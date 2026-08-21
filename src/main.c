@@ -8,7 +8,6 @@ void label_event(QLEvent * e){
 
     struct {int _1;float _2;char * str;} *p = e->value.p;
     printf("event:%d %f\n",p->_1,p->_2);//,p->str);
-
 }
 
 int main(){
