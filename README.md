@@ -7,7 +7,10 @@
 
 - **对象系统（object）已完成** —— 类型、对象生命周期、属性、事件、内存与对象树；
 - **绘制系统 + 控件基类（widget）已完成** —— 显示驱动、画布原语、脏矩形渲染、QLWidget 及自定义控件；
-- **字体/文本系统已完成** —— 内置 4bpp 抗锯齿位图字体、UTF-8 解码、文本度量、`QLLabel` 控件；
+- **字体/文本系统已完成** —— 内置 4bpp 位图字体（MCU）+ FreeType 动态字体（任意字号 / 中文）、
+  UTF-8 解码、文本度量、`QLLabel` 控件；
+- **交互闭环已完成** —— 命中测试、hover/pressed/focus 状态、点击合成、键盘焦点，
+  事件沿控件树冒泡；HTML/CSS 的 `:hover/:active/:focus` 在构建期编译成状态样式；
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
 - **GPU 后端已完成（v0.1）** —— `QLDraw2D` 绘制接口 + GLES3/EGL 后端（SDF 圆角、字形图集、单 draw call），
   与 CPU 后端逐像素对齐（差分测试）；
@@ -76,7 +79,8 @@ include/qlgl/      对外头文件（唯一安装目录）
   qlcanvas.h       画布与绘制原语
   qlwidget.h       控件基类
   qlrender.h       脏矩形渲染器
-  qlfont.h         位图字体、字形查找、UTF-8、文本度量
+  qlfont.h         字体（位图/动态）、字形查找、UTF-8、文本度量
+  qlfont_ft.h      FreeType 后端（可选）
   qlstr.h          自管理字符串（compact / amortized 双策略）
   qllabel.h        文本控件
   qldisp_x11.h     Linux X11 窗口后端（可选）
@@ -88,7 +92,7 @@ include/qlgl/      对外头文件（唯一安装目录）
 src/core/          对象系统实现
 src/draw/          几何、显示、画布、渲染器
 src/widget/        控件基类与 QLLabel
-src/text/          字体实现与自动生成的字形数据
+src/text/          字体实现、FreeType 后端、自动生成的字形数据
 src/ui/            HTML+CSS 编译结果的物化/布局/绘制
 src/port/          平台后端（X11 / Wayland 窗口）
 src/generated/     自动生成的类注册表（勿手改）

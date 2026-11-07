@@ -53,10 +53,83 @@ extern const QLFont ql_font_mono_16;   /* DejaVu Sans Mono, 16px, 4bpp */
 覆盖范围：**仅 ASCII 32..126**。中文/日文/emoji 会显示为 `?`。
 字形数据由 `tools/qlfontgen/gen_bitmap_font.py` 从 TTF 生成。
 
+> 需要中文/任意字号就用下面的 FreeType 动态字体（§2.2），内置位图字体是
+> MCU 的保底方案，两者接口完全一样。
+
 ```bash
 python3 tools/qlfontgen/gen_bitmap_font.py           # 重新生成
 python3 tools/qlfontgen/gen_bitmap_font.py --check   # CI 校验
 ```
+
+---
+
+## 2.2 FreeType 动态字体（M2）
+
+头文件 `<qlgl/qlfont_ft.h>`，需要 `QLGL_ENABLE_FREETYPE`（CMake 选项
+`QLGL_BUILD_FREETYPE=ON`，自动探测 `freetype2`）。
+
+```c
+QLFont *ql_font_ft_load(const char *path, int face_index, int pixel_size);
+```
+
+| 参数 | 说明 |
+|---|---|
+| `path` | `.ttf` / `.otf` / `.ttc` |
+| `face_index` | TTC 里的字面下标；**`-1` 自动挑**（优先 family 名带 `SC` 的简体中文字面） |
+| `pixel_size` | 字号（像素，不是 pt） |
+
+返回的 `QLFont*` 由调用方 **`ql_font_destroy()`** 释放。失败返回 `NULL`（打错误日志）。
+
+```c
+ql_font_ft_available()                 /* 后端是否可用（编译进来就是 1） */
+ql_font_ft_set_cache_limit(uint32_t)   /* 每字体字形缓存上限，默认 2048，全局生效 */
+```
+
+### 默认字体：按字号取
+
+```c
+int         ql_font_set_default_file(const char *path, int face_index);  /* 1 = 成功 */
+const char *ql_font_default_file(void);
+const QLFont *ql_font_default(int pixel_size);   /* 带缓存，返回值不要释放 */
+```
+
+- 设了默认文件 → `ql_font_default(N)` 返回该字号的动态字体（同字号复用）；
+- 没设或加载失败 → **回落到最接近的内置位图字体**（`>=14` 用 mono_16，否则 mono_12）。
+
+> 生命周期：默认字体表由 `qlgl_shutdown()` 释放（`ql_font_reset_defaults()`），
+> 所以控件必须在 shutdown 之前销毁，否则会留下悬垂字体指针。
+> 表容量固定 8 个字号，超出后不再缓存（每次新建，调用方别依赖指针相等）。
+> 单线程使用；与其它 GL/绘制状态一样不做加锁。
+
+`qllabel` 与 `qlui` 都走它：
+
+```c
+ql_label_set_font_size(label, 18);      /* 返回实际使用的字体 */
+```
+
+`qlui` 里写 `font-size: 18px;` 就会自动用上 18px 的动态字体。
+
+### 动态字体的行为约定
+
+| 项 | 说明 |
+|---|---|
+| 光栅化 | 缺字才做（`FT_LOAD_DEFAULT` + `FT_RENDER_MODE_NORMAL`），8bpp 灰度 |
+| 缓存 | 有序数组 + 每字形独立位图；插入时 `memmove` 保持按 codepoint 升序 |
+| 上限 | 达到 `cache_limit` 后**拒绝新字形**并告警一次（不做 LRU 淘汰） |
+| 缺字 | `FT_Get_Char_Index == 0` → 返回 `NULL` → 走 `font->fallback` |
+| 空字形 | 空格这类 `box_w == 0` 的字形也会缓存，避免每次重新走一遍 FreeType |
+| 指针有效期 | `ql_font_find_glyph` 的返回值在**下一次查找前**有效 |
+
+### 平台无关的读取接口
+
+```c
+const uint8_t *ql_font_glyph_row(const QLFont *font, const QLGlyph *glyph, int32_t y);
+uint8_t        ql_font_glyph_alpha(const QLFont *font, const QLGlyph *glyph, int32_t x, int32_t y);
+int            ql_font_is_dynamic(const QLFont *font);
+void           ql_font_destroy(QLFont *font);       /* 静态字体上是空操作 */
+```
+
+写自己的绘制后端时**只用这两个访问器**取像素，就能同时支持两种字体。
 
 ---
 
@@ -284,6 +357,7 @@ ql_object_set_property((QLObject *)label, QL_WIDGET_PROPERTY_WIDTH, ql_value_int
 | `QLGL_BUILD_X11` | ON | Linux X11 窗口后端 |
 | `QLGL_BUILD_WAYLAND` | ON | Linux Wayland 窗口后端（需要 wayland-client + wayland-scanner） |
 | `QLGL_BUILD_TESTS` | ON | 构建 `test/` 下示例与测试 |
+| `QLGL_BUILD_FREETYPE` | ON | FreeType 动态字体后端（中文 + 任意字号） |
 
 ---
 
@@ -291,12 +365,15 @@ ql_object_set_property((QLObject *)label, QL_WIDGET_PROPERTY_WIDTH, ql_value_int
 
 | 项 | v0.1 状态 |
 |---|---|
-| 字符集 | 只有 ASCII 32..126；CJK/emoji 显示为 `?` |
+| 字符集 | 内置位图字体只有 ASCII；**启用 FreeType 后支持任意 Unicode** |
+| 字号 | 内置只有 12/16px；动态字体任意字号 |
 | 自动折行 | 不支持，只有手动 `'\n'` |
 | 垂直对齐 | 只支持顶端对齐 |
 | 字体样式 | 无粗体/斜体/描边/阴影（可以横向偏移多次绘制来模拟） |
 | 排版 | 无字距调整（kerning）、无连字 |
-| 矢量字体 | 不支持，只有位图 |
+| 矢量字体 | ✅ M2 已支持（FreeType，按需光栅化 + 缓存） |
+| 字重/斜体 | 需要不同字体文件（`FT_Face`），无合成加粗 |
+| 字形淘汰 | 无 LRU，达到上限后拒绝新字形 |
 
 ---
 

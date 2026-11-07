@@ -1,6 +1,7 @@
 # QLText / 字体系统 阅读指南
 
-> 本部分包含四层：**字体**（qlfont）→ **字符串**（qlstr）→ **画布文本原语** → **文本控件**（qllabel）。
+> 本部分包含四层：**字体**（qlfont，静态位图 / FreeType 动态）→ **字符串**（qlstr）→
+> **画布文本原语** → **文本控件**（qllabel）。
 > 目标读者：要读懂或修改 `src/text/`、`src/core/qlstr.c`、文本绘制相关代码的人。
 > 只想用 API，请看 [QLText API手册](./QLText%20API手册.md)。
 
@@ -12,8 +13,10 @@
 |---|---|---|
 | `tools/qlfontgen/gen_bitmap_font.py` | 从 TTF 生成内置位图字体 | ① |
 | `src/text/qlfont_ascii.c` | **自动生成**的字形数据（勿手改） | ② |
-| `include/qlgl/qlfont.h` | `QLFont` / `QLGlyph` 结构与查找、度量接口 | ③ |
-| `src/text/qlfont.c` | 二分查找、位图取灰度、UTF-8 编解码、文本度量 | ④ |
+| `include/qlgl/qlfont.h` | `QLFont` / `QLGlyph` / `QLFontBackend` 结构与查找、度量接口 | ③ |
+| `src/text/qlfont.c` | 二分查找、位图行访问、UTF-8 编解码、文本度量、默认字体表 | ④ |
+| `include/qlgl/qlfont_ft.h` | FreeType 后端接口（加载字体、设默认字体、缓存上限） | ⑤ |
+| `src/text/qlfont_ft.c` | 按需光栅化 + 有序字形缓存 + TTC 字面选择 | ⑥ |
 | `include/qlgl/qlstr.h` | 自管理字符串与两种容量策略 | ⑤ |
 | `src/core/qlstr.c` | 容量增长、只读字面量转自有内存 | ⑥ |
 | `src/draw/qlcanvas.c` | `ql_canvas_draw_text` / `draw_glyph`（在文件末尾） | ⑦ |
@@ -230,6 +233,8 @@ QLWidget（几何、背景、边框）
 
 ## 10. 如何添加自定义字体
 
+### 10.1 静态位图字体（MCU 路线）
+
 1. 用 `tools/qlfontgen/gen_bitmap_font.py` 的方式生成（或自己写生成脚本），
    产物是一组 `QLGlyph` + 一块 `uint8_t bitmap[]` + 一个 `const QLFont`；
 2. 要求：
@@ -237,6 +242,83 @@ QLWidget（几何、背景、边框）
    - 每个 `QLGlyph.data_offset` 指向 `bitmap` 内自己那段；
    - `bpp` ∈ {1,4,8}，行字节数符合 `(box_w+7)/8` / `(box_w+1)/2` / `box_w`；
 3. 使用时 `ql_label_set_font(label, &my_font)`。
+
+### 10.2 动态矢量字体（PC/MPU 路线）
+
+```c
+QLFont *f = ql_font_ft_load("/path/to/NotoSansCJK-Regular.ttc", -1, 16);
+ql_label_set_font(label, f);       /* 用完 ql_font_destroy(f) */
+```
+
+或者设成"默认字体"，之后按字号到处用：
+
+```c
+ql_font_set_default_file("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", -1);
+ql_label_set_font_size(label, 18);          /* == ql_font_default(18) */
+```
+
+`qlui` 的 `font-size: Npx` 会自动走 `ql_font_default(N)`，无需额外代码。
+
+---
+
+## 10.5 动态字体是怎么工作的（M2）
+
+### 数据布局
+
+```c
+QLFont {
+    glyphs[i]         按 codepoint 升序（插入时 memmove 保持有序）
+    glyph_bitmaps[i]  第 i 个字形的 8bpp 位图（每行 box_w 字节，独立 malloc）
+    backend           &s_ft_backend
+    impl              QLFTFont{ FT_Library, FT_Face, 文件内存 }
+}
+```
+
+关键点：**静态字体与动态字体共用同一套读取接口**。
+`ql_font_glyph_row()` 内部判断 `glyph_bitmaps != NULL` 决定从哪取行指针，
+所以画布、`QLDraw2D`、GPU 图集三条绘制路径完全不需要区分字体类型。
+
+### 查找流程
+
+```
+ql_font_find_glyph(font, cp)
+  ├─ backend == NULL → 纯二分（静态字体，永不分配）
+  └─ backend != NULL → 先二分，未命中再 backend->ensure_glyph()
+                         ├─ FT_Get_Char_Index  为 0 → 字体没这个字，返回 NULL
+                         ├─ FT_Load_Glyph + FT_Render_Glyph（8bpp 灰度）
+                         ├─ memcpy 出位图（FreeType 的 buffer 下次渲染就失效）
+                         └─ insert_glyph()：扩容 + 二分插入点 + memmove 保持有序
+```
+
+`find_glyph` 返回的指针在下一次查找前有效（插入可能 realloc）。
+绘制路径都是"取一个、画一个"，天然满足。
+
+### 字形缓存上限
+
+`ql_font_ft_set_cache_limit(N)`（全局，默认 2048）。满了之后**拒绝新字形**并
+告警一次，而不是做 LRU 淘汰——交互场景里淘汰会导致同一屏内的字形反复
+光栅化，卡顿比"少画一个生僻字"更糟。要更高上限就调大或按页准备子集。
+
+### GPU 图集（M2 起是动态的）
+
+- 图集 1024×1024 R8（1 MB），货架（shelf）分配；
+- **启动时**把两个内置位图字体的字形一次性拼进 CPU 镜像、一次 `glTexImage2D` 上传
+  （比逐字形上传快一个数量级）；
+- 之后动态字体新出现的字形走 `glTexSubImage2D` 增量上传，小字形先拼进
+  64×64 临时缓冲，一次调用传完；
+- UV 缓存是开放寻址哈希，键是 **`(字体指针, codepoint)`**。
+
+> ⚠️ 踩过的坑：UV 缓存最初用"字形在数组里的下标"做键。动态字体的缓存表是
+> **插入后仍保持按 codepoint 有序**的，新字形插到中间会把后面所有字形挪位，
+> 下标不是稳定标识 —— 表现为"部分文字被画成别的字"。
+> 任何按下标索引动态字形的缓存都必须改按键值（codepoint）。
+
+### 4bpp 行打包的坑
+
+静态字体可能是 4bpp/1bpp（每行 `(box_w+1)/2` 或 `(box_w+7)/8` 字节）。
+往 8bpp 图集搬像素时**不能** `memcpy(box_w)`：奇数宽度时 stride < box_w，直接越界
+（ASan 抓到的就是这个）。统一走 `fetch_glyph_row()`：bpp==8 走 memcpy，
+其他 bpp 逐像素用 `ql_font_glyph_alpha()` 展开。
 
 ---
 

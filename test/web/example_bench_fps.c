@@ -16,6 +16,7 @@
 #include <qlgl/qlgl.h>
 
 #include "ui_demo.h"
+#include "../window_helper.h"
 
 #define MAX_FRAMES 400
 
@@ -38,6 +39,8 @@ int main(int argc, char **argv)
 
     if (qlgl_init() != QL_OK)
         return 1;
+
+    ql_win_load_font();              /* 有矢量字体就用，中文才画得出来 */
 
     printf("%-12s %-10s %10s %10s %12s %8s\n",
            "分辨率", "后端", "ms/帧", "fps", "含GPU完成ms", "顶点");

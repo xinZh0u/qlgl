@@ -111,6 +111,7 @@ UA 默认样式（UA_DEFAULTS）
   ↓ 被匹配到的规则覆盖（按优先级）
   ↓ 被行内 style 覆盖
   ↓ 继承（只有 color / font-size / text-align）
+  ↓ font-size 在生成期汇总成 font_sizes 表，运行期按字号取字体
 ```
 
 继承的实现很直接：父节点先算完样式，子节点从父的样式里挑 `INHERITED` 三个属性作为初始值。

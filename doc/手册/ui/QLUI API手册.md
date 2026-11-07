@@ -105,7 +105,7 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `border-radius` | `Npx` | |
 | `background` / `background-color` | 颜色 | |
 | `color` | 颜色 | |
-| `font-size` | `Npx` | `>= 14px` 用 16 号内置字体，否则 12 号 |
+| `font-size` | `Npx` | 任意整数；生成期汇总成 `font_sizes` 表，运行期按字号取 `ql_font_default(N)`（配置了矢量字体就是该字号的动态字体，支持中文；否则回落到内置 12/16 位图字体） |
 | `text-align` | `left` `center` `right` | |
 | `box-sizing` | `content-box` `border-box` | 默认 `content-box`（与浏览器一致） |
 
