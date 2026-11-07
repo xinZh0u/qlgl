@@ -1,21 +1,96 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
-# 项目名称 & 语言
-project(qlgl C)
+project(qlgl LANGUAGES C VERSION 0.1.0)
 
-# C 标准
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)          # 严格 -std=c11，防止误用 POSIX/编译器扩展
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
 
-# 头文件搜索路径
-include_directories(${PROJECT_SOURCE_DIR}/include)
-
-# 源文件
-file(GLOB SRC_FILES
-    src/*.c
-    include/*.h
-    doc/*.txt
+file(GLOB_RECURSE QLGL_SRC CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c
 )
 
-# 生成可执行文件
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+add_library(qlgl STATIC ${QLGL_SRC})
+target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_options(qlgl PRIVATE -Wall -Wextra)
+
+option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
+option(QLGL_BUILD_WAYLAND "构建 Linux Wayland 窗口后端" ON)
+
+if(QLGL_BUILD_WAYLAND AND UNIX AND NOT APPLE)
+    find_package(PkgConfig QUIET)
+    find_program(WAYLAND_SCANNER_EXECUTABLE NAMES wayland-scanner)
+    if(PkgConfig_FOUND AND WAYLAND_SCANNER_EXECUTABLE)
+        pkg_check_modules(WAYLAND_CLIENT IMPORTED_TARGET wayland-client)
+    endif()
+    if(WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE)
+        set(QL_WL_PROTO_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/port/protocols)
+        set(QL_WL_GEN_DIR   ${CMAKE_CURRENT_BINARY_DIR}/wayland)
+        set(QL_WL_HDR ${QL_WL_GEN_DIR}/xdg-shell-client-protocol.h)
+        set(QL_WL_SRC ${QL_WL_GEN_DIR}/xdg-shell-protocol.c)
+        add_custom_command(
+            OUTPUT ${QL_WL_HDR} ${QL_WL_SRC}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_WL_GEN_DIR}
+            COMMAND ${WAYLAND_SCANNER_EXECUTABLE} client-header
+                    ${QL_WL_PROTO_DIR}/xdg-shell.xml ${QL_WL_HDR}
+            COMMAND ${WAYLAND_SCANNER_EXECUTABLE} private-code
+                    ${QL_WL_PROTO_DIR}/xdg-shell.xml ${QL_WL_SRC}
+            DEPENDS ${QL_WL_PROTO_DIR}/xdg-shell.xml
+            COMMENT "生成 xdg-shell 协议代码")
+        target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/port/qldisp_wayland.c
+                                    ${QL_WL_SRC})
+        target_include_directories(qlgl PUBLIC ${QL_WL_GEN_DIR})
+        target_compile_definitions(qlgl PUBLIC QLGL_ENABLE_WAYLAND=1)
+        target_link_libraries(qlgl PUBLIC PkgConfig::WAYLAND_CLIENT)
+        message(STATUS "QLGL: Wayland 窗口后端已启用")
+    else()
+        message(STATUS "QLGL: 未找到 wayland-client / wayland-scanner，跳过 Wayland 后端")
+    endif()
+endif()
+option(QLGL_BUILD_X11 "构建 Linux X11 窗口后端" ON)
+
+if(QLGL_BUILD_X11 AND UNIX AND NOT APPLE)
+    find_package(X11)
+    if(X11_FOUND)
+        target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/port/qldisp_x11.c)
+        target_compile_definitions(qlgl PUBLIC QLGL_ENABLE_X11=1)
+        if(TARGET X11::X11)
+            target_link_libraries(qlgl PUBLIC X11::X11)
+        else()
+            target_include_directories(qlgl PUBLIC ${X11_INCLUDE_DIR})
+            target_link_libraries(qlgl PUBLIC ${X11_LIBRARIES})
+        endif()
+        message(STATUS "QLGL: X11 窗口后端已启用")
+    else()
+        message(STATUS "QLGL: 未找到 X11，跳过窗口后端")
+    endif()
+endif()
+
+if(QLGL_BUILD_TESTS)
+    enable_testing()
+    file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
+    foreach(test_src ${QLGL_TEST_SRC})
+        get_filename_component(test_name ${test_src} NAME_WE)
+        add_executable(${test_name} ${test_src})
+        target_link_libraries(${test_name} PRIVATE qlgl)
+        target_compile_options(${test_name} PRIVATE -Wall -Wextra)
+        # 窗口示例会进入事件循环，不能当单元测试跑
+        if(NOT test_name MATCHES "^example_window")
+            add_test(NAME ${test_name} COMMAND ${test_name})
+        endif()
+    endforeach()
+endif()
+
+# 重新生成类型 id 表：cmake --build build --target qlgen
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_custom_target(qlgen
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlgen/qlgen.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "扫描 src/**/*.c 重新生成类型 id 表"
+    )
+endif()
