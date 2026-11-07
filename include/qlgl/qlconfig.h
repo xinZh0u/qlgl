@@ -40,6 +40,24 @@
 #define QL_CFG_EVENT_PATH_MAX       8
 #endif
 
+/*
+ * .qlui blob 加载上限（防止把手工构造/损坏的文件当合法数据吃进来）。
+ * 静态编译的 doc 不受这些限制影响——它们是编译器保证的常量。
+ * MCU 上应该按实际页面调小，例如 256 / 256。
+ */
+#ifndef QL_CFG_UI_MAX_NODES
+#define QL_CFG_UI_MAX_NODES         4096
+#endif
+#ifndef QL_CFG_UI_MAX_STYLES
+#define QL_CFG_UI_MAX_STYLES        4096
+#endif
+#ifndef QL_CFG_UI_MAX_TEXT_BYTES
+#define QL_CFG_UI_MAX_TEXT_BYTES    (64u * 1024u)   /* text_offsets 是 uint16 的自然上限 */
+#endif
+#ifndef QL_CFG_UI_MAX_FONT_SIZES
+#define QL_CFG_UI_MAX_FONT_SIZES    256
+#endif
+
 /* 输入事件队列容量（后端只入队，主循环统一派发；静态分配不 malloc） */
 #ifndef QL_CFG_INPUT_QUEUE
 #define QL_CFG_INPUT_QUEUE          64

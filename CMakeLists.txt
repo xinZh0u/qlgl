@@ -43,7 +43,8 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
     set(QL_UI_IN  ${CMAKE_CURRENT_SOURCE_DIR}/test/web)
     set(QL_UI_OUT ${CMAKE_CURRENT_BINARY_DIR}/ui)
-    set(QL_UI_GEN ${QL_UI_OUT}/ui_demo.c ${QL_UI_OUT}/ui_demo.h)
+    set(QL_UI_GEN ${QL_UI_OUT}/ui_demo.c ${QL_UI_OUT}/ui_demo.h
+                  ${QL_UI_OUT}/ui_demo_blob.c)
     add_custom_command(
         OUTPUT ${QL_UI_GEN}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_UI_OUT}
@@ -55,6 +56,26 @@ if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
         COMMENT "编译 HTML+CSS 为 C")
     add_custom_target(qlui ALL DEPENDS ${QL_UI_GEN})
+
+    # ---- 构建期顺便产出 .qlui blob ----
+    # 序列化只在 C 侧实现一次（src/ui/qlui_blob.c），因此这里链一个宿主工具，
+    # 而不是让 Python 再实现一遍二进制格式（避免两份实现漂移）。
+    if(TARGET qlgl)
+        add_executable(qlblob
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlblob/qlblob.c
+            ${QL_UI_GEN})
+        add_dependencies(qlblob qlui)
+        target_include_directories(qlblob PRIVATE ${QL_UI_OUT})
+        target_link_libraries(qlblob PRIVATE qlgl)
+
+        set(QL_UI_BLOB ${QL_UI_OUT}/ui_demo.qlui)
+        add_custom_command(
+            OUTPUT ${QL_UI_BLOB}
+            COMMAND qlblob ${QL_UI_BLOB}
+            DEPENDS qlblob ${QL_UI_GEN}
+            COMMENT "生成 ui_demo.qlui")
+        add_custom_target(qlui_blob ALL DEPENDS ${QL_UI_BLOB})
+    endif()
 endif()
 option(QLGL_BUILD_WAYLAND "构建 Linux Wayland 窗口后端" ON)
 option(QLGL_BUILD_GL "构建 OpenGL ES 3.0 / EGL GPU 后端" ON)
@@ -128,10 +149,21 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$" AND Python3_Interpreter_FOUND)
-            add_executable(${test_name} ${test_src} ${QL_UI_GEN})
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$" AND Python3_Interpreter_FOUND)
+            set(_ql_ui_sources ${QL_UI_GEN})
+            add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
             target_include_directories(${test_name} PRIVATE ${QL_UI_OUT})
+            if(test_name STREQUAL "test_ui_blob")
+                add_dependencies(${test_name} qlui_blob)
+                target_compile_definitions(${test_name} PRIVATE
+                    QL_UI_BLOB_PATH="${QL_UI_OUT}/ui_demo.qlui")
+            endif()
+            if(test_name STREQUAL "example_ui_blob")
+                add_dependencies(${test_name} qlui_blob)
+                target_compile_definitions(${test_name} PRIVATE
+                    QL_UI_BLOB_DEFAULT="${QL_UI_OUT}/ui_demo.qlui")
+            endif()
         else()
             add_executable(${test_name} ${test_src})
         endif()

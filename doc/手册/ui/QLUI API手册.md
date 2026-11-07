@@ -161,15 +161,27 @@ typedef struct {
 
 typedef struct {
     const char *name;
-    uint16_t node_count, text_count;
-    const QLUINode *nodes;
-    const QLUIStyle *styles;
-    const char *text_pool;
-    const uint16_t *text_offsets;
+    uint16_t node_count, style_count, text_count, font_size_count;
+    const QLUINode   *nodes;
+    const QLUIStyle  *styles;
+    const char       *text_pool;      /* 以 '\0' 分隔的 UTF-8 池 */
+    const uint16_t   *text_offsets;
+    const uint16_t   *font_sizes;     /* font_id 索引它，值是像素字号 */
+    void             *arena;          /* NULL = 静态数据，不归 doc 管 */
 } QLUIDoc;
 ```
 
 `0xFFFF` 表示"无"（无父/无子/无兄弟/无文本）。
+
+`arena` 是**唯一的所有权判据**：
+
+- `arena == NULL` → 静态 doc（`.rodata` 或调用方自己管内存），`ql_ui_doc_free` 是空操作；
+- `arena != NULL` → `ql_ui_doc_load*` 分配，`ql_ui_doc_free` 释放。
+
+因为这条判据，静态 doc 误进 free 路径不可能发生，`ql_ui_doc_free` 可以无脑调用。
+
+> 所有内部引用都是 `uint16` **下标**而不是指针 —— 这既让 blob 的加载变成
+> "设 6 个基址指针"（零重定位），也让 doc 之间可以各自独立（不能跨 doc 引用）。
 
 ---
 
@@ -277,6 +289,113 @@ int main(void)
 
 ---
 
+## 6.5 `.qlui` blob API（换界面不用重编译）
+
+头文件 `<qlgl/qlui.h>`。想省字节量的目标机可以不编译 `src/ui/qlui_blob.c`，
+下面的函数就不存在（声明不会产生引用，链接器不会拖入）。
+
+### 6.5.1 最常用：一行加载
+
+```c
+QLUIRoot *ui = ql_ui_load_file("ui/index.qlui");
+if (ui == NULL) {
+    fprintf(stderr, "load failed: %s\n", ql_ui_doc_last_error());
+    return 1;
+}
+ql_ui_layout(ui, 320, 240);
+/* ... 渲染 / 交互 ... */
+ql_ui_free(ui);          /* doc 由 root 持有，会一起释放 */
+```
+
+`ql_ui_load_file` = `ql_ui_doc_load()` + `ql_ui_build()`，并让 root **持有** doc。
+
+### 6.5.2 想自己管 doc
+
+```c
+QLUIDoc *doc = ql_ui_doc_load("ui/index.qlui");
+QLUIRoot *ui = ql_ui_build(doc);
+...
+ql_ui_free(ui);          /* 不释放 doc（root 不持有它） */
+ql_ui_doc_free(doc);
+```
+
+### 6.5.3 API 一览
+
+```c
+/* 构建期（宿主工具用） */
+size_t   ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap);
+ql_err_t ql_ui_doc_save(const QLUIDoc *doc, const char *path);
+
+/* 运行期 */
+QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size);
+QLUIDoc *ql_ui_doc_load(const char *path);
+void     ql_ui_doc_free(QLUIDoc *doc);
+QLUIRoot *ql_ui_load_file(const char *path);
+
+/* 辅助 */
+int         ql_ui_doc_is_owned(const QLUIDoc *doc);   /* arena != NULL */
+size_t      ql_ui_doc_text_pool_size(const QLUIDoc *doc);
+const char *ql_ui_doc_last_error(void);
+```
+
+| 函数 | 说明 |
+|---|---|
+| `ql_ui_doc_encode(doc, NULL, 0)` | 只算需要多少字节（返回 0 = doc 非法） |
+| `ql_ui_doc_encode(doc, buf, cap)` | 写入；`cap` 不足时不写、只返回需求 |
+| `ql_ui_doc_load_mem` | **拷贝**一份数据进来，调用方可以立刻释放自己的缓冲 |
+| `ql_ui_doc_free` | 对**静态 doc（`arena == NULL`）是空操作**，可以无脑调用 |
+| `ql_ui_load_file` | 失败返回 NULL 并打错误日志，原因也可用 `ql_ui_doc_last_error()` |
+
+### 6.5.4 失败原因
+
+加载失败**一律返回 NULL**，绝不"跳过坏数据继续画"。原因用
+`ql_ui_doc_last_error()` 取（静态缓冲，非线程安全）：
+
+| 信息 | 原因 |
+|---|---|
+| `bad magic (not a .qlui blob)` | 不是 blob 文件 |
+| `version mismatch: blob built by a different qlgl` | 库版本变了，重新生成 |
+| `QLUINode layout mismatch (blob built on another ABI)` | 结构体布局变了（换编译器/架构/改了结构体） |
+| `size mismatch (file truncated or corrupted)` | 文件被截断 |
+| `checksum mismatch (file corrupted)` | 内容被改过 |
+| `section offsets inconsistent with counts` | 头部被手工篡改 |
+| `too many nodes` / `text pool too large` | 超过 `QL_CFG_UI_MAX_*` 上限 |
+
+### 6.5.5 容量上限
+
+```c
+#define QL_CFG_UI_MAX_NODES         4096
+#define QL_CFG_UI_MAX_STYLES        4096
+#define QL_CFG_UI_MAX_TEXT_BYTES    (64u * 1024u)
+#define QL_CFG_UI_MAX_FONT_SIZES    256
+```
+
+只作用于 blob（外来数据）。静态编译的 doc 是编译器保证的常量，不受限制。
+MCU 上按实际页面调小，例如 256 / 256 / 8K。
+
+> ⚠ `text_offsets` 是 `uint16`，所以**单个 doc 的文本池天然上限 64KB**
+> （中文约 2 万字）。超了会加载失败，不会静默截断。
+
+### 6.5.6 与静态 C 数据混用
+
+```c
+/* 主壳：构建期固化，零加载成本 */
+QLUIRoot *shell = ql_ui_build(&ui_shell_doc);
+
+/* 侧栏/插件：运行时加载，可换皮 */
+QLUIRoot *panel = ql_ui_load_file("themes/dark/sidebar.qlui");
+
+ql_ui_layout(shell, 320, 480);
+ql_ui_layout(panel, 120, 480);
+/* 各自 render 到自己的区域 */
+```
+
+混用单位是**面板**。`parent/first_child/next_sibling` 是同一数组内的 `uint16` 下标，
+**doc 之间不能互相引用合成一棵树**；跨面板的 CSS 继承也不存在（每个面板独立闭合）。
+需要"某块热改"就重建那个 `QLUIRoot`（几十微秒），不要尝试做元素级混合。
+
+---
+
 ## 7. 限制一览
 
 | 项 | 现状 |
@@ -285,7 +404,8 @@ int main(void)
 | 高度 | 不支持 `%`，不支持 `min/max-height` |
 | 文本 | 不支持混合内容、不自动换行、无字距/行距调整 |
 | 伪类 | `:hover`/`:active`/`:focus` 编译成变体样式；布局仍按基础样式 |
-| 运行期 | 只能改文本，不能改结构/样式类 |
+| 运行期 | 只能改文本，不能改结构/样式类（要改结构就换一份 doc） |
+| 换 UI | 支持 `.qlui` blob，**不用重编译**；但不支持目标机上解析 HTML/CSS 文本（M3.5） |
 | JS | 不支持（交互用 C 回调） |
 | 性能 | 一次 `layout` 遍历整棵树；节点数 ≤ 数百时足够 |
 

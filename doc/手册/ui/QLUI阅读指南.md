@@ -16,15 +16,20 @@
 | `tools/qlui/qlui.py` | HTML 解析 + CSS 解析 + 选择器匹配 + 级联 + 生成 C | ① |
 | `include/qlgl/qlui.h` | 生成数据格式（`QLUIDoc`/`QLUINode`/`QLUIStyle`）与运行期 API | ② |
 | `src/ui/qlui.c` | 物化、布局、绘制、命中测试 | ③ |
-| `test/web/ui_demo.html` / `.css` | 示例页面（构建期被编译） | ④ |
-| `test/web/test_web_ui.c` | 可执行的说明（布局/绘制/交互断言） | ⑤ |
+| `src/ui/qlui_blob.c` | `.qlui` 二进制编解码（**独立编译单元，可摘**） | ④ |
+| `tools/qlblob/qlblob.c` | 宿主工具：把生成的 doc 导出成 `.qlui` | ⑤ |
+| `test/web/ui_demo.html` / `.css` | 示例页面（构建期被编译） | ⑥ |
+| `test/web/test_web_ui.c` | 布局/绘制/交互断言 | ⑦ |
+| `test/web/test_ui_blob.c` | blob 往返 / 损坏检测 / 与构建产物逐字节一致 | ⑧ |
+| `test/web/example_ui_blob.c` | 从 `.qlui` 加载 + 热重载示例 | ⑨ |
 
 生成链路：
 
 ```
 test/web/ui_demo.html ┐
 test/web/ui_demo.css  ├─ cmake --build ─▶ build/ui/ui_demo.c + ui_demo.h ─▶ 编译进测试程序
-tools/qlui/qlui.py    ┘
+tools/qlui/qlui.py    ┘                                     │
+                                                            └─ qlblob ─▶ ui_demo.qlui
 ```
 
 `CMakeLists.txt` 里用 `add_custom_command` 声明依赖，改 HTML/CSS 会自动重新生成（与 Qt 的 `.ui` 体验一致）。
@@ -42,6 +47,31 @@ tools/qlui/qlui.py    ┘
 | 代价 | — | 运行期不能改 CSS |
 
 这正是 Qt `uic` 的思路，也是 `qlgen`（类型 id）、`qlfontgen`（字体）已经在用的思路。
+
+**但"运行期不能改 CSS"并不意味着"换界面必须重编译"。** 见 §5.5 的 `.qlui` blob。
+
+---
+
+## 2.5 三种形态，一份 IR
+
+产出的都是同一个 `QLUIDoc`，区别只在"字节在哪、什么时候解析"：
+
+| | ① 静态 C 数据 | ② `.qlui` blob | ③ 运行时文本（M3.5） |
+|---|---|---|---|
+| HTML/CSS 何时转 | 构建机 | 构建机 | **目标机运行时** |
+| 入口 | `ql_ui_build(&ui_x_doc)` | `ql_ui_load_file("x.qlui")` | `ql_ui_load_text()`（未实现） |
+| 加载成本 | **0** | ~10µs（校验 + 设 6 个基址） | 50~200µs |
+| 渲染成本 | **相同** | **相同** | **相同** |
+| 换 UI 要重编译 | 要 | **不要** | 不要 |
+| 目标机可改 HTML | 不能 | 不能 | **能** |
+| MCU | ✅ | 可选（摘掉 `qlui_blob.c` 即可） | ❌ |
+
+三者渲染开销完全一致，因为都走同一套 `QLUINodeRT → 布局 → 绘制`。
+blob 省掉的只是"解析文本"，**不提升帧率**——它在乎的是启动时间和"改 UI 不重编译"。
+
+混用的单位是**面板**（一个 `QLUIRoot` ↔ 一份 doc）：`parent/first_child/next_sibling`
+是同一数组内的 `uint16` 下标，**跨 doc 引用物理上不存在**，所以不做元素级混合。
+需要"某块热改"就重建那个 `QLUIRoot`（几十微秒）。
 
 ---
 
@@ -187,6 +217,104 @@ layout_node(node, x, y, avail_w):
 按树顺序（父先子后）：背景 → 边框 → 文本 → 递归子节点。
 全部复用已有的 `QLCanvas` 原语（`fill_round_rect_alpha` / `stroke_rect` / `draw_text`）。
 
+字体由 `font-size` 决定：生成期把用到的字号汇总成 `font_sizes[]`，
+运行期 `ql_font_default(N)` 按字号取字体（配了矢量字体就是动态字体，支持中文/任意字号）。
+
+### 5.5 `.qlui` blob：换界面不用重编译
+
+```
+qlui.py ──▶ ui_demo.c ──┐
+                        ├─ 编译进程序（零加载成本）
+        └──▶ qlblob ────┴─▶ ui_demo.qlui ──▶ ql_ui_load_file()（运行时加载）
+```
+
+#### 为什么加载这么便宜
+
+`QLUIDoc` 里**所有内部引用都是 `uint16` 下标**，唯一的指针是 doc 自己的 6 个基址字段：
+
+```c
+QLUIDoc {
+    nodes / styles / text_pool / text_offsets / font_sizes / name   ← 只有这 6 个指针
+    node_count / style_count / text_count / font_size_count
+    arena        ← NULL = 静态数据，不归我管
+}
+```
+
+所以"解码"= 校验 + 设 6 个指针，**没有任何递归重定位**。这是当初"用下标不用指针"
+的一个意外红利。
+
+#### 格式
+
+```
+[ QLUIDocBlobHeader 64 字节 ]
+[ nodes      ] node_count      * 18 字节
+[ styles     ] style_count     * 44 字节
+[ text_pool  ] 以 '\0' 分隔的 UTF-8
+[ text_ofs   ] text_count      * 2 字节
+[ font_sizes ] font_size_count * 2 字节
+[ name       ] name_len 字节
+```
+
+各段按 8 字节对齐。头部含：magic(`QLUI`)、version、header_size、
+4 个计数、`node_struct_size` / `style_struct_size`（**ABI 校验**）、
+total_size、FNV-1a 32 校验和、6 个段偏移。
+
+#### 加载时的校验（缺一不可）
+
+| 检查 | 失败信息 |
+|---|---|
+| magic | `bad magic (not a .qlui blob)` |
+| version | `version mismatch` |
+| header / struct size | `QLUINode layout mismatch (blob built on another ABI)` |
+| total_size 与文件长度 | `size mismatch (file truncated)` |
+| FNV-1a 校验和 | `checksum mismatch (file corrupted)` |
+| 段偏移与计数推出的布局一致 | `section offsets inconsistent with counts` |
+| 容量上限（`QL_CFG_UI_MAX_*`） | `too many nodes` / `text pool too large` |
+
+策略是**明确失败**，绝不"跳过坏数据继续画"——半个正确的界面比报错难查十倍。
+失败原因用 `ql_ui_doc_last_error()` 取。
+
+#### 为什么不跨架构
+
+blob 里是**结构体内存镜像**，`QLUIStyle` 的布局随编译器和 ABI 变。
+所以格式刻意不追求可移植：头里存 `sizeof` 并在加载时逐项校验，
+不匹配就明确拒绝。要跨架构分发就分发 HTML/CSS 源（等 M3.5 的 C 解析器）。
+
+#### 所有权：一条判据
+
+```c
+arena == NULL   → 静态 doc（.rodata 或调用方自己管），ql_ui_doc_free 是空操作
+arena != NULL   → ql_ui_doc_load* 分配，ql_ui_doc_free 释放
+```
+
+`ql_ui_load_file()` 返回的 root **持有** doc，`ql_ui_free(root)` 会一并释放，
+所以最常见的一行用法不需要额外管理：
+
+```c
+QLUIRoot *ui = ql_ui_load_file("ui/index.qlui");
+if (ui == NULL) { /* 原因见 ql_ui_doc_last_error() */ }
+...
+ql_ui_free(ui);      /* doc 一起释放 */
+```
+
+需要拿到 doc 自己管时用 `ql_ui_doc_load()` + `ql_ui_build()` + `ql_ui_doc_free()`。
+
+#### 为什么序列化只在 C 侧实现
+
+`ui_demo.qlui` 是 `tools/qlblob` 这个**宿主工具**调用 `ql_ui_doc_save()` 生成的，
+不是 Python 写的。这样"HTML/CSS → doc"只有一份语义实现（Python 生成 C 表），
+"doc → 二进制"也只有一份（C）。Python 只额外生成一个 6 行的
+`ui_<name>_blob.c` 把 doc 交给工具。
+
+`test_ui_blob.c` 会校验：**工具产出的文件 ≡ 测试现场编码的结果（逐字节）**，
+这就是防止两种形态漂移的护栏。
+
+#### 摘掉它（MCU）
+
+`src/ui/qlui_blob.c` 是独立编译单元，`qlui.c` / `qlcore` 里**没有任何静态引用**指向它。
+不把 `qlui_blob.c` 加进构建，blob 相关代码一个字节都不进镜像；
+`qlui.h` 里的声明不产生引用，链接器不会拖入。
+
 ---
 
 ## 6. 与"真浏览器"的差距（诚实清单）
@@ -221,7 +349,31 @@ layout_node(node, x, y, avail_w):
 
 ---
 
-## 8. 建议的阅读 / 验证顺序
+## 8. 热重载工作流（blob 的实际用法）
+
+两个终端：
+
+```bash
+# 终端 1：窗口 + 监视文件大小变化
+./build/example_ui_blob --watch
+
+# 终端 2：改 test/web/ui_demo.css 后
+python3 tools/qlui/qlui.py --html test/web/ui_demo.html \
+                          --css  test/web/ui_demo.css --out build/ui
+./build/qlblob build/ui/ui_demo.qlui
+# 窗口自动更新，应用二进制没有重新编译
+```
+
+要点：
+
+- 应用**不需要重编译**（`example_ui_blob` 的二进制没变）；
+- 重载是整份重建（几十微秒），因为 doc 之间不能合并；
+- 如果新的 `.qlui` 坏了，示例**保留旧界面**并打印原因——这条规则来自
+  "明确失败优于半个正确"，`test_ui_blob` 里有对应断言。
+
+---
+
+## 9. 建议的阅读 / 验证顺序
 
 1. `ctest --test-dir build -R test_web_ui --output-on-failure` 全绿；
 2. 打开 `build/ui/ui_demo.c`，对照 HTML 看节点表与样式表 —— 这是最快的理解方式；

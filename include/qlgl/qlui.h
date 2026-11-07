@@ -2,13 +2,23 @@
  * @file    qlui.h
  * @brief   HTML + CSS 构建期编译结果（QLUIDoc）与运行期物化/布局/绘制。
  *
- * 工作流（与 Qt 的 .ui/uic 相同）：
- *     index.html + index.css  ──tools/qlui/qlui.py──▶  ui_index.c/.h  ──编译器──▶ .rodata
+ * 三形态，产出的都是同一个 QLUIDoc，区别只在"字节放在哪、什么时候解析"：
  *
- * 运行期只做三件事，不做任何 CSS 解析：
- *     QLUIRoot *ui = ql_ui_build(&ui_index_doc);
- *     ql_ui_layout(ui, 320, 240);
- *     ql_ui_render(ui, canvas);
+ *   ① 静态 C 数据（零加载成本，进 .rodata）：
+ *        index.html + index.css ──tools/qlui/qlui.py──▶ ui_index.c/.h ──编译器──▶ .rodata
+ *        QLUIRoot *ui = ql_ui_build(&ui_index_doc);
+ *
+ *   ② 二进制 blob（改 UI 不用重编译；加载只是校验 + 设基址）：
+ *        QLUIRoot *ui = ql_ui_load_file("ui/index.qlui");
+ *
+ *   ③ 运行时文本（目标机上解析，见 M3.5；这里只是预留入口）
+ *
+ * 三者渲染开销完全相同（都走 QLUINodeRT → 布局 → 绘制），运行期不做 CSS 匹配。
+ * 关键：所有内部引用都是数组下标（uint16），没有指针，所以 blob 的"加载"不需要
+ * 递归重定位——只要校验版本/长度并设好 QLUIDoc 的几个基址。
+ *
+ * ⚠ doc 之间不能互相引用合成一棵树：parent/first_child/next_sibling 是同一份
+ *   数组内的下标。混用的单位是"面板"（一个 QLUIRoot ↔ 一份 doc）。
  */
 #ifndef QLGL_UI_H
 #define QLGL_UI_H
@@ -105,6 +115,13 @@ typedef struct {
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
     const uint16_t   *text_offsets;   /* 文本池内偏移 */
     const uint16_t   *font_sizes;     /* 文档用到的字号（像素），font_id 索引它 */
+    /*
+     * 所有权标记：
+     *   NULL  → 本 doc 是静态数据（.rodata 或调用方自己管），ql_ui_doc_free 不做任何事；
+     *   非 NULL → 本 doc 由 ql_ui_doc_load* 分配，这块内存归 doc 所有。
+     * 判据只有这一条，所以"静态 doc 误进 free 路径"不可能发生。
+     */
+    void             *arena;
 } QLUIDoc;
 
 /* ----- 运行期节点 ----- */
@@ -145,6 +162,7 @@ typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user
 
 struct QLUIRoot {
     const QLUIDoc *doc;
+    uint8_t        owns_doc;     /* 1 = ql_ui_free 时一并释放 doc（ql_ui_load_file 用） */
     QLUINodeRT    *nodes;        /* 深度优先顺序，与 doc->nodes 一一对应 */
     uint16_t       node_count;
     ql_coord_t     width;
@@ -208,5 +226,80 @@ void        ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev);
 /* 键盘焦点：驱动 :focus 样式；传 NULL 清除 */
 void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
+
+/* ===================== 二进制 blob（.qlui） ===================== */
+
+/*
+ * 格式（little-endian，各段按 8 字节对齐）：
+ *
+ *   [ QLUIDocBlobHeader 64 字节 ]
+ *   [ nodes      ] node_count      * sizeof(QLUINode)
+ *   [ styles     ] style_count     * sizeof(QLUIStyle)
+ *   [ text_pool  ] 以 '\0' 分隔的 UTF-8 字节
+ *   [ text_ofs   ] text_count      * uint16
+ *   [ font_sizes ] font_size_count * uint16
+ *   [ name       ] name_len 字节（不含 '\0'）
+ *
+ * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
+ * 但结构体内存布局受编译器/ABI 影响，所以 blob 不是跨架构可移植的：
+ * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
+ */
+#define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
+#define QL_UI_BLOB_VERSION    1u
+
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t header_size;      /* 固定 64 */
+    uint16_t node_count;
+    uint16_t style_count;
+    uint16_t text_count;
+    uint16_t font_size_count;
+    uint16_t name_len;         /* 不含结尾 '\0' */
+    uint16_t node_struct_size; /* sizeof(QLUINode)      —— ABI 校验 */
+    uint16_t style_struct_size;/* sizeof(QLUIStyle)     —— ABI 校验 */
+    uint32_t total_size;       /* 整个 blob 的字节数 */
+    uint32_t checksum;         /* FNV-1a 32，覆盖 [header_size, total_size) */
+    uint32_t off_nodes;
+    uint32_t off_styles;
+    uint32_t off_text_pool;
+    uint32_t off_text_offsets;
+    uint32_t off_font_sizes;
+    uint32_t off_name;
+    uint8_t  reserved[8];      /* 补齐到 64 */
+} QLUIDocBlobHeader;
+
+/*
+ * 把 doc 编码成 blob。buf 为 NULL 或容量不足时只返回需要的字节数（不写）。
+ * 返回值：需要的字节数（>0），或 0 表示 doc 非法。
+ */
+size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap);
+
+/* 写文件；返回 QL_OK / QL_ERR_* */
+ql_err_t ql_ui_doc_save(const QLUIDoc *doc, const char *path);
+
+/*
+ * 从内存加载。data 会被拷贝一份（调用方可以立刻释放自己的缓冲）。
+ * 返回的 QLUIDoc 由 arena 持有，必须用 ql_ui_doc_free 释放。
+ * 失败返回 NULL，原因可用 ql_ui_doc_last_error() 取（含字段名，便于排查 ABI 不匹配）。
+ */
+QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size);
+QLUIDoc *ql_ui_doc_load(const char *path);
+void     ql_ui_doc_free(QLUIDoc *doc);
+
+/* 是否由 ql_ui_doc_load* 分配（等价于 doc != NULL && doc->arena != NULL） */
+int      ql_ui_doc_is_owned(const QLUIDoc *doc);
+
+/* 文本池的字节数（由最后一段字符串推出；没有文本时为 0） */
+size_t   ql_ui_doc_text_pool_size(const QLUIDoc *doc);
+
+/* 最近一次加载失败的原因（静态缓冲，线程不安全；成功时清空） */
+const char *ql_ui_doc_last_error(void);
+
+/*
+ * 从 .qlui 文件直接构建并布局。返回的 root **持有**那份 doc，
+ * ql_ui_free 会一并释放，调用方不需要再管 doc。
+ */
+QLUIRoot *ql_ui_load_file(const char *path);
 
 #endif /* QLGL_UI_H */

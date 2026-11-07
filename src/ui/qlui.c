@@ -20,7 +20,7 @@ const char *ql_ui_tag_name(QLUITag tag)
 
 /* ------------------------------ 构建 ------------------------------ */
 
-QLUIRoot *ql_ui_build(const QLUIDoc *doc)
+static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
 {
     if (doc == NULL || doc->node_count == 0 || doc->nodes == NULL)
         return NULL;
@@ -36,6 +36,7 @@ QLUIRoot *ql_ui_build(const QLUIDoc *doc)
     }
 
     ui->doc = doc;
+    ui->owns_doc = (uint8_t)(owns_doc ? 1 : 0);
     ui->node_count = doc->node_count;
 
     /* 生成器保证 nodes[] 是深度优先顺序，parent 下标一定小于子节点 */
@@ -72,6 +73,26 @@ QLUIRoot *ql_ui_build(const QLUIDoc *doc)
     return ui;
 }
 
+QLUIRoot *ql_ui_build(const QLUIDoc *doc)
+{
+    return build_internal(doc, 0);
+}
+
+QLUIRoot *ql_ui_load_file(const char *path)
+{
+    QLUIDoc *doc = ql_ui_doc_load(path);
+    if (doc == NULL) {
+        QL_LOGE("ui: load \"%s\" failed: %s", path != NULL ? path : "?",
+                ql_ui_doc_last_error());
+        return NULL;
+    }
+
+    QLUIRoot *ui = build_internal(doc, 1);
+    if (ui == NULL)
+        ql_ui_doc_free(doc);
+    return ui;
+}
+
 static QLUIRoot *s_input_target;   /* 挂在输入系统上的根（同一时刻只有一个） */
 
 void ql_ui_free(QLUIRoot *ui)
@@ -82,6 +103,8 @@ void ql_ui_free(QLUIRoot *ui)
     if (s_input_target == ui)
         ql_ui_detach_input();
     ql_mem_free(ui->nodes);
+    if (ui->owns_doc)
+        ql_ui_doc_free((QLUIDoc *)(uintptr_t)ui->doc);
     ql_mem_free(ui);
 }
 

@@ -12,6 +12,8 @@
 - **交互闭环已完成** —— 命中测试、hover/pressed/focus 状态、点击合成、键盘焦点，
   事件沿控件树冒泡；HTML/CSS 的 `:hover/:active/:focus` 在构建期编译成状态样式；
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
+- **`.qlui` blob 已完成** —— 同一份 doc 可导出成二进制，运行时 `ql_ui_load_file()` 加载
+  （改 UI **不用重编译**，实测热重载）；序列化只在 C 侧实现一次，与静态路径逐字节一致；
 - **GPU 后端已完成（v0.1）** —— `QLDraw2D` 绘制接口 + GLES3/EGL 后端（SDF 圆角、字形图集、单 draw call），
   与 CPU 后端逐像素对齐（差分测试）；
 - **Linux 窗口后端已完成** —— X11（XImage 直绘零拷贝）与 Wayland（xdg-shell + wl_shm 双缓冲），
@@ -99,6 +101,7 @@ src/generated/     自动生成的类注册表（勿手改）
 tools/qlgen/       扫描源码生成类型 id 表
 tools/qlfontgen/   从 TTF 生成内置位图字体
 tools/qlui/        把 HTML+CSS 编译成 C（相当于 Qt 的 uic）
+tools/qlblob/      把生成的 doc 导出成 .qlui blob（宿主工具）
 test/object/       对象系统示例与测试
 test/widget/       绘制系统示例与测试
 test/text/         字体/文本示例与测试

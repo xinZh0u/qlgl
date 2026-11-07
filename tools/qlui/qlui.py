@@ -717,11 +717,29 @@ def emit(doc_root, rules, name, out_dir):
         "",
     ]
 
+    # 给宿主工具 qlblob 用的访问器：blob 的序列化格式只在 C 侧实现一次，
+    # Python 这里只负责"把生成的 doc 交给工具"，不重复实现二进制布局。
+    blob_helper = [
+        "/* 本文件由 tools/qlui/qlui.py 生成，请勿手工修改。 */",
+        "/* 仅供宿主工具 tools/qlblob 使用，不参与目标机构建。 */",
+        '#include "%s.h"' % ident,
+        "",
+        "const QLUIDoc *qlui_blob_doc(void);",
+        "",
+        "const QLUIDoc *qlui_blob_doc(void)",
+        "{",
+        "    return &%s_doc;" % ident,
+        "}",
+        "",
+    ]
+
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "%s.c" % ident), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     with open(os.path.join(out_dir, "%s.h" % ident), "w", encoding="utf-8") as f:
         f.write("\n".join(header))
+    with open(os.path.join(out_dir, "%s_blob.c" % ident), "w", encoding="utf-8") as f:
+        f.write("\n".join(blob_helper))
     return len(flat), len(style_src), len(text_pool)
 
 
