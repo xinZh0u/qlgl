@@ -3,10 +3,9 @@
  * @brief   GPU（GLES3/EGL）窗口示例：HTML/CSS 编译出的界面 + 实时动画。
  *
  * 运行：
- *   ./build/example_gl_window              打开 GL 窗口，Esc/q/关闭按钮退出
- *   ./build/example_gl_window --frames 300 跑 300 帧自动退出
- *
- * 按 F 键（或程序内每 60 帧）打印一次帧时间统计。
+ *   ./build/example_gl_window                 打开 GL 窗口（vsync，通常 60fps）
+ *   ./build/example_gl_window --frames 300    跑 300 帧自动退出
+ *   ./build/example_gl_window --bench 600     关闭 vsync + 不休眠，测真实上限
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +29,10 @@ int main(void)
 
 #if defined(__linux__)
 extern int nanosleep(const struct timespec *req, struct timespec *rem);
+extern int clock_gettime(int clk_id, struct timespec *tp);
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
 #endif
 
 static void sleep_us(long us)
@@ -43,10 +46,14 @@ static void sleep_us(long us)
 int main(int argc, char **argv)
 {
     long max_frames = 0;
+    long bench_frames = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
             max_frames = strtol(argv[++i], NULL, 10);
+        else if (strcmp(argv[i], "--bench") == 0 && i + 1 < argc)
+            bench_frames = strtol(argv[++i], NULL, 10);
     }
+    const int bench = (bench_frames > 0);
 
     if (qlgl_init() != QL_OK) {
         printf("qlgl_init 失败\n");
@@ -70,12 +77,20 @@ int main(int argc, char **argv)
     }
     ql_ui_layout(ui, WIN_W, WIN_H);
 
+    if (bench) {
+        ql_gfx_gl_set_vsync(gfx, 0);      /* 关掉垂直同步，测上限 */
+        max_frames = bench_frames;
+    }
+
     QLDraw2D *d2d = ql_gfx_gl_draw(gfx);
 
     long frame = 0;
     double frame_time_sum = 0;
     long frame_time_n = 0;
     int running = 1;
+
+    struct timespec wall0;
+    clock_gettime(CLOCK_MONOTONIC, &wall0);
 
     while (running) {
         running = ql_gfx_gl_poll(gfx);
@@ -128,10 +143,22 @@ int main(int argc, char **argv)
         if (max_frames > 0 && frame >= max_frames)
             break;
 
-        sleep_us(16666);      /* 约 60 fps */
+        if (!bench)
+            sleep_us(16666);      /* 约 60 fps */
     }
 
-    printf("共 %ld 帧\n", frame);
+    struct timespec wall1;
+    clock_gettime(CLOCK_MONOTONIC, &wall1);
+    double elapsed = (double)(wall1.tv_sec - wall0.tv_sec) +
+                     (double)(wall1.tv_nsec - wall0.tv_nsec) / 1e9;
+    if (elapsed > 0.0 && frame > 0) {
+        printf("共 %ld 帧，墙钟 %.3f s → %.1f fps（%.3f ms/帧）%s\n",
+               frame, elapsed, (double)frame / elapsed,
+               elapsed * 1000.0 / (double)frame,
+               bench ? " [无 vsync 上限模式]" : " [vsync]");
+    } else {
+        printf("共 %ld 帧\n", frame);
+    }
     ql_ui_free(ui);
     ql_gfx_gl_destroy(gfx);
     qlgl_shutdown();

@@ -570,6 +570,12 @@ QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx)
     return (gfx != NULL) ? &gfx->draw : NULL;
 }
 
+void ql_gfx_gl_finish(QLGfxGL *gfx)
+{
+    if (gfx != NULL && gfx->ctx != EGL_NO_CONTEXT)
+        glFinish();
+}
+
 void ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on)
 {
     if (gfx == NULL || gfx->egdpy == EGL_NO_DISPLAY)

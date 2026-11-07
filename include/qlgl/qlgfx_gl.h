@@ -43,6 +43,9 @@ QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx);
 /* 1 = 等垂直同步（默认），0 = 不限帧（基准测试用） */
 void     ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on);
 
+/* 阻塞到 GPU 画完（基准测试用；正常渲染不要调用） */
+void     ql_gfx_gl_finish(QLGfxGL *gfx);
+
 /* 统计 */
 uint32_t ql_gfx_gl_frame_count(QLGfxGL *gfx);
 uint32_t ql_gfx_gl_draw_calls(QLGfxGL *gfx);

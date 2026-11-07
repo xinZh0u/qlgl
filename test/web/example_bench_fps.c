@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 /**
  * @file    example_bench_fps.c
  * @brief   实测渲染吞吐：GL(离屏) 与 CPU 后端，多种分辨率。
@@ -38,8 +39,9 @@ int main(int argc, char **argv)
     if (qlgl_init() != QL_OK)
         return 1;
 
-    printf("%-12s %-8s %10s %10s %10s\n", "分辨率", "后端", "ms/帧", "fps", "顶点");
-    printf("------------------------------------------------------\n");
+    printf("%-12s %-10s %10s %10s %12s %8s\n",
+           "分辨率", "后端", "ms/帧", "fps", "含GPU完成ms", "顶点");
+    printf("------------------------------------------------------------------\n");
 
     for (size_t r = 0; r < QL_ARRAY_SIZE(RES); r++) {
         ql_coord_t w = RES[r][0], h = RES[r][1];
@@ -57,6 +59,9 @@ int main(int argc, char **argv)
             ql_ui_render(ui, d2d);
             ql_gfx_gl_end(gfx);
 
+            const char *label = r == 0 ? "320x240" : r == 1 ? "800x480"
+                              : r == 2 ? "1280x720" : "1920x1080";
+
             double t0 = now_ms();
             for (int f = 0; f < frames; f++) {
                 ql_gfx_gl_begin(gfx, QL_COLOR_RGB(0x08, 0x0A, 0x10));
@@ -65,15 +70,26 @@ int main(int argc, char **argv)
             }
             double t1 = now_ms();
 
+            /* 再跑一遍，每帧 glFinish，测"GPU 真的画完"的耗时 */
+            double t2 = now_ms();
+            for (int f = 0; f < frames; f++) {
+                ql_gfx_gl_begin(gfx, QL_COLOR_RGB(0x08, 0x0A, 0x10));
+                ql_ui_render(ui, d2d);
+                ql_gfx_gl_end(gfx);
+                ql_gfx_gl_finish(gfx);
+            }
+            double t3 = now_ms();
+
             double ms = (t1 - t0) / (double)frames;
-            printf("%-12s %-8s %10.3f %10.0f %10u\n",
-                   r == 0 ? "320x240" : r == 1 ? "800x480" : r == 2 ? "1280x720" : "1920x1080",
-                   "GL", ms, 1000.0 / ms, ql_gfx_gl_vertex_count(gfx));
+            double ms_gpu = (t3 - t2) / (double)frames;
+            printf("%-12s %-10s %10.3f %10.0f %12.3f %8u\n",
+                   label, "GL提交", ms, 1000.0 / ms, ms_gpu,
+                   ql_gfx_gl_vertex_count(gfx));
 
             ql_ui_free(ui);
             ql_gfx_gl_destroy(gfx);
         } else {
-            printf("%-12s %-8s %10s\n", "GL", "不可用", "-");
+            printf("%-12s %-10s %10s\n", "GL", "不可用", "-");
         }
 #endif
 
@@ -100,9 +116,9 @@ int main(int argc, char **argv)
             double t1 = now_ms();
 
             double ms = (t1 - t0) / (double)cpu_frames;
-            printf("%-12s %-8s %10.3f %10.0f %10s\n",
+            printf("%-12s %-10s %10.3f %10.0f %12s %8s\n",
                    r == 0 ? "320x240" : r == 1 ? "800x480" : r == 2 ? "1280x720" : "1920x1080",
-                   "CPU", ms, 1000.0 / ms, "-");
+                   "CPU光栅", ms, 1000.0 / ms, "-", "-");
 
             ql_ui_free(ui);
             ql_disp_mem_destroy(disp);

@@ -120,6 +120,8 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - Web 兼容策略：[Web 兼容设计](doc/Web兼容设计.md)
+- 开发规划（里程碑与验收）：[开发规划](doc/开发规划.md)
+- 性能基线：[bench.md](doc/bench.md)
 - 想看整体设计：[底层实现设计](doc/底层实现设计.md)
 - 编码规范：[代码规范](doc/代码规范.txt)
 
