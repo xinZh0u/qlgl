@@ -87,7 +87,8 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `A B`（后代） | ✅ |
 | `A > B`（子代） | ✅ |
 | `A + B` / `A ~ B`（兄弟） | ❌ 报错 |
-| `[attr]` / `:hover` / `::before` | ❌ 报错 |
+| `[attr]` / `::before` | ❌ 报错 |
+| `:hover` / `:active` / `:focus` | ✅ 只允许单个，编译成状态变体 |
 
 优先级按规范三元组 `(id, class, tag)` 计算，同级按出现顺序。
 
@@ -232,7 +233,7 @@ int  ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 
 节点状态位：`QL_UI_RT_HOVER` / `QL_UI_RT_ACTIVE` / `QL_UI_RT_DIRTY`。
 
-> 注意：状态位目前**不影响样式**（不做 `:hover` 的样式切换），
+> 注意：状态位**会影响绘制**（`:hover`/`:active`/`:focus` 有独立样式），但**不影响布局**（M1 限制），
 > 需要高亮请在 `click` 回调或渲染后自行处理。
 
 ---
@@ -283,7 +284,7 @@ int main(void)
 | 布局 | block / inline / inline-block；**无 flex / grid / position** |
 | 高度 | 不支持 `%`，不支持 `min/max-height` |
 | 文本 | 不支持混合内容、不自动换行、无字距/行距调整 |
-| 伪类 | 只记录状态位，不改样式 |
+| 伪类 | `:hover`/`:active`/`:focus` 编译成变体样式；布局仍按基础样式 |
 | 运行期 | 只能改文本，不能改结构/样式类 |
 | JS | 不支持（交互用 C 回调） |
 | 性能 | 一次 `layout` 遍历整棵树；节点数 ≤ 数百时足够 |

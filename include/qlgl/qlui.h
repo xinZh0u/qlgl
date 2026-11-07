@@ -76,7 +76,7 @@ typedef struct {
     uint8_t     border_width;
     uint8_t     border_radius;
     uint8_t     text_align;    /* QLTextAlign */
-    uint8_t     font_id;       /* 0 = mono_12, 1 = mono_16 */
+    uint8_t     font_id;       /* doc->font_sizes 的下标（字号，像素） */
     uint8_t     box_sizing;    /* 0 = content-box, 1 = border-box */
     uint8_t     reserved;
 } QLUIStyle;
@@ -86,23 +86,33 @@ typedef struct {
     uint16_t parent;       /* 0xFFFF = 根 */
     uint16_t first_child;  /* 0xFFFF = 无 */
     uint16_t next_sibling; /* 0xFFFF = 无 */
-    uint16_t style;        /* styles 下标 */
+    uint16_t style;        /* 基础样式下标 */
     uint16_t text;         /* 文本池下标，0xFFFF = 无文本 */
+    /* 状态变体样式下标；0xFFFF = 该状态与基础样式完全一致（不覆盖） */
+    uint16_t style_hover;
+    uint16_t style_active;
+    uint16_t style_focus;
 } QLUINode;
 
 typedef struct {
     const char       *name;
     uint16_t          node_count;
+    uint16_t          style_count;
     uint16_t          text_count;
+    uint16_t          font_size_count;
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
     const uint16_t   *text_offsets;   /* 文本池内偏移 */
+    const uint16_t   *font_sizes;     /* 文档用到的字号（像素），font_id 索引它 */
 } QLUIDoc;
 
 /* ----- 运行期节点 ----- */
 
+typedef struct QLUIRoot QLUIRoot;
+
 typedef struct QLUINodeRT {
+    struct QLUIRoot    *owner;      /* 用于解析状态变体样式 */
     struct QLUINodeRT *parent;
     struct QLUINodeRT *first_child;
     struct QLUINodeRT *next_sibling;
@@ -125,9 +135,12 @@ enum {
     QL_UI_RT_HOVER   = 1u << 0,
     QL_UI_RT_ACTIVE  = 1u << 1,
     QL_UI_RT_DIRTY   = 1u << 2,
+    QL_UI_RT_FOCUS   = 1u << 3,
 };
 
-typedef struct QLUIRoot QLUIRoot;
+/* 状态位 → 样式下标的映射（与生成器里的 PSEUDO_STATES 一致） */
+#define QL_UI_STATE_BITS    3
+
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user_data);
 
 struct QLUIRoot {
@@ -138,6 +151,8 @@ struct QLUIRoot {
     ql_coord_t     height;
     ql_ui_click_cb click_cb;     /* 点击回调（可为 NULL） */
     void          *click_user_data;
+    QLUINodeRT    *hover;        /* 悬停节点（驱动 :hover 样式） */
+    QLUINodeRT    *focus;        /* 键盘焦点节点（驱动 :focus 样式） */
 };
 
 /* ----- 生命周期 ----- */
@@ -158,6 +173,8 @@ QLUINodeRT *ql_ui_find_by_tag(QLUIRoot *ui, QLUITag tag, uint16_t nth);
 QLUINodeRT *ql_ui_hit_test(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 const char *ql_ui_node_text(const QLUINodeRT *node);
 const QLFont *ql_ui_node_font(const QLUINodeRT *node);
+/* 生效样式：ACTIVE > FOCUS > HOVER > 基础（只影响绘制，不影响布局） */
+const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node);
 QLRect      ql_ui_node_rect(const QLUINodeRT *node);
 const char *ql_ui_tag_name(QLUITag tag);
 
@@ -169,5 +186,27 @@ void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
 int         ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 int         ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 int         ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
+
+/*
+ * 把 QLUIRoot 接到输入系统上：之后主循环只需要
+ *     ql_input_dispatch();
+ * 指针事件就会转成 hover / active / :focus 状态并触发 click_cb。
+ * 同一时刻只支持一个 QLUIRoot（与"单一窗口"一致）。
+ */
+void        ql_ui_attach_input(QLUIRoot *ui);
+void        ql_ui_detach_input(void);
+
+/*
+ * 单条事件映射。需要自己再处理按键（Esc 等）时，装自己的 sink：
+ *     static void sink(const QLInputEvent *ev, void *user) {
+ *         if (ev->type == QL_INPUT_KEY_DOWN && ev->key == QL_KEY_ESCAPE) { ...; return; }
+ *         ql_ui_input_event((QLUIRoot *)user, ev);
+ *     }
+ *     ql_input_set_sink(sink, ui);
+ */
+void        ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev);
+/* 键盘焦点：驱动 :focus 样式；传 NULL 清除 */
+void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
+QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 
 #endif /* QLGL_UI_H */

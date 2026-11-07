@@ -16,14 +16,16 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#include "qlinput_x11.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #define QL_GL_MAX_VERTS     65536
-#define QL_GL_ATLAS_SIZE    512
-#define QL_GL_FONT_SLOTS    2
+#define QL_GL_ATLAS_SIZE    1024     /* 1 MB R8：够放几百个 CJK 字形 */
+#define QL_GL_UV_SLOTS      2048     /* (字体, 字形) → UV 哈希表容量，2 的幂 */
 
 /*
  * 字段顺序必须与 shader 的 attribute 绑定一致：
@@ -49,6 +51,21 @@ typedef struct {
     uint8_t valid;
 } QLGLUV;
 
+/*
+ * (字体, codepoint) → 图集 UV。
+ * 以前是 uv[2][256] 的定长表，只认两个内置字体；改成开放寻址哈希后
+ * 任意字体（含 FreeType 动态字体）都能按需进图集，且仍是单批次单 draw call。
+ *
+ * 键必须用 **codepoint 而不是字形数组下标**：动态字体的缓存是"插入时保持有序"的
+ * 有序数组，新字形插进中间会把后面所有字形挪位，下标不是稳定标识
+ * （早先按下标做键，表现出来的症状是部分文字被画成别的字）。
+ */
+typedef struct {
+    const QLFont *font;      /* NULL = 空槽 */
+    uint32_t      codepoint;
+    QLGLUV        uv;
+} QLGLUVEntry;
+
 struct QLGfxGL {
     Display         *dpy;
     Window           win;
@@ -58,6 +75,7 @@ struct QLGfxGL {
     EGLContext       ctx;
     int              offscreen;
     int              closed;
+    uint8_t          buttons;      /* 当前按住的鼠标按钮位图 */
 
     ql_coord_t       width, height;
 
@@ -82,8 +100,11 @@ struct QLGfxGL {
     uint32_t         frame_us;
     struct timespec  t0;
 
-    QLGLUV           uv[QL_GL_FONT_SLOTS][256];   /* 每字体最多 256 字形 */
-    uint16_t         uv_count[QL_GL_FONT_SLOTS];
+    QLGLUVEntry     *uv;          /* 哈希表，容量 QL_GL_UV_SLOTS */
+    uint32_t         uv_used;
+    /* 图集货架分配器状态 */
+    int              atlas_x, atlas_y, atlas_row_h;
+    int              atlas_full_warned;
 };
 
 /* ------------------------------ 着色器 ------------------------------ */
@@ -183,92 +204,244 @@ static int build_program(QLGfxGL *g)
     return 1;
 }
 
-/* ------------------------------ 字形图集 ------------------------------ */
+/* ------------------------------ 字形图集（动态） ------------------------------ */
 
-static void atlas_upload(QLGfxGL *g, const uint8_t *data)
+/*
+ * 取一行字形覆盖率并展开成 8bpp。
+ * 注意：静态位图字体可能是 4bpp/1bpp（每行 strided 打包），不能直接 memcpy
+ * box_w 字节——奇数宽度时 stride < box_w，会读越界（ASan 抓到的第一个错就是它）。
+ */
+static void fetch_glyph_row(const QLFont *font, const QLGlyph *glyph, uint32_t row,
+                            uint8_t *dst)
+{
+    if (font->bpp == 8) {
+        const uint8_t *src = ql_font_glyph_row(font, glyph, (int32_t)row);
+        if (src != NULL)
+            memcpy(dst, src, glyph->box_w);
+        return;
+    }
+    for (uint32_t x = 0; x < glyph->box_w; x++)
+        dst[x] = ql_font_glyph_alpha(font, glyph, (int32_t)x, (int32_t)row);
+}
+
+
+static uint32_t uv_hash(const QLFont *font, uint32_t codepoint)
+{
+    /* 指针低位对齐会撞，先右移；再混一点 codepoint */
+    uintptr_t p = (uintptr_t)font;
+    uint32_t h = (uint32_t)((p >> 4) ^ (p >> 13)) * 2654435761u;
+    h ^= codepoint * 2246822519u;
+    return h & (QL_GL_UV_SLOTS - 1);
+}
+
+static QLGLUVEntry *uv_find(QLGfxGL *g, const QLFont *font, uint32_t codepoint)
+{
+    if (g->uv == NULL)
+        return NULL;
+    uint32_t i = uv_hash(font, codepoint);
+    for (uint32_t probes = 0; probes < QL_GL_UV_SLOTS; probes++) {
+        QLGLUVEntry *e = &g->uv[i];
+        if (e->font == NULL)
+            return NULL;
+        if (e->font == font && e->codepoint == codepoint)
+            return e;
+        i = (i + 1) & (QL_GL_UV_SLOTS - 1);
+    }
+    return NULL;
+}
+
+static QLGLUVEntry *uv_insert(QLGfxGL *g, const QLFont *font, uint32_t codepoint)
+{
+    if (g->uv == NULL || g->uv_used >= QL_GL_UV_SLOTS)
+        return NULL;
+    uint32_t i = uv_hash(font, codepoint);
+    while (g->uv[i].font != NULL) {
+        if (g->uv[i].font == font && g->uv[i].codepoint == codepoint)
+            return &g->uv[i];
+        i = (i + 1) & (QL_GL_UV_SLOTS - 1);
+    }
+    g->uv[i].font = font;
+    g->uv[i].codepoint = codepoint;
+    g->uv[i].uv.valid = 0;
+    g->uv_used++;
+    return &g->uv[i];
+}
+
+/* 在图集里给一个字形找位置；满了返回 0（该字形不画，但不会崩） */
+static int atlas_pack(QLGfxGL *g, int w, int h, int *out_x, int *out_y)
+{
+    if (w <= 0 || h <= 0)
+        return 0;
+
+    if (g->atlas_x + w + 1 > QL_GL_ATLAS_SIZE) {
+        g->atlas_x = 1;
+        g->atlas_y += g->atlas_row_h + 1;
+        g->atlas_row_h = 0;
+    }
+    if (g->atlas_y + h + 1 > QL_GL_ATLAS_SIZE) {
+        if (!g->atlas_full_warned) {
+            QL_LOGW("gl: glyph atlas full (%dx%d), further glyphs are dropped",
+                    QL_GL_ATLAS_SIZE, QL_GL_ATLAS_SIZE);
+            g->atlas_full_warned = 1;
+        }
+        return 0;
+    }
+
+    *out_x = g->atlas_x;
+    *out_y = g->atlas_y;
+    g->atlas_x += w + 1;
+    if (h > g->atlas_row_h)
+        g->atlas_row_h = h;
+    return 1;
+}
+
+/*
+ * 上传一个字形到图集。
+ * 字形位图是"每字形独立分配"的（动态字体），所以不能直接当一块连续内存上传；
+ * 小字形先拼进 64×64 的临时缓冲，一次 glTexSubImage2D 搞定（比逐行上传快一个量级）；
+ * 超大字形（>64px）退回逐行，正确性优先。
+ */
+#define QL_GL_GLYPH_SCRATCH 64
+static uint8_t s_glyph_scratch[QL_GL_GLYPH_SCRATCH * QL_GL_GLYPH_SCRATCH];
+
+static void atlas_upload_glyph(QLGfxGL *g, const QLFont *font, const QLGlyph *glyph,
+                               int dst_x, int dst_y)
 {
     glBindTexture(GL_TEXTURE_2D, g->atlas_tex);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, QL_GL_ATLAS_SIZE, QL_GL_ATLAS_SIZE, 0,
-                 GL_RED, GL_UNSIGNED_BYTE, data);
+
+    uint32_t w = glyph->box_w, h = glyph->box_h;
+
+    if (w <= QL_GL_GLYPH_SCRATCH && h <= QL_GL_GLYPH_SCRATCH) {
+        for (uint32_t row = 0; row < h; row++)
+            fetch_glyph_row(font, glyph, row, &s_glyph_scratch[(size_t)row * w]);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, dst_x, dst_y, (GLsizei)w, (GLsizei)h,
+                        GL_RED, GL_UNSIGNED_BYTE, s_glyph_scratch);
+        return;
+    }
+
+    for (uint32_t row = 0; row < h && row < QL_GL_GLYPH_SCRATCH; row++) {
+        fetch_glyph_row(font, glyph, row, s_glyph_scratch);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, dst_x, dst_y + (int)row, (GLsizei)w, 1,
+                        GL_RED, GL_UNSIGNED_BYTE, s_glyph_scratch);
+    }
+}
+
+/* 把字形位图拷进 CPU 侧图集镜像（初始化时批量填内置字体用） */
+static void blit_glyph_cpu(const QLFont *font, const QLGlyph *glyph, uint8_t *dst,
+                           int dst_x, int dst_y)
+{
+    for (uint32_t row = 0; row < glyph->box_h; row++) {
+        fetch_glyph_row(font, glyph, row,
+                        dst + (size_t)(dst_y + (int)row) * QL_GL_ATLAS_SIZE +
+                        (size_t)dst_x);
+    }
+}
+
+static void atlas_init(QLGfxGL *g)
+{
+    g->atlas_x = 1;
+    g->atlas_y = 1;
+    g->atlas_row_h = 0;
+    g->atlas_full_warned = 0;
+    g->uv_used = 0;
+
+    /*
+     * 内置位图字体的字形是固定的，一次性拼进 CPU 镜像再整块上传，
+     * 比"每个字形来一次 glTexSubImage2D"快得多（软件 GL 上尤其明显）。
+     * 之后动态字体新出现的字形再按需增量上传。
+     */
+    uint8_t *pixels = (uint8_t *)ql_mem_calloc(QL_GL_ATLAS_SIZE * QL_GL_ATLAS_SIZE, 1);
+    if (pixels != NULL) {
+        static const QLFont *const builtins[] = { &ql_font_mono_12, &ql_font_mono_16 };
+        float inv = 1.0f / (float)QL_GL_ATLAS_SIZE;
+
+        for (size_t f = 0; f < QL_ARRAY_SIZE(builtins); f++) {
+            const QLFont *font = builtins[f];
+            for (uint16_t i = 0; i < font->glyph_count; i++) {
+                const QLGlyph *glyph = &font->glyphs[i];
+                if (glyph->box_w == 0 || glyph->box_h == 0)
+                    continue;
+                int px = 0, py = 0;
+                if (!atlas_pack(g, glyph->box_w, glyph->box_h, &px, &py))
+                    break;
+                blit_glyph_cpu(font, glyph, pixels, px, py);
+
+                QLGLUVEntry *entry = uv_insert(g, font, glyph->codepoint);
+                if (entry == NULL)
+                    break;
+                entry->uv.u0 = (float)px * inv;
+                entry->uv.v0 = (float)py * inv;
+                entry->uv.u1 = (float)(px + (int)glyph->box_w) * inv;
+                entry->uv.v1 = (float)(py + (int)glyph->box_h) * inv;
+                entry->uv.valid = 1;
+            }
+        }
+
+        glBindTexture(GL_TEXTURE_2D, g->atlas_tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, QL_GL_ATLAS_SIZE, QL_GL_ATLAS_SIZE, 0,
+                     GL_RED, GL_UNSIGNED_BYTE, pixels);
+        ql_mem_free(pixels);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, g->atlas_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, QL_GL_ATLAS_SIZE, QL_GL_ATLAS_SIZE, 0,
+                     GL_RED, GL_UNSIGNED_BYTE, NULL);
+    }
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-}
 
-static int font_slot(const QLFont *font)
-{
-    if (font == &ql_font_mono_12) return 0;
-    if (font == &ql_font_mono_16) return 1;
-    return -1;
-}
-
-static int build_atlas(QLGfxGL *g)
-{
-    uint8_t *pixels = (uint8_t *)ql_mem_calloc(1, QL_GL_ATLAS_SIZE * QL_GL_ATLAS_SIZE);
-    if (pixels == NULL)
-        return 0;
-
-    static const QLFont *const fonts[QL_GL_FONT_SLOTS] = { &ql_font_mono_12, &ql_font_mono_16 };
-
-    int pen_x = 1, pen_y = 1, row_h = 0;
-
-    for (int slot = 0; slot < QL_GL_FONT_SLOTS; slot++) {
-        const QLFont *font = fonts[slot];
-        g->uv_count[slot] = font->glyph_count;
-
-        for (uint16_t i = 0; i < font->glyph_count && i < 256; i++) {
-            const QLGlyph *glyph = &font->glyphs[i];
-            if (glyph->box_w == 0 || glyph->box_h == 0) {
-                g->uv[slot][i].valid = 0;
-                continue;
-            }
-            if (pen_x + glyph->box_w + 1 > QL_GL_ATLAS_SIZE) {
-                pen_x = 1;
-                pen_y += row_h + 1;
-                row_h = 0;
-            }
-            if (pen_y + glyph->box_h + 1 > QL_GL_ATLAS_SIZE) {
-                QL_LOGE("gl: glyph atlas full");
-                ql_mem_free(pixels);
-                return 0;
-            }
-
-            for (uint32_t gy = 0; gy < glyph->box_h; gy++) {
-                for (uint32_t gx = 0; gx < glyph->box_w; gx++) {
-                    uint8_t a = ql_font_glyph_alpha(font, glyph, (int32_t)gx, (int32_t)gy);
-                    pixels[(size_t)(pen_y + (int)gy) * QL_GL_ATLAS_SIZE +
-                           (size_t)(pen_x + (int)gx)] = a;
-                }
-            }
-
-            float inv = 1.0f / (float)QL_GL_ATLAS_SIZE;
-            g->uv[slot][i].u0 = (float)pen_x * inv;
-            g->uv[slot][i].v0 = (float)pen_y * inv;
-            g->uv[slot][i].u1 = (float)(pen_x + glyph->box_w) * inv;
-            g->uv[slot][i].v1 = (float)(pen_y + glyph->box_h) * inv;
-            g->uv[slot][i].valid = 1;
-
-            pen_x += (int)glyph->box_w + 1;
-            if ((int)glyph->box_h > row_h)
-                row_h = (int)glyph->box_h;
-        }
-    }
-
-    atlas_upload(g, pixels);
-
-    if (getenv("QLGL_GL_DUMP_ATLAS") != NULL) {
+    if (getenv("QLGL_GL_DUMP_ATLAS") != NULL && pixels != NULL) {
         FILE *f = fopen("/tmp/qlgl_atlas.pgm", "wb");
         if (f != NULL) {
             fprintf(f, "P5\n%d %d\n255\n", QL_GL_ATLAS_SIZE, QL_GL_ATLAS_SIZE);
             fwrite(pixels, 1, (size_t)QL_GL_ATLAS_SIZE * QL_GL_ATLAS_SIZE, f);
             fclose(f);
-            QL_LOGI("gl: atlas dumped to /tmp/qlgl_atlas.pgm");
         }
     }
+}
 
-    ql_mem_free(pixels);
+/*
+ * 确保该字形在图集里，返回它的 UV；首次使用时打包 + 上传。
+ * 这一步只在"没见过这个字"时发生，命中哈希表是纯粹的读。
+ */
+static int ensure_glyph_uv(QLGfxGL *g, const QLFont *font, const QLGlyph *glyph,
+                           QLGLUV *out)
+{
+    if (font == NULL || glyph == NULL || font->glyphs == NULL)
+        return 0;
+    if (glyph->box_w == 0 || glyph->box_h == 0)
+        return 0;
+
+    uint32_t codepoint = glyph->codepoint;
+
+    QLGLUVEntry *entry = uv_find(g, font, codepoint);
+    if (entry != NULL && entry->uv.valid) {
+        *out = entry->uv;
+        return 1;
+    }
+
+    int px = 0, py = 0;
+    if (!atlas_pack(g, glyph->box_w, glyph->box_h, &px, &py))
+        return 0;
+
+    atlas_upload_glyph(g, font, glyph, px, py);
+
+    if (entry == NULL)
+        entry = uv_insert(g, font, codepoint);
+    if (entry == NULL)
+        return 0;
+
+    float inv = 1.0f / (float)QL_GL_ATLAS_SIZE;
+    entry->uv.u0 = (float)px * inv;
+    entry->uv.v0 = (float)py * inv;
+    entry->uv.u1 = (float)(px + (int)glyph->box_w) * inv;
+    entry->uv.v1 = (float)(py + (int)glyph->box_h) * inv;
+    entry->uv.valid = 1;
+    *out = entry->uv;
     return 1;
 }
 
@@ -380,14 +553,9 @@ static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gly
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
 
-    int slot = font_slot(font);
-    if (slot < 0)
+    QLGLUV uv;
+    if (!ensure_glyph_uv(g, font, glyph, &uv))
         return;
-    uint32_t index = (uint32_t)(glyph - font->glyphs);
-    if (index >= 256 || !g->uv[slot][index].valid)
-        return;
-
-    QLGLUV uv = g->uv[slot][index];
     QLRect r = ql_rect_make(pen_x + glyph->ofs_x, baseline_y + glyph->ofs_y,
                             glyph->box_w, glyph->box_h);
     emit_quad(g, r, 0, -1, color, 255, uv.u0, uv.v0, uv.u1, uv.v1, 1);
@@ -421,7 +589,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->offscreen = (flags & QL_GFX_GL_OFFSCREEN) ? 1 : 0;
     g->vert_capacity = QL_GL_MAX_VERTS;
     g->verts = (QLGLVertex *)ql_mem_calloc(QL_GL_MAX_VERTS, sizeof(QLGLVertex));
-    if (g->verts == NULL) {
+    g->uv = (QLGLUVEntry *)ql_mem_calloc(QL_GL_UV_SLOTS, sizeof(QLGLUVEntry));
+    if (g->verts == NULL || g->uv == NULL) {
+        ql_mem_free(g->verts);
+        ql_mem_free(g->uv);
         ql_mem_free(g);
         return NULL;
     }
@@ -498,7 +669,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         swa.colormap = XCreateColormap(g->dpy, RootWindow(g->dpy, screen),
                                        vinfo.visual, AllocNone);
         swa.border_pixel = 0;
-        swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask;
+        swa.event_mask = ExposureMask | StructureNotifyMask |
+                         KeyPressMask | KeyReleaseMask |
+                         ButtonPressMask | ButtonReleaseMask |
+                         PointerMotionMask | EnterWindowMask | LeaveWindowMask;
         g->win = XCreateWindow(g->dpy, RootWindow(g->dpy, screen), 0, 0,
                                (unsigned)width, (unsigned)height, 0, vinfo.depth,
                                InputOutput, vinfo.visual,
@@ -539,8 +713,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 
     glGenBuffers(1, &g->vbo);
     glGenTextures(1, &g->atlas_tex);
-    if (!build_atlas(g))
-        goto fail;
+    atlas_init(g);
 
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
@@ -673,20 +846,21 @@ int ql_gfx_gl_poll(QLGfxGL *g)
             if ((Atom)ev.xclient.data.l[0] == g->wm_delete)
                 g->closed = 1;
             break;
-        case KeyPress: {
-            KeySym sym = XLookupKeysym(&ev.xkey, 0);
-            if (sym == XK_Escape || sym == XK_q)
-                g->closed = 1;
-            break;
-        }
         case DestroyNotify:
             g->closed = 1;
             break;
         default:
+            ql_x11_push_input(&ev, &g->buttons);
             break;
         }
     }
     return g->closed ? 0 : 1;
+}
+
+void ql_gfx_gl_close(QLGfxGL *g)
+{
+    if (g != NULL)
+        g->closed = 1;
 }
 
 void ql_gfx_gl_destroy(QLGfxGL *g)
@@ -714,6 +888,7 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
         XCloseDisplay(g->dpy);
     }
     ql_mem_free(g->verts);
+    ql_mem_free(g->uv);
     ql_mem_free(g);
 }
 

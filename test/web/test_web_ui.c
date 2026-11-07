@@ -19,7 +19,7 @@ static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user_data)
 QL_TEST_BEGIN("test_web_ui")
 
     /* 1. 文档内容符合预期：14 个节点（section + 3 div + 5 p + 4 span） */
-    QL_CHECK_EQ(ui_demo_doc.node_count, 14);
+    QL_CHECK_EQ(ui_demo_doc.node_count, 17);   /* 含 M2 加入的中文条 + 2 个 p */
     QL_CHECK(ui_demo_doc.nodes != NULL);
     QL_CHECK(ui_demo_doc.styles != NULL);
     QL_CHECK_STR(ui_demo_doc.name, "ui_demo");
@@ -149,7 +149,38 @@ QL_TEST_BEGIN("test_web_ui")
     ql_ui_layout(ui, 320, 240);
     ql_ui_render_canvas(ui, &canvas);
 
-    /* 14. 视口变窄：根节点宽度跟着变，百分比仍按父内容宽计算 */
+    /* 14. 伪类状态样式：构建期已经编译成独立样式，运行期只切下标 */
+    QLUINodeRT *primary = NULL;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        if (strcmp(ql_ui_node_text(&ui->nodes[i]), "Primary") == 0)
+            primary = &ui->nodes[i];
+    }
+    QL_CHECK(primary != NULL);
+    ql_ui_layout(ui, 320, 240);
+
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x3C, 0xC0, 0x7A));
+
+    QLRect pr = ql_ui_node_rect(primary);
+    QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 1);
+    QL_CHECK((primary->flags & QL_UI_RT_HOVER) != 0);
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
+    /* 祖先链也带 hover（与 Web 一致） */
+    QL_CHECK((primary->parent->flags & QL_UI_RT_HOVER) != 0);
+
+    QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 0);   /* 同一目标不重复变脏 */
+
+    QL_CHECK_EQ(ql_ui_pointer_down(ui, pr.x + 3, pr.y + 3), 1);
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x2A, 0x9A, 0x5C));
+    ql_ui_pointer_up(ui, pr.x + 3, pr.y + 3);
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
+
+    ql_ui_set_focus_node(ui, primary);
+    QL_CHECK(ql_ui_focus_node(ui) == primary);
+    QL_CHECK_EQ(ql_ui_node_style(primary)->border_color, QL_COLOR_RGB(0xFF, 0xD0, 0x60));
+    ql_ui_set_focus_node(ui, NULL);
+    QL_CHECK_EQ(ql_ui_node_style(primary)->border_color, QL_COLOR_RGB(0xE0, 0xFF, 0xE0));  /* 回落到 :hover */
+
+    /* 15. 视口变窄：根节点宽度跟着变，百分比仍按父内容宽计算 */
     ql_ui_layout(ui, 200, 160);
     QL_CHECK_EQ(ql_ui_node_rect(root).w, 200);
 

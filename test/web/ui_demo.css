@@ -76,3 +76,40 @@
   color: #f0b030;
   margin: 6px 0 0 0;
 }
+
+.bar2 {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 8px 0 0 0;
+  padding: 8px 10px;
+  background-color: #1e2a3a;
+  border-radius: 10px;
+  border-width: 1px;
+  border-color: #3399ff;
+}
+.cjk {
+  font-size: 24px;
+  color: #8fd0ff;
+  margin: 0;
+}
+.cjk-small {
+  font-size: 12px;
+  color: #a0b0c0;
+  margin: 2px 0 0 0;
+}
+
+/* 交互状态：M1 起 :hover / :active / :focus 在构建期编译成独立样式表 */
+.btn:hover {
+  background-color: #4ad08a;
+  border-color: #e0ffe0;
+}
+.btn:active {
+  background-color: #2a9a5c;
+}
+.btn.ghost:hover {
+  background-color: #3a485c;
+  border-color: #b0b8c4;
+}
+.btn:focus {
+  border-color: #ffd060;
+}

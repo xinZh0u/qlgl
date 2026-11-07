@@ -43,6 +43,9 @@ int ql_disp_x11_poll(QLDispDriver *driver);
 
 void ql_disp_x11_destroy(QLDispDriver *driver);
 
+/* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */
+void ql_disp_x11_close(QLDispDriver *driver);
+
 /* 窗口名（调试用），未创建返回 "" */
 const char *ql_disp_x11_title(QLDispDriver *driver);
 

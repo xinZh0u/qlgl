@@ -183,6 +183,14 @@ const char *ql_label_text(QLObject *obj)
     return ql_value_get_string(ql_object_get_property(obj, QL_LABEL_PROPERTY_TEXT), "");
 }
 
+const QLFont *ql_label_set_font_size(QLObject *obj, int pixel_size)
+{
+    const QLFont *font = ql_font_default(pixel_size);
+    if (font != NULL && obj != NULL && ql_object_is(obj, QL_LABEL_TYPE))
+        ql_object_set_property(obj, QL_LABEL_PROPERTY_FONT, ql_value_ptr((void *)font));
+    return font;
+}
+
 void ql_label_set_font(QLObject *obj, const QLFont *font)
 {
     ql_object_set_property(obj, QL_LABEL_PROPERTY_FONT, ql_value_ptr((void *)font));

@@ -100,7 +100,8 @@ HTML 标签  →  元素对象（div/span/button/img/input...）
 | `tag` / `.class` / `#id` | ✅ | |
 | `a b`（后代）、`a > b`（子代）、`a + b`、`a ~ b` | ✅ | |
 | `[attr]` / `[attr=v]` | ✅ | |
-| `:hover` `:active` `:focus` `:disabled` `:checked` | ✅ | 需要状态位 + 样式重算 |
+| `:hover` `:active` `:focus` | ✅ 已实现（M1）：构建期编译成状态变体样式表，运行期只切下标 |
+| `:disabled` `:checked` | ⏳ | 需要状态位 + 样式变体，机制已就绪 |
 | `:first-child` `:last-child` `:nth-child(n)` | ✅ | |
 | `::before` / `::after`（`content`） | ⚠️ 只支持纯文本 content | 图标字体常用，值得做 |
 | `:not(a)` | ✅ 简单形式 | 不支持嵌套 |

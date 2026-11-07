@@ -72,7 +72,9 @@ static inline int ql_win_open(QLWin *w, const char *title, ql_coord_t width,
         return 1;
     }
 
-    w->disp = ql_disp_mem_create(width, height, QL_COLOR_RGB888);
+    /* AUTO 只对窗口后端有意义；内存显示要一个具体格式 */
+    QLColorFormat mem_fmt = (hint == QL_COLOR_FORMAT_AUTO) ? QL_COLOR_RGB888 : hint;
+    w->disp = ql_disp_mem_create(width, height, mem_fmt);
     if (w->disp == NULL) {
         printf("创建显示失败\n");
         return 0;
@@ -119,6 +121,75 @@ static inline void ql_win_close(QLWin *w)
         ql_disp_mem_destroy(w->disp);
         return;
     }
+}
+
+/* ------------------------- 默认矢量字体 ------------------------- */
+
+/*
+ * 示例统一在这里找一个可用的中文字体并设为默认：
+ *   1. 环境变量 QLGL_FONT 指定；
+ *   2. 常见发行版路径依次尝试；
+ *   3. 都没有就返回 0，界面回落到内置 ASCII 位图字体。
+ */
+static inline int ql_win_load_font(void)
+{
+#if defined(QLGL_ENABLE_FREETYPE)
+    const char *env = getenv("QLGL_FONT");
+    if (env != NULL && env[0] != '\0') {
+        if (ql_font_set_default_file(env, -1)) {
+            printf("字体：%s（QLGL_FONT）\n", env);
+            return 1;
+        }
+        printf("字体：QLGL_FONT=%s 加载失败，尝试系统字体\n", env);
+    }
+
+    static const char *const candidates[] = {
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    };
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+        if (ql_font_set_default_file(candidates[i], -1)) {
+            printf("字体：%s\n", candidates[i]);
+            return 1;
+        }
+    }
+    printf("字体：未找到矢量字体，只用内置 ASCII 位图字体\n");
+#else
+    printf("字体：未编译 FreeType 后端，只用内置 ASCII 位图字体\n");
+#endif
+    return 0;
+}
+
+/* ------------------------- Esc 退出 ------------------------- */
+
+/*
+ * 后端不再自动把 Esc 当"关闭窗口"（否则应用收不到这个键），
+ * 示例统一在这里挂一个 KEY_DOWN 处理器。
+ */
+static QLWin *ql_win_active;
+
+static inline void ql_win_on_esc(QLEvent *ev)
+{
+    if (ql_event_arg_int(ev, 0, 0) != QL_KEY_ESCAPE || ql_win_active == NULL)
+        return;
+
+    switch (ql_win_active->kind) {
+#if defined(QLGL_ENABLE_WAYLAND)
+    case QL_WIN_KIND_WAYLAND: ql_disp_wayland_close(ql_win_active->disp); break;
+#endif
+#if defined(QLGL_ENABLE_X11)
+    case QL_WIN_KIND_X11:     ql_disp_x11_close(ql_win_active->disp); break;
+#endif
+    default:                  ql_win_active->max_frames = 1; break;
+    }
+}
+
+static inline void ql_win_bind_esc(QLWin *w, QLObject *root)
+{
+    ql_win_active = w;
+    ql_connect(root, QL_WIDGET_EVENT_KEY_DOWN, ql_win_on_esc, NULL);
 }
 
 #endif /* QLGL_EXAMPLE_WINDOW_HELPER_H */

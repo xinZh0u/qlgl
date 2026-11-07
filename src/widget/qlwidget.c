@@ -13,12 +13,16 @@ struct QLWidgetPrivate {
     ql_coord_t h;
     ql_color_t bg_color;
     ql_color_t border_color;
+    ql_color_t state_bg[3];      /* 下标：0=HOVER 1=ACTIVE 2=FOCUS */
     uint8_t    bg_alpha;
     uint8_t    border_width;
     uint8_t    border_radius;
     uint8_t    clip_children;
     uint8_t    visible;
-    uint8_t    reserved[3];
+    uint8_t    state;            /* QL_WIDGET_STATE_* */
+    uint8_t    pointer_events;
+    uint8_t    focusable;
+    uint8_t    state_bg_alpha[3];
 };
 
 QL_DEFINE_WITH_PRIVATE(QL_WIDGET, QLWidget, ql_widget, ql_object)
@@ -115,6 +119,16 @@ static ql_err_t ql_widget_set_property(QLObject *obj, ql_property_t property, QL
         priv->visible = (uint8_t)(ql_value_get_int(value, 1) ? 1 : 0);
         ql_render_invalidate(obj);
         return QL_OK;
+    case QL_WIDGET_PROPERTY_POINTER_EVENTS:
+        if (value.type != QL_VALUE_BOOL && value.type != QL_VALUE_INT)
+            return QL_ERR_INVAL;
+        priv->pointer_events = (uint8_t)(ql_value_get_int(value, 1) ? 1 : 0);
+        return QL_OK;
+    case QL_WIDGET_PROPERTY_FOCUSABLE:
+        if (value.type != QL_VALUE_BOOL && value.type != QL_VALUE_INT)
+            return QL_ERR_INVAL;
+        priv->focusable = (uint8_t)(ql_value_get_int(value, 0) ? 1 : 0);
+        return QL_OK;
     default:
         return QL_ERR_INVAL;
     }
@@ -136,6 +150,8 @@ static QLValue ql_widget_get_property(QLObject *obj, ql_property_t property)
     case QL_WIDGET_PROPERTY_BORDER_RADIUS: return ql_value_int(priv->border_radius);
     case QL_WIDGET_PROPERTY_CLIP_CHILDREN: return ql_value_bool(priv->clip_children);
     case QL_WIDGET_PROPERTY_VISIBLE:       return ql_value_bool(priv->visible);
+    case QL_WIDGET_PROPERTY_POINTER_EVENTS: return ql_value_bool(priv->pointer_events);
+    case QL_WIDGET_PROPERTY_FOCUSABLE:     return ql_value_bool(priv->focusable);
     default:                               return QL_VALUE_NULL;
     }
 }
@@ -165,6 +181,13 @@ static void ql_widget_init(QLWidget *self)
     priv->border_radius = 0;
     priv->clip_children = 0;
     priv->visible = 1;
+    priv->state = 0;
+    priv->pointer_events = 1;
+    priv->focusable = 0;
+    for (int i = 0; i < 3; i++) {
+        priv->state_bg[i] = QL_COLOR_WHITE;
+        priv->state_bg_alpha[i] = 0;
+    }
 }
 
 static void ql_widget_deinit(QLWidget *self)
@@ -320,6 +343,91 @@ void ql_widget_set_visible(QLObject *obj, int visible)
     ql_object_set_property(obj, QL_WIDGET_PROPERTY_VISIBLE, ql_value_bool(visible));
 }
 
+/* ------------------------------ 交互 ------------------------------ */
+
+uint8_t ql_widget_state(QLObject *obj)
+{
+    struct QLWidgetPrivate *priv = priv_of(obj);
+    return (priv != NULL) ? priv->state : 0;
+}
+
+int ql_widget_has_state(QLObject *obj, uint8_t mask)
+{
+    struct QLWidgetPrivate *priv = priv_of(obj);
+    return (priv != NULL) && (priv->state & mask) == mask;
+}
+
+int ql_widget_set_state(QLObject *obj, uint8_t mask, int on)
+{
+    struct QLWidgetPrivate *priv = priv_of(obj);
+    if (priv == NULL)
+        return 0;
+
+    uint8_t old = priv->state;
+    mask &= QL_WIDGET_STATE_ALL;
+    priv->state = (uint8_t)(on ? (priv->state | mask) : (priv->state & ~mask));
+    if (priv->state == old)
+        return 0;
+
+    /* 只有该状态配置了替代背景才需要重绘，否则白打一次脏 */
+    for (int i = 0; i < 3; i++) {
+        if ((mask & (1u << i)) != 0 && priv->state_bg_alpha[i] > 0) {
+            ql_render_invalidate(obj);
+            break;
+        }
+    }
+    return 1;
+}
+
+int ql_widget_pointer_events(QLObject *obj)
+{
+    struct QLWidgetPrivate *priv = priv_of(obj);
+    return (priv != NULL) ? priv->pointer_events : 0;
+}
+
+void ql_widget_set_pointer_events(QLObject *obj, int enabled)
+{
+    if (priv_of(obj) == NULL)
+        return;
+    ql_object_set_property(obj, QL_WIDGET_PROPERTY_POINTER_EVENTS,
+                           ql_value_bool(enabled ? 1 : 0));
+}
+
+int ql_widget_is_focusable(QLObject *obj)
+{
+    struct QLWidgetPrivate *priv = priv_of(obj);
+    return (priv != NULL) ? priv->focusable : 0;
+}
+
+void ql_widget_set_focusable(QLObject *obj, int focusable)
+{
+    if (priv_of(obj) == NULL)
+        return;
+    ql_object_set_property(obj, QL_WIDGET_PROPERTY_FOCUSABLE,
+                           ql_value_bool(focusable ? 1 : 0));
+}
+
+void ql_widget_set_state_bg(QLObject *obj, uint8_t state, ql_color_t color, uint8_t alpha)
+{
+    struct QLWidgetPrivate *priv = priv_of(obj);
+    if (priv == NULL)
+        return;
+
+    if ((state & QL_WIDGET_STATE_HOVER) != 0) {
+        priv->state_bg[0] = color;
+        priv->state_bg_alpha[0] = alpha;
+    }
+    if ((state & QL_WIDGET_STATE_ACTIVE) != 0) {
+        priv->state_bg[1] = color;
+        priv->state_bg_alpha[1] = alpha;
+    }
+    if ((state & QL_WIDGET_STATE_FOCUS) != 0) {
+        priv->state_bg[2] = color;
+        priv->state_bg_alpha[2] = alpha;
+    }
+    ql_render_invalidate(obj);
+}
+
 /* ------------------------------ 绘制 ------------------------------ */
 
 ql_widget_draw_func ql_widget_get_draw(QLObject *obj)
@@ -345,9 +453,22 @@ void ql_widget_draw_default(QLWidget *self, QLCanvas *canvas)
     if (ql_rect_is_empty(rect))
         return;
 
-    if (priv->bg_alpha > 0)
+    /* 状态背景：ACTIVE > FOCUS > HOVER，首个配置了 alpha 的生效 */
+    ql_color_t bg_color = priv->bg_color;
+    uint8_t    bg_alpha = priv->bg_alpha;
+    static const uint8_t order[3] = { 1, 2, 0 };   /* ACTIVE, FOCUS, HOVER */
+    for (int i = 0; i < 3; i++) {
+        uint8_t idx = order[i];
+        if ((priv->state & (1u << idx)) != 0 && priv->state_bg_alpha[idx] > 0) {
+            bg_color = priv->state_bg[idx];
+            bg_alpha = priv->state_bg_alpha[idx];
+            break;
+        }
+    }
+
+    if (bg_alpha > 0)
         ql_canvas_fill_round_rect_alpha(canvas, rect, priv->border_radius,
-                                        priv->bg_color, priv->bg_alpha);
+                                        bg_color, bg_alpha);
 
     if (priv->border_width > 0)
         ql_canvas_stroke_rect(canvas, rect, priv->border_radius,

@@ -40,6 +40,11 @@
 #define QL_CFG_EVENT_PATH_MAX       8
 #endif
 
+/* 输入事件队列容量（后端只入队，主循环统一派发；静态分配不 malloc） */
+#ifndef QL_CFG_INPUT_QUEUE
+#define QL_CFG_INPUT_QUEUE          64
+#endif
+
 /* 渲染器同时跟踪的脏矩形数量上限；满了会合并成一块 */
 #ifndef QL_CFG_DIRTY_RECT_MAX
 #define QL_CFG_DIRTY_RECT_MAX       16

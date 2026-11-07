@@ -17,7 +17,7 @@
 #include "ui_demo.h"
 
 #define WIN_W 320
-#define WIN_H 240
+#define WIN_H 320
 
 #if !defined(QLGL_ENABLE_GL)
 int main(void)
@@ -43,6 +43,19 @@ static void sleep_us(long us)
     nanosleep(&ts, NULL);
 }
 
+/* ---- 输入：Esc 退出，其余转给 QLUI ---- */
+static QLGfxGL *s_gfx;
+
+static void demo_sink(const QLInputEvent *ev, void *user)
+{
+    if (ev->type == QL_INPUT_KEY_DOWN && ev->key == QL_KEY_ESCAPE) {
+        if (s_gfx != NULL)
+            ql_gfx_gl_close(s_gfx);
+        return;
+    }
+    ql_ui_input_event((QLUIRoot *)user, ev);
+}
+
 int main(int argc, char **argv)
 {
     long max_frames = 0;
@@ -66,7 +79,26 @@ int main(int argc, char **argv)
         qlgl_shutdown();
         return 1;
     }
+    s_gfx = gfx;
     printf("GL 后端就绪 %dx%d\n", WIN_W, WIN_H);
+
+    /* 有矢量字体就用它（中文 + 任意字号），没有自动回落内置位图字体 */
+    {
+        const char *env = getenv("QLGL_FONT");
+        const char *cands[] = {
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        };
+        if (env != NULL && ql_font_set_default_file(env, -1))
+            printf("字体：%s\n", env);
+        else
+            for (size_t i = 0; i < sizeof(cands) / sizeof(cands[0]); i++)
+                if (ql_font_set_default_file(cands[i], -1)) {
+                    printf("字体：%s\n", cands[i]);
+                    break;
+                }
+    }
 
     QLUIRoot *ui = ql_ui_build(&ui_demo_doc);
     if (ui == NULL) {
@@ -76,6 +108,9 @@ int main(int argc, char **argv)
         return 1;
     }
     ql_ui_layout(ui, WIN_W, WIN_H);
+
+    /* 事件：Esc 关窗，其余交给 QLUI（驱动 :hover/:active + click_cb） */
+    ql_input_set_sink(demo_sink, ui);
 
     if (bench) {
         ql_gfx_gl_set_vsync(gfx, 0);      /* 关掉垂直同步，测上限 */
@@ -94,6 +129,10 @@ int main(int argc, char **argv)
 
     while (running) {
         running = ql_gfx_gl_poll(gfx);
+        if (!running)
+            break;
+
+        ql_input_dispatch();
         if (!running)
             break;
 

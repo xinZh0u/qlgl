@@ -36,6 +36,9 @@ int ql_disp_wayland_poll(QLDispDriver *driver);
 
 void ql_disp_wayland_destroy(QLDispDriver *driver);
 
+/* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */
+void ql_disp_wayland_close(QLDispDriver *driver);
+
 const char *ql_disp_wayland_title(QLDispDriver *driver);
 
 /* 成功提交（commit）的帧数，调试用 */

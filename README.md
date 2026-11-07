@@ -99,6 +99,7 @@ test/object/       对象系统示例与测试
 test/widget/       绘制系统示例与测试
 test/text/         字体/文本示例与测试
 test/web/          HTML+CSS 编译示例与测试
+test/input/        交互（命中/悬停/点击/焦点）示例与测试
 doc/
   代码规范.txt
   底层实现设计.md
@@ -116,6 +117,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 
 - 对象系统：[QLObject 阅读指南](doc/手册/object/QLObject阅读指南.md) / [QLObject API 手册](doc/手册/object/QLObject%20API手册.md)
 - 绘制与控件：[QLWidget 阅读指南](doc/手册/widget/QLWidget阅读指南.md) / [QLWidget API 手册](doc/手册/widget/QLWidget%20API手册.md)
+- 交互与输入：[QLInput 阅读指南](doc/手册/input/QLInput阅读指南.md) / [QLInput API 手册](doc/手册/input/QLInput%20API手册.md)
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)

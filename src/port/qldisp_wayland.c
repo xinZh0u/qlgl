@@ -21,6 +21,7 @@
 #include <wayland-client.h>
 
 #include "xdg-shell-client-protocol.h"
+#include "qlinput_evdev.h"
 
 #define QL_WL_BUFFERS   2
 
@@ -41,6 +42,13 @@ typedef struct {
     struct xdg_wm_base   *wm_base;
     struct wl_seat       *seat;
     struct wl_keyboard   *keyboard;
+    struct wl_pointer    *pointer;
+
+    /* 输入状态：后端自己维护，渲染/控件层不关心 */
+    uint8_t         buttons;
+    uint8_t         mods;
+    wl_fixed_t      pointer_x;
+    wl_fixed_t      pointer_y;
 
     struct wl_surface   *surface;
     struct xdg_surface  *xdg_surface;
@@ -198,23 +206,42 @@ static void keyboard_leave(void *data, struct wl_keyboard *kb, uint32_t serial,
     QL_UNUSED(data); QL_UNUSED(kb); QL_UNUSED(serial); QL_UNUSED(surface);
 }
 
-/* evdev 键码：1 = Esc，16 = q */
 static void keyboard_key(void *data, struct wl_keyboard *kb, uint32_t serial,
                          uint32_t time, uint32_t key, uint32_t state)
 {
     QL_UNUSED(kb); QL_UNUSED(serial); QL_UNUSED(time);
     QLDispWayland *w = (QLDispWayland *)data;
-    if (state != WL_KEYBOARD_KEY_STATE_PRESSED)
+
+    uint32_t code = ql_evdev_key(key);
+    if (code == QL_KEY_NONE)
         return;
-    if (key == 1 || key == 16)
-        w->closed = 1;
+
+    int down = (state == WL_KEYBOARD_KEY_STATE_PRESSED);
+    ql_input_push_key(code, down, w->mods);
+
+    /* 可打印字符顺带合成文本输入：没有 xkbcommon 时按 US 布局近似 */
+    if (down && code < 0x80 && (w->mods & (QL_MOD_CTRL | QL_MOD_ALT | QL_MOD_META)) == 0) {
+        char buf[2] = { (char)code, '\0' };
+        if ((w->mods & QL_MOD_SHIFT) != 0 && buf[0] >= 'a' && buf[0] <= 'z')
+            buf[0] = (char)(buf[0] - 'a' + 'A');
+        ql_input_push_text(buf);
+    }
 }
 
 static void keyboard_modifiers(void *data, struct wl_keyboard *kb, uint32_t serial,
                                uint32_t dep, uint32_t lat, uint32_t lock, uint32_t grp)
 {
-    QL_UNUSED(data); QL_UNUSED(kb); QL_UNUSED(serial);
-    QL_UNUSED(dep); QL_UNUSED(lat); QL_UNUSED(lock); QL_UNUSED(grp);
+    QL_UNUSED(kb); QL_UNUSED(serial); QL_UNUSED(lat); QL_UNUSED(grp);
+    QLDispWayland *w = (QLDispWayland *)data;
+
+    /* xkb 修饰键掩码：1=Shift 4=Ctrl 8=Alt 64=Super */
+    uint8_t mods = 0;
+    if ((dep & 1u) != 0)  mods |= QL_MOD_SHIFT;
+    if ((dep & 4u) != 0)  mods |= QL_MOD_CTRL;
+    if ((dep & 8u) != 0)  mods |= QL_MOD_ALT;
+    if ((dep & 64u) != 0) mods |= QL_MOD_META;
+    if ((lock & 2u) != 0) mods |= QL_MOD_CAPS;
+    w->mods = mods;
 }
 
 static void keyboard_repeat_info(void *data, struct wl_keyboard *kb, int32_t rate,
@@ -232,17 +259,98 @@ static const struct wl_keyboard_listener keyboard_listener = {
     .repeat_info = keyboard_repeat_info,
 };
 
+/* ----- wl_pointer ----- */
+
+static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
+                          struct wl_surface *surface, wl_fixed_t sx, wl_fixed_t sy)
+{
+    QL_UNUSED(pointer); QL_UNUSED(serial); QL_UNUSED(surface);
+    QLDispWayland *w = (QLDispWayland *)data;
+    w->pointer_x = sx;
+    w->pointer_y = sy;
+    ql_input_push_move(wl_fixed_to_int(sx), wl_fixed_to_int(sy), w->buttons);
+}
+
+static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
+                          struct wl_surface *surface)
+{
+    QL_UNUSED(pointer); QL_UNUSED(serial); QL_UNUSED(surface);
+    QL_UNUSED(data);
+    ql_input_push_leave();
+}
+
+static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time,
+                           wl_fixed_t sx, wl_fixed_t sy)
+{
+    QL_UNUSED(pointer); QL_UNUSED(time);
+    QLDispWayland *w = (QLDispWayland *)data;
+    w->pointer_x = sx;
+    w->pointer_y = sy;
+    ql_input_push_move(wl_fixed_to_int(sx), wl_fixed_to_int(sy), w->buttons);
+}
+
+static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial,
+                           uint32_t time, uint32_t button, uint32_t state)
+{
+    QL_UNUSED(pointer); QL_UNUSED(serial); QL_UNUSED(time);
+    QLDispWayland *w = (QLDispWayland *)data;
+
+    uint8_t btn = ql_evdev_button(button);
+    if (btn == 0xFF)
+        return;
+
+    int down = (state == WL_POINTER_BUTTON_STATE_PRESSED);
+    if (down)
+        w->buttons |= (uint8_t)(1u << btn);
+    else
+        w->buttons &= (uint8_t)~(1u << btn);
+
+    ql_input_push_button(wl_fixed_to_int(w->pointer_x), wl_fixed_to_int(w->pointer_y),
+                         btn, down);
+}
+
+static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time,
+                         uint32_t axis, wl_fixed_t value)
+{
+    QL_UNUSED(pointer); QL_UNUSED(time);
+    QLDispWayland *w = (QLDispWayland *)data;
+
+    /* wl_fixed 是定点滚动量，一格约 15；放大成"行"便于上层按行滚动 */
+    int32_t delta = (int32_t)(wl_fixed_to_double(value) * 20.0);
+    int32_t dx = (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) ? delta : 0;
+    int32_t dy = (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) ? delta : 0;
+    ql_input_push_wheel(wl_fixed_to_int(w->pointer_x), wl_fixed_to_int(w->pointer_y),
+                        dx, dy);
+}
+
+static const struct wl_pointer_listener pointer_listener = {
+    .enter = pointer_enter,
+    .leave = pointer_leave,
+    .motion = pointer_motion,
+    .button = pointer_button,
+    .axis = pointer_axis,
+};
+
 static void seat_capabilities(void *data, struct wl_seat *seat, uint32_t caps)
 {
     QLDispWayland *w = (QLDispWayland *)data;
     int has_keyboard = (caps & WL_SEAT_CAPABILITY_KEYBOARD) != 0;
+    int has_pointer = (caps & WL_SEAT_CAPABILITY_POINTER) != 0;
 
     if (has_keyboard && w->keyboard == NULL) {
         w->keyboard = wl_seat_get_keyboard(seat);
         wl_keyboard_add_listener(w->keyboard, &keyboard_listener, w);
     } else if (!has_keyboard && w->keyboard != NULL) {
-        wl_keyboard_release(w->keyboard);
+        wl_keyboard_destroy(w->keyboard);
         w->keyboard = NULL;
+    }
+
+    if (has_pointer && w->pointer == NULL) {
+        w->pointer = wl_seat_get_pointer(seat);
+        wl_pointer_add_listener(w->pointer, &pointer_listener, w);
+    } else if (!has_pointer && w->pointer != NULL) {
+        wl_pointer_destroy(w->pointer);
+        w->pointer = NULL;
     }
 }
 
@@ -450,6 +558,12 @@ fail:
     return NULL;
 }
 
+void ql_disp_wayland_close(QLDispDriver *driver)
+{
+    if (driver != NULL)
+        ((QLDispWayland *)driver)->closed = 1;
+}
+
 int ql_disp_wayland_poll(QLDispDriver *driver)
 {
     if (driver == NULL)
@@ -503,10 +617,17 @@ void ql_disp_wayland_destroy(QLDispDriver *driver)
             munmap(w->buffers[i].data, w->buffers[i].size);
     }
 
+    /*
+     * wl_seat 按 version 1 绑定，所以 pointer/keyboard/seat 都是 v1 对象。
+     * *_release 是 v3+ 才有的请求，v1 上必须用 *_destroy，
+     * 否则会向服务器发一个不存在的方法。
+     */
+    if (w->pointer != NULL)
+        wl_pointer_destroy(w->pointer);
     if (w->keyboard != NULL)
-        wl_keyboard_release(w->keyboard);
+        wl_keyboard_destroy(w->keyboard);
     if (w->seat != NULL)
-        wl_seat_release(w->seat);
+        wl_seat_destroy(w->seat);
     if (w->toplevel != NULL)
         xdg_toplevel_destroy(w->toplevel);
     if (w->xdg_surface != NULL)

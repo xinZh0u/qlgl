@@ -18,6 +18,21 @@ target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
+option(QLGL_BUILD_FREETYPE "构建 FreeType 矢量字体后端（中文/任意字号）" ON)
+
+# ---- FreeType：矢量字体后端（PC/MPU；MCU 关掉即可，内置位图字体仍然可用） ----
+if(QLGL_BUILD_FREETYPE)
+    find_package(Freetype QUIET)
+    if(FREETYPE_FOUND)
+        target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/text/qlfont_ft.c)
+        target_include_directories(qlgl PUBLIC ${FREETYPE_INCLUDE_DIRS})
+        target_compile_definitions(qlgl PUBLIC QLGL_ENABLE_FREETYPE=1)
+        target_link_libraries(qlgl PUBLIC ${FREETYPE_LIBRARIES})
+        message(STATUS "QLGL: FreeType 矢量字体后端已启用")
+    else()
+        message(STATUS "QLGL: 未找到 FreeType，只用内置位图字体")
+    endif()
+endif()
 
 if(UNIX AND NOT APPLE)
     find_package(X11)

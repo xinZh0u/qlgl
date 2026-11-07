@@ -161,14 +161,25 @@ def parse_edges(text, where):
 
 # ---------------------------------------------------------------- CSS 解析
 
-class Rule:
-    __slots__ = ("selector", "specificity", "decls", "order")
+# 伪类 → 状态位（与 QL_UI_RT_* 保持一致）
+PSEUDO_STATES = {
+    "hover": 1,
+    "active": 2,
+    "focus": 4,
+}
 
-    def __init__(self, selector, specificity, decls, order):
+
+class Rule:
+    """一条 CSS 规则。states 是选择器要求的状态位图（0 = 普通规则）。"""
+
+    __slots__ = ("selector", "specificity", "decls", "order", "states")
+
+    def __init__(self, selector, specificity, decls, order, states=0):
         self.selector = selector
         self.specificity = specificity
         self.decls = decls
         self.order = order
+        self.states = states
 
 
 def strip_comments(css):
@@ -199,10 +210,11 @@ def split_selector(sel):
             continue
 
         simple = {}
-        m = re.fullmatch(r"([a-zA-Z][\w-]*)?((?:\.[\w-]+)*)?(#[\w-]+)?", tok)
+        m = re.fullmatch(
+            r"([a-zA-Z][\w-]*)?((?:\.[\w-]+)*)?(#([\w-]+))?((?::[a-zA-Z-]+)*)", tok)
         if not m:
             raise CssError("不支持的简单选择器：%r" % tok)
-        tag, cls, ident = m.group(1), m.group(2), m.group(3)
+        tag, cls, ident, pseudos = m.group(1), m.group(2), m.group(3), m.group(5)
         if tag:
             if tag.lower() not in TAGS:
                 raise CssError("不支持的标签选择器：%r" % tag)
@@ -214,13 +226,26 @@ def split_selector(sel):
         if ident:
             simple["id"] = ident[1:]
             ids += 1
+        if pseudos:
+            states = 0
+            for name in pseudos.split(":")[1:]:
+                name = name.lower()
+                if name not in PSEUDO_STATES:
+                    raise CssError("不支持的伪类 %r（只支持 :hover :active :focus）"
+                                   % (":" + name))
+                states |= PSEUDO_STATES[name]
+                classes += 1          # 伪类与类选择器同级
+            simple["states"] = states
         if not simple:
             raise CssError("空选择器片段：%r" % tok)
         parts.append((kind, simple))
         kind = "descendant"
 
     specificity = (ids, classes, tags)
-    return parts, specificity
+    states = 0
+    for _kind, simple in parts:
+        states |= simple.get("states", 0)
+    return parts, specificity, states
 
 
 def parse_css(text, origin):
@@ -263,8 +288,8 @@ def parse_css(text, origin):
             sel = sel.strip()
             if not sel:
                 continue
-            parts, spec = split_selector(sel)
-            rules.append(Rule(parts, spec, dict(decls), order))
+            parts, spec, states = split_selector(sel)
+            rules.append(Rule(parts, spec, dict(decls), order, states))
             order += 1
 
         pos = end + 1
@@ -376,27 +401,55 @@ def matches(node, parts):
 
 # ---------------------------------------------------------------- 样式计算
 
+# 文档里出现的所有 font-size 会汇总成一张表，节点的 font_id 是表下标
+FONT_SIZES = []
+
+
 def font_id_for(size_px):
-    return 1 if size_px >= 14 else 0
+    if size_px not in FONT_SIZES:
+        if len(FONT_SIZES) >= 255:
+            raise CssError("font-size 种类过多（上限 255）")
+        FONT_SIZES.append(size_px)
+    return FONT_SIZES.index(size_px)
 
 
-def build_style(node, rules, inherited):
-    """返回 dict（已展开的最终样式）"""
-    # UA 默认
+def collect_decls(node, rules, states_active):
+    """按 (specificity, order) 覆盖出某个「状态组合」下的声明集合。
+
+    states_active 为 0 时只算普通规则；为某状态位时把该状态的规则也算进来。
+    """
     decls = {}
-    ua = UA_DEFAULTS.get(node.tag, {})
-    decls.update(ua)
+    decls.update(UA_DEFAULTS.get(node.tag, {}))
 
-    # 匹配规则，按 (specificity, order) 升序覆盖
     matched = []
     for r in rules:
+        if (r.states & ~states_active) != 0:
+            continue
         if matches(node, r.selector):
             matched.append(r)
     matched.sort(key=lambda r: (r.specificity, r.order))
     for r in matched:
         for k, v in r.decls.items():
             decls[k] = v
+    return decls
 
+
+def build_style(node, rules, inherited):
+    """返回 (基础样式 dict, {状态位: 该状态下的样式 dict})
+
+    伪类规则只会改变"外观类"属性；布局仍按基础样式算（见 doc §M1 说明），
+    因此这里不区分继承来源，各状态用同一份 inherited。
+    """
+    base = finalize_style(collect_decls(node, rules, 0), node, inherited)
+    variants = {}
+    for bit in PSEUDO_STATES.values():
+        variant = finalize_style(collect_decls(node, rules, bit), node, inherited)
+        variants[bit] = variant
+    return base, variants
+
+
+def finalize_style(decls, node, inherited):
+    """展开 shorthand、合并继承，返回最终 dict"""
     # 行内 style 优先
     if "style" in node.attrs:
         for piece in node.attrs["style"].split(";"):
@@ -431,6 +484,7 @@ def build_style(node, rules, inherited):
 # ---------------------------------------------------------------- 生成 C
 
 def emit(doc_root, rules, name, out_dir):
+    FONT_SIZES.clear()
     # 文本池
     text_pool = bytearray()
     text_offsets = []
@@ -489,8 +543,13 @@ def emit(doc_root, rules, name, out_dir):
         if entry["parent"] != 0xFFFF:
             parent_style = flat[entry["parent"]]["style"]
         inherited = {k: parent_style[k] for k in INHERITED if k in parent_style}
-        entry["style"] = build_style(n, rules, inherited)
+        entry["style"], entry["variants"] = build_style(n, rules, inherited)
         entry["style_index"] = add_style(entry["style"])
+        # 只有真正不同才生成变体，没写 :hover 的节点就少 3 个下标
+        entry["state_index"] = {}
+        for bit, variant in entry["variants"].items():
+            entry["state_index"][bit] = (0xFFFF if variant == entry["style"]
+                                         else add_style(variant))
         entry["text_index"] = intern_text(n.text)
 
     def resolve_edges(st, base, where):
@@ -521,18 +580,25 @@ def emit(doc_root, rules, name, out_dir):
     lines.append('#include "%s.h"' % ident)
     lines.append("")
 
+    def hex16(v):
+        return "0xFFFF" if v == 0xFFFF else str(v)
+
     lines.append("static const QLUINode %s_nodes[] = {" % ident)
-    lines.append("    /* tag                     parent first  next   style  text */")
-    for i, entry in enumerate(flat):
+    lines.append("    /* tag                     parent first  next   style  text"
+                 "   hover  active focus */")
+    for entry in flat:
         n = entry["node"]
+        st = entry["state_index"]
         lines.append(
-            "    { %-22s, %5s, %5s, %5s, %5d, %5s },   /* <%s%s%s> */"
+            "    { %-22s, %5s, %5s, %5s, %5s, %5s, %5s, %5s, %5s },"
+            "   /* <%s%s%s> */"
             % (TAGS[n.tag],
-               "0xFFFF" if entry["parent"] == 0xFFFF else str(entry["parent"]),
-               "0xFFFF" if entry["first_child"] == 0xFFFF else str(entry["first_child"]),
-               "0xFFFF" if entry["next_sibling"] == 0xFFFF else str(entry["next_sibling"]),
-               entry["style_index"],
-               "0xFFFF" if entry["text_index"] == 0xFFFF else str(entry["text_index"]),
+               hex16(entry["parent"]),
+               hex16(entry["first_child"]),
+               hex16(entry["next_sibling"]),
+               hex16(entry["style_index"]),
+               hex16(entry["text_index"]),
+               hex16(st[1]), hex16(st[2]), hex16(st[4]),
                n.tag,
                ("#" + n.id) if n.id else "",
                ("." + ".".join(n.classes)) if n.classes else "")
@@ -540,6 +606,8 @@ def emit(doc_root, rules, name, out_dir):
     lines.append("};")
     lines.append("")
 
+    font_sizes_line = len(lines)      # 占位：样式表生成之后才知道用到哪些字号
+    lines.append("")
     lines.append("static const QLUIStyle %s_styles[] = {" % ident)
     for i, st in enumerate(style_src):
         where = "%s:style[%d]" % (name, i)
@@ -588,18 +656,33 @@ def emit(doc_root, rules, name, out_dir):
             % (radius, align, font_id_for(size_px), 1 if box_sizing == "border-box" else 0))
     lines.append("};")
     lines.append("")
+    lines.insert(font_sizes_line,
+                 "static const uint16_t %s_font_sizes[] = { %s };"
+                 % (ident, ", ".join(str(v) for v in FONT_SIZES) or "0"))
 
-    # 文本池
+    # 文本池：直接生成 C 字符串字面量。
+    # 非 ASCII 字节一律用三位八进制转义（\ooo），既有固定长度不会吃掉后面的
+    # 字符，也不会触发 -Wconversion（数字数组写法会把 >127 的字节当成 int）。
+    def c_string(data):
+        out = []
+        for b in data:
+            if b == 0x22:
+                out.append('\\"')
+            elif b == 0x5C:
+                out.append('\\\\')
+            elif 0x20 <= b < 0x7F:
+                out.append(chr(b))
+            else:
+                out.append("\\%03o" % b)
+        return "".join(out)
+
     if text_pool:
-        lines.append("static const char %s_text[] = {" % ident)
-        data = list(text_pool)
-        for i in range(0, len(data), 16):
-            lines.append("    " + ", ".join(str(b) for b in data[i:i + 16]) + ",")
-        lines.append("};")
+        lines.append('static const char %s_text[] = "%s";'
+                     % (ident, c_string(text_pool)))
         lines.append("static const uint16_t %s_text_ofs[] = { %s };"
                      % (ident, ", ".join(str(o) for o in text_offsets)))
     else:
-        lines.append('static const char %s_text[] = { 0 };' % ident)
+        lines.append('static const char %s_text[] = "";' % ident)
         lines.append('static const uint16_t %s_text_ofs[] = { 0 };' % ident)
     lines.append("")
 
@@ -607,8 +690,13 @@ def emit(doc_root, rules, name, out_dir):
     lines.append('    .name         = "%s",' % name)
     lines.append("    .node_count   = (uint16_t)(sizeof(%s_nodes) / sizeof(%s_nodes[0])),"
                  % (ident, ident))
+    lines.append("    .style_count  = (uint16_t)(sizeof(%s_styles) / sizeof(%s_styles[0])),"
+                 % (ident, ident))
     lines.append("    .text_count   = (uint16_t)(sizeof(%s_text_ofs) / sizeof(%s_text_ofs[0])),"
                  % (ident, ident))
+    lines.append("    .font_size_count = (uint16_t)(sizeof(%s_font_sizes) / sizeof(%s_font_sizes[0])),"
+                 % (ident, ident))
+    lines.append("    .font_sizes   = %s_font_sizes," % ident)
     lines.append("    .nodes        = %s_nodes," % ident)
     lines.append("    .styles       = %s_styles," % ident)
     lines.append("    .text_pool    = %s_text," % ident)

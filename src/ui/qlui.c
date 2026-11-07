@@ -43,9 +43,11 @@ QLUIRoot *ql_ui_build(const QLUIDoc *doc)
         const QLUINode *src = &doc->nodes[i];
         QLUINodeRT *rt = &ui->nodes[i];
 
+        rt->owner = ui;
         rt->src = src;
-        rt->style = (src->style < doc->node_count) ? &doc->styles[src->style]
-                                                   : &doc->styles[0];
+        uint16_t style_count = (doc->style_count != 0) ? doc->style_count : doc->node_count;
+        rt->style = (src->style < style_count) ? &doc->styles[src->style]
+                                               : &doc->styles[0];
         rt->text = NULL;
         if (src->text != 0xFFFFu && doc->text_pool != NULL && doc->text_offsets != NULL)
             rt->text = doc->text_pool + doc->text_offsets[src->text];
@@ -70,10 +72,15 @@ QLUIRoot *ql_ui_build(const QLUIDoc *doc)
     return ui;
 }
 
+static QLUIRoot *s_input_target;   /* 挂在输入系统上的根（同一时刻只有一个） */
+
 void ql_ui_free(QLUIRoot *ui)
 {
     if (ui == NULL)
         return;
+    /* 输入汇里还握着这个指针，必须先摘掉，否则下一次事件就是 use-after-free */
+    if (s_input_target == ui)
+        ql_ui_detach_input();
     ql_mem_free(ui->nodes);
     ql_mem_free(ui);
 }
@@ -95,6 +102,18 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
     default:
         return fallback;
     }
+}
+
+/* 样式 → 字体：字号来自生成期的 font_sizes 表，具体字体由字体系统按字号给 */
+static const QLFont *font_of_style(const QLUINodeRT *node, const QLUIStyle *style)
+{
+    int size = 0;
+    if (node != NULL && node->owner != NULL && node->owner->doc != NULL) {
+        const QLUIDoc *doc = node->owner->doc;
+        if (doc->font_sizes != NULL && style->font_id < doc->font_size_count)
+            size = (int)doc->font_sizes[style->font_id];
+    }
+    return ql_font_default(size > 0 ? size : 16);
 }
 
 static ql_coord_t inner_width_of(const QLUIStyle *style, ql_coord_t content_w)
@@ -122,7 +141,7 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
     if (s->display == QL_UI_DISPLAY_NONE)
         return 0;
 
-    const QLFont *font = (s->font_id == 1) ? &ql_font_mono_16 : &ql_font_mono_12;
+    const QLFont *font = font_of_style(node, s);
     int text_sized = s->display != QL_UI_DISPLAY_BLOCK &&
                      s->width.unit == QL_UI_UNIT_AUTO &&
                      node->text != NULL && node->first_child == NULL;
@@ -157,7 +176,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         return 0;
     }
 
-    const QLFont *font = (s->font_id == 1) ? &ql_font_mono_16 : &ql_font_mono_12;
+    const QLFont *font = font_of_style(node, s);
     ql_coord_t border_w = border_width_of(node, avail_w);
 
     ql_coord_t box_x = x + s->margin.left;
@@ -253,12 +272,33 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
 
 static const QLFont *font_of(const QLUINodeRT *node)
 {
-    return (node->style->font_id == 1) ? &ql_font_mono_16 : &ql_font_mono_12;
+    return font_of_style(node, node->style);
 }
 
 const QLFont *ql_ui_node_font(const QLUINodeRT *node)
 {
     return (node != NULL) ? font_of(node) : NULL;
+}
+
+const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node)
+{
+    if (node == NULL)
+        return NULL;
+
+    /* 优先级与 draw_default 一致：ACTIVE > FOCUS > HOVER */
+    const QLUINode *src = node->src;
+    if (src != NULL) {
+        uint16_t idx = 0xFFFF;
+        if ((node->flags & QL_UI_RT_ACTIVE) != 0)
+            idx = src->style_active;
+        if (idx == 0xFFFF && (node->flags & QL_UI_RT_FOCUS) != 0)
+            idx = src->style_focus;
+        if (idx == 0xFFFF && (node->flags & QL_UI_RT_HOVER) != 0)
+            idx = src->style_hover;
+        if (idx != 0xFFFF && node->owner != NULL && node->owner->doc != NULL)
+            return &node->owner->doc->styles[idx];
+    }
+    return node->style;
 }
 
 QLRect ql_ui_node_rect(const QLUINodeRT *node)
@@ -273,7 +313,7 @@ const char *ql_ui_node_text(const QLUINodeRT *node)
 
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 {
-    const QLUIStyle *s = node->style;
+    const QLUIStyle *s = ql_ui_node_style(node);
 
     if (s->display == QL_UI_DISPLAY_NONE)
         return;
@@ -369,13 +409,23 @@ ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text)
     return QL_OK;
 }
 
-/* 交互状态位的简单实现：按下 / 抬起 / 移动 */
+/* 交互状态位：和 Web 一样沿祖先链生效（子元素 hover 时父容器也算 hover） */
+static void set_state_chain(QLUINodeRT *node, uint8_t mask, int on)
+{
+    for (QLUINodeRT *n = node; n != NULL; n = n->parent) {
+        if (on)
+            n->flags = (uint8_t)(n->flags | mask);
+        else
+            n->flags = (uint8_t)(n->flags & ~mask);
+    }
+}
+
 int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
     QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
     if (node == NULL)
         return 0;
-    node->flags |= QL_UI_RT_ACTIVE;
+    set_state_chain(node, QL_UI_RT_ACTIVE, 1);
     return 1;
 }
 
@@ -401,17 +451,78 @@ int ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 
 int ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
-    QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
     if (ui == NULL)
         return 0;
 
-    int changed = 0;
-    for (uint16_t i = 0; i < ui->node_count; i++) {
-        uint8_t want = (&ui->nodes[i] == node) ? QL_UI_RT_HOVER : 0;
-        if ((ui->nodes[i].flags & QL_UI_RT_HOVER) != want) {
-            ui->nodes[i].flags = (uint8_t)((ui->nodes[i].flags & ~QL_UI_RT_HOVER) | want);
-            changed = 1;
-        }
+    QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
+    if (ui->hover == node)
+        return 0;
+
+    for (uint16_t i = 0; i < ui->node_count; i++)
+        ui->nodes[i].flags &= (uint8_t)~QL_UI_RT_HOVER;
+    ui->hover = node;
+    if (node != NULL)
+        set_state_chain(node, QL_UI_RT_HOVER, 1);
+    return 1;
+}
+
+void ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node)
+{
+    if (ui == NULL || ui->focus == node)
+        return;
+    if (ui->focus != NULL)
+        set_state_chain(ui->focus, QL_UI_RT_FOCUS, 0);
+    ui->focus = node;
+    if (node != NULL)
+        set_state_chain(node, QL_UI_RT_FOCUS, 1);
+}
+
+QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui)
+{
+    return (ui != NULL) ? ui->focus : NULL;
+}
+
+/* ------------------------------ 接入输入系统 ------------------------------ */
+
+void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
+{
+    if (ui == NULL || ev == NULL)
+        return;
+
+    switch (ev->type) {
+    case QL_INPUT_POINTER_MOVE:
+        ql_ui_pointer_move(ui, ev->x, ev->y);
+        break;
+    case QL_INPUT_POINTER_DOWN:
+        ql_ui_pointer_down(ui, ev->x, ev->y);
+        break;
+    case QL_INPUT_POINTER_UP:
+        ql_ui_pointer_up(ui, ev->x, ev->y);
+        break;
+    case QL_INPUT_POINTER_LEAVE:
+        ql_ui_pointer_move(ui, -1, -1);
+        break;
+    default:
+        break;
     }
-    return changed;
+}
+
+static void ui_input_sink(const QLInputEvent *ev, void *user)
+{
+    QLUIRoot *ui = (QLUIRoot *)user;
+    if (ui == NULL || ui != s_input_target)
+        return;
+    ql_ui_input_event(ui, ev);
+}
+
+void ql_ui_attach_input(QLUIRoot *ui)
+{
+    s_input_target = ui;
+    ql_input_set_sink(ui_input_sink, ui);
+}
+
+void ql_ui_detach_input(void)
+{
+    s_input_target = NULL;
+    ql_input_set_sink(NULL, NULL);
 }

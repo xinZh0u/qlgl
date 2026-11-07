@@ -4,9 +4,47 @@
  */
 #include <qlgl/qlgl.h>
 
+/*
+ * 动态字体的字形是按需生成的，所以查找前先让后端把字形准备好。
+ * 这里要临时去掉 const：缓存本身是可变的，而对外接口要保持 const 友好。
+ */
+static const QLGlyph *find_dynamic(QLFont *font, uint32_t codepoint)
+{
+    const QLGlyph *hit = NULL;
+
+    /* 先按当前表查一次，避免每次查找都进后端 */
+    uint32_t lo = 0, hi = font->glyph_count;
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        if (font->glyphs[mid].codepoint == codepoint)
+            return &font->glyphs[mid];
+        if (font->glyphs[mid].codepoint < codepoint)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+
+    if (font->backend != NULL && font->backend->ensure_glyph != NULL)
+        hit = font->backend->ensure_glyph(font, codepoint);
+    return hit;
+}
+
 const QLGlyph *ql_font_find_glyph(const QLFont *font, uint32_t codepoint)
 {
-    if (font == NULL || font->glyphs == NULL || font->glyph_count == 0)
+    if (font == NULL)
+        return NULL;
+
+    if (font->backend != NULL) {
+        const QLGlyph *hit = find_dynamic((QLFont *)(uintptr_t)font, codepoint);
+        if (hit != NULL)
+            return hit;
+        /* 动态字体也没有这个字：走 fallback */
+        if (font->fallback != 0 && font->fallback != codepoint)
+            return ql_font_find_glyph(font, font->fallback);
+        return NULL;
+    }
+
+    if (font->glyphs == NULL || font->glyph_count == 0)
         return NULL;
 
     uint32_t lo = 0;
@@ -40,6 +78,29 @@ uint32_t ql_font_glyph_stride(const QLFont *font, const QLGlyph *glyph)
     }
 }
 
+const uint8_t *ql_font_glyph_row(const QLFont *font, const QLGlyph *glyph, int32_t y)
+{
+    if (font == NULL || glyph == NULL)
+        return NULL;
+    if (y < 0 || y >= (int32_t)glyph->box_h)
+        return NULL;
+
+    uint32_t stride = ql_font_glyph_stride(font, glyph);
+
+    if (font->glyph_bitmaps != NULL && font->glyphs != NULL) {
+        /* 动态字体：每个字形一块独立位图 */
+        ptrdiff_t index = glyph - font->glyphs;
+        if (index < 0 || index >= (ptrdiff_t)font->glyph_count)
+            return NULL;
+        const uint8_t *base = font->glyph_bitmaps[index];
+        return (base != NULL) ? base + (size_t)y * stride : NULL;
+    }
+
+    if (font->bitmap == NULL)
+        return NULL;
+    return font->bitmap + glyph->data_offset + (uint32_t)y * stride;
+}
+
 uint8_t ql_font_glyph_alpha(const QLFont *font, const QLGlyph *glyph, int32_t x, int32_t y)
 {
     if (font == NULL || glyph == NULL)
@@ -47,8 +108,9 @@ uint8_t ql_font_glyph_alpha(const QLFont *font, const QLGlyph *glyph, int32_t x,
     if (x < 0 || y < 0 || x >= (int32_t)glyph->box_w || y >= (int32_t)glyph->box_h)
         return 0;
 
-    uint32_t stride = ql_font_glyph_stride(font, glyph);
-    const uint8_t *row = font->bitmap + glyph->data_offset + (uint32_t)y * stride;
+    const uint8_t *row = ql_font_glyph_row(font, glyph, y);
+    if (row == NULL)
+        return 0;
 
     switch (font->bpp) {
     case 1: {
@@ -202,4 +264,70 @@ void ql_font_measure_text(const QLFont *font, const char *text, int32_t len,
         *out_w = width;
     if (out_h != NULL)
         *out_h = height;
+}
+
+int ql_font_is_dynamic(const QLFont *font)
+{
+    return (font != NULL && font->backend != NULL);
+}
+
+void ql_font_destroy(QLFont *font)
+{
+    if (font == NULL || font->backend == NULL)
+        return;
+    if (font->backend->destroy != NULL)
+        font->backend->destroy(font);
+}
+
+/*
+ * 默认字体表：qlui / qllabel 用"字号"选字体。
+ * 字号 → 字体的映射由 qlfont_ft.c 在加载矢量字体后挂进来（见 ql_font_set_default_file）。
+ */
+#define QL_FONT_DEFAULT_SLOTS 8
+
+static struct {
+    int      size;
+    QLFont  *font;
+} s_defaults[QL_FONT_DEFAULT_SLOTS];
+static int s_default_count;
+static QLFont *(*s_default_factory)(int pixel_size);
+
+void ql_font_set_default_factory(QLFont *(*factory)(int pixel_size))
+{
+    s_default_factory = factory;
+    s_default_count = 0;          /* 工厂换了，旧缓存全部作废 */
+}
+
+const QLFont *ql_font_default(int pixel_size)
+{
+    if (pixel_size <= 0)
+        pixel_size = 16;
+
+    for (int i = 0; i < s_default_count; i++) {
+        if (s_defaults[i].size == pixel_size)
+            return s_defaults[i].font;
+    }
+
+    QLFont *font = NULL;
+    if (s_default_factory != NULL)
+        font = s_default_factory(pixel_size);
+
+    if (font == NULL) {
+        /* 没有矢量字体：回落到内置位图字体（只覆盖 ASCII） */
+        return (pixel_size >= 14) ? &ql_font_mono_16 : &ql_font_mono_12;
+    }
+
+    if (s_default_count < QL_FONT_DEFAULT_SLOTS) {
+        s_defaults[s_default_count].size = pixel_size;
+        s_defaults[s_default_count].font = font;
+        s_default_count++;
+    }
+    return font;
+}
+
+void ql_font_reset_defaults(void)
+{
+    for (int i = 0; i < s_default_count; i++)
+        ql_font_destroy(s_defaults[i].font);
+    s_default_count = 0;
 }

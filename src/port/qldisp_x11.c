@@ -16,6 +16,8 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#include "qlinput_x11.h"
+
 typedef struct {
     QLDispDriver base;
     Display     *dpy;
@@ -26,6 +28,7 @@ typedef struct {
     uint8_t     *pixels;        /* XImage 的存储，由我们自己分配 */
     uint32_t     flush_count;
     uint32_t     expose_count;
+    uint8_t      buttons;       /* 当前按住的鼠标按钮位图 */
     int          closed;
     char         title[64];
     int          screen;
@@ -158,7 +161,11 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
 
     strncpy(x->title, (title != NULL) ? title : "QLGL", sizeof(x->title) - 1);
     XStoreName(dpy, x->win, x->title);
-    XSelectInput(dpy, x->win, ExposureMask | StructureNotifyMask | KeyPressMask);
+    XSelectInput(dpy, x->win,
+                 ExposureMask | StructureNotifyMask |
+                 KeyPressMask | KeyReleaseMask |
+                 ButtonPressMask | ButtonReleaseMask |
+                 PointerMotionMask | EnterWindowMask | LeaveWindowMask);
 
     x->wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, x->win, &x->wm_delete, 1);
@@ -230,23 +237,24 @@ int ql_disp_x11_poll(QLDispDriver *driver)
                 x->closed = 1;
             break;
 
-        case KeyPress: {
-            KeySym sym = XLookupKeysym(&ev.xkey, 0);
-            if (sym == XK_Escape || sym == XK_q)
-                x->closed = 1;
-            break;
-        }
-
         case DestroyNotify:
             x->closed = 1;
             break;
 
         default:
+            /* 其余输入事件交给输入系统；Esc/关闭改由应用决定 */
+            ql_x11_push_input(&ev, &x->buttons);
             break;
         }
     }
 
     return x->closed ? 0 : 1;
+}
+
+void ql_disp_x11_close(QLDispDriver *driver)
+{
+    if (driver != NULL)
+        ((QLDispX11 *)driver)->closed = 1;
 }
 
 void ql_disp_x11_destroy(QLDispDriver *driver)

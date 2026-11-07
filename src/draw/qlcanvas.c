@@ -545,10 +545,11 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
     if (gy1 < gy0)
         return;
 
-    uint32_t stride = ql_font_glyph_stride(font, glyph);
-
     for (ql_coord_t gy = gy0; gy <= gy1; gy++) {
-        const uint8_t *src = font->bitmap + glyph->data_offset + (uint32_t)gy * stride;
+        /* 行指针由字体提供：静态位图字体与动态矢量字体的取法不同 */
+        const uint8_t *src = ql_font_glyph_row(font, glyph, gy);
+        if (src == NULL)
+            break;
         ql_coord_t y = origin_y + gy;
 
         switch (font->bpp) {

@@ -43,6 +43,12 @@ QLLabel *ql_label_new_child(QLObject *parent, const char *text,
 void            ql_label_set_text(QLObject *obj, const char *text);
 const char     *ql_label_text(QLObject *obj);
 void            ql_label_set_font(QLObject *obj, const QLFont *font);
+/*
+ * 按字号选字体（内部走 ql_font_default）：配置了矢量字体就得到该字号的
+ * 动态字体（支持中文），否则回落到最接近的内置位图字体。
+ * 返回实际使用的字体，便于调用方判断是不是回退了。
+ */
+const QLFont   *ql_label_set_font_size(QLObject *obj, int pixel_size);
 const QLFont   *ql_label_font(QLObject *obj);
 void            ql_label_set_text_color(QLObject *obj, ql_color_t color);
 void            ql_label_set_align(QLObject *obj, QLTextAlign align);

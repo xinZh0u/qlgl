@@ -82,6 +82,28 @@ static void sleep_us(long us)
 static void sleep_us(long us) { QL_UNUSED(us); }
 #endif
 
+/* Esc 退出：后端不再自动处理，示例自己挂一个处理器 */
+static QLDispDriver *s_quit_disp;
+static int s_quit_kind;      /* 0 = 内存，1 = Wayland，2 = X11 */
+static int s_quit_flag;
+
+static void on_esc(QLEvent *ev)
+{
+    if (ql_event_arg_int(ev, 0, 0) != QL_KEY_ESCAPE || s_quit_disp == NULL)
+        return;
+    if (s_quit_kind == 2) {
+#if defined(QLGL_ENABLE_X11)
+        ql_disp_x11_close(s_quit_disp);
+#endif
+    } else if (s_quit_kind == 1) {
+#if defined(QLGL_ENABLE_WAYLAND)
+        ql_disp_wayland_close(s_quit_disp);
+#endif
+    } else {
+        s_quit_flag = 1;
+    }
+}
+
 int main(int argc, char **argv)
 {
     long max_frames = 0;          /* 0 = 不限 */
@@ -155,6 +177,9 @@ int main(int argc, char **argv)
     QLWidget *root = ql_widget_new_ex(0, 0, WIN_W, WIN_H);
     ql_widget_set_bg((QLObject *)root, QL_COLOR_RGB(0x10, 0x14, 0x1C), 255);
     ql_render_set_root((QLObject *)root);
+    s_quit_disp = disp;
+    s_quit_kind = kind;
+    ql_connect((QLObject *)root, QL_WIDGET_EVENT_KEY_DOWN, on_esc, NULL);
 
     QLWidget *card = ql_widget_new_child((QLObject *)root, 20, 20, WIN_W - 40, WIN_H - 40);
     ql_widget_set_bg((QLObject *)card, QL_COLOR_RGB(0x1E, 0x25, 0x33), 255);
@@ -216,6 +241,9 @@ int main(int argc, char **argv)
     int running = 1;
 
     while (running) {
+        ql_input_dispatch();
+        if (s_quit_flag)
+            break;
         /* 1. 处理窗口事件 */
 #if defined(QLGL_ENABLE_X11)
         if (using_x11) {

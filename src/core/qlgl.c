@@ -46,6 +46,7 @@ ql_err_t qlgl_init(void)
 
     ql_mem_reset_stats();
     ql_event_pool_init();
+    ql_input_reset();
     ql_widget_reset();
     ql_class_reset();
 
@@ -73,8 +74,10 @@ ql_err_t qlgl_init(void)
 
 void qlgl_shutdown(void)
 {
+    ql_font_reset_defaults();
     ql_widget_reset();
     ql_event_pool_init();
+    ql_input_reset();
     ql_widget_reset();
     ql_class_reset();
     ql_mem_reset_stats();

@@ -246,9 +246,23 @@ ql_err_t ql_object_set_parent(QLObject *self, QLObject *parent)
         ql_object_unref(self);
 
     if (parent != NULL) {
+        /*
+         * 追加到链尾而不是头插：child 链表顺序 == 绘制顺序（先挂的先画），
+         * 这样"后挂的子控件覆盖先挂的"（与 DOM append 一致），
+         * 命中测试取最后一个命中的节点也就是最上层的节点。
+         * 挂接只发生在构建期，O(子控件数) 的尾查找可以接受，
+         * 换来的是每个对象省一个 last_child 指针。
+         */
         self->parent = parent;
-        self->next_sibling = parent->first_child;
-        parent->first_child = self;
+        self->next_sibling = NULL;
+        if (parent->first_child == NULL) {
+            parent->first_child = self;
+        } else {
+            QLObject *tail = parent->first_child;
+            while (tail->next_sibling != NULL)
+                tail = tail->next_sibling;
+            tail->next_sibling = self;
+        }
         self->flags |= QL_OBJ_FLAG_ATTACHED;
         ql_object_ref(self);       /* 父持有子对象的引用 */
         if (s_tree_hook != NULL)

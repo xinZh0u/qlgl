@@ -26,11 +26,45 @@ QL_PROPERTY_ENUM_START(QL_WIDGET, QLWidget, QL_OBJECT)
     QL_WIDGET_PROPERTY_BORDER_COLOR,
     QL_WIDGET_PROPERTY_BORDER_RADIUS,
     QL_WIDGET_PROPERTY_CLIP_CHILDREN,
-    QL_WIDGET_PROPERTY_VISIBLE
+    QL_WIDGET_PROPERTY_VISIBLE,
+    QL_WIDGET_PROPERTY_POINTER_EVENTS,
+    QL_WIDGET_PROPERTY_FOCUSABLE
 QL_PROPERTY_ENUM_END(QL_WIDGET, 100)
 
-/* ----- 事件 id（v0.1 暂无事件，占位保留区间） ----- */
-QL_EVENT_ENUM_EMPTY(QL_WIDGET, QLWidget, QL_OBJECT, 100)
+/* ----- 事件 id -----
+ * 参数约定（M1）：
+ *   POINTER_ENTER/LEAVE   (x, y)
+ *   POINTER_MOVE          (x, y, buttons)
+ *   POINTER_DOWN/UP/CLICK (x, y, button)
+ *   WHEEL                 (x, y, dy)
+ *   KEY_DOWN/UP           (key, mods)
+ *   TEXT                  (utf8)
+ *   FOCUS_IN/OUT          ()
+ * 全部默认可冒泡（未在事件描述表登记时按 BUBBLE|STOPPABLE|DEFAULT 处理）。
+ */
+QL_EVENT_ENUM_START(QL_WIDGET, QLWidget, QL_OBJECT)
+    QL_WIDGET_EVENT_POINTER_DOWN,
+    QL_WIDGET_EVENT_POINTER_UP,
+    QL_WIDGET_EVENT_POINTER_MOVE,
+    QL_WIDGET_EVENT_POINTER_ENTER,
+    QL_WIDGET_EVENT_POINTER_LEAVE,
+    QL_WIDGET_EVENT_CLICK,
+    QL_WIDGET_EVENT_WHEEL,
+    QL_WIDGET_EVENT_KEY_DOWN,
+    QL_WIDGET_EVENT_KEY_UP,
+    QL_WIDGET_EVENT_TEXT,
+    QL_WIDGET_EVENT_FOCUS_IN,
+    QL_WIDGET_EVENT_FOCUS_OUT
+QL_EVENT_ENUM_END(QL_WIDGET, 100)
+
+/* ----- 交互状态位（可同时成立，类似 CSS 的 :hover:active） ----- */
+enum {
+    QL_WIDGET_STATE_HOVER  = 1u << 0,
+    QL_WIDGET_STATE_ACTIVE = 1u << 1,
+    QL_WIDGET_STATE_FOCUS  = 1u << 2,
+    QL_WIDGET_STATE_ALL    = 0x07u,
+};
+
 
 QL_DECLARE(QLWidget, ql_widget)
 
@@ -76,6 +110,24 @@ void       ql_widget_set_bg(QLObject *obj, ql_color_t color, uint8_t alpha);
 void       ql_widget_set_border(QLObject *obj, ql_coord_t width, ql_color_t color,
                                 ql_coord_t radius);
 void       ql_widget_set_visible(QLObject *obj, int visible);
+
+/* ----- 交互 ----- */
+uint8_t    ql_widget_state(QLObject *obj);            /* QL_WIDGET_STATE_* 位图 */
+int        ql_widget_has_state(QLObject *obj, uint8_t mask);
+/* 由输入系统调用（沿父链设置状态位）；返回 1 表示状态确实变化了 */
+int        ql_widget_set_state(QLObject *obj, uint8_t mask, int on);
+
+int        ql_widget_pointer_events(QLObject *obj);   /* 0 = 不接受指针命中 */
+void       ql_widget_set_pointer_events(QLObject *obj, int enabled);
+int        ql_widget_is_focusable(QLObject *obj);     /* 是否可用 ql_input_set_focus */
+void       ql_widget_set_focusable(QLObject *obj, int focusable);
+
+/*
+ * 状态背景色：某状态成立时用这套颜色替代 bg_color/bg_alpha。
+ * alpha 为 0 表示该状态不改变外观（默认）。优先级 ACTIVE > FOCUS > HOVER。
+ */
+void       ql_widget_set_state_bg(QLObject *obj, uint8_t state, ql_color_t color,
+                                  uint8_t alpha);
 
 /* ----- 绘制 ----- */
 /* 登记/查询某类型的绘制函数；在 class_init 里调用 set */

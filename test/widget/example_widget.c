@@ -3,7 +3,7 @@
  * @brief   完整示例：搭一个小界面（卡片 + 标题条 + 按钮 + 徽标），渲染并输出 PPM 图片。
  *
  * 运行：
- *   ./build/example_widget                  打开窗口（Wayland/X11），Esc/q 退出
+ *   ./build/example_widget                  打开窗口（Wayland/X11），Esc 退出
  *   ./build/example_widget --frames 120     跑 120 帧后退出
  *   ./build/example_widget --mem --ppm a.ppm  无窗口时导出图片
  */
@@ -72,6 +72,7 @@ int main(int argc, char **argv)
 
     const ql_coord_t W = 320;
     const ql_coord_t H = 200;
+    ql_win_load_font();
     if (!ql_win_open(&win, "QLGL Widgets", W, H, QL_COLOR_FORMAT_AUTO))
         return 1;
     QL_UNUSED(win.disp);
@@ -81,6 +82,7 @@ int main(int argc, char **argv)
     QLWidget *root = ql_widget_new_ex(0, 0, W, H);
     ql_widget_set_bg((QLObject *)root, QL_COLOR_RGB(0x14, 0x18, 0x24), 255);
     ql_render_set_root((QLObject *)root);
+    ql_win_bind_esc(&win, (QLObject *)root);
 
     /* 卡片：圆角 + 描边 */
     QLWidget *card = ql_widget_new_child((QLObject *)root, 24, 24, W - 48, H - 48);
@@ -122,6 +124,7 @@ int main(int argc, char **argv)
     /* 渲染循环：有窗口就持续重绘，否则画一帧导出 */
     long frame = 0;
     while (ql_win_poll(&win)) {
+        ql_input_dispatch();              /* 后端入队，这里统一派发 */
         if (frame == 10)
             ql_widget_set_bg((QLObject *)button, QL_COLOR_RGB(0x50, 0xE0, 0x90), 255);
         if (frame == 20)

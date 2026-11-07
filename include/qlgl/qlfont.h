@@ -1,9 +1,17 @@
 /**
  * @file    qlfont.h
- * @brief   位图字体：字形表、字形查找、UTF-8 解码、文本度量。
+ * @brief   字体：字形表、字形查找、UTF-8 解码、文本度量。
  *
- * v0.1 只支持位图字形（1/4/8 bpp），不做矢量、不做连字。
- * 字形按 codepoint 升序排列，查找用二分；缺字用 font->fallback 兜底。
+ * 两种字体共用同一套接口：
+ *   1. **静态位图字体**（`ql_font_mono_12/16`，MCU 用）：字形表与位图都在 .rodata；
+ *   2. **动态矢量字体**（M2，FreeType，见 `qlfont_ft.h`）：字形按需光栅化后缓存，
+ *      `glyphs` / `glyph_bitmaps` 由后端持有并可在运行期增长。
+ *
+ * 字形按 codepoint 升序排列（动态字体插入时也保持有序），查找用二分；
+ * 缺字用 font->fallback 兜底。
+ *
+ * 重要：`ql_font_find_glyph` 返回的指针在下一次查找前有效
+ * （动态字体插入字形时可能 realloc）。绘制路径都是"取一个、画一个"，满足该约束。
  */
 #ifndef QLGL_FONT_H
 #define QLGL_FONT_H
@@ -22,6 +30,8 @@ typedef struct {
     uint16_t data_offset;  /* 相对 QLFont.bitmap 的字节偏移 */
 } QLGlyph;
 
+typedef struct QLFontBackend QLFontBackend;
+
 typedef struct QLFont {
     const char     *name;
     uint8_t         bpp;          /* 1 / 4 / 8 */
@@ -31,8 +41,25 @@ typedef struct QLFont {
     uint32_t        fallback;     /* 缺字时改用的 codepoint；0 = 不画只前进 */
     uint16_t        glyph_count;
     const QLGlyph  *glyphs;
-    const uint8_t  *bitmap;
+    const uint8_t  *bitmap;       /* 静态字体：所有字形共用一块位图 */
+    /*
+     * --- 以下字段只对动态字体有意义；静态字体保持全 0/NULL ---
+     * glyph_bitmaps[i] 是 glyphs[i] 自己的位图（行优先、每行 glyphs[i].box_w 字节）。
+     * 有它就说明字形位图不是从 bitmap + data_offset 算出来的。
+     */
+    const uint8_t *const *glyph_bitmaps;
+    const QLFontBackend *backend;
+    void           *impl;         /* 后端私有数据（FreeType 句柄/缓存） */
+    uint16_t        glyph_capacity;
+    uint16_t        pixel_size;   /* 该字体标称的字号（动态字体用） */
 } QLFont;
+
+/* 动态字体后端：只负责"给我某个 codepoint 的字形"和"销毁" */
+struct QLFontBackend {
+    /* 取字形，必要时光栅化 + 插入（保持 glyphs 按 codepoint 有序）；失败返回 NULL */
+    const QLGlyph *(*ensure_glyph)(QLFont *font, uint32_t codepoint);
+    void (*destroy)(QLFont *font);
+};
 
 /* 内置字体（由 tools/qlfontgen 生成） */
 extern const QLFont ql_font_mono_12;
@@ -44,8 +71,29 @@ const QLGlyph *ql_font_find_glyph(const QLFont *font, uint32_t codepoint);
 /* 单个字形的位图行字节数 */
 uint32_t ql_font_glyph_stride(const QLFont *font, const QLGlyph *glyph);
 
+/* 取字形某一行的位图起始指针（每行按 bpp 打包）；越界返回 NULL */
+const uint8_t *ql_font_glyph_row(const QLFont *font, const QLGlyph *glyph, int32_t y);
+
 /* 取字形某个像素的覆盖率（0..255） */
 uint8_t ql_font_glyph_alpha(const QLFont *font, const QLGlyph *glyph, int32_t x, int32_t y);
+
+/* 动态字体？(1 = 由后端托管，内存需要 ql_font_destroy) */
+int ql_font_is_dynamic(const QLFont *font);
+
+/* 释放动态字体；传入静态字体或 NULL 时无操作 */
+void ql_font_destroy(QLFont *font);
+
+/*
+ * 按字号取一个"默认字体"：配置了矢量字体就返回对应的动态字体（带缓存），
+ * 否则回落到最接近的内置位图字体。qllabel / qlui / 绘制层共用。
+ * 返回的字体由内部持有，调用方不要释放。
+ */
+const QLFont *ql_font_default(int pixel_size);
+
+/* 内部接线：矢量字体后端把"按字号造字体"的工厂挂进来（qlgl_init 之后由 FT 后端调用） */
+void ql_font_set_default_factory(QLFont *(*factory)(int pixel_size));
+/* 释放默认字体缓存里所有动态字体（qlgl_shutdown 调用） */
+void ql_font_reset_defaults(void);
 
 /* UTF-8 解码：成功返回字节数（1..4），非法字节返回 1 且 *codepoint = 0xFFFD */
 int32_t ql_utf8_decode(const char *text, uint32_t *codepoint);
