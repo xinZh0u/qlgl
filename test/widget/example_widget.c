@@ -3,12 +3,21 @@
  * @brief   完整示例：搭一个小界面（卡片 + 标题条 + 按钮 + 徽标），渲染并输出 PPM 图片。
  *
  * 运行：
- *   ./build/example_widget            输出到 /tmp/qlgl_example_widget.ppm
- *   ./build/example_widget out.ppm    指定输出路径
+ *   ./build/example_widget                  打开窗口（Wayland/X11），Esc/q 退出
+ *   ./build/example_widget --frames 120     跑 120 帧后退出
+ *   ./build/example_widget --mem --ppm a.ppm  无窗口时导出图片
  */
 #include <stdio.h>
+#include <string.h>
 
 #include <qlgl/qlgl.h>
+
+#include "../window_helper.h"
+
+#if defined(__linux__)
+#include <time.h>
+extern int nanosleep(const struct timespec *req, struct timespec *rem);
+#endif
 
 /* ------------------------- 自定义控件：画一个十字 ------------------------- */
 QL_PROPERTY_ENUM_EMPTY(QL_MARK, QLMark, QL_WIDGET, 10)
@@ -53,7 +62,8 @@ static void ql_mark_deinit(QLMark *self) { QL_UNUSED(self); }
 /* ------------------------- 界面搭建 ------------------------- */
 int main(int argc, char **argv)
 {
-    const char *out_path = (argc > 1) ? argv[1] : "/tmp/qlgl_example_widget.ppm";
+    QLWin win;
+    ql_win_parse_args(&win, argc, argv);
 
     if (qlgl_init() != QL_OK) {
         printf("qlgl_init 失败\n");
@@ -62,11 +72,9 @@ int main(int argc, char **argv)
 
     const ql_coord_t W = 320;
     const ql_coord_t H = 200;
-    QLDispDriver *disp = ql_disp_mem_create(W, H, QL_COLOR_RGB565);
-    if (disp == NULL) {
-        printf("创建显示失败\n");
+    if (!ql_win_open(&win, "QLGL Widgets", W, H, QL_COLOR_FORMAT_AUTO))
         return 1;
-    }
+    QL_UNUSED(win.disp);
     ql_disp_set_bg_color(QL_COLOR_RGB(0x14, 0x18, 0x24));
 
     /* 根：整屏，深色背景 */
@@ -111,41 +119,31 @@ int main(int argc, char **argv)
     ql_widget_set_border((QLObject *)mark, 0, QL_COLOR_WHITE, 20);
     ql_object_add_child((QLObject *)card, (QLObject *)mark);
 
-    /* 底部一条装饰线，验证线条原语 */
-    {
-        QLCanvas canvas;
-        if (ql_canvas_from_disp(&canvas, disp) == QL_OK) {
-            /* 这里不直接画，交给渲染器；仅演示 canvas 用法 */
+    /* 渲染循环：有窗口就持续重绘，否则画一帧导出 */
+    long frame = 0;
+    while (ql_win_poll(&win)) {
+        if (frame == 10)
+            ql_widget_set_bg((QLObject *)button, QL_COLOR_RGB(0x50, 0xE0, 0x90), 255);
+        if (frame == 20)
+            ql_widget_set_bg((QLObject *)mark, QL_COLOR_RGB(0x4C, 0x8C, 0xFF), 255);
+
+        int drawn = ql_render();
+        if (drawn < 0) {
+            printf("ql_render failed: %d\n", drawn);
+            break;
+        }
+        frame++;
+        if (win.max_frames > 0 && frame >= win.max_frames)
+            break;
+        if (win.kind != QL_WIN_KIND_MEM) {
+            struct timespec ts = { 0, 16000000L };
+            nanosleep(&ts, NULL);
         }
     }
-
-    /* 第一帧：全屏 */
-    int drawn = ql_render();
-    printf("首帧绘制 %d 个脏区，flush %u 次\n", drawn, ql_disp_mem_flush_count(disp));
-
-    /* 改一个属性后只重绘脏区 */
-    ql_widget_set_bg((QLObject *)button, QL_COLOR_RGB(0x50, 0xE0, 0x90), 255);
-    printf("改背景后脏区数 = %u\n", ql_render_dirty_count());
-    drawn = ql_render();
-    QLRect last;
-    ql_render_dirty_rect(0, &last);           /* 已被清空，返回空矩形 */
-    printf("增量绘制 %d 个脏区，累计 flush %u 次\n", drawn, ql_disp_mem_flush_count(disp));
-
-    /* 采样几个像素，验证绘制结果 */
-    printf("根背景   (%d,%d) = 0x%06X\n", 4, 4, (unsigned)ql_disp_mem_pixel(disp, 4, 4));
-    printf("卡片背景 (%d,%d) = 0x%06X\n", 150, 40, (unsigned)ql_disp_mem_pixel(disp, 150, 40));
-    printf("标题条   (%d,%d) = 0x%06X\n", 100, 44, (unsigned)ql_disp_mem_pixel(disp, 100, 44));
-    printf("主按钮   (%d,%d) = 0x%06X\n", 60, 102, (unsigned)ql_disp_mem_pixel(disp, 60, 102));
-    printf("次级按钮 (%d,%d) = 0x%06X\n", 200, 102, (unsigned)ql_disp_mem_pixel(disp, 200, 102));
-    printf("徽标中心 (%d,%d) = 0x%06X\n", 148, 144, (unsigned)ql_disp_mem_pixel(disp, 148, 144));
-
-    if (ql_disp_mem_save_ppm(disp, out_path) == QL_OK)
-        printf("已写出图片：%s（P6 PPM，可直接查看）\n", out_path);
-    else
-        printf("写出图片失败\n");
+    printf("frames: %ld\n", frame);
 
     ql_object_unref((QLObject *)root);
-    ql_disp_mem_destroy(disp);
+    ql_win_close(&win);
 
     QLMemStats stats;
     ql_mem_stats(&stats);

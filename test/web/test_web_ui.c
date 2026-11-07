@@ -103,7 +103,7 @@ QL_TEST_BEGIN("test_web_ui")
     QLCanvas canvas;
     QL_CHECK_EQ(ql_canvas_from_disp(&canvas, disp), QL_OK);
     ql_canvas_clear(&canvas, QL_COLOR_RGB(0x10, 0x14, 0x1C));
-    ql_ui_render(ui, &canvas);
+    ql_ui_render_canvas(ui, &canvas);
 
     /* 标题条是 #3399ff */
     ql_color_t bar_px = ql_disp_mem_pixel(disp, 20, 16);
@@ -147,7 +147,7 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK_EQ(ql_ui_set_text(ui, title, "Changed"), QL_OK);
     QL_CHECK_STR(ql_ui_node_text(title), "Changed");
     ql_ui_layout(ui, 320, 240);
-    ql_ui_render(ui, &canvas);
+    ql_ui_render_canvas(ui, &canvas);
 
     /* 14. 视口变窄：根节点宽度跟着变，百分比仍按父内容宽计算 */
     ql_ui_layout(ui, 200, 160);

@@ -8,7 +8,9 @@
 - **对象系统（object）已完成** —— 类型、对象生命周期、属性、事件、内存与对象树；
 - **绘制系统 + 控件基类（widget）已完成** —— 显示驱动、画布原语、脏矩形渲染、QLWidget 及自定义控件；
 - **字体/文本系统已完成** —— 内置 4bpp 抗锯齿位图字体、UTF-8 解码、文本度量、`QLLabel` 控件；
-- **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析（MPU 档）；
+- **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
+- **GPU 后端已完成（v0.1）** —— `QLDraw2D` 绘制接口 + GLES3/EGL 后端（SDF 圆角、字形图集、单 draw call），
+  与 CPU 后端逐像素对齐（差分测试）；
 - **Linux 窗口后端已完成** —— X11（XImage 直绘零拷贝）与 Wayland（xdg-shell + wl_shm 双缓冲），
   无桌面环境自动降级到内存显示。
 
@@ -26,7 +28,11 @@ ctest --test-dir build --output-on-failure
 ./build/example_object                    # 对象系统演示
 ./build/example_widget /tmp/out.ppm       # 渲染一个界面并输出 PPM 图片
 ./build/example_text /tmp/text.ppm        # 文本样张：字号/对齐/多行/缺字
+./build/example_gl_window                 # GPU 窗口：HTML/CSS 编译出的界面 + 动画
+./build/example_widget --frames 120       # 控件示例，默认打开窗口
+./build/example_text --frames 120         # 文本示例，默认打开窗口
 ./build/test_web_ui                       # HTML+CSS 编译成 C 后的布局/绘制断言
+./build/test_gl_vs_cpu                    # GPU 与 CPU 后端的像素一致性
 ./build/example_window                    # 打开真实窗口（自动选 Wayland 或 X11）
 ./build/example_window --backend=x11      # 强制 X11；--backend=wayland 强制 Wayland
 ./build/example_window --frames 120       # 跑 120 帧后自动退出
@@ -38,6 +44,7 @@ ctest --test-dir build --output-on-failure
 |---|---|---|
 | X11 | `libx11-dev` | `-DQLGL_BUILD_X11=OFF` |
 | Wayland | `libwayland-dev wayland-protocols`（`wayland-scanner`） | `-DQLGL_BUILD_WAYLAND=OFF` |
+| GPU (GLES3) | `libegl1-mesa-dev libgles2-mesa-dev` | `-DQLGL_BUILD_GL=OFF` |
 
 两者都没有时仍可正常构建，程序自动降级到内存显示（可导出 PPM）。
 `xdg-shell.xml` 已随仓库提供，不需要系统安装 wayland-protocols 的头文件。
@@ -75,6 +82,8 @@ include/qlgl/      对外头文件（唯一安装目录）
   qldisp_x11.h     Linux X11 窗口后端（可选）
   qldisp_wayland.h Linux Wayland 窗口后端（可选）
   qlui.h           HTML+CSS 编译产物格式与运行期布局/绘制
+  qldraw2d.h       绘制接口（CPU / GPU 后端共用）
+  qlgfx_gl.h       GLES3 + EGL GPU 后端（可选）
   qltype_gen.h     自动生成的类型 id（勿手改）
 src/core/          对象系统实现
 src/draw/          几何、显示、画布、渲染器
@@ -109,6 +118,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - 绘制与控件：[QLWidget 阅读指南](doc/手册/widget/QLWidget阅读指南.md) / [QLWidget API 手册](doc/手册/widget/QLWidget%20API手册.md)
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
+- 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - Web 兼容策略：[Web 兼容设计](doc/Web兼容设计.md)
 - 想看整体设计：[底层实现设计](doc/底层实现设计.md)
 - 编码规范：[代码规范](doc/代码规范.txt)

@@ -15,6 +15,7 @@
 
 #include "qlgl.h"
 #include "qlcanvas.h"
+#include "qldraw2d.h"
 
 /* ----- 生成数据的格式（构建期产出，运行期只读） ----- */
 
@@ -146,8 +147,10 @@ void        ql_ui_free(QLUIRoot *ui);
 /* 按给定视口尺寸做一次完整布局（自上而下 + 自下而上算高度） */
 void        ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height);
 
-/* 绘制：背景 → 边框 → 文本，父先子后 */
-void        ql_ui_render(QLUIRoot *ui, QLCanvas *canvas);
+/* 绘制：背景 → 边框 → 文本，父先子后。d2d 可以是 CPU 或 GPU 后端 */
+void        ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d);
+/* 便捷入口：内部包一层 CPU 接口 */
+void        ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas);
 
 /* ----- 查询 / 交互 ----- */
 QLUINodeRT *ql_ui_root_node(QLUIRoot *ui);

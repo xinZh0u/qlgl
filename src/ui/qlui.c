@@ -271,7 +271,7 @@ const char *ql_ui_node_text(const QLUINodeRT *node)
     return (node != NULL && node->text != NULL) ? node->text : "";
 }
 
-static void render_node(QLUINodeRT *node, QLCanvas *canvas)
+static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = node->style;
 
@@ -281,29 +281,37 @@ static void render_node(QLUINodeRT *node, QLCanvas *canvas)
     QLRect box = node->border_box;
 
     if (s->bg_alpha > 0 && !ql_rect_is_empty(box))
-        ql_canvas_fill_round_rect_alpha(canvas, box, s->border_radius, s->bg_color,
-                                        s->bg_alpha);
+        d2d->fill_round_rect(d2d, box, s->border_radius, s->bg_color, s->bg_alpha);
 
     if (s->border_width > 0 && !ql_rect_is_empty(box))
-        ql_canvas_stroke_rect(canvas, box, s->border_radius, s->border_width,
-                              s->border_color);
+        d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,
+                               s->border_color);
 
-    if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box)) {
-        ql_canvas_draw_text(canvas, font_of(node), node->text, -1, node->content_box,
-                            s->text_color, (QLTextAlign)s->text_align);
-    }
+    if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box))
+        d2d->draw_text(d2d, font_of(node), node->text, -1, node->content_box,
+                       s->text_color, (QLTextAlign)s->text_align);
 
     for (QLUINodeRT *child = node->first_child; child != NULL;
          child = child->next_sibling) {
-        render_node(child, canvas);
+        render_node(child, d2d);
     }
 }
 
-void ql_ui_render(QLUIRoot *ui, QLCanvas *canvas)
+void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
 {
-    if (ui == NULL || canvas == NULL || ui->node_count == 0)
+    if (ui == NULL || d2d == NULL || ui->node_count == 0)
         return;
-    render_node(&ui->nodes[0], canvas);
+    render_node(&ui->nodes[0], d2d);
+}
+
+void ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas)
+{
+    if (ui == NULL || canvas == NULL)
+        return;
+    QLDraw2D d2d;
+    if (ql_draw2d_canvas_init(&d2d, canvas) != QL_OK)
+        return;
+    ql_ui_render(ui, &d2d);
 }
 
 /* ------------------------------ 查询 / 交互 ------------------------------ */

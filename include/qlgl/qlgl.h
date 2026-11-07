@@ -74,11 +74,13 @@ void ql_log(int level, const char *fmt, ...);
 #include "qldisp.h"
 #include "qlfont.h"
 #include "qlcanvas.h"
+#include "qldraw2d.h"
 #include "qlwidget.h"
 #include "qllabel.h"
 #include "qlui.h"
 #include "qlrender.h"
 #include "qldisp_x11.h"
 #include "qldisp_wayland.h"
+#include "qlgfx_gl.h"
 
 #endif /* QLGL_H */
