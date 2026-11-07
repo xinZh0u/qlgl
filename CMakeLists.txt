@@ -18,6 +18,25 @@ target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
+
+# ---- HTML+CSS → C（相当于 Qt 的 uic）：把 test/web 下的页面编译成静态数据 ----
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    set(QL_UI_IN  ${CMAKE_CURRENT_SOURCE_DIR}/test/web)
+    set(QL_UI_OUT ${CMAKE_CURRENT_BINARY_DIR}/ui)
+    set(QL_UI_GEN ${QL_UI_OUT}/ui_demo.c ${QL_UI_OUT}/ui_demo.h)
+    add_custom_command(
+        OUTPUT ${QL_UI_GEN}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_UI_OUT}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+                --html ${QL_UI_IN}/ui_demo.html
+                --css  ${QL_UI_IN}/ui_demo.css
+                --out  ${QL_UI_OUT}
+        DEPENDS ${QL_UI_IN}/ui_demo.html ${QL_UI_IN}/ui_demo.css
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+        COMMENT "编译 HTML+CSS 为 C")
+    add_custom_target(qlui ALL DEPENDS ${QL_UI_GEN})
+endif()
 option(QLGL_BUILD_WAYLAND "构建 Linux Wayland 窗口后端" ON)
 
 if(QLGL_BUILD_WAYLAND AND UNIX AND NOT APPLE)
@@ -74,7 +93,13 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        add_executable(${test_name} ${test_src})
+        if(test_name STREQUAL "test_web_ui" AND Python3_Interpreter_FOUND)
+            add_executable(${test_name} ${test_src} ${QL_UI_GEN})
+            add_dependencies(${test_name} qlui)
+            target_include_directories(${test_name} PRIVATE ${QL_UI_OUT})
+        else()
+            add_executable(${test_name} ${test_src})
+        endif()
         target_link_libraries(${test_name} PRIVATE qlgl)
         target_compile_options(${test_name} PRIVATE -Wall -Wextra)
         # 窗口示例会进入事件循环，不能当单元测试跑

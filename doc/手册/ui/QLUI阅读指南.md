@@ -1,0 +1,229 @@
+# QLUI / HTML+CSS 编译 阅读指南
+
+> 本部分的定位见 [Web 兼容设计](../../Web兼容设计.md) §7：
+> **MCU 不追求 Web 兼容（纯 C API）**；HTML/CSS 编译成 C 是给 **MPU/嵌入式 Linux** 用的中间档；
+> **PC 要高兼容请直接用系统 WebView**。
+>
+> 本部分实现的是"构建期把 HTML+CSS 翻译成静态 C 数据"，运行时零解析。
+> 目标读者：要改 `tools/qlui/` 或布局算法的人。只想用，请看 [QLUI API手册](./QLUI%20API手册.md)。
+
+---
+
+## 1. 文件地图
+
+| 文件 | 职责 | 阅读顺序 |
+|---|---|---|
+| `tools/qlui/qlui.py` | HTML 解析 + CSS 解析 + 选择器匹配 + 级联 + 生成 C | ① |
+| `include/qlgl/qlui.h` | 生成数据格式（`QLUIDoc`/`QLUINode`/`QLUIStyle`）与运行期 API | ② |
+| `src/ui/qlui.c` | 物化、布局、绘制、命中测试 | ③ |
+| `test/web/ui_demo.html` / `.css` | 示例页面（构建期被编译） | ④ |
+| `test/web/test_web_ui.c` | 可执行的说明（布局/绘制/交互断言） | ⑤ |
+
+生成链路：
+
+```
+test/web/ui_demo.html ┐
+test/web/ui_demo.css  ├─ cmake --build ─▶ build/ui/ui_demo.c + ui_demo.h ─▶ 编译进测试程序
+tools/qlui/qlui.py    ┘
+```
+
+`CMakeLists.txt` 里用 `add_custom_command` 声明依赖，改 HTML/CSS 会自动重新生成（与 Qt 的 `.ui` 体验一致）。
+
+---
+
+## 2. 为什么"编译成 C"而不是"运行时解析"
+
+| | 运行时解析 | 编译成 C |
+|---|---|---|
+| 代码量 | 需要完整 CSS 引擎（1 万行+） | 运行时只有布局与绘制（约 500 行） |
+| 启动开销 | 解析 + 选择器匹配 + 级联 | 0（数据已在 `.rodata`） |
+| RAM | 需要保存解析中间态 | 只有计算后的布局框 |
+| 错误发现时机 | 运行时（可能上板才炸） | **编译期 / 构建期** |
+| 代价 | — | 运行期不能改 CSS |
+
+这正是 Qt `uic` 的思路，也是 `qlgen`（类型 id）、`qlfontgen`（字体）已经在用的思路。
+
+---
+
+## 3. 生成的数据长什么样
+
+```c
+typedef struct {
+    uint16_t tag;          /* QL_UI_TAG_DIV / _P / _SPAN / _BUTTON ... */
+    uint16_t parent;       /* 0xFFFF = 根 */
+    uint16_t first_child;  /* 0xFFFF = 无 */
+    uint16_t next_sibling; /* 0xFFFF = 无 */
+    uint16_t style;        /* styles[] 下标 */
+    uint16_t text;         /* 文本池下标，0xFFFF = 无 */
+} QLUINode;
+
+typedef struct {
+    uint32_t   bg_color, text_color, border_color;
+    QLUILength width, height;      /* { 值, auto/px/% } */
+    QLUIEdges  margin, padding;    /* 上右下左 */
+    uint8_t    display, bg_alpha, border_width, border_radius;
+    uint8_t    text_align, font_id, box_sizing;
+} QLUIStyle;
+```
+
+关键不变式（生成器保证）：
+
+1. **`nodes[]` 是深度优先顺序**，`parent` 下标一定小于子节点下标 → 物化时一趟 for 循环即可，不需要递归；
+2. **样式表已去重**（`add_style` 用内容做 key），相同样式只存一份；
+3. **文本池按 `'\0'` 分隔**，`text_offsets[]` 是每段的首字节偏移；
+4. **颜色/长度在生成期全部换算成整数**，运行期不做字符串处理。
+
+---
+
+## 4. 生成器（`tools/qlui/qlui.py`）
+
+### 4.1 处理流程
+
+```
+HTML ──HTMLParser──▶ Node 树 ─┐
+                              ├─▶ 逐节点计算样式 ─▶ 去重 ─▶ 生成 C
+CSS  ──parse_css──▶ Rule 列表 ─┘
+```
+
+### 4.2 CSS 解析
+
+- 先 `strip_comments` 去掉 `/* */`；
+- 逐条 `选择器 { 声明; }`；
+- **`@media` / `@supports` 等 at-rule 直接报错**；
+- 属性白名单 `SUPPORTED_PROPS`，不在表里就报错并给出 `文件:行号`。
+
+### 4.3 选择器与优先级
+
+支持：`tag`、`.class`、`#id`、后代（空格）、子代（`>`）。
+**不支持 `+` / `~` 兄弟选择器**（会报错）。
+
+优先级用规范的三元组 `(id 数, class 数, tag 数)`，排序后再按出现顺序覆盖 ——
+这是"同一份 CSS 在两个引擎上渲染一致"的前提，不是可选项。
+
+```python
+matched.sort(key=lambda r: (r.specificity, r.order))
+```
+
+### 4.4 级联与继承
+
+```
+UA 默认样式（UA_DEFAULTS）
+  ↓ 被匹配到的规则覆盖（按优先级）
+  ↓ 被行内 style 覆盖
+  ↓ 继承（只有 color / font-size / text-align）
+```
+
+继承的实现很直接：父节点先算完样式，子节点从父的样式里挑 `INHERITED` 三个属性作为初始值。
+
+### 4.5 明确报错的场景（不静默降级）
+
+| 场景 | 报错信息 |
+|---|---|
+| 不支持的标签（`<table>`/`<img>`） | `不支持标签 <table>` |
+| 不支持的属性（`position`/`flex`/`box-shadow`） | `不支持的属性 'position'` |
+| 不支持的长度单位（`em`/`rem`/`vh`） | `不支持的长度 '1.5em'（只支持 px 与 %）` |
+| 不支持的 at-rule | `不支持 at-rule '@media'` |
+| 兄弟选择器 | `不支持相邻/兄弟选择器 '+'` |
+| **混合内容**（`<p>文字<b>粗</b></p>`） | `同时包含文本和子元素（混合内容）——请把文本放进独立的 <span>/<p>` |
+| 文档有 0 或 2+ 个根元素 | `文档必须有且只有一个根元素` |
+
+最后一条很容易被忽略：v0 的文本是"元素的一段文本"，不支持一个元素里
+既有文字又有子元素。所以演示页面里写的是：
+
+```html
+<p class="line"><span>inline</span><span>bold</span></p>   <!-- ✅ -->
+<p class="line">inline <b>bold</b></p>                      <!-- ❌ 报错 -->
+```
+
+---
+
+## 5. 运行期三件事
+
+### 5.1 物化 `ql_ui_build`
+
+```c
+for (i = 0..node_count) {
+    rt->src   = &doc->nodes[i];
+    rt->style = &doc->styles[src->style];
+    rt->text  = doc->text_pool + doc->text_offsets[src->text];
+    /* 挂到父节点末尾（生成顺序 = 深度优先，父一定先于子） */
+}
+```
+
+一次 `ql_mem_calloc` 分配整个节点数组，之后**零 malloc**。
+
+### 5.2 布局 `ql_ui_layout`
+
+单趟递归，不需要两趟（因为不支持 `height: %`，也没有 flex）：
+
+```
+layout_node(node, x, y, avail_w):
+    display:none → 空矩形，返回 0
+    border_w = 宽度解析（px / % / inline 按文本量 / 其余撑满）
+    box 位置 = (x + margin_left, y + margin_top)
+    content 位置 = box + border + padding
+    if 有子节点:
+        block 子节点纵向堆叠；
+        inline/inline-block 子节点横向排布，超出宽度换行
+        content_h = 游标推进量
+    else if 有文本:
+        content_h = 行高
+    if 显式 height: content_h = max(content_h, 显式值)
+    记录 border_box / content_box
+    return border_h + margin
+```
+
+要点：
+
+- **宽度先算**：`%` 相对父**内容宽**，`auto` 时 block 撑满、inline 按文本量；
+- **`box-sizing: border-box`** 时 `width` 指边框盒（浏览器默认是 `content-box`，
+  所以 `width:100%` + `padding` 会溢出 —— 这是对的，别以为是 bug）；
+- **高度**：没有百分比高度，所以一趟就够；
+- **溢出**：内容高于显式高度时不裁剪（等于 CSS 的 `overflow: visible`）。
+
+### 5.3 绘制 `ql_ui_render`
+
+按树顺序（父先子后）：背景 → 边框 → 文本 → 递归子节点。
+全部复用已有的 `QLCanvas` 原语（`fill_round_rect_alpha` / `stroke_rect` / `draw_text`）。
+
+---
+
+## 6. 与"真浏览器"的差距（诚实清单）
+
+| 项 | 现状 | 影响 |
+|---|---|---|
+| flexbox / grid | ❌ 未实现 | 现代页面大量使用，是下一优先级 |
+| 伪类 `:hover`/`:active` 的样式 | ❌ 只记录状态位，**不改样式** | 悬停高亮目前要自己在 C 侧画 |
+| 混合内容 | ❌ 报错 | 需把文本包进 `<span>` |
+| 行内元素的基线对齐 | ❌ 按矩形顶对齐 | 中英文混排可能不齐 |
+| 文本换行 | 只有 `\n` | 长句不自动折行 |
+| `position` / `overflow` / `z-index` | ❌ | 弹窗、滚动容器做不了 |
+| CSS 变量 / transition / media query | ❌ | 明确不支持 |
+| JS | ❌（编译期无 JS） | 交互靠 C 回调 |
+
+> 这些差距是**刻意的**：MPU 档的目标是"设计师给的静态页面能渲染"，不是"跑任意网页"。
+> 需要高兼容请走 PC + WebView（见设计文档 §7.3）。
+
+---
+
+## 7. 常见坑
+
+| 坑 | 现象 | 说明 |
+|---|---|---|
+| `width:100%` + `padding` 溢出 | 比父元素宽 | `content-box` 语义；加 `box-sizing: border-box` |
+| `<p>a<b>b</b></p>` 构建失败 | 混合内容报错 | 文本放进独立 `<span>` |
+| 改了 HTML 但界没变 | 忘记重新构建 | 生成物是构建期产物，需 `cmake --build` |
+| 改了 CSS 但没重生成 | 同上 | `add_custom_command` 已声明依赖，正常会自动触发 |
+| 文本不换行 | 超出部分被裁 | 只支持 `\n` |
+| 元素重叠 | 布局理解错 | 本引擎只有 block/inline 流，没有 `position` |
+| 样式没生效 | 优先级/拼写 | 用生成物里的注释核对每个节点的最终样式 |
+
+---
+
+## 8. 建议的阅读 / 验证顺序
+
+1. `ctest --test-dir build -R test_web_ui --output-on-failure` 全绿；
+2. 打开 `build/ui/ui_demo.c`，对照 HTML 看节点表与样式表 —— 这是最快的理解方式；
+3. 读 `test/web/test_web_ui.c`：每个断言对应一条布局规则；
+4. 读 `tools/qlui/qlui.py` 的 `parse_css` → `build_style` → `emit` 三个函数；
+5. 读 `src/ui/qlui.c` 的 `layout_node`。

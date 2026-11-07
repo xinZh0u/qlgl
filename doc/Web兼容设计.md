@@ -13,7 +13,7 @@
 | 任意 HTML/CSS/JS 页面直接跑 | ❌ 这等于重做一个浏览器（Blink/WebKit 是千万行级工程） |
 | 自己写的页面（用了常见 HTML/CSS/JS）基本不改 | ✅ 可行，代价是 **3~4.5 万行 C** + **6~12 个月** |
 | 不支持的属性/标签**立刻报错**而不是静默错位 | ✅ 可行，且必须做，这是"不用改"的前提 |
-| 同一份页面在 MCU 上跑 | ❌ 与全量 Web 兼容冲突，需分级裁剪（见 §7） |
+| 同一份页面在 MCU 上跑 | ❌ MCU 走纯 C，不做 Web 兼容（见 §7 定案） |
 
 所以务实的目标应该写成一句可验收的话：
 
@@ -255,20 +255,86 @@ MCU 目标用 **Duktape** 或直接关闭 JS。
 
 ---
 
-## 7. 目标平台冲突：必须分级裁剪
+## 7. 【定案】平台分级：MCU 用 C，不追求 Web 兼容；PC 用多语言追求高兼容
 
-你之前定的目标是 "MCU、MPU、PC、移动终端"。全量 Web 兼容与 MCU 是**冲突**的：
+这一条把"完美兼容"的答案说清楚了：**不是一套实现打天下，而是同一份资源、两套引擎**。
 
-| 目标 | 可行内容 | 内存预算（估） |
+| 平台 | 界面怎么写 | 渲染实现 | 兼容目标 |
+|---|---|---|---|
+| **MCU**（Cortex-M） | **纯 C**，直接用 `QLObject` / `QLWidget` / `QLCanvas` | QLGL 原生实现（自制布局/绘制） | **不追求 Web 兼容**，追求小体积、确定性 |
+| **MPU / 嵌入式 Linux** | HTML + CSS 子集，**构建期编译成 C**（`tools/qlui`，见 §12） | QLGL 原生实现 | Web **子集**兼容（差分测试达标） |
+| **PC / 移动** | HTML + CSS + JS 原样使用 | **JS 引擎 + 系统 WebView / 浏览器引擎** | **高兼容**，接近真浏览器 |
+
+### 7.1 MCU：不追求 Web 兼容是对的
+
+在 MCU 上做 CSS 级联 + JS 引擎，等于把浏览器塞进 200KB RAM，收益低、风险高。
+MCU 的界面本来就该用 C 写：
+
+```c
+QLWidget *card = ql_widget_new_child(root, 8, 8, 240, 120);
+ql_widget_set_bg((QLObject *)card, QL_COLOR_RGB(0x1E, 0x25, 0x33), 255);
+ql_widget_set_border((QLObject *)card, 2, QL_COLOR_SKY, 12);
+QLLabel *t = ql_label_new_child((QLObject *)card, "Temp 26C", 10, 8);
+```
+
+这条路**已经完成并有测试**（对象/绘制/文本/后端四层，14 个测试用例）。
+它不需要任何 Web 兼容层，也不该被 Web 兼容需求污染。
+
+### 7.2 MPU：HTML/CSS 构建期编译成 C
+
+这是"一份页面，两端跑"的桥梁：设计师写的 HTML/CSS 在构建期被 `tools/qlui`
+翻译成静态 C 数据（节点表 + 样式表 + 文本池），运行时零解析（§12）。
+兼容范围是**子集**，不支持项构建期报错（§3.3）。
+
+### 7.3 PC：高兼容靠"多语言 + 真引擎"，不靠自己重写浏览器
+
+在 PC/MCU 之外，如果要"基本不用改就能跑"，唯一务实的做法是**别自己实现 CSS/JS**：
+
+| 方案 | 兼容度 | 代价 | 结论 |
+|---|---|---|---|
+| A. QLGL 自研 CSS+JS 子集 | 60~80%（永远追不完） | 6~12 个月 | 适合 MPU，不适合"高兼容" |
+| B. **嵌入系统 WebView**（WebView2 / WKWebView / WebKitGTK） | ~99% | 几乎为零（系统自带） | **PC 首选** |
+| C. 嵌入 CEF / Electron | ~99% | 几十 MB 体积 | 桌面大型应用可用 |
+| D. QLGL 只做渲染后端，前端逻辑用 JS 绑 C API | 取决于 JS 层 | 中 | 适合"自定义控件 + 脚本"场景 |
+
+**推荐组合**：
+
+```
+PC 端：同一份 index.html/css/js
+        ├─ 默认走系统 WebView（真浏览器，兼容度 ~99%）
+        └─ 需要"和嵌入式一致"时走 qlui → C（子集渲染）
+
+MPU 端：qlui → C（子集渲染，无 JS 或 QuickJS）
+
+MCU 端：纯 C API（无 Web 层）
+```
+
+同一份 HTML/CSS 在两端渲染出来的差异，用 §8 的差分测试量化，
+保证"PC 上看到的效果 ≈ 板子上的效果"，而不是"两边各写一套界面"。
+
+### 7.4 多语言绑定（PC/MPU）
+
+PC 上"用多种语言"的落地方式是**给 C 核心加绑定**，而不是把核心改成脚本语言：
+
+| 语言 | 方式 | 用途 |
 |---|---|---|
-| Cortex-M4/M7（无 MMU） | HTML+CSS 子集（C0~C2 精简），**无 JS**，预编译为二进制 | 64~256 KB |
-| Cortex-A / MPU / PC / 移动 | HTML+CSS 子集 + JS（QuickJS） | 数 MB |
-| PC（工具链） | 全量 + 差分测试 | 不受限 |
+| JS | QuickJS 嵌入 | 页面交互脚本、动态改样式/内容 |
+| Python | ctypes / CFFI 包一层 | 快速原型、测试脚本、工具 |
+| C++ | 头文件直接包含（C ABI 稳定） | 宿主程序 |
+| 其他 | 只要 C ABI 稳定都能包 | — |
 
-建议把"MCU 支持"重新定义为："**能跑 L1 静态页面子集**"，JS 只在 MPU 及以上开启。
-这需要改 `qlconfig.h` 的裁剪策略（按"能力"而不是按"模块"裁剪）。
+绑定层只需要三个入口（见 [QLObject API手册](./手册/object/QLObject%20API手册.md) §12）：
+`ql_object_get_property` / `set_property` / `ql_connect`。
+QLUIStyle / QLUIDoc 是 POD，也可以直接暴露给脚本层。
 
----
+### 7.5 所以"完美兼容"到底能不能做到
+
+| 问法 | 答案 |
+|---|---|
+| 用 QLGL 自己实现，做到完美兼容？ | ❌ 不可能（=重做浏览器） |
+| 在 PC 上用系统 WebView，做到完美兼容？ | ✅ 那就是真浏览器 |
+| 一份 HTML/CSS 在 PC 和板子上都跑？ | ✅ 子集内可行，用差分测试量化差异 |
+| 板子上跑任意网页？ | ❌ 不可行，也不必要 |
 
 ## 8. 怎么验证"基本不用改"——差分测试
 
@@ -338,17 +404,24 @@ MCU 目标用 **Duktape** 或直接关闭 JS。
 
 ---
 
-## 10. 需要你拍板的 4 件事
+## 10. 已定案 / 待定
 
-1. **是否接受"控件 = 标签 + UA CSS"**（放弃现有 QLWidget 子类体系，只保留底层四层）？
-   这是照搬 Web 的前提，影响最大。
-2. **是否接受引入第三方 JS 引擎**（vendor QuickJS 进仓库）？还是先做"无 JS 版"，
-   JS 放到最后？
-3. **MCU 支持是否降级**为"L1 静态页面子集、无 JS"？还是要坚持 MCU 上也能跑全量？
-4. **第一版范围**：按 §9.1 的"最小可交付（静态 HTML+CSS，无 flex 无 JS）"，
-   还是直接上 flex？
+### 已定案
 
----
+| 项 | 结论 |
+|---|---|
+| 平台分级 | MCU 纯 C 不做 Web 兼容；MPU 用 HTML/CSS 编译成 C；PC 用 WebView + 多语言（§7） |
+| HTML/CSS 处理方式 | **构建期编译成 C 文件**，运行时零解析（§12） |
+| 不支持的特性 | **构建期报错**，不静默降级 |
+| 控件模型 | MPU/PC 路径下"控件 = 标签 + UA CSS"；MCU 路径保留 `QLWidget` C API |
+
+### 待定（下一步要拍板）
+
+1. **PC 端要不要真的接系统 WebView**（Windows WebView2 / Linux WebKitGTK / macOS WKWebView）？
+   接的话 QLGL 在 PC 上就退化为"与嵌入式同款的备用渲染器 + 工具链"，而不是主渲染器。
+2. **MPU 端要不要 JS**？如果要，用 QuickJS（vendor 进仓库，约 210KB 代码）。
+3. **第一版做到哪**：目前 `tools/qlui` 已能跑通"block + inline + 盒模型 + px/%"，
+   下一块是 **flexbox**，还是先补 **CSS 选择器/伪类**（`:hover` 等状态样式）？
 
 ## 11. 附：词汇对照（避免团队沟通歧义）
 
@@ -362,3 +435,129 @@ MCU 目标用 **Duktape** 或直接关闭 JS。
 | `EventTarget` | `QLObject` 事件池 ✅ | 已有 |
 | `document` | 渲染根 ✅ | |
 | UA stylesheet | 无 | 需要新增 |
+
+---
+
+## 12. 【定案】HTML/CSS 编译成 C 文件，运行时零解析
+
+对应 Qt Creator 的做法：`.ui`（XML）→ `uic` → `ui_xxx.h`/`.cpp` 编译进程序。
+QLGL 完全照搬这个模型：
+
+```
+ui/index.html  ┐
+ui/index.css   ├─→ tools/qlui/qlui.py ─→ build/ui_index.c  ─→ 编译器 ─→ .rodata
+ui/index.js    ┘        （构建期）          build/ui_index.h
+```
+
+### 12.1 为什么这样最合适
+
+| 好处 | 说明 |
+|---|---|
+| 运行时零解析 | 不做 CSS tokenize/选择器匹配/级联，省下 1 万行代码与全部解析开销 |
+| MCU 可承受 | 数据躺在 `.rodata`（Flash），RAM 只放计算后的布局框 |
+| 编译器把关 | 生成的是 C，类型错误、越界、未定义符号在**编译期**就暴露 |
+| 可裁剪 | 生成的 C 只含实际用到的元素与样式，不用整个 CSS 引擎 |
+| 与现有工具链一致 | `qlgen`（类型 id）、`qlfontgen`（字体）已经都是"构建期生成 C" |
+
+**代价**：运行期不能改 CSS（不能 `el.style.width=...` 走完整 CSS 语义）。
+折中方案（见 §12.5）：允许运行期改**少量**属性，走"直接改布局框"的快路径，不走级联。
+
+### 12.2 生成物形状
+
+生成器输出的 `ui_index.c` 只包含数据，不含逻辑：
+
+```c
+/* 由 tools/qlui 生成，勿手改 */
+#include <qlgl/qlgl.h>
+
+static const QLUINode ui_index_nodes[] = {
+    /*  tag            parent first  next   style  text  class */
+    {  QL_UI_TAG_DIV,    0xFFFF,     1, 0xFFFF,     0, 0xFFFF,    0 },  /* #root */
+    {  QL_UI_TAG_P,         0, 0xFFFF, 0xFFFF,     1,     0,    0 },
+};
+static const QLUIStyle ui_index_styles[] = {
+    { .display = QL_UI_DISPLAY_BLOCK, .width_kind = QL_UI_UNIT_AUTO, ... },
+};
+static const char ui_index_text[] = "Hello\0";
+static const uint16_t ui_index_text_ofs[] = { 0 };
+
+const QLUIDoc ui_index_doc = {
+    .name = "index",
+    .node_count = 2,
+    .nodes = ui_index_nodes,
+    .styles = ui_index_styles,
+    .text_pool = ui_index_text,
+    .text_offsets = ui_index_text_ofs,
+};
+```
+
+配套 `ui_index.h`：
+
+```c
+#ifndef UI_INDEX_H
+#define UI_INDEX_H
+#include <qlgl/qlgl.h>
+extern const QLUIDoc ui_index_doc;
+#endif
+```
+
+### 12.3 运行时要做的三件事
+
+```c
+QLUIRoot *ui = ql_ui_build(&ui_index_doc);        /* 1. 物化：静态表 → 运行期节点树 */
+ql_ui_layout(ui, 320, 240);                       /* 2. 布局：算出每个节点的绝对矩形 */
+ql_ui_render(ui, canvas);                        /* 3. 绘制：背景/边框/文本 */
+```
+
+- **物化**：一次性分配，之后零 malloc；
+- **布局**：block + inline-block 流式布局（v0 不含 flex，见 §13）；
+- **绘制**：按树顺序画，父先子后。
+
+### 12.4 构建集成
+
+```cmake
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+set(UI_SRC  ${CMAKE_CURRENT_SOURCE_DIR}/ui/index.html
+            ${CMAKE_CURRENT_SOURCE_DIR}/ui/index.css)
+set(UI_GEN  ${CMAKE_CURRENT_BINARY_DIR}/ui_index.c
+            ${CMAKE_CURRENT_BINARY_DIR}/ui_index.h)
+
+add_custom_command(
+    OUTPUT  ${UI_GEN}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+            --html ui/index.html --css ui/index.css --out ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${UI_SRC} tools/qlui/qlui.py
+    COMMENT "编译 HTML+CSS 为 C 文件")
+
+add_executable(app main.c ${UI_GEN})
+target_link_libraries(app qlgl)
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+```
+
+改 HTML/CSS → `cmake --build` 自动重新生成 → 重新编译。与 Qt 的 `.ui` 体验一致。
+
+### 12.5 运行期改样式的边界
+
+Web 里 `el.style.width = "50%"` 会触发级联 + 重排。我们**不做级联**，只做：
+
+| 操作 | 支持 | 实现 |
+|---|---|---|
+| 改文本 `textContent` | ✅ | 改文本指针 + 重算该节点尺寸 |
+| 改样式类 `.classList.add` | ❌ | 依赖选择器匹配，运行期不做 |
+| 改内联样式 `style.width` | ⚠️ 仅限"直接改布局框" | 改 `QLUIStyle` 的副本字段 + 重排 |
+| 增删节点 | ⚠️ 有限 | 只允许在预留槽位内（生成期预留 `max_nodes`） |
+
+> 这条边界必须写进 API 文档：**页面结构在构建期固定，运行期只能改内容与少量尺寸**。
+> 这与"MCU 静态界面"的定位是一致的；需要完全动态的界面请用 PC/MPU 配置。
+
+### 12.6 JS 怎么办
+
+JS 无法编译成 C（除非用静态分析把脚本转成 C，复杂度远超收益）。所以：
+
+| 配置 | HTML/CSS | JS |
+|---|---|---|
+| `QL_CFG_UI_JS = 0`（MCU/默认） | 构建期编译成 C | 不支持；交互用 C 侧注册回调（`ql_ui_on_click`） |
+| `QL_CFG_UI_JS = 1`（MPU/PC） | 构建期编译成 C | 运行期嵌入 QuickJS，DOM 绑定见 §5 |
+
+也就是说：**"HTML+CSS 零解析"已经定案；JS 作为可选能力，按配置裁剪。**
