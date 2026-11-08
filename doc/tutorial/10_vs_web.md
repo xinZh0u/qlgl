@@ -35,7 +35,7 @@
 
 ---
 
-## 2. HTML：认 114 个标签，画 78 个
+## 2. HTML：认 114 个标签，画 79 个
 
 | 在浏览器里能写 | 在 QLGL 里 |
 |---|---|
@@ -49,7 +49,7 @@
 | `<textarea>` | ❌ 还没有多行输入 |
 | `<table>` `<tr>` `<td>` | ❌ 用嵌套 flex 代替（表格布局还没做） |
 | `<style>` `<script>` | ❌ 没有样式表标签，也没有脚本 |
-| 其余 78 个标签 | ✅ 见[标签与语义](08_tags.html) |
+| 其余 79 个标签 | ✅ 见[标签与语义](08_tags.html) |
 
 > 完整的 114 个元素逐条状态（含 MCU 能力包裁剪）在
 > [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)。
@@ -83,6 +83,7 @@
 | `required` / `pattern` / `maxlength` | ❌ 没有校验；长度上限是编译期常量 `QL_CFG_UI_INPUT_LEN` |
 | `<progress>` / `<meter>` | ✅ 画成一根条；`low`/`high`/`optimum` 分色没有 |
 | `<details>` / `<summary>` | ✅ 能折叠；**没有三角标记**（没有 `::marker`），自己写字符 |
+| `<dialog>` | ✅ 真浮层（居中 + 遮罩 + `Esc`/点外面关）；**没有焦点圈定**，也不支持嵌套模态 |
 | `type="date"` `type="number"` | ❌ 报错（只支持 `text` / `password`） |
 | `Tab` 切换焦点 | ✅ 在 `input` / `select` / `button` 之间按树序循环，到头绕回 |
 | 剪贴板（Ctrl+C/V） | ❌ 没有（平台层不提供） |

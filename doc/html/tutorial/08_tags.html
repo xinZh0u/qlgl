@@ -213,8 +213,8 @@ main img.shot { max-width: 100%; }
 </ol>
 <p>所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。</p>
-<h2 id="78">现支持的 78 个标签</h2>
-<p>HTML5 一共 114 个元素，本库现在认其中 <strong>78 个</strong>。全量清单（含每个标签的状态、能力包、
+<h2 id="79">现支持的 79 个标签</h2>
+<p>HTML5 一共 114 个元素，本库现在认其中 <strong>79 个</strong>。全量清单（含每个标签的状态、能力包、
 MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>，这里只给常用分组：</p>
 <table>
 <thead>
@@ -279,6 +279,10 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 <tr>
 <td>折叠面板</td>
 <td><code>details</code> <code>summary</code>（见下面"折叠面板"）</td>
+</tr>
+<tr>
+<td>浮层</td>
+<td><code>dialog</code>（见下面"浮层"）</td>
 </tr>
 </tbody>
 </table>
@@ -356,6 +360,19 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 </tbody>
 </table>
+<h3 id="dialog">浮层：<code>&lt;dialog&gt;</code> 是真的盖在最上面</h3>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">dialog</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;dlg&quot;</span><span class="p">&gt;</span>           <span class="cm">&lt;!-- 默认不显示；加 open 或调 API 才出来 --&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span><span class="p">&gt;</span>真的删掉吗？<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">dialog</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_dialog_set_open</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">dlg</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 打开：居中 + 压暗背景 */</span>
+<span class="n">ql_ui_dialog_open</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">dlg</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 1 / 0 */</span>
+<span class="n">ql_ui_dialog_close_top</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 关掉最上层那个 */</span>
+</code></pre></div>
+
+<p>点遮罩或按 <code>Esc</code> 都会关掉。<strong>已知限制</strong>：不做焦点圈定（<code>Tab</code> 不会被困在框里）、
+不支持嵌套模态、宽度固定为 UA 的 <code>70%</code>。</p>
 <h3 id="_2">折叠面板：点标题行展开</h3>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">details</span> <span class="na">open</span><span class="p">&gt;</span>              <span class="cm">&lt;!-- 去掉 open 就是默认收起 --&gt;</span>
   <span class="p">&lt;</span><span class="nt">summary</span><span class="p">&gt;</span>点我展开<span class="p">&lt;/</span><span class="nt">summary</span><span class="p">&gt;</span>

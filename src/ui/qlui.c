@@ -51,7 +51,7 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     /* --- META 包：解析期跳过，不进树 --- */
     "base", "head", "link", "meta", "style", "title",
     /* --- WIDGET 包 --- */
-    "output", "datalist", "progress", "meter", "details", "summary",
+    "output", "datalist", "progress", "meter", "details", "summary", "dialog",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -117,6 +117,10 @@ struct QLUIProgress {
 /* 下面这几组定义在文件后部（构建期就要用），先声明 */
 static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node);
 static void details_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
+static QLUINodeRT *dialog_top(const QLUIRoot *ui);
+static void dialog_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
+static void dialog_center(QLUIRoot *ui);
+static void render_node(QLUINodeRT *node, QLDraw2D *d2d);
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -296,6 +300,20 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
             is_flex_container(rt->parent->style) && text_is_only_ws(rt->text))
             rt->style = &s_style_hidden;
     }
+
+    /*
+     * <dialog>：数一下有几个（为 0 时浮层相关的扫描全部跳过），
+     * 没写 open 的直接关掉（浮层默认不显示）。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++)
+        if (doc->nodes[i].tag == QL_UI_TAG_DIALOG)
+            ui->dialog_count = (uint16_t)(ui->dialog_count + 1u);
+    if (ui->dialog_count > 0)
+        for (uint16_t i = 0; i < doc->node_count; i++) {
+            QLUINodeRT *rt = &ui->nodes[i];
+            if (rt->src != NULL && rt->src->tag == QL_UI_TAG_DIALOG)
+                dialog_apply(ui, rt, (rt->src->flags & QL_UI_NODE_OPEN) != 0);
+        }
 
     /*
      * <details> 的初始状态：没写 open 就把非 summary 的子节点关掉。
@@ -2068,6 +2086,9 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
     /* z-index 排序放在最后：之后绘制与命中测试都自动遵循 z 序 */
     sort_tree_by_z(root);
 
+    /* 浮层居中：必须在算 paint_box 之前（平移会改坐标） */
+    dialog_center(ui);
+
     /* transform 的绝对偏移必须自上而下算，再算绘制包围盒（尺寸 + 位移都定稿） */
     resolve_transform(root, 0, 0, 0, 0, 0, 0);
     compute_paint_box(root);
@@ -2460,6 +2481,99 @@ static int select_key(QLUIRoot *ui, struct QLUISelectState *st, const QLInputEve
     }
 }
 
+/* -------------------------------- 浮层 -------------------------------- */
+
+/* 找最后一个打开的 <dialog>（= 最上层）；没有返回 NULL */
+static QLUINodeRT *dialog_top(const QLUIRoot *ui)
+{
+    if (ui == NULL || ui->dialog_count == 0)
+        return NULL;
+    QLUINodeRT *top = NULL;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        QLUINodeRT *n = &ui->nodes[i];
+        if (n->src != NULL && n->src->tag == QL_UI_TAG_DIALOG &&
+            (n->flags & QL_UI_RT_OPEN) != 0)
+            top = n;
+    }
+    return top;
+}
+
+static void dialog_apply(QLUIRoot *ui, QLUINodeRT *nd, int open)
+{
+    if (open) {
+        nd->flags |= QL_UI_RT_OPEN;
+        nd->style = &ui->doc->styles[nd->src->style];
+    } else {
+        nd->flags = (uint8_t)(nd->flags & ~(uint8_t)QL_UI_RT_OPEN);
+        nd->style = &s_style_hidden;
+    }
+    nd->flags |= QL_UI_RT_DIRTY;
+}
+
+int ql_ui_dialog_open(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || node->src == NULL ||
+        node->src->tag != QL_UI_TAG_DIALOG)
+        return -1;
+    return (node->flags & QL_UI_RT_OPEN) != 0;
+}
+
+ql_err_t ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open)
+{
+    if (ql_ui_dialog_open(ui, node) < 0)
+        return QL_ERR_INVAL;
+    const int want = (open != 0);
+    if (want == ql_ui_dialog_open(ui, node))
+        return QL_OK;
+    dialog_apply(ui, node, want);
+    ql_ui_layout(ui, ui->width, ui->height);   /* 居中与可见性都变了 */
+    ui->nodes[0].flags |= QL_UI_RT_DIRTY;
+    return QL_OK;
+}
+
+int ql_ui_dialog_close_top(QLUIRoot *ui)
+{
+    QLUINodeRT *top = dialog_top(ui);
+    if (top == NULL)
+        return 0;
+    (void)ql_ui_dialog_set_open(ui, top, 0);
+    return 1;
+}
+
+/* 布局末尾：把打开的对话框平移到视口中央（平移子树 = 滚动那一招） */
+static void dialog_center(QLUIRoot *ui)
+{
+    if (ui->dialog_count == 0)
+        return;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        QLUINodeRT *n = &ui->nodes[i];
+        if (n->src == NULL || n->src->tag != QL_UI_TAG_DIALOG ||
+            (n->flags & QL_UI_RT_OPEN) == 0)
+            continue;
+        const ql_coord_t dx = (ui->width - n->border_box.w) / 2 - n->border_box.x;
+        const ql_coord_t dy = (ui->height - n->border_box.h) / 2 - n->border_box.y;
+        translate_subtree(n, dx, dy);
+    }
+}
+
+/*
+ * 浮层绘制：整棵树画完之后，压暗视口，再把对话框子树画一遍盖上去。
+ *
+ * 为什么要画第二遍：遮罩必须盖住**除了对话框以外**的一切，而树是父先子后画的。
+ * 先画遮罩会盖掉后画的兄弟节点，所以顺序只能是"先全部、再遮罩、再对话框"。
+ * 代价：开着对话框时那个子树每帧多画一次（它是 opaque 的，结果一致）。
+ */
+static void draw_dialog_layer(QLUIRoot *ui, QLDraw2D *d2d)
+{
+    QLUINodeRT *top = dialog_top(ui);
+    if (top == NULL)
+        return;
+    const QLRect vp = ql_rect_make(0, 0, ui->width, ui->height);
+    if (!ql_rect_is_empty(vp))
+        d2d->fill_rect(d2d, vp, 0x000000, 96);
+    render_node(top, d2d);
+}
+
 /* ------------------------------ 折叠面板 ------------------------------ */
 
 /*
@@ -2787,6 +2901,7 @@ void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
         ui->clip = ui->root_clip;
     render_node(&ui->nodes[0], d2d);
     draw_select_panel(ui, d2d);
+    draw_dialog_layer(ui, d2d);
 }
 
 void ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty)
@@ -2805,12 +2920,16 @@ void ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty)
     render_node(&ui->nodes[0], d2d);
     d2d->set_clip(d2d, want);
     draw_select_panel(ui, d2d);
+    draw_dialog_layer(ui, d2d);
 }
 
 QLRect ql_ui_paint_bounds(const QLUIRoot *ui)
 {
     if (ui == NULL || ui->node_count == 0)
         return ql_rect_make(0, 0, 0, 0);
+    if (dialog_top(ui) != NULL)   /* 遮罩盖满视口，脏区不能只按树算 */
+        return ql_rect_union(ui->nodes[0].paint_box,
+                             ql_rect_make(0, 0, ui->width, ui->height));
     return ui->nodes[0].paint_box;
 }
 
@@ -3681,6 +3800,26 @@ int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
         return 1;
     }
 
+    /*
+     * 浮层：点外面就关（并且吃掉这次点击 —— 真实浏览器里点遮罩不会穿透）。
+     * 点在对话框内部则照常走后面的流程。
+     */
+    if (ui->dialog_count > 0) {
+        QLUINodeRT *top = dialog_top(ui);
+        if (top != NULL) {
+            int inside = 0;
+            for (QLUINodeRT *n = hit; n != NULL; n = n->parent)
+                if (n == top) {
+                    inside = 1;
+                    break;
+                }
+            if (!inside) {
+                (void)ql_ui_dialog_set_open(ui, top, 0);
+                return 1;
+            }
+        }
+    }
+
     /* 下拉框：展开/收起/选中（面板在最上层，优先） */
     if (select_pointer_down(ui, hit, x, y))
         return 1;
@@ -3941,6 +4080,10 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
         break;
     }
     case QL_INPUT_KEY_DOWN: {
+        /* Esc 先关浮层（别让输入框先吃掉它） */
+        if (ev->key == QL_KEY_ESCAPE && ql_ui_dialog_close_top(ui))
+            break;
+
         /* Tab / Shift+Tab 先走：它要在可聚焦控件之间跳，和控件自身无关 */
         if (ev->key == QL_KEY_TAB) {
             focus_step(ui, (ev->mods & QL_MOD_SHIFT) ? -1 : 1);

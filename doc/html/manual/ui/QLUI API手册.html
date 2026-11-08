@@ -314,7 +314,7 @@ tools/qltext/qltext.c ┘
 </tr>
 </tbody>
 </table>
-<p>目前认 <strong>78 个</strong>（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+<p>目前认 <strong>79 个</strong>（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>；UA 默认样式细节见
 <a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>。</p>
 <p><strong>限制</strong>：
@@ -1394,6 +1394,14 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 </tbody>
 </table>
 <p>轨道 = <code>background-color</code>，填充 = <code>color</code>。不确定进度画固定 1/3（不做动画）。</p>
+<h3 id="dialog">浮层（<code>&lt;dialog&gt;</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_dialog_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_dialog_set_open</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">open</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_dialog_close_top</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<p>打开时：居中、视口压暗、点遮罩或 <code>Esc</code> 关闭。同一时刻只认<strong>最后打开</strong>的那个。
+<code>ql_ui_paint_bounds</code> 在浮层打开时返回整个视口（遮罩要盖满，脏区重绘才不会漏）。</p>
 <h3 id="_6">折叠面板</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_details_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_details_set_open</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">open</span><span class="p">);</span>

@@ -2465,7 +2465,7 @@ static const char *const k_tags[] = {
     /* --- META 包：解析期跳过，不进树 --- */
     "base", "head", "link", "meta", "style", "title",
     /* --- WIDGET 包 --- */
-    "output", "datalist", "progress", "meter", "details", "summary",
+    "output", "datalist", "progress", "meter", "details", "summary", "dialog",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -3507,7 +3507,8 @@ static PNode *parse_html(const char *html)
              * 为什么不给 QLUINode 加两个字段：那是每个节点都要付的 4 字节，
              * 而这里只是一串去重后的十进制数字（"70/100" 全文只存一份）。
              */
-            if (strcmp(name, "details") == 0 && at.has_open)
+            if ((strcmp(name, "details") == 0 || strcmp(name, "dialog") == 0) &&
+                at.has_open)
                 n->flags |= QL_UI_NODE_OPEN;
 
             if (strcmp(name, "progress") == 0 || strcmp(name, "meter") == 0) {
@@ -3736,6 +3737,21 @@ static int ua_defaults(const char *tag, Decls *out)
     }
     if (strcmp(tag, "output") == 0)
         return ua_set_inline(out);
+
+    /*
+     * <dialog>：默认 70% 宽、居中（居中在布局末尾做）。自带白底与圆角，
+     * 因为浮层必须**不透明**，否则下面的内容会透上来。
+     */
+    if (strcmp(tag, "dialog") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "width", "70%") &&
+               decls_set(out, "padding", "16px") &&
+               decls_set(out, "border-radius", "8px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-color", "#8A8A8A") &&
+               decls_set(out, "background-color", "#FFFFFF") &&
+               decls_set(out, "color", "#000000");
+    }
 
     /* <details> 是块；<summary> 是它的标题行（没有三角标记，见文档） */
     if (strcmp(tag, "details") == 0 || strcmp(tag, "summary") == 0)

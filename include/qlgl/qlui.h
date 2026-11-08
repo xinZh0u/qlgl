@@ -151,6 +151,7 @@ typedef enum {
     QL_UI_TAG_METER,      /* 度量条：同上（low/high 分色还没做） */
     QL_UI_TAG_DETAILS,    /* 折叠面板：open 状态控制子节点可见性 */
     QL_UI_TAG_SUMMARY,    /* 折叠面板的标题行（点击它切换） */
+    QL_UI_TAG_DIALOG,     /* 浮层：居中的模态框 + 遮罩 */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -681,6 +682,7 @@ struct QLUIRoot {
     /* 输入框池：doc 里没有 <input> 时为 NULL（零字节） */
     struct QLUIInput *inputs;      /* 输入框池（没有 <input> 时为 NULL） */
     uint16_t       input_count;
+    uint16_t       dialog_count;       /* doc 里 <dialog> 的个数（0 时可以跳过整段浮层逻辑） */
     struct QLUIProgress *progresses;   /* 进度条池（没有 progress/meter 时为 NULL） */
     uint16_t       progress_count;
     struct QLUISelectState *selects;   /* 下拉框池（没有 <select> 时为 NULL） */
@@ -765,6 +767,24 @@ ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *va
 int         ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 按 value/max 设置（夹到 [0, max]；max <= 0 视为 100） */
 ql_err_t    ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
+
+/* -------------------------------- 浮层 -------------------------------- */
+
+/*
+ * `<dialog>`：**真正的浮层** —— 居中、压暗背景、点外面或按 `Esc` 关闭。
+ *
+ * 画法：先把整棵树按正常顺序画完，再在最后（与下拉面板同一层）画一遍遮罩 +
+ * 对话框子树。所以浮层永远在最上面，代价是那个子树每帧多画一次（只有开着才有）。
+ *
+ * 布局：`ql_ui_layout` 末尾把已打开的对话框平移到视口中央（平移子树，与滚动同一招）。
+ * 已知限制：不做焦点圈定（Tab 不会被困在框内）、不支持嵌套模态、宽度按 UA 的 `70%`。
+ */
+/* 1 = 打开，0 = 关闭；不是 <dialog> 返回 -1 */
+int         ql_ui_dialog_open(const QLUIRoot *ui, const QLUINodeRT *node);
+/* 打开/关闭（内部会重排，返回脏区由调用方按 paint_bounds 处理） */
+ql_err_t    ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
+/* 关掉最上层那个（没有打开的返回 0） */
+int         ql_ui_dialog_close_top(QLUIRoot *ui);
 
 /* ------------------------------ 折叠面板 ------------------------------ */
 
