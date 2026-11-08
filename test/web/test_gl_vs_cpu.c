@@ -125,6 +125,129 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
     printf("  像素差异：%ld/%ld = %.2f%%（最大单通道差 %ld）\n", bad, total, ratio * 100, max_diff);
     QL_CHECK(ratio <= MAX_BAD_RATIO);
 
+    /*
+     * ---- 位图搬运：CPU 与 GPU 必须一致 ----
+     *
+     * GPU 侧的图片是"单独一个批次"（整帧共用一个纹理，而图片是另一张），
+     * 所以这里除了比对像素，还确认两件事：能整除成两个批次、纹理不串色。
+     */
+    {
+        static uint16_t raw565[8 * 8];
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++) {
+                const int left = x < 4, top = y < 4;
+                raw565[y * 8 + x] =
+                    (uint16_t)(top ? (left ? 0xF800 : 0x07E0) : (left ? 0x001F : 0xFFFF));
+            }
+        static uint8_t raw_rgba[4 * 4 * 4];
+        for (int i = 0; i < 16; i++) {
+            raw_rgba[i * 4 + 0] = 0x20;
+            raw_rgba[i * 4 + 1] = 0x80;
+            raw_rgba[i * 4 + 2] = 0xE0;
+            raw_rgba[i * 4 + 3] = (uint8_t)(i < 8 ? 255 : 96);   /* 一半半透明 */
+        }
+
+        const char *html =
+            "<div id=r><img src=a><img src=b></div>";
+        const char *css =
+            "#r { width: 64px; height: 64px; background-color: #000000 }"
+            "img { width: 24px; height: 24px }";
+        QLUIDoc *doc = ql_ui_load_text(html, css);
+        QL_CHECK(doc != NULL);
+        if (doc != NULL) {
+            QLUIRoot *iu = ql_ui_build(doc);
+            QL_CHECK(iu != NULL);
+            if (iu != NULL) {
+                QLUIImageInput i1;
+                memset(&i1, 0, sizeof(i1));
+                i1.name = "a";
+                i1.data = (const uint8_t *)raw565;
+                i1.len = sizeof(raw565);
+                i1.w = 8;
+                i1.h = 8;
+                i1.format = QL_IMAGE_SRC_RAW;
+                i1.pixel_format = QL_IMAGE_RGB565;
+                QL_CHECK_EQ(ql_ui_register_image(iu, &i1), QL_OK);
+
+                QLUIImageInput i2;
+                memset(&i2, 0, sizeof(i2));
+                i2.name = "b";
+                i2.data = raw_rgba;
+                i2.len = sizeof(raw_rgba);
+                i2.w = 4;
+                i2.h = 4;
+                i2.format = QL_IMAGE_SRC_RAW;
+                i2.pixel_format = QL_IMAGE_RGBA8888;
+                QL_CHECK_EQ(ql_ui_register_image(iu, &i2), QL_OK);
+
+                ql_ui_layout(iu, 64, 64);
+
+                /* CPU */
+                QLDispDriver *id = ql_disp_mem_create(64, 64, QL_COLOR_RGB888);
+                QLCanvas ic;
+                QL_CHECK_EQ(ql_canvas_from_disp(&ic, id), QL_OK);
+                ql_canvas_clear(&ic, 0x000000);
+                ql_ui_render_canvas(iu, &ic);
+
+                /* GPU */
+                QLGfxGL *ig = ql_gfx_gl_create("img-vs-cpu", 64, 64, QL_GFX_GL_OFFSCREEN);
+                QL_CHECK(ig != NULL);
+                if (ig != NULL) {
+                    ql_gfx_gl_begin(ig, 0x000000);
+                    ql_ui_render(iu, ql_gfx_gl_draw(ig));
+                    ql_gfx_gl_end(ig);
+
+                    /* 两张图 = 两个批次（每个图片各自 flush 一次） */
+                    QL_CHECK(ql_gfx_gl_draw_calls(ig) >= 2);
+
+                    uint8_t *irgba = (uint8_t *)ql_mem_calloc(1, 64u * 64u * 4u);
+                    QL_CHECK(irgba != NULL);
+                    if (irgba != NULL) {
+                        QL_CHECK_EQ(ql_gfx_gl_read_pixels(ig, irgba, 64 * 4), QL_OK);
+                        long bad2 = 0, tot2 = 0;
+                        for (int y = 0; y < 64; y++)
+                            for (int x = 0; x < 64; x++) {
+                                ql_color_t c = ql_disp_mem_pixel(id, (ql_coord_t)x,
+                                                                 (ql_coord_t)y);
+                                const uint8_t *g2 =
+                                    irgba + ((size_t)y * 64u + (size_t)x) * 4u;
+                                int dr = abs((int)QL_COLOR_GET_R(c) - (int)g2[0]);
+                                int dg2 = abs((int)QL_COLOR_GET_G(c) - (int)g2[1]);
+                                int db = abs((int)QL_COLOR_GET_B(c) - (int)g2[2]);
+                                int dmax = dr > dg2 ? dr : dg2;
+                                if (db > dmax) dmax = db;
+                                if (dmax > TOLERANCE) bad2++;
+                                tot2++;
+                            }
+                        const double r2 = (double)bad2 / (double)tot2;
+                        printf("  位图 CPU vs GPU：%ld/%ld = %.2f%%\n", bad2, tot2,
+                               r2 * 100.0);
+                        QL_CHECK(r2 <= MAX_BAD_RATIO);
+
+                        /* 关键点抽查：左上红、右上绿、左下蓝、右下白 */
+                        QLRect a0 = ql_ui_node_rect(&iu->nodes[1]);
+                        const int mx[4] = { a0.x + 6, a0.x + 18, a0.x + 6, a0.x + 18 };
+                        const int my[4] = { a0.y + 6, a0.y + 6, a0.y + 18, a0.y + 18 };
+                        for (int k = 0; k < 4; k++) {
+                            const uint8_t *g3 =
+                                irgba + ((size_t)my[k] * 64u + (size_t)mx[k]) * 4u;
+                            ql_color_t c = ql_disp_mem_pixel(id, (ql_coord_t)mx[k],
+                                                             (ql_coord_t)my[k]);
+                            QL_CHECK(abs((int)QL_COLOR_GET_R(c) - (int)g3[0]) <= TOLERANCE);
+                            QL_CHECK(abs((int)QL_COLOR_GET_G(c) - (int)g3[1]) <= TOLERANCE);
+                            QL_CHECK(abs((int)QL_COLOR_GET_B(c) - (int)g3[2]) <= TOLERANCE);
+                        }
+                        ql_mem_free(irgba);
+                    }
+                    ql_gfx_gl_destroy(ig);
+                }
+                ql_disp_mem_destroy(id);
+                ql_ui_free(iu);
+            }
+            ql_ui_doc_free(doc);
+        }
+    }
+
     /* ---- 关键位置抽查：背景、标题条、面板 ---- */
     QL_CHECK(rgba[((size_t)2 * (size_t)W + 2u) * 4u + 0u] < 40);          /* 左上角深色 */
 

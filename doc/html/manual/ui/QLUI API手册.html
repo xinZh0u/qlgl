@@ -1438,7 +1438,9 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 </table>
 <p><code>ql_image_validate()</code> / <code>ql_image_decode()</code>（<code>&lt;qlgl/qlimage.h&gt;</code>）是通用入口：
 任何外来字节进绘制层之前都要过 <code>validate</code>（"先除后乘"挡 <code>w*h*bpp</code> 溢出）。</p>
-<p><strong>GPU 后端目前没有 <code>blit_image</code></strong>：<code>&lt;img&gt;</code> 只在 CPU 上可见，GPU 侧会打一次警告后跳过。</p>
+<p><strong>CPU 与 GPU 都有 <code>blit_image</code></strong>，两者逐像素一致（<code>test_gl_vs_cpu</code> 里有一页专门比对，
+差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 <code>GL_NEAREST</code> 以对齐 CPU 的
+最近邻；想要双线性就把 <code>QL_CFG_IMAGE_BILINEAR</code> 设成 1（两条后端一起变）。</p>
 <h3 id="dialog">浮层（<code>&lt;dialog&gt;</code>）</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_dialog_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_dialog_set_open</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">open</span><span class="p">);</span>

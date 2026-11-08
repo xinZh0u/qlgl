@@ -7,6 +7,9 @@
 
 #include <qlgl/qlgl.h>
 
+/* 一屏内同时可见的位图数量上限（超出就环形替换，重新上传） */
+#define QL_GL_IMAGE_CACHE 8
+
 #ifdef QLGL_ENABLE_GL
 
 #include <EGL/egl.h>
@@ -139,7 +142,22 @@ struct QLGfxGL {
     GLuint           blur_fbo[2];
     int              blur_w, blur_h;
     GLuint           bg_dummy_tex;    /* u_bg 的占位：没有毛玻璃时也必须绑着 */
+
+    /*
+     * 位图（`<img>`）。纹理按 (px,w,h,stride,format) 缓存：同一张图每帧重复
+     * blit 时不再上传。数量很小（一屏几张），线性查找足够。
+     */
+    GLuint           img_tex[QL_GL_IMAGE_CACHE];
+    const uint8_t   *img_key[QL_GL_IMAGE_CACHE];   /* 源指针，兼作缓存键 */
+    uint16_t         img_w[QL_GL_IMAGE_CACHE];
+    uint16_t         img_h[QL_GL_IMAGE_CACHE];
+    uint8_t          img_fmt[QL_GL_IMAGE_CACHE];
+    int              img_count;
+    int              img_next;        /* 环形替换 */
+    GLuint           cur_img_tex;     /* 本批次要采样的图片纹理；0 = 用占位 */
+    GLint            u_image;
 };
+
 
 /* EWMH 的 UTF-8 标题（WM_NAME 是 latin-1 语义，中文会变乱码），与 qldisp_x11.c 同一做法 */
 static void x11_set_title(Display *dpy, Window win, const char *title)
@@ -200,6 +218,7 @@ static const char *FS_SRC =
     "in vec4 v_mask;\n"
     "uniform sampler2D u_atlas;\n"
     "uniform sampler2D u_bg;\n"
+    "uniform sampler2D u_image;\n"
     "uniform vec2 u_viewport;\n"
     "out vec4 frag;\n"
     "float sdRoundBox(vec2 p, vec2 b, float r){\n"
@@ -223,6 +242,20 @@ static const char *FS_SRC =
     "    m = 1.0 - smoothstep(-0.5, 0.5, md);\n"
     "  }\n"
     /* 形状判定必须按 mode **从大到小**排，别再写成区间夹逼（容易漏档） */
+    /*
+     * mode 6 = A8 蒙版（rgb 取顶点色，alpha 取纹理红通道）；
+     * mode 5 = 位图（直接采样 RGBA）。两者都不做形状 AA：位图自身是矩形，
+     * 边缘对齐由调用方保证（与字形同一个道理，外扩反而会糊）。
+     */
+    "  if (mode > 5.5) {\n"
+    "    frag = vec4(v_color.rgb, v_color.a * texture(u_image, v_uv).r * m);\n"
+    "    return;\n"
+    "  }\n"
+    "  if (mode > 4.5) {\n"
+    "    vec4 t = texture(u_image, v_uv);\n"
+    "    frag = vec4(t.rgb, t.a * v_color.a * m);\n"
+    "    return;\n"
+    "  }\n"
     "  if (mode > 3.5) {\n"
     /* 毛玻璃：uv 盖住整个矩形，形状仍是同一个圆角 SDF */
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
@@ -314,6 +347,7 @@ static int build_program(QLGfxGL *g)
     g->u_viewport = glGetUniformLocation(g->program, "u_viewport");
     g->u_atlas = glGetUniformLocation(g->program, "u_atlas");
     g->u_bg = glGetUniformLocation(g->program, "u_bg");
+    g->u_image = glGetUniformLocation(g->program, "u_image");
     return 1;
 }
 
@@ -502,6 +536,7 @@ static void atlas_init(QLGfxGL *g)
                      GL_RED, GL_UNSIGNED_BYTE, NULL);
     }
 
+    /* 图集必须 LINEAR：字形是"覆盖率"位图，放大时靠插值保持笔画柔和 */
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -745,6 +780,63 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
                       float u0, float v0, float u1, float v1, int use_tex)
 {
     emit_quad_shear(g, r, radius, border, color, alpha, u0, v0, u1, v1, use_tex, 0.0f);
+}
+
+/*
+ * 位图四边形。与 emit_quad_shear 的区别：
+ *   - 不外扩（和字形一样，外扩会糊）；
+ *   - 不吃剪切（图片不参与合成斜体）；
+ *   - uv 是"整张图的一个窗口"（给将来 object-fit: cover 用），而且
+ *     **必须按未裁剪的矩形插值**，否则裁剪后采样会错位（与字形同一个坑）。
+ */
+static void emit_image_quad(QLGfxGL *g, QLRect r, ql_color_t tint, uint8_t alpha,
+                            float u0, float v0, float u1, float v1, float mode)
+{
+    if (ql_rect_is_empty(r) || alpha == 0)
+        return;
+
+    float x0, y0, x1, y1;
+    if (!clip_quad(g, (float)r.x, (float)r.y, (float)ql_rect_right(r),
+                   (float)ql_rect_bottom(r), &x0, &y0, &x1, &y1))
+        return;
+
+    const float ox = off_x_of(g), oy = off_y_of(g);
+    x0 += ox; y0 += oy; x1 += ox; y1 += oy;
+
+    const float cx = (float)r.x + (float)r.w * 0.5f;
+    const float cy = (float)r.y + (float)r.h * 0.5f;
+    const float hx = (float)r.w * 0.5f;
+    const float hy = (float)r.h * 0.5f;
+
+    QLGLVertex v;
+    memset(&v, 0, sizeof(v));
+    v.hx = hx;
+    v.hy = hy;
+    v.radius = 0.0f;
+    v.border = -1.0f;
+    v.use_tex = mode;                 /* 5 = 位图，6 = A8 蒙版（着色用顶点色） */
+    v.r = (float)QL_COLOR_GET_R(tint) / 255.0f;
+    v.g = (float)QL_COLOR_GET_G(tint) / 255.0f;
+    v.b = (float)QL_COLOR_GET_B(tint) / 255.0f;
+    v.a = (float)alpha / 255.0f;
+
+    /* uv 的插值基准：位移后、未裁剪的矩形（见注释） */
+    const float ux0 = (float)r.x + ox, ux1 = (float)ql_rect_right(r) + ox;
+    const float uy0 = (float)r.y + oy, uy1 = (float)ql_rect_bottom(r) + oy;
+
+    static const int order[6] = { 0, 1, 2, 0, 2, 3 };
+    const float xs[4] = { x0, x1, x1, x0 };
+    const float ys[4] = { y0, y0, y1, y1 };
+    for (int i = 0; i < 6; i++) {
+        const int k = order[i];
+        v.x = xs[k];
+        v.y = ys[k];
+        v.lx = xs[k] - cx - ox;
+        v.ly = ys[k] - cy - oy;
+        v.u = u0 + ((ux1 > ux0) ? (xs[k] - ux0) / (ux1 - ux0) : 0.0f) * (u1 - u0);
+        v.v = v0 + ((uy1 > uy0) ? (ys[k] - uy0) / (uy1 - uy0) : 0.0f) * (v1 - v0);
+        emit_vertex(g, &v);
+    }
 }
 
 /* 渐变：从 / 到两个颜色按顶点位置插值，不需要新增顶点属性 */
@@ -1218,6 +1310,123 @@ static void gl_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t
     g->mask_on = 1;
 }
 
+/* 把一张 QLImage 传成纹理（命中缓存就直接复用）；失败返回 0 */
+static GLuint gl_image_tex(QLGfxGL *g, const QLImage *img)
+{
+    for (int i = 0; i < g->img_count; i++) {
+        if (g->img_key[i] == img->px && g->img_w[i] == img->w &&
+            g->img_h[i] == img->h && g->img_fmt[i] == img->format)
+            return g->img_tex[i];
+    }
+
+    int slot;
+    if (g->img_count < QL_GL_IMAGE_CACHE) {
+        slot = g->img_count++;
+        glGenTextures(1, &g->img_tex[slot]);
+        if (g->img_tex[slot] == 0)
+            return 0;
+    } else {
+        slot = g->img_next;
+        g->img_next = (g->img_next + 1) % QL_GL_IMAGE_CACHE;
+    }
+
+    GLenum ifmt = GL_RGBA8, fmt = GL_RGBA, type = GL_UNSIGNED_BYTE;
+    switch (img->format) {
+    case QL_IMAGE_RGBA8888:
+        break;
+    case QL_IMAGE_RGB888:
+        ifmt = GL_RGB8; fmt = GL_RGB;
+        break;
+    case QL_IMAGE_RGB565:
+        /* ES3 里 5_6_5 的合法组合是 **sized** 的 GL_RGB565（配 GL_RGB8 会 INVALID_OPERATION，
+         * 纹理没数据 → 采样全 0 → 图片整块消失） */
+        ifmt = GL_RGB565; fmt = GL_RGB; type = GL_UNSIGNED_SHORT_5_6_5;
+        break;
+    case QL_IMAGE_A8:
+        ifmt = GL_R8; fmt = GL_RED;
+        break;
+    default:
+        return 0;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, g->img_tex[slot]);
+    /* 行宽不一定是 w*bpp：用 UNPACK_ROW_LENGTH 让 GL 按 stride 取行 */
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    const GLint row_len = (GLint)(img->stride / ql_image_format_bpp(img->format));
+    if (row_len > (GLint)img->w)
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, row_len);
+    else
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, (GLint)ifmt, (GLsizei)img->w, (GLsizei)img->h, 0, fmt,
+                 type, img->px);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    /*
+     * 滤波必须与 CPU 侧一致：CPU 默认最近邻（QL_CFG_IMAGE_BILINEAR=0），
+     * 这里也用 NEAREST —— 否则放大后半透明边缘会被 GL 插成渐变，
+     * CPU/GPU 的逐像素比对（golden）当场就红。
+     */
+#if QL_CFG_IMAGE_BILINEAR
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+#else
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+#endif
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    g->img_key[slot] = img->px;
+    g->img_w[slot] = img->w;
+    g->img_h[slot] = img->h;
+    g->img_fmt[slot] = img->format;
+    return g->img_tex[slot];
+}
+
+/*
+ * 位图绘制。**必须单独成批**：整帧的顶点共用一个纹理（图集），而图片是另一张
+ * 纹理，所以这里 flush 两次 —— 之前攒的先落地，图片单独画，之后继续攒。
+ * 与毛玻璃是同一个套路（它也要中途提交）。
+ */
+static void gl_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
+                          const QLRect *src, uint8_t alpha)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    if (g == NULL || img == NULL || img->px == NULL || alpha == 0)
+        return;
+    if (!ql_image_validate(img))
+        return;
+
+    /* 采样窗口：默认整幅；给 object-fit: cover 留的口子 */
+    QLRect s = (src != NULL) ? *src : ql_rect_make(0, 0, img->w, img->h);
+    s = ql_rect_intersect(s, ql_rect_make(0, 0, img->w, img->h));
+    if (ql_rect_is_empty(s))
+        return;
+
+    flush_batch(g);
+    const GLuint tex = gl_image_tex(g, img);
+    if (tex == 0) {
+        flush_batch(g);
+        return;
+    }
+    g->cur_img_tex = tex;
+
+    /*
+     * uv 的方向：上传时第一行数据对应 v = 0，而第一行是图像**顶部**，
+     * 所以四边形的上边用 v0、下边用 v1（**不翻**）。FBO 那种自下而上的纹理才要翻。
+     */
+    const float iw = (float)img->w;
+    const float ih = (float)img->h;
+    const float u0 = (float)s.x / iw;
+    const float u1 = (float)(s.x + s.w) / iw;
+    const float v0 = (float)s.y / ih;
+    const float v1 = (float)(s.y + s.h) / ih;
+
+    const float mode = (img->format == QL_IMAGE_A8) ? 6.0f : 5.0f;
+    emit_image_quad(g, gsx(g, dst), 0xFFFFFF, alpha, u0, v0, u1, v1, mode);
+    flush_batch(g);
+    g->cur_img_tex = 0;
+}
+
 static void gl_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
@@ -1471,11 +1680,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.stroke_round_rect = gl_stroke_round_rect;
     g->draw.draw_line = ql_draw2d_draw_line;
     g->draw.draw_text = gl_draw_text;
-    /*
-     * 位图搬运：GPU 侧还没实现（见 doc/图像管线设计.md §12，P3a 之后补）。
-     * 明确留 NULL，由 draw_img 打一次警告 —— 不假装画了。
-     */
-    g->draw.blit_image = NULL;
+    g->draw.blit_image = gl_blit_image;
     g->draw.flush = NULL;
     g->draw.scale_fx = g->scale_fx;
     g->draw.offset_x_fx = 0;
@@ -1699,6 +1904,15 @@ static void flush_batch(QLGfxGL *g)
         glBindTexture(GL_TEXTURE_2D, (g->blur_tex[0] != 0) ? g->blur_tex[0]
                                                           : g->bg_dummy_tex);
         glUniform1i(g->u_bg, 1);
+
+        /*
+         * u_image 同理：采样器必须绑东西。没有图片的批次绑 1x1 占位纹理，
+         * 免得采样结果是未定义值。
+         */
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, (g->cur_img_tex != 0) ? g->cur_img_tex
+                                                           : g->bg_dummy_tex);
+        glUniform1i(g->u_image, 2);
         glActiveTexture(GL_TEXTURE0);
 
         glBindBuffer(GL_ARRAY_BUFFER, g->vbo);
@@ -1822,6 +2036,9 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
             if (g->blur_tex[i])
                 glDeleteTextures(1, &g->blur_tex[i]);
         }
+        for (int i = 0; i < g->img_count; i++)
+            if (g->img_tex[i])
+                glDeleteTextures(1, &g->img_tex[i]);
         if (g->bg_dummy_tex)
             glDeleteTextures(1, &g->bg_dummy_tex);
         if (g->blur_prog)

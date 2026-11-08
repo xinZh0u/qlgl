@@ -814,19 +814,55 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 </tbody>
 </table>
-<h3 id="63-gpu-p3a-blit_image-null">6.3 GPU 实现要点（P3a 未实现，<code>blit_image</code> 现在留 NULL）</h3>
-<blockquote>
-<p>现状：<code>qlgfx_gl.c</code> 把 <code>blit_image</code> 设成 NULL，<code>draw_img</code> 会<strong>打一次警告</strong>并跳过 ——
-不假装画了。补 GPU 之前，<code>&lt;img&gt;</code> 只在 CPU 后端上可见。</p>
-</blockquote>
-<ul>
-<li>上传：每个 <code>QLImage</code> 一次 <code>glTexImage2D</code>（<code>GL_RGB</code> / <code>GL_RGBA</code> / <code>GL_R5G6B5</code>），
-  纹理 id 缓存在 <code>QLImage</code> 的旁边（<code>QLUIImageRT.gl_tex</code>，由后端私有表维护，不进公共结构）。</li>
-<li>绘制：新增 <code>mode = 3</code>（图片），复用现有的 <code>emit_quad</code> + <code>u_atlas</code> 采样器；
-  <strong>uv 必须用目标矩形的角点算</strong>（和 <code>emit_quad_shear</code> 里"剪切前角点"是同一个坑）。</li>
-<li>混合：<code>GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA</code>；<strong>不预乘</strong>（与 CPU 侧一致）。</li>
-<li>不做：mipmap、各向异性、sRGB 转换、纹理压缩（这些是"PC 全有"之后的事）。</li>
-</ul>
+<h3 id="63-gpu">6.3 GPU 实现要点（已实现）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+<th>坑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>上传</td>
+<td>每个 <code>QLImage</code> 一次 <code>glTexImage2D</code>，按 <code>(px,w,h,format)</code> 缓存（8 条，环形替换）</td>
+<td>行宽不等于 <code>w*bpp</code> 时要用 <code>GL_UNPACK_ROW_LENGTH</code> + <code>GL_UNPACK_ALIGNMENT=1</code></td>
+</tr>
+<tr>
+<td>内部格式</td>
+<td><code>RGB565</code> → <strong><code>GL_RGB565</code></strong>；<code>RGB888</code> → <code>GL_RGB8</code>；<code>RGBA8888</code> → <code>GL_RGBA8</code>；<code>A8</code> → <code>GL_R8</code></td>
+<td>5_6_5 配 <code>GL_RGB8</code> 是 <strong>INVALID_OPERATION</strong>：纹理没数据 → 采样全 0 → <strong>图片整块消失</strong>（不是变色，所以特别难查）</td>
+</tr>
+<tr>
+<td>采样器</td>
+<td>新增 <code>u_image</code>（texture unit 2）；没有图片的批次绑 1x1 占位</td>
+<td>采样器<strong>必须</strong>绑东西，否则采样结果是未定义值</td>
+</tr>
+<tr>
+<td>批次</td>
+<td>图片<strong>单独成批</strong>：整帧顶点共用一个纹理（图集），图片是另一张 → <code>flush → 上传/绑定 → 画 → flush</code></td>
+<td>与毛玻璃中途提交是同一个套路</td>
+</tr>
+<tr>
+<td>滤波</td>
+<td><strong>必须与 CPU 一致</strong>：<code>QL_CFG_IMAGE_BILINEAR=0</code> 时用 <code>GL_NEAREST</code></td>
+<td>用 <code>GL_LINEAR</code> 会把半透明边缘插成渐变，CPU/GPU 比对立刻红（实测 3.4% 差异）</td>
+</tr>
+<tr>
+<td>uv</td>
+<td>上传第一行 = 图像顶部 = <code>v=0</code>，所以<strong>不翻</strong>（FBO 那种自下而上的纹理才翻）</td>
+<td></td>
+</tr>
+<tr>
+<td>着色</td>
+<td><code>mode 5</code> = 位图（直接采样），<code>mode 6</code> = A8 蒙版（rgb 取顶点色、alpha 取红通道）</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>验收：<code>test_gl_vs_cpu</code> 里新增一页"两张 <code>&lt;img&gt;</code>（RGB565 + 半透明 RGBA8888）"，
+CPU vs GPU 逐像素差异 <strong>0.00%</strong>，并断言批次数 ≥ 2（证明图片确实单独成批）。</p>
 <hr />
 <h2 id="7">7. 布局层</h2>
 <h3 id="71-intrinsic-size">7.1 内在尺寸（intrinsic size）</h3>
@@ -1095,7 +1131,7 @@ PNG 容器（chunk / filter / 颜色转换）
 <tbody>
 <tr>
 <td><strong>P3a</strong> ✅</td>
-<td><code>QLImage</code> + <code>QLDraw2D-&gt;blit_image</code>（<strong>CPU 最近邻已实现</strong>，GPU 留空 + 一次警告）+ <code>&lt;img&gt;</code> 标签 + doc 资源段（blob <strong>v13</strong>）+ 布局固有尺寸 + <code>owned=0</code> 的 RAW 直指路径</td>
+<td><code>QLImage</code> + <code>QLDraw2D-&gt;blit_image</code>（<strong>CPU 与 GPU 都已实现</strong>）+ <code>&lt;img&gt;</code> 标签 + doc 资源段（blob <strong>v13</strong>）+ 布局固有尺寸 + <code>owned=0</code> 的 RAW 直指路径</td>
 <td>3–4 天</td>
 </tr>
 <tr>

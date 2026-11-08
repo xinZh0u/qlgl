@@ -255,7 +255,7 @@ app.html: 42 个节点，使用标签 9 种
 | P2a ✅ 已完成 | `WIDGET` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
 | P2b ✅ 已完成 | `details` `summary`：收起时把子节点指向共享隐藏样式 | 78 | 0.5 天 |
 | P2c ✅ 已完成 | `dialog`：真正的浮层（居中 + 遮罩 + `Esc` / 点外面关闭） | 79 | 1 天 |
-| P3a ✅ 已完成 | `QLImage` + `blit_image`（CPU）+ `<img>` + doc 资源段（blob v13）+ 固有尺寸；GPU 的 blit 待补 | 80 | 3–4 天 |
+| P3a ✅ 已完成 | `QLImage` + `blit_image`（**CPU + GPU**）+ `<img>` + doc 资源段（blob v13）+ 固有尺寸 | 80 | 3–4 天 |
 | P3f | `qltext assets`：`--format raw --pixel-format` | 80 | 1.5–2 天 |
 | P3b–g | BMP/QOI/PNG 解码、`object-fit`、热区、平台后端 | 84 | 8–10 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |

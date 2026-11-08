@@ -779,7 +779,9 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 `ql_image_validate()` / `ql_image_decode()`（`<qlgl/qlimage.h>`）是通用入口：
 任何外来字节进绘制层之前都要过 `validate`（"先除后乘"挡 `w*h*bpp` 溢出）。
 
-**GPU 后端目前没有 `blit_image`**：`<img>` 只在 CPU 上可见，GPU 侧会打一次警告后跳过。
+**CPU 与 GPU 都有 `blit_image`**，两者逐像素一致（`test_gl_vs_cpu` 里有一页专门比对，
+差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 `GL_NEAREST` 以对齐 CPU 的
+最近邻；想要双线性就把 `QL_CFG_IMAGE_BILINEAR` 设成 1（两条后端一起变）。
 
 ### 浮层（`<dialog>`）
 
