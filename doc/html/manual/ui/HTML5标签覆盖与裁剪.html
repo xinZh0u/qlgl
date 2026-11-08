@@ -998,11 +998,11 @@ P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<cod
 </tr>
 <tr>
 <td><code>IMAGE</code></td>
-<td><code>QL_FEAT_UI_IMAGE</code><br>+ <code>QL_FEAT_UI_IMAGE_DECODE</code>（PC 默认 1 / MCU 默认 0）</td>
+<td><code>QL_FEAT_UI_IMAGE</code><br>+ <code>QL_FEAT_IMG_BMP/QOI/PNG</code>（各自一个开关）<br>+ <code>QL_FEAT_IMG_PLATFORM</code>（JPEG/GIF）</td>
 <td>5（<code>img picture source map area</code>）</td>
 <td>✅</td>
-<td>✅（<strong>只吃构建期转好的 <code>RAW</code></strong>，零解码器、零图片 RAM）</td>
-<td>构建期转码（<code>qltext assets --pixel-format</code>）是所有平台的默认路径；PC 额外有自有解码器（BMP/QOI/PNG）与平台后端（JPEG/GIF）。设计见<a href="../../design/图像管线设计.html">图像管线设计</a></td>
+<td>✅（用 <code>raw-only</code>：只吃构建期转好的 <code>RAW</code>，零解码器、零图片 RAM）</td>
+<td>开关正交、组合都合法；<code>full</code>/<code>lean</code>/<code>raw-only</code> 只是预设。构建期转码是零成本路径，任何平台可选。设计见<a href="../../design/图像管线设计.html">图像管线设计</a></td>
 </tr>
 <tr>
 <td><code>WIDGET</code></td>
@@ -1192,7 +1192,7 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 </tr>
 <tr>
 <td>P3</td>
-<td><code>IMAGE</code> 包：构建期转码（<code>RAW</code> 直指 Flash，<strong>MCU 的默认路径</strong>）+ <code>blit_image</code> + <code>object-fit</code> + 热区；PC 侧再加 BMP/QOI/PNG 解码与平台后端<br>（见<a href="../../design/图像管线设计.html">图像管线设计</a>）</td>
+<td><code>IMAGE</code> 包：构建期转码（<code>RAW</code> 直指 Flash，零解码路径）+ <code>blit_image</code> + <code>object-fit</code> + 热区；再做 BMP/QOI/PNG 解码与平台后端（各自开关）<br>（见<a href="../../design/图像管线设计.html">图像管线设计</a>）</td>
 <td>84</td>
 <td>12–15 天（拆成 P3a–P3g）</td>
 </tr>

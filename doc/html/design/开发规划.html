@@ -1895,11 +1895,12 @@ golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <c
 <li><strong>自有解码器只做 BMP / QOI / PNG</strong>。PNG 的难点只有 DEFLATE 一处，而它是无状态
    纯算法（32KB 固定窗口、输出直接喂反滤波），可完全有界、可 fuzz；JPEG 是"一整套
    色彩管线"，手写的失败模式是<strong>色偏</strong>而不是崩溃 —— 收益/风险完全不划算。</li>
-<li><strong>构建期转码是所有平台的默认路径，MCU 尤其靠它</strong>：<code>qltext assets</code> 在开发机上解码，
-   直接产出<strong>目标像素格式</strong>（MCU 常是 RGB565）的 <code>RAW</code>，放 <code>.rodata</code>、<code>px</code> 直指、
-   <code>owned=0</code> → 运行时<strong>零解码、零图片 RAM</strong>；MCU 默认 <code>QL_FEAT_UI_IMAGE_DECODE=0</code>，
-   固件里连 inflate/QOI/BMP 代码都没有。PC 额外可选：运行期自有解码器（BMP/QOI/PNG）
-   与平台后端（libjpeg-turbo / ImageIO / WIC / BitmapFactory），MCU 侧没有后端 → 明确报错。</li>
+<li><strong>不分平台，只分开关（Linux Kconfig 那套）</strong>：每个能力一个宏、互不互斥、组合都合法。
+   <code>QL_FEAT_IMG_BMP/QOI/PNG</code> 各自可裁，<code>QL_FEAT_IMG_PLATFORM</code>（JPEG/GIF）想编就编、想砍就砍，
+   砍掉后遇到该格式明确报 <code>QL_ERR_UNSUPPORTED</code>。"PC 配置 / MCU 配置"只是<strong>预设</strong>
+   （<code>full</code> / <code>lean</code> / <code>raw-only</code>），起手不同，随时可单品覆盖。
+   零解码路径（构建期转出 <code>RAW</code>，<code>px</code> 直指 <code>.rodata</code>、<code>owned=0</code>）是任何平台都可选的一档，
+   PC 上用它同样划算：换"启动零解码 + 像素完全确定"。</li>
 <li><strong>stb_image 不进产线</strong>（7k 行不可裁、整幅 malloc、顺带扩大攻击面），只当测试对拍。</li>
 </ol>
 <p>其余要点：<code>node-&gt;text</code> 复用为资源名（不加节点字段）；<code>w/h</code> 存进 doc，所以<strong>布局不依赖

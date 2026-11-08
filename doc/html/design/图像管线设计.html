@@ -218,6 +218,8 @@ main img.shot { max-width: 100%; }
 而这个库的红线是<strong>外来数据必须有界</strong>。</p>
 <hr />
 <h2 id="0">0. 结论摘要</h2>
+<p><strong>不分平台，只分开关。</strong> 每个能力都是独立的编译期开关（像 Linux 的 Kconfig），
+"PC 配置"和 "MCU 配置"只是两套<strong>预设</strong>，不是两套代码路径 —— 任何组合都合法。</p>
 <table>
 <thead>
 <tr>
@@ -228,19 +230,19 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td>自己写还是调库</td>
-<td><strong>自有解码器写 BMP / QOI / PNG；JPEG、GIF 等一律不自己写</strong></td>
+<td><strong>自有解码器写 BMP / QOI / PNG；JPEG / GIF 一律不自己写</strong>（要就给平台后端）</td>
 </tr>
 <tr>
-<td>PC/移动的 JPEG/GIF</td>
-<td><strong>两条路</strong>：① 构建期转码成 QOI 嵌入（默认，运行时零依赖）；② 运行期交给<strong>平台后端</strong>（libjpeg-turbo / ImageIO / WIC / BitmapFactory）</td>
+<td>构建期转码</td>
+<td><strong>一等公民</strong>：<code>qltext assets</code> 在开发机上解好，产物直接是<strong>目标像素格式</strong>。PC 想用也可以 —— 编译期多几 KB 换"零解码 + 像素完全确定"</td>
 </tr>
 <tr>
-<td><strong>构建期转码</strong></td>
-<td><strong>所有平台的默认路径</strong>（MCU 与 PC 一样）：<code>qltext assets</code> 在开发机上解好，产物直接是<strong>目标像素格式</strong>（MCU 常是 RGB565）</td>
+<td>运行时解码器</td>
+<td>BMP / QOI / PNG <strong>各自一个开关</strong>，默认全开；<code>-DQL_FEAT_IMG_PNG=0</code> 就只少 PNG</td>
 </tr>
 <tr>
-<td>MCU</td>
-<td><strong>默认零解码器</strong>：素材经构建期转成 <code>RAW</code> 放 <code>.rodata</code>，<code>px</code> 直接指向 Flash（<code>owned = 0</code>）→ 运行时零解码、零 RAM。可选开 <code>QL_FEAT_UI_IMAGE_DECODE</code> 才编进 QOI/BMP 解码器；JPEG/GIF 无后端 → 报错</td>
+<td>JPEG / GIF</td>
+<td><code>QL_FEAT_IMG_PLATFORM</code> + 平台后端（libjpeg-turbo / ImageIO / WIC / BitmapFactory）。<strong>想编进来就编，不想就砍</strong> —— 砍掉后遇到 JPEG 明确报 <code>QL_ERR_UNSUPPORTED</code></td>
 </tr>
 <tr>
 <td>stb_image</td>
@@ -248,7 +250,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>像素格式</td>
-<td><strong>构建期就定型</strong>，与显示驱动的 <code>QLColorFormat</code> 一致（MCU 常是 RGB565，PC 常是 RGB888/RGBA8888）→ 运行时<strong>零转换</strong></td>
+<td><strong>构建期就定型</strong>（<code>--pixel-format rgb565/rgb888/rgba8888/a8</code>），运行时<strong>零转换</strong></td>
 </tr>
 <tr>
 <td>解码时机</td>
@@ -272,7 +274,8 @@ main img.shot { max-width: 100%; }
 <h2 id="1">1. 目标与非目标</h2>
 <p><strong>目标</strong></p>
 <ol>
-<li><code>&lt;img src&gt;</code> 在 PC 上"贴一个真图片文件就能显示"，在 MCU 上"贴一个位图就能显示"。</li>
+<li><code>&lt;img src&gt;</code> 既能"贴一个任意格式的图片文件，构建期转好直接显示"，
+   也能"运行期拿字节自己解" —— 两条路都由开发者按需选择，不被平台预设绑死。</li>
 <li>解码路径<strong>完全有界</strong>：任何输入（含畸形/超大）都不许 OOM、不许越界、不许死循环。</li>
 <li>有 alpha 的 PNG 能正确叠加（源覆盖 + 圆角裁剪）。</li>
 <li>解码结果<strong>只解一次</strong>，每帧只做像素搬运。</li>
@@ -285,107 +288,191 @@ main img.shot { max-width: 100%; }
 <li>EXIF 方向自动旋转（PC 后端解码时由平台库处理，自有解码器不管）。</li>
 </ul>
 <hr />
-<h2 id="2">2. 平台分档</h2>
-<p><strong>构建期转码是所有平台的默认路径</strong>，不只是 PC —— MCU 尤其需要它：把"解码"这件事
-整个挪到开发机上，固件里就只剩"把像素搬到屏幕"。</p>
+<h2 id="2">2. 能力开关（不分平台）</h2>
+<p>设计原则：<strong>能力正交、各自可裁、组合都合法</strong>。没有"MCU 版本"和"PC 版本"两套代码，
+只有一套代码 + 一组开关；预设只是把常用的组合打包，随时可以单品覆盖。</p>
+<h3 id="21">2.1 开关清单</h3>
 <table>
 <thead>
 <tr>
-<th></th>
-<th>MCU</th>
-<th>PC / 移动</th>
+<th>能力</th>
+<th>宏</th>
+<th>默认</th>
+<th>关掉的后果</th>
+<th>依赖</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>默认路径</td>
-<td><strong>构建期转码 → <code>RAW</code>（目标像素格式）</strong></td>
-<td><strong>构建期转码 → <code>RAW</code> / <code>QOI</code></strong></td>
+<td><code>&lt;img&gt;</code> 标签</td>
+<td><code>QL_FEAT_UI_IMAGE</code></td>
+<td>1</td>
+<td>标签报"不认识"</td>
+<td>—</td>
 </tr>
 <tr>
-<td>运行时解码器</td>
-<td><strong>默认不编进去</strong>（<code>QL_FEAT_UI_IMAGE_DECODE=0</code>）</td>
-<td>编进去（<code>=1</code>），另加平台后端</td>
+<td><strong>预解码位图（<code>RAW</code>）</strong></td>
+<td><strong>永久可用</strong></td>
+<td>—</td>
+<td>关不掉 —— 这是零成本路径</td>
+<td>—</td>
 </tr>
 <tr>
-<td>运行时支持的格式</td>
-<td>只认"已经解好的" <code>RAW</code></td>
-<td><code>RAW</code> <code>QOI</code> <code>BMP</code> <code>PNG</code> + 平台后端（JPEG/GIF…）</td>
+<td>BMP 解码</td>
+<td><code>QL_FEAT_IMG_BMP</code></td>
+<td>1</td>
+<td>该格式 → <code>QL_ERR_UNSUPPORTED</code></td>
+<td>—</td>
 </tr>
 <tr>
-<td>第三方依赖</td>
-<td>无</td>
-<td>可选（平台库）</td>
+<td>QOI 解码</td>
+<td><code>QL_FEAT_IMG_QOI</code></td>
+<td>1</td>
+<td>同上</td>
+<td>—</td>
 </tr>
 <tr>
-<td>典型用途</td>
-<td>图标、位图 UI 素材、开机图</td>
-<td>照片、用户内容、网络图</td>
+<td>PNG 解码</td>
+<td><code>QL_FEAT_IMG_PNG</code></td>
+<td>1</td>
+<td>同上</td>
+<td>inflate</td>
 </tr>
 <tr>
-<td>像素格式</td>
-<td>常是 <code>RGB565</code>（每像素 2 B，Flash 减半）</td>
-<td><code>RGB888</code> / <code>RGBA8888</code></td>
+<td>inflate</td>
+<td><code>QL_FEAT_IMG_INFLATE</code></td>
+<td>= <code>PNG</code></td>
+<td>PNG 自动关掉</td>
+<td>—</td>
 </tr>
 <tr>
-<td>宏</td>
-<td><code>QL_FEAT_UI_IMAGE</code> + <code>QL_CFG_IMAGE_*</code></td>
-<td>同左 + <code>QL_FEAT_UI_IMAGE_DECODE</code> + <code>QL_FEAT_UI_IMAGE_PLATFORM</code></td>
+<td>JPEG / GIF / …（平台后端）</td>
+<td><code>QL_FEAT_IMG_PLATFORM</code></td>
+<td>1</td>
+<td>只认自有解码器认识的格式</td>
+<td>平台提供者</td>
+</tr>
+<tr>
+<td>双线性缩放</td>
+<td><code>QL_CFG_IMAGE_BILINEAR</code></td>
+<td>0</td>
+<td>只有最近邻</td>
+<td>—</td>
+</tr>
+<tr>
+<td>占位框</td>
+<td><code>QL_CFG_IMAGE_PLACEHOLDER</code></td>
+<td>1</td>
+<td>空图不画任何东西</td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
-<p>MCU 上两种产物的取舍（<strong>都由构建期决定，运行时只是读</strong>）：</p>
+<blockquote>
+<p><code>QL_FEAT_UI_IMAGE=0</code> 时整套图像代码（blit / 解码 / 资源段）都不编进来，
+与 <code>&lt;img&gt;</code> 一起消失 —— 和现在 <code>QLGL_BUILD_TEXT_PARSER</code> / <code>QLGL_BUILD_FREETYPE</code>
+是同一个套路。</p>
+</blockquote>
+<h3 id="22">2.2 预设（只是宏的打包，不是代码分支）</h3>
 <table>
 <thead>
 <tr>
-<th>产物</th>
+<th>预设</th>
+<th>展开</th>
+<th>典型用途</th>
+<th>代码量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>full</code>（默认）</td>
+<td>全开</td>
+<td>PC / 移动 / 资源充足的板子</td>
+<td>全量</td>
+</tr>
+<tr>
+<td><code>lean</code></td>
+<td><code>IMG_PNG=0</code>、<code>IMG_PLATFORM=0</code>；留 BMP + QOI</td>
+<td>Flash 紧但想要运行期解码</td>
+<td>省掉 inflate + PNG ≈ 1.3K 行</td>
+</tr>
+<tr>
+<td><code>raw-only</code></td>
+<td>除 <code>&lt;img&gt;</code> 与 <code>RAW</code> 外全关</td>
+<td><strong>只吃构建期转码产物</strong>：零解码器、零图片 RAM</td>
+<td>只剩 blit</td>
+</tr>
+</tbody>
+</table>
+<p>用法（CMake 侧只需一行，单品的 <code>-D</code> 永远优先）：</p>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQLGL_IMG_PRESET<span class="o">=</span>raw-only<span class="w">        </span><span class="c1"># 预设</span>
+cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQL_FEAT_IMG_PNG<span class="o">=</span><span class="m">0</span><span class="w">               </span><span class="c1"># 单品覆盖：只砍 PNG，别的照旧</span>
+cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQL_FEAT_IMG_PLATFORM<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">               </span>-DQLGL_PLATFORM_DECODER<span class="o">=</span>libjpeg<span class="w">   </span><span class="c1"># 把 JPEG 编进来（哪怕板子很小）</span>
+</code></pre></div>
+
+<p><strong>"硬要保留也可以"是要点</strong>：开关之间没有互斥，<code>raw-only</code> 加上
+<code>-DQL_FEAT_IMG_PNG=1</code> 也完全合法 —— 预设只决定起点。</p>
+<h3 id="23">2.3 产物格式与开关是<strong>正交</strong>的</h3>
+<p><code>--format raw|qoi|png-pass</code> 决定"资源以什么形式进固件"，<code>QL_FEAT_IMG_*</code> 决定
+"固件里有哪些解码器"。两者组合：</p>
+<table>
+<thead>
+<tr>
+<th>资源形式</th>
+<th>需要哪个开关</th>
 <th>Flash</th>
 <th>RAM</th>
-<th>需要的代码</th>
 <th>什么时候选</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code>RAW</code></strong>（已解码、目标像素格式）</td>
-<td><code>w·h·2</code></td>
-<td><strong>0</strong>（<code>px</code> 指向 <code>.rodata</code>）</td>
-<td>无（连 memcpy 都不用）</td>
-<td><strong>默认</strong>。Flash 换 RAM，MCU 上最划算</td>
+<td><strong><code>RAW</code></strong>（目标像素格式）</td>
+<td>无</td>
+<td><code>w·h·bpp</code></td>
+<td><strong>0</strong>（<code>px</code> 直指 <code>.rodata</code>，<code>owned=0</code>）</td>
+<td>默认首选。Flash 换"零解码 + 像素完全确定"</td>
 </tr>
 <tr>
-<td><strong><code>QOI</code></strong></td>
-<td>约为 RAW 的 50–70%</td>
-<td><code>w·h·2</code>（解码缓冲）</td>
-<td>~130 行 QOI 解码</td>
+<td><code>QOI</code></td>
+<td><code>IMG_QOI</code></td>
+<td>约 RAW 的 50–70%</td>
+<td><code>w·h·bpp</code>（解码缓冲）</td>
 <td>Flash 紧张、图多、同屏少</td>
+</tr>
+<tr>
+<td><code>PNG</code>（原样嵌入）</td>
+<td><code>IMG_PNG</code> + inflate</td>
+<td>最小</td>
+<td><code>w·h·bpp</code> + 32KB 窗口</td>
+<td>需要无损且"改动后不动工具链"</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>所以"MCU 也要构建期转码"在实现上就是两条：
-① <code>qltext assets --pixel-format rgb565 --format raw</code> 直接产出可指向 Flash 的位图；
-② 运行时 <code>QL_FEAT_UI_IMAGE_DECODE=0</code> 时<strong>链接期就不带任何解码器</strong>，
-遇到非 <code>RAW</code> 的资源是<strong>构建期</strong>就该报的错，运行时根本走不到。</p>
-</blockquote>
-<p><strong>为什么不自己写 JPEG</strong>：baseline 1200–1800 行、渐进式再 600 行、4:2:0/4:2:2 上采样、
-restart marker、色域转换。手写 JPEG 的典型失败不是崩溃，而是<strong>色偏</strong>与块效应 —— 那是最难
-查的一类 bug。而 PC 上系统库满地都是，MCU 上根本不需要照片。收益/风险完全不划算。</p>
-<p><strong>为什么 PNG 自己写</strong>：它的"难"只有 DEFLATE 一处，而 DEFLATE 是<strong>无状态纯算法</strong>
-（32KB 固定窗口 + 输出直接写进目标行缓冲），可以完全有界，写完还能拿 fuzz 打。
-PNG 的其余部分（chunk、5 种 filter、调色板/位深/tRNS）都是纯数据搬运。</p>
-<p><strong>为什么不用 stb_image</strong>：① 7k 行不可裁（<code>STBI_ONLY_*</code> 只裁格式入口，代码还在）；
-② 整幅解码到单一 <code>malloc</code> 缓冲，MCU 不适用；③ 顺带支持 GIF/PSD/HDR，等于<strong>扩大攻击面</strong>；
-④ 部分路径用 <code>float</code> 做颜色转换，与本库定点风格不一致。它能当测试 oracle（离线跑）。</p>
+<p><code>RAW</code> 在 <strong>PC 上也是合法选择</strong>，而且很划算：编译期多几 KB，换来<strong>启动零解码</strong>和
+<strong>像素完全确定</strong>（golden 基准不会因为换解码器/换库而漂移）。</p>
+<h3 id="24-jpeg-png">2.4 为什么 JPEG 不自己写，但 PNG 自己写</h3>
+<ul>
+<li><strong>JPEG</strong>：baseline 1200–1800 行、渐进式再 600 行、4:2:0/4:2:2 上采样、restart marker、
+  色域转换。手写的典型失败不是崩溃而是<strong>色偏</strong>与块效应 —— 最难查的那类 bug。
+  所以它做成"开关 + 平台后端"：<strong>想要就编，不想要就砍</strong>，但我们不自己实现。</li>
+<li><strong>PNG</strong>：难点只有 DEFLATE 一处，而 DEFLATE 是<strong>无状态纯算法</strong>（32KB 固定窗口 +
+  输出直接写进目标行缓冲），可以完全有界、可以 fuzz。其余（chunk / 5 种 filter /
+  调色板 / 位深 / tRNS）都是纯数据搬运。</li>
+<li><strong>不用 stb_image</strong>：① 7k 行不可裁；② 整幅解码到单一 <code>malloc</code> 缓冲；
+  ③ 顺带支持 GIF/PSD/HDR，等于扩大攻击面；④ 部分路径用 <code>float</code> 做颜色转换。
+  它能当测试 oracle（离线跑），但不进产线。</li>
+</ul>
 <hr />
 <h2 id="3-1">3. 三个入口（入口 1 是默认，其余是增量）</h2>
-<div class="highlight"><pre><span></span><code>                     ┌── ① 构建期（默认，MCU 唯一路径）
+<div class="highlight"><pre><span></span><code>                     ┌── ① 构建期（零解码路径的入口，任何平台可用）
                      │    qltext assets：系统库/自有解码 → 直接转成目标像素格式（RAW）
   &lt;img src=&quot;logo.jpg&quot;&gt;┤                     → .rodata，px 直指，owned=0，运行时零解码
                      │
                      └── ② 运行期：ql_ui_register_image(ui, &quot;logo.jpg&quot;, bytes, len)
                           bytes ──► 格式探测 ──► ③ 自有解码器：BMP/QOI/PNG（DECODE=1 才有）
-                                            └─► ④ 平台后端：JPEG/GIF…（PC 可选，MCU 无 → 报错）
+                                            └─► ④ 平台后端：JPEG/GIF…（有系统库就编进来，没有就砍）
                                                 │
                                                 ▼
                                     QLImage{ w,h,stride,format,px }
@@ -407,33 +494,33 @@ PNG 的其余部分（chunk、5 种 filter、调色板/位深/tRNS）都是纯�
 <tr>
 <td>① <strong>构建期转码</strong>（<code>&lt;img src&gt;</code> 由 <code>qltext assets</code> 处理）</td>
 <td>产品 UI 素材、图标、开机图</td>
-<td><strong>MCU + PC 都是默认</strong></td>
+<td>任何平台</td>
 <td><strong>零</strong>（连解码器都不编进去）</td>
 </tr>
 <tr>
 <td>② 运行期注册</td>
-<td>PC 从文件/网络拿到图</td>
-<td>PC/移动</td>
+<td>从文件/网络拿到图（任何平台）</td>
+<td>任何平台</td>
 <td>③ 或 ④</td>
 </tr>
 <tr>
 <td>③ 自有解码器 BMP/QOI/PNG</td>
-<td>PC 动态图片；MCU 想省 Flash 时用 QOI</td>
-<td>可选（<code>QL_FEAT_UI_IMAGE_DECODE</code>）</td>
+<td>运行期动态图片；或想用 QOI 省 Flash</td>
+<td>可选（各自一个开关）</td>
 <td>编译进来</td>
 </tr>
 <tr>
 <td>④ 平台后端</td>
-<td>用户内容（照片）</td>
-<td>PC/移动</td>
+<td>用户内容（照片）、GIF</td>
+<td>有系统库的场合</td>
 <td>系统库</td>
 </tr>
 </tbody>
 </table>
 <p><strong>关键点</strong>：入口 ① 在<strong>开发机上</strong>就把"解码 + 像素格式转换 + 可能还有缩放"全做完，
-所以 MCU 固件里既没有解码器、也没有图片 RAM —— 只剩"指向 Flash 的指针 + 宽高"。
-②③④ 是 PC 侧的增量能力，MCU 默认一个都不带。四条路互不干扰，且都由
-<code>QL_FEAT_UI_IMAGE_DECODE</code> / <code>QL_FEAT_UI_IMAGE_PLATFORM</code> 在编译期裁掉。</p>
+所以选择这条路的固件里既没有解码器、也没有图片 RAM —— 只剩"指向 Flash 的指针 + 宽高"。
+②③④ 是按需打开的增量能力，每个都由自己的宏在编译期裁掉。<strong>没有哪条是"某平台的路径"</strong>：
+想全要就全开，想只留 ① 就全关。</p>
 <hr />
 <h2 id="4">4. 数据模型</h2>
 <h3 id="41">4.1 解码结果（跨模块唯一契约）</h3>
@@ -543,20 +630,26 @@ PNG 容器（chunk / filter / 颜色转换）
 <li>输出：按目标 <code>QLImageFormat</code> 直接转换（调色板展开、16→8 取高字节、灰度复制三通道、
   alpha 直通）。</li>
 </ul>
-<h3 id="511-mcu">5.1.1 零解码器构建（MCU 默认）</h3>
-<div class="highlight"><pre><span></span><code><span class="cm">/* qlconfig.h */</span>
-<span class="cp">#define QL_FEAT_UI_IMAGE         1</span>
-<span class="cp">#define QL_FEAT_UI_IMAGE_DECODE  0     </span><span class="cm">/* 不编入 BMP/QOI/PNG 解码器 */</span>
+<h3 id="511-raw-only">5.1.1 <code>raw-only</code> 配置（零解码器）</h3>
+<div class="highlight"><pre><span></span><code><span class="cp">#define QL_FEAT_UI_IMAGE         1</span>
+<span class="cp">#define QL_FEAT_IMG_BMP          0</span>
+<span class="cp">#define QL_FEAT_IMG_QOI          0</span>
+<span class="cp">#define QL_FEAT_IMG_PNG          0</span>
+<span class="cp">#define QL_FEAT_IMG_INFLATE      0</span>
+<span class="cp">#define QL_FEAT_IMG_PLATFORM     0</span>
 </code></pre></div>
 
 <ul>
-<li>只认 <code>QL_IMAGE_SRC_RAW</code>（构建期已解好的位图），<code>px</code> 直接指向 <code>doc</code> 的资源段；</li>
-<li><code>QLImage.owned = 0</code> → <code>ql_ui_free</code> 不碰它（数据在 <code>.rodata</code>）；</li>
-<li>链接期省下：inflate + PNG 约 1.3K 行、QOI 130 行、BMP 150 行 —— 对 64–256 KB Flash
-  的 MCU 是实打实的一块；</li>
-<li>这条路径<strong>必须有一条构建配置的测试</strong>：<code>-DQL_FEAT_UI_IMAGE_DECODE=0</code> 下用一份 RAW
-  资源跑完整布局+绘制，并且确认 <code>ql_image_decode()</code> 对 PNG 字节返回 <code>QL_ERR_UNSUPPORTED</code>。</li>
+<li>只认 <code>QL_IMAGE_SRC_RAW</code>（构建期已解好的位图），<code>px</code> 直接指向资源段；</li>
+<li><code>QLImage.owned = 0</code> → <code>ql_ui_free</code> 不碰它（数据在 <code>.rodata</code>/Flash）；</li>
+<li>链接期省下：inflate + PNG 约 1.3K 行、QOI 130 行、BMP 150 行 —— 这是本库能给
+  "最小固件"的最直接让步；</li>
+<li><strong>但这不是 MCU 专属</strong>：PC 一样可以用（启动零解码、golden 像素完全确定）。
+  反过来，资源充足的板子把开关全开也完全合法 —— 组合没有限制。</li>
 </ul>
+<p>这条路径<strong>必须有一条构建配置的测试</strong>：关掉全部解码器时用一份 <code>RAW</code> 资源跑完整
+布局 + 绘制，并确认 <code>ql_image_decode()</code> 对 PNG 字节返回 <code>QL_ERR_UNSUPPORTED</code>。</p>
+<h3 id="52">5.2 平台后端接口（有系统库的场合）</h3>
 <h3 id="52-pc">5.2 平台后端接口（PC/移动）</h3>
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="cm">/* 返回 1 = 认识并解出来；0 = 不认识；-1 = 认识但失败（错误原因写 err） */</span>
@@ -598,8 +691,8 @@ PNG 容器（chunk / filter / 颜色转换）
 <td>走 JNI 由宿主提供</td>
 </tr>
 <tr>
-<td>MCU</td>
-<td><strong>不提供</strong></td>
+<td>无系统库的板子</td>
+<td><strong>不提供</strong>（或自己写：接口就在这儿）</td>
 <td>探测到 JPEG 魔数 → <code>QL_ERR_UNSUPPORTED</code> 并给出文案</td>
 </tr>
 </tbody>
@@ -629,8 +722,8 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 <tr>
 <td><code>QL_CFG_IMAGE_MAX_PIXELS</code></td>
-<td>4096×4096（PC）/ 512×512（MCU）</td>
-<td>解码后像素数上限</td>
+<td>4096×4096（默认）/ 小固件调成 512×512</td>
+<td>解码后像素数上限。<strong>它跟平台无关，只跟你的 RAM 有关</strong></td>
 </tr>
 <tr>
 <td><code>QL_CFG_IMAGE_SCRATCH</code></td>
@@ -697,7 +790,7 @@ PNG 容器（chunk / filter / 颜色转换）
 <tr>
 <td>缩放</td>
 <td><strong>默认最近邻</strong>；<code>QL_CFG_IMAGE_BILINEAR=1</code> 时双线性</td>
-<td>最近邻的 MCU 成本是双线性的 1/4，且 UI 素材大多整数倍缩放</td>
+<td>最近邻成本是双线性的 1/4，且 UI 素材大多整数倍缩放</td>
 </tr>
 <tr>
 <td>alpha</td>
@@ -789,7 +882,7 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 </tbody>
 </table>
-<p>全部整数运算（用 16.16 定点算比例，最后取整），避免浮点在 MCU 上的代价。</p>
+<p>全部整数运算（用 16.16 定点算比例，最后取整），避免浮点代价与平台差异。</p>
 <hr />
 <h2 id="8-html-css">8. HTML / CSS 面</h2>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">img</span> <span class="na">src</span><span class="o">=</span><span class="s">&quot;logo.png&quot;</span> <span class="na">alt</span><span class="o">=</span><span class="s">&quot;QLGL&quot;</span><span class="p">&gt;</span>
@@ -838,7 +931,7 @@ PNG 容器（chunk / filter / 颜色转换）
 <tr>
 <td><code>--format</code></td>
 <td><code>raw</code></td>
-<td>已解码，<code>.rodata</code> 直指；MCU 默认</td>
+<td>已解码，<code>.rodata</code> 直指；<strong>零解码路径，任何平台可选用</strong></td>
 </tr>
 <tr>
 <td></td>
@@ -853,7 +946,7 @@ PNG 容器（chunk / filter / 颜色转换）
 <tr>
 <td><code>--scale</code></td>
 <td><code>1</code> / <code>2</code> / <code>WxH</code></td>
-<td><strong>构建期预缩放</strong>：MCU 直接拿目标尺寸，省 Flash 也省绘制期缩放</td>
+<td><strong>构建期预缩放</strong>：直接拿目标尺寸，省 Flash 也省绘制期缩放</td>
 </tr>
 <tr>
 <td><code>--dither</code></td>
@@ -926,8 +1019,13 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 <tr>
 <td>构建配置</td>
-<td><code>-DQL_FEAT_UI_IMAGE_DECODE=0</code></td>
-<td>RAW 资源能布局+绘制；PNG 字节返回 <code>QL_ERR_UNSUPPORTED</code>；目标里不含 inflate 符号</td>
+<td><code>QLGL_IMG_PRESET=raw-only</code> / <code>lean</code> / <code>full</code></td>
+<td>三档都能编译并跑：RAW 资源能布局+绘制；被砍掉的格式返回 <code>QL_ERR_UNSUPPORTED</code>；<code>raw-only</code> 的目标里不含 inflate 符号</td>
+</tr>
+<tr>
+<td>构建配置</td>
+<td>单品覆盖（<code>-DQL_FEAT_IMG_PNG=0</code> 但别的开）</td>
+<td>只影响 PNG，其余格式照旧</td>
 </tr>
 </tbody>
 </table>
@@ -976,9 +1074,10 @@ PNG 容器（chunk / filter / 颜色转换）
 </tbody>
 </table>
 <blockquote>
-<p><strong>给 MCU 的默认姿势</strong>：<code>RAW</code> + <code>--pixel-format rgb565</code> + <code>--scale</code> 预缩放，
-放 <code>.rodata</code>，<code>owned = 0</code>，<code>QL_FEAT_UI_IMAGE_DECODE=0</code>。
-这样固件里既没有解码器、也没有图片 RAM —— 只有"指向 Flash 的指针 + 尺寸"。</p>
+<p><strong>小固件的推荐组合</strong>：<code>RAW</code> + <code>--pixel-format rgb565</code> + <code>--scale</code> 预缩放，
+放 <code>.rodata</code>，<code>owned = 0</code>，<code>QLGL_IMG_PRESET=raw-only</code>。
+这样固件里既没有解码器、也没有图片 RAM —— 只有"指向 Flash 的指针 + 尺寸"。
+这不是"MCU 专用路径"：任何平台想省 RAM/省启动时间都可以这么配。</p>
 </blockquote>
 <h2 id="12">12. 分期与工作量</h2>
 <table>
@@ -997,12 +1096,12 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 <tr>
 <td><strong>P3f</strong></td>
-<td><code>qltext assets</code>：<code>--format raw</code> + <code>--pixel-format</code> + <code>--scale</code>（<strong>MCU 的默认路径</strong>）</td>
+<td><code>qltext assets</code>：<code>--format raw</code> + <code>--pixel-format</code> + <code>--scale</code>（<strong>零解码路径的入口</strong>，任何平台可用）</td>
 <td>1.5–2 天</td>
 </tr>
 <tr>
 <td><strong>P3b</strong></td>
-<td>BMP + QOI 解码器 + fuzz（<code>QL_FEAT_UI_IMAGE_DECODE=1</code> 时才编）</td>
+<td>BMP + QOI 解码器 + fuzz（各自一个开关，默认开）</td>
 <td>1 天</td>
 </tr>
 <tr>
@@ -1012,7 +1111,7 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 <tr>
 <td><strong>P3c</strong></td>
-<td>PNG（inflate + 容器）+ 对拍 + fuzz（<code>DECODE</code> 内的最高档）</td>
+<td>PNG（inflate + 容器）+ 对拍 + fuzz（<code>QL_FEAT_IMG_PNG</code>）</td>
 <td>3–4 天</td>
 </tr>
 <tr>
@@ -1029,8 +1128,9 @@ PNG 容器（chunk / filter / 颜色转换）
 </table>
 <p>合计 <strong>≈ 12–15 天</strong>，<code>img</code> <code>picture</code> <code>source</code> <code>map</code> <code>area</code> 五个标签一次到位。</p>
 <p>建议顺序：<strong>P3a → P3f → P3b → P3d → P3c → P3e → P3g</strong>。
-理由：P3a + P3f 就能端到端跑通"图片文件 → 构建期转码 → MCU 固件里显示"，
-这是<strong>唯一的必达路径</strong>（MCU 默认只走它）；解码器与 PNG 是 PC 侧的增量。</p>
+理由：P3a + P3f 就能端到端跑通"图片文件 → 构建期转码 → 固件里显示"这条
+<strong>零解码路径</strong>（它不依赖任何解码器开关，是唯一"关掉一切也能用"的路）；
+解码器与 PNG 都是在这之上的增量开关。</p>
 <hr />
 <h2 id="13">13. 风险与已知限制</h2>
 <table>
@@ -1056,6 +1156,10 @@ PNG 容器（chunk / filter / 颜色转换）
 <tr>
 <td>每帧重复解码</td>
 <td><code>failed</code> 位 + 解码只在 build/register 时发生；测试钉住"每帧不动解码器"</td>
+</tr>
+<tr>
+<td><strong>开关组合爆炸</strong></td>
+<td>只测"预设三档 + 两个单品覆盖"，不测 2^8 组合；新增开关时必须同时给它一个预设归属</td>
 </tr>
 <tr>
 <td><strong>构建期转码工具变成必经之路</strong></td>
