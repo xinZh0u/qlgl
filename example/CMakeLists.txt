@@ -22,6 +22,7 @@ set(QL_EXAMPLES
     08_tags
     09_scroll
     10_input
+    11_semantic
 )
 
 foreach(e ${QL_EXAMPLES})

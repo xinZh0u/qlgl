@@ -186,6 +186,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
 <h4>QLUI</h4>
 <a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
 <h4>QLUIText</h4>
 <a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
@@ -212,7 +213,9 @@ main img.shot { max-width: 100%; }
 </ol>
 <p>所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。</p>
-<h2 id="35">现支持的 35 个标签</h2>
+<h2 id="66">现支持的 66 个标签</h2>
+<p>HTML5 一共 114 个元素，本库现在认其中 <strong>66 个</strong>。全量清单（含每个标签的状态、能力包、
+MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>，这里只给常用分组：</p>
 <table>
 <thead>
 <tr>
@@ -223,7 +226,7 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td>容器 / 结构</td>
-<td><code>div</code> <code>section</code> <code>header</code> <code>footer</code> <code>nav</code> <code>main</code> <code>article</code> <code>aside</code> <code>figure</code> <code>figcaption</code> <code>blockquote</code></td>
+<td><code>div</code> <code>section</code> <code>header</code> <code>footer</code> <code>nav</code> <code>main</code> <code>article</code> <code>aside</code> <code>figure</code> <code>figcaption</code> <code>blockquote</code> <code>html</code> <code>body</code> <code>hgroup</code> <code>search</code></td>
 </tr>
 <tr>
 <td>标题</td>
@@ -231,11 +234,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>文本块</td>
-<td><code>p</code></td>
+<td><code>p</code> <code>dl</code> <code>dt</code> <code>dd</code> <code>menu</code> <code>address</code></td>
 </tr>
 <tr>
 <td>行内</td>
-<td><code>span</code> <code>b</code> <code>i</code> <code>em</code> <code>strong</code> <code>u</code> <code>s</code> <code>mark</code></td>
+<td><code>span</code> <code>b</code> <code>i</code> <code>em</code> <code>strong</code> <code>u</code> <code>s</code> <code>mark</code> <code>del</code> <code>ins</code></td>
+</tr>
+<tr>
+<td>行内（纯语义）</td>
+<td><code>a</code> <code>abbr</code> <code>code</code> <code>kbd</code> <code>samp</code> <code>var</code> <code>q</code> <code>dfn</code> <code>cite</code> <code>data</code> <code>time</code> <code>small</code> <code>bdi</code> <code>bdo</code></td>
 </tr>
 <tr>
 <td>列表</td>
@@ -243,7 +250,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>空元素</td>
-<td><code>hr</code> <code>br</code></td>
+<td><code>hr</code> <code>br</code> <code>wbr</code></td>
 </tr>
 <tr>
 <td>控件</td>
@@ -255,10 +262,91 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>下拉</td>
-<td><code>select</code> <code>option</code>（<code>option</code> 自动 <code>display: none</code>，见<a href="11_input.html">输入控件</a>）</td>
+<td><code>select</code> <code>option</code> <code>optgroup</code>（后两个自动 <code>display: none</code>，见<a href="11_input.html">输入控件</a>）</td>
+</tr>
+<tr>
+<td>表单外壳</td>
+<td><code>form</code> <code>label</code> <code>fieldset</code> <code>legend</code>（<strong>没有提交、没有校验</strong>）</td>
 </tr>
 </tbody>
 </table>
+<p>新加的这批叫<strong>纯语义标签</strong>：它们不引入任何新能力，只是"别再报错"。所以要说清楚
+哪些看得出区别、哪些看不出：</p>
+<table>
+<thead>
+<tr>
+<th>看得出区别</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dl</code> / <code>dt</code> / <code>dd</code></td>
+<td><code>dl</code> 有 margin，<code>dd</code> 缩进 18px</td>
+</tr>
+<tr>
+<td><code>cite</code> / <code>var</code> / <code>dfn</code> / <code>address</code></td>
+<td>斜体（合成斜体，见 §5.4.8 那种）</td>
+</tr>
+<tr>
+<td><code>del</code> / <code>ins</code></td>
+<td>删除线 / 下划线（装饰线已经支持）</td>
+</tr>
+<tr>
+<td><code>fieldset</code></td>
+<td>自带 1px 圆角边框</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>看不出区别</th>
+<th>缺什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a</code></td>
+<td>没有 <code>href</code> 导航、没有光标；就是一段带颜色的文字</td>
+</tr>
+<tr>
+<td><code>abbr</code></td>
+<td>没有 <code>title</code> tooltip</td>
+</tr>
+<tr>
+<td><code>code</code> / <code>kbd</code> / <code>samp</code></td>
+<td>没有等宽字体族（<code>font-family</code> 还没做）</td>
+</tr>
+<tr>
+<td><code>q</code></td>
+<td>没有生成引号（本库没有生成内容）</td>
+</tr>
+<tr>
+<td><code>time</code> / <code>data</code></td>
+<td><code>datetime</code> / <code>value</code> 属性被忽略</td>
+</tr>
+<tr>
+<td><code>small</code></td>
+<td>没有相对字号单位（<code>em</code> / <code>smaller</code>）</td>
+</tr>
+<tr>
+<td><code>bdi</code> / <code>bdo</code></td>
+<td>没有双向文本（RTL）支持</td>
+</tr>
+<tr>
+<td><code>wbr</code></td>
+<td>没有"可选断点"（不影响折行）</td>
+</tr>
+<tr>
+<td><code>form</code> / <code>label</code> / <code>legend</code> / <code>optgroup</code></td>
+<td>纯排版盒子；<code>optgroup</code> 的组名不画</td>
+</tr>
+</tbody>
+</table>
+<p>一张全是语义标签的页面（<code>dl</code> 缩进、<code>cite</code> 斜体、<code>del</code>/<code>ins</code> 装饰线、<code>fieldset</code> 边框）：</p>
+<p><img src="../img/11-semantic.png" alt="纯语义标签示例" width="320"></p>
+<p>完整程序：<code>example/11_semantic.c</code>。</p>
 <p>UA 默认样式都很薄，只有"看结构就该知道"的那些：</p>
 <div class="highlight"><pre><span></span><code><span class="c">/* 大致相当于内置样式表的全部内容 */</span>
 <span class="nt">div</span><span class="o">,</span><span class="w"> </span><span class="nt">section</span><span class="o">,</span><span class="w"> </span><span class="nt">header</span><span class="o">,</span><span class="w"> </span><span class="nt">footer</span><span class="o">,</span><span class="w"> </span><span class="nt">nav</span><span class="o">,</span><span class="w"> </span><span class="nt">main</span><span class="o">,</span><span class="w"> </span><span class="nt">article</span><span class="o">,</span><span class="w"> </span><span class="nt">aside</span><span class="o">,</span>
@@ -271,7 +359,17 @@ main img.shot { max-width: 100%; }
 <span class="nt">hr</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#8A8A8A</span><span class="p">;</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span>
 <span class="nt">mark</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFE58F</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#000</span><span class="w"> </span><span class="p">}</span>
 <span class="nt">input</span><span class="o">,</span><span class="w"> </span><span class="nt">select</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">inline-block</span><span class="p">;</span><span class="w"> </span><span class="c">/* 内边距 + 边框 + 圆角 */</span><span class="w"> </span><span class="p">}</span>
-<span class="nt">option</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="w"> </span><span class="p">}</span><span class="w">                 </span><span class="c">/* 只活在下拉面板里 */</span>
+<span class="nt">option</span><span class="o">,</span><span class="w"> </span><span class="nt">optgroup</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 只活在下拉面板里 */</span>
+<span class="c">/* 纯语义标签：只给 display，外加几处&quot;真的看得出&quot;的 */</span>
+<span class="nt">a</span><span class="o">,</span><span class="w"> </span><span class="nt">abbr</span><span class="o">,</span><span class="w"> </span><span class="nt">code</span><span class="o">,</span><span class="w"> </span><span class="nt">kbd</span><span class="o">,</span><span class="w"> </span><span class="nt">samp</span><span class="o">,</span><span class="w"> </span><span class="nt">q</span><span class="o">,</span><span class="w"> </span><span class="nt">data</span><span class="o">,</span><span class="w"> </span><span class="nt">time</span><span class="o">,</span><span class="w"> </span><span class="nt">small</span><span class="o">,</span><span class="w"> </span><span class="nt">bdi</span><span class="o">,</span><span class="w"> </span><span class="nt">bdo</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">inline</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">cite</span><span class="o">,</span><span class="w"> </span><span class="nt">var</span><span class="o">,</span><span class="w"> </span><span class="nt">dfn</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">inline</span><span class="p">;</span><span class="w"> </span><span class="k">font-style</span><span class="p">:</span><span class="w"> </span><span class="kc">italic</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">del</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">inline</span><span class="p">;</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">line-through</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">ins</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">inline</span><span class="p">;</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">dl</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">dd</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">padding-left</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">menu</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">padding-left</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">address</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-style</span><span class="p">:</span><span class="w"> </span><span class="kc">italic</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">fieldset</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#8A8A8A</span><span class="p">;</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 
 <p>注意这是<strong>给这个库的观感</strong>调的，不是"和 Chrome 截图一致"调的（比如 <code>p</code> 的

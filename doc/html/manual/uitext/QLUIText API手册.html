@@ -186,6 +186,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
 <h4>QLUI</h4>
 <a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
 <h4>QLUIText</h4>
 <a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
@@ -262,7 +263,7 @@ MCU 侧应当关掉：界面走构建期生成的静态表，运行期没有任�
 <span class="n">ql_ui_doc_free</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
 </code></pre></div>
 
-<p><strong>支持的 HTML（35 个标签）</strong></p>
+<p><strong>支持的 HTML（66 个标签，HTML5 共 114 个）</strong></p>
 <table>
 <thead>
 <tr>
@@ -297,7 +298,11 @@ MCU 侧应当关掉：界面走构建期生成的静态表，运行期没有任�
 </tr>
 <tr>
 <td>输入控件</td>
-<td><code>input</code>（<code>type</code> 只支持 <code>text</code> / <code>password</code>）、<code>select</code> + <code>option</code>（覆盖式面板）</td>
+<td><code>input</code>（<code>type</code> 只支持 <code>text</code> / <code>password</code>）、<code>select</code> + <code>option</code> + <code>optgroup</code>（覆盖式面板）</td>
+</tr>
+<tr>
+<td>纯语义</td>
+<td><code>html</code> <code>body</code> <code>a</code> <code>abbr</code> <code>code</code> <code>kbd</code> <code>samp</code> <code>var</code> <code>q</code> <code>dfn</code> <code>cite</code> <code>data</code> <code>time</code> <code>small</code> <code>bdi</code> <code>bdo</code> <code>del</code> <code>ins</code> <code>dl</code> <code>dt</code> <code>dd</code> <code>menu</code> <code>address</code> <code>hgroup</code> <code>search</code> <code>form</code> <code>label</code> <code>fieldset</code> <code>legend</code> <code>wbr</code></td>
 </tr>
 </tbody>
 </table>

@@ -186,6 +186,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
 <h4>QLUI</h4>
 <a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
 <h4>QLUIText</h4>
 <a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
@@ -239,7 +240,7 @@ main img.shot { max-width: 100%; }
 默认改成 <code>normal</code> 会让已有界面在你没改任何东西时重新排版。详见
 <a href="02_text.html">文本</a>。</p>
 <hr />
-<h2 id="2-html-35">2. HTML：只认 35 个标签</h2>
+<h2 id="2-html-114-66">2. HTML：认 114 个标签，画 66 个</h2>
 <table>
 <thead>
 <tr>
@@ -249,20 +250,24 @@ main img.shot { max-width: 100%; }
 </thead>
 <tbody>
 <tr>
-<td><code>&lt;html&gt;</code> <code>&lt;head&gt;</code> <code>&lt;body&gt;</code></td>
-<td>❌ 报错（<strong>整个文档就是一个根元素</strong>）</td>
+<td><code>&lt;html&gt;</code> <code>&lt;body&gt;</code></td>
+<td>✅ 当普通块级容器（<strong>整个文档仍然只有一个根元素</strong>）</td>
+</tr>
+<tr>
+<td><code>&lt;head&gt;</code> <code>&lt;title&gt;</code> <code>&lt;meta&gt;</code> <code>&lt;link&gt;</code></td>
+<td>❌ 报错（文档元数据还没做）</td>
 </tr>
 <tr>
 <td><code>&lt;!DOCTYPE html&gt;</code> <code>&lt;!-- 注释 --&gt;</code></td>
 <td>✅ 直接跳过</td>
 </tr>
 <tr>
-<td><code>&lt;a href&gt;</code></td>
-<td>❌ 还没有链接（没有光标、没有导航）</td>
+<td><code>&lt;a&gt;</code></td>
+<td>⚠️ 只是带颜色的文字：<code>href</code> 被忽略，没有光标、没有导航</td>
 </tr>
 <tr>
 <td><code>&lt;img src&gt;</code></td>
-<td>❌ 没有图片解码器</td>
+<td>❌ 没有图片解码器（有计划，见下）</td>
 </tr>
 <tr>
 <td><code>&lt;input type="text\|password"&gt;</code></td>
@@ -278,18 +283,22 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>&lt;table&gt;</code> <code>&lt;tr&gt;</code> <code>&lt;td&gt;</code></td>
-<td>❌ 用嵌套 flex 代替</td>
+<td>❌ 用嵌套 flex 代替（表格布局还没做）</td>
 </tr>
 <tr>
 <td><code>&lt;style&gt;</code> <code>&lt;script&gt;</code></td>
 <td>❌ 没有样式表标签，也没有脚本</td>
 </tr>
 <tr>
-<td>其它 35 个标签</td>
+<td>其余 66 个标签</td>
 <td>✅ 见<a href="08_tags.html">标签与语义</a></td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>完整的 114 个元素逐条状态（含 MCU 能力包裁剪）在
+<a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>。</p>
+</blockquote>
 <p><strong>属性只有五个有用</strong>：<code>class</code> / <code>id</code> / <code>style</code> / <code>value</code> / <code>type</code>。其余（<code>data-*</code>、
 <code>aria-*</code>、<code>href</code>、<code>title</code>…）会被<strong>静默忽略</strong> —— 这是本库唯一"不报错的宽容"，
 因为属性不影响渲染。<code>value</code> / <code>type</code> 只管 <code>&lt;input&gt;</code>，<code>type</code> 写别的值会<strong>报错</strong>

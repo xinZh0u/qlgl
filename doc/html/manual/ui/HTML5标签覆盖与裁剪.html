@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>HTML5 标签覆盖与 MCU 裁剪 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<a href='../../tutorial/08_tags.html'>标签与语义</a>
+<a href='../../tutorial/09_scroll.html'>滚动</a>
+<a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../../tutorial/11_input.html'>输入控件</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="html5-mcu">HTML5 标签覆盖与 MCU 裁剪</h1>
+<p>这份文档回答两个问题：</p>
+<ol>
+<li><strong>HTML5 的标签，本库到底支持到哪一步？</strong> —— 全量清单，一个不漏，逐条给状态。</li>
+<li><strong>MCU 上怎么办？</strong> —— 编译期按能力包裁剪，但<strong>枚举与 blob 不许跟着变</strong>。</li>
+</ol>
+<p>一句话承诺：</p>
+<blockquote>
+<p><strong>解析层 114/114</strong>（不再有"不认识的标签"）；<strong>渲染层按能力包</strong>（PC/移动默认全开）；
+<strong>MCU 编译期裁包</strong>，裁剪只影响代码路径与错误文案，<strong>不影响 <code>QLUITag</code> 枚举值、不影响 blob</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="1-114">1. 全量清单（114 个）</h2>
+<p>口径：HTML Living Standard 的元素索引，<strong>不含 obsolete 元素</strong>（<code>marquee</code> <code>center</code>
+<code>font</code> <code>big</code> <code>strike</code> <code>tt</code> <code>frame</code> <code>nobr</code> <code>rb</code> <code>xmp</code> 等二十来个），也不含实验中的
+<code>portal</code> / <code>fencedframe</code>。obsolete 那批按"明确失败"处理：写了就报错，不做宽容降级。</p>
+<p>现状三档：</p>
+<table>
+<thead>
+<tr>
+<th>记号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✅ 已支持</td>
+<td>能解析、有 UA 默认样式、能画</td>
+</tr>
+<tr>
+<td>⏳ 计划</td>
+<td>标签能解析（或即将能），但渲染要么需要新能力（能力包），要么只做占位盒</td>
+</tr>
+<tr>
+<td>❌ 不做</td>
+<td>连占位都不做，解析期报错（本表里已经没有了 —— 见 §5）</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>分类</th>
+<th>标签</th>
+<th>能力包</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>根 / 文档外壳</td>
+<td><code>&lt;html&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>文档元数据</td>
+<td><code>&lt;base&gt;</code></td>
+<td><code>META</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>文档元数据</td>
+<td><code>&lt;head&gt;</code></td>
+<td><code>META</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>文档元数据</td>
+<td><code>&lt;link&gt;</code></td>
+<td><code>META</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>文档元数据</td>
+<td><code>&lt;meta&gt;</code></td>
+<td><code>META</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>文档元数据</td>
+<td><code>&lt;style&gt;</code></td>
+<td><code>META</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>文档元数据</td>
+<td><code>&lt;title&gt;</code></td>
+<td><code>META</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;body&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;address&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;article&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;aside&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;footer&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;header&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;h1&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;h2&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;h3&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;h4&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;h5&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;h6&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;hgroup&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;main&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;nav&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;search&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分段</td>
+<td><code>&lt;section&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;blockquote&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;dd&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;div&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;dl&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;dt&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;figcaption&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;figure&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;hr&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;li&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;menu&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;ol&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;p&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;pre&gt;</code></td>
+<td><code>TEXT</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>分组</td>
+<td><code>&lt;ul&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;a&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;abbr&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;b&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;bdi&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;bdo&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;br&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;cite&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;code&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;data&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;dfn&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;em&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;i&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;kbd&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;mark&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;q&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;rp&gt;</code></td>
+<td><code>TEXT</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;rt&gt;</code></td>
+<td><code>TEXT</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;ruby&gt;</code></td>
+<td><code>TEXT</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;s&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;samp&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;small&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;span&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;strong&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;sub&gt;</code></td>
+<td><code>TEXT</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;sup&gt;</code></td>
+<td><code>TEXT</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;time&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;u&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;var&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>行内文本</td>
+<td><code>&lt;wbr&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>编辑标记</td>
+<td><code>&lt;del&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>编辑标记</td>
+<td><code>&lt;ins&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;area&gt;</code></td>
+<td><code>IMAGE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;embed&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;iframe&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;img&gt;</code></td>
+<td><code>IMAGE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;map&gt;</code></td>
+<td><code>IMAGE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;object&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;picture&gt;</code></td>
+<td><code>IMAGE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>嵌入</td>
+<td><code>&lt;source&gt;</code></td>
+<td><code>IMAGE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>媒体</td>
+<td><code>&lt;audio&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>媒体</td>
+<td><code>&lt;track&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>媒体</td>
+<td><code>&lt;video&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;caption&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;col&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;colgroup&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;table&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;tbody&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;td&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;tfoot&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;th&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;thead&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表格</td>
+<td><code>&lt;tr&gt;</code></td>
+<td><code>TABLE</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;button&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;datalist&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;fieldset&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;form&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;input&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;label&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;legend&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;meter&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;optgroup&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;option&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;output&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;progress&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;select&gt;</code></td>
+<td><code>CORE</code></td>
+<td>✅ 已支持</td>
+</tr>
+<tr>
+<td>表单</td>
+<td><code>&lt;textarea&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>交互</td>
+<td><code>&lt;details&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>交互</td>
+<td><code>&lt;dialog&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>交互</td>
+<td><code>&lt;summary&gt;</code></td>
+<td><code>WIDGET</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>脚本</td>
+<td><code>&lt;canvas&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>脚本</td>
+<td><code>&lt;noscript&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>脚本</td>
+<td><code>&lt;script&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>Web Components</td>
+<td><code>&lt;slot&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>Web Components</td>
+<td><code>&lt;template&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>SVG / MathML</td>
+<td><code>&lt;math&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+<tr>
+<td>SVG / MathML</td>
+<td><code>&lt;svg&gt;</code></td>
+<td><code>EMBED</code></td>
+<td>⏳ 计划</td>
+</tr>
+</tbody>
+</table>
+<p>统计：<strong>✅ 66 个</strong>（本轮之前 35，本轮加 31 个纯语义标签）、<strong>⏳ 48 个</strong>、<strong>❌ 0 个</strong>。</p>
+<hr />
+<h2 id="2">2. 能力包</h2>
+<p>一个"包"= 一组标签 + 支撑它们的那部分引擎。包是<strong>编译期开关</strong>，也是<strong>构建期报告的单位</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>宏</th>
+<th>含标签（个数）</th>
+<th>PC/移动默认</th>
+<th>MCU 默认</th>
+<th>依赖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CORE</code></td>
+<td>恒开</td>
+<td>66</td>
+<td>✅</td>
+<td>✅</td>
+<td>无（永远有）</td>
+</tr>
+<tr>
+<td><code>META</code></td>
+<td><code>QL_FEAT_UI_META</code></td>
+<td>6（<code>base head link meta style title</code>）</td>
+<td>✅</td>
+<td>✅</td>
+<td>无 —— 只做"解析期跳过"，零代码</td>
+</tr>
+<tr>
+<td><code>TEXT</code></td>
+<td><code>QL_FEAT_UI_TEXT</code></td>
+<td>6（<code>pre sub sup ruby rt rp</code>）</td>
+<td>✅</td>
+<td>❌</td>
+<td>文本内 <code>\n</code>、<code>white-space: pre</code>、等宽字体族、行内注音</td>
+</tr>
+<tr>
+<td><code>TABLE</code></td>
+<td><code>QL_FEAT_UI_TABLE</code></td>
+<td>10（<code>table</code> 全家）</td>
+<td>✅</td>
+<td>❌</td>
+<td>表格布局算法（列宽分配、跨行跨列、边框合并）</td>
+</tr>
+<tr>
+<td><code>IMAGE</code></td>
+<td><code>QL_FEAT_UI_IMAGE</code></td>
+<td>5（<code>img picture source map area</code>）</td>
+<td>✅</td>
+<td>❌</td>
+<td>有界解码器（PNG/BMP/QOI）+ 缩放 + 热区</td>
+</tr>
+<tr>
+<td><code>WIDGET</code></td>
+<td><code>QL_FEAT_UI_WIDGET</code></td>
+<td>8（<code>progress meter output datalist textarea details summary dialog</code>）</td>
+<td>✅</td>
+<td>❌</td>
+<td>复用已有池/覆盖层机制 + `</td>
+</tr>
+<tr>
+<td><code>（</code>textarea`）</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>EMBED</code></td>
+<td><code>QL_FEAT_UI_EMBED</code></td>
+<td>13（<code>iframe embed object audio video track canvas script noscript slot template svg math</code>）</td>
+<td>✅</td>
+<td>❌</td>
+<td><strong>只做占位盒 / 忽略</strong>，见 §5</td>
+</tr>
+</tbody>
+</table>
+<p><code>CORE</code> 里那 66 个就是现在能画的那批（含 <code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / 滚动容器）。</p>
+<hr />
+<h2 id="3">3. 一条硬约束：枚举不可条件化</h2>
+<p><code>QLUITag</code> 的数值会<strong>写进 blob</strong>（<code>QLUINode.tag</code> 是 <code>uint16</code> 索引），而且三张表
+（<code>QLUITag</code> / <code>k_tags[]</code> / <code>s_tag_names[]</code>，外加 <code>qltext</code> 的 <code>TAG_NAMES[]</code>）必须同序。</p>
+<p>所以：</p>
+<table>
+<thead>
+<tr>
+<th>允许</th>
+<th>禁止</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>在<strong>末尾追加</strong>枚举项</td>
+<td>因为"MCU 不用"而删掉/挪动枚举项</td>
+</tr>
+<tr>
+<td>用宏裁掉<strong>函数体、UA 默认分支、绘制路径</strong></td>
+<td>用宏裁掉<strong>枚举项本身</strong>（值会错位，blob 跨平台就废了）</td>
+</tr>
+<tr>
+<td>用宏裁掉<strong>报错文案</strong></td>
+<td>让同一份 <code>.qlui</code> 在两个平台上解释出不同标签</td>
+</tr>
+</tbody>
+</table>
+<p>结论：<strong>枚举与名字表永远全量</strong>。代价是 <code>.rodata</code> 里多约 1.2 KB 字符串
+（114 条名字 + 指针表），换回来的是"一份 blob 到处能读、调试名永远对得上"。</p>
+<blockquote>
+<p>如果某天真的差这 1 KB，再加一个 <code>QL_CFG_UI_TAG_NAMES_MIN</code>（名字表退化成
+<code>ql_ui_tag_name()</code> 返回 <code>"?"</code>），那是<strong>独立的一步</strong>，和裁包无关。</p>
+</blockquote>
+<hr />
+<h2 id="4">4. 裁包之后会发生什么</h2>
+<blockquote>
+<p><strong>现状</strong>：包机制还没落地（P1 才做）。在那之前<strong>所有 114 个已知标签都能解析</strong>，
+未实现的标签按其 UA 默认样式渲染，不会降级也不会报错 —— 也就是说，
+今天"标签能编译通过"已经成立，缺的是"画得像"。</p>
+</blockquote>
+<p>包机制落地后，解析器先按名字认标签（<code>tag_index()</code>，全量表），再看这个标签所属的包开没开：</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>strict</code>（默认）</td>
+<td><strong>明确报错</strong>，文案里点名缺哪个包：<br><code>&lt;table&gt;: 本构建没有启用 QL_FEAT_UI_TABLE（表格布局）</code></td>
+</tr>
+<tr>
+<td><code>lenient</code></td>
+<td>降级成 <code>div</code>（块级）/ <code>span</code>（行内），并计入 <code>doc-&gt;degraded_tags</code>，<code>ql_ui_load_text</code> 之后可查</td>
+</tr>
+</tbody>
+</table>
+<p>两条都<strong>不静默</strong>：strict 失败在编译期（CI 能拦住），lenient 有计数与名单（运行时能打日志）。
+这就是本库"明确失败优于半个正确"的落地方式 —— 降级是<strong>显式声明的</strong>，不是悄悄发生。</p>
+<p><code>lenient</code> 的典型用途：MCU 上贴外部 HTML 片段、只想要"能看就行"。</p>
+<hr />
+<h2 id="5-13-embed">5. 永远只做占位的 13 个（<code>EMBED</code>）</h2>
+<p>它们不是"还没做"，是<strong>按红线不做真渲染</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>标签</th>
+<th>为什么不做</th>
+<th>占位怎么做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>script</code> <code>noscript</code> <code>template</code> <code>slot</code></td>
+<td>与"没有 DOM / 没有 JS"红线冲突</td>
+<td><code>script</code> 的内容<strong>整段跳过</strong>（不解析、不进文本池）；其余按 <code>display:none</code></td>
+</tr>
+<tr>
+<td><code>iframe</code> <code>embed</code> <code>object</code></td>
+<td>外来内容无法有界（网络、第三方渲染器）</td>
+<td>一个带边框的空盒子 + 文字 <code>未支持</code></td>
+</tr>
+<tr>
+<td><code>audio</code> <code>video</code> <code>track</code></td>
+<td>要解码器 + 音频输出 + 音视频同步</td>
+<td>空盒子（可以画个播放图标字符）</td>
+</tr>
+<tr>
+<td><code>canvas</code></td>
+<td>要 JS 或"C 代码往上画"的新 API 层</td>
+<td>空盒子占位；真的想画 → 直接用 <code>QLCanvas</code>，别绕 HTML</td>
+</tr>
+<tr>
+<td><code>svg</code> <code>math</code></td>
+<td>各自需要独立渲染器（等于写第二个 QLGL）</td>
+<td>空盒子占位</td>
+</tr>
+</tbody>
+</table>
+<p><strong>这就是"HTML5 全支持"的准确含义</strong>：114 个标签<strong>全能编译通过</strong>，
+其中 66 个现在真画、48 个按包补齐后真画或占位、0 个报"不认识的标签"。</p>
+<hr />
+<h2 id="6">6. 构建期就该知道结果</h2>
+<p><code>qltext</code> 拿得到目标平台的能力包，所以不用等到跑起来才发现被降级：</p>
+<div class="highlight"><pre><span></span><code>$<span class="w"> </span>qltext<span class="w"> </span>check<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--features<span class="w"> </span>core,image
+app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </span>个节点，使用标签<span class="w"> </span><span class="m">9</span><span class="w"> </span>种
+<span class="w">  </span>&lt;table&gt;<span class="w">   </span>×2<span class="w">  </span>需要<span class="w"> </span>QL_FEAT_UI_TABLE<span class="w">  </span>→<span class="w"> </span>会被降级成<span class="w"> </span>div
+<span class="w">  </span>&lt;img&gt;<span class="w">     </span>×3<span class="w">  </span>✅
+<span class="w">  </span>&lt;ruby&gt;<span class="w">    </span>×1<span class="w">  </span>需要<span class="w"> </span>QL_FEAT_UI_TEXT<span class="w">   </span>→<span class="w"> </span>会被降级成<span class="w"> </span>span
+结论：3<span class="w"> </span>处降级。要么开包，要么改界面。
+</code></pre></div>
+
+<p>同一套开关也用在 <code>qltext cc --features ...</code>（生成 C 时直接按目标平台裁）。</p>
+<hr />
+<h2 id="7">7. 分期与工作量</h2>
+<p>按"先解锁数量、再补能力"排，每期都能独立验收、独立提交：</p>
+<table>
+<thead>
+<tr>
+<th>期</th>
+<th>内容</th>
+<th>新增可画标签</th>
+<th>估时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P0 ✅ 已完成</td>
+<td>31 个纯语义标签（<code>a</code> <code>code</code> <code>del</code> <code>ins</code> <code>dl</code> <code>form</code> <code>fieldset</code>…）</td>
+<td>66</td>
+<td>1 天</td>
+</tr>
+<tr>
+<td>P1</td>
+<td><code>META</code> 包：元数据标签一律跳过（<code>&lt;style&gt;</code> 内容整段不解析）</td>
+<td>72</td>
+<td>0.5 天</td>
+</tr>
+<tr>
+<td>P2</td>
+<td><code>WIDGET</code> 包：<code>progress</code> <code>meter</code> <code>details</code> <code>summary</code> <code>dialog</code> <code>datalist</code> <code>output</code></td>
+<td>79</td>
+<td>3–4 天</td>
+</tr>
+<tr>
+<td>P3</td>
+<td><code>IMAGE</code> 包：PNG/BMP/QOI 有界解码 + <code>object-fit</code> + <code>map</code>/<code>area</code> 热区</td>
+<td>84</td>
+<td>3–4 天</td>
+</tr>
+<tr>
+<td>P4</td>
+<td><code>TEXT</code> 包：文本内 <code>\n</code> + <code>white-space: pre</code> + 等宽字体 + <code>sub</code>/<code>sup</code> + <code>ruby</code></td>
+<td>90</td>
+<td>5–6 天</td>
+</tr>
+<tr>
+<td>P5</td>
+<td><code>WIDGET</code> 补齐：<code>textarea</code>（多行编辑）</td>
+<td>91</td>
+<td>2–3 天</td>
+</tr>
+<tr>
+<td>P6</td>
+<td><code>TABLE</code> 包：表格布局算法</td>
+<td>101</td>
+<td>5–8 天（<strong>风险最高</strong>）</td>
+</tr>
+<tr>
+<td>P7</td>
+<td><code>EMBED</code> 包：13 个占位盒 + <code>script</code> 内容跳过</td>
+<td>114</td>
+<td>1–2 天</td>
+</tr>
+<tr>
+<td>P8</td>
+<td><code>&lt;input&gt;</code> 的其余 <code>type</code>（<code>checkbox</code> <code>radio</code> <code>range</code> <code>number</code> <code>search</code>）</td>
+<td>—</td>
+<td>3–5 天</td>
+</tr>
+</tbody>
+</table>
+<p>总计约 <strong>24–34 人日</strong>。P6 单独标风险：它是唯一一处"要从零写一套布局算法"的地方，
+其余都是在已有机制上加分支。</p>
+<hr />
+<h2 id="8">8. 与文档其它地方的口径</h2>
+<ul>
+<li>现在（P0 之后）：<strong>已支持 66 / 114</strong>，未支持 48。</li>
+<li>教程的"<a href="10_vs_web.html">与 Web 的差别</a>"列的是<strong>用户会踩到的差异</strong>，不重复这份清单。</li>
+<li>各标签的 UA 默认样式见<a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>；
+  属性白名单见 <a href="QLUI API手册.html">API 手册 §3.2</a>。</li>
+</ul>
+<div class='pager'>
+<a href='../../manual/text/QLText阅读指南.html'><span class='dir'>上一页</span>QLText / 字体系统 阅读指南</a>
+<a class='next' href='../../manual/ui/QLUI API手册.html'><span class='dir'>下一页</span>QLUI / HTML+CSS 编译 API 手册（v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

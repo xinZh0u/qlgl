@@ -81,6 +81,49 @@ typedef enum {
     QL_UI_TAG_INPUT,
     QL_UI_TAG_SELECT,
     QL_UI_TAG_OPTION,
+
+    /*
+     * --- 纯语义标签：UA 默认只有 block / inline，不引入任何新能力 ---
+     *
+     * 加它们是为了"真实 HTML 片段贴进来不报错"。它们各自的**语义**（链接、
+     * 缩写、行内代码、编辑标记…）大多还没有实现，见 QLUI阅读指南 §5.4.7 的诚实清单。
+     */
+    /* 文档外壳：本库要求整个文档只有一个根元素，有这两个就能整段贴 */
+    QL_UI_TAG_HTML,
+    QL_UI_TAG_BODY,
+    /* 分组：描述列表 / 菜单 / 联系信息 / 标题组 / 搜索区 */
+    QL_UI_TAG_DL,
+    QL_UI_TAG_DT,
+    QL_UI_TAG_DD,
+    QL_UI_TAG_MENU,
+    QL_UI_TAG_ADDRESS,
+    QL_UI_TAG_HGROUP,
+    QL_UI_TAG_SEARCH,
+    /* 行内语义：纯文字，没有字体变体（`code`/`kbd`/`samp` 的等宽字体还没有） */
+    QL_UI_TAG_A,
+    QL_UI_TAG_ABBR,
+    QL_UI_TAG_CODE,
+    QL_UI_TAG_KBD,
+    QL_UI_TAG_SAMP,
+    QL_UI_TAG_VAR,
+    QL_UI_TAG_Q,
+    QL_UI_TAG_DFN,
+    QL_UI_TAG_CITE,
+    QL_UI_TAG_DATA,
+    QL_UI_TAG_TIME,
+    QL_UI_TAG_SMALL,
+    QL_UI_TAG_BDI,
+    QL_UI_TAG_BDO,
+    QL_UI_TAG_WBR,
+    /* 编辑标记：装饰线已经有了，所以这两个能真的看出区别 */
+    QL_UI_TAG_DEL,
+    QL_UI_TAG_INS,
+    /* 表单外壳：没有 <form> 语义（不提交、不校验），只是排版用的盒子 */
+    QL_UI_TAG_FORM,
+    QL_UI_TAG_LABEL,
+    QL_UI_TAG_FIELDSET,
+    QL_UI_TAG_LEGEND,
+    QL_UI_TAG_OPTGROUP,
     QL_UI_TAG_COUNT
 } QLUITag;
 

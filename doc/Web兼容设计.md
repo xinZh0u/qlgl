@@ -179,6 +179,9 @@ typedef struct QLNode {
 | `ul/ol/li` | `display:block` + `list-item` | 项目符号（可用 `::before` 实现） |
 | `a` | `display:inline` + 颜色/下划线 | `href` 触发导航回调（不内置跳转） |
 
+全量 114 个元素的现状（哪些已支持、哪些靠哪个能力包、MCU 怎么裁）见
+[HTML5 标签覆盖与裁剪](./手册/ui/HTML5标签覆盖与裁剪.md)。
+
 > 这样新增"控件"的方式变成了**写 UA CSS + 可能的 tag handler**，与 Web 一致；
 > 不再需要 `QL_DEFINE_WITH_PRIVATE` 一套类注册。
 

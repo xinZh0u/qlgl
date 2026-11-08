@@ -40,6 +40,13 @@ QL_TEST_BEGIN("test_html_tags")
             "aside", "figure", "figcaption", "blockquote", "ul", "ol", "li",
             "hr", "br", "mark", "em", "strong", "u", "s", "input", "select",
             "option",
+            /* --- 纯语义标签 --- */
+            "html", "body",
+            "dl", "dt", "dd", "menu", "address", "hgroup", "search",
+            "a", "abbr", "code", "kbd", "samp", "var", "q", "dfn", "cite",
+            "data", "time", "small", "bdi", "bdo", "wbr",
+            "del", "ins",
+            "form", "label", "fieldset", "legend", "optgroup",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -53,7 +60,8 @@ QL_TEST_BEGIN("test_html_tags")
             const char *name = ql_ui_tag_name((uint16_t)i);
             char html[256];
             const int is_void = (strcmp(name, "br") == 0 || strcmp(name, "hr") == 0 ||
-                                 strcmp(name, "input") == 0);
+                                 strcmp(name, "input") == 0 ||
+                                 strcmp(name, "wbr") == 0);
             if (is_void)
                 snprintf(html, sizeof(html), "<div id=r><%s></div>", name);
             else
@@ -293,6 +301,115 @@ QL_TEST_BEGIN("test_html_tags")
             QL_CHECK_EQ((int)ui->nodes[2].style->text_color, 0x445566);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 14. 纯语义标签：UA 默认样式与几个"现在真的有区别"的 ---------- */
+    {
+        static const char *const inl[] = { "a", "abbr", "code", "kbd", "samp",
+                                           "q", "data", "time", "small", "bdi",
+                                           "bdo", "del", "ins", "label",
+                                           "legend" };
+        for (size_t i = 0; i < sizeof(inl) / sizeof(inl[0]); i++) {
+            char html[128];
+            snprintf(html, sizeof(html), "<div id=r><%s>t</%s></div>", inl[i],
+                     inl[i]);
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build(html, "", 200, 200, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK_EQ((int)ui->nodes[1].style->display, (int)QL_UI_DISPLAY_INLINE);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* 引用/变量/定义 + <address> 是斜体（合成斜体已经有了） */
+        static const char *const ital[] = { "cite", "var", "dfn", "address" };
+        for (size_t i = 0; i < sizeof(ital) / sizeof(ital[0]); i++) {
+            char html[128];
+            snprintf(html, sizeof(html), "<div id=r><%s>t</%s></div>", ital[i],
+                     ital[i]);
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build(html, "", 200, 200, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK((ui->nodes[1].style->font_flags & QL_UI_FONT_ITALIC) != 0);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* <del> 删除线 / <ins> 下划线 */
+        {
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build("<div id=r><del>a</del><ins>b</ins></div>", "", 200,
+                                 200, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK((ui->nodes[1].style->font_flags & QL_UI_FONT_LINE_THROUGH) != 0);
+                QL_CHECK((ui->nodes[2].style->font_flags & QL_UI_FONT_UNDERLINE) != 0);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* 描述列表：<dd> 有缩进，<dt>/<dd> 都是块 */
+        {
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build("<div id=r><dl><dt>t</dt><dd>d</dd></dl></div>", "",
+                                 200, 200, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK_EQ((int)ui->nodes[2].style->display, (int)QL_UI_DISPLAY_BLOCK);
+                QL_CHECK_EQ((int)ui->nodes[3].style->display, (int)QL_UI_DISPLAY_BLOCK);
+                QL_CHECK_EQ((int)ui->nodes[3].style->padding.left, 18);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* <optgroup> 与 <option> 一样不进布局 */
+        {
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build("<div id=r><select><optgroup><option>x</option>"
+                                 "</optgroup></select></div>",
+                                 "", 200, 200, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK_EQ((int)ui->nodes[2].style->display, (int)QL_UI_DISPLAY_NONE);
+                QL_CHECK_EQ((int)ui->nodes[3].style->display, (int)QL_UI_DISPLAY_NONE);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* <wbr> 是空元素：不压栈，也不会报"缺少结束标签" */
+        {
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build("<div id=r><span>a</span><wbr><span>b</span></div>",
+                                 "", 200, 60, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK_EQ((int)doc->node_count, 4);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* tag 选择器对新增标签同样有效 */
+        {
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = build("<div id=r><abbr>a</abbr><code>b</code></div>",
+                                 "abbr { color: #010203 } code { color: #040506 }",
+                                 200, 200, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QL_CHECK_EQ((int)ui->nodes[1].style->text_color, 0x010203);
+                QL_CHECK_EQ((int)ui->nodes[2].style->text_color, 0x040506);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
         }
     }
 

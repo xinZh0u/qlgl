@@ -51,7 +51,7 @@ cmake --build build -j
 ```
 
 **想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，10 章，每章配一个
-可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十个自包含的 `.c`。
+可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十一个自包含的 `.c`。
 
 | 例程 | 讲什么 |
 |---|---|
@@ -65,6 +65,7 @@ cmake --build build -j
 | `08_tags` | HTML 标签与 UA 默认样式：一半纯默认值，一半只用 CSS 改观感 |
 | `09_scroll` | 滚动容器：`overflow: auto` + 滚轮 / 拖滚动条 / PageDown |
 | `10_input` | 输入控件：`<input>`（含密码框）+ `<select>` 下拉面板 + Tab 切换焦点 |
+| `11_semantic` | 纯语义标签：`dl` / `del` / `ins` / `cite` / `fieldset`，整段真实 HTML 贴进来就能画 |
 
 ## 构建与测试
 
@@ -105,7 +106,7 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 ./build/test_qltext_blob                  # qltext blob 直接产出的 .qlui 与提交基准逐字节相同
 ./build/test_line_height                  # line-height：单行文字垂直居中（按渲染墨迹判断）
 ./build/test_text_wrap                    # 自动折行：断行规则 + 布局/绘制共用一份行数
-./build/test_html_tags                    # 35 个标签的 UA 默认样式 + 行内空白规则
+./build/test_html_tags                    # 66 个标签的 UA 默认样式 + 行内空白规则
 ./build/test_text_style                   # 合成加粗/斜体/下划线 + 装饰线
 ./build/test_scroll                       # overflow: auto 的滚动（滚轮/拖动/夹紧/命中）
 ./build/test_input_edit                   # <input>：值/光标/选区/UTF-8 边界/密码显示
@@ -225,6 +226,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - 交互与输入：[QLInput 阅读指南](doc/手册/input/QLInput阅读指南.md) / [QLInput API 手册](doc/手册/input/QLInput%20API手册.md)
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
+- HTML5 覆盖度：[HTML5 标签覆盖与裁剪](doc/手册/ui/HTML5标签覆盖与裁剪.md)（114 个元素逐条状态 + MCU 能力包裁剪）
 - 动效：[QLAnim 阅读指南](doc/手册/anim/QLAnim阅读指南.md) / [QLAnim API 手册](doc/手册/anim/QLAnim%20API手册.md)
 - 运行期解析：[QLUIText 阅读指南](doc/手册/uitext/QLUIText阅读指南.md) / [QLUIText API 手册](doc/手册/uitext/QLUIText%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)

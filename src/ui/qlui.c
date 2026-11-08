@@ -40,6 +40,13 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "hr", "br",
     "mark", "em", "strong", "u", "s",
     "input", "select", "option",
+    /* --- 纯语义标签 --- */
+    "html", "body",
+    "dl", "dt", "dd", "menu", "address", "hgroup", "search",
+    "a", "abbr", "code", "kbd", "samp", "var", "q", "dfn", "cite", "data",
+    "time", "small", "bdi", "bdo", "wbr",
+    "del", "ins",
+    "form", "label", "fieldset", "legend", "optgroup",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -2129,15 +2136,29 @@ static void draw_scrollbar(QLUINodeRT *node, QLDraw2D *d2d)
 
 
 /* 第 i 个 <option> 子节点（display:none 的不算） */
+/*
+ * <option> 可以是 <select> 的直接子节点，也可以包在 <optgroup> 里 —— 所以
+ * 往下找**一层**（optgroup 的组名现在不画，见 QLUI阅读指南 §5.4.7）。
+ */
 static QLUINodeRT *select_option_at(const QLUINodeRT *sel, int index)
 {
     int i = 0;
     for (QLUINodeRT *c = sel->first_child; c != NULL; c = c->next_sibling) {
-        if (c->src == NULL || c->src->tag != QL_UI_TAG_OPTION)
+        if (c->src == NULL)
             continue;
-        if (i == index)
-            return c;
-        i++;
+        if (c->src->tag == QL_UI_TAG_OPTION) {
+            if (i == index)
+                return c;
+            i++;
+        } else if (c->src->tag == QL_UI_TAG_OPTGROUP) {
+            for (QLUINodeRT *o = c->first_child; o != NULL; o = o->next_sibling) {
+                if (o->src == NULL || o->src->tag != QL_UI_TAG_OPTION)
+                    continue;
+                if (i == index)
+                    return o;
+                i++;
+            }
+        }
     }
     return NULL;
 }
@@ -2145,9 +2166,17 @@ static QLUINodeRT *select_option_at(const QLUINodeRT *sel, int index)
 static int select_option_count(const QLUINodeRT *sel)
 {
     int n = 0;
-    for (QLUINodeRT *c = sel->first_child; c != NULL; c = c->next_sibling)
-        if (c->src != NULL && c->src->tag == QL_UI_TAG_OPTION)
+    for (QLUINodeRT *c = sel->first_child; c != NULL; c = c->next_sibling) {
+        if (c->src == NULL)
+            continue;
+        if (c->src->tag == QL_UI_TAG_OPTION) {
             n++;
+        } else if (c->src->tag == QL_UI_TAG_OPTGROUP) {
+            for (QLUINodeRT *o = c->first_child; o != NULL; o = o->next_sibling)
+                if (o->src != NULL && o->src->tag == QL_UI_TAG_OPTION)
+                    n++;
+        }
+    }
     return n;
 }
 

@@ -2452,6 +2452,13 @@ static const char *const k_tags[] = {
     "hr", "br",
     "mark", "em", "strong", "u", "s",
     "input", "select", "option",
+    /* --- 纯语义标签 --- */
+    "html", "body",
+    "dl", "dt", "dd", "menu", "address", "hgroup", "search",
+    "a", "abbr", "code", "kbd", "samp", "var", "q", "dfn", "cite", "data",
+    "time", "small", "bdi", "bdo", "wbr",
+    "del", "ins",
+    "form", "label", "fieldset", "legend", "optgroup",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2482,12 +2489,17 @@ static QLUITag tag_value(const char *tag)
  * 拿不到最终 display。如果你把 span 改成 display:block，这个判断不会跟着变，
  * 但那种写法本来就该自己管空白。
  */
+static const char *const k_inline_tags[] = {
+    "span", "b", "i", "em", "strong", "u", "s", "mark", "del", "ins",
+    "a", "abbr", "code", "kbd", "samp", "var", "q", "dfn", "cite", "data",
+    "time", "small", "bdi", "bdo", "wbr", "label", "legend",
+};
+
+/* 这些标签的 UA 默认 display 是 inline（表里的）+ 有额外样式的几个（下面单独判） */
 static int tag_inline_by_default(const char *tag)
 {
-    static const char *const inl[] = { "span", "b",  "i",      "em",
-                                       "strong", "u", "s", "mark" };
-    for (size_t i = 0; i < sizeof(inl) / sizeof(inl[0]); i++)
-        if (strcmp(tag, inl[i]) == 0)
+    for (size_t i = 0; i < sizeof(k_inline_tags) / sizeof(k_inline_tags[0]); i++)
+        if (strcmp(tag, k_inline_tags[i]) == 0)
             return 1;
     return 0;
 }
@@ -2499,7 +2511,7 @@ static int tag_inline_by_default(const char *tag)
 static int tag_is_void(const char *tag)
 {
     return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0 ||
-           strcmp(tag, "input") == 0;
+           strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0;
 }
 
 static void pnode_free(PNode *n)
@@ -3501,6 +3513,54 @@ static int ua_defaults(const char *tag, Decls *out)
     if (strcmp(tag, "option") == 0) {
         return decls_set(out, "display", "none");
     }
+    /* <optgroup> 与 <option> 一样不参与布局（组名现在不画，见文档） */
+    if (strcmp(tag, "optgroup") == 0) {
+        return decls_set(out, "display", "none");
+    }
+
+    /* ---- 纯语义标签：只给"看结构就该知道"的 display ---- */
+    /*
+     * 描述列表：<dd> 的缩进用 padding-left（与 <ul> 一致，39 行的 40px margin 不要）。
+     */
+    if (strcmp(tag, "dl") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "margin", "8px 0");
+    }
+    if (strcmp(tag, "dd") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "padding-left", "18px");
+    }
+    if (strcmp(tag, "menu") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "margin", "8px 0") &&
+               decls_set(out, "padding-left", "18px");
+    }
+    if (strcmp(tag, "address") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "font-style", "italic");
+    }
+    /* <fieldset> 自带一圈边框；<legend> 排在它里面当一个行内标题 */
+    if (strcmp(tag, "fieldset") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "margin", "8px 0") &&
+               decls_set(out, "padding", "8px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-radius", "4px") &&
+               decls_set(out, "border-color", "#8A8A8A");
+    }
+    /* 引用/定义/变量按浏览器惯例用斜体（装饰线已经支持，所以这是真的斜体） */
+    if (strcmp(tag, "cite") == 0 || strcmp(tag, "var") == 0 ||
+        strcmp(tag, "dfn") == 0) {
+        return ua_set_inline(out) && decls_set(out, "font-style", "italic");
+    }
+    if (strcmp(tag, "del") == 0)
+        return ua_set_inline(out) && decls_set(out, "text-decoration", "line-through");
+    if (strcmp(tag, "ins") == 0)
+        return ua_set_inline(out) && decls_set(out, "text-decoration", "underline");
+
+    /* 剩下这些纯行内标签 UA 默认只有 display:inline（与 tag_inline_by_default 同表） */
+    if (tag_inline_by_default(tag))
+        return ua_set_inline(out);
 
     /* ---- 按钮：一行能看见的边框 + 内边距（用 line-height 撑不出来的高度） ---- */
     if (strcmp(tag, "button") == 0) {

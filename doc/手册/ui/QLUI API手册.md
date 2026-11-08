@@ -72,7 +72,9 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `input` | `display:inline-block`，带内边距/边框/圆角；`type` 只支持 `text` / `password` |
 | `select` / `option` | 与 `input` 同形 / **`display:none`**（只活在面板里） |
 
-完整 35 个标签见[阅读指南 §5.4.7](QLUI阅读指南.md)。
+目前认 **66 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+[HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)；UA 默认样式细节见
+[阅读指南 §5.4.7](QLUI阅读指南.html)。
 
 **限制**：
 - 文档必须**有且只有一个根元素**；

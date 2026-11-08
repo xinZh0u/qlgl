@@ -12,19 +12,52 @@
 所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。
 
-## 现支持的 35 个标签
+## 现支持的 66 个标签
+
+HTML5 一共 114 个元素，本库现在认其中 **66 个**。全量清单（含每个标签的状态、能力包、
+MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)，这里只给常用分组：
 
 | 类 | 标签 |
 |---|---|
-| 容器 / 结构 | `div` `section` `header` `footer` `nav` `main` `article` `aside` `figure` `figcaption` `blockquote` |
+| 容器 / 结构 | `div` `section` `header` `footer` `nav` `main` `article` `aside` `figure` `figcaption` `blockquote` `html` `body` `hgroup` `search` |
 | 标题 | `h1` `h2` `h3` `h4` `h5` `h6` |
-| 文本块 | `p` |
-| 行内 | `span` `b` `i` `em` `strong` `u` `s` `mark` |
+| 文本块 | `p` `dl` `dt` `dd` `menu` `address` |
+| 行内 | `span` `b` `i` `em` `strong` `u` `s` `mark` `del` `ins` |
+| 行内（纯语义） | `a` `abbr` `code` `kbd` `samp` `var` `q` `dfn` `cite` `data` `time` `small` `bdi` `bdo` |
 | 列表 | `ul` `ol` `li` |
-| 空元素 | `hr` `br` |
+| 空元素 | `hr` `br` `wbr` |
 | 控件 | `button` |
 | 输入 | `input`（`type` 只支持 `text` / `password`，见[输入控件](11_input.html)） |
-| 下拉 | `select` `option`（`option` 自动 `display: none`，见[输入控件](11_input.html)） |
+| 下拉 | `select` `option` `optgroup`（后两个自动 `display: none`，见[输入控件](11_input.html)） |
+| 表单外壳 | `form` `label` `fieldset` `legend`（**没有提交、没有校验**） |
+
+新加的这批叫**纯语义标签**：它们不引入任何新能力，只是"别再报错"。所以要说清楚
+哪些看得出区别、哪些看不出：
+
+| 看得出区别 | 为什么 |
+|---|---|
+| `dl` / `dt` / `dd` | `dl` 有 margin，`dd` 缩进 18px |
+| `cite` / `var` / `dfn` / `address` | 斜体（合成斜体，见 §5.4.8 那种） |
+| `del` / `ins` | 删除线 / 下划线（装饰线已经支持） |
+| `fieldset` | 自带 1px 圆角边框 |
+
+| 看不出区别 | 缺什么 |
+|---|---|
+| `a` | 没有 `href` 导航、没有光标；就是一段带颜色的文字 |
+| `abbr` | 没有 `title` tooltip |
+| `code` / `kbd` / `samp` | 没有等宽字体族（`font-family` 还没做） |
+| `q` | 没有生成引号（本库没有生成内容） |
+| `time` / `data` | `datetime` / `value` 属性被忽略 |
+| `small` | 没有相对字号单位（`em` / `smaller`） |
+| `bdi` / `bdo` | 没有双向文本（RTL）支持 |
+| `wbr` | 没有"可选断点"（不影响折行） |
+| `form` / `label` / `legend` / `optgroup` | 纯排版盒子；`optgroup` 的组名不画 |
+
+一张全是语义标签的页面（`dl` 缩进、`cite` 斜体、`del`/`ins` 装饰线、`fieldset` 边框）：
+
+<img src="../img/11-semantic.png" alt="纯语义标签示例" width="320">
+
+完整程序：`example/11_semantic.c`。
 
 UA 默认样式都很薄，只有"看结构就该知道"的那些：
 
@@ -40,7 +73,17 @@ ul, ol { margin: 8px 0; padding-left: 18px }
 hr { height: 1px; background-color: #8A8A8A; margin: 8px 0 }
 mark { background-color: #FFE58F; color: #000 }
 input, select { display: inline-block; /* 内边距 + 边框 + 圆角 */ }
-option { display: none }                 /* 只活在下拉面板里 */
+option, optgroup { display: none }        /* 只活在下拉面板里 */
+/* 纯语义标签：只给 display，外加几处"真的看得出"的 */
+a, abbr, code, kbd, samp, q, data, time, small, bdi, bdo { display: inline; }
+cite, var, dfn { display: inline; font-style: italic }
+del { display: inline; text-decoration: line-through }
+ins { display: inline; text-decoration: underline }
+dl  { margin: 8px 0 }
+dd  { padding-left: 18px }
+menu { margin: 8px 0; padding-left: 18px }
+address { font-style: italic }
+fieldset { margin: 8px 0; padding: 8px; border: 1px solid #8A8A8A; border-radius: 4px }
 ```
 
 注意这是**给这个库的观感**调的，不是"和 Chrome 截图一致"调的（比如 `p` 的
