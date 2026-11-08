@@ -171,6 +171,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/05_animation.html'>动画</a>
 <a href='../../tutorial/06_theme.html'>换皮肤</a>
 <a href='../../tutorial/07_advanced.html'>进阶</a>
+<a href='../../tutorial/08_tags.html'>标签与语义</a>
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
@@ -461,7 +462,7 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 <tbody>
 <tr>
 <td>不支持的标签</td>
-<td><code>&lt;table&gt;</code> / <code>&lt;img&gt;</code>（只认 10 个标签，见 §6）</td>
+<td><code>&lt;table&gt;</code> / <code>&lt;img&gt;</code> / <code>&lt;input&gt;</code>（提示会告诉你替代做法）</td>
 </tr>
 <tr>
 <td>HTML 结构错</td>
@@ -927,6 +928,77 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
    现在按 <code>row ? 文本宽度 : 行数 × 行高</code> 分轴，折行时行数用"父容器给的可用宽度"估。</li>
 </ol>
 <hr />
+<h3 id="547-ua">5.4.7 标签与 UA 默认样式</h3>
+<p>标签在本架构里<strong>只影响三件事</strong>：UA 默认样式、<code>tag</code> 选择器、调试名。
+布局与绘制只看编译出来的 <code>QLUIStyle</code>，不看标签——所以加标签几乎零成本（只加枚举）。</p>
+<p>共 32 个（<code>QLUITag</code> / <code>k_tags[]</code> / <code>s_tag_names[]</code> <strong>三处顺序必须一致</strong>，
+且只能在末尾追加：<code>node.tag</code> 是存进 blob 的数字）：</p>
+<table>
+<thead>
+<tr>
+<th>类</th>
+<th>标签</th>
+<th>UA 默认样式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>容器</td>
+<td><code>div</code> <code>section</code> <code>header</code> <code>footer</code> <code>nav</code> <code>main</code> <code>article</code> <code>aside</code> <code>figure</code> <code>figcaption</code> <code>blockquote</code></td>
+<td><code>display: block</code></td>
+</tr>
+<tr>
+<td>标题</td>
+<td><code>h1</code>…<code>h6</code></td>
+<td>block + 字号 24/20/17/15/13/12 + 递减 margin</td>
+</tr>
+<tr>
+<td>文本块</td>
+<td><code>p</code></td>
+<td>block + <code>margin: 8px 0</code></td>
+</tr>
+<tr>
+<td>行内</td>
+<td><code>span</code> <code>b</code> <code>i</code> <code>em</code> <code>strong</code> <code>u</code> <code>s</code></td>
+<td><code>display: inline</code></td>
+</tr>
+<tr>
+<td>高亮</td>
+<td><code>mark</code></td>
+<td>inline + 黄底黑字</td>
+</tr>
+<tr>
+<td>列表</td>
+<td><code>ul</code> <code>ol</code> / <code>li</code></td>
+<td>block + <code>margin: 8px 0</code> / block；<code>padding-left: 18px</code></td>
+</tr>
+<tr>
+<td>空元素</td>
+<td><code>hr</code> / <code>br</code></td>
+<td>1px 细线 + margin / 高度 0 的块</td>
+</tr>
+<tr>
+<td>控件</td>
+<td><code>button</code></td>
+<td>inline-block + 内边距 + 边框 + 圆角</td>
+</tr>
+</tbody>
+</table>
+<p><strong>几处必须知道的取舍</strong></p>
+<ol>
+<li><strong><code>em</code>/<code>strong</code>/<code>u</code>/<code>s</code>/<code>b</code>/<code>i</code> 现在和 <code>span</code> 一样</strong>：加粗/斜体/下划线要字体变体
+   （合成加粗、合成斜体、装饰线），还没做。<code>mark</code> 是唯一现在就有视觉区别的行内标签。</li>
+<li><strong>列表不画项目符号</strong>：本库没有生成内容（<code>::before</code> / <code>::marker</code>），标记请自己写字符。</li>
+<li><strong><code>&lt;br&gt;</code> 是一个"高度为 0 的块"</strong>：没有生成内容，也没法在一个文本节点里插换行，
+   所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。</li>
+<li><strong><code>&lt;img&gt;</code> / <code>&lt;input&gt;</code> / <code>&lt;table&gt;</code> 明确报错</strong>，错误信息里给出替代做法
+   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。</li>
+</ol>
+<p><strong>行内元素之间的空白保留成一个空格</strong>（<code>&lt;b&gt;a&lt;/b&gt; &lt;i&gt;b&lt;/i&gt;</code> 不能变成 <code>ab</code>）。
+这一步在解析期做，靠的是标签的<strong>默认</strong> display（级联还没跑），所以如果你把
+<code>span</code> 改成 <code>block</code>，这个判断不会跟着变。块级兄弟之间的空白照旧丢掉，
+否则每个缩进都会变成一行。flex 容器里这种"只有空白的 span"会在 <code>ql_ui_build</code>
+时被共享的隐藏样式关掉（CSS：只含空白的匿名 flex 项不渲染），零额外内存。</p>
 <h3 id="55-qlui-blob">5.5 <code>.qlui</code> blob：换界面不用重编译</h3>
 <div class="highlight"><pre><span></span><code>                    ┌──▶ ui_demo.c ──▶ 编译器 ──▶ .rodata ──▶ ql_ui_build()
 index.html + index.css ──qltext cc──┤

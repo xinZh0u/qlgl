@@ -29,6 +29,16 @@
 
 /* ----- 生成数据的格式（构建期产出，运行期只读） ----- */
 
+/*
+ * 标签。
+ *
+ * 标签在本架构里只影响三件事：① UA 默认样式（相当于浏览器内置样式表）；
+ * ② `tag` 选择器；③ 调试/查询。布局与绘制只看编译出来的 QLUIStructStyle，
+ * 不看标签——所以加标签几乎零成本。
+ *
+ * 顺序必须与 qlui_parse.c 的 `k_tags[]` 一致（下标就是枚举值）。
+ * 只能在末尾追加：node.tag 是存进 blob 的数字。
+ */
 typedef enum {
     QL_UI_TAG_DIV = 0,
     QL_UI_TAG_SECTION,
@@ -40,8 +50,36 @@ typedef enum {
     QL_UI_TAG_H1,
     QL_UI_TAG_H2,
     QL_UI_TAG_H3,
+    /* --- 标题的其余三级 --- */
+    QL_UI_TAG_H4,
+    QL_UI_TAG_H5,
+    QL_UI_TAG_H6,
+    /* --- 文档结构：UA 默认样式就是 display:block，纯语义 --- */
+    QL_UI_TAG_HEADER,
+    QL_UI_TAG_FOOTER,
+    QL_UI_TAG_NAV,
+    QL_UI_TAG_MAIN,
+    QL_UI_TAG_ARTICLE,
+    QL_UI_TAG_ASIDE,
+    QL_UI_TAG_FIGURE,
+    QL_UI_TAG_FIGCAPTION,
+    QL_UI_TAG_BLOCKQUOTE,
+    /* --- 列表（注意：不画项目符号，本库没有生成内容，见文档） --- */
+    QL_UI_TAG_UL,
+    QL_UI_TAG_OL,
+    QL_UI_TAG_LI,
+    /* --- 两个空元素：<hr> 是块级细线，<br> 是"换一行" --- */
+    QL_UI_TAG_HR,
+    QL_UI_TAG_BR,
+    /* --- 行内语义：UA 默认 display:inline；加粗/斜体/下划线要等文本样式支持 --- */
+    QL_UI_TAG_MARK,
+    QL_UI_TAG_EM,
+    QL_UI_TAG_STRONG,
+    QL_UI_TAG_U,
+    QL_UI_TAG_S,
     QL_UI_TAG_COUNT
 } QLUITag;
+
 
 typedef enum {
     QL_UI_DISPLAY_BLOCK = 0,
@@ -557,7 +595,7 @@ const QLFont *ql_ui_node_font(const QLUINodeRT *node);
 /* 生效样式：ACTIVE > FOCUS > HOVER > 基础（只影响绘制，不影响布局） */
 const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node);
 QLRect      ql_ui_node_rect(const QLUINodeRT *node);
-const char *ql_ui_tag_name(QLUITag tag);
+const char *ql_ui_tag_name(uint16_t tag);
 
 /* 运行期只允许改文本（结构在构建期固定，见 Web兼容设计 §12.5） */
 ql_err_t    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);

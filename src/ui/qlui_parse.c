@@ -2441,38 +2441,62 @@ struct PNode {
     int    capitems;
 };
 
-static const char *const k_tags[] = { "div", "section", "p", "span", "b", "i",
-                                      "button", "h1", "h2", "h3" };
+/* 下标 == QLUITag 的枚举值，顺序不能改（只在末尾追加） */
+static const char *const k_tags[] = {
+    "div", "section", "p", "span", "b", "i", "button", "h1", "h2", "h3",
+    "h4", "h5", "h6",
+    "header", "footer", "nav", "main", "article", "aside", "figure",
+    "figcaption", "blockquote",
+    "ul", "ol", "li",
+    "hr", "br",
+    "mark", "em", "strong", "u", "s",
+};
+
+#define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
+
+/* 标签名 → 枚举；不认识的返回 -1 */
+static int tag_index(const char *tag)
+{
+    for (int i = 0; i < TAG_COUNT; i++)
+        if (strcmp(tag, k_tags[i]) == 0)
+            return i;
+    return -1;
+}
 
 static int tag_supported(const char *tag)
 {
-    for (size_t i = 0; i < sizeof(k_tags) / sizeof(k_tags[0]); i++)
-        if (strcmp(tag, k_tags[i]) == 0)
-            return 1;
-    return 0;
+    return tag_index(tag) >= 0;
 }
 
 static QLUITag tag_value(const char *tag)
 {
-    if (strcmp(tag, "div") == 0)
-        return QL_UI_TAG_DIV;
-    if (strcmp(tag, "section") == 0)
-        return QL_UI_TAG_SECTION;
-    if (strcmp(tag, "p") == 0)
-        return QL_UI_TAG_P;
-    if (strcmp(tag, "span") == 0)
-        return QL_UI_TAG_SPAN;
-    if (strcmp(tag, "b") == 0)
-        return QL_UI_TAG_B;
-    if (strcmp(tag, "i") == 0)
-        return QL_UI_TAG_I;
-    if (strcmp(tag, "button") == 0)
-        return QL_UI_TAG_BUTTON;
-    if (strcmp(tag, "h1") == 0)
-        return QL_UI_TAG_H1;
-    if (strcmp(tag, "h2") == 0)
-        return QL_UI_TAG_H2;
-    return QL_UI_TAG_H3;
+    const int i = tag_index(tag);
+    return (QLUITag)((i >= 0) ? i : QL_UI_TAG_DIV);
+}
+
+/*
+ * 这些标签的 UA 默认 display 是 inline。**只用来判断"两个行内元素之间的空白
+ * 要不要留成一个空格"**（见 flatten_node 的混排分支）——那个判断发生在级联之前，
+ * 拿不到最终 display。如果你把 span 改成 display:block，这个判断不会跟着变，
+ * 但那种写法本来就该自己管空白。
+ */
+static int tag_inline_by_default(const char *tag)
+{
+    static const char *const inl[] = { "span", "b",  "i",      "em",
+                                       "strong", "u", "s", "mark" };
+    for (size_t i = 0; i < sizeof(inl) / sizeof(inl[0]); i++)
+        if (strcmp(tag, inl[i]) == 0)
+            return 1;
+    return 0;
+}
+
+/*
+ * 空元素（HTML 里没有结束标签、也没有子节点的那些）。
+ * 本库只认这两个：`<hr>` 和 `<br>`。
+ */
+static int tag_is_void(const char *tag)
+{
+    return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0;
 }
 
 static void pnode_free(PNode *n)
@@ -2958,7 +2982,57 @@ static int flatten_node(PNode *n)
                 break;
             }
             if (blank) {
+                /*
+                 * 空白段（元素之间那点缩进/空格）。
+                 *
+                 * CSS 的规则：两个**行内**盒子之间的空白折叠成一个空格；
+                 * 块级盒子之间的空白没有意义，直接丢掉。
+                 * 这里没有级联结果，只能按标签的默认 display 判断 ——
+                 * 不这么做的话 `<mark>a</mark> <em>b</em>` 会渲染成 "ab"
+                 * （真实 HTML 里到处都是这种写法，肉眼一看就错）。
+                 *
+                 * 首段/末段的空白仍然丢掉：行首行尾的空格在 CSS 里也不显示。
+                 */
+                /*
+                 * 注意不能用 first_text/last_text 判断"行首/行尾"：
+                 * `<em>a</em> <strong>b</strong>` 里那段空格就是**最后一个**
+                 * 文本段，但它夹在两个元素中间，必须保留（丢掉就成了 "ab"）。
+                 * 真正的判据是有没有前/后邻居元素。
+                 */
+                int keep = 0;
+                {
+                    const PNode *pv = NULL;
+                    const PNode *nx = NULL;
+                    for (int k = i - 1; k >= 0; k--)
+                        if (!n->items[k].is_text) {
+                            pv = n->items[k].node;
+                            break;
+                        }
+                    for (int k = i + 1; k < n->nitems; k++)
+                        if (!n->items[k].is_text) {
+                            nx = n->items[k].node;
+                            break;
+                        }
+                    keep = (pv != NULL && nx != NULL &&
+                            tag_inline_by_default(pv->tag) &&
+                            tag_inline_by_default(nx->tag));
+                }
                 ql_mem_free(dup);
+                if (!keep)
+                    continue;
+                PNode *space = pnode_new("span", n);
+                if (space == NULL)
+                    return 0;
+                space->text = xstrdup(" ");
+                if (space->text == NULL) {
+                    pnode_free(space);
+                    return 0;
+                }
+                if (prev != NULL)
+                    prev->next_sibling = space;
+                else
+                    n->first_child = space;
+                prev = space;
                 continue;
             }
             PNode *span = pnode_new("span", n);
@@ -3121,7 +3195,20 @@ static PNode *parse_html(const char *html)
             int self_closing = (after[-2] == '/');
 
             if (!tag_supported(name)) {
-                set_error("HTML: 不支持的标签 <%s>", name);
+                /* 对几个"一定会有人写"的标签给出比"不支持"更有用的提示 */
+                if (strcmp(name, "img") == 0)
+                    set_error("HTML: 不支持 <img>（本库没有图片解码器）："
+                              "装饰用 div + background-image / 圆角做，"
+                              "图标用字体字符或 SDF 图元做");
+                else if (strcmp(name, "input") == 0 || strcmp(name, "textarea") == 0 ||
+                         strcmp(name, "select") == 0)
+                    set_error("HTML: 不支持 <%s>（还没有输入控件）："
+                              "文本展示用 div，点击用 :active/:hover + 事件", name);
+                else if (strcmp(name, "table") == 0 || strcmp(name, "tr") == 0 ||
+                         strcmp(name, "td") == 0)
+                    set_error("HTML: 不支持表格 <%s>：用嵌套的 flex 行来做", name);
+                else
+                    set_error("HTML: 不支持的标签 <%s>", name);
                 attrs_free(&at);
                 pnode_free(root);
                 return NULL;
@@ -3175,8 +3262,9 @@ static PNode *parse_html(const char *html)
                 return NULL;
             }
 
-            if (self_closing) {
-                /* 自闭合：不压栈（等价于 start + end） */
+            /* 自闭合写法 <br/> 与空元素 <br> 等价：都不压栈 */
+            if (self_closing || tag_is_void(name)) {
+                /* 不压栈（等价于 start + end） */
             } else {
                 cur = n;
                 depth++;
@@ -3246,39 +3334,105 @@ static int rule_matches(const PNode *n, const Rule *r)
     return r->nparts > 0 && match_rec(n, r, r->nparts - 1);
 }
 
-/* 每个标签的 UA 默认样式（相当于浏览器的内置样式表） */
+/*
+ * 每个标签的 UA 默认样式（相当于浏览器的内置样式表）。
+ *
+ * 两条原则：
+ *   1. **只给"看结构就该知道"的样式**：块级/行内、标题字号、列表缩进、<hr> 的细线。
+ *      不做逐像素对标浏览器 —— 我们的 UA 默认值是给这个库的观感调的，不是给
+ *      "和 Chrome 截图一致"调的。
+ *   2. **不确定性优先报错**：想让某个标签长得不一样，自己写 CSS 覆盖它，
+ *      别指望这里悄悄塞个值。
+ *
+ * 注意哪些标签这里**故意没有效果**：
+ *   - `em` / `strong` / `b` / `i` / `u` / `s`：要加粗/斜体/下划线，得先有
+ *     字体变体（合成加粗、合成斜体、装饰线），那是下一步；现在它们与 `span` 等价。
+ *   - `ul` / `ol`：结构与缩进有了，但**不画项目符号** —— 本库没有生成内容
+ *     （`::marker` / `::before`），标记请自己写字符。
+ */
+static int ua_set_block(Decls *out)
+{
+    return decls_set(out, "display", "block");
+}
+
+static int ua_set_inline(Decls *out)
+{
+    return decls_set(out, "display", "inline");
+}
+
+static int ua_heading(Decls *out, int px, int margin)
+{
+    char size[16];
+    char m[16];
+    snprintf(size, sizeof(size), "%dpx", px);
+    snprintf(m, sizeof(m), "%dpx 0", margin);
+    return decls_set(out, "display", "block") && decls_set(out, "font-size", size) &&
+           decls_set(out, "margin", m);
+}
+
 static int ua_defaults(const char *tag, Decls *out)
 {
-    if (strcmp(tag, "p") == 0) {
-        return decls_set(out, "display", "block") &&
-               decls_set(out, "margin", "8px 0");
+    /* ---- 行内 ---- */
+    if (strcmp(tag, "span") == 0 || strcmp(tag, "b") == 0 || strcmp(tag, "i") == 0 ||
+        strcmp(tag, "em") == 0 || strcmp(tag, "strong") == 0 ||
+        strcmp(tag, "u") == 0 || strcmp(tag, "s") == 0)
+        return ua_set_inline(out);
+
+    /* 高亮：行内元素也有自己的背景盒，所以这个标签现在就能看出区别 */
+    if (strcmp(tag, "mark") == 0)
+        return decls_set(out, "display", "inline") &&
+               decls_set(out, "background-color", "#FFE58F") &&
+               decls_set(out, "color", "#000");
+
+    /* ---- 标题：浏览器量级，但用 px ---- */
+    if (tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' && tag[2] == '\0') {
+        static const int k_h_px[6] = { 24, 20, 17, 15, 13, 12 };
+        static const int k_h_margin[6] = { 10, 9, 8, 7, 6, 5 };
+        const int i = tag[1] - '1';
+        return ua_heading(out, k_h_px[i], k_h_margin[i]);
     }
-    if (strcmp(tag, "span") == 0 || strcmp(tag, "b") == 0 || strcmp(tag, "i") == 0)
-        return decls_set(out, "display", "inline");
+
+    if (strcmp(tag, "p") == 0)
+        return decls_set(out, "display", "block") && decls_set(out, "margin", "8px 0");
+
+    /* ---- 按钮：一行能看见的边框 + 内边距（用 line-height 撑不出来的高度） ---- */
     if (strcmp(tag, "button") == 0) {
         return decls_set(out, "display", "inline-block") &&
                decls_set(out, "padding", "4px 10px") &&
                decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-radius", "4px") &&
                decls_set(out, "border-color", "#555") &&
                decls_set(out, "background-color", "#d8d8d8") &&
                decls_set(out, "color", "#000");
     }
-    if (strcmp(tag, "h1") == 0) {
+
+    /* ---- 列表：结构 + 缩进（符号自己写，见上面的说明） ---- */
+    if (strcmp(tag, "ul") == 0 || strcmp(tag, "ol") == 0) {
         return decls_set(out, "display", "block") &&
-               decls_set(out, "font-size", "16px") &&
-               decls_set(out, "margin", "6px 0");
+               decls_set(out, "margin", "8px 0") &&
+               decls_set(out, "padding-left", "18px");
     }
-    if (strcmp(tag, "h2") == 0) {
+    if (strcmp(tag, "li") == 0)
+        return ua_set_block(out);
+
+    /* ---- <hr>：块级细线。不写 background-color 就是黑的，所以必须显式给 ---- */
+    if (strcmp(tag, "hr") == 0) {
         return decls_set(out, "display", "block") &&
-               decls_set(out, "font-size", "16px") &&
-               decls_set(out, "margin", "5px 0");
+               decls_set(out, "height", "1px") &&
+               decls_set(out, "background-color", "#8A8A8A") &&
+               decls_set(out, "margin", "8px 0");
     }
-    if (strcmp(tag, "h3") == 0) {
-        return decls_set(out, "display", "block") &&
-               decls_set(out, "font-size", "12px") &&
-               decls_set(out, "margin", "4px 0");
+    /*
+     * <br>：没有生成内容，也没法在一个文本节点里插换行，所以做成
+     * "一个高度为 0 的块" —— 它会结束当前行内行，于是下一段从新的一行开始。
+     * 视觉上等价于换行，代价是它占一个节点。
+     */
+    if (strcmp(tag, "br") == 0) {
+        return decls_set(out, "display", "block") && decls_set(out, "height", "0");
     }
-    return decls_set(out, "display", "block");     /* div / section */
+
+    /* ---- 其余结构容器 / section / figure / figcaption / blockquote / main … ---- */
+    return ua_set_block(out);
 }
 
 typedef struct {

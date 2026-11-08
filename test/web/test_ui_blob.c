@@ -96,7 +96,7 @@ QL_TEST_BEGIN("test_ui_blob")
     QL_CHECK_EQ(ui_demo_doc.arena, NULL);
     QL_CHECK_EQ(ql_ui_doc_is_owned(&ui_demo_doc), 0);
     ql_ui_doc_free((QLUIDoc *)(uintptr_t)&ui_demo_doc);   /* 不应崩、不应 free */
-    QL_CHECK_EQ(ui_demo_doc.node_count, 24);              /* 仍然有效 */
+    QL_CHECK_EQ(ui_demo_doc.node_count, 26);   /* 24 个元素 + 2 个行内间隔 span */              /* 仍然有效 */
 
     /* ---------- 3. 编码：容量查询与写入 ---------- */
     size_t need = ql_ui_doc_encode(&ui_demo_doc, NULL, 0);

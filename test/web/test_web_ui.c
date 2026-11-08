@@ -27,8 +27,9 @@ static void settle(QLUIRoot *ui)
 
 QL_TEST_BEGIN("test_web_ui")
 
-    /* 1. 文档内容符合预期：14 个节点（section + 3 div + 5 p + 4 span） */
-    QL_CHECK_EQ(ui_demo_doc.node_count, 24);   /* M3 示例页：flex + 混合内容 */
+    /* 1. 文档内容符合预期：24 个元素 + 2 个"行内元素之间的空格"span
+     *    （解析期为了让 `<span>a</span> <span>b</span>` 不粘在一起会插这种节点） */
+    QL_CHECK_EQ(ui_demo_doc.node_count, 26);
     QL_CHECK(ui_demo_doc.nodes != NULL);
     QL_CHECK(ui_demo_doc.styles != NULL);
     QL_CHECK_STR(ui_demo_doc.name, "ui_demo");

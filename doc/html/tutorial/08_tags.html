@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>标签与语义 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html' class='active'>标签与语义</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">标签与语义</h1>
+<p>这一章讲 HTML 标签。</p>
+<p><strong>先说清楚一件事</strong>：在这套架构里，标签<strong>几乎不参与渲染</strong>。布局和绘制只看编译出来的
+<code>QLUIStyle</code>（<code>layout</code> / <code>paint</code> 的字段），不看标签。标签只影响三样东西：</p>
+<ol>
+<li><strong>UA 默认样式</strong>（相当于浏览器的内置样式表）；</li>
+<li><strong><code>tag</code> 选择器</strong>（<code>header { color: ... }</code>）；</li>
+<li><strong>调试与查询</strong>（<code>ql_ui_tag_name(node-&gt;src-&gt;tag)</code> 取回 "header"）。</li>
+</ol>
+<p>所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
+直接报错。</p>
+<h2 id="32">现支持的 32 个标签</h2>
+<table>
+<thead>
+<tr>
+<th>类</th>
+<th>标签</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>容器 / 结构</td>
+<td><code>div</code> <code>section</code> <code>header</code> <code>footer</code> <code>nav</code> <code>main</code> <code>article</code> <code>aside</code> <code>figure</code> <code>figcaption</code> <code>blockquote</code></td>
+</tr>
+<tr>
+<td>标题</td>
+<td><code>h1</code> <code>h2</code> <code>h3</code> <code>h4</code> <code>h5</code> <code>h6</code></td>
+</tr>
+<tr>
+<td>文本块</td>
+<td><code>p</code></td>
+</tr>
+<tr>
+<td>行内</td>
+<td><code>span</code> <code>b</code> <code>i</code> <code>em</code> <code>strong</code> <code>u</code> <code>s</code> <code>mark</code></td>
+</tr>
+<tr>
+<td>列表</td>
+<td><code>ul</code> <code>ol</code> <code>li</code></td>
+</tr>
+<tr>
+<td>空元素</td>
+<td><code>hr</code> <code>br</code></td>
+</tr>
+<tr>
+<td>控件</td>
+<td><code>button</code></td>
+</tr>
+</tbody>
+</table>
+<p>UA 默认样式都很薄，只有"看结构就该知道"的那些：</p>
+<div class="highlight"><pre><span></span><code><span class="c">/* 大致相当于内置样式表的全部内容 */</span>
+<span class="nt">div</span><span class="o">,</span><span class="w"> </span><span class="nt">section</span><span class="o">,</span><span class="w"> </span><span class="nt">header</span><span class="o">,</span><span class="w"> </span><span class="nt">footer</span><span class="o">,</span><span class="w"> </span><span class="nt">nav</span><span class="o">,</span><span class="w"> </span><span class="nt">main</span><span class="o">,</span><span class="w"> </span><span class="nt">article</span><span class="o">,</span><span class="w"> </span><span class="nt">aside</span><span class="o">,</span>
+<span class="nt">figure</span><span class="o">,</span><span class="w"> </span><span class="nt">figcaption</span><span class="o">,</span><span class="w"> </span><span class="nt">blockquote</span><span class="o">,</span><span class="w"> </span><span class="nt">p</span><span class="o">,</span><span class="w"> </span><span class="nt">li</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">block</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">span</span><span class="o">,</span><span class="w"> </span><span class="nt">b</span><span class="o">,</span><span class="w"> </span><span class="nt">i</span><span class="o">,</span><span class="w"> </span><span class="nt">em</span><span class="o">,</span><span class="w"> </span><span class="nt">strong</span><span class="o">,</span><span class="w"> </span><span class="nt">u</span><span class="o">,</span><span class="w"> </span><span class="nt">s</span><span class="w">           </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">inline</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">h1</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">h2</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">9</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* …到 h6 递减 */</span>
+<span class="nt">p</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">ul</span><span class="o">,</span><span class="w"> </span><span class="nt">ol</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="k">padding-left</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">hr</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#8A8A8A</span><span class="p">;</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">mark</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFE58F</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#000</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>注意这是<strong>给这个库的观感</strong>调的，不是"和 Chrome 截图一致"调的（比如 <code>p</code> 的
+margin 是 8px 而不是 1em）。</p>
+<h2 id="_2">一个完整的文章页</h2>
+<p><img src="../img/08-tags.png" alt="标签示例" width="260"></p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_html</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="s">&quot;&lt;div id=</span><span class="se">\&quot;</span><span class="s">root</span><span class="se">\&quot;</span><span class="s">&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;  &lt;header&gt;QLGL 标签示例&lt;/header&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;  &lt;hr&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;  &lt;p&gt;普通文本，&lt;mark&gt;高亮&lt;/mark&gt;，&lt;em&gt;强调&lt;/em&gt;，&lt;strong&gt;更强&lt;/strong&gt;。&lt;/p&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;  &lt;ul&gt;&lt;li&gt;第一项&lt;/li&gt;&lt;li&gt;第二项&lt;/li&gt;&lt;/ul&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;  &lt;blockquote&gt;引用一段话&lt;/blockquote&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;  &lt;figure&gt;&lt;div class=</span><span class="se">\&quot;</span><span class="s">box</span><span class="se">\&quot;</span><span class="s">&gt;&lt;/div&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;    &lt;figcaption&gt;图 1：一个方块&lt;/figcaption&gt;&lt;/figure&gt;&quot;</span>
+<span class="w">    </span><span class="s">&quot;&lt;/div&gt;&quot;</span><span class="p">;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_css</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="s">&quot;#root { width: 260px; background-color: #0B0E14; color: #C8D2DE;&quot;</span>
+<span class="w">    </span><span class="s">&quot;        font-size: 12px; }&quot;</span>
+<span class="w">    </span><span class="s">&quot;header { font-size: 14px; color: #7CE0FF; }&quot;</span>
+<span class="w">    </span><span class="s">&quot;blockquote { margin: 8px 10px; color: #8A94A0; }&quot;</span>
+<span class="w">    </span><span class="s">&quot;figcaption { font-size: 11px; color: #6C7783; }&quot;</span>
+<span class="w">    </span><span class="s">&quot;.box { width: 140px; height: 28px; border-radius: 4px;&quot;</span>
+<span class="w">    </span><span class="s">&quot;       background-color: #2E6BE6; }&quot;</span><span class="p">;</span>
+</code></pre></div>
+
+<p>完整可运行的版本见 <code>example/08_tags.c</code>。</p>
+<h2 id="_3">三个必须知道的"不完美"</h2>
+<h3 id="1-em-strong-u-s-span">1. <code>em</code> / <code>strong</code> / <code>u</code> / <code>s</code> 现在和 <code>span</code> 一样</h3>
+<p>加粗、斜体、下划线需要<strong>字体变体</strong>：<code>font-weight: bold</code> 要合成加粗，
+<code>font-style: italic</code> 要合成斜体，<code>text-decoration</code> 要画装饰线。这些还没做。
+所以这群标签现在是"语义标记"——对布局没有影响，等文本样式补上才真的有区别。</p>
+<p>目前唯一现在就能看出区别的行内标签是 <code>mark</code>（它有背景色）。</p>
+<h3 id="2">2. 列表不画项目符号</h3>
+<p>本库没有生成内容（<code>::before</code> / <code>::marker</code>），所以 <code>&lt;ul&gt;</code> 只给你缩进和块级结构，
+<code>•</code> 要自己写：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">ul</span><span class="p">&gt;&lt;</span><span class="nt">li</span><span class="p">&gt;</span>• 第一项<span class="p">&lt;/</span><span class="nt">li</span><span class="p">&gt;&lt;</span><span class="nt">li</span><span class="p">&gt;</span>• 第二项<span class="p">&lt;/</span><span class="nt">li</span><span class="p">&gt;&lt;/</span><span class="nt">ul</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<h3 id="3-br-0">3. <code>&lt;br&gt;</code> 是一个"高度为 0 的块"</h3>
+<p>没有生成内容，也没法在一个文本节点里插换行。但<strong>块级元素会结束当前行内行</strong>，
+所以一个高度 0 的块刚好等于"换一行"：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span><span class="p">&gt;&lt;</span><span class="nt">span</span><span class="p">&gt;</span>a<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;&lt;</span><span class="nt">br</span><span class="p">&gt;&lt;</span><span class="nt">span</span><span class="p">&gt;</span>b<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>   <span class="cm">&lt;!-- a、b 分两行 --&gt;</span>
+</code></pre></div>
+
+<p>代价是它占一个节点（不是纯文本里的 <code>\n</code>）。</p>
+<h2 id="_4">行内元素之间的空格会被保留</h2>
+<p>这件事看起来小，但真实 HTML 里到处都是：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">p</span><span class="p">&gt;</span>plain <span class="p">&lt;</span><span class="nt">mark</span><span class="p">&gt;</span>mark<span class="p">&lt;/</span><span class="nt">mark</span><span class="p">&gt;</span> <span class="p">&lt;</span><span class="nt">em</span><span class="p">&gt;</span>em<span class="p">&lt;/</span><span class="nt">em</span><span class="p">&gt;</span> <span class="p">&lt;</span><span class="nt">strong</span><span class="p">&gt;</span>strong<span class="p">&lt;/</span><span class="nt">strong</span><span class="p">&gt;&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+<span class="cm">&lt;!-- 渲染成 &quot;plain mark em strong&quot;，不是 &quot;plain markemstrong&quot; --&gt;</span>
+</code></pre></div>
+
+<p>规则与 CSS 一致：</p>
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>两个<strong>行内</strong>元素之间只有空白</td>
+<td>保留成一个空格</td>
+</tr>
+<tr>
+<td>两个<strong>块级</strong>元素之间只有空白</td>
+<td>丢掉（否则每个缩进都变一行）</td>
+</tr>
+<tr>
+<td>行首 / 行尾的空白</td>
+<td>丢掉</td>
+</tr>
+<tr>
+<td>flex 容器里只含空白的项</td>
+<td>不渲染（CSS：匿名 flex 项只含空白时不生成）</td>
+</tr>
+</tbody>
+</table>
+<p>它是在<strong>解析期</strong>决定的，靠的是标签的<strong>默认</strong> display —— 那时级联还没跑。
+所以你把 <code>span</code> 改成 <code>display: block</code>，这个判断不会跟着变（这种写法本来就该自己管空白）。</p>
+<h2 id="_5">明确报错的三个标签</h2>
+<p>写不了就直说，并且告诉你替代做法：</p>
+<div class="highlight"><pre><span></span><code>HTML: 不支持 &lt;img&gt;（本库没有图片解码器）：装饰用 div + background-image / 圆角做，
+      图标用字体字符或 SDF 图元做
+HTML: 不支持 &lt;input&gt;（还没有输入控件）：文本展示用 div，点击用 :active/:hover + 事件
+HTML: 不支持表格 &lt;table&gt;：用嵌套的 flex 行来做
+</code></pre></div>
+
+<hr />
+<p>上一章：<a href="07_advanced.html">进阶</a></p>
+<div class='pager'>
+<a href='../tutorial/07_advanced.html'><span class='dir'>上一页</span>进阶</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

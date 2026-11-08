@@ -105,10 +105,17 @@ static const char *base_name(const char *path)
 /* 枚举 → 名字（让生成出来的 C 可读，而不是一堆魔数）                  */
 /* ------------------------------------------------------------------ */
 
+/* 顺序必须与 include/qlgl/qlui.h 的 QLUITag 一致 */
 static const char *const TAG_NAMES[] = {
     "QL_UI_TAG_DIV", "QL_UI_TAG_SECTION", "QL_UI_TAG_P", "QL_UI_TAG_SPAN",
     "QL_UI_TAG_B", "QL_UI_TAG_I", "QL_UI_TAG_BUTTON", "QL_UI_TAG_H1",
-    "QL_UI_TAG_H2", "QL_UI_TAG_H3",
+    "QL_UI_TAG_H2", "QL_UI_TAG_H3", "QL_UI_TAG_H4", "QL_UI_TAG_H5",
+    "QL_UI_TAG_H6", "QL_UI_TAG_HEADER", "QL_UI_TAG_FOOTER", "QL_UI_TAG_NAV",
+    "QL_UI_TAG_MAIN", "QL_UI_TAG_ARTICLE", "QL_UI_TAG_ASIDE",
+    "QL_UI_TAG_FIGURE", "QL_UI_TAG_FIGCAPTION", "QL_UI_TAG_BLOCKQUOTE",
+    "QL_UI_TAG_UL", "QL_UI_TAG_OL", "QL_UI_TAG_LI", "QL_UI_TAG_HR",
+    "QL_UI_TAG_BR", "QL_UI_TAG_MARK", "QL_UI_TAG_EM", "QL_UI_TAG_STRONG",
+    "QL_UI_TAG_U", "QL_UI_TAG_S",
 };
 
 static const char *const DISPLAY_NAMES[] = {

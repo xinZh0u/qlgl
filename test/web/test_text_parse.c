@@ -41,6 +41,7 @@
 #include "ui_flex_anim.h"
 #include "ui_flex_anim10.h"
 #include "ui_flex_bench100.h"
+#include "ui_flex_tags.h"
 
 #ifndef QL_TEXT_CASE_DIR
 #define QL_TEXT_CASE_DIR "test/web/flex"
@@ -79,6 +80,7 @@ static const TextCase k_cases[] = {
     { "anim", &ui_flex_anim_doc },
     { "anim10", &ui_flex_anim10_doc },
     { "bench100", &ui_flex_bench100_doc },
+    { "tags", &ui_flex_tags_doc },
 };
 
 #define CASE_COUNT ((int)(sizeof(k_cases) / sizeof(k_cases[0])))

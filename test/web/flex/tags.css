@@ -1,0 +1,12 @@
+#root { width: 240px; height: 240px; background-color: #0B0E14; color: #C8D2DE;
+        font-size: 12px; }
+.hd { font-size: 14px; color: #7CE0FF; }
+.line { margin: 4px 0; }
+.row { background-color: #141A22; padding: 2px 4px; }
+.list { margin: 4px 0; padding-left: 18px; }
+.quote { margin: 4px 8px; color: #8A94A0; }
+.fig { margin: 4px 0; }
+.box { width: 120px; height: 24px; border-radius: 4px;
+       background-color: #2E6BE6; }
+figcaption { font-size: 11px; color: #6C7783; }
+mark { background-color: #FFE58F; color: #101010; }

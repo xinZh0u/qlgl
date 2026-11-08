@@ -24,14 +24,45 @@
 /* 起播关键帧动画（定义在过渡那一段，构建时要先用） */
 static void anim_boot(QLUIRoot *ui);
 
+/* 定义在布局那一段；构建时判断"父节点是不是 flex 容器"要用 */
+static int is_flex_container(const QLUIStyle *s);
+
+/* 下标 == QLUITag 枚举值，顺序必须与 qlui.h / qlui_parse.c 的 k_tags[] 一致 */
 static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "div", "section", "p", "span", "b", "i", "button", "h1", "h2", "h3",
+    "h4", "h5", "h6",
+    "header", "footer", "nav", "main", "article", "aside", "figure",
+    "figcaption", "blockquote",
+    "ul", "ol", "li",
+    "hr", "br",
+    "mark", "em", "strong", "u", "s",
 };
 
-const char *ql_ui_tag_name(QLUITag tag)
+const char *ql_ui_tag_name(uint16_t tag)
 {
-    return (tag < QL_UI_TAG_COUNT) ? s_tag_names[tag] : "?";
+    return (tag < (uint16_t)QL_UI_TAG_COUNT) ? s_tag_names[tag] : "?";
 }
+
+/* 只有空白的文本（用来识别 flex 里"不该产生项"的空白节点） */
+static int text_is_only_ws(const char *t)
+{
+    if (t == NULL || t[0] == '\0')
+        return 0;
+    for (const char *p = t; *p != '\0';) {
+        uint32_t cp = 0;
+        int32_t used = ql_utf8_decode(p, &cp);
+        if (used <= 0)
+            return 0;
+        if (!(cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r' || cp == 0xA0u ||
+              cp == 0x3000u))
+            return 0;
+        p += used;
+    }
+    return 1;
+}
+
+/* 共享的隐藏样式：只用来关掉"只含空白的 flex 项" */
+static const QLUIStyle s_style_hidden = { .display = QL_UI_DISPLAY_NONE };
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -83,6 +114,21 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
                 sibling->next_sibling = rt;
             }
         }
+    }
+
+    /*
+     * flex 容器里"只有空白"的文本节点不产生 flex 项。
+     *
+     * CSS：匿名 flex 项如果只含空白就不渲染。解析期为了让
+     * `<span>a</span> <span>b</span>` 之间的空格不被吃掉，会插入一个只含空格的
+     * span；到了这里才知道父节点是不是 flex 容器。是的话就用一份**共享的隐藏样式**
+     * 把它关掉——每个节点零额外内存，也不用改任何布局循环。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++) {
+        QLUINodeRT *rt = &ui->nodes[i];
+        if (rt->parent != NULL && rt->text != NULL && rt->first_child == NULL &&
+            is_flex_container(rt->parent->style) && text_is_only_ws(rt->text))
+            rt->style = &s_style_hidden;
     }
 
     /*

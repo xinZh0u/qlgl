@@ -58,9 +58,21 @@ ql_ui_free(ui);
 ql_ui_doc_free(doc);
 ```
 
-**支持的 HTML**：`div` `section` `p` `span` `b` `i` `button` `h1` `h2` `h3`；
+**支持的 HTML（32 个标签）**
+
+| 类 | 标签 |
+|---|---|
+| 容器 / 结构 | `div` `section` `header` `footer` `nav` `main` `article` `aside` `figure` `figcaption` `blockquote` |
+| 标题 | `h1` `h2` `h3` `h4` `h5` `h6` |
+| 文本块 / 行内 | `p` `span` `b` `i` `em` `strong` `u` `s` `mark` |
+| 列表 | `ul` `ol` `li`（结构与缩进；**不画项目符号**，本库没有生成内容） |
+| 空元素 | `hr`（块级细线）、`br`（换一行） |
+| 控件 | `button`（只是一个样式化的盒子，点击靠事件） |
+
 属性只看 `class` / `id` / `style`；注释与 `<!DOCTYPE>` 跳过。
-混合内容（`<p>a<b>b</b></p>`）在编译期消解成匿名 `span`。
+混合内容（`<p>a<b>b</b></p>`）在编译期消解成匿名 `span`，
+**行内元素之间的空白会保留成一个空格**（`<b>a</b> <i>b</i>` 不会变成 `ab`）。
+标签名可用 `ql_ui_tag_name(node->src->tag)` 取回。
 
 **支持的 CSS**：与构建期工具完全一致（同一套属性白名单、同一个选择器子集）。
 详见 [QLUI API手册 §3](../ui/QLUI%20API手册.md)。

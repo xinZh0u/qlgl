@@ -166,7 +166,7 @@ UA 默认样式（UA_DEFAULTS）
 
 | 类别 | 例子 |
 |---|---|
-| 不支持的标签 | `<table>` / `<img>`（只认 10 个标签，见 §6） |
+| 不支持的标签 | `<table>` / `<img>` / `<input>`（提示会告诉你替代做法） |
 | HTML 结构错 | 结束标签不匹配、标签未闭合、根元素不是恰好 1 个 |
 | 属性名不认识 | `inset` / `opacity` / 任意拼错的属性 |
 | 属性值不认识 | `position: sticky`、`display: grid`、`border: 2px dashed` |
@@ -601,6 +601,42 @@ ql_text_wrap(font, text, max_w, out, max_lines)
    现在按 `row ? 文本宽度 : 行数 × 行高` 分轴，折行时行数用"父容器给的可用宽度"估。
 
 ---
+
+
+### 5.4.7 标签与 UA 默认样式
+
+标签在本架构里**只影响三件事**：UA 默认样式、`tag` 选择器、调试名。
+布局与绘制只看编译出来的 `QLUIStyle`，不看标签——所以加标签几乎零成本（只加枚举）。
+
+共 32 个（`QLUITag` / `k_tags[]` / `s_tag_names[]` **三处顺序必须一致**，
+且只能在末尾追加：`node.tag` 是存进 blob 的数字）：
+
+| 类 | 标签 | UA 默认样式 |
+|---|---|---|
+| 容器 | `div` `section` `header` `footer` `nav` `main` `article` `aside` `figure` `figcaption` `blockquote` | `display: block` |
+| 标题 | `h1`…`h6` | block + 字号 24/20/17/15/13/12 + 递减 margin |
+| 文本块 | `p` | block + `margin: 8px 0` |
+| 行内 | `span` `b` `i` `em` `strong` `u` `s` | `display: inline` |
+| 高亮 | `mark` | inline + 黄底黑字 |
+| 列表 | `ul` `ol` / `li` | block + `margin: 8px 0` / block；`padding-left: 18px` |
+| 空元素 | `hr` / `br` | 1px 细线 + margin / 高度 0 的块 |
+| 控件 | `button` | inline-block + 内边距 + 边框 + 圆角 |
+
+**几处必须知道的取舍**
+
+1. **`em`/`strong`/`u`/`s`/`b`/`i` 现在和 `span` 一样**：加粗/斜体/下划线要字体变体
+   （合成加粗、合成斜体、装饰线），还没做。`mark` 是唯一现在就有视觉区别的行内标签。
+2. **列表不画项目符号**：本库没有生成内容（`::before` / `::marker`），标记请自己写字符。
+3. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
+   所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。
+4. **`<img>` / `<input>` / `<table>` 明确报错**，错误信息里给出替代做法
+   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。
+
+**行内元素之间的空白保留成一个空格**（`<b>a</b> <i>b</i>` 不能变成 `ab`）。
+这一步在解析期做，靠的是标签的**默认** display（级联还没跑），所以如果你把
+`span` 改成 `block`，这个判断不会跟着变。块级兄弟之间的空白照旧丢掉，
+否则每个缩进都会变成一行。flex 容器里这种"只有空白的 span"会在 `ql_ui_build`
+时被共享的隐藏样式关掉（CSS：只含空白的匿名 flex 项不渲染），零额外内存。
 
 ### 5.5 `.qlui` blob：换界面不用重编译
 
