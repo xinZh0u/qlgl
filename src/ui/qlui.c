@@ -17,6 +17,7 @@
  *      **没有剩余空间可分**，此时 flex-grow 无效（与浏览器一致）。
  */
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <qlgl/qlgl.h>
@@ -49,6 +50,8 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "form", "label", "fieldset", "legend", "optgroup",
     /* --- META 包：解析期跳过，不进树 --- */
     "base", "head", "link", "meta", "style", "title",
+    /* --- WIDGET 包 --- */
+    "output", "datalist", "progress", "meter",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -96,6 +99,23 @@ struct QLUIInput {
     uint16_t    sel;      /* 选区锚点；== caret 表示没有选区 */
     ql_coord_t  scroll_x; /* 文本比盒子宽时横向滚动的像素 */
 };
+
+/*
+ * 每个 <progress>/<meter> 对应池里的一条。
+ *
+ * 只存**完成度**（0..1000）与"有没有值"：布局与绘制都只需要"多满"，
+ * value/max 是解析期的事（`<progress value="70" max="100">` → 700）。
+ */
+struct QLUIProgress;
+
+struct QLUIProgress {
+    QLUINodeRT *node;
+    uint16_t    permille;      /* 0..1000 */
+    uint8_t     known;         /* 0 = 没有 value 属性（不确定进度） */
+};
+
+/* progress_of 的定义在下面（绘制与 API 两边都要用），这里先声明 */
+static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node);
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -187,6 +207,48 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
             in->caret = 0;
             in->sel = 0;
             rt->text = in->buf;
+        }
+    }
+
+    /*
+     * 进度条池：同样按需分配。文本里带的 "value/max" 在这里折成完成度，然后清掉
+     * `rt->text` —— 那串数字只是**运输工具**，不是要显示的文字。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++)
+        if (doc->nodes[i].tag == QL_UI_TAG_PROGRESS || doc->nodes[i].tag == QL_UI_TAG_METER)
+            ui->progress_count = (uint16_t)(ui->progress_count + 1u);
+    if (ui->progress_count > 0) {
+        if (ui->progress_count > QL_CFG_UI_PROGRESS_MAX)
+            ui->progress_count = (uint16_t)QL_CFG_UI_PROGRESS_MAX;
+        ui->progresses = (struct QLUIProgress *)ql_mem_calloc(
+            ui->progress_count, sizeof(struct QLUIProgress));
+        if (ui->progresses == NULL) {
+            ql_ui_free(ui);
+            return NULL;
+        }
+        uint16_t k = 0;
+        for (uint16_t i = 0; i < doc->node_count && k < ui->progress_count; i++) {
+            QLUINodeRT *rt = &ui->nodes[i];
+            if (rt->src->tag != QL_UI_TAG_PROGRESS && rt->src->tag != QL_UI_TAG_METER)
+                continue;
+            struct QLUIProgress *pg = &ui->progresses[k++];
+            pg->node = rt;
+            pg->permille = 0;
+            pg->known = 0;
+            if (rt->text != NULL && rt->text[0] != '\0') {
+                const char *slash = strchr(rt->text, '/');
+                const long v = strtol(rt->text, NULL, 10);
+                const long mx = (slash != NULL) ? strtol(slash + 1, NULL, 10) : 100L;
+                long mm = (mx > 0) ? mx : 100L;
+                long p = (v * 1000L) / mm;
+                if (p < 0)
+                    p = 0;
+                if (p > 1000)
+                    p = 1000;
+                pg->permille = (uint16_t)p;
+                pg->known = 1;
+            }
+            rt->text = NULL;
         }
     }
 
@@ -294,6 +356,7 @@ void ql_ui_free(QLUIRoot *ui)
         ql_mem_free(ui->trans);
     }
     ql_mem_free(ui->runs);
+    ql_mem_free(ui->progresses);
     ql_mem_free(ui->inputs);
     ql_mem_free(ui->selects);
     ql_mem_free(ui->nodes);
@@ -2292,6 +2355,31 @@ ql_err_t ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index)
     return QL_OK;
 }
 
+int ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    const struct QLUIProgress *pg = progress_of(ui, node);
+    if (pg == NULL)
+        return -1;
+    return pg->known ? (int)pg->permille : -2;
+}
+
+ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max)
+{
+    struct QLUIProgress *pg = progress_of(ui, node);
+    if (pg == NULL)
+        return QL_ERR_INVAL;
+    const int m = (max > 0) ? max : 100;
+    int v = value;
+    if (v < 0)
+        v = 0;
+    if (v > m)
+        v = m;
+    pg->permille = (uint16_t)(((int32_t)v * 1000) / m);
+    pg->known = 1;
+    pg->node->flags |= QL_UI_RT_DIRTY;
+    return QL_OK;
+}
+
 /* 点在下拉框上：展开/收起；点开着的面板上：选中那一项 */
 static int select_pointer_down(QLUIRoot *ui, QLUINodeRT *hit, ql_coord_t x, ql_coord_t y)
 {
@@ -2359,6 +2447,43 @@ static int select_key(QLUIRoot *ui, struct QLUISelectState *st, const QLInputEve
     default:
         return 0;
     }
+}
+
+/* ------------------------------ 进度条 ------------------------------ */
+
+static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || ui->progresses == NULL)
+        return NULL;
+    for (uint16_t i = 0; i < ui->progress_count; i++)
+        if (ui->progresses[i].node == node)
+            return &ui->progresses[i];
+    return NULL;
+}
+
+/*
+ * 进度条只有两笔：轨道（普通背景，已经画过了）与填充（这里）。
+ * 填充用 `color`，所以换配色不需要碰 C 代码。
+ *
+ * 不确定进度（没有 value）画一个固定 1/3 宽的条 —— **不做动画**：
+ * 会跑的进度条要求主循环一直醒着，本库的省电优先原则不允许。
+ */
+static void draw_progress(QLUINodeRT *node, QLDraw2D *d2d)
+{
+    const QLUIStyle *s = ql_ui_node_style(node);
+    if (s->text_color == 0 && s->bg_alpha == 0)
+        return;                       /* 没说要不要画，交给 CSS */
+    const struct QLUIProgress *pg = progress_of(node->owner, node);
+    if (pg == NULL || ql_rect_is_empty(node->content_box))
+        return;
+
+    QLRect fill = node->content_box;
+    const int permille = pg->known ? (int)pg->permille : 333;
+    fill.w = (ql_coord_t)((int32_t)fill.w * permille / 1000);
+    if (fill.w <= 0)
+        return;
+    fill.h = node->content_box.h;
+    d2d->fill_rect(d2d, fill, s->text_color, 255);
 }
 
 /* ------------------------------ 输入框绘制 ------------------------------ */
@@ -2502,6 +2627,11 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
     if (s->border_width > 0 && !ql_rect_is_empty(box))
         d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,
                                s->border_color);
+
+    /* <progress>/<meter>：轨道就是背景（已经画完），这里补填充 */
+    if (node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||
+                              node->src->tag == QL_UI_TAG_METER))
+        draw_progress(node, d2d);
 
     if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box)) {
         /*

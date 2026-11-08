@@ -131,6 +131,10 @@
 #define QL_CFG_UI_INPUT_LEN         96
 #endif
 /* 下拉框：最多几个、面板最高多少像素（超出就滚动） */
+#ifndef QL_CFG_UI_PROGRESS_MAX
+#define QL_CFG_UI_PROGRESS_MAX      4       /* 一个界面上最多几个 <progress>/<meter> */
+#endif
+
 #ifndef QL_CFG_UI_SELECT_MAX
 #define QL_CFG_UI_SELECT_MAX        8
 #endif

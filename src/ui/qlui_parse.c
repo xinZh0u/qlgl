@@ -2464,6 +2464,8 @@ static const char *const k_tags[] = {
     "form", "label", "fieldset", "legend", "optgroup",
     /* --- META 包：解析期跳过，不进树 --- */
     "base", "head", "link", "meta", "style", "title",
+    /* --- WIDGET 包 --- */
+    "output", "datalist", "progress", "meter",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2860,8 +2862,9 @@ typedef struct {
     char *cls;
     char *id;
     char *style;
-    char *value;      /* <input value="..."> */
+    char *value;      /* <input value> / <progress value> */
     char *type;       /* <input type="text|password"> */
+    char *max;        /* <progress max> / <meter max> */
 } Attrs;
 
 static void attrs_free(Attrs *a)
@@ -2869,6 +2872,7 @@ static void attrs_free(Attrs *a)
     ql_mem_free(a->cls);
     ql_mem_free(a->value);
     ql_mem_free(a->type);
+    ql_mem_free(a->max);
     ql_mem_free(a->id);
     ql_mem_free(a->style);
     memset(a, 0, sizeof(*a));
@@ -2947,7 +2951,7 @@ static const char *parse_attrs(const char *p, Attrs *a)
 
         if (val != NULL && (strcmp(name, "class") == 0 || strcmp(name, "id") == 0 ||
                             strcmp(name, "style") == 0 || strcmp(name, "value") == 0 ||
-                            strcmp(name, "type") == 0)) {
+                            strcmp(name, "type") == 0 || strcmp(name, "max") == 0)) {
             SB sb = { 0 };
             if (!decode_entities(val, vlen, &sb)) {
                 sb_free(&sb);
@@ -2968,6 +2972,9 @@ static const char *parse_attrs(const char *p, Attrs *a)
             } else if (strcmp(name, "type") == 0) {
                 ql_mem_free(a->type);
                 a->type = s;
+            } else if (strcmp(name, "max") == 0) {
+                ql_mem_free(a->max);
+                a->max = s;
             } else {
                 ql_mem_free(a->style);
                 a->style = s;
@@ -3489,6 +3496,30 @@ static PNode *parse_html(const char *html)
                     }
                 }
             }
+            /*
+             * <progress> / <meter>：`value` / `max` 编成 "value/max" 放进这个节点的文本，
+             * 由 ql_ui_build 折成 0..1000 的完成度后**清掉**（见 qlui.c）。
+             * 为什么不给 QLUINode 加两个字段：那是每个节点都要付的 4 字节，
+             * 而这里只是一串去重后的十进制数字（"70/100" 全文只存一份）。
+             */
+            if (strcmp(name, "progress") == 0 || strcmp(name, "meter") == 0) {
+                if (at.value != NULL && at.value[0] != '\0') {
+                    char spec[32];
+                    snprintf(spec, sizeof(spec), "%s/%s", at.value,
+                             (at.max != NULL && at.max[0] != '\0') ? at.max : "100");
+                    Item tit;
+                    tit.is_text = 1;
+                    tit.text = xstrdup(spec);
+                    tit.node = NULL;
+                    if (tit.text == NULL || !pnode_add_item(n, tit)) {
+                        ql_mem_free(tit.text);
+                        attrs_free(&at);
+                        pnode_free(n);
+                        pnode_free(root);
+                        return NULL;
+                    }
+                }
+            }
             attrs_free(&at);
 
             Item it;
@@ -3680,9 +3711,23 @@ static int ua_defaults(const char *tag, Decls *out)
         return decls_set(out, "display", "none");
     }
     /* <optgroup> 与 <option> 一样不参与布局（组名现在不画，见文档） */
-    if (strcmp(tag, "optgroup") == 0) {
+    if (strcmp(tag, "optgroup") == 0 || strcmp(tag, "datalist") == 0) {
         return decls_set(out, "display", "none");
     }
+
+    /*
+     * <progress> / <meter>：一根细条。轨道用 background-color，填充用 color ——
+     * 换配色只写 CSS，运行期只改"多满"（见 ql_ui_progress_set）。
+     */
+    if (strcmp(tag, "progress") == 0 || strcmp(tag, "meter") == 0) {
+        return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "height", "8px") &&
+               decls_set(out, "border-radius", "4px") &&
+               decls_set(out, "background-color", "#E3E6EA") &&
+               decls_set(out, "color", "#0969DA");
+    }
+    if (strcmp(tag, "output") == 0)
+        return ua_set_inline(out);
 
     /* ---- 纯语义标签：只给"看结构就该知道"的 display ---- */
     /*

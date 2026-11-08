@@ -72,7 +72,7 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `input` | `display:inline-block`，带内边距/边框/圆角；`type` 只支持 `text` / `password` |
 | `select` / `option` | 与 `input` 同形 / **`display:none`**（只活在面板里） |
 
-目前认 **72 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+目前认 **76 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)；UA 默认样式细节见
 [阅读指南 §5.4.7](QLUI阅读指南.html)。
 
@@ -739,6 +739,20 @@ ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *va
 编辑能力：点击定位、拖动选字、`Backspace`/`Delete`、`←`/`→`/`Home`/`End`、
 `Shift+方向` 扩展选区、`QL_INPUT_TEXT` 插入、`Esc` 收焦点。
 **没有剪贴板、没有 IME、光标不闪。**
+
+### 进度条 / 度量条
+
+```c
+int      ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node);
+ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
+```
+
+| 函数 | 说明 |
+|---|---|
+| `progress_permille` | 0..1000；`-1` = 不是 `progress`/`meter`，`-2` = 没有 `value`（不确定） |
+| `progress_set` | 按 `value`/`max` 设置（夹到 `[0,max]`；`max<=0` 视为 100） |
+
+轨道 = `background-color`，填充 = `color`。不确定进度画固定 1/3（不做动画）。
 
 ### 下拉框
 

@@ -138,6 +138,17 @@ typedef enum {
     QL_UI_TAG_META,
     QL_UI_TAG_STYLE,
     QL_UI_TAG_TITLE,
+
+    /*
+     * --- WIDGET 包：需要一点运行期状态或子节点行为的控件 ---
+     *
+     * 放在最后是为了守住"只能末尾追加"：前面每个枚举值都已上线（哪怕元数据
+     * 那六个永远不进树），挪一下就可能让旧 blob 解释成别的标签。
+     */
+    QL_UI_TAG_OUTPUT,     /* 行内文本（表单结果），与 span 等价 */
+    QL_UI_TAG_DATALIST,   /* 候选列表：display:none；`list=` 补全框还没做 */
+    QL_UI_TAG_PROGRESS,   /* 进度条：value/max → 0..1000 的完成度 */
+    QL_UI_TAG_METER,      /* 度量条：同上（low/high 分色还没做） */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -666,6 +677,8 @@ struct QLUIRoot {
     /* 输入框池：doc 里没有 <input> 时为 NULL（零字节） */
     struct QLUIInput *inputs;      /* 输入框池（没有 <input> 时为 NULL） */
     uint16_t       input_count;
+    struct QLUIProgress *progresses;   /* 进度条池（没有 progress/meter 时为 NULL） */
+    uint16_t       progress_count;
     struct QLUISelectState *selects;   /* 下拉框池（没有 <select> 时为 NULL） */
     uint16_t       select_count;
     struct QLUISelectState *open_select;   /* 当前展开的那个下拉框 */
@@ -732,6 +745,22 @@ void        ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
 const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 改值（会被夹到上限；光标移到末尾） */
 ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
+
+/* ---------------------------- 进度条 / 度量条 ---------------------------- */
+
+/*
+ * `<progress value="70" max="100">` 与 `<meter>`：内部只存**完成度**（0..1000），
+ * 不存 value/max —— 布局与绘制都只需要"多满"。
+ *
+ * 没有 `value` 属性 = 不确定进度：画一个 1/3 宽的固定条（**不做动画**：
+ * 会跑的进度条要求主循环一直醒着，省电优先）。
+ *
+ * 轨道 = `background-color`，填充 = `color`。所以换颜色只写 CSS，不用碰 API。
+ */
+/* 0..1000 的完成度；-1 = 不是 progress/meter，-2 = 没有 value（不确定） */
+int         ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node);
+/* 按 value/max 设置（夹到 [0, max]；max <= 0 视为 100） */
+ql_err_t    ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
 
 /* ------------------------------ 下拉框 ------------------------------ */
 

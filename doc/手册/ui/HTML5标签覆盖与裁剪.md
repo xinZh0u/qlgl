@@ -120,17 +120,17 @@
 | 表格 | `<thead>` | `TABLE` | ⏳ 计划 |
 | 表格 | `<tr>` | `TABLE` | ⏳ 计划 |
 | 表单 | `<button>` | `CORE` | ✅ 已支持 |
-| 表单 | `<datalist>` | `WIDGET` | ⏳ 计划 |
+| 表单 | `<datalist>` | `WIDGET` | ✅ 已支持 |
 | 表单 | `<fieldset>` | `CORE` | ✅ 已支持 |
 | 表单 | `<form>` | `CORE` | ✅ 已支持 |
 | 表单 | `<input>` | `CORE` | ✅ 已支持 |
 | 表单 | `<label>` | `CORE` | ✅ 已支持 |
 | 表单 | `<legend>` | `CORE` | ✅ 已支持 |
-| 表单 | `<meter>` | `WIDGET` | ⏳ 计划 |
+| 表单 | `<meter>` | `WIDGET` | ✅ 已支持 |
 | 表单 | `<optgroup>` | `CORE` | ✅ 已支持 |
 | 表单 | `<option>` | `CORE` | ✅ 已支持 |
-| 表单 | `<output>` | `WIDGET` | ⏳ 计划 |
-| 表单 | `<progress>` | `WIDGET` | ⏳ 计划 |
+| 表单 | `<output>` | `WIDGET` | ✅ 已支持 |
+| 表单 | `<progress>` | `WIDGET` | ✅ 已支持 |
 | 表单 | `<select>` | `CORE` | ✅ 已支持 |
 | 表单 | `<textarea>` | `WIDGET` | ⏳ 计划 |
 | 交互 | `<details>` | `WIDGET` | ⏳ 计划 |
@@ -144,7 +144,8 @@
 | SVG / MathML | `<math>` | `EMBED` | ⏳ 计划 |
 | SVG / MathML | `<svg>` | `EMBED` | ⏳ 计划 |
 
-统计：**✅ 72 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签）、**⏳ 42 个**、**❌ 0 个**。
+统计：**✅ 76 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、P2a 加 4 个控件）、
+**⏳ 38 个**、**❌ 0 个**。
 
 ---
 
@@ -251,7 +252,8 @@ app.html: 42 个节点，使用标签 9 种
 |---|---|---|---|
 | P0 ✅ 已完成 | 31 个纯语义标签（`a` `code` `del` `ins` `dl` `form` `fieldset`…） | 66 | 1 天 |
 | P1 ✅ 已完成 | `META` 包：元数据标签一律跳过（`<style>` 内容整段不解析）+ 包机制骨架 | 72 | 0.5 天 |
-| P2 | `WIDGET` 包：`progress` `meter` `details` `summary` `dialog` `datalist` `output` | 79 | 3–4 天 |
+| P2a ✅ 已完成 | `WIDGET` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
+| P2b | `WIDGET` 剩下的 `details` `summary` `dialog` | 79 | 2–3 天 |
 | P3 | `IMAGE` 包：PNG/BMP/QOI 有界解码 + `object-fit` + `map`/`area` 热区 | 84 | 3–4 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |

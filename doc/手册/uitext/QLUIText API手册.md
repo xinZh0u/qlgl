@@ -58,7 +58,7 @@ ql_ui_free(ui);
 ql_ui_doc_free(doc);
 ```
 
-**支持的 HTML（72 个标签，HTML5 共 114 个）**
+**支持的 HTML（76 个标签，HTML5 共 114 个）**
 
 | 类 | 标签 |
 |---|---|
@@ -69,6 +69,7 @@ ql_ui_doc_free(doc);
 | 空元素 | `hr`（块级细线）、`br`（换一行） |
 | 控件 | `button`（只是一个样式化的盒子，点击靠事件） |
 | 输入控件 | `input`（`type` 只支持 `text` / `password`）、`select` + `option` + `optgroup`（覆盖式面板） |
+| 进度 / 度量 | `progress` / `meter`（`value`/`max` → 完成度；UI 那边的池见 QLUI 手册） |
 | 元数据 | `base` `head` `link` `meta` `style` `title`（解析期整段跳过，不进树；`<style>` 内容不解析） |
 | 纯语义 | `html` `body` `a` `abbr` `code` `kbd` `samp` `var` `q` `dfn` `cite` `data` `time` `small` `bdi` `bdo` `del` `ins` `dl` `dt` `dd` `menu` `address` `hgroup` `search` `form` `label` `fieldset` `legend` `wbr` |
 
