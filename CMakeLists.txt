@@ -20,6 +20,25 @@ add_library(qlgl STATIC ${QLGL_SRC})
 target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 
+# 图像能力预设：full（全开）/ lean（砍 PNG 与平台后端）/ raw-only（只吃构建期 RAW）
+set(QLGL_IMG_PRESET "full" CACHE STRING "图像能力预设：full / lean / raw-only")
+set_property(CACHE QLGL_IMG_PRESET PROPERTY STRINGS full lean raw-only)
+if(QLGL_IMG_PRESET STREQUAL "raw-only")
+    set(QL_FEAT_IMG_BMP 0)
+    set(QL_FEAT_IMG_QOI 0)
+    set(QL_FEAT_IMG_PNG 0)
+    set(QL_FEAT_IMG_PLATFORM 0)
+elseif(QLGL_IMG_PRESET STREQUAL "lean")
+    set(QL_FEAT_IMG_PNG 0)
+    set(QL_FEAT_IMG_PLATFORM 0)
+endif()
+if(DEFINED QL_FEAT_IMG_BMP)
+    add_compile_definitions(QL_FEAT_IMG_BMP=${QL_FEAT_IMG_BMP}
+                            QL_FEAT_IMG_QOI=${QL_FEAT_IMG_QOI}
+                            QL_FEAT_IMG_PNG=${QL_FEAT_IMG_PNG}
+                            QL_FEAT_IMG_PLATFORM=${QL_FEAT_IMG_PLATFORM})
+endif()
+
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
 option(QLGL_BUILD_EXAMPLES "构建 example/ 下的基本例程" ON)
 # 运行期 HTML/CSS 解析器（M3.5 第 3 步）。MCU 侧关掉它即零字节成本
@@ -191,7 +210,7 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_line_height$|^test_text_wrap$|^test_html_tags$|^test_text_style$|^test_scroll$|^test_input_edit$|^test_select$|^test_progress$|^test_details$|^test_dialog$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_line_height$|^test_text_wrap$|^test_html_tags$|^test_text_style$|^test_scroll$|^test_input_edit$|^test_select$|^test_progress$|^test_details$|^test_dialog$|^test_image$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)

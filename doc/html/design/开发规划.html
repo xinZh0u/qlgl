@@ -1906,7 +1906,7 @@ golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <c
 <p>其余要点：<code>node-&gt;text</code> 复用为资源名（不加节点字段）；<code>w/h</code> 存进 doc，所以<strong>布局不依赖
 解码</strong>；<code>object-fit</code> 在绘制期算、不动布局；<code>blend</code> 与现有 <code>fill_rect(alpha)</code> 同一套；
 MCU 的推荐姿势是 <strong><code>RAW</code> + 指向 Flash</strong>（<code>owned=0</code>，RAM 为 0）。</p>
-<p>分期：P3a 基础设施（3–4 天）→ <strong>P3f 工具链（1.5–2 天）</strong> → P3b BMP/QOI（1 天）→
+<p>分期：<strong>P3a ✅ 基础设施（3–4 天）</strong> → <strong>P3f 工具链（1.5–2 天）</strong> → P3b BMP/QOI（1 天）→
 P3d <code>object-fit</code>（1 天）→ P3c PNG（3–4 天）→ P3e 热区（0.5 天）→ P3g 平台后端（1 天），
 合计 12–15 天。P3a + P3f 就打通"图片文件 → 构建期转码 → 固件里显示"这条<strong>必达路径</strong>。</p>
 <hr />
@@ -1944,6 +1944,17 @@ lenient 时会计入 <code>QLUIDoc.degraded_tags</code>（<strong>不写进 blob
 之前做。三个容易漏的联动：<code>ql_ui_paint_bounds</code> 在浮层打开时必须返回整个视口
 （否则脏区重绘不会画遮罩）；点遮罩要<strong>吃掉</strong>这次点击（不穿透）；<code>Esc</code> 要排在输入框
 之前处理，否则输入框先把 <code>Esc</code> 当"取消焦点"吃掉。</p>
+<p><strong>P3a（已完成）</strong>：<code>QLImage</code> + <code>QLDraw2D-&gt;blit_image</code>（CPU 最近邻、四种像素格式矩阵）+
+<code>&lt;img&gt;</code> 标签 + doc 图像资源段（blob <strong>v13</strong>，头 72 → 84 字节）+ 布局固有尺寸。</p>
+<p>三个实现要点：
+1. <strong><code>node-&gt;text</code> 存资源名</strong>（不加节点字段），所以所有"按文本测量/绘制"的地方都要走
+   <code>has_shown_text()</code> —— 漏一处就会把 "logo.png" 当成正文画在图上（<strong>这个 bug 真踩了</strong>）。
+2. <strong>布局只看 doc 里的 <code>w/h</code></strong>，不看解码是否成功：图没注册也占对位置。
+   CSS 给了宽度、高度 auto 时按宽高比推（整数运算 <code>h = w*ih/iw</code>）。
+3. <strong>有界校验前置</strong>：<code>ql_image_validate()</code> 用"先除后乘"挡溢出，<code>stride</code> 必须装得下
+   <code>w*bpp</code> 且是 uint16，<code>len == stride*h</code>；进绘制层之前必过。</p>
+<p>开关骨架一起落地：<code>QL_FEAT_UI_IMAGE</code> / <code>QL_FEAT_IMG_BMP|QOI|PNG|INFLATE|PLATFORM</code> +
+CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only</code> 构建）。</p>
 <p><strong>一条硬约束（写进文档，不许破）</strong>：<code>QLUITag</code> <strong>只能末尾追加、永不加条件编译</strong>。
 理由：<code>node.tag</code> 的数值写进 blob，且三张表必须同序；一旦"MCU 上少几个枚举"，
 同一份 <code>.qlui</code> 在两个平台就解释成不同标签。所以<strong>裁的是代码路径，不是枚举</strong>，

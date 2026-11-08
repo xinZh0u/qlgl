@@ -2466,6 +2466,7 @@ static const char *const k_tags[] = {
     "base", "head", "link", "meta", "style", "title",
     /* --- WIDGET 包 --- */
     "output", "datalist", "progress", "meter", "details", "summary", "dialog",
+    "img",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2518,7 +2519,8 @@ static int tag_inline_by_default(const char *tag)
 static int tag_is_void(const char *tag)
 {
     return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0 ||
-           strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0;
+           strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0 ||
+           strcmp(tag, "img") == 0;
 }
 
 /* ---------------- META 包：文档元数据（解析期整段跳过） ---------------- */
@@ -2865,6 +2867,7 @@ typedef struct {
     char *value;      /* <input value> / <progress value> */
     char *type;       /* <input type="text|password"> */
     char *max;        /* <progress max> / <meter max> */
+    char *src;        /* <img src>：只是资源名，字节另找（见图像管线设计） */
     uint8_t has_open; /* <details open> / <dialog open>：布尔属性，只需"有没有" */
 } Attrs;
 
@@ -2874,6 +2877,7 @@ static void attrs_free(Attrs *a)
     ql_mem_free(a->value);
     ql_mem_free(a->type);
     ql_mem_free(a->max);
+    ql_mem_free(a->src);
     ql_mem_free(a->id);
     ql_mem_free(a->style);
     memset(a, 0, sizeof(*a));
@@ -2956,7 +2960,8 @@ static const char *parse_attrs(const char *p, Attrs *a)
 
         if (val != NULL && (strcmp(name, "class") == 0 || strcmp(name, "id") == 0 ||
                             strcmp(name, "style") == 0 || strcmp(name, "value") == 0 ||
-                            strcmp(name, "type") == 0 || strcmp(name, "max") == 0)) {
+                            strcmp(name, "type") == 0 || strcmp(name, "max") == 0 ||
+                            strcmp(name, "src") == 0)) {
             SB sb = { 0 };
             if (!decode_entities(val, vlen, &sb)) {
                 sb_free(&sb);
@@ -2980,6 +2985,9 @@ static const char *parse_attrs(const char *p, Attrs *a)
             } else if (strcmp(name, "max") == 0) {
                 ql_mem_free(a->max);
                 a->max = s;
+            } else if (strcmp(name, "src") == 0) {
+                ql_mem_free(a->src);
+                a->src = s;
             } else {
                 ql_mem_free(a->style);
                 a->style = s;
@@ -3507,6 +3515,24 @@ static PNode *parse_html(const char *html)
              * 为什么不给 QLUINode 加两个字段：那是每个节点都要付的 4 字节，
              * 而这里只是一串去重后的十进制数字（"70/100" 全文只存一份）。
              */
+            /*
+             * <img src>：`src` 存进节点文本（资源名）。不加节点字段 ——
+             * 资源名本来就在文本池里，运行时按名字找到解码结果。
+             */
+            if (strcmp(name, "img") == 0 && at.src != NULL && at.src[0] != '\0') {
+                Item tit;
+                tit.is_text = 1;
+                tit.text = xstrdup(at.src);
+                tit.node = NULL;
+                if (tit.text == NULL || !pnode_add_item(n, tit)) {
+                    ql_mem_free(tit.text);
+                    attrs_free(&at);
+                    pnode_free(n);
+                    pnode_free(root);
+                    return NULL;
+                }
+            }
+
             if ((strcmp(name, "details") == 0 || strcmp(name, "dialog") == 0) &&
                 at.has_open)
                 n->flags |= QL_UI_NODE_OPEN;
@@ -3737,6 +3763,13 @@ static int ua_defaults(const char *tag, Decls *out)
     }
     if (strcmp(tag, "output") == 0)
         return ua_set_inline(out);
+
+    /*
+     * <img>：行内块，尺寸来自资源固有尺寸（见 QLUI阅读指南 §5.7.1）。
+     * 不给默认宽高：没指定就按图片自己的像素尺寸排。
+     */
+    if (strcmp(tag, "img") == 0)
+        return decls_set(out, "display", "inline-block");
 
     /*
      * <dialog>：默认 70% 宽、居中（居中在布局末尾做）。自带白底与圆角，

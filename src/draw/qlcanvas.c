@@ -1789,3 +1789,94 @@ void ql_canvas_draw_text(QLCanvas *canvas, const QLFont *font, const char *text,
 
     canvas->clip = saved_clip;
 }
+
+/* ------------------------------ 位图搬运 ------------------------------ */
+
+/* 读源图一个像素（按它的像素格式）→ RGBA */
+static void image_read_rgba(const QLImage *img, ql_coord_t x, ql_coord_t y,
+                            uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a)
+{
+    const uint8_t *row = img->px + (uint32_t)y * img->stride;
+
+    switch (img->format) {
+    case QL_IMAGE_RGB565: {
+        uint16_t px;
+        memcpy(&px, row + (uint32_t)x * 2u, 2);
+        *r = (uint8_t)(((px >> 11) & 0x1Fu) * 255u / 31u);
+        *g = (uint8_t)(((px >> 5) & 0x3Fu) * 255u / 63u);
+        *b = (uint8_t)((px & 0x1Fu) * 255u / 31u);
+        *a = 255;
+        break;
+    }
+    case QL_IMAGE_RGB888:
+        *r = row[x * 3 + 0];
+        *g = row[x * 3 + 1];
+        *b = row[x * 3 + 2];
+        *a = 255;
+        break;
+    case QL_IMAGE_RGBA8888:
+        *r = row[x * 4 + 0];
+        *g = row[x * 4 + 1];
+        *b = row[x * 4 + 2];
+        *a = row[x * 4 + 3];
+        break;
+    default:
+        *r = *g = *b = row[x];
+        *a = 255;
+        break;
+    }
+}
+
+void ql_canvas_blit_image(QLCanvas *canvas, const QLImage *img, QLRect dst,
+                          const QLRect *src, uint8_t alpha)
+{
+    if (canvas == NULL || img == NULL || alpha == 0)
+        return;
+    if (!ql_image_validate(img))
+        return;
+
+    QLRect s = (src != NULL) ? *src : ql_rect_make(0, 0, img->w, img->h);
+    s = ql_rect_intersect(s, ql_rect_make(0, 0, img->w, img->h));
+    if (ql_rect_is_empty(s) || ql_rect_is_empty(dst))
+        return;
+
+    /* 与 clip 求交，跳过完全看不到的部分（整块图在屏幕外时这里是纯收益） */
+    const QLRect box = ql_rect_intersect(dst, canvas->clip);
+    const QLRect view = ql_rect_make(0, 0, canvas->width, canvas->height);
+    const QLRect area = ql_rect_intersect(box, view);
+    if (ql_rect_is_empty(area))
+        return;
+
+    for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
+        /*
+         * 最近邻：把目标像素的中心映射回源坐标。整数运算，避免浮点差异
+         * 让 CPU 与 GPU 的取样点在边界上分叉。
+         */
+        int32_t sy = s.y + (int32_t)(((int32_t)(y - dst.y) * 2 + 1) * s.h /
+                                    (2 * dst.h));
+        if (sy < s.y)
+            sy = s.y;
+        if (sy >= ql_rect_bottom(s))
+            sy = ql_rect_bottom(s) - 1;
+
+        for (ql_coord_t x = area.x; x < ql_rect_right(area); x++) {
+            int32_t sx2 = s.x + (int32_t)(((int32_t)(x - dst.x) * 2 + 1) * s.w /
+                                         (2 * dst.w));
+            if (sx2 < s.x)
+                sx2 = s.x;
+            if (sx2 >= ql_rect_right(s))
+                sx2 = ql_rect_right(s) - 1;
+
+            uint8_t r, g, b, a;
+            image_read_rgba(img, (ql_coord_t)sx2, (ql_coord_t)sy, &r, &g, &b, &a);
+
+            uint32_t cov = mask_cov_at(canvas, x, y);
+            if (cov == 0u)
+                continue;
+            uint32_t total = (uint32_t)a * (uint32_t)alpha * cov / (255u * 255u);
+            if (total == 0u)
+                continue;
+            ql_canvas_write_pixel(canvas, x, y, QL_COLOR_RGB(r, g, b), (uint8_t)total);
+        }
+    }
+}

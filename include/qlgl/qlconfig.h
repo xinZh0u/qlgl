@@ -131,6 +131,52 @@
 #define QL_CFG_UI_INPUT_LEN         96
 #endif
 /* 下拉框：最多几个、面板最高多少像素（超出就滚动） */
+/*
+ * ---- 图像（`<img>`）----
+ *
+ * **不分平台，只分开关**：每个能力一个宏、互不互斥、组合都合法。
+ * `QLGL_IMG_PRESET=full|lean|raw-only` 只是把常用组合打包（见 CMake），
+ * 单品的 -D 永远优先。设计见 doc/图像管线设计.md §2。
+ */
+#ifndef QL_FEAT_UI_IMAGE
+#define QL_FEAT_UI_IMAGE            1   /* <img> 标签与整条图像管线 */
+#endif
+/* 预解码位图（RAW）永久可用：它是零成本路径，关不掉 */
+#ifndef QL_FEAT_IMG_BMP
+#define QL_FEAT_IMG_BMP             1
+#endif
+#ifndef QL_FEAT_IMG_QOI
+#define QL_FEAT_IMG_QOI             1
+#endif
+#ifndef QL_FEAT_IMG_PNG
+#define QL_FEAT_IMG_PNG             1
+#endif
+#ifndef QL_FEAT_IMG_INFLATE
+#define QL_FEAT_IMG_INFLATE         QL_FEAT_IMG_PNG
+#endif
+#ifndef QL_FEAT_IMG_PLATFORM
+#define QL_FEAT_IMG_PLATFORM        1   /* 平台后端（JPEG/GIF…）：有就给，没有就报错 */
+#endif
+
+#ifndef QL_CFG_UI_IMAGE_MAX
+#define QL_CFG_UI_IMAGE_MAX         8       /* 一个界面最多几张图 */
+#endif
+#ifndef QL_CFG_IMAGE_MAX_BYTES
+#define QL_CFG_IMAGE_MAX_BYTES      (512u * 1024u)   /* 单张编码字节上限 */
+#endif
+#ifndef QL_CFG_IMAGE_MAX_PIXELS
+#define QL_CFG_IMAGE_MAX_PIXELS     (4096u * 4096u)  /* 解码后像素数上限 */
+#endif
+#ifndef QL_CFG_IMAGE_SCRATCH
+#define QL_CFG_IMAGE_SCRATCH        (32u * 1024u)    /* inflate 窗口 + 行缓冲 */
+#endif
+#ifndef QL_CFG_IMAGE_BILINEAR
+#define QL_CFG_IMAGE_BILINEAR       0       /* 0 = 最近邻（省），1 = 双线性 */
+#endif
+#ifndef QL_CFG_IMAGE_PLACEHOLDER
+#define QL_CFG_IMAGE_PLACEHOLDER    1       /* 解码失败时画个占位框 */
+#endif
+
 #ifndef QL_CFG_UI_PROGRESS_MAX
 #define QL_CFG_UI_PROGRESS_MAX      4       /* 一个界面上最多几个 <progress>/<meter> */
 #endif

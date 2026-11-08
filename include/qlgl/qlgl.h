@@ -24,6 +24,7 @@ typedef enum {
     QL_ERR_EXISTS   = -5,   /* 重复注册 */
     QL_ERR_VER      = -6,   /* 版本不兼容 */
     QL_ERR_FULL     = -7,   /* 池已满 */
+    QL_ERR_UNSUPPORTED = -8, /* 这个构建没启用该能力（格式/特性被裁掉） */
 } ql_err_t;
 
 /* ----- 公共宏 ----- */
@@ -76,6 +77,7 @@ void ql_log(int level, const char *fmt, ...);
 #include "qlanim.h"
 #include "qlfont.h"
 #include "qlfont_ft.h"
+#include "qlimage.h"
 #include "qlcanvas.h"
 #include "qldraw2d.h"
 #include "qlwidget.h"

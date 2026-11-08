@@ -72,7 +72,7 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `input` | `display:inline-block`，带内边距/边框/圆角；`type` 只支持 `text` / `password` |
 | `select` / `option` | 与 `input` 同形 / **`display:none`**（只活在面板里） |
 
-目前认 **79 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+目前认 **80 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)；UA 默认样式细节见
 [阅读指南 §5.4.7](QLUI阅读指南.html)。
 
@@ -753,6 +753,33 @@ ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
 | `progress_set` | 按 `value`/`max` 设置（夹到 `[0,max]`；`max<=0` 视为 100） |
 
 轨道 = `background-color`，填充 = `color`。不确定进度画固定 1/3（不做动画）。
+
+### 图片（`<img>`）
+
+```c
+typedef struct {
+    const char    *name;         /* 对应 <img src> */
+    const uint8_t *data;
+    size_t         len;
+    uint16_t       w, h;         /* RAW 必填；其他格式填 0 */
+    uint8_t        format;       /* QL_IMAGE_SRC_RAW/BMP/QOI/PNG/AUTO */
+    uint8_t        pixel_format; /* RAW 时必填（QL_IMAGE_RGB565 等） */
+} QLUIImageInput;
+
+ql_err_t       ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
+const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
+```
+
+| 情况 | 返回 |
+|---|---|
+| 名字对不上任何 `<img src>` / 界面里没有 `<img>` / 参数非法 | `QL_ERR_INVAL` |
+| 格式这个构建没编进来（PNG/BMP/QOI 或平台后端） | `QL_ERR_UNSUPPORTED` |
+| 解码成功 | `QL_OK`，并且**内部已重排**（固有尺寸可能变了） |
+
+`ql_image_validate()` / `ql_image_decode()`（`<qlgl/qlimage.h>`）是通用入口：
+任何外来字节进绘制层之前都要过 `validate`（"先除后乘"挡 `w*h*bpp` 溢出）。
+
+**GPU 后端目前没有 `blit_image`**：`<img>` 只在 CPU 上可见，GPU 侧会打一次警告后跳过。
 
 ### 浮层（`<dialog>`）
 

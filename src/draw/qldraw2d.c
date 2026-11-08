@@ -497,6 +497,16 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
                           &local, cpu_emit_glyph);
 }
 
+static void cpu_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
+                           const QLRect *src, uint8_t alpha)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    /* dst 走与其它图元完全相同的坐标变换（offset / DPR / elem scale） */
+    ql_canvas_blit_image(ctx->canvas, img,
+                         ql_rect_from_fx(sxf(self, shift_rect_rounded(self, dst))), src,
+                         alpha);
+}
+
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
 {
     if (out == NULL || canvas == NULL)
@@ -515,6 +525,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->stroke_round_rect = cpu_stroke_round_rect;
     out->draw_line = ql_draw2d_draw_line;
     out->draw_text = cpu_draw_text;
+    out->blit_image = cpu_blit_image;
     out->flush = NULL;
     out->scale_fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
     out->offset_x_fx = 0;

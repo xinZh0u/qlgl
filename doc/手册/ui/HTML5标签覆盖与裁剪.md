@@ -101,7 +101,7 @@
 | 嵌入 | `<area>` | `IMAGE` | ⏳ 计划 |
 | 嵌入 | `<embed>` | `EMBED` | ⏳ 计划 |
 | 嵌入 | `<iframe>` | `EMBED` | ⏳ 计划 |
-| 嵌入 | `<img>` | `IMAGE` | ⏳ 计划 |
+| 嵌入 | `<img>` | `IMAGE` | ✅ 已支持（P3a） |
 | 嵌入 | `<map>` | `IMAGE` | ⏳ 计划 |
 | 嵌入 | `<object>` | `EMBED` | ⏳ 计划 |
 | 嵌入 | `<picture>` | `IMAGE` | ⏳ 计划 |
@@ -144,8 +144,8 @@
 | SVG / MathML | `<math>` | `EMBED` | ⏳ 计划 |
 | SVG / MathML | `<svg>` | `EMBED` | ⏳ 计划 |
 
-统计：**✅ 79 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
-P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`）、**⏳ 35 个**、**❌ 0 个**。
+统计：**✅ 80 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`）、**⏳ 34 个**、**❌ 0 个**。
 
 ---
 
@@ -255,7 +255,9 @@ app.html: 42 个节点，使用标签 9 种
 | P2a ✅ 已完成 | `WIDGET` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
 | P2b ✅ 已完成 | `details` `summary`：收起时把子节点指向共享隐藏样式 | 78 | 0.5 天 |
 | P2c ✅ 已完成 | `dialog`：真正的浮层（居中 + 遮罩 + `Esc` / 点外面关闭） | 79 | 1 天 |
-| P3 | `IMAGE` 包：构建期转码（`RAW` 直指 Flash，零解码路径）+ `blit_image` + `object-fit` + 热区；再做 BMP/QOI/PNG 解码与平台后端（各自开关）<br>（见[图像管线设计](../../design/图像管线设计.html)） | 84 | 12–15 天（拆成 P3a–P3g） |
+| P3a ✅ 已完成 | `QLImage` + `blit_image`（CPU）+ `<img>` + doc 资源段（blob v13）+ 固有尺寸；GPU 的 blit 待补 | 80 | 3–4 天 |
+| P3f | `qltext assets`：`--format raw --pixel-format` | 80 | 1.5–2 天 |
+| P3b–g | BMP/QOI/PNG 解码、`object-fit`、热区、平台后端 | 84 | 8–10 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |

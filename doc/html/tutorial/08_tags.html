@@ -219,8 +219,8 @@ main img.shot { max-width: 100%; }
 </ol>
 <p>所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。</p>
-<h2 id="79">现支持的 79 个标签</h2>
-<p>HTML5 一共 114 个元素，本库现在认其中 <strong>79 个</strong>。全量清单（含每个标签的状态、能力包、
+<h2 id="80">现支持的 80 个标签</h2>
+<p>HTML5 一共 114 个元素，本库现在认其中 <strong>80 个</strong>。全量清单（含每个标签的状态、能力包、
 MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>，这里只给常用分组：</p>
 <table>
 <thead>
@@ -289,6 +289,10 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 <tr>
 <td>浮层</td>
 <td><code>dialog</code>（见下面"浮层"）</td>
+</tr>
+<tr>
+<td>位图</td>
+<td><code>img</code>（见下面"图片"）</td>
 </tr>
 </tbody>
 </table>
@@ -363,6 +367,60 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 <tr>
 <td><code>form</code> / <code>label</code> / <code>legend</code> / <code>optgroup</code></td>
 <td>纯排版盒子；<code>optgroup</code> 的组名不画</td>
+</tr>
+</tbody>
+</table>
+<h3 id="src">图片：<code>src</code> 只是<strong>资源名</strong></h3>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">img</span> <span class="na">src</span><span class="o">=</span><span class="s">&quot;logo.png&quot;</span><span class="p">&gt;</span>                     <span class="cm">&lt;!-- 名字，不是路径 --&gt;</span>
+<span class="p">&lt;</span><span class="nt">img</span> <span class="na">src</span><span class="o">=</span><span class="s">&quot;logo.png&quot;</span> <span class="na">style</span><span class="o">=</span><span class="s">&quot;width:32px&quot;</span><span class="p">&gt;</span>  <span class="cm">&lt;!-- CSS 尺寸优先 --&gt;</span>
+</code></pre></div>
+
+<p>字节从哪来有两处，任选：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* ① 运行期注册（demo / 从文件或网络拿到） */</span>
+<span class="n">QLUIImageInput</span><span class="w"> </span><span class="n">in</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">.</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;logo.png&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw_pixels</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">raw_pixels</span><span class="p">),</span>
+<span class="w">    </span><span class="p">.</span><span class="n">w</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">h</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_SRC_RAW</span><span class="p">,</span><span class="w">           </span><span class="cm">/* 已解码的像素 */</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pixel_format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_RGB565</span><span class="p">,</span>
+<span class="p">};</span>
+<span class="n">ql_ui_register_image</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">in</span><span class="p">);</span><span class="w">            </span><span class="cm">/* 内部会重排 */</span>
+
+<span class="cm">/* ② 构建期转码：qltext assets 转成 RAW 塞进 doc 的资源段（P3f，待做） */</span>
+</code></pre></div>
+
+<p>几条规矩：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局的尺寸</td>
+<td>来自<strong>资源条目</strong>的 <code>w/h</code>，所以图没解出来也占对位置</td>
+</tr>
+<tr>
+<td>CSS 给了宽度、高度 auto</td>
+<td>按宽高比推高（整数运算）</td>
+</tr>
+<tr>
+<td>没给任何尺寸</td>
+<td>用图片的固有像素尺寸</td>
+</tr>
+<tr>
+<td><code>object-fit</code></td>
+<td>只有 <code>fill</code>（拉伸）；其余四态还没做</td>
+</tr>
+<tr>
+<td>格式</td>
+<td>现在只认 <strong>RAW</strong>（构建期已解好的像素）；PNG/BMP/QOI 按开关逐个落地</td>
+</tr>
+<tr>
+<td>名字对不上 / 格式不支持</td>
+<td><strong>明确报错</strong>（<code>QL_ERR_INVAL</code> / <code>QL_ERR_UNSUPPORTED</code>），不静默画空白</td>
 </tr>
 </tbody>
 </table>

@@ -12,9 +12,9 @@
 所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。
 
-## 现支持的 79 个标签
+## 现支持的 80 个标签
 
-HTML5 一共 114 个元素，本库现在认其中 **79 个**。全量清单（含每个标签的状态、能力包、
+HTML5 一共 114 个元素，本库现在认其中 **80 个**。全量清单（含每个标签的状态、能力包、
 MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)，这里只给常用分组：
 
 | 类 | 标签 |
@@ -34,6 +34,7 @@ MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与
 | 进度 / 度量 | `progress` `meter`（见下面"进度条"）、`output`、`datalist`（不显示） |
 | 折叠面板 | `details` `summary`（见下面"折叠面板"） |
 | 浮层 | `dialog`（见下面"浮层"） |
+| 位图 | `img`（见下面"图片"） |
 
 新加的这批叫**纯语义标签**：它们不引入任何新能力，只是"别再报错"。所以要说清楚
 哪些看得出区别、哪些看不出：
@@ -56,6 +57,40 @@ MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与
 | `bdi` / `bdo` | 没有双向文本（RTL）支持 |
 | `wbr` | 没有"可选断点"（不影响折行） |
 | `form` / `label` / `legend` / `optgroup` | 纯排版盒子；`optgroup` 的组名不画 |
+
+### 图片：`src` 只是**资源名**
+
+```html
+<img src="logo.png">                     <!-- 名字，不是路径 -->
+<img src="logo.png" style="width:32px">  <!-- CSS 尺寸优先 -->
+```
+
+字节从哪来有两处，任选：
+
+```c
+/* ① 运行期注册（demo / 从文件或网络拿到） */
+QLUIImageInput in = {
+    .name = "logo.png",
+    .data = raw_pixels, .len = sizeof(raw_pixels),
+    .w = 8, .h = 8,
+    .format = QL_IMAGE_SRC_RAW,           /* 已解码的像素 */
+    .pixel_format = QL_IMAGE_RGB565,
+};
+ql_ui_register_image(ui, &in);            /* 内部会重排 */
+
+/* ② 构建期转码：qltext assets 转成 RAW 塞进 doc 的资源段（P3f，待做） */
+```
+
+几条规矩：
+
+| 项 | 现状 |
+|---|---|
+| 布局的尺寸 | 来自**资源条目**的 `w/h`，所以图没解出来也占对位置 |
+| CSS 给了宽度、高度 auto | 按宽高比推高（整数运算） |
+| 没给任何尺寸 | 用图片的固有像素尺寸 |
+| `object-fit` | 只有 `fill`（拉伸）；其余四态还没做 |
+| 格式 | 现在只认 **RAW**（构建期已解好的像素）；PNG/BMP/QOI 按开关逐个落地 |
+| 名字对不上 / 格式不支持 | **明确报错**（`QL_ERR_INVAL` / `QL_ERR_UNSUPPORTED`），不静默画空白 |
 
 ### 浮层：`<dialog>` 是真的盖在最上面
 

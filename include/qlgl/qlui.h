@@ -152,6 +152,7 @@ typedef enum {
     QL_UI_TAG_DETAILS,    /* 折叠面板：open 状态控制子节点可见性 */
     QL_UI_TAG_SUMMARY,    /* 折叠面板的标题行（点击它切换） */
     QL_UI_TAG_DIALOG,     /* 浮层：居中的模态框 + 遮罩 */
+    QL_UI_TAG_IMG,        /* 位图：src 是资源名，见 doc/图像管线设计.md */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -441,6 +442,16 @@ typedef struct {
     uint8_t  reserved;
 } QLUINode;
 
+/* ----- 图像资源（doc 里的一条） ----- */
+typedef struct {
+    uint16_t name;          /* text 池下标：资源名（"logo.png"），与 <img src> 对照 */
+    uint32_t off;           /* 字节在 image_data 段内的偏移 */
+    uint32_t len;           /* 字节数 */
+    uint16_t w, h;          /* 原始像素尺寸（RAW 时必填；其余格式可由解码得出） */
+    uint8_t  format;        /* QLImageSrcFormat */
+    uint8_t  pixel_format;  /* QLImageFormat，仅 format == RAW 时有效 */
+} QLUIImageSrc;
+
 typedef struct {
     const char       *name;
     uint16_t          node_count;
@@ -454,6 +465,10 @@ typedef struct {
      * **不写进 blob**：加载出来的 doc 这个字段恒为 0，它只描述"这份 doc 是被解析出来的"。
      */
     uint16_t          degraded_tags;
+    uint16_t          image_count;      /* 图像资源条数 */
+    uint32_t          image_data_size;  /* 资源字节段的总长度 */
+    const QLUIImageSrc *images;         /* image_count 条 */
+    const uint8_t     *image_data;      /* 所有资源的字节（RAW 的像素也在这里） */
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
@@ -682,7 +697,9 @@ struct QLUIRoot {
     /* 输入框池：doc 里没有 <input> 时为 NULL（零字节） */
     struct QLUIInput *inputs;      /* 输入框池（没有 <input> 时为 NULL） */
     uint16_t       input_count;
-    uint16_t       dialog_count;       /* doc 里 <dialog> 的个数（0 时可以跳过整段浮层逻辑） */
+    uint16_t       dialog_count;
+    struct QLUIImageRT *images;        /* 图像池（没有 <img> 时为 NULL） */
+    uint16_t       image_count;       /* doc 里 <dialog> 的个数（0 时可以跳过整段浮层逻辑） */
     struct QLUIProgress *progresses;   /* 进度条池（没有 progress/meter 时为 NULL） */
     uint16_t       progress_count;
     struct QLUISelectState *selects;   /* 下拉框池（没有 <select> 时为 NULL） */
@@ -786,6 +803,30 @@ ql_err_t    ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 /* 关掉最上层那个（没有打开的返回 0） */
 int         ql_ui_dialog_close_top(QLUIRoot *ui);
 
+/* -------------------------------- 图像 -------------------------------- */
+
+/*
+ * `<img src="logo.png">`：`src` 只是**资源名**，字节从两处来：
+ *   1. doc 里（构建期 `qltext assets` 转好 / `.qlui` blob 带进来）；
+ *   2. 运行期 `ql_ui_register_image()`（PC 读文件、网络图）。
+ *
+ * 布局只需要 `w/h`，所以 `w/h` 在 doc 里就有 —— 图没解出来也占对位置。
+ * 解码只在 build / register 时发生一次，**每帧只搬像素**。
+ */
+typedef struct {
+    const char    *name;         /* 对应 <img src> 的名字 */
+    const uint8_t *data;
+    size_t         len;
+    uint16_t       w, h;         /* RAW 必填；其他格式填 0 = 以解码结果为准 */
+    uint8_t        format;       /* QLImageSrcFormat；AUTO = 按魔数探测 */
+    uint8_t        pixel_format; /* RAW 时必填（QLImageFormat） */
+} QLUIImageInput;
+
+/* 注册/替换一张图（同名覆盖）。会重排（尺寸可能变了）。 */
+ql_err_t    ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
+/* 节点当前的解码结果；没有/失败返回 NULL，不是 <img> 返回 NULL */
+const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
+
 /* ------------------------------ 折叠面板 ------------------------------ */
 
 /*
@@ -873,7 +914,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    12u  /* 12: <input>（QLUINode 加 flags） */
+#define QL_UI_BLOB_VERSION    13u  /* 13: 图像资源段（images / image_data） */
 
 typedef struct {
     uint32_t magic;
@@ -885,6 +926,7 @@ typedef struct {
     uint16_t font_size_count;
     uint16_t anim_count;          /* @keyframes 段数 */
     uint16_t keyframe_count;      /* 关键帧总数 */
+    uint16_t image_count;         /* 图像资源条数 */
     uint16_t name_len;            /* 不含结尾 '\0' */
     uint16_t node_struct_size;    /* sizeof(QLUINode)      —— ABI 校验 */
     uint16_t style_struct_size;   /* sizeof(QLUIStyle)     —— ABI 校验 */
@@ -899,10 +941,13 @@ typedef struct {
     uint32_t off_font_sizes;
     uint32_t off_anims;
     uint32_t off_keyframes;
+    uint32_t off_images;          /* QLUIImageSrc[] */
+    uint32_t off_image_data;      /* 资源字节 */
+    uint32_t image_data_size;
     uint32_t off_name;
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 72, "blob 头必须是 72 字节");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 84, "blob 头必须是 84 字节（v13）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

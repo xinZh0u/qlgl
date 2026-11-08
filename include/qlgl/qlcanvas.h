@@ -96,6 +96,15 @@ ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius);
 
 /* ----- 原语 ----- */
 void ql_canvas_clear(QLCanvas *canvas, ql_color_t color);
+
+/*
+ * 把一张位图按最近邻缩放到 dst（设备像素）。`src == NULL` 取整幅。
+ * 遵循 canvas 的 clip 与圆遮罩；源 alpha 与 global alpha 相乘后做源覆盖混合。
+ * 无返回值：非法输入（空图、尺寸为 0）直接不画 —— 调用方已经用
+ * ql_image_validate() 验过一遍，这里只是兜底。
+ */
+void ql_canvas_blit_image(QLCanvas *canvas, const QLImage *img, QLRect dst,
+                          const QLRect *src, uint8_t alpha);
 void ql_canvas_fill_rect(QLCanvas *canvas, QLRect rect, ql_color_t color);
 /* alpha: 0 完全透明（跳过），255 完全不透明 */
 void ql_canvas_fill_rect_alpha(QLCanvas *canvas, QLRect rect, ql_color_t color, uint8_t alpha);
@@ -179,6 +188,19 @@ static inline QLRectFx ql_rectfx_from_rect(QLRect r)
 {
     return ql_rectfx_make(ql_fx_of(r.x), ql_fx_of(r.y), ql_fx_of(r.w),
                           ql_fx_of(r.h));
+}
+
+/*
+ * fx → 整数：**向外取整**（起点向下、终点向上），保证覆盖的面积不小于原矩形。
+ * 位图搬运按整像素取样，所以这里宁可多算一像素也不能漏。
+ */
+static inline QLRect ql_rect_from_fx(QLRectFx f)
+{
+    const ql_coord_t x0 = (ql_coord_t)(f.x / QL_FX_ONE);
+    const ql_coord_t y0 = (ql_coord_t)(f.y / QL_FX_ONE);
+    const ql_coord_t x1 = (ql_coord_t)((f.x + f.w + QL_FX_ONE - 1) / QL_FX_ONE);
+    const ql_coord_t y1 = (ql_coord_t)((f.y + f.h + QL_FX_ONE - 1) / QL_FX_ONE);
+    return ql_rect_make(x0, y0, x1 - x0, y1 - y0);
 }
 
 void ql_canvas_fill_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_color_t color,

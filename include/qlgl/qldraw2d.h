@@ -96,6 +96,14 @@ struct QLDraw2D {
     void (*backdrop_blur)(QLDraw2D *self, QLRect rect, int sigma);
 
     /* 后端可选的批次提交（GPU 用；CPU 为 NULL） */
+    /*
+     * 位图搬运：把一张 QLImage 画到 dst（设备像素、已含所有变换）。
+     * `src == NULL` 取整幅；否则取子矩形（给 object-fit: cover 用）。
+     * 缩放、alpha 混合都在后端里做；裁剪与圆遮罩沿用 set_clip / set_mask。
+     */
+    void (*blit_image)(QLDraw2D *self, const QLImage *img, QLRect dst,
+                       const QLRect *src, uint8_t alpha);
+
     void (*flush)(QLDraw2D *self);
 
     /*

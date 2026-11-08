@@ -210,7 +210,7 @@ main img.shot { max-width: 100%; }
 <main>
 <h1 id="img">图像管线设计（<code>&lt;img&gt;</code> / 解码 / 绘制）</h1>
 <blockquote>
-<p>状态：<strong>设计（待实现）</strong>。目标读者：要实现解码器、<code>blit_image</code>、<code>&lt;img&gt;</code> 布局与
+<p>状态：<strong>设计；P3a 已实现（2026-11-09）</strong>。目标读者：要实现解码器、<code>blit_image</code>、<code>&lt;img&gt;</code> 布局与
 工具链转码的人。文档站上的覆盖度清单见 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>。</p>
 </blockquote>
 <p>这份文档定三件事：<strong>格式怎么分工</strong>、<strong>数据放在哪</strong>、<strong>绘制怎么落到两个后端</strong>。
@@ -814,7 +814,11 @@ PNG 容器（chunk / filter / 颜色转换）
 </tr>
 </tbody>
 </table>
-<h3 id="63-gpu">6.3 GPU 实现要点</h3>
+<h3 id="63-gpu-p3a-blit_image-null">6.3 GPU 实现要点（P3a 未实现，<code>blit_image</code> 现在留 NULL）</h3>
+<blockquote>
+<p>现状：<code>qlgfx_gl.c</code> 把 <code>blit_image</code> 设成 NULL，<code>draw_img</code> 会<strong>打一次警告</strong>并跳过 ——
+不假装画了。补 GPU 之前，<code>&lt;img&gt;</code> 只在 CPU 后端上可见。</p>
+</blockquote>
 <ul>
 <li>上传：每个 <code>QLImage</code> 一次 <code>glTexImage2D</code>（<code>GL_RGB</code> / <code>GL_RGBA</code> / <code>GL_R5G6B5</code>），
   纹理 id 缓存在 <code>QLImage</code> 的旁边（<code>QLUIImageRT.gl_tex</code>，由后端私有表维护，不进公共结构）。</li>
@@ -1090,8 +1094,8 @@ PNG 容器（chunk / filter / 颜色转换）
 </thead>
 <tbody>
 <tr>
-<td><strong>P3a</strong></td>
-<td><code>QLImage</code> + <code>QLDraw2D-&gt;blit_image</code>（CPU 最近邻 + GPU 纹理）+ <code>&lt;img&gt;</code> 标签 + doc 资源段（blob v13）+ 布局内在尺寸 + <strong><code>RAW</code> 直指 <code>.rodata</code> 的 <code>owned=0</code> 路径</strong></td>
+<td><strong>P3a</strong> ✅</td>
+<td><code>QLImage</code> + <code>QLDraw2D-&gt;blit_image</code>（<strong>CPU 最近邻已实现</strong>，GPU 留空 + 一次警告）+ <code>&lt;img&gt;</code> 标签 + doc 资源段（blob <strong>v13</strong>）+ 布局固有尺寸 + <code>owned=0</code> 的 RAW 直指路径</td>
 <td>3–4 天</td>
 </tr>
 <tr>

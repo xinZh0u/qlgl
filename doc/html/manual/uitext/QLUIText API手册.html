@@ -269,7 +269,7 @@ MCU 侧应当关掉：界面走构建期生成的静态表，运行期没有任�
 <span class="n">ql_ui_doc_free</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
 </code></pre></div>
 
-<p><strong>支持的 HTML（79 个标签，HTML5 共 114 个）</strong></p>
+<p><strong>支持的 HTML（80 个标签，HTML5 共 114 个）</strong></p>
 <table>
 <thead>
 <tr>
@@ -313,6 +313,10 @@ MCU 侧应当关掉：界面走构建期生成的静态表，运行期没有任�
 <tr>
 <td>折叠</td>
 <td><code>details</code> / <code>summary</code>、<code>dialog</code>（<code>open</code> 是布尔属性，写不写值都算）</td>
+</tr>
+<tr>
+<td>位图</td>
+<td><code>img</code>（<code>src</code> 是资源名；字节由 <code>ql_ui_register_image()</code> 或构建期转码提供）</td>
 </tr>
 <tr>
 <td>元数据</td>

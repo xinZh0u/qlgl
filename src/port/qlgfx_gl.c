@@ -1471,6 +1471,11 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.stroke_round_rect = gl_stroke_round_rect;
     g->draw.draw_line = ql_draw2d_draw_line;
     g->draw.draw_text = gl_draw_text;
+    /*
+     * 位图搬运：GPU 侧还没实现（见 doc/图像管线设计.md §12，P3a 之后补）。
+     * 明确留 NULL，由 draw_img 打一次警告 —— 不假装画了。
+     */
+    g->draw.blit_image = NULL;
     g->draw.flush = NULL;
     g->draw.scale_fx = g->scale_fx;
     g->draw.offset_x_fx = 0;

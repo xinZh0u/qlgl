@@ -52,6 +52,7 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "base", "head", "link", "meta", "style", "title",
     /* --- WIDGET 包 --- */
     "output", "datalist", "progress", "meter", "details", "summary", "dialog",
+    "img",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -75,6 +76,18 @@ static int text_is_only_ws(const char *t)
         p += used;
     }
     return 1;
+}
+
+/*
+ * 这个节点的 text 是不是**要显示的文字**？
+ * `<img>` 的 text 存的是资源名（"logo.png"），既不该排版也不该绘制 ——
+ * 所有"按文本测量/绘制"的地方都必须走这个判断。
+ */
+static int has_shown_text(const QLUINodeRT *n)
+{
+    if (n == NULL || n->text == NULL)
+        return 0;
+    return !(n->src != NULL && n->src->tag == QL_UI_TAG_IMG);
 }
 
 /* 共享的隐藏样式：只用来关掉"只含空白的 flex 项" */
@@ -114,8 +127,21 @@ struct QLUIProgress {
     uint8_t     known;         /* 0 = 没有 value 属性（不确定进度） */
 };
 
+/*
+ * 每个 <img> 对应池里的一条。`img.px` 来自两处：doc 里的资源段（`.rodata`，
+ * owned=0）或运行期注册时解码出来的内存（owned=1，ql_ui_free 负责释放）。
+ */
+struct QLUIImageRT {
+    QLUINodeRT *node;
+    QLImage     img;
+    uint8_t     failed;      /* 解码失败过：不要每帧重试 */
+};
+
 /* 下面这几组定义在文件后部（构建期就要用），先声明 */
 static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node);
+static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node);
+static void image_node_size(const QLUIRoot *ui, const QLUINodeRT *node, ql_coord_t *w,
+                            ql_coord_t *h);
 static void details_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
 static QLUINodeRT *dialog_top(const QLUIRoot *ui);
 static void dialog_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
@@ -302,6 +328,50 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
     }
 
     /*
+     * 图像池：按需分配。doc 里带的资源（构建期转好的 / blob 里的）在这里接上；
+     * 没带资源的（`ql_ui_load_text` 的常态）留给 ql_ui_register_image()。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++)
+        if (doc->nodes[i].tag == QL_UI_TAG_IMG)
+            ui->image_count = (uint16_t)(ui->image_count + 1u);
+    if (ui->image_count > 0) {
+        if (ui->image_count > QL_CFG_UI_IMAGE_MAX)
+            ui->image_count = (uint16_t)QL_CFG_UI_IMAGE_MAX;
+        ui->images = (struct QLUIImageRT *)ql_mem_calloc(ui->image_count,
+                                                         sizeof(struct QLUIImageRT));
+        if (ui->images == NULL) {
+            ql_ui_free(ui);
+            return NULL;
+        }
+        uint16_t k = 0;
+        for (uint16_t i = 0; i < doc->node_count && k < ui->image_count; i++) {
+            QLUINodeRT *rt = &ui->nodes[i];
+            if (rt->src->tag != QL_UI_TAG_IMG)
+                continue;
+            struct QLUIImageRT *ir = &ui->images[k++];
+            ir->node = rt;
+            /* 在 doc 的资源表里按名字找（线性扫，只在 build 时做一次） */
+            for (uint16_t j = 0; j < doc->image_count; j++) {
+                const QLUIImageSrc *src = &doc->images[j];
+                const char *nm = doc->text_pool + doc->text_offsets[src->name];
+                if (rt->text == NULL || strcmp(nm, rt->text) != 0)
+                    continue;
+                QLImageDecodeReq req;
+                memset(&req, 0, sizeof(req));
+                req.data = doc->image_data + src->off;
+                req.len = src->len;
+                req.src_format = src->format;
+                req.pixel_format = src->pixel_format;
+                req.w = src->w;
+                req.h = src->h;
+                if (ql_image_decode(&req, &ir->img) != QL_OK)
+                    ir->failed = 1;
+                break;
+            }
+        }
+    }
+
+    /*
      * <dialog>：数一下有几个（为 0 时浮层相关的扫描全部跳过），
      * 没写 open 的直接关掉（浮层默认不显示）。
      */
@@ -385,6 +455,12 @@ void ql_ui_free(QLUIRoot *ui)
         ql_mem_free(ui->trans);
     }
     ql_mem_free(ui->runs);
+    if (ui->images != NULL) {
+        for (uint16_t i = 0; i < ui->image_count; i++)
+            if (ui->images[i].img.owned)
+                ql_mem_free((void *)ui->images[i].img.px);
+        ql_mem_free(ui->images);
+    }
     ql_mem_free(ui->progresses);
     ql_mem_free(ui->inputs);
     ql_mem_free(ui->selects);
@@ -460,10 +536,22 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
     if (s->display == QL_UI_DISPLAY_NONE)
         return 0;
 
+    /*
+     * <img>：CSS 没给宽度时用图片的固有宽度（inline-block 的 shrink-to-fit）。
+     * 必须在"文本尺寸"判断之前 —— 否则会把资源名的宽度当成图片宽度。
+     */
+    if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG &&
+        s->width.unit == QL_UI_UNIT_AUTO) {
+        ql_coord_t iw = 0, ih = 0;
+        image_node_size(node->owner, node, &iw, &ih);
+        return iw + s->padding.left + s->padding.right +
+               2 * (ql_coord_t)s->border_width;
+    }
+
     const QLFont *font = font_of_style(node, s);
     int text_sized = s->display != QL_UI_DISPLAY_BLOCK &&
                      s->width.unit == QL_UI_UNIT_AUTO &&
-                     node->text != NULL && node->first_child == NULL;
+                     has_shown_text(node) && node->first_child == NULL;
 
     if (text_sized)
         return ql_font_line_width(font, node->text, -1) + s->padding.left +
@@ -645,7 +733,7 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
         own_w = (stretch < 0) ? 0 : stretch;
     } else {
         const QLFont *font = font_of_style(child, s);
-        if (child->text != NULL && child->first_child == NULL && font != NULL) {
+        if (has_shown_text(child) && child->first_child == NULL && font != NULL) {
             ql_coord_t tw = ql_font_line_width(font, child->text, -1) +
                             2 * (ql_coord_t)s->border_width + s->padding.left +
                             s->padding.right;
@@ -1195,7 +1283,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         if (in_row)
             cursor_y += row_h;
         content_h = cursor_y - content_y;
-    } else if (node->text != NULL) {
+    } else if (has_shown_text(node)) {
         const ql_coord_t lh = text_line_h_of(s, font);
         if (s->height.unit == QL_UI_UNIT_AUTO) {
             /*
@@ -1211,6 +1299,20 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
             content_h = lh * (ql_coord_t)lines;
         } else {
             content_h = resolve_length(s->height, 0, lh);
+        }
+    } else if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG) {
+        /*
+         * <img> 的高度：CSS 给了就按 CSS（下面的通用收尾会覆盖），
+         * 否则按固有高；宽度被改写时按宽高比缩（整数运算，避免浮点）：
+         *   h = content_w * 固有h / 固有w
+         */
+        ql_coord_t iw = 0, ih = 0;
+        image_node_size(node->owner, node, &iw, &ih);
+        if (s->height.unit == QL_UI_UNIT_AUTO && iw > 0 && ih > 0 &&
+            content_w != iw) {
+            content_h = (ql_coord_t)(((int32_t)content_w * (int32_t)ih) / (int32_t)iw);
+        } else {
+            content_h = ih;
         }
     } else {
         content_h = 0;
@@ -1340,7 +1442,11 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
         if (s->box_sizing == 0)
             own += pad_border;
     } else if (len->unit == QL_UI_UNIT_AUTO) {
-        if (node->text != NULL && node->first_child == NULL) {
+        if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG) {
+            ql_coord_t iw = 0, ih = 0;
+            image_node_size(node->owner, node, &iw, &ih);
+            own = row ? iw : ih;
+        } else if (node->text != NULL && node->first_child == NULL) {
             const QLFont *font = font_of_style(node, s);
             if (row) {
                 /* 主轴水平：max-content 就是把文本摊平不折行的宽度 */
@@ -2175,7 +2281,12 @@ QLRect ql_ui_node_rect(const QLUINodeRT *node)
 
 const char *ql_ui_node_text(const QLUINodeRT *node)
 {
-    return (node != NULL && node->text != NULL) ? node->text : "";
+    if (node == NULL || node->text == NULL)
+        return "";
+    /* <img> 的 text 是资源名，不是显示文字：对外一律返回空串 */
+    if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
+        return "";
+    return node->text;
 }
 
 /* ------------------------------ 滚动条 ------------------------------ */
@@ -2640,6 +2751,120 @@ static int details_pointer_down(QLUIRoot *ui, QLUINodeRT *hit, ql_coord_t x,
     return 1;
 }
 
+/* -------------------------------- 图像 -------------------------------- */
+
+static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || ui->images == NULL)
+        return NULL;
+    for (uint16_t i = 0; i < ui->image_count; i++)
+        if (ui->images[i].node == node)
+            return &ui->images[i];
+    return NULL;
+}
+
+const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    const struct QLUIImageRT *ir = image_of(ui, node);
+    if (ir == NULL || ir->img.px == NULL)
+        return NULL;
+    return &ir->img;
+}
+
+/*
+ * 布局需要的"固有尺寸"。**不看解码是否成功** —— 尺寸来自 doc 的资源条目，
+ * 所以图没解出来也能占对位置（只是画不出来）。
+ */
+static void image_node_size(const QLUIRoot *ui, const QLUINodeRT *node, ql_coord_t *w,
+                            ql_coord_t *h)
+{
+    *w = 0;
+    *h = 0;
+    if (node == NULL || node->src == NULL || node->src->tag != QL_UI_TAG_IMG)
+        return;
+    const struct QLUIImageRT *ir = image_of(ui, node);
+    if (ir != NULL && ir->img.w > 0) {
+        *w = (ql_coord_t)ir->img.w;
+        *h = (ql_coord_t)ir->img.h;
+        return;
+    }
+    /* 没注册资源：退回 doc 里的资源条目（blob 路径下这里才有值） */
+    if (node->text == NULL || ui->doc == NULL)
+        return;
+    for (uint16_t j = 0; j < ui->doc->image_count; j++) {
+        const QLUIImageSrc *src = &ui->doc->images[j];
+        const char *nm = ui->doc->text_pool + ui->doc->text_offsets[src->name];
+        if (strcmp(nm, node->text) == 0) {
+            *w = (ql_coord_t)src->w;
+            *h = (ql_coord_t)src->h;
+            return;
+        }
+    }
+}
+
+ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
+{
+    if (ui == NULL || in == NULL || in->name == NULL || in->data == NULL)
+        return QL_ERR_INVAL;
+    if (ui->images == NULL)
+        return QL_ERR_INVAL;           /* 这个界面里没有 <img> */
+
+    int hit = 0;
+    ql_err_t first_err = QL_OK;
+    for (uint16_t i = 0; i < ui->image_count; i++) {
+        struct QLUIImageRT *ir = &ui->images[i];
+        if (ir->node->text == NULL || strcmp(ir->node->text, in->name) != 0)
+            continue;
+        hit = 1;
+
+        QLImageDecodeReq req;
+        memset(&req, 0, sizeof(req));
+        req.data = in->data;
+        req.len = in->len;
+        req.src_format = in->format;
+        req.pixel_format = in->pixel_format;
+        req.w = in->w;
+        req.h = in->h;
+
+        QLImage img;
+        const ql_err_t err = ql_image_decode(&req, &img);
+        if (err != QL_OK) {
+            ir->failed = 1;
+            ir->img.px = NULL;
+            if (first_err == QL_OK)
+                first_err = err;
+            continue;
+        }
+        if (ir->img.owned)
+            ql_mem_free((void *)ir->img.px);
+        ir->img = img;
+        ir->failed = 0;
+        ir->node->flags |= QL_UI_RT_DIRTY;
+    }
+    if (!hit)
+        return QL_ERR_INVAL;           /* 名字对不上任何 <img src> */
+
+    ql_ui_layout(ui, ui->width, ui->height);   /* 固有尺寸变了，必须重排 */
+    return first_err;
+}
+
+/* 绘制：P3a 只有 object-fit: fill（拉伸到内容盒）；其余四态见设计文档 §7.2 */
+static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
+{
+    const QLImage *img = ql_ui_node_image(ui, node);
+    if (img == NULL || ql_rect_is_empty(node->content_box))
+        return;
+    if (d2d->blit_image == NULL) {
+        static int warned = 0;
+        if (!warned) {
+            warned = 1;
+            QL_LOGW("ui: <img> 已注册，但当前后端没有 blit_image（GPU 侧待实现）");
+        }
+        return;
+    }
+    d2d->blit_image(d2d, img, node->content_box, NULL, 255);
+}
+
 /* ------------------------------ 进度条 ------------------------------ */
 
 static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node)
@@ -2819,12 +3044,21 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
         d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,
                                s->border_color);
 
+    /* <img>：背景/边框画完之后贴图（P3a：object-fit: fill） */
+    if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
+        draw_img(node->owner, node, d2d);
+
     /* <progress>/<meter>：轨道就是背景（已经画完），这里补填充 */
     if (node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||
                               node->src->tag == QL_UI_TAG_METER))
         draw_progress(node, d2d);
 
-    if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box)) {
+    /*
+     * <img> 的 `node->text` 是**资源名**（"logo.png"），不是要显示的文字 ——
+     * 这一条必须挡住，否则资源名会被当成正文画在图片上。
+     */
+    if (has_shown_text(node) && node->text[0] != '\0' &&
+        !ql_rect_is_empty(node->content_box)) {
         /*
          * 输入框：显示文本可能被换成圆点（密码），而且比盒子宽时要横向滚。
          * 这两件事都只在输入框上发生，普通文本节点走的是同一条 draw_text。
@@ -3093,6 +3327,8 @@ ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text)
         return QL_ERR_INVAL;
     if (node->first_child != NULL)
         return QL_ERR_INVAL;      /* 有子节点的元素不直接放文本 */
+    if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
+        return QL_ERR_INVAL;      /* <img> 的 text 是资源名，别让 set_text 覆盖它 */
     node->text = text;
     node->flags |= QL_UI_RT_DIRTY;
     return QL_OK;

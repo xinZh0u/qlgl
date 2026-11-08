@@ -246,7 +246,7 @@ main img.shot { max-width: 100%; }
 默认改成 <code>normal</code> 会让已有界面在你没改任何东西时重新排版。详见
 <a href="02_text.html">文本</a>。</p>
 <hr />
-<h2 id="2-html-114-79">2. HTML：认 114 个标签，画 79 个</h2>
+<h2 id="2-html-114-80">2. HTML：认 114 个标签，画 80 个</h2>
 <table>
 <thead>
 <tr>
@@ -272,8 +272,8 @@ main img.shot { max-width: 100%; }
 <td>⚠️ 只是带颜色的文字：<code>href</code> 被忽略，没有光标、没有导航</td>
 </tr>
 <tr>
-<td><code>&lt;img src&gt;</code></td>
-<td>❌ 没有图片解码器（有计划，见下）</td>
+<td><code>&lt;img&gt;</code></td>
+<td>⚠️ 能画，但 <code>src</code> 是<strong>资源名</strong>：字节要靠 <code>ql_ui_register_image()</code> 或构建期转码给（没有文件系统/网络）</td>
 </tr>
 <tr>
 <td><code>&lt;input type="text\|password"&gt;</code></td>
@@ -296,7 +296,7 @@ main img.shot { max-width: 100%; }
 <td>❌ 没有样式表标签，也没有脚本</td>
 </tr>
 <tr>
-<td>其余 79 个标签</td>
+<td>其余 80 个标签</td>
 <td>✅ 见<a href="08_tags.html">标签与语义</a></td>
 </tr>
 </tbody>
