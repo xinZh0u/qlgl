@@ -959,8 +959,13 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 </tr>
 <tr>
 <td>行内</td>
-<td><code>span</code> <code>b</code> <code>i</code> <code>em</code> <code>strong</code> <code>u</code> <code>s</code></td>
+<td><code>span</code></td>
 <td><code>display: inline</code></td>
+</tr>
+<tr>
+<td>语义行内</td>
+<td><code>b</code> <code>strong</code>（加粗）<code>i</code> <code>em</code>（斜体）<code>u</code>（下划线）<code>s</code>（删除线）</td>
+<td>inline + 对应的字体变体</td>
 </tr>
 <tr>
 <td>高亮</td>
@@ -986,8 +991,8 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 </table>
 <p><strong>几处必须知道的取舍</strong></p>
 <ol>
-<li><strong><code>em</code>/<code>strong</code>/<code>u</code>/<code>s</code>/<code>b</code>/<code>i</code> 现在和 <code>span</code> 一样</strong>：加粗/斜体/下划线要字体变体
-   （合成加粗、合成斜体、装饰线），还没做。<code>mark</code> 是唯一现在就有视觉区别的行内标签。</li>
+<li><strong>字体变体是合成的</strong>：加粗 = 画两遍偏移 1px，斜体 = 按行剪切，装饰线 = 1px 横线。
+   不加载第二个字体文件（MCU 上也不可能）。详见 §5.4.8。</li>
 <li><strong>列表不画项目符号</strong>：本库没有生成内容（<code>::before</code> / <code>::marker</code>），标记请自己写字符。</li>
 <li><strong><code>&lt;br&gt;</code> 是一个"高度为 0 的块"</strong>：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。</li>
@@ -999,6 +1004,49 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <code>span</code> 改成 <code>block</code>，这个判断不会跟着变。块级兄弟之间的空白照旧丢掉，
 否则每个缩进都会变成一行。flex 容器里这种"只有空白的 span"会在 <code>ql_ui_build</code>
 时被共享的隐藏样式关掉（CSS：只含空白的匿名 flex 项不渲染），零额外内存。</p>
+<h3 id="548">5.4.8 字体变体：合成加粗 / 合成斜体 / 装饰线</h3>
+<p><code>QLUIStyle.font_flags</code> 一个字节装四种位（<code>QL_UI_FONT_*</code>），<code>QLUIStyle</code> <strong>仍是 120 字节</strong>
+（塞进最后一个 padding 字节）。全部<strong>合成</strong>，不换字体文件：</p>
+<table>
+<thead>
+<tr>
+<th>效果</th>
+<th>CPU（<code>qlcanvas.c</code>）</th>
+<th>GPU（<code>qlgfx_gl.c</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加粗</td>
+<td>同一个字形 <code>glyph_blit()</code> 跑两遍，第二遍 <code>strike = 1px</code></td>
+<td>同一个 quad 发两遍，第二遍 <code>x + 1</code></td>
+</tr>
+<tr>
+<td>斜体</td>
+<td>行循环里逐行右移：<code>row = round(shear × (hh−gy) / (hh × 16))</code></td>
+<td>顶边两个顶点右移 <code>shear</code>，<strong>uv 仍按剪切前角点取</strong></td>
+</tr>
+<tr>
+<td>装饰线</td>
+<td><code>fill_rect</code> 一条 1px</td>
+<td>同一条 <code>fill_rect</code>（就是普通 quad）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>斜体必须用 1/16 像素定点</strong>：9px 高的小字按整数像素剪切只有 1px，分摊到 9 行里
+每行要么 0 要么 1（视觉上就是没斜）。改成 1/16 后每行都能分到不同位移。</p>
+<p>装饰线画在 <code>ql_draw2d_text_layout()</code> 里，因为只有它知道每行的起止与基线 ——
+放这里两个后端就自动都有，不用各写一遍。空行（<code>llen == 0</code>）不画，否则折行产生的
+空行会拖一条线。</p>
+<p><strong>三个坑</strong>：</p>
+<ol>
+<li>加粗的第二遍必须带<strong>同样的剪切</strong>，否则加粗斜体的右下角会缺一块。</li>
+<li>GPU 侧 <code>emit_quad()</code> 加了 <code>shear</code> 参数后，<code>v.u</code> 必须用<strong>剪切前</strong>的角点算，
+   否则纹理采样跟着四边形一起歪（字形会变成斜着错位的一团）。</li>
+<li>行高是 CSS px，到了后端要按 <code>font_fx</code> 放大；装饰线画在设备像素里，
+   HiDPI 下不能还是 1 个 CSS px 粗。</li>
+</ol>
+<hr />
 <h3 id="55-qlui-blob">5.5 <code>.qlui</code> blob：换界面不用重编译</h3>
 <div class="highlight"><pre><span></span><code>                    ┌──▶ ui_demo.c ──▶ 编译器 ──▶ .rodata ──▶ ql_ui_build()
 index.html + index.css ──qltext cc──┤

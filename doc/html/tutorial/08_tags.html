@@ -288,11 +288,44 @@ margin 是 8px 而不是 1em）。</p>
 
 <p>完整可运行的版本见 <code>example/08_tags.c</code>。</p>
 <h2 id="_3">三个必须知道的"不完美"</h2>
-<h3 id="1-em-strong-u-s-span">1. <code>em</code> / <code>strong</code> / <code>u</code> / <code>s</code> 现在和 <code>span</code> 一样</h3>
-<p>加粗、斜体、下划线需要<strong>字体变体</strong>：<code>font-weight: bold</code> 要合成加粗，
-<code>font-style: italic</code> 要合成斜体，<code>text-decoration</code> 要画装饰线。这些还没做。
-所以这群标签现在是"语义标记"——对布局没有影响，等文本样式补上才真的有区别。</p>
-<p>目前唯一现在就能看出区别的行内标签是 <code>mark</code>（它有背景色）。</p>
+<h3 id="1">1. 字体变体是<strong>合成</strong>的，不是换了字体文件</h3>
+<p><code>b</code>/<code>strong</code> = 加粗，<code>i</code>/<code>em</code> = 斜体，<code>u</code> = 下划线，<code>s</code> = 删除线。
+它们靠三个"穷人版"实现，不加载第二个字体文件（MCU 上也不可能）：</p>
+<table>
+<thead>
+<tr>
+<th>效果</th>
+<th>做法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加粗</td>
+<td>字形再画一遍，右移 1px</td>
+<td>墨迹多约 1.6 倍（面积），像素级</td>
+</tr>
+<tr>
+<td>斜体</td>
+<td>按行剪切，顶部右移 <code>高度 × 0.21</code></td>
+<td>每行起点差 1px，行内像素连续写</td>
+</tr>
+<tr>
+<td>下划线 / 删除线</td>
+<td>画一条 1px 横线</td>
+<td>1 个矩形</td>
+</tr>
+</tbody>
+</table>
+<p>这意味着：<strong>小字号下斜体看起来会比较"硬"</strong>（每行只能挪整像素），
+加粗也不是真字重的形状。要求高就自己提供粗体字重的字体文件并换 <code>font-family</code>
+（本库还没有 <code>font-family</code>，所以目前就是合成这一条路）。</p>
+<p>对应 CSS 是标准写法，可以单独用：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">note</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-weight</span><span class="p">:</span><span class="w"> </span><span class="kc">bold</span><span class="p">;</span><span class="w"> </span><span class="k">font-style</span><span class="p">:</span><span class="w"> </span><span class="kc">italic</span><span class="p">;</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p><code>font-weight</code> 也吃数字：<code>&gt;= 600</code> 算加粗（<code>normal</code> = 400、<code>bold</code> = 700）。
+<code>text-decoration</code> 支持 <code>underline line-through</code> 组合，<code>overline</code> 明确报错。</p>
 <h3 id="2">2. 列表不画项目符号</h3>
 <p>本库没有生成内容（<code>::before</code> / <code>::marker</code>），所以 <code>&lt;ul&gt;</code> 只给你缩进和块级结构，
 <code>•</code> 要自己写：</p>

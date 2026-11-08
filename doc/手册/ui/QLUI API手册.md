@@ -610,7 +610,8 @@ typedef struct {
     /* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h
        （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）
        line-height 是 int16_t line_h（0 = normal），
-       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行） */
+       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），
+       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */
 } QLUIStyle;  /* sizeof == 120（blob v11） */
 
 typedef struct {

@@ -163,11 +163,11 @@ int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
 }
 
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                           QLRect box, ql_color_t color, QLTextAlign align,
-                           ql_coord_t line_h, int wrap,
+                           QLRect box, const QLTextStyle *ts,
                            ql_draw2d_glyph_fn emit_glyph)
 {
-    if (self == NULL || font == NULL || text == NULL || emit_glyph == NULL)
+    if (self == NULL || font == NULL || text == NULL || ts == NULL ||
+        emit_glyph == NULL)
         return;
     if (ql_rect_is_empty(box))
         return;
@@ -181,9 +181,9 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
     const ql_coord_t lead_total = (ql_coord_t)(font->ascent + font->descent);
     ql_coord_t line_step = font->line_height;
     ql_coord_t half_lead = 0;
-    if (line_h > 0) {
-        line_step = line_h;
-        half_lead = (ql_coord_t)(line_h - lead_total) / 2;
+    if (ts->line_h > 0) {
+        line_step = ts->line_h;
+        half_lead = (ql_coord_t)(ts->line_h - lead_total) / 2;
     }
 
     /* `len < 0` 时按 NUL 结尾；有显式长度时截一段临时缓冲交给折行函数 */
@@ -198,7 +198,7 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
     QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
     const int max_lines = (int)(sizeof(lines) / sizeof(lines[0]));
-    int count = ql_text_wrap(font, src, wrap ? box.w : 0, lines, max_lines);
+    int count = ql_text_wrap(font, src, ts->wrap ? box.w : 0, lines, max_lines);
     if (count > max_lines)
         count = max_lines;      /* 超出的行不画（布局统计不受此限） */
 
@@ -209,10 +209,12 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
         const ql_coord_t line_w = ql_font_line_width(font, lt, llen);
 
         ql_coord_t pen_x = box.x;
-        if (align == QL_TEXT_ALIGN_CENTER)
+        if (ts->align == QL_TEXT_ALIGN_CENTER)
             pen_x = box.x + (box.w - line_w) / 2;
-        else if (align == QL_TEXT_ALIGN_RIGHT)
+        else if (ts->align == QL_TEXT_ALIGN_RIGHT)
             pen_x = box.x + box.w - line_w;
+
+        const ql_coord_t line_x0 = pen_x;
 
         int32_t j = 0;
         while (j < llen) {
@@ -222,11 +224,31 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
                 break;
             const QLGlyph *glyph = ql_font_find_glyph(font, cp);
             if (glyph != NULL && glyph->box_w > 0)
-                emit_glyph(self, font, glyph, pen_x, baseline, color);
+                emit_glyph(self, font, glyph, pen_x, baseline, ts);
             if (glyph != NULL)
                 pen_x += glyph->adv_w;
             j += used;
         }
+
+        /*
+         * 装饰线在这里画：本函数知道每行的起止与基线，两个后端就不用各写一遍。
+         * 空行（llen == 0）不画，否则折行产生的空行会拖一条线。
+         */
+        if (ts->deco != 0 && llen > 0 && self->fill_rect != NULL) {
+            const ql_coord_t x0 = line_x0;
+            const ql_coord_t w = line_w;
+            if ((ts->deco & QL_TEXT_DECO_UNDERLINE) != 0) {
+                /* 基线下方 2px：再低会碰到下一行的字，再高会压住下伸部 */
+                QLRect r = ql_rect_make(x0, baseline + 2, w, 1);
+                self->fill_rect(self, r, ts->color, 255);
+            }
+            if ((ts->deco & QL_TEXT_DECO_LINE_THROUGH) != 0) {
+                /* 大约在 x-height 的一半处（ascent 的一半偏上一点） */
+                QLRect r = ql_rect_make(x0, baseline - font->ascent / 2, w, 1);
+                self->fill_rect(self, r, ts->color, 255);
+            }
+        }
+
         baseline += line_step;
     }
 }
@@ -424,10 +446,12 @@ static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius
 }
 
 static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *glyph,
-                           ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color)
+                           ql_coord_t pen_x, ql_coord_t baseline_y,
+                           const QLTextStyle *ts)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_draw_glyph(ctx->canvas, font, glyph, pen_x, baseline_y, color);
+    ql_canvas_draw_glyph_ex(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+                            ts->italic != 0, ts->bold != 0);
 }
 
 /*
@@ -450,8 +474,7 @@ const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx)
 }
 
 static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                          QLRect box, ql_color_t color, QLTextAlign align,
-                          ql_coord_t line_h, int wrap)
+                          QLRect box, const QLTextStyle *ts)
 {
     /*
      * 字形按"元素缩放 × DPR"重取字号：transform: scale() 在浏览器里会让文字
@@ -463,8 +486,15 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
         (ql_coord_t)((int64_t)self->scale_fx * elem_len_fx(self) / QL_SCALE_ONE);
     const QLFont *dev = ql_draw2d_device_font(font, font_fx);
     /* 文本取偏移的整数部分：亚像素平移会让字形糊掉 */
+    /*
+     * 行高与装饰线厚度都是 CSS px，到后端要按同样的比例放大（否则 HiDPI 下
+     * 1px 的下划线会变成半根）。这里只换算，不改语义。
+     */
+    QLTextStyle local = *ts;
+    if (local.line_h > 0)
+        local.line_h = ql_scale_len(local.line_h, font_fx);
     ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
-                          color, align, line_h, wrap, cpu_emit_glyph);
+                          &local, cpu_emit_glyph);
 }
 
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)

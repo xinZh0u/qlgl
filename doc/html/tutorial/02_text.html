@@ -301,6 +301,45 @@ main img.shot { max-width: 100%; }
 想要"文字在任意高度的盒子里居中而不用算像素"，当前没有 <code>flex</code> 那套
 匿名文本盒，还是得让 <code>line-height</code> 等于盒高。</p>
 </blockquote>
+<h2 id="_3">规则三·再补：加粗、斜体、下划线</h2>
+<p>三个 CSS 属性，<strong>都是合成实现</strong>（不换字体文件）：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-weight</span><span class="p">:</span><span class="w"> </span><span class="kc">bold</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* 也吃数字：&gt;= 600 算加粗 */</span>
+<span class="p">.</span><span class="nc">i</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-style</span><span class="p">:</span><span class="w"> </span><span class="kc">italic</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* oblique 等价 */</span>
+<span class="p">.</span><span class="nc">u</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">d</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">line-through</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">both</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="w"> </span><span class="kc">line-through</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 可以组合 */</span>
+</code></pre></div>
+
+<p>效果与代价：</p>
+<table>
+<thead>
+<tr>
+<th>效果</th>
+<th>做法</th>
+<th>需要注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加粗</td>
+<td>字形画两遍，第二遍右移 1px</td>
+<td>不是真字重，笔画会略"胖"</td>
+</tr>
+<tr>
+<td>斜体</td>
+<td>逐行右移，顶部挪 <code>高度 × 0.21</code></td>
+<td>小字号下只能挪整像素，看起来偏硬</td>
+</tr>
+<tr>
+<td>下划线 / 删除线</td>
+<td>1px 横线</td>
+<td>颜色跟 <code>color</code> 走</td>
+</tr>
+</tbody>
+</table>
+<p>它们和 <code>font-size</code> / <code>color</code> 一样<strong>会被继承</strong>，所以写在容器上就管整片文字。</p>
+<p>对应的语义标签（<code>b</code> <code>strong</code> <code>i</code> <code>em</code> <code>u</code> <code>s</code>）的 UA 默认样式就是这些值，
+见<a href="08_tags.html">标签与语义</a>。</p>
 <h2 id="white-space-normal">规则四：默认不折行，<code>white-space: normal</code> 才折</h2>
 <p><strong>这是本库与浏览器唯一有意为之的差异</strong>：浏览器默认就折行（<code>white-space: normal</code>），
 本库默认 <code>nowrap</code> —— 一段文本就是一行，超长就溢出（被父级 <code>overflow: hidden</code> 裁掉）。</p>
@@ -353,7 +392,7 @@ main img.shot { max-width: 100%; }
 本库不做），以及 <code>text-overflow: ellipsis</code>（"太长就省略号"）。写了会<strong>报错</strong>，
 不会静默降级。</p>
 </blockquote>
-<h2 id="_3">运行期改文本</h2>
+<h2 id="_4">运行期改文本</h2>
 <div class="highlight"><pre><span></span><code><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;新的内容&quot;</span><span class="p">);</span>
 </code></pre></div>
 

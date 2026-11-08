@@ -1184,7 +1184,8 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <span class="w">    </span><span class="cm">/* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h</span>
 <span class="cm">       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）</span>
 <span class="cm">       line-height 是 int16_t line_h（0 = normal），</span>
-<span class="cm">       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行） */</span>
+<span class="cm">       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），</span>
+<span class="cm">       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */</span>
 <span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 120（blob v11） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>

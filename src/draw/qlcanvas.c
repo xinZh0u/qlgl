@@ -1597,27 +1597,52 @@ void ql_canvas_draw_line(QLCanvas *canvas, ql_coord_t x1, ql_coord_t y1,
 
 /* ------------------------------ 文本 ------------------------------ */
 
-void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
-                          ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color)
+/*
+ * 合成斜体的斜率：整字高度上的水平位移 = 高度 × 21/100（FreeType 默认 oblique 的量级）。
+ *
+ * 精度用 1/16 像素而不是整数像素：9px 高的小字整数剪切只有 1px，
+ * 分摊到 9 行里几乎看不出来（每行要么 0 要么 1）。用 1/16 定点后
+ * 每行都能分到不同的位移，视觉上才像"斜"。
+ */
+#define QL_GLYPH_SLANT_NUM 21
+#define QL_GLYPH_SLANT_DEN 100
+#define QL_GLYPH_SHEAR_SUB 16
+
+/*
+ * 真正的逐像素实现。`shear` = 顶部相对底部右移多少像素（0 = 不斜）；
+ * `strike` = 加粗时这一遍的额外横移（0 = 主笔画，1 = 加粗补的第二遍）。
+ *
+ * 剪切在**行循环内部**做：每一行的起点右移 row_shear，行内像素照旧连续写，
+ * 所以不会退化成逐像素随机访问。
+ */
+static void glyph_blit(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                       ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
+                       ql_coord_t shear, ql_coord_t strike)
 {
     if (canvas == NULL || font == NULL || glyph == NULL)
         return;
     if (glyph->box_w == 0 || glyph->box_h == 0)
         return;
 
-    ql_coord_t origin_x = pen_x + glyph->ofs_x;
+    ql_coord_t origin_x = pen_x + glyph->ofs_x + strike;
     ql_coord_t origin_y = baseline_y + glyph->ofs_y;
 
-    /* 可见范围一次算好：之后行内不再做任何裁剪/越界判断 */
+    /*
+     * 斜体让顶部外扩，横向可见范围要放宽 shear 个像素，否则右上方会被裁掉。
+     * 这里把 origin_x 临时左移 shear 做统一的裁剪计算，行内再加回来。
+     */
+    const ql_coord_t shear_px = (shear > 0) ? (shear / QL_GLYPH_SHEAR_SUB) : 0;
+    const ql_coord_t clip_x0 = origin_x - shear_px;
+
     ql_coord_t gx0 = 0, gx1 = (ql_coord_t)glyph->box_w - 1;
-    if (origin_x < canvas->clip.x)
-        gx0 = canvas->clip.x - origin_x;
-    if (origin_x + gx1 > ql_rect_right(canvas->clip) - 1)
-        gx1 = ql_rect_right(canvas->clip) - 1 - origin_x;
-    if (origin_x < 0)
-        gx0 = (gx0 > -origin_x) ? gx0 : -origin_x;
-    if (origin_x + gx1 > canvas->width - 1)
-        gx1 = canvas->width - 1 - origin_x;
+    if (clip_x0 < canvas->clip.x)
+        gx0 = canvas->clip.x - clip_x0;
+    if (clip_x0 + gx1 > ql_rect_right(canvas->clip) - 1)
+        gx1 = ql_rect_right(canvas->clip) - 1 - clip_x0;
+    if (clip_x0 < 0)
+        gx0 = (gx0 > -clip_x0) ? gx0 : -clip_x0;
+    if (clip_x0 + gx1 > canvas->width - 1)
+        gx1 = canvas->width - 1 - clip_x0;
     if (gx1 < gx0)
         return;
 
@@ -1639,13 +1664,25 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
     const uint32_t cb = QL_COLOR_GET_B(color);
 
     for (ql_coord_t gy = gy0; gy <= gy1; gy++) {
-        /* 行指针由字体提供：静态位图字体与动态矢量字体的取法不同 */
         const uint8_t *src = ql_font_glyph_row(font, glyph, gy);
         if (src == NULL)
             break;
-        ql_coord_t y = origin_y + gy;
-        /* 行指针提到行外：字形逐像素写，原来每像素重算一次 buffer + y*stride */
+        const ql_coord_t y = origin_y + gy;
         uint8_t *row = canvas->buffer + (uint32_t)y * canvas->stride;
+
+        /*
+         * 剪切：越靠上右移越多（gy 小 = 靠上）。
+         * shear 是 1/16 像素单位的总位移，这里按行线性分摊并四舍五入回整像素：
+         *     row = round( shear * (hh - gy) / (hh * 16) )
+         */
+        const ql_coord_t hh = (ql_coord_t)glyph->box_h - 1;
+        ql_coord_t row_shear = 0;
+        if (shear > 0 && hh > 0) {
+            const int64_t num = (int64_t)shear * (int64_t)(hh - gy);
+            const int64_t den = (int64_t)hh * QL_GLYPH_SHEAR_SUB;
+            row_shear = (ql_coord_t)((num + den / 2) / den);
+        }
+        const ql_coord_t line_x0 = clip_x0 + row_shear;
 
         switch (font->bpp) {
         case 4:
@@ -1653,7 +1690,7 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
                 uint8_t byte = src[(uint32_t)gx / 2u];
                 uint8_t nib = (gx % 2 == 0) ? (uint8_t)(byte >> 4) : (uint8_t)(byte & 0x0Fu);
                 if (nib != 0)
-                    blend_px(row, origin_x + gx, fmt, cr, cg, cb, color,
+                    blend_px(row, line_x0 + gx, fmt, cr, cg, cb, color,
                              (uint32_t)nib * 17u);
             }
             break;
@@ -1661,20 +1698,43 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
             for (ql_coord_t gx = gx0; gx <= gx1; gx++) {
                 uint8_t byte = src[(uint32_t)gx / 8u];
                 if (byte & (0x80u >> (gx % 8)))
-                    blend_px_masked(canvas, row, origin_x + gx, y, fmt, cr, cg,
-                                    cb, color, 255u);
+                    blend_px_masked(canvas, row, line_x0 + gx, y, fmt, cr, cg, cb, color,
+                                    255u);
             }
             break;
         default:
             for (ql_coord_t gx = gx0; gx <= gx1; gx++) {
                 uint8_t a = src[gx];
                 if (a != 0)
-                    blend_px_masked(canvas, row, origin_x + gx, y, fmt, cr, cg,
-                                    cb, color, a);
+                    blend_px_masked(canvas, row, line_x0 + gx, y, fmt, cr, cg, cb, color,
+                                    a);
             }
             break;
         }
     }
+}
+
+void ql_canvas_draw_glyph_ex(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                             ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
+                             int italic, int bold)
+{
+    if (glyph == NULL)
+        return;
+    ql_coord_t shear = 0;      /* 1/16 像素单位 */
+    if (italic && glyph->box_h > 1)
+        shear = (ql_coord_t)((int64_t)glyph->box_h * QL_GLYPH_SLANT_NUM *
+                             QL_GLYPH_SHEAR_SUB / QL_GLYPH_SLANT_DEN);
+    glyph_blit(canvas, font, glyph, pen_x, baseline_y, color, shear, 0);
+    if (bold) {
+        /* 第二遍右移 1px：先画斜体那份、再补一遍，两遍剪切一致 */
+        glyph_blit(canvas, font, glyph, pen_x, baseline_y, color, shear, 1);
+    }
+}
+
+void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                          ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color)
+{
+    ql_canvas_draw_glyph_ex(canvas, font, glyph, pen_x, baseline_y, color, 0, 0);
 }
 
 void ql_canvas_draw_text(QLCanvas *canvas, const QLFont *font, const char *text,

@@ -217,6 +217,19 @@ void ql_canvas_draw_text(QLCanvas *canvas, const QLFont *font, const char *text,
 void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
                           ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color);
 
+/*
+ * 带字体变体的字形绘制（`font-weight: bold` / `font-style: italic` 的实现）。
+ *
+ * 都是**合成**的，不加载第二个字体文件：
+ *   - `italic`：按行剪切，每往上一行右移 `slant/height` 的斜率（约 0.21）；
+ *   - `bold`  ：再画一遍、右移 1px。先画斜体那份，第二遍也带上同样的剪切，
+ *               否则加粗字的右下角会缺一块。
+ * 位图字体与矢量字体走的是同一条路（都逐像素写），所以 MCU 也支持。
+ */
+void ql_canvas_draw_glyph_ex(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                             ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
+                             int italic, int bold);
+
 /* 颜色按目标格式量化后的实际值（测试用：RGB565 会有精度损失） */
 ql_color_t ql_canvas_quantize(QLCanvas *canvas, ql_color_t color);
 

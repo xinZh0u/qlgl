@@ -19,6 +19,31 @@
 
 typedef struct QLDraw2D QLDraw2D;
 
+/* 装饰线（`text-decoration`）：两条都是 1px，画在基线附近 */
+#define QL_TEXT_DECO_UNDERLINE    0x01u
+#define QL_TEXT_DECO_LINE_THROUGH 0x02u
+
+/*
+ * 一次文本绘制的全部参数。
+ *
+ * 收成一个结构体是因为参数已经到 8 个了，再加"字体变体/装饰线"就该爆炸。
+ * 后端实现只读它，不要往里写。
+ *
+ * `bold` / `italic` 是**合成**的（不换字体文件）：
+ *   - 加粗：把字形再画一遍、右移 1px（等价于 FreeType 的 embolden 的穷人版）；
+ *   - 斜体：按行剪切（顶部右移、底部不动），斜率约 0.21。
+ * 位数少、效果够用、MCU 也不额外占空间 —— 换真字体文件在 MCU 上不现实。
+ */
+typedef struct {
+    ql_color_t color;
+    ql_coord_t line_h;    /* 行高（px）；0 = normal（字体自身的 line_height） */
+    uint8_t    align;     /* QLTextAlign */
+    uint8_t    wrap;      /* 1 = 按 box.w 折行；0 = 只按 '\n' 断 */
+    uint8_t    bold;
+    uint8_t    italic;
+    uint8_t    deco;      /* QL_TEXT_DECO_* 位图 */
+} QLTextStyle;
+
 struct QLDraw2D {
     /* 设置裁剪矩形（绝对坐标）；之后的绘制都被裁到它里面 */
     void (*set_clip)(QLDraw2D *self, QLRect clip);
@@ -60,8 +85,7 @@ struct QLDraw2D {
      * 单行垂直居中就靠它：`height: 26px; line-height: 26px`。
      */
     void (*draw_text)(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                      QLRect box, ql_color_t color, QLTextAlign align,
-                      ql_coord_t line_h, int wrap);
+                      QLRect box, const QLTextStyle *ts);
 
     /*
      * 毛玻璃（CSS px）：把 `rect` 区域里**已经画好的内容**就地模糊。
@@ -142,14 +166,14 @@ int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
 /* 单行绘制文字的公共实现：后端可直接复用它的排版逻辑 */
 typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,
                                    const QLGlyph *glyph, ql_coord_t pen_x,
-                                   ql_coord_t baseline_y, ql_color_t color);
+                                   ql_coord_t baseline_y, const QLTextStyle *ts);
+
 /*
- * `wrap` = 0：只按 '\n' 断行（`white-space: nowrap`）；
- * `wrap` = 1：再按 `box.w` 折行（`white-space: normal`，走 ql_text_wrap()）。
+ * 排一行/多行并逐字发射。`wrap` / `line_h` / 装饰线都在 `ts` 里。
+ * 装饰线由这个函数自己画（它知道每行的起止与基线），所以两个后端不用各写一遍。
  */
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                           QLRect box, ql_color_t color, QLTextAlign align,
-                           ql_coord_t line_h, int wrap,
+                           QLRect box, const QLTextStyle *ts,
                            ql_draw2d_glyph_fn emit_glyph);
 
 /*

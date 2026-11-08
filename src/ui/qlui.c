@@ -1698,10 +1698,22 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
         d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,
                                s->border_color);
 
-    if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box))
-        d2d->draw_text(d2d, font_of(node), node->text, -1, node->content_box,
-                       s->text_color, (QLTextAlign)s->text_align, s->line_h,
-                       s->white_space == 1);
+    if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box)) {
+        QLTextStyle ts;
+        memset(&ts, 0, sizeof(ts));
+        ts.color = s->text_color;
+        ts.line_h = s->line_h;
+        ts.align = s->text_align;
+        ts.wrap = (uint8_t)(s->white_space == 1);
+        ts.bold = (uint8_t)((s->font_flags & QL_UI_FONT_BOLD) != 0);
+        ts.italic = (uint8_t)((s->font_flags & QL_UI_FONT_ITALIC) != 0);
+        ts.deco = (uint8_t)(((s->font_flags & QL_UI_FONT_UNDERLINE) ? QL_TEXT_DECO_UNDERLINE
+                                                                   : 0u) |
+                            ((s->font_flags & QL_UI_FONT_LINE_THROUGH)
+                                 ? QL_TEXT_DECO_LINE_THROUGH
+                                 : 0u));
+        d2d->draw_text(d2d, font_of(node), node->text, -1, node->content_box, &ts);
+    }
 
     /* overflow != visible 时，子树被裁到本节点的边框盒（含圆角） */
     if (s->overflow != QL_UI_OVERFLOW_VISIBLE && d2d->set_clip != NULL) {

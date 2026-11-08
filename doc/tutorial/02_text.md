@@ -110,6 +110,31 @@ static const char *k_css =
 > 想要"文字在任意高度的盒子里居中而不用算像素"，当前没有 `flex` 那套
 > 匿名文本盒，还是得让 `line-height` 等于盒高。
 
+## 规则三·再补：加粗、斜体、下划线
+
+三个 CSS 属性，**都是合成实现**（不换字体文件）：
+
+```css
+.b { font-weight: bold; }              /* 也吃数字：>= 600 算加粗 */
+.i { font-style: italic; }             /* oblique 等价 */
+.u { text-decoration: underline; }
+.d { text-decoration: line-through; }
+.both { text-decoration: underline line-through; }   /* 可以组合 */
+```
+
+效果与代价：
+
+| 效果 | 做法 | 需要注意 |
+|---|---|---|
+| 加粗 | 字形画两遍，第二遍右移 1px | 不是真字重，笔画会略"胖" |
+| 斜体 | 逐行右移，顶部挪 `高度 × 0.21` | 小字号下只能挪整像素，看起来偏硬 |
+| 下划线 / 删除线 | 1px 横线 | 颜色跟 `color` 走 |
+
+它们和 `font-size` / `color` 一样**会被继承**，所以写在容器上就管整片文字。
+
+对应的语义标签（`b` `strong` `i` `em` `u` `s`）的 UA 默认样式就是这些值，
+见[标签与语义](08_tags.html)。
+
 ## 规则四：默认不折行，`white-space: normal` 才折
 
 **这是本库与浏览器唯一有意为之的差异**：浏览器默认就折行（`white-space: normal`），

@@ -1649,7 +1649,7 @@ static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
-    "box-shadow",
+    "box-shadow", "font-weight", "font-style", "text-decoration",
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
@@ -3373,10 +3373,21 @@ static int ua_heading(Decls *out, int px, int margin)
 static int ua_defaults(const char *tag, Decls *out)
 {
     /* ---- 行内 ---- */
-    if (strcmp(tag, "span") == 0 || strcmp(tag, "b") == 0 || strcmp(tag, "i") == 0 ||
-        strcmp(tag, "em") == 0 || strcmp(tag, "strong") == 0 ||
-        strcmp(tag, "u") == 0 || strcmp(tag, "s") == 0)
+    if (strcmp(tag, "span") == 0)
         return ua_set_inline(out);
+
+    /*
+     * 语义行内标签现在**真的有区别了**（合成加粗/斜体/装饰线，见 QL_UI_FONT_*）。
+     * 与浏览器一致：b/strong = 加粗，i/em = 斜体，u = 下划线，s = 删除线。
+     */
+    if (strcmp(tag, "b") == 0 || strcmp(tag, "strong") == 0)
+        return ua_set_inline(out) && decls_set(out, "font-weight", "bold");
+    if (strcmp(tag, "i") == 0 || strcmp(tag, "em") == 0)
+        return ua_set_inline(out) && decls_set(out, "font-style", "italic");
+    if (strcmp(tag, "u") == 0)
+        return ua_set_inline(out) && decls_set(out, "text-decoration", "underline");
+    if (strcmp(tag, "s") == 0)
+        return ua_set_inline(out) && decls_set(out, "text-decoration", "line-through");
 
     /* 高亮：行内元素也有自己的背景盒，所以这个标签现在就能看出区别 */
     if (strcmp(tag, "mark") == 0)
@@ -4352,6 +4363,87 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         return 0;
 
     /*
+     * 字体变体 + 装饰线。三者都**合成**实现（不换字体文件），见 QL_UI_FONT_*。
+     *
+     * font-weight：支持 normal(400)/bold(700)/100..900 的数字写法。
+     *   >= 600 视为加粗 —— 和 CSS 的"相对 bolder"简化版一致，够用且可预测。
+     * font-style ：只支持 normal / italic（oblique 等价于 italic）。
+     * text-decoration：none / underline / line-through（combo 用空格分隔）。
+     */
+    uint8_t font_flags = 0;
+    {
+        const char *fv = decls_get(st, "font-weight");
+        if (fv != NULL) {
+            char wt[32];
+            trim_lower(fv, wt, sizeof(wt));
+            if (strcmp(wt, "normal") == 0) {
+                /* 400：不加粗 */
+            } else if (strcmp(wt, "bold") == 0) {
+                font_flags |= QL_UI_FONT_BOLD;
+            } else {
+                const char *end = NULL;
+                double w = 0;
+                if (!match_number(wt, &end, &w) || *end != '\0' || w < 1 || w > 1000) {
+                    set_error("%s: 不支持的 font-weight '%s'"
+                              "（normal / bold / 100~900）", where, fv);
+                    return 0;
+                }
+                if (w >= 600)
+                    font_flags |= QL_UI_FONT_BOLD;
+            }
+        }
+        fv = decls_get(st, "font-style");
+        if (fv != NULL) {
+            char stl[32];
+            trim_lower(fv, stl, sizeof(stl));
+            if (strcmp(stl, "normal") == 0) {
+                /* 不斜 */
+            } else if (strcmp(stl, "italic") == 0 || strcmp(stl, "oblique") == 0) {
+                font_flags |= QL_UI_FONT_ITALIC;
+            } else {
+                set_error("%s: 不支持的 font-style '%s'（normal / italic）", where, fv);
+                return 0;
+            }
+        }
+        fv = decls_get(st, "text-decoration");
+        if (fv != NULL) {
+            char td[64];
+            trim_lower(fv, td, sizeof(td));
+            if (strcmp(td, "none") == 0) {
+                /* 无 */
+            } else {
+                /* 允许 "underline line-through" 这种组合 */
+                const char *p = td;
+                while (*p != '\0') {
+                    while (*p == ' ') p++;
+                    const char *b = p;
+                    while (*p != '\0' && *p != ' ') p++;
+                    char word[32];
+                    size_t wl = (size_t)(p - b);
+                    if (wl >= sizeof(word)) wl = sizeof(word) - 1u;
+                    memcpy(word, b, wl);
+                    word[wl] = '\0';
+                    if (wl == 0)
+                        continue;
+                    if (strcmp(word, "underline") == 0) {
+                        font_flags |= QL_UI_FONT_UNDERLINE;
+                    } else if (strcmp(word, "line-through") == 0) {
+                        font_flags |= QL_UI_FONT_LINE_THROUGH;
+                    } else if (strcmp(word, "overline") == 0) {
+                        set_error("%s: text-decoration 暂不支持 overline（本库没有上划线）",
+                                  where);
+                        return 0;
+                    } else {
+                        set_error("%s: 不支持的 text-decoration '%s'"
+                                  "（none / underline / line-through）", where, word);
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+
+    /*
      * white-space：默认 nowrap（与浏览器的**故意差异**，见 qlui.h 里该字段的注释）。
      * 只支持 nowrap / normal —— pre* 系列需要保留空白与制表符语义，本库不做。
      */
@@ -4762,6 +4854,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
+    out->font_flags = font_flags;
     return 1;
 }
 
@@ -4977,7 +5070,9 @@ static int flatten_tree(const PNode *root, Flat **out, int *out_n)
 
 /* 继承只带走这三个属性（与 Python 的 INHERITED 一致） */
 static const char *const k_inherited[] = { "color", "font-size", "text-align",
-                                           "line-height", "white-space" };
+                                           "line-height", "white-space",
+                                           "font-weight", "font-style",
+                                           "text-decoration" };
 
 static int collect_inherited(const Decls *parent, Decls *out)
 {

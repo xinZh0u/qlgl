@@ -616,7 +616,8 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 容器 | `div` `section` `header` `footer` `nav` `main` `article` `aside` `figure` `figcaption` `blockquote` | `display: block` |
 | 标题 | `h1`…`h6` | block + 字号 24/20/17/15/13/12 + 递减 margin |
 | 文本块 | `p` | block + `margin: 8px 0` |
-| 行内 | `span` `b` `i` `em` `strong` `u` `s` | `display: inline` |
+| 行内 | `span` | `display: inline` |
+| 语义行内 | `b` `strong`（加粗）`i` `em`（斜体）`u`（下划线）`s`（删除线） | inline + 对应的字体变体 |
 | 高亮 | `mark` | inline + 黄底黑字 |
 | 列表 | `ul` `ol` / `li` | block + `margin: 8px 0` / block；`padding-left: 18px` |
 | 空元素 | `hr` / `br` | 1px 细线 + margin / 高度 0 的块 |
@@ -624,8 +625,8 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 
 **几处必须知道的取舍**
 
-1. **`em`/`strong`/`u`/`s`/`b`/`i` 现在和 `span` 一样**：加粗/斜体/下划线要字体变体
-   （合成加粗、合成斜体、装饰线），还没做。`mark` 是唯一现在就有视觉区别的行内标签。
+1. **字体变体是合成的**：加粗 = 画两遍偏移 1px，斜体 = 按行剪切，装饰线 = 1px 横线。
+   不加载第二个字体文件（MCU 上也不可能）。详见 §5.4.8。
 2. **列表不画项目符号**：本库没有生成内容（`::before` / `::marker`），标记请自己写字符。
 3. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。
@@ -637,6 +638,34 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 `span` 改成 `block`，这个判断不会跟着变。块级兄弟之间的空白照旧丢掉，
 否则每个缩进都会变成一行。flex 容器里这种"只有空白的 span"会在 `ql_ui_build`
 时被共享的隐藏样式关掉（CSS：只含空白的匿名 flex 项不渲染），零额外内存。
+
+### 5.4.8 字体变体：合成加粗 / 合成斜体 / 装饰线
+
+`QLUIStyle.font_flags` 一个字节装四种位（`QL_UI_FONT_*`），`QLUIStyle` **仍是 120 字节**
+（塞进最后一个 padding 字节）。全部**合成**，不换字体文件：
+
+| 效果 | CPU（`qlcanvas.c`） | GPU（`qlgfx_gl.c`） |
+|---|---|---|
+| 加粗 | 同一个字形 `glyph_blit()` 跑两遍，第二遍 `strike = 1px` | 同一个 quad 发两遍，第二遍 `x + 1` |
+| 斜体 | 行循环里逐行右移：`row = round(shear × (hh−gy) / (hh × 16))` | 顶边两个顶点右移 `shear`，**uv 仍按剪切前角点取** |
+| 装饰线 | `fill_rect` 一条 1px | 同一条 `fill_rect`（就是普通 quad） |
+
+**斜体必须用 1/16 像素定点**：9px 高的小字按整数像素剪切只有 1px，分摊到 9 行里
+每行要么 0 要么 1（视觉上就是没斜）。改成 1/16 后每行都能分到不同位移。
+
+装饰线画在 `ql_draw2d_text_layout()` 里，因为只有它知道每行的起止与基线 ——
+放这里两个后端就自动都有，不用各写一遍。空行（`llen == 0`）不画，否则折行产生的
+空行会拖一条线。
+
+**三个坑**：
+
+1. 加粗的第二遍必须带**同样的剪切**，否则加粗斜体的右下角会缺一块。
+2. GPU 侧 `emit_quad()` 加了 `shear` 参数后，`v.u` 必须用**剪切前**的角点算，
+   否则纹理采样跟着四边形一起歪（字形会变成斜着错位的一团）。
+3. 行高是 CSS px，到了后端要按 `font_fx` 放大；装饰线画在设备像素里，
+   HiDPI 下不能还是 1 个 CSS px 粗。
+
+---
 
 ### 5.5 `.qlui` blob：换界面不用重编译
 

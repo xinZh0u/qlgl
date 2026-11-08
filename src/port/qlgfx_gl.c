@@ -644,9 +644,16 @@ static inline float round_to_int(float v)
     return (float)((int)(v + (v >= 0.0f ? 0.5f : -0.5f)));
 }
 
-static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border,
-                      ql_color_t color, uint8_t alpha,
-                      float u0, float v0, float u1, float v1, int use_tex)
+/*
+ * 发射一个（可带圆角/描边/纹理/剪切）的四边形。
+ *
+ * `shear` 只给合成斜体用：把**顶边**两个顶点右移这么多像素，底边不动，
+ * uv 仍按剪切前的角点取（否则采样会跟着歪）。
+ */
+static void emit_quad_shear(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border,
+                            ql_color_t color, uint8_t alpha,
+                            float u0, float v0, float u1, float v1, int use_tex,
+                            float shear)
 {
     if (ql_rect_is_empty(r) || alpha == 0)
         return;
@@ -692,7 +699,9 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
     x0 += ox; y0 += oy; x1 += ox; y1 += oy;
     cx += ox; cy += oy;
 
-    const float xs[4] = { x0, x1, x1, x0 };
+    /* uv 用剪切前的角点；位置用剪切后的（顶边右移 shear） */
+    const float xsu[4] = { x0, x1, x1, x0 };
+    const float xs[4] = { x0 + shear, x1 + shear, x1, x0 };
     const float ys[4] = { y0, y0, y1, y1 };
 
     /*
@@ -725,10 +734,17 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
          * 字形不外扩且落在整数像素上，所有顶点算出来就是 0 或 1，
          * 于是纹理采样恰好落在纹素中心（GL_LINEAR 也不会糊）。
          */
-        v.u = u0 + ((ux1 > ux0) ? (xs[k] - ux0) / (ux1 - ux0) : 0.0f) * (u1 - u0);
+        v.u = u0 + ((ux1 > ux0) ? (xsu[k] - ux0) / (ux1 - ux0) : 0.0f) * (u1 - u0);
         v.v = v0 + ((uy1 > uy0) ? (ys[k] - uy0) / (uy1 - uy0) : 0.0f) * (v1 - v0);
         emit_vertex(g, &v);
     }
+}
+
+static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border,
+                      ql_color_t color, uint8_t alpha,
+                      float u0, float v0, float u1, float v1, int use_tex)
+{
+    emit_quad_shear(g, r, radius, border, color, alpha, u0, v0, u1, v1, use_tex, 0.0f);
 }
 
 /* 渐变：从 / 到两个颜色按顶点位置插值，不需要新增顶点属性 */
@@ -1226,21 +1242,31 @@ static void gl_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
 }
 
 static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *glyph,
-                          ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color)
+                          ql_coord_t pen_x, ql_coord_t baseline_y,
+                          const QLTextStyle *ts)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
 
     QLGLUV uv;
     if (!ensure_glyph_uv(g, font, glyph, &uv))
         return;
-    QLRect r = ql_rect_make(pen_x + glyph->ofs_x, baseline_y + glyph->ofs_y,
-                            glyph->box_w, glyph->box_h);
-    emit_quad(g, r, 0, -1, color, 255, uv.u0, uv.v0, uv.u1, uv.v1, 1);
+
+    /* 合成斜体：顶边右移（与 CPU 侧同一斜率，见 qlcanvas.c） */
+    float shear = 0.0f;
+    if (ts->italic != 0 && glyph->box_h > 1)
+        shear = (float)glyph->box_h * 0.21f;
+
+    const int passes = (ts->bold != 0) ? 2 : 1;
+    for (int i = 0; i < passes; i++) {
+        QLRect r = ql_rect_make(pen_x + glyph->ofs_x + i, baseline_y + glyph->ofs_y,
+                                glyph->box_w, glyph->box_h);
+        emit_quad_shear(g, r, 0, -1, ts->color, 255, uv.u0, uv.v0, uv.u1, uv.v1, 1,
+                        shear);
+    }
 }
 
 static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                         QLRect box, ql_color_t color, QLTextAlign align,
-                         ql_coord_t line_h, int wrap)
+                         QLRect box, const QLTextStyle *ts)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (elem_len_fx_gl(g) == 0)
@@ -1250,10 +1276,10 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
     const QLFont *dev = ql_draw2d_device_font(font, font_fx);
     /* 排版在设备像素里进行：字形位图与 quad 是一一对应的，不能再缩放 */
     /* 行高是 CSS px；排版在设备像素里做，所以按同样的比例换算 */
-    const ql_coord_t dev_line_h =
-        (line_h > 0) ? (ql_coord_t)((int64_t)line_h * font_fx / QL_SCALE_ONE) : 0;
-    ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), color, align, dev_line_h,
-                          wrap, gl_emit_glyph);
+    QLTextStyle local = *ts;
+    if (local.line_h > 0)
+        local.line_h = ql_scale_len(local.line_h, font_fx);
+    ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), &local, gl_emit_glyph);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */

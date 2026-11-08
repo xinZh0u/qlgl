@@ -2,6 +2,8 @@
  * @file    qllabel.c
  * @brief   QLLabel 实现：文本持有、属性、绘制。
  */
+#include <string.h>
+
 #include <qlgl/qlgl.h>
 
 struct QLLabelPrivate {
@@ -114,9 +116,12 @@ static void ql_label_draw(QLWidget *widget, QLDraw2D *d2d)
     if (ql_rect_is_empty(rect) || ql_str_len(&priv->text) == 0)
         return;
 
+    QLTextStyle ts;
+    memset(&ts, 0, sizeof(ts));
+    ts.color = priv->text_color;
+    ts.align = (uint8_t)priv->align;
     d2d->draw_text(d2d, priv->font, ql_str_data(&priv->text),
-                   (int32_t)ql_str_len(&priv->text), rect, priv->text_color,
-                   (QLTextAlign)priv->align, 0, 0);
+                   (int32_t)ql_str_len(&priv->text), rect, &ts);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */

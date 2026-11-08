@@ -257,7 +257,20 @@ typedef struct {
      * 想要折行就显式写 `white-space: normal` —— 一行 CSS 换一个明确的语义。
      */
     uint8_t     white_space;
+
+    /*
+     * 字体变体 + 装饰线（`font-weight` / `font-style` / `text-decoration`）的位图，
+     * 见 QL_UI_FONT_*。都是**合成**的：不加载第二个字体文件，加粗=画两遍偏移 1px、
+     * 斜体=按行剪切、装饰线=画一条 1px 的横线。MCU 上也一样。
+     */
+    uint8_t     font_flags;
 } QLUIStyle;
+
+/* 字体变体与装饰线：QLUIStyle.font_flags 的位 */
+#define QL_UI_FONT_BOLD           0x01u   /* font-weight >= 600：合成加粗 */
+#define QL_UI_FONT_ITALIC         0x02u   /* font-style: italic：合成斜体 */
+#define QL_UI_FONT_UNDERLINE      0x04u   /* text-decoration: underline */
+#define QL_UI_FONT_LINE_THROUGH   0x08u   /* text-decoration: line-through */
 
 /* 能过渡的属性（"transition: all" = 四个都开） */
 #define QL_UI_TRANS_BG      0x01u   /* background-color（渐变时连同终止色） */
