@@ -31,6 +31,20 @@ struct QLDraw2D {
     void (*stroke_round_rect)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                               ql_coord_t thickness, ql_color_t color);
 
+    /*
+     * 线性渐变圆角矩形：from → to，dir 见 QLGradientDir。
+     * GPU 侧用"顶点颜色插值"实现，所以不增加顶点、不增加 draw call。
+     */
+    void (*fill_round_rect_gradient)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
+                                     ql_color_t from, ql_color_t to, uint8_t dir,
+                                     uint8_t alpha);
+    /*
+     * 软阴影：以 inner（圆角 radius）为轮廓，向外扩散 blur，整体偏移 (dx,dy)。
+     * 调用方必须**先画阴影再画本体**。
+     */
+    void (*fill_shadow)(QLDraw2D *self, QLRect inner, ql_coord_t radius, ql_coord_t blur,
+                        ql_coord_t dx, ql_coord_t dy, ql_color_t color, uint8_t alpha);
+
     void (*draw_text)(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                       QLRect box, ql_color_t color, QLTextAlign align);
 

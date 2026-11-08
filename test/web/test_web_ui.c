@@ -158,7 +158,11 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK(primary != NULL);
     ql_ui_layout(ui, 320, 240);
 
-    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x3C, 0xC0, 0x7A));
+    /* .primary 现在用 linear-gradient，bg_color 是渐变起始色，终止色在 bg_color2 */
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color2, QL_COLOR_RGB(0x2A, 0x9A, 0x5C));
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_grad_dir, 1);   /* 1 = 垂直 */
+    QL_CHECK(ql_ui_node_style(primary)->shadow_alpha > 0);     /* 有阴影 */
 
     QLRect pr = ql_ui_node_rect(primary);
     QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 1);

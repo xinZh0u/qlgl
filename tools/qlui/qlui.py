@@ -90,7 +90,7 @@ SIDES = ("top", "right", "bottom", "left")
 SUPPORTED_PROPS = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
-    "font-size", "text-align", "box-sizing",
+    "font-size", "text-align", "box-sizing", "box-shadow",
 } | {"%s-%s" % (base, side) for base in ("margin", "padding") for side in SIDES}
 
 
@@ -118,8 +118,83 @@ def parse_color(text, where):
         if max(r, g, b) > 255:
             raise CssError("%s: rgb() 分量超范围 %r" % (where, text))
         return (r << 16) | (g << 8) | b, 255, (r << 16) | (g << 8) | b
-    raise CssError("%s: 不支持的颜色写法 %r（支持 #rgb/#rrggbb/rgb()/命名色）"
+    m = re.fullmatch(
+        r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)", t)
+    if m:
+        r, g, b = (int(m.group(i)) for i in (1, 2, 3))
+        a = float(m.group(4))
+        if max(r, g, b) > 255 or a < 0 or a > 1:
+            raise CssError("%s: rgba() 分量超范围 %r" % (where, text))
+        return (r << 16) | (g << 8) | b, int(round(a * 255)), (r << 16) | (g << 8) | b
+    raise CssError("%s: 不支持的颜色写法 %r（支持 #rgb/#rrggbb/rgb()/rgba()/命名色）"
                    % (where, text))
+
+
+GRADIENTS = {
+    "to bottom": 1, "180deg": 1, "to top": 1,
+    "to right": 2, "90deg": 2, "to left": 2,
+}
+
+
+def parse_gradient(text, where):
+    """linear-gradient(<方向>, <起色>, <止色>) → (起色, 止色, 方向)"""
+    t = text.strip()
+    m = re.fullmatch(r"linear-gradient\((.*)\)", t, re.S)
+    if not m:
+        raise CssError("%s: 只支持 linear-gradient()，收到 %r" % (where, text))
+    parts = [p.strip() for p in m.group(1).split(",")]
+    if len(parts) != 3:
+        raise CssError("%s: linear-gradient 需要 3 个参数（方向, 起色, 止色）" % where)
+    direction = GRADIENTS.get(parts[0].lower())
+    if direction is None:
+        raise CssError("%s: 不支持的渐变方向 %r（支持 to bottom/right、180deg/90deg）"
+                       % (where, parts[0]))
+    c0, _, _ = parse_color(parts[1], where)
+    c1, _, _ = parse_color(parts[2], where)
+    return c0, c1, direction
+
+
+def parse_shadow(text, where):
+    """box-shadow: <dx> <dy> [blur] <color> → (dx, dy, blur, rgb, alpha)
+
+    注意 rgba(...) 里有空格，不能简单 split()，先把颜色整体抠出来。
+    """
+    t = " ".join(text.split())
+    if t == "none":
+        return 0, 0, 0, 0, 0
+
+    color_txt = None
+    for pat in (r"rgba?\([^)]*\)", r"#[0-9a-fA-F]{3,8}", r"[a-zA-Z]+"):
+        m = re.search(pat, t)
+        if m:
+            color_txt = m.group(0)
+            t = (t[:m.start()] + " " + t[m.end():]).strip()
+            break
+    if color_txt is None:
+        raise CssError("%s: box-shadow 缺少颜色（不支持默认色）" % where)
+
+    nums = []
+    for piece in t.split():
+        m = re.fullmatch(r"(-?\d+(?:\.\d+)?)px", piece)
+        if m:
+            nums.append(int(round(float(m.group(1)))))
+        elif piece == "0":
+            nums.append(0)
+        else:
+            raise CssError("%s: box-shadow 里无法识别 %r" % (where, piece))
+
+    if len(nums) == 2:
+        dx, dy = nums
+        blur = 0
+    elif len(nums) == 3:
+        dx, dy, blur = nums
+    else:
+        raise CssError("%s: box-shadow 需要 2 或 3 个长度，收到 %d 个" % (where, len(nums)))
+    if blur < 0:
+        raise CssError("%s: box-shadow 的模糊半径不能为负" % where)
+
+    rgb, a, _ = parse_color(color_txt, where)
+    return dx, dy, blur, rgb, a
 
 
 def parse_length(text, where, allow_percent=True):
@@ -466,7 +541,10 @@ def finalize_style(decls, node, inherited):
 
     # 展开 shorthand
     if "background" in style and "background-color" not in style:
-        style["background-color"] = style["background"]
+        if "gradient(" in style["background"]:
+            style["background-image"] = style["background"]
+        else:
+            style["background-color"] = style["background"]
     if "border" in style and "border-width" not in style:
         # border: 1px solid #333
         bits = style["border"].split()
@@ -614,6 +692,20 @@ def emit(doc_root, rules, name, out_dir):
         bg, bg_a, _ = parse_color(st.get("background-color", "transparent"), where)
         fg, _, _ = parse_color(st.get("color", "black"), where)
         bd, _, _ = parse_color(st.get("border-color", "black"), where)
+
+        # 渐变背景：背景色取起始色，终止色与方向单列
+        bg2, grad_dir = bg, 0
+        if "background-image" in st:
+            g0, g1, grad_dir = parse_gradient(st["background-image"], where)
+            bg = g0
+            bg2 = g1
+            if bg_a == 0:
+                bg_a = 255
+
+        # 阴影
+        sh_dx = sh_dy = sh_blur = sh_a = sh_color = 0
+        if "box-shadow" in st:
+            sh_dx, sh_dy, sh_blur, sh_color, sh_a = parse_shadow(st["box-shadow"], where)
         wu, wv = length_of(st.get("width"), where)
         hu, hv = length_of(st.get("height"), where)
         margin = resolve_edges(st, "margin", where)
@@ -635,6 +727,9 @@ def emit(doc_root, rules, name, out_dir):
             "    { .bg_color = 0x%06X, .text_color = 0x%06X, .border_color = 0x%06X,"
             % (bg, fg, bd))
         lines.append(
+            "      .bg_color2 = 0x%06X, .shadow_color = 0x%06X,"
+            % (bg2, sh_color))
+        lines.append(
             "      .width = { %d, %s }, .height = { %d, %s },"
             % (wv, "QL_UI_UNIT_PX" if wu == "px" else
                ("QL_UI_UNIT_PERCENT" if wu == "percent" else "QL_UI_UNIT_AUTO"),
@@ -651,9 +746,14 @@ def emit(doc_root, rules, name, out_dir):
         if box_sizing not in ("content-box", "border-box"):
             raise CssError("%s: 不支持的 box-sizing %r" % (where, box_sizing))
         lines.append(
+            "      .shadow_dx = %d, .shadow_dy = %d," % (sh_dx, sh_dy))
+        lines.append(
             "      .border_radius = %d, .text_align = %s, .font_id = %d,"
-            " .box_sizing = %d },"
-            % (radius, align, font_id_for(size_px), 1 if box_sizing == "border-box" else 0))
+            " .box_sizing = %d," % (radius, align, font_id_for(size_px),
+                                    1 if box_sizing == "border-box" else 0))
+        lines.append(
+            "      .bg_grad_dir = %d, .shadow_blur = %d, .shadow_alpha = %d },"
+            % (grad_dir, sh_blur, sh_a))
     lines.append("};")
     lines.append("")
     lines.insert(font_sizes_line,

@@ -12,6 +12,8 @@
 - **交互闭环已完成** —— 命中测试、hover/pressed/focus 状态、点击合成、键盘焦点，
   事件沿控件树冒泡；HTML/CSS 的 `:hover/:active/:focus` 在构建期编译成状态样式；
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
+- **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
+  （垂直走行填充快路径，GPU 走顶点颜色插值、零额外 draw call）；
 - **`.qlui` blob 已完成** —— 同一份 doc 可导出成二进制，运行时 `ql_ui_load_file()` 加载
   （改 UI **不用重编译**，实测热重载）；序列化只在 C 侧实现一次，与静态路径逐字节一致；
 - **GPU 后端已完成（v0.1）** —— `QLDraw2D` 绘制接口 + GLES3/EGL 后端（SDF 圆角、字形图集、单 draw call），

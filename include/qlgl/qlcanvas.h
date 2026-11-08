@@ -43,6 +43,32 @@ void ql_canvas_fill_round_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                ql_color_t color);
 void ql_canvas_fill_round_rect_alpha(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                      ql_color_t color, uint8_t alpha);
+/* 线性渐变方向 */
+typedef enum {
+    QL_GRADIENT_VERTICAL = 0,     /* 从 rect 上边到下边 */
+    QL_GRADIENT_HORIZONTAL,       /* 从 rect 左边到右边 */
+} QLGradientDir;
+
+/*
+ * 线性渐变圆角矩形（单趟，不需要离屏缓冲）。
+ * 垂直方向是快路径：每行颜色相同，直接走行填充，成本≈纯色填充。
+ * 水平方向每像素颜色不同，逐像素混合，比垂直慢一个量级。
+ */
+void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
+                                        ql_color_t from, ql_color_t to,
+                                        QLGradientDir dir, uint8_t alpha);
+
+/*
+ * 软阴影：以 inner 矩形（圆角 radius）为轮廓，向外扩散 blur 像素，
+ * 整体偏移 (dx, dy)，用 SDF + smoothstep 衰减（与 GPU 后端同一套公式）。
+ *
+ * 实现要点：只有"环"（距轮廓 blur 以内）需要逐像素算距离，
+ * 内部实心区走 fill_row，因此在 PC 上不明显，在 MCU 上也可用。
+ */
+void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
+                           ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                           ql_color_t color, uint8_t alpha);
+
 /* 描边：宽度向外不扩张，向内绘制 */
 void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                            ql_coord_t thickness, ql_color_t color);

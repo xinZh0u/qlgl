@@ -74,12 +74,17 @@ typedef struct {
     uint32_t    bg_color;      /* 0xRRGGBB；alpha 见 bg_alpha */
     uint32_t    text_color;
     uint32_t    border_color;
+    uint32_t    bg_color2;     /* 渐变终止色：只有 bg_grad_dir != 0 时有效 */
+    uint32_t    shadow_color;
 
     QLUILength  width;
     QLUILength  height;
 
     QLUIEdges   margin;
     QLUIEdges   padding;
+
+    int16_t     shadow_dx;     /* 阴影偏移 */
+    int16_t     shadow_dy;
 
     uint8_t     display;       /* QLUIDisplay */
     uint8_t     bg_alpha;      /* 0..255 */
@@ -88,7 +93,10 @@ typedef struct {
     uint8_t     text_align;    /* QLTextAlign */
     uint8_t     font_id;       /* doc->font_sizes 的下标（字号，像素） */
     uint8_t     box_sizing;    /* 0 = content-box, 1 = border-box */
-    uint8_t     reserved;
+    uint8_t     bg_grad_dir;   /* 0 = 纯色；1 = 垂直；2 = 水平（见 QLGradientDir+1） */
+    uint8_t     shadow_blur;   /* 0 = 硬阴影 */
+    uint8_t     shadow_alpha;  /* 0 = 无阴影 */
+    uint8_t     reserved[2];
 } QLUIStyle;
 
 typedef struct {
@@ -245,7 +253,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    1u
+#define QL_UI_BLOB_VERSION    2u   /* 2: QLUIStyle 增加渐变与阴影字段 */
 
 typedef struct {
     uint32_t magic;

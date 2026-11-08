@@ -127,6 +127,12 @@ static const char *VS_SRC =
     "  v_uv = a_uv; v_color = a_color;\n"
     "}\n";
 
+/*
+ * v_params = (radius, border_or_blur, mode, -)
+ *   mode 0 = 形状（填充/描边），1 = 字形（采样图集），2 = 软阴影
+ *   mode 2 时 border 存的是 blur 半径，距离衰减与 CPU 的 shadow_coverage 同一公式，
+ *          保证两条后端视觉一致（golden 测试容忍 40/通道）。
+ */
 static const char *FS_SRC =
     "#version 300 es\n"
     "precision mediump float;\n"
@@ -140,9 +146,14 @@ static const char *FS_SRC =
     "void main(){\n"
     "  float radius = v_params.x;\n"
     "  float border = v_params.y;\n"
-    "  float use_tex = v_params.z;\n"
+    "  float mode = v_params.z;\n"
     "  float cov;\n"
-    "  if (use_tex > 0.5) {\n"
+    "  if (mode > 1.5) {\n"
+    "    float d = sdRoundBox(v_local, v_half, radius);\n"
+    "    float b = max(border, 0.5);\n"
+    "    float t = clamp(d / b, 0.0, 1.0);\n"
+    "    cov = 1.0 - t * t * (3.0 - 2.0 * t);\n"
+    "  } else if (mode > 0.5) {\n"
     "    cov = texture(u_atlas, v_uv).r;\n"
     "  } else {\n"
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
@@ -454,6 +465,21 @@ static void emit_vertex(QLGfxGL *g, const QLGLVertex *v)
     g->verts[g->vert_count++] = *v;
 }
 
+/* 顶点颜色按位置插值：CPU 侧是逐行/逐像素 lerp，GPU 让插值器代劳，视觉等价 */
+static void color_at(ql_color_t a, ql_color_t b, int t, float *out)
+{
+    if (t < 0) t = 0;
+    if (t > 255) t = 255;
+    uint32_t inv = (uint32_t)(255 - t);
+    uint32_t u = (uint32_t)t;
+    out[0] = (float)(((uint32_t)QL_COLOR_GET_R(a) * inv +
+                      (uint32_t)QL_COLOR_GET_R(b) * u) / 255u) / 255.0f;
+    out[1] = (float)(((uint32_t)QL_COLOR_GET_G(a) * inv +
+                      (uint32_t)QL_COLOR_GET_G(b) * u) / 255u) / 255.0f;
+    out[2] = (float)(((uint32_t)QL_COLOR_GET_B(a) * inv +
+                      (uint32_t)QL_COLOR_GET_B(b) * u) / 255u) / 255.0f;
+}
+
 static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border,
                       ql_color_t color, uint8_t alpha,
                       float u0, float v0, float u1, float v1, int use_tex)
@@ -510,6 +536,137 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
         v.v = vs[k];
         emit_vertex(g, &v);
     }
+}
+
+/* 渐变：从 / 到两个颜色按顶点位置插值，不需要新增顶点属性 */
+static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
+                               ql_color_t from, ql_color_t to, uint8_t dir,
+                               uint8_t alpha)
+{
+    if (ql_rect_is_empty(r) || alpha == 0)
+        return;
+    if (dir != QL_GRADIENT_HORIZONTAL)
+        dir = QL_GRADIENT_VERTICAL;
+
+    float x0 = (float)r.x - 1.0f;
+    float y0 = (float)r.y - 1.0f;
+    float x1 = (float)ql_rect_right(r) + 1.0f;
+    float y1 = (float)ql_rect_bottom(r) + 1.0f;
+
+    float cx = (float)r.x + (float)r.w * 0.5f;
+    float cy = (float)r.y + (float)r.h * 0.5f;
+    float hx = (float)r.w * 0.5f;
+    float hy = (float)r.h * 0.5f;
+
+    float half_min = (hx < hy ? hx : hy);
+    float rad = (float)radius;
+    if (rad > half_min) rad = half_min;
+    if (rad < 0.0f) rad = 0.0f;
+
+    float ca = (float)alpha / 255.0f;
+    ql_coord_t span = (dir == QL_GRADIENT_HORIZONTAL) ? r.w : r.h;
+    if (span < 1) span = 1;
+
+    const float xs[4] = { x0, x1, x1, x0 };
+    const float ys[4] = { y0, y0, y1, y1 };
+
+    QLGLVertex v;
+    memset(&v, 0, sizeof(v));
+    v.hx = hx; v.hy = hy;
+    v.radius = rad;
+    v.border = -1.0f;
+    v.use_tex = 0.0f;
+    v.a = ca;
+
+    static const int order[6] = { 0, 1, 2, 0, 2, 3 };
+    for (int i = 0; i < 6; i++) {
+        int k = order[i];
+        /* 按顶点自身位置算插值位置，与 CPU 的逐行/逐像素 lerp 对齐 */
+        int t;
+        if (dir == QL_GRADIENT_HORIZONTAL)
+            t = (int)(((xs[k] - (float)r.x) / (float)span) * 255.0f);
+        else
+            t = (int)(((ys[k] - (float)r.y) / (float)span) * 255.0f);
+
+        float rgb[3];
+        color_at(from, to, t, rgb);
+        v.r = rgb[0]; v.g = rgb[1]; v.b = rgb[2];
+
+        v.x = xs[k];
+        v.y = ys[k];
+        v.lx = xs[k] - cx;
+        v.ly = ys[k] - cy;
+        emit_vertex(g, &v);
+    }
+}
+
+/*
+ * 软阴影：quad 覆盖"轮廓外扩 blur"，但 lx/ly 相对**轮廓中心**、hx/hy 是轮廓半尺寸，
+ * 所以片元里的 sdRoundBox 算的就是到轮廓的距离。不需要新增任何顶点属性。
+ */
+static void emit_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius, ql_coord_t blur,
+                        ql_coord_t dx, ql_coord_t dy, ql_color_t color, uint8_t alpha)
+{
+    if (ql_rect_is_empty(inner) || alpha == 0)
+        return;
+    if (blur < 0)
+        blur = 0;
+
+    QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
+    float pad = (float)blur + 1.0f;
+
+    float x0 = (float)shaped.x - pad;
+    float y0 = (float)shaped.y - pad;
+    float x1 = (float)ql_rect_right(shaped) + pad;
+    float y1 = (float)ql_rect_bottom(shaped) + pad;
+
+    float cx = (float)shaped.x + (float)shaped.w * 0.5f;
+    float cy = (float)shaped.y + (float)shaped.h * 0.5f;
+    float hx = (float)shaped.w * 0.5f;
+    float hy = (float)shaped.h * 0.5f;
+
+    float half_min = (hx < hy ? hx : hy);
+    float rad = (float)radius;
+    if (rad > half_min) rad = half_min;
+    if (rad < 0.0f) rad = 0.0f;
+
+    const float xs[4] = { x0, x1, x1, x0 };
+    const float ys[4] = { y0, y0, y1, y1 };
+
+    QLGLVertex v;
+    memset(&v, 0, sizeof(v));
+    v.hx = hx; v.hy = hy;
+    v.radius = rad;
+    v.border = (float)blur;
+    v.use_tex = 2.0f;                 /* 2 = 阴影模式 */
+    v.r = (float)QL_COLOR_GET_R(color) / 255.0f;
+    v.g = (float)QL_COLOR_GET_G(color) / 255.0f;
+    v.b = (float)QL_COLOR_GET_B(color) / 255.0f;
+    v.a = (float)alpha / 255.0f;
+
+    static const int order[6] = { 0, 1, 2, 0, 2, 3 };
+    for (int i = 0; i < 6; i++) {
+        int k = order[i];
+        v.x = xs[k];
+        v.y = ys[k];
+        v.lx = xs[k] - cx;
+        v.ly = ys[k] - cy;
+        emit_vertex(g, &v);
+    }
+}
+
+static void gl_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t radius,
+                                        ql_color_t from, ql_color_t to, uint8_t dir,
+                                        uint8_t alpha)
+{
+    emit_quad_gradient((QLGfxGL *)self->user, rect, radius, from, to, dir, alpha);
+}
+
+static void gl_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
+                           ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                           ql_color_t color, uint8_t alpha)
+{
+    emit_shadow((QLGfxGL *)self->user, inner, radius, blur, dx, dy, color, alpha);
 }
 
 /* ------------------------------ QLDraw2D 实现 ------------------------------ */
@@ -725,6 +882,8 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.set_clip = gl_set_clip;
     g->draw.fill_rect = gl_fill_rect;
     g->draw.fill_round_rect = gl_fill_round_rect;
+    g->draw.fill_round_rect_gradient = gl_fill_round_rect_gradient;
+    g->draw.fill_shadow = gl_fill_shadow;
     g->draw.stroke_round_rect = gl_stroke_round_rect;
     g->draw.draw_text = gl_draw_text;
     g->draw.flush = NULL;

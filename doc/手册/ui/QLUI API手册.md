@@ -103,7 +103,8 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `border-color` | 颜色 | |
 | `border` | `1px solid #333` | 只支持 `solid` |
 | `border-radius` | `Npx` | |
-| `background` / `background-color` | 颜色 | |
+| `background` / `background-color` | 颜色，或 `linear-gradient(...)`（见 §3.5） | |
+| `box-shadow` | `<dx> <dy> [blur] <color>` | 软阴影，SDF 实现，单趟。`none` 关闭 |
 | `color` | 颜色 | |
 | `font-size` | `Npx` | 任意整数；生成期汇总成 `font_sizes` 表，运行期按字号取 `ql_font_default(N)`（配置了矢量字体就是该字号的动态字体，支持中文；否则回落到内置 12/16 位图字体） |
 | `text-align` | `left` `center` `right` | |
@@ -111,13 +112,56 @@ target_include_directories(app PRIVATE ${UI_OUT})
 
 ### 3.3 颜色写法
 
-`#rgb`、`#rrggbb`、`rgb(r,g,b)`、命名色（`black`/`white`/`red`/`green`/`lime`/`blue`/`gray`/`silver`/`yellow`/`orange`/`purple`/`navy`/`teal`/`transparent`）。
+`#rgb`、`#rrggbb`、`rgb(r,g,b)`、`rgba(r,g,b,a)`、命名色（`black`/`white`/`red`/`green`/`lime`/`blue`/`gray`/`silver`/`yellow`/`orange`/`purple`/`navy`/`teal`/`transparent`）。
 
-### 3.4 不支持的写法一律报错
+### 3.5 渐变
+
+```css
+background: linear-gradient(to right, #3399ff, #1a4f8a);
+background: linear-gradient(to bottom, #4ad08a, #2a9a5c);
+```
+
+| 项 | 支持 |
+|---|---|
+| 方向 | `to bottom` / `to top` / `180deg`、`to right` / `to left` / `90deg` |
+| 颜色停靠点 | 只支持 **2 个**（起始 + 终止） |
+| 多停靠点 / 角度其他值 / `radial-gradient` | ❌ 构建期报错 |
+
+实现：垂直渐变走**行填充快路径**（整行同色，成本≈纯色填充）；水平渐变逐像素插值，慢一个量级。
+GPU 侧用**顶点颜色插值**实现，不增加顶点、不增加 draw call。
+
+> ⚠️ **状态样式与渐变**：`:hover` / `:active` 等变体样式是"整套重算"的，
+> 如果变体规则只写了 `background-color`（没有 `background`），渐变会**退回纯色**。
+> 想让渐变按钮在 hover/active 下保持渐变，要显式写：
+>
+> ```css
+> .btn:hover { background: linear-gradient(to bottom, #58e09a, #35a869); }
+> ```
+
+### 3.6 阴影
+
+```css
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+box-shadow: 0 1px 0 #000;          /* 硬阴影（无模糊） */
+box-shadow: none;
+```
+
+| 项 | 支持 |
+|---|---|
+| `dx dy` | 必须（`px`） |
+| `blur` | 可选，`0` = 硬边 |
+| 颜色 | 必须（不支持浏览器默认色） |
+| `spread`（第 4 个长度）、`inset`、多重阴影 | ❌ 构建期报错 |
+
+实现是 **SDF + smoothstep 衰减**，与 GPU 着色器同一公式，因此两条后端视觉一致。
+只有"距轮廓 blur 以内"的环需要逐像素算距离，内部实心区走行填充——
+所以在 PC 上几乎无感，在 MCU 上也可用（见开发规划 M5.5 的能力矩阵）。
+
+### 3.7 不支持的写法一律报错
 
 ```
-position / float / flex / grid / z-index / overflow / opacity / box-shadow
-transition / animation / var() / @media / em / rem / vh / vw / calc()
+position / float / flex / grid / z-index / overflow / opacity
+transition / animation / filter / clip-path / var() / @media / em / rem / vh / vw / calc()
 ```
 
 报错示例：

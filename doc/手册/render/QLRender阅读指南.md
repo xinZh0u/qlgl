@@ -226,3 +226,57 @@ y=top  │  █████████████  │   中间行： [x0, xl)
 6. `qlcanvas.c` 的 `put_px` / `fill_row` / `round_row_span`（三个基础件）
 7. `ql_canvas_fill_round_rect_alpha`（怎么用它们拼出圆角）
 8. `test/widget/test_canvas.c`（像素级断言，改这些函数后必须全绿）
+
+---
+
+## 11. 渐变与软阴影（M5.5 先行项）
+
+两个效果都**不需要离屏缓冲、不需要多趟渲染**，因此不打破"单批次 1 draw call"。
+
+### 11.1 渐变：CPU 走行填充，GPU 走顶点颜色插值
+
+| 后端 | 做法 | 成本 |
+|---|---|---|
+| CPU 垂直 | 每行算一个颜色，交给 `fill_row` | **≈ 纯色填充** |
+| CPU 水平 | 每像素 `lerp_color`，逐像素写 | 慢一个量级 |
+| GPU | 上下（或左右）顶点给不同颜色，让插值器算 | **零额外顶点、零额外 draw call** |
+
+关键点：GPU 侧**没有改着色器**。`v_color` 本来就是 varying，插值器自动完成线性渐变；
+只有 `cov`（SDF 覆盖率）参与 alpha 相乘，所以圆角抗锯齿依然正确。
+
+顶点颜色按**顶点自身位置**求值（而不是按矩形边），这样扩出去做 AA 的 1px 也和
+CPU 的逐行 lerp 对齐。
+
+### 11.2 软阴影：SDF + smoothstep，两端同一公式
+
+```
+d   = sdRoundBox(p - 中心, 半径半尺寸, radius)      // 负值在内部
+cov = 1 - smoothstep(0, blur, d)
+```
+
+GPU 直接在片元里算；CPU 用 `sd_round_box()` + `shadow_coverage()`，**公式逐字相同**，
+所以 `test_gl_vs_cpu` 的差异仍在 4% 量级（只差边缘 AA）。
+
+CPU 侧的关键优化：只有"距轮廓 `blur` 以内"的**环**需要逐像素算距离，
+内部实心段用 `round_row_span` 内缩 `blur` 后整段 `fill_row`。
+一条 250×60 的卡片阴影大约只有 1/3 的像素需要开方。
+
+### 11.3 顶点复用的技巧
+
+阴影的 quad 覆盖"轮廓外扩 blur"，但 `lx/ly` 相对**轮廓中心**、`hx/hy` 是**轮廓半尺寸**——
+于是片元里的 `sdRoundBox` 算出来的就是到轮廓的距离。
+**不需要新增任何顶点属性**，顶点结构仍是 64 字节。
+
+`v_params.z` 从 `use_tex` 布尔升级成 `mode`：
+
+| mode | 含义 | `v_params.y` |
+|---|---|---|
+| 0 | 形状（填充/描边） | 描边宽度（<0 表示填充） |
+| 1 | 字形（采样图集） | 未用 |
+| 2 | 软阴影 | blur 半径 |
+
+### 11.4 测试
+
+- `test/widget/test_effects.c`：26 项像素断言（渐变端点/中点/同色行、圆角、alpha=0、
+  阴影衰减方向、blur=0 硬边、alpha=0 空操作）；
+- `test_gl_vs_cpu`：示例页现在含渐变与阴影，仍通过 8% 阈值。

@@ -18,6 +18,12 @@ typedef struct QLDraw2D {
     void (*stroke_round_rect)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                               ql_coord_t thickness, ql_color_t color);
 
+    void (*fill_round_rect_gradient)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
+                                     ql_color_t from, ql_color_t to, uint8_t dir,
+                                     uint8_t alpha);
+    void (*fill_shadow)(QLDraw2D *self, QLRect inner, ql_coord_t radius, ql_coord_t blur,
+                        ql_coord_t dx, ql_coord_t dy, ql_color_t color, uint8_t alpha);
+
     void (*draw_text)(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                       QLRect box, ql_color_t color, QLTextAlign align);
 
@@ -31,6 +37,8 @@ typedef struct QLDraw2D {
 | `set_clip` | 绝对坐标；与表面边界求交；后续绘制都被裁到它里面 |
 | `fill_rect` / `fill_round_rect` | `alpha` 0=跳过，255=不透明；圆角半径自动裁到短边一半 |
 | `stroke_round_rect` | **向内描边**；`thickness` ≤ 0 时无操作 |
+| `fill_round_rect_gradient` | `dir` 取 `QLGradientDir`；只有 2 个停靠点 |
+| `fill_shadow` | 以 `inner` 为轮廓向外扩散 `blur` 并偏移 `(dx,dy)`；**必须先画阴影再画本体** |
 | `draw_text` | `len < 0` 表示 `'\0'` 结尾；只处理 `'\n'`；水平按 `align` 对齐 |
 | `flush` | CPU 为 `NULL`；GPU 用它提交批次 |
 

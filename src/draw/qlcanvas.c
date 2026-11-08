@@ -2,6 +2,7 @@
  * @file    qlcanvas.c
  * @brief   画布原语实现。所有写入都先过裁剪，越界直接丢弃。
  */
+#include <math.h>
 #include <string.h>
 
 #include <qlgl/qlgl.h>
@@ -224,6 +225,59 @@ static inline void put_px(QLCanvas *c, ql_coord_t x, ql_coord_t y,
     }
 }
 
+/*
+ * put_px 的行指针版本：调用方已算好行起点，省掉每像素一次
+ * c->buffer + y*stride（阴影的环内循环会调用几十万次）。
+ */
+static inline void put_px_at(uint8_t *row, uint8_t format, ql_coord_t x,
+                             ql_color_t color, uint8_t alpha)
+{
+    uint8_t r = QL_COLOR_GET_R(color);
+    uint8_t g = QL_COLOR_GET_G(color);
+    uint8_t b = QL_COLOR_GET_B(color);
+
+    switch (format) {
+    case QL_COLOR_RGB565: {
+        uint16_t *p = (uint16_t *)(void *)(row + (uint32_t)x * 2u);
+        uint16_t old = *p;
+        uint32_t orr = (uint32_t)((old >> 11) & 0x1Fu) * 255u / 31u;
+        uint32_t og = (uint32_t)((old >> 5) & 0x3Fu) * 255u / 63u;
+        uint32_t ob = (uint32_t)(old & 0x1Fu) * 255u / 31u;
+        uint32_t inv = 255u - alpha;
+        r = (uint8_t)(((uint32_t)r * alpha + orr * inv) / 255u);
+        g = (uint8_t)(((uint32_t)g * alpha + og * inv) / 255u);
+        b = (uint8_t)(((uint32_t)b * alpha + ob * inv) / 255u);
+        *p = (uint16_t)(((r & 0xF8u) << 8) | ((g & 0xFCu) << 3) | (b >> 3));
+        break;
+    }
+    case QL_COLOR_RGB888: {
+        uint8_t *p = row + (uint32_t)x * 3u;
+        uint32_t inv = 255u - alpha;
+        p[0] = (uint8_t)(((uint32_t)r * alpha + (uint32_t)p[0] * inv) / 255u);
+        p[1] = (uint8_t)(((uint32_t)g * alpha + (uint32_t)p[1] * inv) / 255u);
+        p[2] = (uint8_t)(((uint32_t)b * alpha + (uint32_t)p[2] * inv) / 255u);
+        break;
+    }
+    case QL_COLOR_ARGB8888: {
+        uint32_t *p = (uint32_t *)(void *)(row + (uint32_t)x * 4u);
+        uint32_t old = *p;
+        uint32_t inv = 255u - alpha;
+        r = (uint8_t)(((uint32_t)r * alpha + (old >> 16 & 0xFFu) * inv) / 255u);
+        g = (uint8_t)(((uint32_t)g * alpha + (old >> 8 & 0xFFu) * inv) / 255u);
+        b = (uint8_t)(((uint32_t)b * alpha + (old & 0xFFu) * inv) / 255u);
+        *p = 0xFF000000u | QL_COLOR_RGB(r, g, b);
+        break;
+    }
+    default: {
+        uint8_t *p = row + (uint32_t)x;
+        uint8_t lum = (uint8_t)(((uint32_t)r * 77u + (uint32_t)g * 150u +
+                                 (uint32_t)b * 29u) >> 8);
+        *p = (uint8_t)(((uint32_t)lum * alpha + (uint32_t)(*p) * (255u - alpha)) / 255u);
+        break;
+    }
+    }
+}
+
 /* 写一行 [x0, x1]（含端点），alpha 必须已判断 */
 static void fill_row(QLCanvas *c, ql_coord_t x0, ql_coord_t x1, ql_coord_t y,
                      ql_color_t color, uint8_t alpha)
@@ -382,6 +436,173 @@ void ql_canvas_fill_round_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                ql_color_t color)
 {
     ql_canvas_fill_round_rect_alpha(canvas, rect, radius, color, 255);
+}
+
+/* ------------------------------ 渐变 / 阴影 ------------------------------ */
+
+/* 两个颜色的定点插值：t 为 0..255 */
+static ql_color_t lerp_color(ql_color_t a, ql_color_t b, uint32_t t)
+{
+    uint32_t inv = 255u - t;
+    uint32_t r = ((uint32_t)QL_COLOR_GET_R(a) * inv + (uint32_t)QL_COLOR_GET_R(b) * t) / 255u;
+    uint32_t g = ((uint32_t)QL_COLOR_GET_G(a) * inv + (uint32_t)QL_COLOR_GET_G(b) * t) / 255u;
+    uint32_t bl = ((uint32_t)QL_COLOR_GET_B(a) * inv + (uint32_t)QL_COLOR_GET_B(b) * t) / 255u;
+    return QL_COLOR_RGB(r, g, bl);
+}
+
+void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
+                                        ql_color_t from, ql_color_t to,
+                                        QLGradientDir dir, uint8_t alpha)
+{
+    if (canvas == NULL || alpha == 0)
+        return;
+
+    QLRect area = ql_rect_intersect(rect, canvas->clip);
+    if (ql_rect_is_empty(area))
+        return;
+
+    ql_coord_t span = (dir == QL_GRADIENT_HORIZONTAL) ? rect.w : rect.h;
+    if (span <= 1) {
+        /* 退化成一格：直接用起始色 */
+        ql_canvas_fill_round_rect_alpha(canvas, rect, radius, from, alpha);
+        return;
+    }
+
+    for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
+        ql_coord_t sx0 = rect.x;
+        ql_coord_t sx1 = ql_rect_right(rect) - 1;
+
+        if (radius > 0 && !round_row_span(rect, y, radius, &sx0, &sx1))
+            continue;
+
+        if (sx0 < area.x)
+            sx0 = area.x;
+        if (sx1 > ql_rect_right(area) - 1)
+            sx1 = ql_rect_right(area) - 1;
+        if (sx1 < sx0)
+            continue;
+
+        if (dir == QL_GRADIENT_VERTICAL) {
+            /* 快路径：整行同一个颜色 */
+            uint32_t t = (uint32_t)((y - rect.y) * 255) / (uint32_t)(span - 1);
+            fill_row(canvas, sx0, sx1, y, lerp_color(from, to, t), alpha);
+        } else {
+            for (ql_coord_t x = sx0; x <= sx1; x++) {
+                uint32_t t = (uint32_t)((x - rect.x) * 255) / (uint32_t)(span - 1);
+                put_px(canvas, x, y, lerp_color(from, to, t), alpha);
+            }
+        }
+    }
+}
+
+/* 圆角矩形的符号距离（负值在内部），与 GPU 着色器里的 sdRoundBox 同式 */
+static float sd_round_box(float px, float py, float hx, float hy, float r)
+{
+    float qx = fabsf(px) - hx + r;
+    float qy = fabsf(py) - hy + r;
+    float mx = (qx > 0.0f) ? qx : 0.0f;
+    float my = (qy > 0.0f) ? qy : 0.0f;
+
+    /*
+     * 试过"直边时省掉 sqrt"的分支版本，实测反而更慢：
+     * x86 上 sqrtss 是硬件指令，而这个分支几乎不可预测。
+     * 保持无分支写法。
+     */
+    float outside = sqrtf(mx * mx + my * my);
+
+    float inside = (qx > qy) ? qx : qy;
+    if (inside > 0.0f)
+        inside = 0.0f;
+    return outside + inside - r;
+}
+
+/* 覆盖率：距离 d（外部为正）→ 0..1，与 GPU 的 smoothstep 一致 */
+static float shadow_coverage(float d, float blur)
+{
+    if (d <= 0.0f)
+        return 1.0f;
+    if (blur <= 0.0f)
+        return 0.0f;
+    float t = d / blur;
+    if (t >= 1.0f)
+        return 0.0f;
+    return 1.0f - (t * t * (3.0f - 2.0f * t));     /* 1 - smoothstep(0,1,t) */
+}
+
+void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
+                           ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                           ql_color_t color, uint8_t alpha)
+{
+    if (canvas == NULL || alpha == 0 || ql_rect_is_empty(inner))
+        return;
+
+    if (blur < 0)
+        blur = 0;
+
+    /* 阴影轮廓 = inner 平移，绘制区域 = 轮廓外扩 blur（+1 给衰减留边） */
+    QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
+    ql_coord_t pad = blur + 1;
+    QLRect outer = ql_rect_make(shaped.x - pad, shaped.y - pad,
+                                shaped.w + 2 * pad, shaped.h + 2 * pad);
+
+    QLRect area = ql_rect_intersect(outer, canvas->clip);
+    if (ql_rect_is_empty(area))
+        return;
+
+    ql_coord_t limit = (shaped.w < shaped.h ? shaped.w : shaped.h) / 2;
+    float rad = (float)((radius > limit) ? limit : (radius < 0 ? 0 : radius));
+    float hx = (float)shaped.w * 0.5f;
+    float hy = (float)shaped.h * 0.5f;
+    float cx = (float)shaped.x + hx;
+    float cy = (float)shaped.y + hy;
+    float fblur = (float)blur;
+
+    for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
+        uint8_t *row = canvas->buffer + (uint32_t)y * canvas->stride;
+        float py = (float)y + 0.5f - cy;
+
+        /*
+         * 快路径：这一行"可能全实心"的横向区间 = 轮廓行跨度内缩 blur。
+         * 内缩后这些像素距离轮廓 >= blur，覆盖率恒为 1，可以整段填充。
+         */
+        ql_coord_t sx0 = 0, sx1 = 0;
+        int have_solid = 0;
+        if (blur > 0 && y >= shaped.y + blur && y < ql_rect_bottom(shaped) - blur) {
+            if (round_row_span(shaped, y, (ql_coord_t)rad, &sx0, &sx1)) {
+                sx0 += blur;
+                sx1 -= blur;
+                if (sx1 >= sx0)
+                    have_solid = 1;
+            }
+        }
+
+        ql_coord_t solid0 = 0, solid1 = -1;
+        if (have_solid) {
+            solid0 = (sx0 > area.x) ? sx0 : area.x;
+            solid1 = (sx1 < ql_rect_right(area) - 1) ? sx1 : ql_rect_right(area) - 1;
+            if (solid1 >= solid0)
+                fill_row(canvas, solid0, solid1, y, color, alpha);
+        }
+
+        /* 环：逐像素算距离；实心段跳过 */
+        for (ql_coord_t x = area.x; x < ql_rect_right(area); x++) {
+            if (have_solid && x >= solid0 && x <= solid1)
+                continue;
+
+            float px = (float)x + 0.5f - cx;
+            float d = sd_round_box(px, py, hx, hy, rad);
+            float cov = shadow_coverage(d, fblur);
+            if (cov <= 0.0f)
+                continue;
+
+            uint32_t a = (uint32_t)(cov * (float)alpha + 0.5f);
+            if (a == 0)
+                continue;
+            if (a > 255)
+                a = 255;
+            put_px_at(row, canvas->format, x, color, (uint8_t)a);
+        }
+    }
 }
 
 void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,

@@ -343,8 +343,19 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 
     QLRect box = node->border_box;
 
-    if (s->bg_alpha > 0 && !ql_rect_is_empty(box))
-        d2d->fill_round_rect(d2d, box, s->border_radius, s->bg_color, s->bg_alpha);
+    /* 阴影先画（在背景之下）；阴影轮廓取边框盒，与 CSS box-shadow 一致 */
+    if (s->shadow_alpha > 0 && d2d->fill_shadow != NULL && !ql_rect_is_empty(box))
+        d2d->fill_shadow(d2d, box, s->border_radius, s->shadow_blur,
+                         s->shadow_dx, s->shadow_dy, s->shadow_color, s->shadow_alpha);
+
+    if (s->bg_alpha > 0 && !ql_rect_is_empty(box)) {
+        if (s->bg_grad_dir != 0 && d2d->fill_round_rect_gradient != NULL)
+            d2d->fill_round_rect_gradient(d2d, box, s->border_radius, s->bg_color,
+                                          s->bg_color2,
+                                          (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha);
+        else
+            d2d->fill_round_rect(d2d, box, s->border_radius, s->bg_color, s->bg_alpha);
+    }
 
     if (s->border_width > 0 && !ql_rect_is_empty(box))
         d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,

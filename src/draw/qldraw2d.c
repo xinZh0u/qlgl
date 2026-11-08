@@ -81,6 +81,23 @@ static void cpu_fill_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
     ql_canvas_fill_round_rect_alpha(ctx->canvas, rect, radius, color, alpha);
 }
 
+static void cpu_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t radius,
+                                         ql_color_t from, ql_color_t to, uint8_t dir,
+                                         uint8_t alpha)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    ql_canvas_fill_round_rect_gradient(ctx->canvas, rect, radius, from, to,
+                                       (QLGradientDir)dir, alpha);
+}
+
+static void cpu_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
+                            ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                            ql_color_t color, uint8_t alpha)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    ql_canvas_fill_shadow(ctx->canvas, inner, radius, blur, dx, dy, color, alpha);
+}
+
 static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                   ql_coord_t thickness, ql_color_t color)
 {
@@ -112,6 +129,8 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->set_clip = cpu_set_clip;
     out->fill_rect = cpu_fill_rect;
     out->fill_round_rect = cpu_fill_round_rect;
+    out->fill_round_rect_gradient = cpu_fill_round_rect_gradient;
+    out->fill_shadow = cpu_fill_shadow;
     out->stroke_round_rect = cpu_stroke_round_rect;
     out->draw_text = cpu_draw_text;
     out->flush = NULL;

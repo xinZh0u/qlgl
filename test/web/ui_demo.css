@@ -9,8 +9,9 @@
   box-sizing: border-box;
   width: 100%;
   padding: 8px 10px;
-  background-color: #3399ff;
+  background: linear-gradient(to right, #3399ff, #1a4f8a);
   border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
 }
 .title {
   font-size: 16px;
@@ -34,7 +35,8 @@
   margin-right: 8px;
 }
 .primary {
-  background-color: #3cc07a;
+  background: linear-gradient(to bottom, #4ad08a, #2a9a5c);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   border-width: 1px;
   border-color: #ffffff;
   color: #000000;
@@ -48,6 +50,7 @@
 .panel {
   margin: 10px 0 0 0;
   padding: 8px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
   background-color: #1e2533;
   border-width: 1px;
   border-color: #3a4860;
@@ -105,6 +108,13 @@
 }
 .btn:active {
   background-color: #2a9a5c;
+}
+/* 渐变按钮的状态样式要显式给渐变，否则会退回纯色（见 QLUI 手册的说明） */
+.primary:hover {
+  background: linear-gradient(to bottom, #58e09a, #35a869);
+}
+.primary:active {
+  background: linear-gradient(to bottom, #35a869, #1f7a46);
 }
 .btn.ghost:hover {
   background-color: #3a485c;
