@@ -784,7 +784,8 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 | `QL_IMAGE_SRC_RAW` | ✅（不复制，`owned = 0`，零 RAM） | 直通 |
 | `QL_IMAGE_SRC_BMP` | ✅ 24/32 位、8 位调色板、`BITFIELDS`、上下翻转（不解 RLE） | 按 `out_format` 转换 |
 | `QL_IMAGE_SRC_QOI` | ✅ 六种 op | 同上 |
-| `QL_IMAGE_SRC_PNG` | ⏳ 待做（现在返回 `QL_ERR_UNSUPPORTED`） | — |
+| `QL_IMAGE_SRC_PNG` 备注 | IDAT 是 **zlib 流**（校验头 + Adler-32）；chunk CRC 不校验；**不解** Adam7 隔行、APNG、iCCP/色彩管理 | — |
+| `QL_IMAGE_SRC_PNG` | ✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、`tRNS`；**隔行扫描（Adam7）明确报 `QL_ERR_UNSUPPORTED`** | 同上 |
 
 `out_format` 默认 **RGBA8888**（它的枚举值就是 0，所以 `memset` 清零的请求即默认）。
 `src_format = QL_IMAGE_SRC_AUTO` 时按魔数探测（PNG/BMP/QOI；RAW 无法探测，必须显式给）。

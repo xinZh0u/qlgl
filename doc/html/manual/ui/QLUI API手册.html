@@ -1463,9 +1463,14 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <td>同上</td>
 </tr>
 <tr>
-<td><code>QL_IMAGE_SRC_PNG</code></td>
-<td>⏳ 待做（现在返回 <code>QL_ERR_UNSUPPORTED</code>）</td>
+<td><code>QL_IMAGE_SRC_PNG</code> 备注</td>
+<td>IDAT 是 <strong>zlib 流</strong>（校验头 + Adler-32）；chunk CRC 不校验；<strong>不解</strong> Adam7 隔行、APNG、iCCP/色彩管理</td>
 <td>—</td>
+</tr>
+<tr>
+<td><code>QL_IMAGE_SRC_PNG</code></td>
+<td>✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、<code>tRNS</code>；<strong>隔行扫描（Adam7）明确报 <code>QL_ERR_UNSUPPORTED</code></strong></td>
+<td>同上</td>
 </tr>
 </tbody>
 </table>

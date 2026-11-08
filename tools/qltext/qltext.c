@@ -101,6 +101,22 @@ static const char *base_name(const char *path)
     return (s != NULL) ? s + 1 : path;
 }
 
+/* 本构建实际编进来的解码器（用于错误信息，别让用户猜） */
+static const char *qltext_decode_formats(void)
+{
+#if QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
+    return "BMP/QOI/PNG";
+#elif QL_FEAT_IMG_BMP && QL_FEAT_IMG_QOI
+    return "BMP/QOI";
+#elif QL_FEAT_IMG_BMP
+    return "BMP";
+#elif QL_FEAT_IMG_QOI
+    return "QOI";
+#else
+    return "只有构建期已转好的 RAW";
+#endif
+}
+
 /* ------------------------------------------------------------------ */
 /* 枚举 → 名字（让生成出来的 C 可读，而不是一堆魔数）                  */
 /* ------------------------------------------------------------------ */
@@ -566,9 +582,10 @@ static int collect_assets(const QLUIDoc *doc, const Args *a, Assets *out)
         free(bytes);
         if (rc != QL_OK) {
             fprintf(stderr,
-                    "qltext: 解不了 \"%s\"（%s）：本构建的解码器只支持 BMP/QOI，"
-                    "PNG/JPEG 请先用其它工具转成 BMP/QOI\n",
-                    path, (rc == QL_ERR_UNSUPPORTED) ? "格式不支持" : "数据非法");
+                    "qltext: 解不了 \"%s\"（%s）：本构建的解码器只支持 %s；"
+                    "JPEG/GIF 请先用其它工具转成 PNG/BMP/QOI\n",
+                    path, (rc == QL_ERR_UNSUPPORTED) ? "格式不支持" : "数据非法",
+                    qltext_decode_formats());
             return 0;
         }
 

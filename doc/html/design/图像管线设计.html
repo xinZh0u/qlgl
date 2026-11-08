@@ -616,20 +616,62 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </s
 </tr>
 </tbody>
 </table>
-<p><strong>PNG 拆成两层</strong></p>
-<div class="highlight"><pre><span></span><code>inflate（DEFLATE 解码）   ← 独立、可单独 fuzz
-    ↓ 输出直接写到&quot;当前行的裸字节&quot;（不落地整幅未滤波数据）
-PNG 容器（chunk / filter / 颜色转换）
+<p><strong>PNG 拆成两层</strong>（<code>src/draw/qlinflate.c</code> + <code>src/draw/qlimage.c</code> 的 PNG 段）</p>
+<div class="highlight"><pre><span></span><code>inflate（DEFLATE 解码，QL_FEAT_IMG_INFLATE）
+    ↓ 输出 = h*(1+row_bytes) 的&quot;带过滤字节的行数据&quot;
+PNG 容器（chunk / 反过滤 / 颜色转换）
 </code></pre></div>
 
 <ul>
-<li>inflate：固定 Huffman 与动态 Huffman、<code>stored</code> 块、长度/距离码表。窗口固定
-  <code>QL_CFG_IMAGE_SCRATCH</code>（默认 32KB）。<strong>输出不缓冲整幅图</strong>，而是按行喂给反滤波。</li>
+<li>inflate：<code>stored</code> / 固定 Huffman / 动态 Huffman，长度与距离码表全按 RFC 1951。
+  <strong>不分配滑动窗口</strong> —— 输出缓冲本身就是窗口（回溯距离 ≤ 32768，且合法的回溯一定
+  指向已解出的字节），所以额外 RAM 是 0，栈上只有 2×608 字节的 Huffman 表 +
+  256 字节输入暂存。实测 Release 下 1024×1024 RGBA ≈ <strong>26 ms（155 MB/s）</strong>，
+  纯解码发生在构建期或注册时，不进帧。</li>
+<li><strong>输入是流式回调</strong>：IDAT 会被拆成多个 chunk，中间夹 12 字节（长度/类型 + CRC），
+  所以 <code>ql_inflate</code> 收 <code>QLZSource{read, ctx}</code> 而不是一段连续内存 —— 零拷贝、不拼接。</li>
+<li><strong>IDAT 是 zlib 数据流（RFC 1950）不是裸 DEFLATE</strong>：开头的 2 字节头要校验
+  （<code>CM==8</code>、<code>CINFO&lt;=7</code>、<code>FCHECK</code>、<code>FDICT==0</code>），结尾 4 字节 Adler-32 顺手校验
+  （几乎零成本，坏流当场拒绝）。</li>
 <li>PNG：<code>IHDR/PLTE/tRNS/IDAT/IEND</code>；位深 1/2/4/8/16；颜色类型 0/2/3/4/6；filter 0–4
-  （<code>None/Sub/Up/Average/Paeth</code>）；<code>interlace</code> 为 1 时 <strong>明确报错</strong>（Adam7 不做，占位说明）。</li>
+  （<code>None/Sub/Up/Average/Paeth</code>）；<code>interlace</code> 为 1 时 <strong>明确报 <code>QL_ERR_UNSUPPORTED</code></strong>
+  （Adam7 要做 7 趟子图重建，收益远小于风险）。</li>
+<li><strong>不校验 chunk CRC</strong>：CRC 只说明"传输没坏"，而本库关心的是"能不能安全解出来"。
+  结构性错误（块越界、码表非法、回溯越界、调色板索引越界、行数对不上、Adler 不符）
+  一律明确失败。少一份 1 KB 查表，代价写在这里。</li>
+<li><strong>PNG 全是大端</strong>（BMP/QOI 是小端）—— 读长度字段时搞错的表现是"块长度像天文数字"。</li>
 <li>输出：按目标 <code>QLImageFormat</code> 直接转换（调色板展开、16→8 取高字节、灰度复制三通道、
   alpha 直通）。</li>
+<li>上界：过滤后的字节数按"解码预算的 2 倍 + 每行 1 字节"卡（16 位 RGBA 是 8 字节/像素，
+  RGBA8888 输出只有 4），这样 1024×1024 的 16 位 RGBA 正好卡在边上而不被误杀。</li>
 </ul>
+<p>测试（<code>test_png</code> 1253 项 / <code>test_png_assets</code> 43 项 / <code>test_png_fuzz</code> 5 轮 4700 例）：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>容器与位深</td>
+<td><strong>测试里现场构造 PNG</strong>（只用 <code>stored</code> deflate 块），15 组 (颜色类型, 位深) 逐像素断言</td>
+</tr>
+<tr>
+<td>反过滤</td>
+<td>5 种 filter 逐行轮换，4 组 (类型, 位深)（含 bpp=8 的 16 位 RGBA）往返比对</td>
+</tr>
+<tr>
+<td>真实压缩流</td>
+<td><code>test/assets/png/*.png</code>（PIL 生成，动态 Huffman）+ <code>*.rgba</code> 基准逐字节比对</td>
+</tr>
+<tr>
+<td>有界 / 坏数据</td>
+<td>30 条错误路径 + 4700 例随机/变异输入（ASan+UBSan 下只允许"返回失败"）</td>
+</tr>
+</tbody>
+</table>
 <h3 id="511-raw-only">5.1.1 <code>raw-only</code> 配置（零解码器）</h3>
 <div class="highlight"><pre><span></span><code><span class="cp">#define QL_FEAT_UI_IMAGE         1</span>
 <span class="cp">#define QL_FEAT_IMG_BMP          0</span>
@@ -726,9 +768,9 @@ PNG 容器（chunk / filter / 颜色转换）
 <td>解码后像素数上限。<strong>它跟平台无关，只跟你的 RAM 有关</strong></td>
 </tr>
 <tr>
-<td><code>QL_CFG_IMAGE_SCRATCH</code></td>
-<td>32 KB</td>
-<td>inflate 窗口 + 行缓冲</td>
+<td>~~<code>QL_CFG_IMAGE_SCRATCH</code>~~</td>
+<td>—</td>
+<td><strong>已删除</strong>：inflate 不需要单独的滑动窗口（输出缓冲就是窗口），过滤后的行数据按 <code>h·(1+row_bytes)</code> 临时分配、解完即释放</td>
 </tr>
 </tbody>
 </table>
@@ -1078,7 +1120,7 @@ qltext:<span class="w"> </span>app<span class="w"> </span>-&gt;<span class="w"> 
 </tbody>
 </table>
 <p>来源格式：<strong>现在支持 BMP 与 QOI</strong>（库里的解码器，与运行时是同一份代码，不会漂移）。
-PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接吃 PNG。</p>
+PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台后端）。</p>
 <p>规矩没变：</p>
 <ol>
 <li><strong>构建期允许用任何库</strong>（那是在开发机上跑），运行时只认自有解码器。</li>
@@ -1102,8 +1144,13 @@ PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接
 </tr>
 <tr>
 <td>解码器</td>
-<td><strong>对拍</strong>：脚本用 PIL 生成同样内容，比对 RGB 值</td>
-<td>完全一致（QOI/BMP/PNG 都无损）</td>
+<td><strong>对拍</strong>：PIL 生成 <code>test/assets/png/*.png</code> + <code>.rgba</code> 基准（<code>tools/gen_png_assets.py</code>）</td>
+<td>逐字节一致（PNG 无损）</td>
+</tr>
+<tr>
+<td>解码器</td>
+<td><strong>现场构造</strong>：只用 <code>stored</code> deflate 块拼 PNG，颜色类型 × 位深 × filter 全覆盖</td>
+<td>逐像素等于手算期望值</td>
 </tr>
 <tr>
 <td>解码器</td>
@@ -1191,8 +1238,14 @@ PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接
 <tr>
 <td>inflate 临时</td>
 <td>—</td>
-<td>32 KB（固定）</td>
-<td><code>QL_CFG_IMAGE_SCRATCH</code>；<code>DECODE=0</code> 时<strong>不存在</strong></td>
+<td><strong>0</strong>（窗口就是输出缓冲）+ 栈 1.5 KB</td>
+<td><code>DECODE=0</code> 时整段不存在</td>
+</tr>
+<tr>
+<td>PNG 过滤后字节</td>
+<td>—</td>
+<td><code>h·(1+row_bytes)</code>，临时</td>
+<td>解码完立刻释放；16 位 RGBA 最多 8 字节/像素</td>
 </tr>
 </tbody>
 </table>
@@ -1233,8 +1286,8 @@ PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接
 <td>1 天</td>
 </tr>
 <tr>
-<td><strong>P3c</strong></td>
-<td>PNG（inflate + 容器）+ 对拍 + fuzz（<code>QL_FEAT_IMG_PNG</code>）</td>
+<td><strong>P3c</strong> ✅</td>
+<td>PNG（<code>qlinflate.c</code> + 容器）+ 现场构造用例 + PIL 对拍 + fuzz（<code>QL_FEAT_IMG_PNG</code> / <code>QL_FEAT_IMG_INFLATE</code>）</td>
 <td>3–4 天</td>
 </tr>
 <tr>
@@ -1250,7 +1303,7 @@ PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接
 </tbody>
 </table>
 <p>合计 <strong>≈ 12–15 天</strong>，<code>img</code> <code>picture</code> <code>source</code> <code>map</code> <code>area</code> 五个标签一次到位。</p>
-<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d ✅ → P3e ✅ → P3c → P3g</strong>。
+<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d ✅ → P3e ✅ → P3c ✅ → P3g</strong>。
 理由：P3a + P3f 就能端到端跑通"图片文件 → 构建期转码 → 固件里显示"这条
 <strong>零解码路径</strong>（它不依赖任何解码器开关，是唯一"关掉一切也能用"的路）；
 解码器与 PNG 都是在这之上的增量开关。</p>

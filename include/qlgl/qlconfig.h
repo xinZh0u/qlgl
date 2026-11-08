@@ -170,9 +170,6 @@
 #ifndef QL_CFG_IMAGE_MAX_PIXELS
 #define QL_CFG_IMAGE_MAX_PIXELS     (4096u * 4096u)  /* 解码后像素数上限 */
 #endif
-#ifndef QL_CFG_IMAGE_SCRATCH
-#define QL_CFG_IMAGE_SCRATCH        (32u * 1024u)    /* inflate 窗口 + 行缓冲 */
-#endif
 #ifndef QL_CFG_IMAGE_BILINEAR
 #define QL_CFG_IMAGE_BILINEAR       0       /* 0 = 最近邻（省），1 = 双线性 */
 #endif

@@ -2,14 +2,16 @@
  * @file    qlimage.c
  * @brief   位图校验与解码入口。
  *
- * 目前只有 RAW 直通（构建期已解好的像素）。BMP / QOI / PNG 解码器按
- * `QL_FEAT_IMG_*` 逐个落地，落地前一律 `QL_ERR_UNSUPPORTED` —— **明确失败**，
- * 不猜、不降级成空白。
+ * RAW 直通（构建期已解好的像素）、BMP、QOI、PNG。每种编码一个 `QL_FEAT_IMG_*`
+ * 开关，裁掉后一律 `QL_ERR_UNSUPPORTED` —— **明确失败**，不猜、不降级成空白。
+ * PNG 复用同一份 DEFLATE（`qlinflate.c`，`QL_FEAT_IMG_INFLATE`）。
  */
 #include <stdlib.h>
 #include <string.h>
 
 #include <qlgl/qlgl.h>
+
+#include "qlinflate.h"
 
 uint32_t ql_image_format_bpp(uint8_t format)
 {
@@ -133,6 +135,18 @@ static uint32_t rd_u32le(const uint8_t *p)
 static uint16_t rd_u16le(const uint8_t *p)
 {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+/* PNG 全是大端（BMP/QOI 是小端）—— 这一点写错的话表现是"长度像天文数字" */
+static uint32_t rd_u32be(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) |
+           (uint32_t)p[3];
+}
+
+static uint16_t rd_u16be(const uint8_t *p)
+{
+    return (uint16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
 }
 
 /*
@@ -361,6 +375,454 @@ bad:
     return QL_ERR_INVAL;
 }
 
+/* ------------------------------ PNG ------------------------------ */
+
+#if QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
+
+/*
+ * PNG 的难点只有 DEFLATE 一处（已经由 qlinflate.c 解决）；容器本身是
+ * "块（长度 + 类型 + 数据 + CRC）"。这里刻意**不校验 CRC**：CRC 只说明"传输没坏"，
+ * 而本库关心的是"能不能安全地解出来" —— 结构性错误（块越界、码表非法、
+ * 回溯越界、调色板索引越界）全都会明确失败，CRC 坏但结构合法的图我们会照解。
+ * 代价写进文档，收益是少一份 1 KB 的查表。
+ *
+ * **不支持**：隔行扫描（Adam7）、APNG 多帧、iCCP/gAMA 等色彩管理块。
+ * 隔行扫描在 UI 素材里极少，解它需要 7 趟子图重建，明确报 UNSUPPORTED 更诚实。
+ */
+
+#define PNG_SIG_LEN 8u
+
+/*
+ * IDAT 可能被拆成多个块，中间夹着 12 字节（长度+类型 / CRC），所以做成流式读取。
+ *
+ * 注意 **PNG 的 IDAT 是 zlib 数据流（RFC 1950）而不是裸 DEFLATE**：
+ * 开头有 2 字节头（CMF/FLG），结尾有 4 字节 Adler-32。头在 `skip` 里跳掉，
+ * 尾用 `stop` 截断 —— 这样交给 `ql_inflate` 的就是纯 DEFLATE 片段。
+ */
+typedef struct {
+    const uint8_t *d;
+    size_t         n;
+    size_t         next;    /* 下一个 chunk 头部偏移 */
+    size_t         stop;    /* 全局上界 = 最后一个 IDAT 数据结尾 - 4（Adler-32 之前） */
+    size_t         skip;    /* 第一个 IDAT 段开头要跳过的字节数（zlib 头） */
+    const uint8_t *p;
+    size_t         left;    /* 当前 IDAT 段剩余字节 */
+    int            done;
+} PngIdat;
+
+static int png_is(const uint8_t *t, const char *name)
+{
+    return t[0] == (uint8_t)name[0] && t[1] == (uint8_t)name[1] &&
+           t[2] == (uint8_t)name[2] && t[3] == (uint8_t)name[3];
+}
+
+/* 推进到下一个 IDAT 段；返回 0 = 没有更多（IEND / 文件结束 / 结构错） */
+static int png_next_idat(PngIdat *s)
+{
+    while (!s->done) {
+        if (s->next + 12u > s->n) {
+            s->done = 1;
+            return 0;
+        }
+        const uint32_t clen = rd_u32be(s->d + s->next);
+        const uint8_t *ct = s->d + s->next + 4u;
+        if ((size_t)clen > s->n || s->next + 12u + (size_t)clen > s->n) {
+            s->done = 1;
+            return 0;
+        }
+        const size_t data_off = s->next + 8u;
+        const size_t next_hdr = data_off + (size_t)clen + 4u;
+
+        if (png_is(ct, "IEND")) {
+            s->done = 1;
+            return 0;
+        }
+        if (!png_is(ct, "IDAT")) {
+            s->next = next_hdr;
+            continue;
+        }
+        /* 第一段要跳 zlib 头；所有段都要在 Adler-32 之前收住 */
+        const size_t off = data_off + s->skip;
+        s->skip = 0;
+        s->next = next_hdr;
+        if (off >= s->stop || off < data_off) {
+            s->done = 1;
+            return 0;
+        }
+        size_t avail = (size_t)clen - (off - data_off);
+        const size_t room = s->stop - off;
+        if (avail > room)
+            avail = room;
+        if (avail == 0)
+            continue;                  /* 空 IDAT：去下一个 */
+        s->p = s->d + off;
+        s->left = avail;
+        return 1;
+    }
+    return 0;
+}
+
+static size_t png_read(void *ctx, uint8_t *dst, size_t max)
+{
+    PngIdat *s = (PngIdat *)ctx;
+    size_t got = 0;
+    while (got < max) {
+        if (s->left == 0 && !png_next_idat(s))
+            break;
+        size_t take = max - got;
+        if (take > s->left)
+            take = s->left;
+        memcpy(dst + got, s->p, take);
+        s->p += take;
+        s->left -= take;
+        got += take;
+    }
+    return got;
+}
+
+/* PNG 的"每像素字节数"（过滤器用，向上取整，最小 1） */
+static size_t png_filter_bpp(uint64_t bits_per_px)
+{
+    const size_t b = (size_t)((bits_per_px + 7u) / 8u);
+    return (b == 0) ? 1u : b;
+}
+
+static int png_paeth(int a, int b, int c)
+{
+    const int p = a + b - c;
+    const int pa = (p > a) ? (p - a) : (a - p);
+    const int pb = (p > b) ? (p - b) : (b - p);
+    const int pc = (p > c) ? (p - c) : (c - p);
+    if (pa <= pb && pa <= pc)
+        return a;
+    return (pb <= pc) ? b : c;
+}
+
+/* zlib 的 Adler-32（模数 65521；5552 是"不溢出 uint32"的最大块） */
+static uint32_t png_adler32(const uint8_t *p, size_t n)
+{
+    uint32_t a = 1, b = 0;
+    while (n > 0) {
+        size_t chunk = (n < 5552u) ? n : 5552u;
+        n -= chunk;
+        while (chunk-- > 0) {
+            a += *p++;
+            b += a;
+        }
+        a %= 65521u;
+        b %= 65521u;
+    }
+    return (b << 16) | a;
+}
+
+/* 行反过滤（就地）。返回 0 = 非法的过滤类型 */
+static int png_unfilter(int ft, uint8_t *cur, const uint8_t *prev, size_t n, size_t bpp)
+{
+    switch (ft) {
+    case 0:                            /* None */
+        return 1;
+    case 1:                            /* Sub */
+        for (size_t i = bpp; i < n; i++)
+            cur[i] = (uint8_t)(cur[i] + cur[i - bpp]);
+        return 1;
+    case 2:                            /* Up */
+        if (prev != NULL)
+            for (size_t i = 0; i < n; i++)
+                cur[i] = (uint8_t)(cur[i] + prev[i]);
+        return 1;
+    case 3:                            /* Average：左边没有就是 0，上一行没有也是 0 */
+        for (size_t i = 0; i < n; i++) {
+            const uint32_t left = (i >= bpp) ? cur[i - bpp] : 0u;
+            const uint32_t up = (prev != NULL) ? prev[i] : 0u;
+            cur[i] = (uint8_t)(cur[i] + (uint8_t)((left + up) >> 1));
+        }
+        return 1;
+    case 4:                            /* Paeth：上一行不存在时退化成 Sub */
+        for (size_t i = 0; i < n; i++) {
+            const int left = (i >= bpp) ? cur[i - bpp] : 0;
+            const int up = (prev != NULL) ? prev[i] : 0;
+            const int ul = (prev != NULL && i >= bpp) ? prev[i - bpp] : 0;
+            cur[i] = (uint8_t)(cur[i] + (uint8_t)png_paeth(left, up, ul));
+        }
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* 取第 idx 个采样值（原样，未缩放到 8 位） */
+static uint32_t png_sample(const uint8_t *row, size_t idx, int depth)
+{
+    switch (depth) {
+    case 8:
+        return row[idx];
+    case 16:
+        return ((uint32_t)row[idx * 2u] << 8) | row[idx * 2u + 1u];
+    default: {
+        const size_t bit = idx * (size_t)depth;
+        const uint32_t b = (uint32_t)row[bit >> 3] >> (8u - (uint32_t)depth - (bit & 7u));
+        return b & ((1u << depth) - 1u);
+    }
+    }
+}
+
+/* 采样值缩放到 8 位（1/2/4 位用整数倍扩展，16 位取高字节） */
+static uint8_t png_to8(uint32_t v, int depth)
+{
+    switch (depth) {
+    case 1:
+        return (uint8_t)(v ? 255u : 0u);
+    case 2:
+        return (uint8_t)(v * 85u);
+    case 4:
+        return (uint8_t)(v * 17u);
+    case 8:
+        return (uint8_t)v;
+    default:
+        return (uint8_t)(v >> 8);
+    }
+}
+
+static int decode_png(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
+{
+    const uint8_t *d = req->data;
+    const size_t n = req->len;
+
+    if (n < PNG_SIG_LEN + 25u || memcmp(d, "\x89PNG\r\n\x1a\n", PNG_SIG_LEN) != 0)
+        return QL_ERR_INVAL;
+    /* 第一个块必须是 13 字节的 IHDR */
+    if (rd_u32be(d + PNG_SIG_LEN) != 13u ||
+        !png_is(d + PNG_SIG_LEN + 4u, "IHDR"))
+        return QL_ERR_INVAL;
+
+    const uint8_t *ih = d + PNG_SIG_LEN + 8u;
+    const uint32_t pw = rd_u32be(ih);
+    const uint32_t ph = rd_u32be(ih + 4u);
+    const int depth = ih[8];
+    const int ctype = ih[9];
+    const int comp = ih[10];
+    const int filt = ih[11];
+    const int inter = ih[12];
+
+    if (pw == 0u || ph == 0u || pw > 0xFFFFu || ph > 0xFFFFu)
+        return QL_ERR_INVAL;
+    if (pw > QL_CFG_IMAGE_MAX_PIXELS / ph)
+        return QL_ERR_INVAL;           /* 先除后乘，挡 w*h 溢出 */
+    if (comp != 0 || filt != 0)
+        return QL_ERR_UNSUPPORTED;     /* 只定义了 0；将来也别猜 */
+    if (inter != 0)
+        return QL_ERR_UNSUPPORTED;     /* Adam7 不做 */
+
+    int chan = 0;
+    int depth_ok = 0;
+    switch (ctype) {
+    case 0:                            /* 灰度 */
+        chan = 1;
+        depth_ok = (depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16);
+        break;
+    case 2:                            /* 真彩 */
+        chan = 3;
+        depth_ok = (depth == 8 || depth == 16);
+        break;
+    case 3:                            /* 调色板 */
+        chan = 1;
+        depth_ok = (depth == 1 || depth == 2 || depth == 4 || depth == 8);
+        break;
+    case 4:                            /* 灰度 + alpha */
+        chan = 2;
+        depth_ok = (depth == 8 || depth == 16);
+        break;
+    case 6:                            /* 真彩 + alpha */
+        chan = 4;
+        depth_ok = (depth == 8 || depth == 16);
+        break;
+    default:
+        return QL_ERR_INVAL;
+    }
+    if (!depth_ok)
+        return QL_ERR_INVAL;
+
+    const uint64_t bits_per_px = (uint64_t)chan * (uint64_t)depth;
+    const size_t row_bytes = (size_t)(((uint64_t)pw * bits_per_px + 7u) / 8u);
+    const uint64_t raw_size64 = (uint64_t)ph * ((uint64_t)row_bytes + 1u);
+    /*
+     * 过滤后的字节数也要有界。它比解码输出大：16 位 RGBA 是 8 字节/像素，
+     * 而输出 RGBA8888 只有 4 —— 所以预算取"解码预算的 2 倍 + 每行 1 字节"，
+     * 这样 1024×1024 的 16 位 RGBA 正好卡在边上而不被误杀。
+     */
+    if (raw_size64 > (uint64_t)QL_CFG_IMAGE_MAX_BYTES * 16u + (uint64_t)ph)
+        return QL_ERR_INVAL;
+
+    /* ---- 扫一遍块：取 PLTE / tRNS，并记住第一个 IDAT ---- */
+    uint8_t plte[256 * 3];
+    uint8_t trns[256];
+    uint16_t plte_n = 0;               /* 0..256：**不能**用 uint8，256 会回绕成 0 */
+    int trns_n = 0;
+    int trns_gray = -1;
+    int trns_rgb[3] = { -1, -1, -1 };
+    size_t first_idat_hdr = 0;         /* 第一个 IDAT 的 chunk 头偏移 */
+    size_t first_idat = 0;             /* 第一个 IDAT 的 **数据** 起始偏移 */
+    size_t last_idat_end = 0;          /* 最后一个 IDAT 的数据结尾（CRC 之前） */
+    for (size_t co = PNG_SIG_LEN; co + 12u <= n;) {
+        const uint32_t clen = rd_u32be(d + co);
+        const uint8_t *ct = d + co + 4u;
+        if ((size_t)clen > n || co + 12u + (size_t)clen > n)
+            return QL_ERR_INVAL;
+        const uint8_t *cd = d + co + 8u;
+        if (png_is(ct, "IEND"))
+            break;
+        if (png_is(ct, "IDAT")) {
+            if (first_idat_hdr == 0) {
+                first_idat_hdr = co;
+                first_idat = co + 8u;
+            }
+            last_idat_end = co + 8u + (size_t)clen;
+        } else if (png_is(ct, "PLTE")) {
+            if (clen == 0u || (clen % 3u) != 0u || clen > 768u)
+                return QL_ERR_INVAL;
+            plte_n = (uint16_t)(clen / 3u);
+            memcpy(plte, cd, clen);
+        } else if (png_is(ct, "tRNS")) {
+            if (ctype == 3) {
+                if (clen > 256u)
+                    return QL_ERR_INVAL;
+                trns_n = (int)clen;
+                memcpy(trns, cd, clen);
+            } else if (ctype == 0 && clen >= 2u) {
+                trns_gray = (int)rd_u16be(cd);
+            } else if (ctype == 2 && clen >= 6u) {
+                trns_rgb[0] = (int)rd_u16be(cd);
+                trns_rgb[1] = (int)rd_u16be(cd + 2u);
+                trns_rgb[2] = (int)rd_u16be(cd + 4u);
+            }
+        }
+        co += 12u + (size_t)clen;
+    }
+    /* zlib 头（2）+ 至少一个 DEFLATE 字节 + Adler-32（4） */
+    if (first_idat == 0 || last_idat_end < first_idat + 7u)
+        return QL_ERR_INVAL;           /* 没有像素数据 / 短到不可能是 zlib 流 */
+    if (ctype == 3 && plte_n == 0)
+        return QL_ERR_INVAL;           /* 调色板图必须有 PLTE */
+
+    /* 校验 zlib 头：CM=8（DEFLATE）、CINFO<=7、FCHECK、FDICT==0 */
+    {
+        const uint8_t cmf = d[first_idat];
+        const uint8_t flg = d[first_idat + 1u];
+        if ((cmf & 0x0Fu) != 8u || (cmf >> 4) > 7u)
+            return QL_ERR_UNSUPPORTED; /* 压缩方法是别的（PNG 只定义了 0=zlib） */
+        if ((((uint32_t)cmf << 8) | (uint32_t)flg) % 31u != 0u)
+            return QL_ERR_INVAL;       /* 头本身不合法 */
+        if ((flg & 0x20u) != 0u)
+            return QL_ERR_UNSUPPORTED; /* 预置字典：没有字典就没法解 */
+    }
+
+    /* ---- 解压 ---- */
+    const size_t raw_size = (size_t)raw_size64;
+    uint8_t *raw = (uint8_t *)ql_mem_alloc(raw_size);
+    if (raw == NULL)
+        return QL_ERR_NOMEM;
+
+    PngIdat idat;
+    memset(&idat, 0, sizeof(idat));
+    idat.d = d;
+    idat.n = n;
+    idat.next = first_idat_hdr;
+    idat.stop = last_idat_end - 4u;    /* Adler-32 之前收尾 */
+    idat.skip = 2u;                    /* zlib 头 */
+
+    QLZSource zsrc;
+    zsrc.read = png_read;
+    zsrc.ctx = &idat;
+
+    size_t got = 0;
+    const int zrc = ql_inflate(&zsrc, raw, raw_size, &got);
+    /* 解出来的字节数必须**正好**等于 h*(1+row_bytes)：少了是残图，多了是撒谎 */
+    if (zrc != QLZ_OK || got != raw_size) {
+        ql_mem_free(raw);
+        return QL_ERR_INVAL;
+    }
+    /* zlib 的 Adler-32 是"整段解密数据"的校验，成本几乎为零，顺手就校了 */
+    if (png_adler32(raw, raw_size) != rd_u32be(d + last_idat_end - 4u)) {
+        ql_mem_free(raw);
+        return QL_ERR_INVAL;
+    }
+
+    /* ---- 逐行反过滤 ---- */
+    const size_t bpp = png_filter_bpp(bits_per_px);
+    for (uint32_t y = 0; y < ph; y++) {
+        uint8_t *row = raw + (size_t)y * (row_bytes + 1u);
+        const uint8_t *prev = (y > 0) ? (row - (row_bytes + 1u) + 1u) : NULL;
+        if (!png_unfilter(row[0], row + 1u, prev, row_bytes, bpp)) {
+            ql_mem_free(raw);
+            return QL_ERR_INVAL;
+        }
+    }
+
+    /* ---- 转成输出像素 ---- */
+    Dst dst;
+    memset(&dst, 0, sizeof(dst));
+    if (dst_alloc(&dst, (uint16_t)pw, (uint16_t)ph, outf) == NULL) {
+        ql_mem_free(raw);
+        return QL_ERR_INVAL;
+    }
+
+    for (uint32_t y = 0; y < ph; y++) {
+        const uint8_t *row = raw + (size_t)y * (row_bytes + 1u) + 1u;
+        for (uint32_t x = 0; x < pw; x++) {
+            uint8_t r = 0, g = 0, b = 0, a = 255;
+            const size_t px = (size_t)x;
+            if (ctype == 3) {
+                const uint32_t idx = png_sample(row, px, depth);
+                if (idx >= (uint32_t)plte_n) {
+                    ql_mem_free(raw);
+                    ql_mem_free(dst.px);
+                    return QL_ERR_INVAL;   /* 索引越界：不猜成黑色 */
+                }
+                r = plte[idx * 3u];
+                g = plte[idx * 3u + 1u];
+                b = plte[idx * 3u + 2u];
+                a = (idx < (uint32_t)trns_n) ? trns[idx] : 255u;
+            } else if (ctype == 0) {
+                const uint32_t v = png_sample(row, px, depth);
+                r = g = b = png_to8(v, depth);
+                a = (trns_gray >= 0 && v == (uint32_t)trns_gray) ? 0u : 255u;
+            } else if (ctype == 2) {
+                const uint32_t sr = png_sample(row, px * 3u + 0u, depth);
+                const uint32_t sg = png_sample(row, px * 3u + 1u, depth);
+                const uint32_t sb = png_sample(row, px * 3u + 2u, depth);
+                r = png_to8(sr, depth);
+                g = png_to8(sg, depth);
+                b = png_to8(sb, depth);
+                if (trns_rgb[0] >= 0 && sr == (uint32_t)trns_rgb[0] &&
+                    sg == (uint32_t)trns_rgb[1] && sb == (uint32_t)trns_rgb[2])
+                    a = 0;
+            } else if (ctype == 4) {
+                r = g = b = png_to8(png_sample(row, px * 2u, depth), depth);
+                a = png_to8(png_sample(row, px * 2u + 1u, depth), depth);
+            } else {
+                r = png_to8(png_sample(row, px * 4u + 0u, depth), depth);
+                g = png_to8(png_sample(row, px * 4u + 1u, depth), depth);
+                b = png_to8(png_sample(row, px * 4u + 2u, depth), depth);
+                a = png_to8(png_sample(row, px * 4u + 3u, depth), depth);
+            }
+            dst_put(&dst, (uint16_t)x, (uint16_t)y, r, g, b, a);
+        }
+    }
+    ql_mem_free(raw);
+
+    memset(out, 0, sizeof(*out));
+    out->px = dst.px;
+    out->len = (uint32_t)dst.stride * dst.h;
+    out->w = dst.w;
+    out->h = dst.h;
+    out->stride = dst.stride;
+    out->format = dst.format;
+    out->owned = 1;
+    return QL_OK;
+}
+
+#endif /* QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE */
+
 /* ------------------------------ 入口 ------------------------------ */
 
 int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
@@ -427,9 +889,14 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
 #endif
     }
 
-    /*
-     * PNG（QL_FEAT_IMG_PNG）还没落地，平台后端（QL_FEAT_IMG_PLATFORM）也只搭了接口。
-     * 对调用方是同一件事：这个构建不支持这种格式。
-     */
+    if (fmt == QL_IMAGE_SRC_PNG) {
+#if QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
+        return decode_png(req, out, outf);
+#else
+        return QL_ERR_UNSUPPORTED;
+#endif
+    }
+
+    /* 平台后端（JPEG/GIF…）只搭了接口；对调用方是同一件事：这个构建不支持 */
     return QL_ERR_UNSUPPORTED;
 }

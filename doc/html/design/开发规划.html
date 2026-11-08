@@ -1908,8 +1908,13 @@ golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <c
 MCU 的推荐姿势是 <strong><code>RAW</code> + 指向 Flash</strong>（<code>owned=0</code>，RAM 为 0）。</p>
 <p>分期：<strong>P3a ✅ 基础设施（3–4 天）</strong> → <strong>P3f ✅ 工具链（1.5–2 天）</strong> → <strong>P3b ✅ BMP/QOI（1 天）</strong> →
 <strong>P3d ✅ <code>object-fit</code> + 圆角裁剪（1 天）</strong> → <strong>P3e ✅ <code>&lt;map&gt;</code>/<code>&lt;area&gt;</code> 热区 + <code>picture</code>/<code>source</code>（0.5 天）</strong> →
-P3c PNG（3–4 天）→ P3g 平台后端（1 天），合计 12–15 天。
+<strong>P3c ✅ PNG（3–4 天）</strong> → P3g 平台后端（1 天），合计 12–15 天。
 P3a + P3f 就打通"图片文件 → 构建期转码 → 固件里显示"这条<strong>必达路径</strong>。</p>
+<p>P3c 的两条要点：<strong>IDAT 是 zlib 流</strong>（2 字节头 + Adler-32，不是裸 DEFLATE），
+<code>ql_inflate</code> 不分配滑动窗口（输出缓冲本身就是窗口，额外 RAM 为 0），输入走流式回调
+所以多个 IDAT 零拷贝；<code>test_png</code> 用<strong>现场构造的 stored 块 PNG</strong> 覆盖 15 组
+(颜色类型, 位深) 与 5 种 filter，<code>test/assets/png</code> 用 PIL 生成的真实压缩流对拍，
+<code>test_png_fuzz</code> 4700 例随机/变异输入在 ASan 下只允许"返回失败"。</p>
 <p>P3e 的两条要点：热区<strong>几何在构建期定型</strong>（<code>usemap</code> ↔ <code>&lt;map name&gt;</code> 在解析末尾配对，
 存下 <code>&lt;img&gt;</code> 节点序号），运行期只做一次"屏幕点 → 图片像素"的整数换算；
 blob 升到 <strong>v14</strong>（<code>areas</code> / <code>area_coords</code> 两段，不需要热区时 0 字节）。</p>

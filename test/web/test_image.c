@@ -195,7 +195,10 @@ QL_TEST_BEGIN("test_image")
             QLUIImageInput in = raw_input("nope");
             QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_ERR_INVAL);
 
-            /* PNG 字节：本构建的解码器还没落地 → UNSUPPORTED（数据能识别，但解不了） */
+            /*
+             * 只有 8 字节签名的 PNG 残片：格式认出来了（不是 UNSUPPORTED），
+             * 但内容不完整 → INVAL。PNG 解码器本身由 test_png 覆盖。
+             */
             static const uint8_t png[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
             QLUIImageInput p;
             memset(&p, 0, sizeof(p));
@@ -203,7 +206,11 @@ QL_TEST_BEGIN("test_image")
             p.data = png;
             p.len = sizeof(png);
             p.format = QL_IMAGE_SRC_AUTO;
+#if QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
+            QL_CHECK_EQ(ql_ui_register_image(ui, &p), QL_ERR_INVAL);
+#else
             QL_CHECK_EQ(ql_ui_register_image(ui, &p), QL_ERR_UNSUPPORTED);
+#endif
             /* 失败之后不假装有图 */
             QL_CHECK(ql_ui_node_image(ui, &ui->nodes[1]) == NULL);
 

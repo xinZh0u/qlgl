@@ -261,7 +261,8 @@ app.html: 42 个节点，使用标签 9 种
 | P3b ✅ 已完成 | BMP + QOI 解码器（构建期与运行时共用同一份） | 80 | 1 天 |
 | P3d ✅ 已完成 | `object-fit` 五态 + 图片跟随 `border-radius` 裁剪 | 80 | 1 天 |
 | P3e ✅ 已完成 | `map`/`area` 热区（rect/circle/poly/default，构建期绑定 `<img>`）+ `picture`/`source` | 84 | 0.5 天 |
-| P3c / P3g | PNG 解码、平台后端（JPEG/GIF） | 84 | 4–5 天 |
+| P3c ✅ 已完成 | PNG 解码（`qlinflate.c` + 容器：位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6 × filter 0–4）+ 对拍 + fuzz | 84 | 3–4 天 |
+| P3g | 平台后端（JPEG/GIF） | 84 | 1 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |
