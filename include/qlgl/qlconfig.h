@@ -73,6 +73,27 @@
 #define QL_CFG_UI_MAX_KEYFRAMES     4096    /* 所有段的关键帧总数 */
 #endif
 
+/*
+ * HTML/CSS 文本解析（`ql_ui_load_text`）的上限。
+ * 这是全库**唯一**吃外部文本的地方，所有计数与递归都必须有界：
+ * 一份恶意/损坏的 CSS 不该能把栈撑爆或把堆吃光。
+ */
+#ifndef QL_CFG_UI_MAX_DEPTH
+#define QL_CFG_UI_MAX_DEPTH         32      /* 元素嵌套深度 */
+#endif
+#ifndef QL_CFG_UI_MAX_CSS_RULES
+#define QL_CFG_UI_MAX_CSS_RULES     2048
+#endif
+#ifndef QL_CFG_UI_MAX_DECLS
+#define QL_CFG_UI_MAX_DECLS         128     /* 单条规则/单个元素的声明数 */
+#endif
+#ifndef QL_CFG_UI_MAX_SEL_PARTS
+#define QL_CFG_UI_MAX_SEL_PARTS     16      /* 复合选择器的段数 */
+#endif
+#ifndef QL_CFG_UI_MAX_TEXT_NODES
+#define QL_CFG_UI_MAX_TEXT_NODES    4096    /* 去重后的文本条数 */
+#endif
+
 /* 输入事件队列容量（后端只入队，主循环统一派发；静态分配不 malloc） */
 #ifndef QL_CFG_INPUT_QUEUE
 #define QL_CFG_INPUT_QUEUE          64

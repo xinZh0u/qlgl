@@ -21,6 +21,8 @@ target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
+# 运行期 HTML/CSS 解析器（M3.5 第 3 步）。MCU 侧关掉它即零字节成本
+option(QLGL_BUILD_TEXT_PARSER "构建 ql_ui_load_text()（运行期 HTML/CSS 解析）" ON)
 option(QLGL_BUILD_FREETYPE "构建 FreeType 矢量字体后端（中文/任意字号）" ON)
 
 # ---- FreeType：矢量字体后端（PC/MPU；MCU 关掉即可，内置位图字体仍然可用） ----
@@ -101,6 +103,12 @@ if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
         add_custom_target(qlui_blob ALL DEPENDS ${QL_UI_BLOB})
     endif()
 endif()
+if(NOT QLGL_BUILD_TEXT_PARSER)
+    # 全库唯一吃外部文本的地方；不编它就没有任何运行期解析
+    list(REMOVE_ITEM QLGL_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/qlui_parse.c)
+    target_sources(qlgl PRIVATE ${QLGL_SRC})
+endif()
+
 option(QLGL_BUILD_WAYLAND "构建 Linux Wayland 窗口后端" ON)
 option(QLGL_BUILD_GL "构建 OpenGL ES 3.0 / EGL GPU 后端" ON)
 
@@ -173,11 +181,16 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
             target_include_directories(${test_name} PRIVATE ${QL_UI_OUT})
+            if(test_name STREQUAL "test_text_parse")
+                add_dependencies(${test_name} qlui_flex)
+                target_compile_definitions(${test_name} PRIVATE
+                    QL_TEXT_CASE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/web/flex")
+            endif()
             if(test_name STREQUAL "test_golden")
                 add_dependencies(${test_name} qlui_flex)
                 target_compile_definitions(${test_name} PRIVATE
@@ -201,6 +214,7 @@ if(QLGL_BUILD_TESTS)
                OR test_name STREQUAL "test_flip"
                OR test_name STREQUAL "test_blur"
                OR test_name STREQUAL "test_golden"
+               OR test_name STREQUAL "test_text_parse"
                OR test_name STREQUAL "example_flip_window"
                OR test_name STREQUAL "example_showcase_window")
                 add_dependencies(${test_name} qlui_flex)

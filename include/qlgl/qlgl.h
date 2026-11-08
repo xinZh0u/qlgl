@@ -81,6 +81,7 @@ void ql_log(int level, const char *fmt, ...);
 #include "qlwidget.h"
 #include "qllabel.h"
 #include "qlui.h"
+#include "qluitext.h"
 #include "qlrender.h"
 #include "qldisp_x11.h"
 #include "qldisp_wayland.h"

@@ -15,6 +15,8 @@
   justify-content、align-items）、`position: relative/absolute/fixed`、`z-index`、`overflow` 裁剪、
   文本与行内元素混排（生成期消解成匿名节点）；
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
+- **运行期 HTML/CSS 解析（M3.5 第 3 步）已完成** —— `ql_ui_load_text(html, css)` 在加载时算一次，
+  产物与构建期工具**逐字节相同**（27 页用例守着）；可 `-DQLGL_BUILD_TEXT_PARSER=OFF` 整块摘掉；
 - **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
   （垂直走行填充快路径，GPU 走顶点颜色插值、零额外 draw call）；
 - **动效（M5.5）已完成 ①②③④⑥⑦⑧⑨ 与 translate/scale/分轴翻转/圆角揭示/圆形遮罩/毛玻璃** —— 帧时钟 + `transition` + `@keyframes`
@@ -70,6 +72,9 @@ ctest --test-dir build --output-on-failure
 ./build/test_scale                        # transform: scale() 绘制期缩放（布局不受影响）
 ./build/test_flip                         # scaleX()/scaleY() 分轴缩放 + animation-delay（假 3D 翻转）
 ./build/test_blur                         # backdrop-filter: blur() 毛玻璃（CPU 与 GPU 各断言一遍性质）
+./build/test_text_parse                   # 运行期解析器 vs 构建期工具：27 页 blob 逐字节相同
+./build/test_text_reject                  # 拒绝集合一致：32 个正负用例
+./build/example_load_text --dump a.ppm    # 运行期编译 HTML+CSS 并渲染（不用重新编译程序）
 ./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
 QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 ./build/example_flip_window               # 假翻转演示：水平翻/垂直翻/圆形硬币，错开相位
