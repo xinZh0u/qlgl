@@ -1,0 +1,1637 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLGL 底层实现设计（v0.1 草案） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item active' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlgl-v01">QLGL 底层实现设计（v0.1 草案）</h1>
+<blockquote>
+<p>本文档只描述<strong>底层</strong>：内存、类型、属性、事件、字符串、绘制、样式、编译期二进制格式与工具链。
+上层控件（按钮、列表、滚动容器）不在本文范围。
+约束来源：<a href="./代码规范.txt">代码规范.txt</a>（C11、中文注释、LVGL 风格、枚举全大写、结构体 <code>QL</code> 开头驼峰、禁用 32/64 位不等长类型、属性区预留大余量）。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 文档使用说明</h2>
+<table>
+<thead>
+<tr>
+<th>标记</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✅ 已验证</td>
+<td>已在本仓库机器上用原型代码编译 + ASan 跑过</td>
+</tr>
+<tr>
+<td>⚠️ 待验证</td>
+<td>设计已完成，实现后需基准/测试确认</td>
+</tr>
+<tr>
+<td>❗ 阻塞</td>
+<td>当前代码存在、必须先修的缺陷</td>
+</tr>
+</tbody>
+</table>
+<p>文中出现的 <code>/src/...</code> 路径为<strong>计划中的目标路径</strong>；标注"现状"的才是仓库里已有的文件。</p>
+<hr />
+<h2 id="1">1. 设计总纲</h2>
+<h3 id="11">1.1 分层</h3>
+<div class="highlight"><pre><span></span><code>┌───────────────────────────────────────────────┐
+│ 控件层  ql_label / ql_button / ...             │  不在本文
+├───────────────────────────────────────────────┤
+│ 布局层  ql_layout   （盒模型、两趟测量/排布）    │  §8
+├───────────────────────────────────────────────┤
+│ 样式层  ql_style    （级联结果、继承白名单）     │  §9
+├───────────────────────────────────────────────┤
+│ 绘制层  ql_draw / ql_render（脏矩形、字形 blit） │  §7
+├───────────────────────────────────────────────┤
+│ 对象层  ql_object / ql_class / ql_prop / ql_event│  §2~§6
+├───────────────────────────────────────────────┤
+│ 平台层  ql_disp / ql_input / ql_mem / ql_log     │  §2.5
+└───────────────────────────────────────────────┘
+        ▲ 编译期（PC 端工具 qcssc）        │ 运行期（目标板）
+        │ HTML+CSS → IR → 二进制 v1        │ loader / 直接读 .rodata
+</code></pre></div>
+
+<h3 id="12">1.2 三条铁律</h3>
+<ol>
+<li><strong>编译期能做的不留到运行期</strong>：选择器匹配、级联、单位换算、文本分段全在 <code>qcssc</code> 里做完；运行时只做"按 id 取已算好的值"。</li>
+<li><strong>运行期不隐式分配</strong>：控件创建/事件/绘制路径上禁止 <code>malloc</code>（可在 <code>qlgl_init</code> 里一次性预分配池）。所有"可能失败"的 API 返回 <code>ql_err_t</code>。</li>
+<li><strong>id 由构建期生成</strong>：类型 id、属性 id、事件 id 全部来自 <code>src/generated/*.h</code>，由脚本扫描源码生成，保证目标板与 PC 工具看到同一套 id。</li>
+</ol>
+<h3 id="13">1.3 配置裁剪</h3>
+<p>所有功能由 <code>qlconfig.h</code> 单点开关，默认值面向 MPU；MCU 通过 <code>qlconfig_mcu.h</code> 覆盖：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/qlconfig.h */</span>
+<span class="cp">#ifndef QLCONFIG_H</span>
+<span class="cp">#define QLCONFIG_H</span>
+
+<span class="cp">#define QL_CFG_MAX_CLASS            64      </span><span class="cm">/* 类表容量，ROM 静态数组 */</span>
+<span class="cp">#define QL_CFG_MAX_INHERIT_DEPTH    8       </span><span class="cm">/* 继承链上限，超过注册即失败 */</span>
+<span class="cp">#define QL_CFG_EVENT_ARG_MAX        4       </span><span class="cm">/* 事件参数上限 */</span>
+<span class="cp">#define QL_CFG_EVENT_CONN_POOL      256     </span><span class="cm">/* 全局连接池，0 = 每对象内联 2 个 */</span>
+<span class="cp">#define QL_CFG_DIRTY_RECT_MAX       16</span>
+<span class="cp">#define QL_CFG_ANTIALIAS            1</span>
+<span class="cp">#define QL_CFG_TEXT_UTF8            1</span>
+<span class="cp">#define QL_CFG_BINARY_LOADER        1       </span><span class="cm">/* 0 = 只允许编译进 .rodata */</span>
+<span class="cp">#define QL_CFG_HTML_RUNTIME         0       </span><span class="cm">/* 0 = 纯二进制，1 = 运行时解析 */</span>
+<span class="cp">#define QL_CFG_PROPERTY_NAME        1       </span><span class="cm">/* 0 = 裁掉属性名字符串 */</span>
+<span class="cp">#define QL_CFG_LOG_LEVEL            2</span>
+
+<span class="cp">#endif</span>
+</code></pre></div>
+
+<p>裁掉 <code>QL_CFG_PROPERTY_NAME</code> / <code>QL_CFG_BINARY_LOADER</code> / <code>QL_CFG_HTML_RUNTIME</code> 可省掉绝大部分字符串与解析代码（⚠️ 体积收益待实测）。</p>
+<hr />
+<h2 id="2">2. 对象与内存布局</h2>
+<h3 id="21">2.1 现状问题（❗阻塞）</h3>
+<table>
+<thead>
+<tr>
+<th>现状</th>
+<th>缺陷</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../src/qlobject.c">src/qlobject.c</a> <code>ql_object_new</code></td>
+<td>私有区总量 = 各层 <code>private_size()</code> 的<strong>前缀和之和</strong>，5 层继承时是需求的 3 倍</td>
+</tr>
+<tr>
+<td>同文件 <code>ql_object_unref</code></td>
+<td><code>free(self)</code>，<code>self</code> 是块内偏移指针 → ASan 报 <code>free on address which was not malloc()-ed</code> ✅已验证</td>
+</tr>
+<tr>
+<td>私有区访问</td>
+<td><code>ql_xxx_get_private()</code> 是宏生成的<strong>非 static 函数</strong>，未声明进头文件，且每次调用走一次减法+一次虚调用</td>
+</tr>
+<tr>
+<td><code>ql_object_init</code></td>
+<td>把<strong>栈上局部</strong> <code>QLObjectClass</code> 存进 <code>class_table[0]</code> → 悬垂</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22">2.2 目标布局 ✅已验证</h3>
+<p><strong>条件</strong>：<code>class_table[0]</code> 为根类，且要求"父类先于子类注册"（见 §3.2）。</p>
+<div class="highlight"><pre><span></span><code>            malloc 块
+  +---------------------------+  mem
+  | 根类私有区   priv_offset=0 |
+  +---------------------------+  +0
+  | 父类私有区                |
+  +---------------------------+
+  | 本类私有区                |
+  +---------------------------+  mem + priv_total
+  | QLObject 实例（含继承结构） |  ← self，instance_size 为最终派生类大小
+  +---------------------------+
+</code></pre></div>
+
+<p>分配量 = <code>self-&gt;klass-&gt;instance_size + self-&gt;klass-&gt;priv_total</code>，其中
+<code>priv_total = Σ 每层 own_private_size</code>（<strong>不再是前缀和</strong>）。</p>
+<p>原型实测（5 层、每层 16 字节私有区）：<code>priv_total = 80</code>，恰好等于需求，无重叠、无浪费，<code>unref</code> 在 ASan 下通过 ✅。当前实现同样场景为 240 字节。</p>
+<h3 id="23-api">2.3 核心 API</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/core/qlclass.h */</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLObjectClass</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLType</span><span class="w">   </span><span class="n">type</span><span class="p">;</span><span class="w">              </span><span class="cm">/* 构建期生成，见 §3 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">instance_size</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 该类结构体大小（含父类字段） */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">own_private_size</span><span class="p">;</span><span class="w">  </span><span class="cm">/* 本类自己的私有区大小 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">priv_offset</span><span class="p">;</span><span class="w">       </span><span class="cm">/* 私有区相对块首偏移，注册时算好 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">priv_total</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 整条链私有区总和，注册时算好 */</span>
+
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">           </span><span class="cm">/* QL_CFG_PROPERTY_NAME=0 时可为 NULL */</span>
+
+<span class="w">    </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property_start</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 含 */</span>
+<span class="w">    </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property_end</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 含 */</span>
+
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">QLPropertyDesc</span><span class="w"> </span><span class="o">*</span><span class="n">props</span><span class="p">;</span><span class="w">    </span><span class="cm">/* 可选，供脚本/工具使用 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">prop_count</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">QLEventDesc</span><span class="w"> </span><span class="o">*</span><span class="n">events</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 事件描述表，静态 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">event_count</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">;</span>
+
+<span class="w">    </span><span class="cm">/* 虚函数 */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">init</span><span class="p">)(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">deinit</span><span class="p">)(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">class_init</span><span class="p">)(</span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_property</span><span class="p">)(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
+<span class="w">    </span><span class="n">QLValue</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">get_property</span><span class="p">)(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">p</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">event</span><span class="p">)(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="n">args</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 默认事件处理，用于冒泡 */</span>
+<span class="p">};</span>
+<span class="cm">/* O(1) 私有区访问；内联，无虚调用 */</span>
+<span class="k">static</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_priv</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">k</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">self</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">klass</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">priv_offset</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>QLObject</code> 精简为：</p>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">QLObject</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLObject</span><span class="w">   </span><span class="o">*</span><span class="n">parent</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLObject</span><span class="w">   </span><span class="o">*</span><span class="n">first_child</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLObject</span><span class="w">   </span><span class="o">*</span><span class="n">next_sibling</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int32_t</span><span class="w">     </span><span class="n">ref_count</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w">    </span><span class="n">conn_head</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 连接池链表头，0xFFFFFFFF = 空 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">    </span><span class="n">flags</span><span class="p">;</span><span class="w">       </span><span class="cm">/* DIRTY_SIZE / DIRTY_STYLE / HIDDEN ... */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">     </span><span class="n">state</span><span class="p">;</span><span class="w">       </span><span class="cm">/* 构造中/存活/析构中 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">     </span><span class="n">reserved</span><span class="p">;</span><span class="w">    </span><span class="cm">/* ABI 预留 */</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<blockquote>
+<p>刻意<strong>不用位域</strong>：位域布局由实现定义，与"ABI 稳定"目标冲突（❗当前 <a href="../src/qlobject.h">src/qlobject.h</a> 有 <code>uint8_t emitting : 1</code>）。</p>
+</blockquote>
+<h3 id="24">2.4 生命周期</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_new</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span>
+
+<span class="cm">/* 引用计数为 0 时：先调 deinit（子→父），再释放连接，再 free(块首) */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_object_unref</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+
+<span class="cm">/* 父子关系：父持有强引用，删除父自动 unref 全部子 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_object_set_parent</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">);</span>
+</code></pre></div>
+
+<p>销毁顺序固定：<code>deinit</code>（派生→根）→ 断开事件连接 → 移出父链 → <code>ql_mem_free(mem)</code>。<code>mem</code> 指针由 <code>(char*)self - self-&gt;klass-&gt;priv_total</code> 反算，<strong>绝不 free(self)</strong>。</p>
+<h3 id="25">2.5 分配器钩子</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/core/qlmem.h */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">alloc</span><span class="p">)(</span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">realloc</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">free</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">p</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLAllocator</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_mem_set_allocator</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLAllocator</span><span class="w"> </span><span class="o">*</span><span class="n">a</span><span class="p">);</span><span class="w">   </span><span class="cm">/* qlgl_init 之前调用 */</span>
+</code></pre></div>
+
+<ul>
+<li>默认走 <code>malloc/realloc/free</code>；</li>
+<li>MCU 可挂静态块分配器（约定"只分配不回收"或 TLSF 风格）；</li>
+<li>所有分配失败返回 <code>NULL</code>，调用方必须处理并返回 <code>QL_ERR_NOMEM</code>（❗当前 <code>ql_object_new</code> 未检查 <code>calloc</code> 返回值）。</li>
+</ul>
+<h3 id="26">2.6 错误码与公共符号</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/core/qlgl.h */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_OK</span><span class="w">           </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_ERR_NOMEM</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_ERR_INVAL</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="mi">-2</span><span class="p">,</span><span class="w">   </span><span class="cm">/* 参数非法 / id 越界 */</span>
+<span class="w">    </span><span class="n">QL_ERR_NOT_INIT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-3</span><span class="p">,</span><span class="w">   </span><span class="cm">/* qlgl_init 未调用或父类未注册 */</span>
+<span class="w">    </span><span class="n">QL_ERR_OVERFLOW</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-4</span><span class="p">,</span><span class="w">   </span><span class="cm">/* 私有区/继承深度超限 */</span>
+<span class="w">    </span><span class="n">QL_ERR_EXISTS</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mi">-5</span><span class="p">,</span><span class="w">   </span><span class="cm">/* 重复注册 */</span>
+<span class="w">    </span><span class="n">QL_ERR_VER</span><span class="w">      </span><span class="o">=</span><span class="w"> </span><span class="mi">-6</span><span class="p">,</span><span class="w">   </span><span class="cm">/* 二进制版本不兼容 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">ql_err_t</span><span class="p">;</span>
+
+<span class="cp">#define QL_ARRAY_SIZE(a)    (sizeof(a) / sizeof((a)[0]))</span>
+<span class="cp">#define QL_CONN_NONE        0xFFFFFFFFu</span>
+
+<span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_class_get</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 越界返回 NULL */</span>
+<span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_class_get</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>ql_err_t</code> 为负值，便于 <code>if (err &lt; 0)</code> 统一判断；<code>qlgl_init()</code> 返回 <code>ql_err_t</code> 而非 <code>int</code>（❗现状 <code>int qlgl_init()</code> 用 <code>return 1</code> 表示成功，语义反直觉）。</p>
+<hr />
+<h2 id="3">3. 类型系统</h2>
+<h3 id="31">3.1 现状问题（❗阻塞）</h3>
+<ul>
+<li><code>QLType</code> 定义为 <code>unsigned long</code> → 32 位机 4 字节、64 位机 8 字节，<strong>直接违反自家规范</strong>。</li>
+<li>类 id 由 <code>.init_array</code> 构造函数按<strong>链接顺序</strong>自增分配 → 每次改文件/改链接顺序 id 就变，二进制格式与语言绑定全部失效。</li>
+<li>根类没走统一注册，<code>class_table[0]</code> 是悬垂指针。</li>
+<li>继承链遍历用 <code>class_table[i]</code>（下标）而非栈内容 → ✅实测对 <code>QLButton</code> 调用了无关类 <code>QLExtra</code> 的 <code>init</code>（类型混淆）。</li>
+</ul>
+<h3 id="32">3.2 目标方案</h3>
+<p><strong><code>QLType = uint32_t</code></strong>，id 来自构建期生成的枚举：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/generated/qltype_gen.h  —— 由 tools/qlgen 生成，勿手改 */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_TYPE_OBJECT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_TYPE_WIDGET</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_TYPE_LABEL</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_TYPE_BUTTON</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/* 新类追加到末尾，禁止插入或重排 */</span>
+<span class="w">    </span><span class="n">QL_TYPE_COUNT</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLTypeBuiltin</span><span class="p">;</span>
+</code></pre></div>
+
+<p>生成规则：<code>tools/qlgen</code> 扫描所有 <code>QL_DEFINE_WITH_PRIVATE(NAME, Name, name, Inherit)</code>，按首次出现顺序编号；CI 里跑 <code>qlgen --check</code>，与已提交版本不一致即失败（防止手滑重排导致 ABI 破坏）。</p>
+<p><strong>注册不再依赖构造函数</strong>，改为显式、按依赖顺序：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/generated/qlclass_gen.c */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLType</span><span class="w">         </span><span class="n">type</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLType</span><span class="w">         </span><span class="n">parent_type</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 由 qlgen 从 QL_DEFINE_WITH_PRIVATE 的第 4 个参数解析 */</span>
+<span class="w">    </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLClassReg</span><span class="p">;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLClassReg</span><span class="w"> </span><span class="n">ql_class_reg_table</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_object_class</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_widget_class</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_LABEL</span><span class="p">,</span><span class="w">  </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_label_class</span><span class="w">  </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_BUTTON</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_button_class</span><span class="w"> </span><span class="p">},</span>
+<span class="p">};</span>
+
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_class_init_all</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="w">      </span><span class="cm">/* qlgl_init() 内部调用，顺序即枚举顺序 */</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">size_t</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">QL_ARRAY_SIZE</span><span class="p">(</span><span class="n">ql_class_reg_table</span><span class="p">);</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_class_reg_table</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">klass</span><span class="p">;</span>
+<span class="w">        </span><span class="n">QLType</span><span class="w"> </span><span class="n">pt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_class_reg_table</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">parent_type</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">type</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="n">ql_class_reg_table</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">type</span><span class="p">;</span>
+<span class="w">        </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">pt</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="nb">NULL</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">ql_class_get</span><span class="p">(</span><span class="n">pt</span><span class="p">);</span>
+
+<span class="w">        </span><span class="cm">/* 父类必须先注册，否则说明生成的表顺序错了 */</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">pt</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">QL_ERR_NOT_INIT</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">priv_offset</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="o">-&gt;</span><span class="n">priv_offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="o">-&gt;</span><span class="n">own_private_size</span><span class="p">)</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">        </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">own_private_size</span><span class="p">;</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">UINT16_MAX</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">QL_ERR_OVERFLOW</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">class_table</span><span class="p">[</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">type</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="p">;</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">class_init</span><span class="p">)</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">class_init</span><span class="p">(</span><span class="n">k</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">QL_OK</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p>父/子关系由<strong>生成的表</strong>给出（<code>parent_type</code>），不引入 <code>parent_type()</code> 虚函数——少一次间接调用，也避免"类对象尚未注册就去问它父类是谁"的顺序问题。</p>
+</blockquote>
+<p>好处：无 <code>.init_array</code>（裸机友好）、id 确定、父类必然先注册、错误可上报。</p>
+<h3 id="33">3.3 对象创建中的继承链遍历（修正版）</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_new</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_class_get</span><span class="p">(</span><span class="n">type</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">k</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">instance_size</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">total</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">instance_size</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">  </span><span class="o">*</span><span class="n">mem</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="n">ql_mem_alloc</span><span class="p">(</span><span class="n">total</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">mem</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)(</span><span class="n">mem</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="p">);</span>
+<span class="w">    </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">klass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="p">;</span>
+<span class="w">    </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">ref_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">conn_head</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_CONN_NONE</span><span class="p">;</span>
+
+<span class="w">    </span><span class="cm">/* 父 → 子，逐层 init；链由 klass-&gt;parent 走出，不碰数组下标 */</span>
+<span class="w">    </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">stack</span><span class="p">[</span><span class="n">QL_CFG_MAX_INHERIT_DEPTH</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">depth</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="p">;</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">depth</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">QL_CFG_MAX_INHERIT_DEPTH</span><span class="p">;</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">c</span><span class="o">-&gt;</span><span class="n">parent</span><span class="p">)</span>
+<span class="w">        </span><span class="n">stack</span><span class="p">[</span><span class="n">depth</span><span class="o">++</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">c</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">depth</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">--</span><span class="p">)</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">stack</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">-&gt;</span><span class="n">init</span><span class="p">)</span><span class="w"> </span><span class="n">stack</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">-&gt;</span><span class="n">init</span><span class="p">(</span><span class="n">self</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">self</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p>深度检查缺失是 ❗现状问题（<code>ql_object_new</code> 对 <code>QL_OBJECT_MAX_INHERIT_NUM</code> 无边界判断，超出即栈溢出）。</p>
+</blockquote>
+<hr />
+<h2 id="4">4. 属性系统</h2>
+<h3 id="41">4.1 区间语义（修正）</h3>
+<p>现状用 <code>property &gt; start &amp;&amp; property &lt; end</code>，导致 <code>*_PROPERTY_START</code> 本身不可用。目标改为<strong>闭区间</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="cp">#define QL_PROPERTY_ENUM_START(NAME, Name, INHERIT)                     \</span>
+<span class="cp">    typedef enum Name##Property Name##Property;                         \</span>
+<span class="cp">    enum Name##Property {                                               \</span>
+<span class="cp">        NAME##_PROPERTY_START = INHERIT##_PROPERTY_SPACE_END + 1,       \</span>
+<span class="cp">        NAME##_PROPERTY_FIRST = NAME##_PROPERTY_START,</span>
+
+<span class="cp">#define QL_PROPERTY_ENUM_END(NAME, capacity)                            \</span>
+<span class="cp">        NAME##_PROPERTY_END = NAME##_PROPERTY_START + (capacity) - 1,   \</span>
+<span class="cp">        NAME##_PROPERTY_SPACE_END = NAME##_PROPERTY_END,                \</span>
+<span class="cp">    };</span>
+</code></pre></div>
+
+<p>同时把 <code>start = object 的 SPACE_END + 1</code>，保证相邻类区间不重叠：
+根类 <code>OBJECT</code> 占 <code>[1, 100]</code>，<code>WIDGET</code> 占 <code>[101, 200]</code>，<code>LABEL</code> 占 <code>[201, 300]</code> ……</p>
+<h3 id="42">4.2 派发</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/core/qlprop.c */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_object_set_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">v</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">klass</span><span class="p">;</span><span class="w"> </span><span class="n">k</span><span class="p">;</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">parent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">p</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">property_start</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">property_end</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">set_property</span><span class="p">)</span><span class="w"> </span><span class="n">k</span><span class="o">-&gt;</span><span class="n">set_property</span><span class="p">(</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>复杂度 O(继承深度)，深度 ≤ 8 → 可接受；不做哈希表（ROM 代价大于收益）。</p>
+<h3 id="43">4.3 属性描述表（可选，供工具与绑定）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">type</span><span class="p">;</span><span class="w">    </span><span class="cm">/* QLValueType */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">flags</span><span class="p">;</span><span class="w">   </span><span class="cm">/* QL_PROP_READ / WRITE / REDRAW / RELAYOUT / INHERIT */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w"> </span><span class="cm">/* QL_CFG_PROPERTY_NAME=0 时不存在 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLPropertyDesc</span><span class="p">;</span>
+</code></pre></div>
+
+<p><code>REDRAW</code> / <code>RELAYOUT</code> 标志让 setter 自动打脏标记，避免每个控件手写：set 之后由框架统一置 <code>QL_OBJ_FLAG_DIRTY_*</code>，构建设计上把"通知"与"赋值"解耦。</p>
+<h3 id="44">4.4 值类型</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">type</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">flags</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 例如 QL_VAL_OWN_STR */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">aux</span><span class="p">;</span>
+<span class="w">    </span><span class="k">union</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">int32_t</span><span class="w">    </span><span class="n">i</span><span class="p">;</span>
+<span class="w">        </span><span class="kt">uint32_t</span><span class="w">   </span><span class="n">u</span><span class="p">;</span>
+<span class="w">        </span><span class="n">ql_fixed_t</span><span class="w"> </span><span class="n">f</span><span class="p">;</span><span class="w">   </span><span class="cm">/* Q16.16 定点，禁止直接用 float 存属性 */</span>
+<span class="w">        </span><span class="kt">void</span><span class="w">      </span><span class="o">*</span><span class="n">p</span><span class="p">;</span>
+<span class="w">        </span><span class="n">QLObject</span><span class="w">  </span><span class="o">*</span><span class="n">o</span><span class="p">;</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLValue</span><span class="p">;</span>
+</code></pre></div>
+
+<ul>
+<li><code>QLType</code> 用 <code>int32_t/uint32_t</code>，<strong>不用 <code>long</code></strong>；浮点统一 <code>Q16.16</code>（<code>ql_fixed_t = int32_t</code>）以满足"32/64 位等长"；</li>
+<li><code>QLValue</code> 含指针，仅在内存中传递，<strong>绝不直接落盘</strong>（落盘用 §11 的 wire 编码）。</li>
+</ul>
+<hr />
+<h2 id="5">5. 事件系统</h2>
+<h3 id="51">5.1 现状问题</h3>
+<table>
+<thead>
+<tr>
+<th>现状</th>
+<th>缺陷</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>❗<code>QL_EMIT(obj, code)</code> 0 参数</td>
+<td><code>QL_VALUE_NULL</code> 未定义，<strong>无法编译</strong> ✅已验证</td>
+</tr>
+<tr>
+<td>❗参数宏</td>
+<td>实际按逗号 token 数派发，只覆盖偶数 token（2/4/…/20），注释写的 0/1/4/6 与实现不符</td>
+</tr>
+<tr>
+<td>❗<code>ql_value_ptr(&amp;_p)</code></td>
+<td>把<strong>栈上临时结构体</strong>地址塞进事件，回调若缓存即悬垂；也无法被语言绑定表达</td>
+</tr>
+<tr>
+<td>❗无 parent 指针</td>
+<td><code>QL_EVENT_BUBBLE</code> 已定义但根本无法实现</td>
+</tr>
+<tr>
+<td>❗<code>ql_disconnect</code> 只置 <code>removed</code></td>
+<td>既不回收槽位也无压缩，长跑场景池会耗尽</td>
+</tr>
+<tr>
+<td>❗<code>ql_event_new</code> 在 <code>class_init</code> 里 <code>strdup</code></td>
+<td>除了 <code>strdup</code> 不可移植外，事件名在 MCU 上纯属浪费</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52">5.2 参数打包（替换裸指针）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">count</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">type</span><span class="p">[</span><span class="n">QL_CFG_EVENT_ARG_MAX</span><span class="p">];</span>
+<span class="w">    </span><span class="n">QLValue</span><span class="w"> </span><span class="n">arg</span><span class="p">[</span><span class="n">QL_CFG_EVENT_ARG_MAX</span><span class="p">];</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLEventArgs</span><span class="p">;</span>
+</code></pre></div>
+
+<p>宏改为"逐个塞进结构体数组"，不再取临时结构体地址：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/core/qlevent.h */</span>
+<span class="cp">#define QL_EMIT_2(obj, code, t1, a1)                        \</span>
+<span class="cp">    do {                                                    \</span>
+<span class="cp">        QLEventArgs _a = { .count = 1 };                    \</span>
+<span class="cp">        _a.type[0] = (t1); _a.arg[0].type = (t1);           \</span>
+<span class="cp">        _a.arg[0].i = (int32_t)(a1);                       \</span>
+<span class="cp">        ql_emit((obj), (code), &amp;_a);                        \</span>
+<span class="cp">    } while (0)</span>
+</code></pre></div>
+
+<p>约定：<strong>只允许带类型的整型/定点/对象/指针</strong>（<code>QL_EVENT_ARG_INT/FIXED/PTR/OBJ</code>），字符串走 <code>QLStr</code> 指针，禁止任意结构体。这样 JS/Py 绑定与二进制事件表都能表达。</p>
+<blockquote>
+<p>派发改为按参数个数显式选择 <code>QL_EMIT_N(obj, ev, ...)</code>（N=0..4），不再靠 token 计数魔法宏——token 计数在 0 参数和奇数参数时必错。</p>
+</blockquote>
+<h3 id="53-id">5.3 事件 id</h3>
+<div class="highlight"><pre><span></span><code><span class="cp">#define QL_EVENT_ENUM_START(NAME, Name, INHERIT)                  \</span>
+<span class="cp">    typedef enum Name##Event Name##Event;                          \</span>
+<span class="cp">    enum Name##Event {                                             \</span>
+<span class="cp">        NAME##_EVENT_START = INHERIT##_EVENT_SPACE_END + 1,        \</span>
+<span class="cp">        NAME##_EVENT_FIRST = NAME##_EVENT_START,</span>
+
+<span class="cp">#define QL_EVENT_ENUM_END(NAME, capacity)                          \</span>
+<span class="cp">        NAME##_EVENT_END = NAME##_EVENT_START + (capacity) - 1,    \</span>
+<span class="cp">        NAME##_EVENT_SPACE_END = NAME##_EVENT_END,                 \</span>
+<span class="cp">    };</span>
+</code></pre></div>
+
+<blockquote>
+<p>❗现状 <a href="../src/qlevent.h">src/qlevent.h</a> 里 <code>enum Name##Property</code> 是笔误，且 <code>NAME##_EVENT_END</code> 从未定义，事件枚举体系实际不可用；<code>main.c</code> 里直接用魔法数字 <code>1</code>。</p>
+</blockquote>
+<h3 id="54-malloc">5.4 连接池（运行期零 malloc）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLObject</span><span class="w">     </span><span class="o">*</span><span class="n">obj</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_event_cb_t</span><span class="w"> </span><span class="n">cb</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">void</span><span class="w">         </span><span class="o">*</span><span class="n">user_data</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_event_t</span><span class="w">    </span><span class="n">event</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w">      </span><span class="n">conn_id</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 单调递增，不复用，避免 ABA */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">      </span><span class="n">next</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 同对象连接链表 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">       </span><span class="n">removed</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">       </span><span class="n">in_use</span><span class="w">  </span><span class="o">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLEventConn</span><span class="p">;</span>
+</code></pre></div>
+
+<ul>
+<li><code>QL_CFG_EVENT_CONN_POOL</code> 个槽位静态预分配；对象头只存 <code>conn_head</code>；</li>
+<li><code>ql_disconnect</code> 置 <code>removed</code>，<strong>首尾的 removed 节点立即回收</strong>，中间的等 <code>emit_depth == 0</code> 时压缩；</li>
+<li><code>conn_id</code> 用 <code>uint32_t</code> 单调递增（4G 次后回绕可接受，或 64 位 PC 端用 64 位）。</li>
+</ul>
+<h3 id="55">5.5 传播</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w"> </span><span class="nf">ql_emit</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="n">args</span><span class="p">);</span>
+</code></pre></div>
+
+<p>流程：捕获阶段（若 flag 有 <code>CAPTURE</code>，从根到目标）→ 目标回调 → 冒泡（<code>BUBBLE</code> 时沿 <code>parent</code> 上溯）→ 回调内 <code>ql_event_stop_propagation()</code> 置 <code>stop</code> 标志、<code>ql_event_stop_default()</code> 跳过 <code>klass-&gt;event</code>。全程一个 <code>emit_depth</code> 计数，深度 &gt; 8 直接丢弃（防父子环）。</p>
+<hr />
+<h2 id="6">6. 字符串与资源</h2>
+<h3 id="61-qlstr">6.1 QLStr</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">    </span><span class="o">*</span><span class="n">data</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">len</span><span class="p">;</span><span class="w">       </span><span class="cm">/* strlen 缓存，UTF-8 字节数 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">capacity</span><span class="p">;</span><span class="w">  </span><span class="cm">/* data 可写容量；0 = 只读（静态/外部） */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">own</span><span class="w">  </span><span class="o">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">  </span><span class="cm">/* 是否由 ql_mem 分配 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">dyn</span><span class="w">  </span><span class="o">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">  </span><span class="cm">/* 是否启用容量倍增策略 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLStr</span><span class="p">;</span>
+</code></pre></div>
+
+<h3 id="62-4">6.2 两种策略（对应规范第 4 条）</h3>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>行为</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_STR_COMPACT</code></td>
+<td>每次写入按精确长度分配，容量 = 长度</td>
+<td>MCU 端高频文本刷新（内存紧张）</td>
+</tr>
+<tr>
+<td><code>QL_STR_AMORTIZED</code></td>
+<td>容量按 2 倍增长，删除不缩容</td>
+<td>MPU/PC 端（避免反复分配）</td>
+</tr>
+</tbody>
+</table>
+<p>策略是<strong>每对象可切换</strong>（<code>ql_str_set_policy()</code>），不是编译期二选一，这样同一固件里 label 可以用 compact、日志面板可以用 amortized。</p>
+<h3 id="63">6.3 资源</h3>
+<p>字体/图片/矢量路径全部走"资源 id → 段内偏移"，运行期不出现文件路径：</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">offset</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 相对资源段 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">kind</span><span class="p">;</span><span class="w">     </span><span class="cm">/* FONT / IMG / PATH */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLResourceEntry</span><span class="p">;</span>
+</code></pre></div>
+
+<hr />
+<h2 id="7">7. 绘制与显示</h2>
+<h3 id="71">7.1 现状</h3>
+<p>❗<a href="../src/draw/qldraw.h">src/draw/qldraw.h</a> 只有空 struct，<code>qldraw.c</code> 空文件，且 <code>CMakeLists.txt</code> 的 glob 根本没包含 <code>src/draw/</code>。</p>
+<h3 id="72">7.2 显示驱动接口</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/port/qldisp.h */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_COLOR_RGB565</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_COLOR_RGB888</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_COLOR_ARGB8888</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_COLOR_L8</span><span class="p">,</span><span class="w">        </span><span class="cm">/* 单色/灰度屏 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLColorFormat</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">  </span><span class="n">x1</span><span class="p">,</span><span class="w"> </span><span class="n">y1</span><span class="p">,</span><span class="w"> </span><span class="n">x2</span><span class="p">,</span><span class="w"> </span><span class="n">y2</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 闭区间 */</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">;</span><span class="w">              </span><span class="cm">/* 颜色格式对应的行缓冲 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w">  </span><span class="n">stride</span><span class="p">;</span><span class="w">             </span><span class="cm">/* 字节/行 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLArea</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLDispDriver</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">color_format</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">rotation</span><span class="p">;</span>
+<span class="w">    </span><span class="cm">/* 返回真表示已同步写完，buf 可复用 */</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">flush</span><span class="p">)(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLArea</span><span class="w"> </span><span class="o">*</span><span class="n">area</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLDispDriver</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_disp_register</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_disp_flush_ready</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 异步 flush 用 */</span>
+</code></pre></div>
+
+<h3 id="73">7.3 渲染管线</h3>
+<div class="highlight"><pre><span></span><code>属性变化 → 置 QL_OBJ_FLAG_DIRTY_LAYOUT
+         → 布局趟（§8）算出新几何
+         → 对比旧/新矩形 → 置脏矩形
+         → 绘制趟：脏矩形合并 → renderer 逐层填充 → flush
+</code></pre></div>
+
+<ul>
+<li>脏矩形数组大小 <code>QL_CFG_DIRTY_RECT_MAX</code>，合并规则：相交则取并集；满则退化为全屏；</li>
+<li><strong>单色屏优化</strong>：<code>L8</code> 格式下按 8 像素一字节做掩码绘制，字形本身就是位图，免转换；</li>
+<li>抗锯齿默认<strong>关</strong>（<code>QL_CFG_ANTIALIAS=0</code> 时连代码都裁掉），MCU 只做 1bpp/4bpp 字形。</li>
+</ul>
+<h3 id="74-renderer">7.4 renderer 原语（最小集）</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_fill_rect</span><span class="w"> </span><span class="p">(</span><span class="n">QLDrawCtx</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">c</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_fill_round</span><span class="p">(</span><span class="n">QLDrawCtx</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">c</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw_line</span><span class="w"> </span><span class="p">(</span><span class="n">QLDrawCtx</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">x1</span><span class="p">,</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">y1</span><span class="p">,</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">x2</span><span class="p">,</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">y2</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">c</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_blit_mask</span><span class="p">(</span><span class="n">QLDrawCtx</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">dst</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">mask</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">bpp</span><span class="p">,</span>
+<span class="w">                  </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">fg</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">opacity</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw_text</span><span class="p">(</span><span class="n">QLDrawCtx</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">clip</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLStr</span><span class="w"> </span><span class="o">*</span><span class="n">s</span><span class="p">,</span>
+<span class="w">                  </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">f</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">align</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>QLDrawCtx</code> 持有当前裁剪矩形、目标格式、行缓冲指针；<strong>不做图层合成</strong>（v0.1 明确不支持 alpha 叠加合成，只在 <code>ARGB8888</code> 下支持源 alpha）。</p>
+<hr />
+<h2 id="8">8. 布局（盒模型）</h2>
+<p>对齐 CSS2.1 的盒子模型，但只实现 <strong>content + padding + border + margin</strong>，不支持 <code>float</code>/<code>position:fixed</code>。</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 内容区左上（相对父内容区） */</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 内容区尺寸 */</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">pad</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w">        </span><span class="cm">/* 上右下左 */</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">border</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">margin</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">box_sizing</span><span class="p">;</span><span class="w">    </span><span class="cm">/* CONTENT_BOX / BORDER_BOX */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLBox</span><span class="p">;</span>
+</code></pre></div>
+
+<p>两趟算法（LVGL 同思路）：</p>
+<ol>
+<li><strong>测尺寸</strong>：自底向上 <code>measure(self, avail_w, avail_h) -&gt; (w,h)</code>，<code>width:auto</code> 时取子节点最大外沿；</li>
+<li><strong>排位置</strong>：自顶向下 <code>arrange(self, x, y, w, h)</code>，按 <code>display: block | flex-row | flex-col</code>（v0.1 只做这三种）依次分配主轴空间。</li>
+</ol>
+<p>约束：数值单位在编译期已归一化为<strong>像素整数</strong>（<code>%</code> 转成本次可用空间的定点比例，<code>em</code> 按字体尺寸换算），运行期不做单位运算。</p>
+<hr />
+<h2 id="9">9. 样式系统</h2>
+<h3 id="91">9.1 计算样式结构体（运行期唯一关心的东西）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">bg_color</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">fg_color</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">    </span><span class="n">border_width</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">border_radius</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">    </span><span class="n">font_size</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 已换算为像素 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">   </span><span class="n">font_id</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 资源段里的字体索引 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">align</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 文本对齐 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">opacity</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 0..255 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">display</span><span class="p">;</span><span class="w">        </span><span class="cm">/* BLOCK / FLEX_ROW / FLEX_COL / NONE */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">overflow</span><span class="p">;</span><span class="w">       </span><span class="cm">/* VISIBLE / HIDDEN / SCROLL */</span>
+<span class="w">    </span><span class="cm">/* 追加字段只能加在末尾；结构体带 size 字段供 loader 校验 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">   </span><span class="n">struct_size</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLStyle</span><span class="p">;</span>
+</code></pre></div>
+
+<h3 id="92">9.2 编译期级联</h3>
+<p><code>qcssc</code> 做完整级联，产物是"每个节点一份 <code>QLStyle</code> + 一份差异化属性集合"。</p>
+<p>层叠顺序（低 → 高）：UA 默认样式 → 标签选择器 → 类选择器 → ID 选择器 → 行内 <code>style</code> → <code>!important</code>。</p>
+<p><strong>继承白名单</strong>（只有这些属性会向下继承，其余一律重置）：<code>color</code>、<code>font-size</code>、<code>font-id</code>、<code>text-align</code>、<code>visibility</code>。白名单写死在 <code>qcssc</code> 里，避免运行期做继承遍历。</p>
+<h3 id="93">9.3 不支持项必须构建期报错</h3>
+<div class="highlight"><pre><span></span><code><span class="c">/* qcssc 遇到即报错并指出文件:行:列 */</span>
+<span class="nt">position</span><span class="o">:</span><span class="w"> </span><span class="nt">fixed</span><span class="o">;</span><span class="w">      </span><span class="c">/* 不支持 */</span>
+<span class="nt">float</span><span class="o">:</span><span class="w"> </span><span class="nt">left</span><span class="o">;</span><span class="w">          </span><span class="c">/* 不支持 */</span>
+<span class="p">@</span><span class="k">media</span><span class="w"> </span><span class="o">...</span><span class="w">            </span><span class="c">/* 不支持（v0.1） */</span>
+</code></pre></div>
+
+<blockquote>
+<p>这条是硬要求：静默降级会让"PC 上看起来对、板子上错位"成为常态，排查成本远高于构建失败。</p>
+</blockquote>
+<hr />
+<h2 id="10-htmlcss-pc">10. HTML/CSS 编译器（PC 端工具）</h2>
+<h3 id="101">10.1 工具链</h3>
+<div class="highlight"><pre><span></span><code>tools/qcssc/
+├── lexer.c        词法（HTML + CSS 共用字符流）
+├── html_parse.c   宽容型 HTML 解析（不做 XML 严格校验）
+├── css_parse.c    CSS2.1 子集 + 自定义属性
+├── selector.c     选择器匹配（type / .class / #id / 后代 / 子代）
+├── cascade.c      级联与计算样式
+├── layout_pass.c  静态可确定的几何（绝对定位、固定尺寸）
+├── emit_bin.c     输出二进制 v1（§11）
+├── emit_c.c       输出 .rodata C 数组（MCU 免 loader）
+└── main.c         CLI
+</code></pre></div>
+
+<p>CLI：</p>
+<div class="highlight"><pre><span></span><code>qcssc<span class="w"> </span>--in<span class="w"> </span>ui/index.html<span class="w"> </span>--out<span class="w"> </span>ui.bin<span class="w"> </span>--fmt<span class="w"> </span>bin<span class="w"> </span>--arch<span class="w"> </span><span class="m">32</span><span class="w"> </span>--color<span class="w"> </span>rgb565
+qcssc<span class="w"> </span>--in<span class="w"> </span>ui/index.html<span class="w"> </span>--out<span class="w"> </span>ui_data.c<span class="w"> </span>--fmt<span class="w"> </span>c<span class="w"> </span>--name<span class="w"> </span>ui_index
+qcssc<span class="w"> </span>--dump-ids<span class="w"> </span>&gt;<span class="w"> </span>/dev/null<span class="w">   </span><span class="c1"># 校验属性/事件 id 与运行时一致</span>
+</code></pre></div>
+
+<h3 id="102-v01">10.2 支持子集（v0.1 冻结）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>元素</td>
+<td><code>div span p b i button input label img</code> + 自定义 <code>ql-*</code></td>
+<td>其余视为 <code>div</code></td>
+</tr>
+<tr>
+<td>选择器</td>
+<td>类 / ID / 类型 / 后代 / 子代 / <code>:first-child</code> / <code>:hover</code> / <code>:active</code></td>
+<td>不支持属性选择器</td>
+</tr>
+<tr>
+<td>盒模型</td>
+<td>margin / padding / border / width / height / box-sizing</td>
+<td>支持 <code>%</code>、<code>px</code></td>
+</tr>
+<tr>
+<td>布局</td>
+<td><code>display: block</code> / <code>flex</code>（<code>row</code>,<code>column</code> + <code>justify-content</code> / <code>align-items</code> 子集）</td>
+<td>无 <code>grid</code></td>
+</tr>
+<tr>
+<td>文本</td>
+<td><code>color</code> / <code>font-size</code> / <code>font-weight</code>(400/700) / <code>text-align</code></td>
+<td>无 <code>text-shadow</code></td>
+</tr>
+<tr>
+<td>背景</td>
+<td><code>background-color</code> / <code>border-radius</code></td>
+<td>无渐变、无 <code>box-shadow</code></td>
+</tr>
+<tr>
+<td>伪类</td>
+<td><code>:hover</code> <code>:active</code> <code>:checked</code> <code>:disabled</code></td>
+<td>编译为"状态→样式覆盖表"</td>
+</tr>
+</tbody>
+</table>
+<p>":hover 如何编译"——每个节点额外输出一张"状态覆盖表"，运行时只做 <code>style = state_table[state] ?: base_style</code>，一次数组寻址。</p>
+<hr />
+<h2 id="11-v1">11. 二进制格式 v1</h2>
+<h3 id="111">11.1 总则</h3>
+<ul>
+<li>小端（跨端序时构建期整体翻转，标志位记录）；</li>
+<li>所有段 8 字节对齐；</li>
+<li>所有偏移相对<strong>本段起点</strong>；</li>
+<li>只增不改：新增字段追加在结构体末尾，<code>struct_size</code> 字段自描述；破坏性变更升 major。</li>
+</ul>
+<h3 id="112-32">11.2 文件头（32 字节）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">magic</span><span class="p">;</span><span class="w">        </span><span class="cm">/* &#39;QLGL&#39; = 0x4C47514C */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">version_major</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">version_minor</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">header_size</span><span class="p">;</span><span class="w">  </span><span class="cm">/* = 32，加载器只读这部分做兼容判断 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">section_count</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">file_size</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">crc32</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 0 = 未启用 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">type_count</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">flags</span><span class="p">;</span><span class="w">        </span><span class="cm">/* bit0: 小端  bit1: 含字体  bit2: 含图片 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLBinHeader</span><span class="p">;</span>
+</code></pre></div>
+
+<h3 id="113-tag">11.3 段表项与段 tag</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">tag</span><span class="p">;</span><span class="w">    </span><span class="cm">/* &#39;META&#39; &#39;STRT&#39; &#39;TYPE&#39; &#39;PROP&#39; &#39;EVNT&#39; &#39;TREE&#39; &#39;STYL&#39; &#39;FONT&#39; &#39;IMGS&#39; */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">offset</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">item_count</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLBinSection</span><span class="p">;</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>tag</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>META</code></td>
+<td>源文件路径、构建时间、qcssc 版本（可裁剪）</td>
+</tr>
+<tr>
+<td><code>STRT</code></td>
+<td>字符串池：<code>u32 count</code> + <code>u32 offsets[]</code> + UTF-8 数据（去重）</td>
+</tr>
+<tr>
+<td><code>TYPE</code></td>
+<td>用到的类 id 列表（与 <code>qltype_gen.h</code> 交叉校验）</td>
+</tr>
+<tr>
+<td><code>PROP</code></td>
+<td>属性值扁平池：<code>tag(u8) + payload</code>，wire 编码见下</td>
+</tr>
+<tr>
+<td><code>EVNT</code></td>
+<td>事件绑定：节点索引 + 事件 id + 处理函数名（字符串池索引，绑定层解析）</td>
+</tr>
+<tr>
+<td><code>TREE</code></td>
+<td>节点数组（定长，见下）</td>
+</tr>
+<tr>
+<td><code>STYL</code></td>
+<td>每个节点的基础样式 + 状态覆盖表</td>
+</tr>
+<tr>
+<td><code>FONT</code></td>
+<td>字形表：bitmap 或矢量路径</td>
+</tr>
+<tr>
+<td><code>IMGS</code></td>
+<td>图片：格式字节 + w/h + 像素数据（可选 RLE）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="114-24">11.4 节点记录（定长 24 字节）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">type_id</span><span class="p">;</span><span class="w">       </span><span class="cm">/* QLType，与运行时一致 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">parent</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 0xFFFF = 根 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">first_child</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">style_index</span><span class="p">;</span><span class="w">   </span><span class="cm">/* STYL 段下标 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">event_index</span><span class="p">;</span><span class="w">   </span><span class="cm">/* EVNT 段下标，0xFFFF = 无 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">prop_count</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">prop_off</span><span class="p">;</span><span class="w">      </span><span class="cm">/* PROP 段字节偏移 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">text_off</span><span class="p">;</span><span class="w">      </span><span class="cm">/* STRT 段偏移；0xFFFFFFFF = 无文本 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLBinNode</span><span class="p">;</span>
+</code></pre></div>
+
+<h3 id="115-wire">11.5 wire 值编码</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_WIRE_INT8</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_WIRE_INT16</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_WIRE_INT32</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_WIRE_FIXED</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w">   </span><span class="cm">/* Q16.16 */</span>
+<span class="w">    </span><span class="n">QL_WIRE_COLOR</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w">   </span><span class="cm">/* RGB565 / RGB888 由头部 flags 决定 */</span>
+<span class="w">    </span><span class="n">QL_WIRE_STR</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w">   </span><span class="cm">/* u32 STRT 偏移 */</span>
+<span class="w">    </span><span class="n">QL_WIRE_BOOL</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLWireTag</span><span class="p">;</span>
+</code></pre></div>
+
+<p>统一 <code>u8 tag</code> + 变长 payload（<code>INT8</code> 省 3 字节，MCU 上重要）。</p>
+<h3 id="116">11.6 加载器</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/html/qlbin.c */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_bin_load</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">**</span><span class="n">out_root</span><span class="p">);</span>
+</code></pre></div>
+
+<p>校验顺序：<code>magic</code> → <code>header_size &gt;= 32</code> → <code>version_major == QLGL_BIN_MAJOR</code> → <code>crc32</code>（若启用）→ <code>type_count</code> 与本地 <code>QL_TYPE_COUNT</code> 交叉验证（<strong>不匹配直接拒绝</strong>，避免属性错位的静默错乱）。</p>
+<p>零拷贝原则：字符串、字体位图、图片<strong>直接指向文件缓冲</strong>，不复制（因此缓冲生命周期必须长于对象树，用 <code>ql_bin_attach()</code> 记录所有权）。</p>
+<h3 id="117-mcu">11.7 纯文本 / MCU 直读</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>编译开关</th>
+<th>体积</th>
+<th>启动开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>纯二进制 + 运行时 loader</td>
+<td><code>QL_CFG_BINARY_LOADER=1</code></td>
+<td>最小数据 + loader 代码</td>
+<td>解析段表（≈ 微秒级）</td>
+</tr>
+<tr>
+<td>二进制转 C 数组（<code>emit_c</code>）</td>
+<td><code>QL_CFG_BINARY_LOADER=0</code></td>
+<td>数据略大（C 语法）</td>
+<td>0（直接遍历数组）</td>
+</tr>
+<tr>
+<td>运行时解析 HTML/CSS</td>
+<td><code>QL_CFG_HTML_RUNTIME=1</code></td>
+<td>需要 2~3 倍代码</td>
+<td>高（不推荐在 MCU 用）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-abi">12. 语言绑定 ABI</h2>
+<p>对外只暴露 C ABI，三条规则：</p>
+<ol>
+<li><strong>结构体只增不改</strong>，每个对外结构体首部带 <code>uint16_t struct_size</code>；</li>
+<li><strong>属性/事件 id 永久稳定</strong>（§3.2 生成器保证），名字 → id 的映射表随库发布；</li>
+<li><strong>回调签名固定为 <code>void (*)(QLObject *, const QLEventArgs *)</code></strong>，参数打包（§5.2）保证可被 JS/Py 反射成数组。</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 绑定层只需要这三个入口 */</span>
+<span class="n">QLValue</span><span class="w"> </span><span class="nf">ql_object_get_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">o</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">p</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">    </span><span class="nf">ql_object_set_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">o</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_connect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">o</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_cb_t</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+</code></pre></div>
+
+<p>字符串转换只在绑定层做（<code>QLStr</code> ↔ <code>JSString</code>），核心库永不 <code>strdup</code>。</p>
+<hr />
+<h2 id="13_1">13. 目录结构与构建</h2>
+<div class="highlight"><pre><span></span><code>qlgl/
+├── CMakeLists.txt
+├── include/qlgl/            # 对外头文件（唯一安装目录）
+│   ├── qlgl.h  qlobject.h  qlclass.h  qlprop.h  qlevent.h  qlstr.h
+│   └── qlwidget.h qllabel.h ...
+├── src/
+│   ├── core/     qlobject.c qlclass.c qlprop.c qlevent.c qlstr.c qlmem.c qllog.c
+│   ├── draw/     qldraw.c qlfill.c qltext.c qlfont.c qldirty.c
+│   ├── layout/   qlbox.c qllayout.c
+│   ├── style/    qlstyle.c
+│   ├── widget/   qlwidget.c qllabel.c qlbutton.c
+│   ├── html/     qlbin.c qlhtml.c qlcss.c          # 可按 QL_CFG_* 裁剪
+│   ├── port/     qldisp_fb.c qlinput_touch.c
+│   └── generated/ qltype_gen.h qlclass_gen.c qlprop_gen.h qlevent_gen.h
+├── tools/
+│   ├── qlgen/                # 扫描源码生成 id 表；--check 用于 CI
+│   └── qcssc/                # HTML+CSS → 二进制（§10）
+├── tests/
+│   ├── unit/                 # 每个 core 文件一个测试
+│   └── golden/               # 二进制格式 round-trip 黄金样例
+└── doc/
+</code></pre></div>
+
+<p><code>CMakeLists.txt</code> 修正要点（❗现状全部不满足）：</p>
+<div class="highlight"><pre><span></span><code><span class="nb">include_directories</span><span class="p">(</span><span class="o">${</span><span class="nv">PROJECT_SOURCE_DIR</span><span class="o">}</span><span class="s">/include</span><span class="w"> </span><span class="o">${</span><span class="nv">PROJECT_SOURCE_DIR</span><span class="o">}</span><span class="s">/src</span><span class="p">)</span>
+<span class="nb">file</span><span class="p">(</span><span class="s">GLOB_RECURSE</span><span class="w"> </span><span class="s">SRC_FILES</span><span class="w"> </span><span class="s">CONFIGURE_DEPENDS</span><span class="w"> </span><span class="s">src/*.c</span><span class="p">)</span><span class="w">   </span><span class="c"># 递归，覆盖 draw/ 等子目录</span>
+<span class="nb">file</span><span class="p">(</span><span class="s">GLOB_RECURSE</span><span class="w"> </span><span class="s">HDR_FILES</span><span class="w"> </span><span class="s">CONFIGURE_DEPENDS</span><span class="w"> </span><span class="s">include/qlgl/*.h</span><span class="p">)</span>
+<span class="nb">add_library</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">STATIC</span><span class="w"> </span><span class="o">${</span><span class="nv">SRC_FILES</span><span class="o">}</span><span class="p">)</span>
+<span class="nb">target_compile_features</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">c_std_11</span><span class="p">)</span>
+<span class="nb">target_compile_options</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">-Wall</span><span class="w"> </span><span class="s">-Wextra</span><span class="p">)</span>
+<span class="c"># 示例程序与测试分离，doc/*.txt 不再进编译输入</span>
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">qlgl_demo</span><span class="w"> </span><span class="s">examples/main.c</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">qlgl_demo</span><span class="w"> </span><span class="s">qlgl</span><span class="p">)</span>
+</code></pre></div>
+
+<hr />
+<h2 id="14">14. 性能预算与验证方法</h2>
+<p>目标硬件基线：120~200 MHz Cortex-M4（无 FPU 假设）+ 320×240 RGB565 单缓冲；PC 端 x86-64 作对照。</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>预算（M4@168MHz）</th>
+<th>验证方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_object_new</code> + <code>unref</code></td>
+<td>≤ 1.5 µs</td>
+<td>循环 10 万次计时</td>
+</tr>
+<tr>
+<td><code>set_property</code>（深 3 层）</td>
+<td>≤ 120 ns</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>ql_emit</code>（1 个连接，无冒泡）</td>
+<td>≤ 200 ns</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>全屏 <code>fill_rect</code> 320×240</td>
+<td>≤ 4 ms</td>
+<td>单帧计时</td>
+</tr>
+<tr>
+<td>100 个文本节点重绘</td>
+<td>≤ 16 ms（60fps 边界）</td>
+<td>冻结帧计时</td>
+</tr>
+<tr>
+<td><code>.text</code> + <code>.rodata</code>（最小配置）</td>
+<td>≤ 48 KB ⚠️</td>
+<td><code>size</code></td>
+</tr>
+</tbody>
+</table>
+<p>验证规则：<strong>没有基准数据就不许在文档里写"略高于 LVGL"</strong>——这一条建议直接写进规范的下一次修订。</p>
+<hr />
+<h2 id="15-p0">15. 当前缺陷 → 目标实现对照表（P0）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺陷</th>
+<th>精确修复</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>构建失败（<code>include/</code> 不存在、<code>src/draw</code> 未编译）</td>
+<td>见 §13 CMake 片段</td>
+<td><code>cmake -B build &amp;&amp; cmake --build build</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>free(self)</code> 非法释放</td>
+<td><code>free((char*)self - self-&gt;klass-&gt;priv_total)</code></td>
+<td>ASan 用例 <code>new→unref</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>私有区前缀和膨胀</td>
+<td><code>priv_offset</code> / <code>priv_total</code> 注册期算好，<code>ql_priv()</code> O(1)</td>
+<td>5 层继承断言 <code>priv_total == Σ own</code>（✅原型已验证）</td>
+</tr>
+<tr>
+<td>4</td>
+<td>init 派发 <code>class_table[i]</code> 类型混淆</td>
+<td>用 <code>klass-&gt;parent</code> 走链，父→子调用（§3.3）</td>
+<td>注册 4 个类断言各 <code>init</code> 恰好 1 次</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>class_table[0]</code> 悬垂（栈上局部）</td>
+<td>根类进 <code>ql_class_gen.c</code> 静态表；<code>ql_class_init_all()</code></td>
+<td>ASan</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>QL_EMIT(obj,ev)</code> 无法编译</td>
+<td>显式 <code>QL_EMIT_0..4</code>，参数进 <code>QLEventArgs</code></td>
+<td>单元测试 0/1/2/3/4 参数</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>strdup</code> 依赖 POSIX</td>
+<td>自写 <code>ql_str_dup()</code>（<code>ql_mem_alloc</code> + <code>memcpy</code>）</td>
+<td><code>-std=c11 -pedantic</code> 无警告</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>QLType = unsigned long</code></td>
+<td><code>typedef uint32_t QLType</code></td>
+<td><code>-m32</code> 交叉编译断言 <code>sizeof==4</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>继承深度无边界检查</td>
+<td><code>QL_CFG_MAX_INHERIT_DEPTH</code>，注册期拒绝超深类</td>
+<td>构造 9 层类断言注册失败</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>emitting : 1</code> 位域</td>
+<td>改 <code>uint16_t flags</code> + 宏</td>
+<td><code>offsetof</code> 断言</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>ql_object_new</code> 未检查 <code>calloc</code></td>
+<td>返回 <code>NULL</code> 并让调用方上报 <code>QL_ERR_NOMEM</code></td>
+<td>注入失败分配器测试</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>QL_EVENT_BUBBLE</code> 无法实现</td>
+<td><code>QLObject.parent</code> + 冒泡（§5.5）</td>
+<td>三层链断言回调次数</td>
+</tr>
+<tr>
+<td>13</td>
+<td>事件枚举宏笔误 / <code>EVENT_END</code> 未定义</td>
+<td>§5.3</td>
+<td>编译期断言</td>
+</tr>
+<tr>
+<td>14</td>
+<td>属性区间 <code>&gt;</code>/<code>&lt;</code> 使 START 不可用</td>
+<td>闭区间 + <code>SPACE_END+1</code>（§4.1）</td>
+<td>边界值测试</td>
+</tr>
+</tbody>
+</table>
+<p>顺序建议：1 → 2 → 5 → 4 → 6 → 8 → 3 → 其余。前六项一天内可完成，且能立刻让现有 <code>main.c</code> 示例在 ASan 下干净通过。</p>
+<hr />
+<h2 id="16">16. 分阶段实施与验收</h2>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>验收标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P0（0.5~1 天）</td>
+<td>§15 表全部 14 项</td>
+<td>ASan + UBSan 全绿；<code>-Wall -Wextra</code> 零警告</td>
+</tr>
+<tr>
+<td>P1（≈1 周）</td>
+<td>对象树、连接池、<code>QLStr</code>、日志、分配器钩子、<code>qlgen</code> 生成器</td>
+<td>单测覆盖对象/属性/事件三模块；<code>qlgen --check</code> 进 CI</td>
+</tr>
+<tr>
+<td>P2（2~4 周）</td>
+<td>display 驱动 + 脏矩形 + 盒模型 + 文本渲染</td>
+<td>能在 320×240 上显示一段中文，帧率 ≥ 30fps（PC 端）</td>
+</tr>
+<tr>
+<td>P3（4~8 周）</td>
+<td><code>qcssc</code> 子集 + 二进制 v1 + loader + golden 测试</td>
+<td>同一 HTML 在 PC/板子上像素级一致（±0 字节）；round-trip 测试</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>基准、语言绑定、内存预算回归</td>
+<td>§14 全部达标，数据入 <code>doc/bench.md</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>阶段门禁</strong>：每阶段结束必须同时产出"测试 + 基准数据"，否则不进入下一阶段——这是从当前代码"能跑但靠巧合"走到可交付的唯一办法。</p>
+<hr />
+<h2 id="17-5">17. 需要你拍板的 5 个决策</h2>
+<ol>
+<li><strong>事件参数上限</strong>：定为 4 个（本文默认）还是 8 个？影响每对象内存与绑定复杂度。</li>
+<li><strong><code>float</code> 是否允许出现在属性值里</strong>：本文统一 <code>Q16.16</code> 定点；若目标板有 FPU 可放宽（但会破坏 32/64 位一致性）。</li>
+<li><strong>字体格式</strong>：只做位图（体积小、无依赖）还是同时支持矢量路径（美观、CPU 高）？</li>
+<li><strong><code>QL_CFG_*</code> 的默认目标</strong>：默认面向 MPU（功能全开）还是 MCU（最省）？影响第一次基准的基线。</li>
+<li><strong>是否接受"不支持项构建期报错"</strong>：这会限制 <code>qcssc</code> 的宽容度，但能避免静默错位。</li>
+</ol>
+<hr />
+<h2 id="a">附录 A：本文中已验证与待验证清单</h2>
+<table>
+<thead>
+<tr>
+<th>结论</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>私有区布局公式（<code>priv_offset</code>/<code>priv_total</code>、<code>ql_priv</code>）在 5 层继承下零浪费零重叠</td>
+<td>✅ 原型 + ASan</td>
+</tr>
+<tr>
+<td><code>free(self)</code> 非法释放导致堆破坏</td>
+<td>✅ ASan 复现</td>
+</tr>
+<tr>
+<td>init 派发类型混淆（对 <code>QLButton</code> 调 <code>QLExtra.init</code>）</td>
+<td>✅ 复现（4 类场景 <code>extra_init</code> 计数 = 2）</td>
+</tr>
+<tr>
+<td>0 参数 <code>QL_EMIT</code> 编译失败</td>
+<td>✅ 编译复现</td>
+</tr>
+<tr>
+<td>当前 QLLabel 对象分配 80 字节（需求 64）</td>
+<td>✅ 实测</td>
+</tr>
+<tr>
+<td>5 层当前实现需 240 字节（目标 80）</td>
+<td>✅ 由公式推算并实测 2 层</td>
+</tr>
+<tr>
+<td>二进制格式体积/加载耗时</td>
+<td>⚠️ 待 P3 实测</td>
+</tr>
+<tr>
+<td>布局与绘制性能预算</td>
+<td>⚠️ 待 P2 实测</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="bp0-v01">附录 B：P0 落地后与 v0.1 设计的差异</h2>
+<p>对象系统已经按本文实现并全部通过测试，落地过程中有 8 处与上文草案不同，后续以本附录为准：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>上文草案</th>
+<th>实际实现</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>§5.2 <code>QL_EMIT_2(obj, ev, t1, a1, t2, a2)</code> 用类型 token</td>
+<td>改为"参数构造器 + 显式个数"：<code>QL_EMIT_2(obj, ev, ql_args_int, 1, ql_args_string, "hi")</code></td>
+<td>类型 token 无法表达复合类型，且 0 参数与奇数参数时 token 计数必错</td>
+</tr>
+<tr>
+<td>2</td>
+<td>§4.2 <code>void ql_object_set_property</code></td>
+<td><code>ql_err_t ql_object_set_property</code></td>
+<td>调用方需要知道"id 越界/类型不符/无人处理"，返回 void 只能靠日志</td>
+</tr>
+<tr>
+<td>3</td>
+<td>§2.4 只有 <code>ql_object_set_parent</code></td>
+<td>增加 <code>ql_object_add_child(parent, child)</code></td>
+<td>父对象持有子引用，调用方还要自己 unref 一次，极易漏；便捷函数把两步合一</td>
+</tr>
+<tr>
+<td>4</td>
+<td>§4.1 <code>*_PROPERTY_START</code> 即第一个属性</td>
+<td><code>START</code>/<code>END</code> 是区间哨兵，第一个自定义属性是 <code>START + 1</code></td>
+<td>枚举首项带显式初值后，后续项必然 +1；保留哨兵让"零属性类"也能占位</td>
+</tr>
+<tr>
+<td>5</td>
+<td>§3.2 生成文件只有 <code>src/generated/qlclass_gen.c</code></td>
+<td>同时生成 <code>include/qlgl/qltype_gen.h</code>（公开 id 枚举）</td>
+<td>id 是公开契约，使用者需要 <code>QL_TYPE_LABEL</code> 这类常量</td>
+</tr>
+<tr>
+<td>6</td>
+<td>§3.2 <code>ql_class_register(k, parent)</code> 只用于内置类</td>
+<td>内置类由生成表注册，公开 API 同时支持动态注册（id 从 <code>QL_TYPE_COUNT</code> 起）</td>
+<td>测试与插件需要在不改源码的前提下定义类</td>
+</tr>
+<tr>
+<td>7</td>
+<td>§5.5 默认处理未明确范围</td>
+<td>默认处理<strong>只在事件目标节点</strong>、且事件带 <code>QL_EVENT_FLAG_DEFAULT</code> 时调用</td>
+<td>否则一次冒泡会在每个祖先节点都跑默认逻辑</td>
+</tr>
+<tr>
+<td>8</td>
+<td>日志文本未约定语言</td>
+<td>日志<strong>一律英文</strong>，注释与文档中文</td>
+<td>便于 grep 与不同终端/环境的编码兼容</td>
+</tr>
+</tbody>
+</table>
+<p>另外两处实现细节，写在这里避免再次踩坑：</p>
+<ul>
+<li><code>QL_DECLARE</code> / <code>QL_DEFINE_WITH_PRIVATE</code> <strong>自带分号</strong>，调用处不要加分号；</li>
+<li>宏参数 <code>name</code> 会替换掉结构体字段 <code>.name</code> 这个 token，所以宏里用 <code>QL_CLASS_FIELD_NAME</code> 间接展开。</li>
+</ul>
+<hr />
+<h2 id="cv01">附录 C：绘制系统落地说明（v0.1）</h2>
+<p><code>src/draw/</code> 与 <code>src/widget/</code> 已实现并通过测试，与 §7 草案的差异如下，后续以本附录为准：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>草案</th>
+<th>实际实现</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>§7.2 <code>flush(driver, const QLArea *area)</code>，<code>QLArea</code> 带行缓冲指针</td>
+<td><code>flush(driver, QLRect area)</code>，驱动持有整块 <code>framebuffer</code> + <code>stride</code></td>
+<td>直绘一屏显存，测试可直接读像素；行缓冲后端后续再加，接口只需换 flush 实现</td>
+</tr>
+<tr>
+<td>2</td>
+<td>§7.4 原语以 <code>QLDrawCtx*</code> 为第一参数</td>
+<td>改为 <code>QLCanvas*</code>，并新增 <code>fill_round_rect</code> / <code>stroke_rect</code> / 线条</td>
+<td><code>QLDrawCtx</code> 职责与 <code>QLCanvas</code> 重复，合并减少一层</td>
+</tr>
+<tr>
+<td>3</td>
+<td>§7.3 "属性变化 → DIRTY_LAYOUT → 布局趟 → 比较新旧矩形"</td>
+<td>v0.1 无布局系统：属性变化直接按控件绝对矩形打脏</td>
+<td>绝对定位阶段不需要两趟布局；布局系统接入时再引入新旧矩形比较</td>
+</tr>
+<tr>
+<td>4</td>
+<td>未说明控件绘制虚函数放哪</td>
+<td>放"类型 id → 绘制函数"表（<code>ql_widget_class_set_draw</code>），<strong>不放类结构体</strong></td>
+<td>类结构体逐层嵌套，派生类加字段后从 <code>QLObjectClass*</code> 反查字段偏移不确定</td>
+</tr>
+<tr>
+<td>5</td>
+<td>§7.3 <code>QL_CFG_ANTIALIAS</code> 开关</td>
+<td>未实现抗锯齿，配置项暂未引入</td>
+<td>等文本/字形系统一起做，避免留下无效开关</td>
+</tr>
+<tr>
+<td>6</td>
+<td>未说明控件挂接时的重绘</td>
+<td>对象层提供 <code>ql_object_set_tree_hook</code>，渲染层注册后自动打脏</td>
+<td>对象层不依赖绘制层，用钩子解耦</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="dlinux-v01">附录 D：Linux 窗口后端（v0.1）</h2>
+<p><code>src/port/qldisp_x11.c</code> 实现了第一个真实平台后端，与 §7 草案的差异：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>草案</th>
+<th>实际实现</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>抽象"平台层 <code>qldisp.h</code>"</td>
+<td>平台后端放在 <code>src/port/</code>，接口在 <code>include/qlgl/qldisp_x11.h</code>，由 CMake 的 <code>QLGL_BUILD_X11</code> 控制</td>
+<td>后端可能依赖第三方头文件，不能污染主头文件</td>
+</tr>
+<tr>
+<td>2</td>
+<td>未约定帧缓冲归属</td>
+<td>X11 后端让 <strong>XImage 的 <code>data</code> 指向渲染器帧缓冲</strong></td>
+<td>绘制与上屏零拷贝；销毁时必须先把 <code>image-&gt;data</code> 置 NULL 再 <code>XDestroyImage</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>未约定像素格式协商</td>
+<td><code>QL_COLOR_FORMAT_AUTO</code> + 按视觉掩码自动选格式（32/24bpp、16bpp RGB565）</td>
+<td>写死格式会在部分 X 服务器上出现颜色错乱</td>
+</tr>
+<tr>
+<td>4</td>
+<td>未约定窗口事件</td>
+<td><code>ql_disp_x11_poll()</code> 返回是否继续；<code>Expose</code> 自动整屏打脏；关闭按钮/Esc/q 退出</td>
+<td>事件循环留在应用侧，库不接管 main</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">落地时发现并对对象系统做的修正</h3>
+<p><code>QLWidget</code> 的私有区只有 4 字节（3 层继承时 <code>priv_total = 36</code>），
+导致 <code>self = mem + priv_total</code> 落在 4 字节边界上 —— UBSan 报
+<code>member access within misaligned address for type 'struct QLObject'</code>。</p>
+<p>修正：<code>ql_class_register</code> 把每层的 <code>own_private_size</code> <strong>向上对齐到 <code>_Alignof(max_align_t)</code></strong>，
+再累加成 <code>priv_total</code>。<code>test_object_inherit.c</code> 现在对实例与各层私有区都做了对齐断言。</p>
+<hr />
+<h2 id="ev01">附录 E：字体/文本系统（v0.1）</h2>
+<h3 id="_2">与草案的差异</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>草案</th>
+<th>实际实现</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>§7.4 <code>ql_draw_text(ctx, clip, QLStr*, QLFont*, ...)</code></td>
+<td><code>ql_canvas_draw_text(canvas, font, text, len, box, color, align)</code>，<code>QLStr</code> 由调用方传 <code>data/len</code></td>
+<td>画布层不依赖字符串对象，标签负责把 <code>QLStr</code> 拆成指针+长度</td>
+</tr>
+<tr>
+<td>2</td>
+<td>§6.2 字符串双策略</td>
+<td>已实现为 <code>QL_STR_COMPACT</code> / <code>QL_STR_AMORTIZED</code>，<strong>每个字符串独立切换</strong></td>
+<td>同一固件里不同控件需求不同，编译期二选一太死板</td>
+</tr>
+<tr>
+<td>3</td>
+<td>未约定字体来源</td>
+<td><code>tools/qlfontgen</code> 从 DejaVu Sans Mono 生成 12/16px 4bpp 字形（约 6.8KB）</td>
+<td>手写位图不可维护；用脚本生成可随时改字号/字符集</td>
+</tr>
+<tr>
+<td>4</td>
+<td>§7.3 提到 <code>QL_CFG_ANTIALIAS</code></td>
+<td>抗锯齿与 4bpp 字形天然一体，没有独立开关</td>
+<td>覆盖率就是 alpha，关掉它只能靠换 1bpp 字体，不需要额外配置</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_3">落地时发现并修复的缺陷</h3>
+<table>
+<thead>
+<tr>
+<th>缺陷</th>
+<th>现象</th>
+<th>修复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_font_measure_text</code> 循环条件写错</td>
+<td>多行/单行宽度恒为 0</td>
+<td>改为循环内判断"是否到达结尾"，见 <code>src/text/qlfont.c</code></td>
+</tr>
+<tr>
+<td><code>ensure_capacity</code> 与 <code>ql_str_set_n</code> 互相调用</td>
+<td>只读字面量转自有内存时无限递归 → 栈溢出</td>
+<td><code>ensure_capacity</code> 内部完成"分配+拷贝"，不再回调 <code>ql_str_set_n</code></td>
+</tr>
+<tr>
+<td>compact 策略不缩容</td>
+<td><code>set</code> 更短内容后容量不变</td>
+<td>明确两种策略的语义：compact 要求"容量正好"，amortized 只要求"够用"</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="fwayland-v01">附录 F：Wayland 后端（v0.1）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>话题</th>
+<th>实现</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>协议来源</td>
+<td><code>src/port/protocols/xdg-shell.xml</code> 随仓库提供，构建期用 <code>wayland-scanner</code> 生成</td>
+<td>系统可能没装 wayland-protocols，但 <code>wayland-scanner</code> 通常随 wayland 一起装</td>
+</tr>
+<tr>
+<td>2</td>
+<td>缓冲策略</td>
+<td>渲染器写持久缓冲；2 个 <code>wl_buffer</code> 轮换；flush 时把脏区逐行拷进当前 shm 缓冲区</td>
+<td>Wayland 要求客户端 attach 完整缓冲区，无法像 X11 那样把 XImage 当帧缓冲</td>
+</tr>
+<tr>
+<td>3</td>
+<td>提交合并</td>
+<td>新增驱动可选回调 <code>flush_done</code>，一帧只 <code>attach + damage + commit</code> 一次</td>
+<td>一帧有多个脏区时会提交多次，合成器负担与功耗都会上升</td>
+</tr>
+<tr>
+<td>4</td>
+<td>缓冲区忙</td>
+<td>两个都在用时跳过本帧（<code>skip_count++</code>）而不是等待</td>
+<td>等待会让 UI 卡顿；跳过只丢一帧画面，下次仍是最新内容</td>
+</tr>
+<tr>
+<td>5</td>
+<td>键盘</td>
+<td>直接读 evdev 键码（Esc=1、q=16），不引入 xkbcommon</td>
+<td>减少依赖；v0.1 只需要"退出"两个键</td>
+</tr>
+<tr>
+<td>6</td>
+<td>格式</td>
+<td>只支持 ARGB8888（<code>WL_SHM_FORMAT_XRGB8888</code>）</td>
+<td>其他格式在多数合成器上不被接受，或需要额外协商</td>
+</tr>
+</tbody>
+</table>
+<div class='pager'>
+<a href='../design/图像管线设计.html'><span class='dir'>上一页</span>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='next' href='../design/Web兼容设计.html'><span class='dir'>下一页</span>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

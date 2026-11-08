@@ -175,6 +175,12 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/09_scroll.html'>滚动</a>
 <a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
 <a href='../../tutorial/11_input.html'>输入控件</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../../design/bench.html'>性能基线（bench.md）</a>
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
@@ -996,7 +1002,7 @@ P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<cod
 <td>5（<code>img picture source map area</code>）</td>
 <td>✅</td>
 <td>❌</td>
-<td>有界解码器（PNG/BMP/QOI）+ 缩放 + 热区</td>
+<td>自有解码器（BMP/QOI/PNG）+ 可选平台后端（PC 的 JPEG/GIF）+ <code>object-fit</code> + 热区。设计见<a href="../../design/图像管线设计.html">图像管线设计</a></td>
 </tr>
 <tr>
 <td><code>WIDGET</code></td>
@@ -1186,9 +1192,9 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 </tr>
 <tr>
 <td>P3</td>
-<td><code>IMAGE</code> 包：PNG/BMP/QOI 有界解码 + <code>object-fit</code> + <code>map</code>/<code>area</code> 热区</td>
+<td><code>IMAGE</code> 包：BMP/QOI/PNG 有界解码 + <code>object-fit</code> + <code>map</code>/<code>area</code> 热区<br>（JPEG/GIF 走构建期转码或平台后端，见<a href="../../design/图像管线设计.html">图像管线设计</a>）</td>
 <td>84</td>
-<td>3–4 天</td>
+<td>11–14 天（拆成 P3a–P3g）</td>
 </tr>
 <tr>
 <td>P4</td>

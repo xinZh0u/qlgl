@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>性能基线（bench.md） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item active' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="benchmd">性能基线（bench.md）</h1>
+<blockquote>
+<p>规则：<strong>没有数字的优化不算优化</strong>。每次改动后重跑本文命令，超标即视为回归。
+机器：Linux / Mesa / x86-64；会话 Wayland（GL 走 XWayland）。</p>
+</blockquote>
+<h2 id="_1">复现命令</h2>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>-j
+<span class="c1"># 注意：性能数字用 Release 构建记录（Debug 下逐像素浮点会慢 3 倍以上）</span>
+cmake<span class="w"> </span>-B<span class="w"> </span>build-rel<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>build-rel<span class="w"> </span>-j
+./build-rel/example_bench_fps<span class="w"> </span><span class="m">300</span><span class="w">      </span><span class="c1"># 多分辨率 × GL/CPU</span>
+./build/example_gl_window<span class="w"> </span>--bench<span class="w"> </span><span class="m">600</span><span class="w">  </span><span class="c1"># 窗口无 vsync 上限</span>
+./build/example_gl_window<span class="w"> </span>--frames<span class="w"> </span><span class="m">180</span><span class="w"> </span><span class="c1"># 窗口 vsync 模式</span>
+</code></pre></div>
+
+<h2 id="780-1-draw-callrelease">单帧开销（780 顶点，1 draw call，<strong>Release 构建</strong>）</h2>
+<blockquote>
+<p>顶点数 552 → 570 → 780，是示例页内容在增长（中文字体 → 渐变/阴影 → flex 布局）。
+跨版本比绝对值意义不大，看"每像素成本"和"是否仍满足目标"。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>分辨率</th>
+<th>GL CPU 提交</th>
+<th>GL 含 GPU 完成</th>
+<th>CPU 光栅（含阴影）</th>
+<th>M4 之前</th>
+<th>提升</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>320×240</td>
+<td>0.025 ms</td>
+<td>0.146 ms</td>
+<td><strong>0.296 ms</strong></td>
+<td>0.696 ms</td>
+<td>2.35×</td>
+</tr>
+<tr>
+<td>800×480</td>
+<td>0.025 ms</td>
+<td>0.301 ms</td>
+<td><strong>0.697 ms</strong></td>
+<td>1.854 ms</td>
+<td>2.66×</td>
+</tr>
+<tr>
+<td>1280×720</td>
+<td>0.027 ms</td>
+<td>0.455 ms</td>
+<td><strong>1.370 ms</strong></td>
+<td>3.169 ms</td>
+<td>2.31×</td>
+</tr>
+<tr>
+<td>1920×1080</td>
+<td>0.030 ms</td>
+<td>0.738 ms</td>
+<td><strong>2.191 ms</strong></td>
+<td>4.929 ms</td>
+<td>2.25×</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>"无阴影"列已省略：现在示例页有 3 处阴影，去掉它们不代表真实场景。</p>
+</blockquote>
+<h3 id="example_bench_ui211-480360-release">节点级基准（<code>example_bench_ui</code>，211 节点 / 480×360 / Release）</h3>
+<div class="highlight"><pre><span></span><code>./build-rel/example_bench_ui<span class="w"> </span>--iter<span class="w"> </span><span class="m">3000</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>M4 之前</th>
+<th>M4 之后</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>layout（全树）</td>
+<td>0.134 ms</td>
+<td><strong>0.037 ms</strong></td>
+<td>≤0.1 ms ✅</td>
+</tr>
+<tr>
+<td>render（全量 CPU）</td>
+<td>0.975 ms</td>
+<td><strong>0.348 ms</strong></td>
+<td>见下</td>
+</tr>
+<tr>
+<td>render（80×60 局部）</td>
+<td>0.048 ms</td>
+<td><strong>0.016 ms</strong></td>
+<td>全量的 4.5%</td>
+</tr>
+<tr>
+<td>hit_test</td>
+<td>0.001 ms</td>
+<td><strong>0.001 ms</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>"100 节点重绘 ≤0.3 ms" 的验收口径</strong>：该页 211 节点全量重绘 0.346 ms，
+归一化 <strong>0.166 ms / 100 节点</strong>，已达标 1.8×。<code>example_bench_ui</code> 直接打印这个
+归一化值（并按它判定 <code>≤0.3/百节点</code>），不要拿 211 节点的绝对值去对 100 节点的阈值。</p>
+<p>阴影占该页 render 的 <strong>54%</strong>（0.186 / 0.346）；其余是 100 个圆角填充 + 100 段描边 +
+100 段文本 ≈ 0.16 ms。</p>
+<h3 id="_2">软阴影的真实成本（重要）</h3>
+<p>阴影在 CPU 上按<strong>九宫格</strong>分解（见上表）：上/下边带逐行、左/右边带逐列，
+只有四个 <code>(rad+pad)²</code> 的角块是逐像素浮点 SDF + smoothstep。
+所以成本 ≈ <code>周长 × blur × 行/列填充常数 + 4 × (rad+blur)² × ~30 cycles</code>，
+不再是"整圈面积 × 70 cycles"。</p>
+<p>有阴影的实测（<code>example_bench_fps</code>，示例页 3 处阴影）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>CPU 光栅</th>
+<th>其中阴影</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1080p（3 个 1900px 宽面板 + blur 10，压力测试）</td>
+<td>2.191 ms</td>
+<td>≈ 1.2 ms</td>
+</tr>
+<tr>
+<td>320×240（3 个 296px 宽面板 + blur 10，真实手机尺寸）</td>
+<td>0.296 ms</td>
+<td>≈ 0.16 ms</td>
+</tr>
+<tr>
+<td>GPU 后端（任何尺寸）</td>
+<td>—</td>
+<td><strong>≈ 0</strong>（SDF 在片元着色器里，仍是 1 draw call）</td>
+</tr>
+</tbody>
+</table>
+<p>结论：</p>
+<ul>
+<li><strong>PC 默认走 GPU，阴影几乎免费</strong>；CPU 路径只在无 GPU / 离屏导出时用到；</li>
+<li>两条目标仍满足（1080p ≤6ms、320×240 ≤1.5ms），且余量已到 2.7× / 5×；</li>
+<li><strong>MCU 仍不应使用实时 SDF 阴影</strong>：Cortex-M4 @180MHz 的 SRAM 写带宽约为桌面 DDR 的
+  1/50~1/100，粗估 1080p 那档要 60 ms 级。MCU 走 M5.5 能力矩阵里的
+  <strong>9-slice 预烘焙阴影</strong>（2KB 贴图 + alpha blit）。</li>
+</ul>
+<h3 id="m4">M4 做了什么（按贡献排序）</h3>
+<table>
+<thead>
+<tr>
+<th>改动</th>
+<th>作用</th>
+<th>收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>半透明行混合 SIMD</strong>：<code>fill_row</code> 的 alpha 路径把行指针与格式 switch 提到循环外，ARGB8888 走 SSE2 4 像素/批（<code>unpack → mullo → mulhi(32897) → srli 7 → packus</code>）</td>
+<td>软阴影、渐变、圆角覆盖都是整行同 alpha，原来每像素重调一次 <code>put_px</code></td>
+<td>阴影 0.692 → 0.280 ms/100 次</td>
+</tr>
+<tr>
+<td><strong>阴影 9-slice 分解</strong></td>
+<td>上/下边带逐行、左/右边带逐列、只有四个角逐像素</td>
+<td>1080p 4.93 → 2.93 ms</td>
+</tr>
+<tr>
+<td><strong>角区四镜像</strong>：覆盖率只取决于 <code>(qx, qy)</code>，四个角互为镜像 → 算一次写四处</td>
+<td>角区 sqrt+三次多项式的工作量降到 1/4</td>
+<td>阴影 0.272 → 0.186 ms/100 次</td>
+</tr>
+<tr>
+<td><strong>角区合并分支</strong>：三个 <code>continue</code> 合成一次 <code>a != 0</code> 判定</td>
+<td>角内有效带只有 blur 像素宽，原来每像素错 3 次分支预测</td>
+<td>同下</td>
+</tr>
+<tr>
+<td><strong><code>round_row_span</code> 解析求解</strong>：<code>dx_max = isqrt(rad²-dy²)</code></td>
+<td>去掉逐像素横向扫描</td>
+<td>全额重绘 -11%</td>
+</tr>
+<tr>
+<td><strong>实心区转调通用圆角填充</strong>（整块可见时）</td>
+<td>复用 <code>fill_round_rect_alpha</code> 里被优化过的行跨度循环</td>
+<td>阴影再 -15%</td>
+</tr>
+<tr>
+<td><strong>字形行指针外提</strong></td>
+<td>原来每像素重算 <code>buffer + y*stride</code></td>
+<td>小</td>
+</tr>
+<tr>
+<td><strong>渲染脏区剪枝</strong>：每个节点布局末尾算 <code>paint_box</code>（自己 ⊕ 阴影外扩 ⊕ 未裁剪子树），绘制时不相交就整棵跳过</td>
+<td>一次矩形判断替代一次子树遍历</td>
+<td>局部重绘 0.026 → <strong>0.016 ms</strong></td>
+</tr>
+<tr>
+<td><strong>控件层接 <code>QLDraw2D</code></strong>：绘制函数签名从 <code>QLCanvas*</code> 改为 <code>QLDraw2D*</code>，新增 <code>ql_render_draw2d()</code></td>
+<td>同一棵控件树可上 GPU；自定义控件只写一次</td>
+<td>架构性，无 CPU 耗时变化</td>
+</tr>
+</tbody>
+</table>
+<p><code>/255</code> 的两个逐值恒等式（<code>0..65025</code> 全域验证与 <code>x/255</code> 相同）：
+- 标量 <code>(x + (x&gt;&gt;8) + 1) &gt;&gt; 8</code>
+- SSE2 <code>mulhi_epu16(x, 32897) &gt;&gt; 7</code></p>
+<h3 id="_3">正确性护栏</h3>
+<p>9-slice / 快路径 / 角区镜像都是<strong>结构改写</strong>，必须逐像素等价。<code>test_effects</code>
+里有一份<strong>朴素参考实现</strong> <code>ref_shadow()</code>（对整块外框逐像素求圆角 SDF，不做任何分解），
+用 3 种外框 × 4 种半径 × 4 种模糊 × 3 种偏移 × 3 种 alpha = <strong>432 组</strong>逐一对比。
+它已经抓到三个真 bug：</p>
+<ol>
+<li><code>rad == 0</code> 时四个 <code>pad×pad</code> 方角没有任何区域负责（上/下带只到 <code>[sx0,sx1)</code>，
+   左/右带只到 <code>[sy0,sy1)</code>），留白；</li>
+<li>右侧/下侧角块以 <code>sx1 - (rad+pad)</code> 为锚，比正确位置内偏 <code>pad</code>
+   —— 既与直边带重叠（同一点混两次、偏黑），又漏掉最外侧 <code>pad</code> 条带；</li>
+<li>角区直写时误用整体 <code>alpha</code> 而不是逐像素覆盖率 <code>a</code> 做混合。</li>
+</ol>
+<p>第四个 bug 来自 DPR 测试（<code>test_dpr</code>）：GPU 后端是单批次（整帧一次
+<code>glDrawArrays</code>），注释里写着"顶点已按最终 clip 画好"，但 <code>emit_quad</code> /
+<code>emit_quad_gradient</code> / <code>emit_shadow</code> <strong>从来没做这个裁剪</strong>，<code>g-&gt;clip</code> 只存不用。
+结果是 <strong><code>overflow:hidden</code> 在 GPU 上完全没生效</strong>。修法是发顶点前把四边形范围与
+<code>g-&gt;clip</code> 求交，但形状参数（<code>hx/hy</code>、radius、渐变跨度）必须继续用未裁剪的矩形，
+否则片元里的 SDF 会算错。修好前后 CPU vs GL：<strong>28.24% → 0.77%</strong>（scale=1），
+仍是<strong>单 draw call</strong>。</p>
+<p>第三个 bug 来自脏区测试（<code>test_render</code>）：<code>fill_shadow</code> 的下边带 / 右边带起点
+（<code>sy1</code> / <code>sx1</code>）没有与裁剪上界求交，阴影被 <code>overflow:hidden</code> 或脏区裁掉上半部分时
+会往上/往左画到裁剪外面。</p>
+<p>还有一条<strong>不算 bug</strong>的既定行为：内实心区（<code>d &lt;= 0</code>）由 <code>round_row_span</code> 的离散判定
+负责，它与连续 SDF 的边界最多差 1px；那块被元素自身背景盖住，不参与对比。</p>
+<p>优化记录（试过但<strong>没有</strong>采用）：
+- "直边时跳过 sqrt"的分支版本：x86 上 <code>sqrtss</code> 是硬件指令，分支反而因误预测更慢（4.0 → 4.4 ms），已回退；
+- 把 <code>put_px</code> 换成行指针版本 <code>put_px_at</code>：保留了（少一次乘加，但收益在噪声量级）；
+- 字形逐像素改走 <code>blend_px</code>（ARGB8888 直写）：收益在噪声量级，但代码更整洁，保留。</p>
+<p>进一步优化的方向（未做）：角区按"有效环带"解析求 x 区间、距离→覆盖率查表、
+按 <code>border-box</code> 裁剪阴影内实心区（CSS 规范行为，能省 0.04 ms 但要同步改 GPU 顶点分解）。</p>
+<h2 id="gpu">GPU 字形图集</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>图集尺寸</td>
+<td>1024×1024 R8 = 1 MB 显存</td>
+</tr>
+<tr>
+<td>分配方式</td>
+<td>货架（shelf），字形高度决定行高</td>
+</tr>
+<tr>
+<td>内置位图字体</td>
+<td>启动时一次性拼 CPU 镜像 + 一次 <code>glTexImage2D</code></td>
+</tr>
+<tr>
+<td>动态字体新字形</td>
+<td><code>glTexSubImage2D</code> 增量上传（≤64px 走 64×64 临时缓冲，一次调用）</td>
+</tr>
+<tr>
+<td>UV 缓存</td>
+<td>开放寻址哈希 2048 槽，键 <code>(字体指针, codepoint)</code></td>
+</tr>
+<tr>
+<td>容量上限</td>
+<td>哈希满或图集满 → 丢弃新字形并告警一次，不淘汰</td>
+</tr>
+</tbody>
+</table>
+<h2 id="dpidpr">高 DPI（DPR）的代价</h2>
+<p>缩放只在后端入口乘一次（26.6 定点），所以<strong>几何开销可忽略</strong>，真正的代价是：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>1x</th>
+<th>2x</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 光栅像素数</td>
+<td>1×</td>
+<td><strong>4×</strong></td>
+<td>面积四倍，这是主要成本</td>
+</tr>
+<tr>
+<td>GPU 顶点数</td>
+<td>780</td>
+<td>780</td>
+<td>形状参数不变，顶点数不变</td>
+</tr>
+<tr>
+<td>GL draw call</td>
+<td>1</td>
+<td><strong>1</strong></td>
+<td>单批次不受影响</td>
+</tr>
+<tr>
+<td>字体光栅化</td>
+<td>12px 字形</td>
+<td>24px 字形</td>
+<td>一次性，进图集；图集占用量 ×4 面积</td>
+</tr>
+<tr>
+<td>帧缓冲</td>
+<td>320×320×4 = 400KB</td>
+<td>640×640×4 = 1.6MB</td>
+<td>RGB888/565 按格式换算</td>
+</tr>
+</tbody>
+</table>
+<p>实测（<code>example_gl_window --dpr 2</code>，320×320 CSS px / 640×640 设备像素）：
+仍稳定 55 fps（vsync 上限），<strong>1 draw call</strong>。</p>
+<hr />
+<h2 id="_4">亚像素填充的代价</h2>
+<p>亚像素不是"全部逐像素"：每行只有<strong>两端各一次 <code>put_px</code></strong>，中间整像素仍走
+<code>fill_row</code> 的 SIMD 快路径。所以一个带小数的矩形比整数版本只多两次单像素混合。</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>额外开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>100 个 44×20 圆角卡片（亚像素偏移）</td>
+<td>约 +200 次单像素混合，相对阴影/文本可忽略</td>
+</tr>
+<tr>
+<td>对齐（offset 全 0）</td>
+<td><strong>0</strong>（走原来的整数路径）</td>
+</tr>
+</tbody>
+</table>
+<p><code>offset</code> 只影响绘制入口，不触发布局与 <code>paint_box</code> 计算。</p>
+<hr />
+<h2 id="mcu">关于 MCU</h2>
+<p>上表全部是 x86-64（AVX2/SSE4.2、DDR）实测。<strong>不能直接外推到 Cortex-M</strong>：</p>
+<ul>
+<li>纯填充是 cache/内存带宽密集，M4 @180MHz 的 SRAM 写带宽约是桌面 DDR 的 1/50~1/100；</li>
+<li>M7 上叠了 ATCM/DTCM 与 ART 加速器，实际比 M4 快 3~5 倍；</li>
+<li>一致的部分是<strong>算法复杂度</strong>：行跨度扫描 + 格式特化仍然是 MCU 上的正确做法，
+  但绝对数值必须单独实测。M6 里程碑会在真板子上跑同一份 <code>example_bench_fps</code>。</li>
+</ul>
+<hr />
+<h2 id="m55-12">动效（M5.5 ①②）的开销</h2>
+<p>动画本身不进渲染热点：<code>ql_anim_tick</code> 只是几十次浮点插值与一次 <code>apply</code> 回调，
+真正的成本是<strong>被动画元素的重绘</strong>，而重绘走已有的脏区路径。</p>
+<p>实测（Release，<code>ui_flex_trans</code> 两个节点的用例，hover 过渡 200ms，每帧推进 1ms）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一帧 = <code>ql_ui_anim_tick</code> + 1 块 60×30 脏区 <code>ql_ui_render_rect</code></td>
+<td><strong>0.0015 ms</strong></td>
+</tr>
+<tr>
+<td><code>ql_anim_tick</code> 单次，64 个活跃动画</td>
+<td><strong>&lt; 0.001 ms</strong>（低于计时精度）</td>
+</tr>
+<tr>
+<td>静态界面（无过渡）</td>
+<td><strong>0</strong>（返回 0，主循环整帧跳过）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>这两个数比 M4 的"局部重绘 80×60 = 0.014 ms"小一个量级，原因是文档只有 2 个节点：
+<code>ql_ui_render_rect</code> 的成本里有一项是<strong>遍历 <code>paint_box</code> 判断剪枝</strong>，与节点数成正比；
+211 节点的 bench100 页面上做同样的局部重绘就是 0.014 ms。</p>
+</blockquote>
+<p>结论：过渡不是性能问题，<strong>"这一帧要不要重绘"的判断才是</strong>。所以 <code>ql_anim_tick</code> 返回
+"仍在进行中的动画数"而不是布尔值——静止期省掉整帧（MCU 上没有动画就不烧 CPU）。</p>
+<hr />
+<h2 id="keyframes-m55-3"><code>@keyframes</code> 的开销（M5.5 ③）</h2>
+<p>关键帧动画与过渡共用"求值 → 写样式 → 标脏 → 局部重绘"这条路径，所以成本结构一样，
+区别只有一处：<strong>求值不是一次线性插值，而是"按时间定位段 + 段内插值"</strong>，
+多一次帧表扫描（段数通常 2~5，线性）。</p>
+<p>实测（Release，<code>ui_flex_kf</code> 用例，5 个节点同时动画，120×140 画布）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一帧 = <code>ql_ui_anim_tick</code> + 4 块脏区重绘（5 段动画在跑）</td>
+<td><strong>0.0052 ms</strong></td>
+</tr>
+<tr>
+<td>纯 <code>ql_ui_anim_tick</code>（5 段动画，不重绘）</td>
+<td><strong>0.00013 ms</strong></td>
+</tr>
+<tr>
+<td>没有 <code>@keyframes</code> 的页面</td>
+<td><strong>0</strong>（<code>runs == NULL</code>，一字节都不占）</td>
+</tr>
+</tbody>
+</table>
+<p>也就是说求值本身占一帧的 2.5%，其余是重绘。<strong>动画段数不影响帧预算，被动画的像素面积才影响</strong>
+——和 <code>transition</code> 完全一致的结论。</p>
+<blockquote>
+<p>脏区是"节点的 <code>paint_box</code>"。关键帧只改颜色/alpha，不改盒子，所以动画期间每帧只需重绘
+各自那一块；<code>fill: forwards</code> 停在末帧之后不再标脏，界面回到"零开销"静止态。</p>
+</blockquote>
+<hr />
+<h2 id="transform-translate"><code>transform: translate</code> 的开销</h2>
+<p>平移<strong>不进布局</strong>，只是把绘制偏移加一点，所以在 CPU 与 GPU 两条路径上都<strong>接近零成本</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>每节点一次 <code>offset += tf &lt;&lt; 6</code>；填充仍走行跨度扫描（轴对齐不变），逐像素成本完全相同</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>偏移直接进顶点浮点（<code>emit_quad</code> 里那个 <code>off_x_of</code>），顶点数、批次、draw call 都不变</td>
+</tr>
+<tr>
+<td>布局</td>
+<td><strong>0</strong> —— <code>border_box</code> 不变，flex 不重算</td>
+</tr>
+<tr>
+<td>脏区</td>
+<td>唯一变大的地方：<code>paint_box</code> 要覆盖整个位移区间（Minkowski 包围盒），位移 N 像素就把脏区撑大 N 像素</td>
+</tr>
+</tbody>
+</table>
+<p>实测 <code>example_anim_window</code>（360×260，5 段动画在跑）：<strong>3 块脏区 / 1 draw call</strong>，
+与 M4 的"局部重绘"同一量级——动画的成本仍然由<strong>被动画的像素面积</strong>决定，不由动画数量决定。</p>
+<hr />
+<h2 id="gpu-1px-m55">GPU 字形：外扩 1px 的代价（M5.5 修复）</h2>
+<p>实测同一次渲染（<code>ui_demo</code> 页 + <code>ui_flex_anim</code> 页），只改 <code>emit_quad()</code> 里一个字形的 pad：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>外扩 1px（错误）</th>
+<th>不外扩（正确）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ui_demo</code> CPU vs GPU 像素差异</td>
+<td>5.72%</td>
+<td><strong>0.73%</strong></td>
+</tr>
+<tr>
+<td>控件层 CPU vs GPU 像素差异</td>
+<td>0.29%</td>
+<td><strong>0.10%</strong></td>
+</tr>
+<tr>
+<td><code>.hint</code> 一行字墨迹宽度（CPU 104 px）</td>
+<td>GPU 106 px</td>
+<td><strong>GPU 105 px</strong></td>
+</tr>
+</tbody>
+</table>
+<p>性能上没有差别（顶点数、draw call 完全相同），差别全在正确性与观感：
+外扩等于把每个字横向拉宽 (w+2)/w（8 px 的字即 +25%），字距被吃掉、笔画粘连。</p>
+<p>保留式脏区（FBO 画布）的成本：一次 <code>glBlitFramebuffer</code> + 一块 <code>w×h×4</code> 的纹理
+（360×260 ≈ 366 KB）。换来的是"动画只重绘变化区域"在窗口上真正成立——
+<code>example_anim_window</code> 稳定在 <strong>3 块脏区 / 1 draw call</strong>。</p>
+<hr />
+<h2 id="10-m55">10 个元素同时动画（M5.5 验收）</h2>
+<p><code>test_anim_stress</code>（320×320，10 张卡片各自 <code>@keyframes ... infinite alternate</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+<th>60fps 预算</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一帧 = <code>ql_ui_anim_tick</code> + 逐个 <code>ql_ui_render_rect</code></td>
+<td><strong>0.0259 ms</strong></td>
+<td>16.7 ms（<strong>645× 余量</strong>）</td>
+</tr>
+<tr>
+<td>仅 <code>ql_ui_anim_tick</code>（10 段）</td>
+<td><strong>0.00049 ms</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>平均脏区块数</td>
+<td>10 块</td>
+<td>—</td>
+</tr>
+<tr>
+<td>脏区总面积</td>
+<td>62400 px² / 整屏 102400 px²</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>窗口实测（<code>example_gl_window</code>，320×320，保留式脏区）：<strong>59.3 fps</strong>（vsync 上限），
+<strong>2 块脏区 / 1 draw call</strong>。</p>
+<p>结论没变但更硬了：<strong>动画数量几乎不花钱，"这一帧动到了多少像素"才花钱</strong>。</p>
+<hr />
+<h2 id="m55-6">径向渐变的代价（M5.5 ⑥）</h2>
+<p>径向渐变不能走"整行同色"的快路径，只能逐像素算距离。用<strong>增量法</strong>避开了逐像素乘法：</p>
+<div class="highlight"><pre><span></span><code>dy² 每行算一次；dx² 在行内按 dx2 += 2*dx + 1 累加；每像素只剩一次 sqrtf + 一次 lerp
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>相对纯色填充</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>48×48 圆形（<code>radial-gradient</code> + 圆角）</td>
+<td>约 3~4×</td>
+</tr>
+<tr>
+<td>120×24 竖直渐变（快路径）</td>
+<td>1×（≈纯色）</td>
+</tr>
+<tr>
+<td>120×24 水平渐变</td>
+<td>约 10×</td>
+</tr>
+</tbody>
+</table>
+<p>GPU 侧<strong>零额外成本</strong>：径向判断在片元着色器里，顶点数、批次、draw call 都不变
+（第二色打包进已存在的 <code>a_uv.x</code>，顶点结构没有变大）。</p>
+<p>CPU vs GPU 一致性（<code>test_gl_vs_cpu</code> 的无文字渐变页）：<strong>1.47%</strong> 像素超差（阈值 3%），
+差异全部来自 SDF 边缘的抗锯齿处理方式不同。</p>
+<hr />
+<h2 id="_5">圆遮罩的代价</h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>额外开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 遮罩 + 纯色矩形</td>
+<td>每行一次 <code>sqrtf</code> + 两端各一次单像素混合（≈纯色填充的 1.1×）</td>
+</tr>
+<tr>
+<td>CPU 遮罩 + 字形</td>
+<td>每像素多一次 <code>sqrtf</code>（字形本来就在逐像素算覆盖率）</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td><strong>0</strong>：顶点结构 64 → 80 B（+25% 内存），顶点数 / draw call 不变，片元里多一次 <code>length</code></td>
+</tr>
+</tbody>
+</table>
+<p>CPU vs GPU 一致性（<code>test_clip</code>，遮罩半径 50%）：<strong>0.26%</strong> 像素超差（阈值 3%）。</p>
+<hr />
+<h2 id="transform-scale"><code>transform: scale()</code> 的代价</h2>
+<p>等比缩放不改变"轴对齐"这个前提，所以行跨度扫描照常工作：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>每个矩形多两次乘法（按边缩放），每像素成本<strong>完全不变</strong></td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>顶点变换里多两次乘法，顶点数 / draw call 不变</td>
+</tr>
+<tr>
+<td>布局</td>
+<td><strong>0</strong> —— <code>border_box</code> 不变</td>
+</tr>
+<tr>
+<td>文本</td>
+<td>字号变了就要<strong>重新光栅化字形</strong>（这是唯一有成本的地方，且与 scale 无关，取决于字数和字号）</td>
+</tr>
+</tbody>
+</table>
+<p>CPU vs GPU（<code>test_scale</code>，scale 1.5）：<strong>0.00%</strong>（阈值 2%）——
+因为两条路径用的是同一套"按边缩放"的整数公式，逐像素完全相同。</p>
+<hr />
+<h2 id="scalexscaley">分轴缩放（<code>scaleX</code>/<code>scaleY</code>，假翻转）的代价</h2>
+<p>与等比缩放同一数量级——多出来的只是一位"两轴用不同倍数"：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td><code>sx()</code> 两次乘法（x 用 <code>elem_x_fx</code>、y 用 <code>elem_y_fx</code>），每像素成本<strong>完全不变</strong></td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>同上，顶点数 / draw call 不变</td>
+</tr>
+<tr>
+<td>圆角 / 描边 / 字号</td>
+<td>多一次 <code>min(sx, sy)</code> 比较</td>
+</tr>
+<tr>
+<td>布局</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>压到 0（<code>scaleX(0)</code>）</td>
+<td>矩形变空 → 整块跳过，<strong>比不缩放还便宜</strong></td>
+</tr>
+</tbody>
+</table>
+<p>CPU vs GPU（<code>test_flip</code>，<code>scaleX(0.5)</code> + <code>scaleY(0.5)</code> + 半程翻转三张卡片同时在场）：
+<strong>0.00%</strong>（阈值 2%）。</p>
+<p><code>example_flip_window</code>（420×240，三张卡片错开相位）：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>脏区</td>
+<td>3 块 / 帧</td>
+</tr>
+<tr>
+<td>draw call</td>
+<td>1</td>
+</tr>
+<tr>
+<td>顶点</td>
+<td>约 340</td>
+</tr>
+<tr>
+<td>帧率</td>
+<td>60 fps（vsync）</td>
+</tr>
+</tbody>
+</table>
+<p>零宽那一帧整块不画，所以翻转动画的帧耗时曲线是<strong>谷形</strong>的：
+中间最"便宜"，两端（满宽）最贵。</p>
+<hr />
+<h2 id="bug">缩放动画的脏区代价（一条真 bug）</h2>
+<p><code>paint_box</code> 原来只看<strong>基础样式</strong>的 <code>sc</code>，所以 <code>@keyframes</code> 里放大、
+<code>:hover</code> 里放大的元素脏区算小。实测（<code>test_scale</code> 的 1.188× 中途一帧）：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>脏区</th>
+<th>局部重绘 vs 整幅重画</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只看基础样式</td>
+<td>40×40（布局盒）</td>
+<td><strong>504 像素不一致</strong>（放大那一圈擦不掉/画不上）</td>
+</tr>
+<tr>
+<td>取三个来源的极值</td>
+<td>60×60（1.5× 上界）</td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table>
+<p>代价：<code>compute_paint_box</code> 多一次「基础样式 ∪ 状态变体 ∪ 关键帧帧表」的 <code>max</code> 扫描
+（只在布局末尾跑一次，与节点数线性相关，实测从 0.037 ms 变 0.038 ms，可忽略）。</p>
+<hr />
+<h2 id="cpugpu">渐变 + 圆遮罩（同一次填充）的 CPU/GPU 差异</h2>
+<p><code>.rad2</code> 是"径向渐变 + 圆角 + <code>clip-path</code>"挤在一次填充里，用来守住"遮罩对<strong>所有</strong>
+图元都生效"这条线：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>CPU vs GPU 差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU 遮罩只作用于非径向分支（bug）</td>
+<td><strong>3.00%</strong>（刚好卡在阈值上，比例断言抓不住）</td>
+</tr>
+<tr>
+<td>修复后（遮罩对所有出口生效）</td>
+<td><strong>1.17%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>所以这条用例的判断不靠比例，而是直接看像素：遮罩半径 75% 盖不到的角落必须是底色，
+中心必须真的画出了渐变。收紧后的比例阈值是 2%。</p>
+<hr />
+<h2 id="backdrop-filter-blur">毛玻璃（<code>backdrop-filter: blur()</code>）的代价</h2>
+<p>CPU 侧是"取出区域 → 四趟滑动窗口卷积（H/V × 2）→ 写回"：</p>
+<table>
+<thead>
+<tr>
+<th>区域</th>
+<th><code>blur(12)</code> 每次</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>108×56（一张卡片）</td>
+<td><strong>0.159 ms</strong></td>
+</tr>
+<tr>
+<td>300×200（半个屏幕）</td>
+<td><strong>1.68 ms</strong></td>
+</tr>
+<tr>
+<td>对照：520×400 整屏重画</td>
+<td>0.304 ms</td>
+</tr>
+</tbody>
+</table>
+<p>也就是说：<strong>一张卡片的毛玻璃大约等于半次整屏重绘</strong>。CPU 上能做，但只适合小面积；
+MCU 明确不支持（见 <code>开发规划.md</code> 的能力矩阵）。</p>
+<p>GPU 侧：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>额外 draw call</td>
+<td><strong>+1</strong>（整帧 1 → 2，中途 flush 一次）</td>
+</tr>
+<tr>
+<td>额外顶点</td>
+<td>6</td>
+</tr>
+<tr>
+<td>额外显存</td>
+<td>两块半分辨率 RGBA8（520×400 → 2×104 KB）</td>
+</tr>
+<tr>
+<td>每帧多出的 pass</td>
+<td>blit 一次 + 两次 9 抽头的半分辨率全屏 pass</td>
+</tr>
+</tbody>
+</table>
+<p><code>example_showcase_window</code>（520×400，含一个滑动的毛玻璃条 + 6 段动画）：
+6 块脏区 / 2 draw call / 60 fps。</p>
+<hr />
+<h2 id="transform-scale_1">字号缓存的坑：<code>transform: scale()</code> 会把它撑爆</h2>
+<p><code>ql_font_default(size)</code> 是一张"字号 → 字体"的小表。缩放动画让设备字号每帧都变，
+而槽位只有 8 个 —— 满了以后旧实现"造一个不缓存的新字体"，等于<strong>每帧重载 TTF + 重光栅化</strong>。</p>
+<p>实测（<code>example_showcase_window</code> 的 520×400 页面，6 段动画里两段带缩放，CPU 整屏）：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>每帧耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时刻固定（字号不变）</td>
+<td>0.567 ms</td>
+</tr>
+<tr>
+<td>每帧推进 16 ms（字号连续变化）</td>
+<td><strong>8.077 ms</strong></td>
+</tr>
+<tr>
+<td>槽位 8 → 32 + 满了淘汰最老的一个</td>
+<td><strong>0.570 ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>窗口整体：200 帧从 3.8 s（含 <code>sys 1.9 s</code>）降到 3.6 s 且<strong>稳定 59.8 fps</strong>，
+<code>sys</code> 时间从 1.93 s 掉到 0.39 s（那部分就是每帧新建字体对象造成的分配/缺页）。</p>
+<hr />
+<h2 id="golden">golden 护栏的代价</h2>
+<p><code>test_golden</code> 覆盖 27 个 CSS 用例，每页做<strong>两层</strong>比对：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>判据</th>
+<th>咬合度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.qlui</code> blob</td>
+<td><strong>逐字节相同</strong>（机器无关，全是整数）</td>
+<td>改 1 个色阶 / 1px 圆角就红</td>
+</tr>
+<tr>
+<td>基准图</td>
+<td>单通道差 &gt; 12 的像素 ≤ 0.5%；CPU vs GPU ≤ 2%（<code>blur</code> 6%）</td>
+<td>版面/几何/颜色回归</td>
+</tr>
+</tbody>
+</table>
+<p>实测：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用例数</td>
+<td>27（全部 flex 用例，含 <code>bench100</code>）</td>
+</tr>
+<tr>
+<td>基准体积</td>
+<td><strong>528 KB</strong>（<code>.qlg</code> 极简 RLE + 按内容裁剪；等价的 PPM 是 8.2 MB）</td>
+</tr>
+<tr>
+<td>单次运行</td>
+<td><strong>0.19 s</strong>（含 27 次 CPU 渲染 + 27 次 GL 离屏渲染 + 54 次比对）</td>
+</tr>
+<tr>
+<td>覆盖的 CPU vs GPU 页</td>
+<td><strong>27</strong>（以前只手挑 3 页）</td>
+</tr>
+</tbody>
+</table>
+<p>顺带说明为什么图那一层不能卡 0：这些页几乎都有文字，字形是 FreeType 光栅化的结果，
+换一个 FreeType/字体版本就有 1~2 个灰度级的差别。所以"看得见"的回归靠容差阈值，
+"看不见"的回归（数据层）靠 blob 逐字节——两者互补，缺一不可。</p>
+<div class='pager'>
+<a href='../design/开发规划.html'><span class='dir'>上一页</span>QLGL 开发规划</a>
+<a class='next' href='../tutorial/01_basics.html'><span class='dir'>下一页</span>基础知识</a>
+</div>
+</main>
+</div>
+</body>
+</html>

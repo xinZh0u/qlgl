@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item active' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="web-html-css-js">Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</h1>
+<blockquote>
+<p>本文回答两个问题：<strong>"完美兼容"能不能做到</strong>、<strong>要做到"基本不用改"需要付出什么</strong>。
+结论先行：<strong>方向可行，但"完美兼容"不可行</strong>；可以做到的是"<strong>Web 子集 + 可度量的兼容率</strong>"。
+文中所有代码量/时间都是按单人全职、含测试估算的<strong>工程估计</strong>，不是承诺。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 一句话结论</h2>
+<table>
+<thead>
+<tr>
+<th>你想要的</th>
+<th>现实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>任意 HTML/CSS/JS 页面直接跑</td>
+<td>❌ 这等于重做一个浏览器（Blink/WebKit 是千万行级工程）</td>
+</tr>
+<tr>
+<td>自己写的页面（用了常见 HTML/CSS/JS）基本不改</td>
+<td>✅ 可行，代价是 <strong>3~4.5 万行 C</strong> + <strong>6~12 个月</strong></td>
+</tr>
+<tr>
+<td>不支持的属性/标签<strong>立刻报错</strong>而不是静默错位</td>
+<td>✅ 可行，且必须做，这是"不用改"的前提</td>
+</tr>
+<tr>
+<td>同一份页面在 MCU 上跑</td>
+<td>❌ MCU 走纯 C，不做 Web 兼容（见 §7 定案）</td>
+</tr>
+</tbody>
+</table>
+<p>所以务实的目标应该写成一句可验收的话：</p>
+<blockquote>
+<p><strong>给定一个"Web 子集"页面，QLGL 的渲染结果与 Chromium 的差异在既定阈值内，未支持的属性在构建期报错。</strong></p>
+</blockquote>
+<hr />
+<h2 id="1-web">1. 先说清楚：照搬 Web 意味着放弃现在的"控件类"</h2>
+<p>这是最重要的一条，<strong>会决定后续所有代码的形态</strong>。</p>
+<p>Web 里<strong>没有"控件类"</strong>。浏览器里只有：</p>
+<div class="highlight"><pre><span></span><code>HTML 标签  →  元素对象（div/span/button/img/input...）
+            +  UA 样式表（浏览器内置的默认 CSS）
+            +  属性/类名/id
+            +  布局算法（由 display 等 CSS 决定）
+</code></pre></div>
+
+<p><code>&lt;button&gt;</code> 之所以"长得像按钮"，是因为 UA 样式表给了它 <code>display:inline-block; padding:...; border:...; background:...</code>，
+<strong>不是因为有个 <code>QLButton</code> C 类</strong>。</p>
+<p>所以"照搬 Web"要求我们：</p>
+<table>
+<thead>
+<tr>
+<th>现在</th>
+<th>Web 模型下</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QLWidget</code> 子类体系（QLButton/QLabel）</td>
+<td><strong>标签名 → 元素行为</strong>（tag handler）+ <strong>UA 样式表</strong></td>
+</tr>
+<tr>
+<td><code>ql_object_set_property(WIDTH, 100)</code></td>
+<td><code>element.style.width = "100px"</code> / CSS 规则</td>
+</tr>
+<tr>
+<td><code>x/y/w/h</code> 四个 int</td>
+<td><code>auto</code> / <code>%</code> / <code>em</code> / <code>flex</code> 算出来的<strong>布局结果</strong></td>
+</tr>
+<tr>
+<td>属性 id 区间</td>
+<td>内部实现细节，对外<strong>完全不可见</strong>；对外是 attribute / style</td>
+</tr>
+<tr>
+<td>事件 <code>ql_connect</code></td>
+<td><code>addEventListener</code> + 冒泡/捕获 + <code>Event</code> 对象</td>
+</tr>
+</tbody>
+</table>
+<p><strong>影响评估</strong>：<code>src/core/</code>（对象/事件/内存）、<code>src/draw/</code>（画布/渲染器）、<code>src/text/</code>（字体）<strong>全部保留</strong>；
+<code>src/widget/qlwidget.c</code> 的"属性 + 绝对几何"要拆成 <strong>DOM 元素（样式）</strong> 与 <strong>布局盒（几何）</strong> 两层，
+原来的 <code>ql_widget_*</code> API 变成内部实现或废弃。</p>
+<blockquote>
+<p>这不是推翻重来，而是把"控件"这一层从"类继承"换成"标签 + CSS"。底下四层地基不动。</p>
+</blockquote>
+<hr />
+<h2 id="2">2. 分层架构（建议）</h2>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────┐
+│ 应用层：页面 HTML/CSS/JS（用户写的）           │
+├─────────────────────────────────────────────┤
+│ JS 引擎：QuickJS / Duktape（嵌入式）           │  §6
+├─────────────────────────────────────────────┤
+│ DOM 绑定：document/element/Event/style         │  §5
+├─────────────────────────────────────────────┤
+│ DOM 树：元素/文本节点/属性/类名/id             │  §4
+├─────────────────────────────────────────────┤
+│ CSSOM：解析 → 选择器匹配 → 级联 → 计算样式      │  §3
+├─────────────────────────────────────────────┤
+│ 布局：盒模型 → block/inline → flex → 几何      │  §3.4
+├─────────────────────────────────────────────┤
+│ 渲染：脏矩形 → 画布 → 后端（X11/Wayland/mem）   │  ✅ 已完成
+├─────────────────────────────────────────────┤
+│ 基础：对象/事件/内存/字体                      │  ✅ 已完成
+└─────────────────────────────────────────────┘
+</code></pre></div>
+
+<hr />
+<h2 id="3-css">3. CSS：能做到什么程度</h2>
+<h3 id="31">3.1 分级（按"实现成本 / 收益"排序）</h3>
+<table>
+<thead>
+<tr>
+<th>级别</th>
+<th>内容</th>
+<th>状态</th>
+<th>代码量估计</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>C0</strong></td>
+<td>tokenizer、选择器匹配、优先级、级联、继承、<code>!important</code></td>
+<td>必做，其他都依赖它</td>
+<td>6~9k</td>
+</tr>
+<tr>
+<td><strong>C1</strong></td>
+<td>盒模型（margin/padding/border/box-sizing）、<code>display: block/inline/inline-block/none</code>、<code>width/height/min/max</code>、<code>px/%/em/rem</code></td>
+<td>决定"能不能排版"</td>
+<td>8~12k</td>
+</tr>
+<tr>
+<td><strong>C2</strong></td>
+<td>flexbox（<code>row/column</code>、<code>justify-content</code>、<code>align-items</code>、<code>flex-grow/shrink/basis</code>、<code>gap</code>）</td>
+<td>现代页面 90% 的布局靠它</td>
+<td>6~10k（自研）或 引入 Yoga</td>
+</tr>
+<tr>
+<td><strong>C3</strong></td>
+<td><code>position: static/relative/absolute/fixed</code>、<code>z-index</code>、<code>overflow: hidden/auto</code></td>
+<td>弹窗、下拉、滚动容器</td>
+<td>4~6k</td>
+</tr>
+<tr>
+<td><strong>C4</strong></td>
+<td>背景（<code>background-color/image</code>）、<code>border-radius</code>、<code>opacity</code>、<code>box-shadow</code>(可选)</td>
+<td>视觉还原</td>
+<td>3~5k</td>
+</tr>
+<tr>
+<td><strong>C5</strong></td>
+<td>文本（<code>font-*</code>、<code>line-height</code>、<code>text-align</code>、<code>white-space</code>、<code>letter-spacing</code>）</td>
+<td>已有字体基础</td>
+<td>3~5k</td>
+</tr>
+<tr>
+<td><strong>C6</strong></td>
+<td><code>transition</code>/<code>animation</code>、CSS 变量、<code>@media</code>、<code>grid</code></td>
+<td><strong>建议不做</strong>（见 §3.3）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-c0">3.2 选择器（C0 必做）</h3>
+<table>
+<thead>
+<tr>
+<th>选择器</th>
+<th>做</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tag</code> / <code>.class</code> / <code>#id</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>a b</code>（后代）、<code>a &gt; b</code>（子代）、<code>a + b</code>、<code>a ~ b</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>[attr]</code> / <code>[attr=v]</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>:hover</code> <code>:active</code> <code>:focus</code></td>
+<td>✅ 已实现（M1）：构建期编译成状态变体样式表，运行期只切下标</td>
+<td></td>
+</tr>
+<tr>
+<td><code>:disabled</code> <code>:checked</code></td>
+<td>⏳</td>
+<td>需要状态位 + 样式变体，机制已就绪</td>
+</tr>
+<tr>
+<td><code>:first-child</code> <code>:last-child</code> <code>:nth-child(n)</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>::before</code> / <code>::after</code>（<code>content</code>）</td>
+<td>⚠️ 只支持纯文本 content</td>
+<td>图标字体常用，值得做</td>
+</tr>
+<tr>
+<td><code>:not(a)</code></td>
+<td>✅ 简单形式</td>
+<td>不支持嵌套</td>
+</tr>
+<tr>
+<td>其他伪类/伪元素</td>
+<td>❌</td>
+<td>构建期报错</td>
+</tr>
+</tbody>
+</table>
+<p><strong>优先级</strong>（specificity）必须与规范一致：<code>(id, class/attr/伪类, tag/伪元素)</code> 三元组比较，
+否则同一份 CSS 在两个引擎上的渲染会不一致 —— 这不是"锦上添花"，是<strong>正确性</strong>。</p>
+<h3 id="33">3.3 明确不做（并要求构建期报错）</h3>
+<table>
+<thead>
+<tr>
+<th>不做</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSS Grid</td>
+<td>实现成本接近 flex 的两倍，且可用 flex 替代</td>
+</tr>
+<tr>
+<td><code>float</code> 布局</td>
+<td>与 flex 混用时行为诡异，现代页面基本不用</td>
+</tr>
+<tr>
+<td><code>transition</code> / <code>animation</code> / <code>@keyframes</code></td>
+<td>需要时间轴与插值引擎，属于"另做一个子系统"</td>
+</tr>
+<tr>
+<td>CSS 变量（<code>--x</code> / <code>var()</code>）</td>
+<td>会让"运行期样式"变复杂，破坏构建期预计算的收益</td>
+</tr>
+<tr>
+<td><code>@media</code>（响应式断点）</td>
+<td>目标设备屏幕固定，多数场景可用固定尺寸替代</td>
+</tr>
+<tr>
+<td><code>table</code> 布局</td>
+<td>表格算法极其繁琐，建议用 div+flex 重写</td>
+</tr>
+<tr>
+<td><code>box-shadow</code> / 渐变 / 滤镜</td>
+<td>可以后续作为独立"绘制效果"补，不阻塞布局</td>
+</tr>
+<tr>
+<td>SVG / Canvas / iframe / video / Web Components / Shadow DOM</td>
+<td>都是独立子系统</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>关键要求</strong>：以上任何一项出现在输入里，<code>qcssc</code>/运行时都必须<strong>报错并给出行号</strong>，
+而不是"忽略这条规则继续渲染"。静默降级是"PC 上看着对、板子上错位"的根源。</p>
+</blockquote>
+<hr />
+<h2 id="4-dom">4. DOM 树</h2>
+<h3 id="41">4.1 节点模型</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_NODE_DOCUMENT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_NODE_ELEMENT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_NODE_TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_NODE_COMMENT</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLNodeType</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLNode</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLNodeType</span><span class="w">        </span><span class="n">type</span><span class="p">;</span>
+<span class="w">    </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLNode</span><span class="w">    </span><span class="o">*</span><span class="n">parent</span><span class="p">;</span>
+<span class="w">    </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLNode</span><span class="w">    </span><span class="o">*</span><span class="n">first_child</span><span class="p">;</span>
+<span class="w">    </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLNode</span><span class="w">    </span><span class="o">*</span><span class="n">next_sibling</span><span class="p">;</span>
+
+<span class="w">    </span><span class="cm">/* element only */</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">       </span><span class="o">*</span><span class="n">tag</span><span class="p">;</span><span class="w">          </span><span class="cm">/* &quot;div&quot; / &quot;span&quot; / &quot;button&quot; */</span>
+<span class="w">    </span><span class="n">QLAttr</span><span class="w">           </span><span class="o">*</span><span class="n">attrs</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 属性链表或小数组 */</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">             </span><span class="o">*</span><span class="n">id</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">             </span><span class="o">*</span><span class="n">classes</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 空格分隔 */</span>
+<span class="w">    </span><span class="n">QLComputedStyle</span><span class="w">  </span><span class="o">*</span><span class="n">style</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 计算样式缓存 */</span>
+<span class="w">    </span><span class="n">QLLayoutBox</span><span class="w">      </span><span class="o">*</span><span class="n">box</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 布局结果缓存 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w">          </span><span class="n">flags</span><span class="p">;</span><span class="w">        </span><span class="cm">/* hover/active/focus/disabled/checked + dirty 位 */</span>
+
+<span class="w">    </span><span class="cm">/* text only */</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">             </span><span class="o">*</span><span class="n">text</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLNode</span><span class="p">;</span>
+</code></pre></div>
+
+<h3 id="42">4.2 与现有对象系统的关系</h3>
+<p>现有 <code>QLObject</code>（引用计数、父子链、私有区、事件池）可以继续作为节点基类 ——
+<strong>它已经就是一个最小 DOM</strong>（<code>first_child/next_sibling/parent</code> 与 DOM 完全同构）。
+建议：</p>
+<ul>
+<li><code>QLNode</code> 继承 <code>QLObject</code>（复用内存布局与对象树）；</li>
+<li>原来的"属性 id 区间"机制保留，但只用于<strong>内部实现字段</strong>；</li>
+<li>对外统一走 <code>attribute</code> / <code>style</code> 两层：<code>style</code> 最终映射到内部属性。</li>
+</ul>
+<h3 id="43">4.3 标签与元素行为（替代控件类）</h3>
+<table>
+<thead>
+<tr>
+<th>tag</th>
+<th>默认 UA 样式</th>
+<th>特殊行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>div</code> <code>p</code> <code>section</code></td>
+<td><code>display:block</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>span</code> <code>b</code> <code>i</code> <code>em</code> <code>strong</code></td>
+<td><code>display:inline</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>button</code></td>
+<td><code>display:inline-block</code> + 内边距/边框/背景</td>
+<td><code>:active</code> 状态、发 <code>click</code></td>
+</tr>
+<tr>
+<td><code>input</code></td>
+<td><code>display:inline-block</code></td>
+<td><code>text</code> 类型可编辑（需要文本输入子系统）</td>
+</tr>
+<tr>
+<td><code>img</code></td>
+<td><code>display:inline-block</code></td>
+<td>资源 id → 图片</td>
+</tr>
+<tr>
+<td><code>ul/ol/li</code></td>
+<td><code>display:block</code> + <code>list-item</code></td>
+<td>项目符号（可用 <code>::before</code> 实现）</td>
+</tr>
+<tr>
+<td><code>a</code></td>
+<td><code>display:inline</code> + 颜色/下划线</td>
+<td><code>href</code> 触发导航回调（不内置跳转）</td>
+</tr>
+</tbody>
+</table>
+<p>全量 114 个元素的现状（哪些已支持、哪些靠哪个能力包、MCU 怎么裁）见
+<a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a>。</p>
+<blockquote>
+<p>这样新增"控件"的方式变成了<strong>写 UA CSS + 可能的 tag handler</strong>，与 Web 一致；
+不再需要 <code>QL_DEFINE_WITH_PRIVATE</code> 一套类注册。</p>
+</blockquote>
+<hr />
+<h2 id="5-dom-api-web">5. DOM API 与事件（对齐 Web）</h2>
+<h3 id="51-api">5.1 必须提供的 API（按使用频率）</h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// 查询</span>
+<span class="nb">document</span><span class="p">.</span><span class="nx">getElementById</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">querySelector</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">querySelectorAll</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">getElementsByClassName</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">getElementsByTagName</span>
+<span class="c1">// 结构</span>
+<span class="nx">createElement</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">createTextNode</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">appendChild</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">insertBefore</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">removeChild</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">replaceChild</span>
+<span class="c1">// 属性与样式</span>
+<span class="nx">getAttribute</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">setAttribute</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">removeAttribute</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">classList</span><span class="p">.</span><span class="nx">add</span><span class="o">/</span><span class="nx">remove</span><span class="o">/</span><span class="nx">toggle</span><span class="o">/</span><span class="nx">contains</span>
+<span class="nx">element</span><span class="p">.</span><span class="nx">style</span><span class="p">.</span><span class="nx">width</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;50%&quot;</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">element</span><span class="p">.</span><span class="nx">style</span><span class="p">.</span><span class="nx">setProperty</span><span class="p">(...)</span>
+<span class="nx">dataset</span><span class="err">（</span><span class="nx">可选</span><span class="err">）</span>
+<span class="c1">// 内容</span>
+<span class="nx">textContent</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">innerText</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">innerHTML</span><span class="err">（</span><span class="nx">受限</span><span class="err">：</span><span class="nx">只接受子集</span><span class="err">，</span><span class="nx">其余报错</span><span class="err">）</span>
+<span class="c1">// 事件</span>
+<span class="nx">addEventListener</span><span class="p">(</span><span class="nx">type</span><span class="p">,</span><span class="w"> </span><span class="nx">fn</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="nx">capture</span><span class="p">,</span><span class="w"> </span><span class="nx">once</span><span class="p">,</span><span class="w"> </span><span class="nx">passive</span><span class="p">})</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">removeEventListener</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">dispatchEvent</span>
+<span class="c1">// 布局（只读）</span>
+<span class="nx">getBoundingClientRect</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">offsetWidth</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">offsetHeight</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">clientWidth</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">clientHeight</span>
+</code></pre></div>
+
+<h3 id="52-web">5.2 事件模型（必须与 Web 一致）</h3>
+<div class="highlight"><pre><span></span><code>capture 阶段（根 → 目标父）
+  ↓
+target 阶段
+  ↓
+bubble 阶段（目标父 → 根）
+</code></pre></div>
+
+<ul>
+<li><code>event.target</code> / <code>currentTarget</code> / <code>eventPhase</code></li>
+<li><code>stopPropagation()</code> / <code>stopImmediatePropagation()</code> / <code>preventDefault()</code></li>
+<li><code>event.type</code>、<code>event.clientX/Y</code>、<code>event.key</code>、<code>event.detail</code></li>
+<li><strong>默认行为</strong>：<code>click</code> 在 <code>button</code> 上触发 <code>:active</code>；<code>a</code> 的 <code>href</code> 触发导航回调</li>
+</ul>
+<p>⚠️ 我们现有的 <code>ql_emit</code> 已经实现了"捕获→目标→冒泡 + stop_propagation"，
+<strong>语义可以对齐</strong>，但需要把 <code>QLEvent</code> 换成 Web 的 <code>Event</code> 对象字段命名，并补 <code>stopImmediatePropagation</code>。</p>
+<h3 id="53">5.3 重排 / 重绘调度</h3>
+<p>Web 语义是"改样式立即生效，但浏览器在帧边界统一重排"。
+我们必须一致，否则 <code>offsetWidth</code> 读到的值会与浏览器不同：</p>
+<div class="highlight"><pre><span></span><code><span class="nx">el</span><span class="p">.</span><span class="nx">style</span><span class="p">.</span><span class="nx">width</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;100px&quot;</span><span class="p">;</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">el</span><span class="p">.</span><span class="nx">offsetWidth</span><span class="p">);</span><span class="w">   </span><span class="c1">// 浏览器：立刻拿到 100（强制同步布局）</span>
+</code></pre></div>
+
+<p>实现：<code>getBoundingClientRect</code> 等读取几何的 API 前<strong>先冲刷脏布局队列</strong>（forced reflow）。</p>
+<hr />
+<h2 id="6-js">6. JS 引擎选型</h2>
+<p>自己写 JS 引擎 = 另一个 10 万行工程，<strong>必须用现成的</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>引擎</th>
+<th>许可</th>
+<th>体积</th>
+<th>ES 版本</th>
+<th>嵌入难度</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>QuickJS</strong></td>
+<td>MIT</td>
+<td>~210 KB 代码 + 生成器/正则</td>
+<td>ES2023（含 async/generator）</td>
+<td>单文件 4 个 .c，需 <code>make</code> 编译</td>
+<td><strong>推荐</strong>：现代语法覆盖好，单文件易裁剪</td>
+</tr>
+<tr>
+<td>Duktape</td>
+<td>MIT</td>
+<td>~200 KB</td>
+<td>ES5.1 + 部分 ES6</td>
+<td>两个文件，C89 兼容</td>
+<td>备选：MCU 友好，但没有 <code>let/class/箭头函数</code></td>
+</tr>
+<tr>
+<td>MuJS</td>
+<td>ISC</td>
+<td>~100 KB</td>
+<td>ES5</td>
+<td>极简</td>
+<td>过于陈旧，不建议</td>
+</tr>
+<tr>
+<td>V8 / JavaScriptCore / SpiderMonkey</td>
+<td>各自</td>
+<td>数 MB~数十 MB</td>
+<td>最新</td>
+<td>需平台适配</td>
+<td>不适合嵌入式目标</td>
+</tr>
+</tbody>
+</table>
+<p><strong>建议</strong>：默认 <strong>QuickJS</strong>（vendored 到 <code>third_party/quickjs/</code>，可裁剪），
+MCU 目标用 <strong>Duktape</strong> 或直接关闭 JS。</p>
+<blockquote>
+<p>说明：本机只有 duktape 运行库（无头文件）、无 quickjs，两者都需要 vendor 进仓库。
+这是引入第三方依赖的重大决定，需要你确认（见 §9）。</p>
+</blockquote>
+<hr />
+<h2 id="7-mcu-c-web-pc">7. 【定案】平台分级：MCU 用 C，不追求 Web 兼容；PC 用多语言追求高兼容</h2>
+<p>这一条把"完美兼容"的答案说清楚了：<strong>不是一套实现打天下，而是同一份资源、两套引擎</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>平台</th>
+<th>界面怎么写</th>
+<th>渲染实现</th>
+<th>兼容目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MCU</strong>（Cortex-M）</td>
+<td><strong>纯 C</strong>，直接用 <code>QLObject</code> / <code>QLWidget</code> / <code>QLCanvas</code></td>
+<td>QLGL 原生实现（自制布局/绘制）</td>
+<td><strong>不追求 Web 兼容</strong>，追求小体积、确定性</td>
+</tr>
+<tr>
+<td><strong>MPU / 嵌入式 Linux</strong></td>
+<td>HTML + CSS 子集，<strong>构建期编译成 C</strong>（<code>tools/qlui</code>，见 §12）</td>
+<td>QLGL 原生实现</td>
+<td>Web <strong>子集</strong>兼容（差分测试达标）</td>
+</tr>
+<tr>
+<td><strong>PC / 移动</strong></td>
+<td>HTML + CSS + JS 原样使用</td>
+<td><strong>JS 引擎 + 系统 WebView / 浏览器引擎</strong></td>
+<td><strong>高兼容</strong>，接近真浏览器</td>
+</tr>
+</tbody>
+</table>
+<h3 id="71-mcu-web">7.1 MCU：不追求 Web 兼容是对的</h3>
+<p>在 MCU 上做 CSS 级联 + JS 引擎，等于把浏览器塞进 200KB RAM，收益低、风险高。
+MCU 的界面本来就该用 C 写：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">card</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_child</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">);</span>
+<span class="n">ql_widget_set_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x1E</span><span class="p">,</span><span class="w"> </span><span class="mh">0x25</span><span class="p">,</span><span class="w"> </span><span class="mh">0x33</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="n">ql_widget_set_border</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_SKY</span><span class="p">,</span><span class="w"> </span><span class="mi">12</span><span class="p">);</span>
+<span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="n">t</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_label_new_child</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Temp 26C&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
+</code></pre></div>
+
+<p>这条路<strong>已经完成并有测试</strong>（对象/绘制/文本/后端四层，14 个测试用例）。
+它不需要任何 Web 兼容层，也不该被 Web 兼容需求污染。</p>
+<h3 id="72-mpuhtmlcss-c">7.2 MPU：HTML/CSS 构建期编译成 C</h3>
+<p>这是"一份页面，两端跑"的桥梁：设计师写的 HTML/CSS 在构建期被 <code>tools/qlui</code>
+翻译成静态 C 数据（节点表 + 样式表 + 文本池），运行时零解析（§12）。
+兼容范围是<strong>子集</strong>，不支持项构建期报错（§3.3）。</p>
+<h3 id="73-pc">7.3 PC：高兼容靠"多语言 + 真引擎"，不靠自己重写浏览器</h3>
+<p>在 PC/MCU 之外，如果要"基本不用改就能跑"，唯一务实的做法是<strong>别自己实现 CSS/JS</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>兼容度</th>
+<th>代价</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. QLGL 自研 CSS+JS 子集</td>
+<td>60~80%（永远追不完）</td>
+<td>6~12 个月</td>
+<td>适合 MPU，不适合"高兼容"</td>
+</tr>
+<tr>
+<td>B. <strong>嵌入系统 WebView</strong>（WebView2 / WKWebView / WebKitGTK）</td>
+<td>~99%</td>
+<td>几乎为零（系统自带）</td>
+<td><strong>PC 首选</strong></td>
+</tr>
+<tr>
+<td>C. 嵌入 CEF / Electron</td>
+<td>~99%</td>
+<td>几十 MB 体积</td>
+<td>桌面大型应用可用</td>
+</tr>
+<tr>
+<td>D. QLGL 只做渲染后端，前端逻辑用 JS 绑 C API</td>
+<td>取决于 JS 层</td>
+<td>中</td>
+<td>适合"自定义控件 + 脚本"场景</td>
+</tr>
+</tbody>
+</table>
+<p><strong>推荐组合</strong>：</p>
+<div class="highlight"><pre><span></span><code>PC 端：同一份 index.html/css/js
+        ├─ 默认走系统 WebView（真浏览器，兼容度 ~99%）
+        └─ 需要&quot;和嵌入式一致&quot;时走 qlui → C（子集渲染）
+
+MPU 端：qlui → C（子集渲染，无 JS 或 QuickJS）
+
+MCU 端：纯 C API（无 Web 层）
+</code></pre></div>
+
+<p>同一份 HTML/CSS 在两端渲染出来的差异，用 §8 的差分测试量化，
+保证"PC 上看到的效果 ≈ 板子上的效果"，而不是"两边各写一套界面"。</p>
+<h3 id="74-pcmpu">7.4 多语言绑定（PC/MPU）</h3>
+<p>PC 上"用多种语言"的落地方式是<strong>给 C 核心加绑定</strong>，而不是把核心改成脚本语言：</p>
+<table>
+<thead>
+<tr>
+<th>语言</th>
+<th>方式</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JS</td>
+<td>QuickJS 嵌入</td>
+<td>页面交互脚本、动态改样式/内容</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>ctypes / CFFI 包一层</td>
+<td>快速原型、测试脚本、工具</td>
+</tr>
+<tr>
+<td>C++</td>
+<td>头文件直接包含（C ABI 稳定）</td>
+<td>宿主程序</td>
+</tr>
+<tr>
+<td>其他</td>
+<td>只要 C ABI 稳定都能包</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>绑定层只需要三个入口（见 <a href="./手册/object/QLObject%20API手册.md">QLObject API手册</a> §12）：
+<code>ql_object_get_property</code> / <code>set_property</code> / <code>ql_connect</code>。
+QLUIStyle / QLUIDoc 是 POD，也可以直接暴露给脚本层。</p>
+<h3 id="75">7.5 所以"完美兼容"到底能不能做到</h3>
+<table>
+<thead>
+<tr>
+<th>问法</th>
+<th>答案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用 QLGL 自己实现，做到完美兼容？</td>
+<td>❌ 不可能（=重做浏览器）</td>
+</tr>
+<tr>
+<td>在 PC 上用系统 WebView，做到完美兼容？</td>
+<td>✅ 那就是真浏览器</td>
+</tr>
+<tr>
+<td>一份 HTML/CSS 在 PC 和板子上都跑？</td>
+<td>✅ 子集内可行，用差分测试量化差异</td>
+</tr>
+<tr>
+<td>板子上跑任意网页？</td>
+<td>❌ 不可行，也不必要</td>
+</tr>
+</tbody>
+</table>
+<h2 id="8">8. 怎么验证"基本不用改"——差分测试</h2>
+<p>这是把"感觉兼容"变成"数据兼容"的关键。</p>
+<h3 id="81">8.1 方案</h3>
+<div class="highlight"><pre><span></span><code>同一份 HTML/CSS(/JS)
+   ├─→ Chromium headless（参考实现）→ 截图 + 元素盒模型 JSON
+   └─→ QLGL（被测实现）           → 截图 + 元素盒模型 JSON
+                     ↓
+        逐元素比较 x/y/w/h（阈值 ±1px）+ 逐像素比较（允许抗锯齿差异）
+                     ↓
+                 生成兼容率报告
+</code></pre></div>
+
+<ul>
+<li>参考浏览器：本机<strong>未安装</strong> chromium/firefox，需 <code>npx playwright install chromium</code> 或系统安装；
+  测试脚本用 <code>node</code>（本机已有 v22）。</li>
+<li>图片比较：可以复用现有的 PPM 导出 + <code>ImageMagick compare</code>（本机已有）。</li>
+<li>用例来源：
+  1. 自建用例库（每个 CSS 特性一个最小用例，便于定位问题）；
+  2. <strong>Web Platform Tests（WPT）子集</strong>：WPT 是官方一致性测试集，可以挑选纯 HTML/CSS 的用例接入，
+     这是最有说服力的"兼容率"口径。</li>
+</ul>
+<h3 id="82">8.2 验收指标（建议）</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自建用例通过率（盒模型 ±1px）</td>
+<td>≥ 95%</td>
+</tr>
+<tr>
+<td>自建用例整图像素差</td>
+<td>平均 &lt; 2%，最大 &lt; 8%（抗锯齿差异）</td>
+</tr>
+<tr>
+<td>WPT 选定子集通过率</td>
+<td>首版 ≥ 60%，逐版提升</td>
+</tr>
+<tr>
+<td>未支持特性</td>
+<td>100% 构建期报错（不允许静默降级）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9">9. 分阶段路线与工作量</h2>
+<p>按"每阶段都能独立验收"切分：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>代码量（估）</th>
+<th>时间（单人）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>W0</strong></td>
+<td>CSS tokenizer/parser + 选择器 + 级联 + 计算样式（纯数据，可单测）</td>
+<td>6~9k</td>
+<td>3~5 周</td>
+</tr>
+<tr>
+<td><strong>W1</strong></td>
+<td>盒模型 + block/inline 布局 + <code>display</code> + 单位换算</td>
+<td>8~12k</td>
+<td>5~8 周</td>
+</tr>
+<tr>
+<td><strong>W2</strong></td>
+<td>flexbox 布局</td>
+<td>6~10k</td>
+<td>4~6 周</td>
+</tr>
+<tr>
+<td><strong>W3</strong></td>
+<td>HTML 解析 → DOM 树 + 属性/class/id + UA 样式表 + tag handler</td>
+<td>5~7k</td>
+<td>3~5 周</td>
+</tr>
+<tr>
+<td><strong>W4</strong></td>
+<td>DOM API + Web 事件模型 + 强制同步布局</td>
+<td>4~6k</td>
+<td>3~4 周</td>
+</tr>
+<tr>
+<td><strong>W5</strong></td>
+<td>JS 引擎接入（QuickJS）+ 绑定 + <code>requestAnimationFrame</code></td>
+<td>5~8k</td>
+<td>4~6 周</td>
+</tr>
+<tr>
+<td><strong>W6</strong></td>
+<td>差分测试框架 + 用例库 + WPT 子集接入</td>
+<td>2~3k</td>
+<td>2~4 周</td>
+</tr>
+<tr>
+<td><strong>合计</strong></td>
+<td></td>
+<td><strong>3.6~5.5 万行</strong></td>
+<td><strong>24~40 周（6~10 个月）</strong></td>
+</tr>
+</tbody>
+</table>
+<p>对比参考：
+- 现有已完成的四层（对象/绘制/文本/后端）约 <strong>6.3k 行</strong>，用了约 1 天（含文档与测试）。
+- LiteHTML（HTML/CSS 子集渲染器）约 2 万行 C++；Yoga（flexbox）约 1 万行 C++。
+  我们的估算与之同量级，属于<strong>合理不是乐观</strong>。</p>
+<h3 id="91">9.1 最小可交付（建议的第一版）</h3>
+<p>先做 <strong>W0 + W1 + W3 的精简版</strong>：</p>
+<ul>
+<li>静态 HTML + CSS，支持 <code>block/inline/inline-block</code>、盒模型、<code>px/%</code>、颜色/字体/边框；</li>
+<li>不支持 flex（先用 <code>inline-block</code> + 文本对齐凑）；</li>
+<li>无 JS，交互只到 <code>:hover/:active</code> 与 <code>click</code> 回调（C 侧注册）。</li>
+</ul>
+<p>这个版本约 <strong>1.2~1.8 万行、2~4 个月</strong>，已经能渲染"看起来像 Web 页面"的东西，
+并且能为后面的 flex/JS 打好接口。<strong>建议先做这个</strong>。</p>
+<hr />
+<h2 id="10">10. 已定案 / 待定</h2>
+<h3 id="_1">已定案</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平台分级</td>
+<td>MCU 纯 C 不做 Web 兼容；MPU 用 HTML/CSS 编译成 C；PC 用 WebView + 多语言（§7）</td>
+</tr>
+<tr>
+<td>HTML/CSS 处理方式</td>
+<td><strong>构建期编译成 C 文件</strong>，运行时零解析（§12）</td>
+</tr>
+<tr>
+<td>不支持的特性</td>
+<td><strong>构建期报错</strong>，不静默降级</td>
+</tr>
+<tr>
+<td>控件模型</td>
+<td>MPU/PC 路径下"控件 = 标签 + UA CSS"；MCU 路径保留 <code>QLWidget</code> C API</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">待定（下一步要拍板）</h3>
+<ol>
+<li><strong>PC 端要不要真的接系统 WebView</strong>（Windows WebView2 / Linux WebKitGTK / macOS WKWebView）？
+   接的话 QLGL 在 PC 上就退化为"与嵌入式同款的备用渲染器 + 工具链"，而不是主渲染器。</li>
+<li><strong>MPU 端要不要 JS</strong>？如果要，用 QuickJS（vendor 进仓库，约 210KB 代码）。</li>
+<li><strong>第一版做到哪</strong>：目前 <code>tools/qlui</code> 已能跑通"block + inline + 盒模型 + px/%"，
+   下一块是 <strong>flexbox</strong>，还是先补 <strong>CSS 选择器/伪类</strong>（<code>:hover</code> 等状态样式）？</li>
+</ol>
+<h2 id="11">11. 附：词汇对照（避免团队沟通歧义）</h2>
+<table>
+<thead>
+<tr>
+<th>Web</th>
+<th>QLGL 现有</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>element / tag</td>
+<td>控件</td>
+<td>Web 里没有"控件类"，只有标签</td>
+</tr>
+<tr>
+<td><code>style.width</code></td>
+<td><code>QL_WIDGET_PROPERTY_WIDTH</code></td>
+<td>对外必须暴露成 CSS 字符串</td>
+</tr>
+<tr>
+<td>layout / reflow</td>
+<td>无（绝对坐标）</td>
+<td>需要新增布局趟</td>
+</tr>
+<tr>
+<td>repaint</td>
+<td>脏矩形重绘 ✅</td>
+<td>已有</td>
+</tr>
+<tr>
+<td><code>addEventListener</code></td>
+<td><code>ql_connect</code> ✅</td>
+<td>语义对齐即可</td>
+</tr>
+<tr>
+<td><code>EventTarget</code></td>
+<td><code>QLObject</code> 事件池 ✅</td>
+<td>已有</td>
+</tr>
+<tr>
+<td><code>document</code></td>
+<td>渲染根 ✅</td>
+<td></td>
+</tr>
+<tr>
+<td>UA stylesheet</td>
+<td>无</td>
+<td>需要新增</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-htmlcss-c">12. 【定案】HTML/CSS 编译成 C 文件，运行时零解析</h2>
+<p>对应 Qt Creator 的做法：<code>.ui</code>（XML）→ <code>uic</code> → <code>ui_xxx.h</code>/<code>.cpp</code> 编译进程序。
+QLGL 完全照搬这个模型：</p>
+<div class="highlight"><pre><span></span><code>ui/index.html  ┐
+ui/index.css   ├─→ qltext (tools/qltext) ─→ build/ui_index.c ─→ 编译器 ─→ .rodata
+ui/index.js    ┘        （构建期）          build/ui_index.h
+</code></pre></div>
+
+<h3 id="121">12.1 为什么这样最合适</h3>
+<table>
+<thead>
+<tr>
+<th>好处</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行时零解析</td>
+<td>不做 CSS tokenize/选择器匹配/级联，省下 1 万行代码与全部解析开销</td>
+</tr>
+<tr>
+<td>MCU 可承受</td>
+<td>数据躺在 <code>.rodata</code>（Flash），RAM 只放计算后的布局框</td>
+</tr>
+<tr>
+<td>编译器把关</td>
+<td>生成的是 C，类型错误、越界、未定义符号在<strong>编译期</strong>就暴露</td>
+</tr>
+<tr>
+<td>可裁剪</td>
+<td>生成的 C 只含实际用到的元素与样式，不用整个 CSS 引擎</td>
+</tr>
+<tr>
+<td>与现有工具链一致</td>
+<td><code>qlgen</code>（类型 id）、<code>qlfontgen</code>（字体）已经都是"构建期生成 C"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>代价</strong>：运行期不能改 CSS（不能 <code>el.style.width=...</code> 走完整 CSS 语义）。
+折中方案（见 §12.5）：允许运行期改<strong>少量</strong>属性，走"直接改布局框"的快路径，不走级联。</p>
+<h3 id="122">12.2 生成物形状</h3>
+<p>生成器输出的 <code>ui_index.c</code> 只包含数据，不含逻辑：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 由 tools/qlui 生成，勿手改 */</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINode</span><span class="w"> </span><span class="n">ui_index_nodes</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cm">/*  tag            parent first  next   style  text  class */</span>
+<span class="w">    </span><span class="p">{</span><span class="w">  </span><span class="n">QL_UI_TAG_DIV</span><span class="p">,</span><span class="w">    </span><span class="mh">0xFFFF</span><span class="p">,</span><span class="w">     </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">,</span><span class="w">     </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">,</span><span class="w">    </span><span class="mi">0</span><span class="w"> </span><span class="p">},</span><span class="w">  </span><span class="cm">/* #root */</span>
+<span class="w">    </span><span class="p">{</span><span class="w">  </span><span class="n">QL_UI_TAG_P</span><span class="p">,</span><span class="w">         </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">,</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">,</span><span class="w">     </span><span class="mi">1</span><span class="p">,</span><span class="w">     </span><span class="mi">0</span><span class="p">,</span><span class="w">    </span><span class="mi">0</span><span class="w"> </span><span class="p">},</span>
+<span class="p">};</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="w"> </span><span class="n">ui_index_styles</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="p">.</span><span class="n">display</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">width_kind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_UI_UNIT_AUTO</span><span class="p">,</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">},</span>
+<span class="p">};</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">ui_index_text</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Hello</span><span class="se">\0</span><span class="s">&quot;</span><span class="p">;</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">ui_index_text_ofs</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">};</span>
+
+<span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="n">ui_index_doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">.</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;index&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">node_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">nodes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_index_nodes</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">styles</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_index_styles</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">text_pool</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_index_text</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">text_offsets</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_index_text_ofs</span><span class="p">,</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<p>配套 <code>ui_index.h</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="cp">#ifndef UI_INDEX_H</span>
+<span class="cp">#define UI_INDEX_H</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+<span class="k">extern</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="n">ui_index_doc</span><span class="p">;</span>
+<span class="cp">#endif</span>
+</code></pre></div>
+
+<h3 id="123">12.3 运行时要做的三件事</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ui_index_doc</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 1. 物化：静态表 → 运行期节点树 */</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">);</span><span class="w">                       </span><span class="cm">/* 2. 布局：算出每个节点的绝对矩形 */</span>
+<span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">canvas</span><span class="p">);</span><span class="w">                        </span><span class="cm">/* 3. 绘制：背景/边框/文本 */</span>
+</code></pre></div>
+
+<ul>
+<li><strong>物化</strong>：一次性分配，之后零 malloc；</li>
+<li><strong>布局</strong>：block + inline-block 流式布局（v0 不含 flex，见 §13）；</li>
+<li><strong>绘制</strong>：按树顺序画，父先子后。</li>
+</ul>
+<h3 id="124">12.4 构建集成</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">set</span><span class="p">(</span><span class="s">UI_SRC</span><span class="w">  </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_SOURCE_DIR</span><span class="o">}</span><span class="s">/ui/index.html</span>
+<span class="w">            </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_SOURCE_DIR</span><span class="o">}</span><span class="s">/ui/index.css</span><span class="p">)</span>
+<span class="nb">set</span><span class="p">(</span><span class="s">UI_GEN</span><span class="w">  </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_BINARY_DIR</span><span class="o">}</span><span class="s">/ui_index.c</span>
+<span class="w">            </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_BINARY_DIR</span><span class="o">}</span><span class="s">/ui_index.h</span><span class="p">)</span>
+
+<span class="c"># qltext 是宿主工具（链库自己的解析器），所以不需要 Python</span>
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">qltext</span><span class="w"> </span><span class="s">tools/qltext/qltext.c</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">qltext</span><span class="w"> </span><span class="s">qlgl</span><span class="p">)</span>
+
+<span class="nb">add_custom_command</span><span class="p">(</span>
+<span class="w">    </span><span class="s">OUTPUT</span><span class="w">  </span><span class="o">${</span><span class="nv">UI_GEN</span><span class="o">}</span>
+<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="s">qltext</span><span class="w"> </span><span class="s">cc</span><span class="w"> </span><span class="s">--html</span><span class="w"> </span><span class="s">ui/index.html</span><span class="w"> </span><span class="s">--css</span><span class="w"> </span><span class="s">ui/index.css</span>
+<span class="w">            </span><span class="s">--out</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_BINARY_DIR</span><span class="o">}</span>
+<span class="w">    </span><span class="s">DEPENDS</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_SRC</span><span class="o">}</span><span class="w"> </span><span class="s">qltext</span>
+<span class="w">    </span><span class="s">COMMENT</span><span class="w"> </span><span class="s2">&quot;编译 HTML+CSS 为 C 文件&quot;</span><span class="p">)</span>
+
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">main.c</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_GEN</span><span class="o">}</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">qlgl</span><span class="p">)</span>
+<span class="nb">target_include_directories</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_BINARY_DIR</span><span class="o">}</span><span class="p">)</span>
+</code></pre></div>
+
+<p>改 HTML/CSS → <code>cmake --build</code> 自动重新生成 → 重新编译。与 Qt 的 <code>.ui</code> 体验一致。</p>
+<h3 id="125">12.5 运行期改样式的边界</h3>
+<p>Web 里 <code>el.style.width = "50%"</code> 会触发级联 + 重排。我们<strong>不做级联</strong>，只做：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>支持</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>改文本 <code>textContent</code></td>
+<td>✅</td>
+<td>改文本指针 + 重算该节点尺寸</td>
+</tr>
+<tr>
+<td>改样式类 <code>.classList.add</code></td>
+<td>❌</td>
+<td>依赖选择器匹配，运行期不做</td>
+</tr>
+<tr>
+<td>改内联样式 <code>style.width</code></td>
+<td>⚠️ 仅限"直接改布局框"</td>
+<td>改 <code>QLUIStyle</code> 的副本字段 + 重排</td>
+</tr>
+<tr>
+<td>增删节点</td>
+<td>⚠️ 有限</td>
+<td>只允许在预留槽位内（生成期预留 <code>max_nodes</code>）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>这条边界必须写进 API 文档：<strong>页面结构在构建期固定，运行期只能改内容与少量尺寸</strong>。
+这与"MCU 静态界面"的定位是一致的；需要完全动态的界面请用 PC/MPU 配置。</p>
+</blockquote>
+<h3 id="126-js">12.6 JS 怎么办</h3>
+<p>JS 无法编译成 C（除非用静态分析把脚本转成 C，复杂度远超收益）。所以：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>HTML/CSS</th>
+<th>JS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_UI_JS = 0</code>（MCU/默认）</td>
+<td>构建期编译成 C</td>
+<td>不支持；交互用 C 侧注册回调（<code>ql_ui_on_click</code>）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_JS = 1</code>（MPU/PC）</td>
+<td>构建期编译成 C</td>
+<td>运行期嵌入 QuickJS，DOM 绑定见 §5</td>
+</tr>
+</tbody>
+</table>
+<p>也就是说：<strong>"HTML+CSS 零解析"已经定案；JS 作为可选能力，按配置裁剪。</strong></p>
+<div class='pager'>
+<a href='../design/底层实现设计.html'><span class='dir'>上一页</span>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='next' href='../design/开发规划.html'><span class='dir'>下一页</span>QLGL 开发规划</a>
+</div>
+</main>
+</div>
+</body>
+</html>

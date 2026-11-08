@@ -1,0 +1,3044 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLGL 开发规划 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item active' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlgl">QLGL 开发规划</h1>
+<blockquote>
+<p>定位：<strong>CSS+HTML 的"GTK"</strong> —— 界面用 HTML/CSS 写，构建期编译成 C；绘制层 CPU/GPU 双后端；
+PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏 CPU 光栅场景结构性轻于 GTK。</p>
+<p>本文是<strong>排期与验收依据</strong>。每完成一个里程碑，必须同时更新 <a href="./bench.md">bench.md</a> 与相关手册。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 现状快照（已完成并可验证）</h2>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>能力</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基础</td>
+<td>对象/类型/属性/事件池/内存池/QLStr 双策略</td>
+<td>✅ 6 个测试</td>
+</tr>
+<tr>
+<td>绘制</td>
+<td><code>QLCanvas</code> 原语（填充/圆角/描边/线/alpha/多像素格式）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>文本</td>
+<td>内置 4bpp 位图字体（ASCII 32..126）、UTF-8、度量</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>控件</td>
+<td><code>QLWidget</code> / <code>QLLabel</code>（属性 + 自动尺寸 + 对齐）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>HTML/CSS</td>
+<td><code>tools/qlui</code>：HTML+CSS → C；block/inline、盒模型、6 种选择器、级联、<code>box-sizing</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>绘制接口</td>
+<td><code>QLDraw2D</code>（CPU/GPU 唯一分界）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>GLES3 + EGL：SDF 圆角、字形图集、<strong>1 draw call/帧</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>显示</td>
+<td>内存 / X11 / Wayland（CPU）；GL(X11) 窗口 + 离屏</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>交互</td>
+<td><code>QLInput</code>：命中测试、hover/active/focus 状态、点击合成、键盘焦点、冒泡</td>
+<td>✅ 130 项断言</td>
+</tr>
+<tr>
+<td>脏区</td>
+<td><code>QLUINodeRT.paint_box</code> + <code>ql_ui_render_rect()</code>；控件层经 <code>QLDraw2D</code> 可走 GPU</td>
+<td>✅ 32 项断言</td>
+</tr>
+<tr>
+<td>字体</td>
+<td>内置位图（MCU）+ FreeType 动态字体（任意字号/中文）+ 动态字形图集</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>UI 产物</td>
+<td>静态 C 数据 / <code>.qlui</code> blob（<code>ql_ui_load_file</code>，改 UI 不重编译）</td>
+<td>✅ 63 项断言</td>
+</tr>
+<tr>
+<td>工具</td>
+<td><code>qlgen</code>（类型 id）、<code>qlfontgen</code>（字体）、<code>qlui</code>（HTML/CSS）、<code>qlblob</code>（.qlui 导出）</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>规模</strong>：头文件 + 实现 <strong>12,600+ 行</strong>，测试/示例 21 个文件，20 个 ctest 全绿，
+ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
+<h3 id="mesa-780-release">实测性能（本机，Mesa，单帧 780 顶点，Release）</h3>
+<table>
+<thead>
+<tr>
+<th>分辨率</th>
+<th>GL 含 GPU 完成</th>
+<th>CPU 光栅</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>320×240</td>
+<td>0.146 ms（≈6,800 fps）</td>
+<td><strong>0.296 ms</strong>（3,384 fps）</td>
+</tr>
+<tr>
+<td>1280×720</td>
+<td>0.455 ms（≈2,200 fps）</td>
+<td><strong>1.370 ms</strong>（730 fps）</td>
+</tr>
+<tr>
+<td>1920×1080</td>
+<td>0.738 ms（≈1,350 fps）</td>
+<td><strong>2.191 ms</strong>（456 fps）</td>
+</tr>
+</tbody>
+</table>
+<p>窗口 vsync 模式稳定 <strong>59.2 fps</strong>，CPU 侧每帧仅 0.22 ms。
+节点级：211 节点页全量重绘 0.346 ms、全树 layout 0.034 ms（见 bench.md）。</p>
+<hr />
+<h2 id="2">2. 已知缺口（按影响排序）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺口</th>
+<th>影响</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>~~G1~~</td>
+<td>~~CPU 光栅逐像素函数调用~~ <strong>已修复</strong></td>
+<td>1080p 44.4 ms → <strong>1.84 ms</strong></td>
+<td>bench 表</td>
+</tr>
+<tr>
+<td>G2</td>
+<td>布局每次全树重算</td>
+<td>静态界面也重复计算</td>
+<td><code>ql_ui_layout</code></td>
+</tr>
+<tr>
+<td>G3</td>
+<td>渲染全树遍历，只裁剪不剪枝</td>
+<td>节点多时线性变慢</td>
+<td><code>qlrender.c</code> / <code>qlui.c</code></td>
+</tr>
+<tr>
+<td>G4</td>
+<td>字形逐像素混合、无字形缓存</td>
+<td>文本是 CPU 路径主要开销</td>
+<td><code>qlcanvas.c</code></td>
+</tr>
+<tr>
+<td>G5</td>
+<td><code>QLUINodeRT</code> 内嵌 <code>style_copy</code>（44 B）</td>
+<td>100 节点白吃 4.4 KB</td>
+<td><code>qlui.h</code></td>
+</tr>
+<tr>
+<td>T1</td>
+<td><strong>只有 ASCII 字体</strong></td>
+<td><strong>中文界面不成立</strong> → PC 第一平台受阻</td>
+<td><code>qlfont_ascii.c</code></td>
+</tr>
+<tr>
+<td>T2</td>
+<td>无字形缓存/矢量字体</td>
+<td>缩放、HiDPI、大字号不可用</td>
+<td>—</td>
+</tr>
+<tr>
+<td>L1</td>
+<td><strong>无 flexbox</strong></td>
+<td>Web 布局 80% 靠 flex，迁移最大障碍</td>
+<td><code>qlui_parse.c</code></td>
+</tr>
+<tr>
+<td>L2</td>
+<td>无 <code>position</code>/<code>overflow</code>/滚动</td>
+<td>弹窗、下拉、列表滚动做不了</td>
+<td><code>qlui_parse.c</code></td>
+</tr>
+<tr>
+<td>L3</td>
+<td>无混合内容（<code>&lt;p&gt;a&lt;b&gt;b&lt;/b&gt;&lt;/p&gt;</code>）</td>
+<td>需把文本包 <code>&lt;span&gt;</code>，与 Web 习惯不符</td>
+<td><code>qlui_parse.c</code> 报错</td>
+</tr>
+<tr>
+<td>I1</td>
+<td><strong>无输入系统</strong></td>
+<td>界面不可交互（只有状态位，无事件）</td>
+<td><code>qlui.h</code></td>
+</tr>
+<tr>
+<td>I2</td>
+<td><code>:hover/:active</code> 只记录状态位不改样式</td>
+<td>悬停高亮要自己画</td>
+<td><code>qlui.c</code></td>
+</tr>
+<tr>
+<td>D1</td>
+<td><strong>无 DPR / 逻辑坐标</strong></td>
+<td>HiDPI、移动端 2x/3x 不可用</td>
+<td>rect 是设备像素</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>GL 仅 X11（Wayland 靠 XWayland）</td>
+<td>Wayland 原生缺失</td>
+<td><code>qlgfx_gl.c</code></td>
+</tr>
+<tr>
+<td>P2</td>
+<td>仅 Linux</td>
+<td>"PC/移动第一平台"未兑现</td>
+<td>—</td>
+</tr>
+<tr>
+<td>E1</td>
+<td>无 bench 回归、无 golden 套件</td>
+<td>性能/画质漂移无人发现</td>
+<td>—</td>
+</tr>
+<tr>
+<td>E2</td>
+<td>控件层未接 <code>QLDraw2D</code></td>
+<td>控件用不上 GPU</td>
+<td><code>qlwidget.h</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3">3. 目标与验收标准</h2>
+<h3 id="31-ci">3.1 性能（可量化，进 CI）</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>现状</th>
+<th>目标</th>
+<th>验收方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GL 1080p 帧时间</td>
+<td>0.50 ms</td>
+<td>≤ 1.0 ms</td>
+<td><code>example_bench_fps</code></td>
+</tr>
+<tr>
+<td><strong>CPU 1080p 全屏填充</strong></td>
+<td>44 ms</td>
+<td><strong>≤ 6 ms</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>CPU 320×240 全屏</td>
+<td>3.68 ms</td>
+<td><strong>≤ 1.5 ms</strong></td>
+<td>同上（对标 LVGL）</td>
+</tr>
+<tr>
+<td>静态界面（100 节点）重绘</td>
+<td>0.164 ms（归一化）</td>
+<td><strong>≤ 0.3 ms</strong> ✅</td>
+<td><code>example_bench_ui</code></td>
+</tr>
+<tr>
+<td>改一个属性触发的重排</td>
+<td>全树</td>
+<td><strong>≤ 0.1 ms</strong></td>
+<td>新增 bench</td>
+</tr>
+<tr>
+<td>单节点内存</td>
+<td>~128 B</td>
+<td><strong>≤ 96 B</strong></td>
+<td>编译期断言</td>
+</tr>
+<tr>
+<td>稳态 malloc</td>
+<td>0</td>
+<td><strong>0</strong>（加断言守住）</td>
+<td>测试</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32">3.2 能力（功能验收）</h3>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>验收</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中文界面</td>
+<td>内置 Noto CJK 子集，128 个常用汉字正确渲染</td>
+</tr>
+<tr>
+<td>flexbox</td>
+<td>20 个 flex 用例（对齐/换行/grow/shrink）与浏览器几何差 ≤ 1px</td>
+</tr>
+<tr>
+<td>交互</td>
+<td>鼠标/触摸点击、悬停高亮、键盘 Tab 键导航</td>
+</tr>
+<tr>
+<td>滚动</td>
+<td>列表可滚动，滚动条样式来自 CSS</td>
+</tr>
+<tr>
+<td>多平台</td>
+<td>Linux(GL)、Windows(D3D11)、macOS/iOS(Metal)、Android(GLES) 至少各一个可运行示例</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4">4. 里程碑</h2>
+<blockquote>
+<p>排序原则：<strong>先让"能看见、能点、能写中文"，再谈性能极限，最后铺平台。</strong>
+每个里程碑独立可演示、可验收，不做"半年后再看效果"的大爆炸式交付。</p>
+</blockquote>
+<h3 id="m1-2-2026-11-08">M1 · 交互闭环（约 2 周）—— <strong>已完成（2026-11-08）</strong></h3>
+<p><strong>目标</strong>：界面能点、能悬停、能响应键盘。</p>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>说明</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入抽象</td>
+<td><code>QLInputEvent</code>（pointer down/up/move/wheel/leave、key down/up、字符输入）+ 64 深度静态环形队列</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>后端对接</td>
+<td>X11（显示 + GL 共用 <code>qlinput_x11.h</code>）、Wayland（<code>wl_pointer</code>/<code>wl_keyboard</code>）、GL 窗口</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>事件路由</td>
+<td>命中测试 → 目标控件 → 冒泡到根；<code>stop_propagation</code> 有效</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>回调 API</td>
+<td>用既有的 <code>ql_connect(obj, QL_WIDGET_EVENT_*, cb, user)</code>；12 个控件事件</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>状态样式</td>
+<td><code>:hover</code> / <code>:active</code> / <code>:focus</code> 在<strong>构建期</strong>编译成状态变体样式表 + 控件级 <code>state_bg</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>验收</td>
+<td><code>test/input/test_input.c</code>（130 项断言）、<code>example_input</code>（窗口 + <code>--demo</code> 自检）、<code>test_web_ui</code> 增补 13 项</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong></p>
+<ul>
+<li>输入层不认识控件树：后端只 <code>push</code>，主循环 <code>ql_input_dispatch()</code> 统一派发，
+  因此<strong>无窗口也能自动化测试</strong>（<code>example_input --demo</code> 注入事件跑完整链路）；</li>
+<li>状态位沿<strong>父链</strong>设置，和 CSS 的 <code>:hover</code> 作用到祖先一致；</li>
+<li>按住拖动时事件仍发给按下目标（等价 DOM 隐式指针捕获），拖出控件再松手不会漏 UP；</li>
+<li>点击合成：同目标 + 位移 ≤ 4px；</li>
+<li>后端<strong>不再</strong>把 Esc 当关闭键，示例用 <code>ql_win_bind_esc()</code> 自己挂处理器。</li>
+</ul>
+<p><strong>顺带修掉的真 bug</strong></p>
+<ol>
+<li><code>ql_object_set_parent</code> 头插 + 渲染正序遍历 → <strong>最后挂上的控件画在最下面</strong>，
+   与 <code>qlwidget.h</code> 的承诺相反。改为追加到链尾（链表顺序 == 绘制顺序）。</li>
+<li><code>ql_ui_build</code> 用 <code>node_count</code> 给<strong>样式下标</strong>做越界检查，
+   样式数一旦超过节点数就静默回落到 <code>styles[0]</code>。<code>QLUIDoc</code> 增加 <code>style_count</code>。</li>
+</ol>
+<p><strong>未纳入 M1（已登记）</strong>：Tab 遍历焦点、双击/长按、触摸、IME、DPR。</p>
+<hr />
+<h3 id="m2-3-2026-11-08">M2 · 文本质量（约 3 周）—— <strong>已完成（2026-11-08）</strong></h3>
+<p><strong>目标</strong>：中文能看、任意字号、文本不再是 CPU 瓶颈。</p>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>说明</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>字体后端抽象</td>
+<td><code>QLFontBackend</code> + 可选的 <code>glyph_bitmaps</code>，静态位图字体与动态字体共用读取接口</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>FreeType 接入</td>
+<td><code>ql_font_ft_load(path, face, px)</code>；8bpp 灰度；TTC 自动挑简体字面</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>字形缓存</td>
+<td>有序数组 + 每字形独立位图；上限 2048，满则拒绝新字形并告警</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>动态图集</td>
+<td>GPU 侧 1024² R8 货架分配 + <code>glTexSubImage2D</code> 增量上传 + <code>(字体,codepoint)</code> 哈希</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>任意字号</td>
+<td><code>ql_font_default(N)</code> + <code>font-size: Npx</code> 全部走字号表</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>验收</td>
+<td><code>test_font_ft</code>（40 项）、中文示例页（CPU 与 GPU 输出一致）、<code>example_gl_window</code> 中文渲染</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong></p>
+<ul>
+<li>三条绘制路径（画布 / QLDraw2D / GPU 图集）<strong>都不区分字体类型</strong>，
+  只通过 <code>ql_font_glyph_row()</code> / <code>ql_font_glyph_alpha()</code> 取像素；</li>
+<li>内置位图字体仍在启动时一次性拼进图集（一次 <code>glTexImage2D</code>），
+  动态字形才走增量上传 —— 首帧耗时反而从 1230µs 降到 1065µs；</li>
+<li>MCU 可以直接关掉 <code>QLGL_BUILD_FREETYPE</code>，位图字体路径零依赖不变。</li>
+</ul>
+<p><strong>顺带修掉的真 bug</strong></p>
+<ol>
+<li>GPU 字形 UV 缓存用<strong>字形数组下标</strong>做键，而动态字体的缓存表插入后要保持
+   按 codepoint 有序 —— 插入新字会把后面所有字形挪位，下标不稳定，
+   症状是"部分文字被画成别的字"。改成按 <code>(字体, codepoint)</code> 做键。</li>
+<li>往 8bpp 图集搬 4bpp 位图时按 <code>box_w</code> 直接 memcpy，奇数宽度时
+   <code>stride &lt; box_w</code> 会读越界（ASan 报 global-buffer-overflow）。
+   统一走 <code>fetch_glyph_row()</code>，非 8bpp 逐像素展开。</li>
+<li>生成器把字体字节写成数字数组 <code>{ 228, 184, 173 }</code>，<code>-Wconversion</code> 下报错；
+   改成带八进制转义的字符串字面量。</li>
+</ol>
+<p><strong>未纳入 M2（已登记）</strong>：自动折行、字距/行高精调、HarfBuzz 整形、
+字重/斜体合成、字形 LRU 淘汰。</p>
+<hr />
+<h3 id="m3-4-2026-11-08">M3 · 布局表达力（约 4 周）—— <strong>已完成（2026-11-08）</strong></h3>
+<p><strong>目标</strong>：能表达真实页面，不再"只能堆 div + margin"。</p>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>说明</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>flexbox</td>
+<td><code>display:flex</code>、<code>flex-direction</code>（含 reverse）、<code>justify-content</code>（6 值）、<code>align-items</code>、<code>flex-grow/shrink/basis</code>、<code>gap</code>、<code>flex-wrap</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>定位</td>
+<td><code>position: relative/absolute/fixed</code>、<code>top/right/bottom/left</code>、<code>z-index</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>裁剪</td>
+<td><code>overflow: hidden/auto</code>（裁剪 + 命中测试同步裁剪）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>混合内容</td>
+<td><code>&lt;p&gt;文字&lt;b&gt;粗&lt;/b&gt;…&lt;/p&gt;</code> —— <strong>生成期</strong>展开成匿名 inline 节点，运行期零改动</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>验收</td>
+<td><code>test_flex</code>（84 项几何断言，12 个用例页）；示例页改为真实 flex 布局；CPU/GPU 均验证</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong></p>
+<ul>
+<li>flex 是"<strong>测量 → 分配 → 定位</strong>"三步；测量直接复用 <code>layout_node</code>（哑位置跑一遍），
+  保证与 block/inline 路径的尺寸算法完全一致；</li>
+<li>全程<strong>零分配</strong>：信息暂存在子节点的 <code>border_box</code> 里，需要汇总时再遍历链表；</li>
+<li>最终尺寸写进 <code>style_copy</code>，复用既有的"运行期改写样式"机制；</li>
+<li><code>z-index</code> 在布局末尾对子链表做<strong>稳定排序</strong>，之后绘制与命中测试自动一致；</li>
+<li>混合内容在<strong>生成期</strong>消解成匿名 <code>&lt;span&gt;</code>，运行期数据模型不变。</li>
+</ul>
+<p><strong>顺带修掉的真 bug</strong></p>
+<ol>
+<li><code>box-sizing: border-box</code> 时<strong>显式高度</strong>被当成内容高使用，导致所有这类元素
+   被撑大一整个 <code>padding + border</code>（卡片高度 68 → 86）。宽度路径一直是对的，
+   高度路径漏了换算。</li>
+<li><code>style_copy</code> 从不清除：flex 分配与绝对定位写进去的强制尺寸会<strong>带到下一帧</strong>，
+   视口变窄时表现为"尺寸不更新"。改为每次 <code>ql_ui_layout</code> 开头重置。</li>
+<li><code>QLUILength.value</code> 是 <code>uint16_t</code>，<code>top: -6px</code> 变成 65530（badge 飞到 y=65741）。
+   改成 <code>int16_t</code>。</li>
+<li>同一节点在一次布局里被 <code>layout_node</code> 调用两次（相对定位那段重复调用），
+   已合并成一次。</li>
+<li>命中测试原来按"数组下标倒序"扫，<code>z-index</code> 排序后与绘制顺序脱节。
+   改为与绘制同源的树遍历（子节点优先 + 后者覆盖 + overflow 裁剪）。</li>
+</ol>
+<p><strong>未纳入 M3（已登记）</strong>：滚动容器与滚动条、自动折行、<code>align-self</code>/<code>align-content</code>、
+绝对定位的 "static position" 与完整 shrink-to-fit。</p>
+<hr />
+<h3 id="m35-ui-115-01234-2026-11-08">M3.5 · UI 前端统一（约 1~1.5 周）—— <strong>第 0/1/2/3/4 步已完成（2026-11-08）</strong></h3>
+<p><strong>目标</strong>：一套 C 前端、两种产物（<code>.qlui</code> blob / C 源），三种形态共存不漂移。</p>
+<blockquote>
+<p>为什么夹在 M3 与 M4 之间：flex/position 会大改属性表与级联语义。
+先让 M3 把属性集稳定下来，再一次性写解析器，否则要改两遍。
+但 blob 与所有权<strong>不依赖</strong> M3，所以先做（已完成）。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>任务</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第 0 步</td>
+<td><code>QLUIDoc.arena</code> 所有权判据；<code>.qlui</code> 格式 + 编解码 + 损坏检测；<code>ql_ui_load_file</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>第 1 步</td>
+<td>宿主工具 <code>tools/qlblob</code>（序列化只在 C 侧实现一次）+ CMake 产出 <code>ui_demo.qlui</code> + 热重载示例</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>第 2 步</td>
+<td>M3 布局（见上）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>第 3 步</td>
+<td>C 版 HTML/CSS 解析器：<code>ql_ui_load_text(html, css)</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>第 4 步</td>
+<td><code>qlui.py</code> 降级为"调宿主工具 + 格式化"，语义只剩一份</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>并行</td>
+<td><code>qltext --platform</code>：对目标平台不支持的效果给出<strong>构建期降级报告</strong></td>
+<td>⏳</td>
+</tr>
+</tbody>
+</table>
+<p><strong>第 0/1 步的验收（已全部通过）</strong></p>
+<ul>
+<li><code>test_ui_blob</code>（63 项）：编码/解码往返、字段逐项相等、<strong>重新编码的 blob 与原文逐字节相同</strong>、
+  加载后的 doc 渲染与静态 doc <strong>逐像素相同</strong>（差异 0/102400）、7 类损坏输入全部明确拒绝、
+  与 <code>qlblob</code> 产物逐字节一致；</li>
+<li>热重载实测：改 CSS → 重新生成 <code>.qlui</code> → 窗口更新，<strong>应用二进制未重新编译</strong>；
+  新 blob 损坏时<strong>保留旧界面</strong>并打印原因。</li>
+</ul>
+<p><strong>第 3 步的完成判据（先写下来，防止"差不多就行"）</strong></p>
+<ol>
+<li>同一份 HTML/CSS，构建期产物与提交的基准 blob <strong>逐字节相同</strong>；</li>
+<li><strong>拒绝的输入集合相同</strong>（含错误信息里的行列号），不只比成功的；</li>
+<li>解析器是全库唯一吃外部文本的地方，必须有界：嵌套深度、节点/样式/文本/字号上限
+   全部进 <code>qlconfig.h</code>；</li>
+<li>可摘：不编译该编译单元则零字节成本，core 里零静态引用指向它。</li>
+</ol>
+<p><strong>明确不做</strong>：元素级 doc 混用（跨 doc 的 <code>uint16</code> 下标无法引用）；
+混用单位锁死在<strong>面板</strong>（一个 <code>QLUIRoot</code> ↔ 一份 doc）。</p>
+<p><strong><code>--platform</code> 降级报告（与 M5.5 能力矩阵配套）</strong></p>
+<p>同一份 HTML/CSS，两个目标各生成一份产物；MCU 侧不支持的效果<strong>明确报告降级去往何处</strong>，
+而不是静默忽略（沿用"不静默降级"红线）：</p>
+<div class="highlight"><pre><span></span><code>$ qltext cc --html app.html --css app.css --platform mcu --out build/mcu
+⚠ app.css:42   backdrop-filter: blur(8px)
+               MCU 不支持 → 降级为 background-color: #ffffffcc（无模糊）
+⚠ app.css:88   transform: rotateY(45deg)
+               MCU 不支持 → 降级为 scaleX 假翻转
+❌ app.css:120  filter: blur(4px)
+               无等效替代 → 建议改用 9-slice 预烘焙阴影
+qlui: 21 处降级，1 处无法降级
+</code></pre></div>
+
+<p>这样<strong>一份源文件、两个平台</strong>，能力差异由工具表达，不需要 <code>#ifdef</code> 满天飞。
+（MCU 为第二平台，此任务在 PC 主线走通后再做。）</p>
+<hr />
+<p><strong>第 3 步已完成（2026-11-08）</strong></p>
+<p><code>src/ui/qlui_parse.c</code>（约 4700 行）+ <code>include/qlgl/qluitext.h</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_load_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">html</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_text_last_error</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<p>验收标准全部达成，而且是<strong>逐字节</strong>级别的：</p>
+<table>
+<thead>
+<tr>
+<th>判据</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同一份 HTML/CSS，构建期与运行期产出的 blob <strong>逐字节相同</strong></td>
+<td>✅ <code>test_golden</code> 27 页逐字节 + <code>test_text_parse</code> 352 项</td>
+</tr>
+<tr>
+<td>拒绝的输入集合相同</td>
+<td>✅ <code>test_text_reject</code>：32 个正负用例（含 HTML 结构错、非法值、不支持的属性/选择器/at-rule、简写冲突、关键帧属性不一致…）<strong>0 处不一致</strong></td>
+</tr>
+<tr>
+<td>有界</td>
+<td>✅ 11 个 <code>QL_CFG_UI_MAX_*</code> 上限，超限即报错不截断</td>
+</tr>
+<tr>
+<td>可摘</td>
+<td>✅ <code>-DQLGL_BUILD_TEXT_PARSER=OFF</code> → 一行代码都不进二进制</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现过程中真正花时间的五个细节</strong>（都写进《QLUIText阅读指南》）：</p>
+<ol>
+<li><strong>样式表身份 = 排序后的 <code>(属性, 值)</code> 字符串集合</strong>，不是编译后的结构体。
+   否则"两个声明不同但编出来一样"的节点会被合并，样式表条数就不同了。</li>
+<li><strong>简写必须在单条规则内展开</strong>（<code>animation</code> / <code>transition</code> / <code>flex</code> / <code>gap</code> /
+   <code>background</code> / <code>border</code>）——级联合并后再展开会覆盖后出现的长写。</li>
+<li><strong>空文本池也要占一条</strong>：构建期工具用 <code>text_ofs[] = { 0 }</code> 占位，于是
+   <code>text_count == 1</code> 且池里是空串。</li>
+<li><strong>Unicode 空白</strong>：Python 的 <code>\s</code> 认 U+3000 等；示例文本里就有一个全角空格，
+   漏掉它 blob 差 2 字节。</li>
+<li><strong><code>box-shadow</code> 的颜色提取顺序</strong>必须是 <code>rgba()</code> → <code>#hex</code> → 第一段字母，
+   顺序错了会把 <code>1px</code> 里的 <code>px</code> 当颜色。</li>
+</ol>
+<p>顺带修掉一个真泄漏：<code>pnode_free</code> 只遍历 <code>items</code>，而 flatten 之后子节点在
+<code>first_child</code> 链上——27 页跑完漏 76 KB。</p>
+<p>文档：<code>doc/手册/uitext/</code>（阅读指南 + API 手册）；示例：<code>test/uitext/example_load_text.c</code>。</p>
+<hr />
+<p><strong>第 4 步已完成（2026-11-08）：删掉第二份语义</strong></p>
+<p>第 3 步结束时是"两份实现 + blob 逐字节比对"互相盯着。这一步把两份变成一份：
+新增宿主工具 <code>tools/qltext/qltext.c</code>（约 700 行），它<strong>链库自己的解析器</strong>
+（<code>ql_ui_load_text</code>），只负责把算出来的 <code>QLUIDoc</code> 落盘。</p>
+<div class="highlight"><pre><span></span><code>        index.html + index.css
+                 │
+     ┌───────────┴────────────┐
+     ▼                        ▼
+  qltext cc               ql_ui_load_text()      ← 同一个函数
+     │                        │
+     ▼                        ▼
+ ui_x.c → 编译器 → .rodata   QLUIDoc → 直接布局/绘制
+     │
+     └── qlblob → ui_x.qlui  → ql_ui_load_file()
+</code></pre></div>
+
+<p>三个子命令：</p>
+<table>
+<thead>
+<tr>
+<th>子命令</th>
+<th>产物</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qltext cc --html --css --name --out DIR</code></td>
+<td><code>ui_x.c/.h/_blob.c</code></td>
+<td>正式产品的构建期编译</td>
+</tr>
+<tr>
+<td><code>qltext blob --html --css --out x.qlui</code></td>
+<td><code>.qlui</code></td>
+<td>不需要编译器就能出热重载资源</td>
+</tr>
+<tr>
+<td><code>qltext check --html --css</code></td>
+<td>只打印规模</td>
+<td>CI 里的语法检查 / 编辑器保存钩子</td>
+</tr>
+</tbody>
+</table>
+<p><code>tools/qlui/qlui.py</code> 从 1750 行降到 <strong>58 行</strong>，只剩"找 <code>qltext</code> + 转发参数 + 转发退出码"。
+它保留下来只是为了让旧的命令行习惯继续能用，CMake 已经直接调 <code>qltext cc</code>。</p>
+<p><strong>验收</strong></p>
+<table>
+<thead>
+<tr>
+<th>判据</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同一份源，新工具产出的 blob 与旧 Python 产出的<strong>逐字节相同</strong></td>
+<td>✅ 27 页（<code>test_golden</code>）+ <code>test_qltext_blob</code>（<code>qltext blob</code> 直出 vs 基准 <code>cmp</code>）+ <code>ui_demo.qlui</code> <code>cmp</code> 全等</td>
+</tr>
+<tr>
+<td>接受/拒绝集合不变</td>
+<td>✅ <code>test_text_reject</code>（42 个用例）全绿</td>
+</tr>
+<tr>
+<td>生成出来的 C 可读</td>
+<td>✅ 枚举写名字、<code>0xFFFF</code> 哨兵写成 <code>0xFFFF</code></td>
+</tr>
+<tr>
+<td>不再需要 Python 才能构建界面</td>
+<td>✅ <code>QLGL_BUILD_TEXT_PARSER=ON</code> 就够；CMake 里 <code>qltext</code> 目标不依赖 Python</td>
+</tr>
+<tr>
+<td>严格告警</td>
+<td>✅ <code>-Werror -Wconversion</code> 下 <code>qltext.c</code> 零告警</td>
+</tr>
+</tbody>
+</table>
+<p><strong>这一步丢了一样东西，说清楚</strong>：生成的 <code>ui_x.c</code> 里原本有 <code>/* &lt;div#root&gt; */</code> 这样的
+注释（来自 Python 侧的 DOM 树）。<code>QLUIDoc</code> 只存 <code>tag</code>，不存 <code>class</code>/<code>id</code>
+（存了就要进 blob，blob 会变长、变版本），所以现在那行注释没有了。
+要补回来只有一个办法：在 <code>qltext</code> 里再写一遍 HTML 词法专门用来出注释——
+那正是这一步要消灭的东西，不做。节点靠 <code>style</code> / <code>text</code> 下标仍然能定位。</p>
+<p><strong>顺带删掉的</strong>：<code>test/web/test_qlui_errors.py</code>（112 行）。它守的"动画/关键帧必须报错"
+清单，其中 10 条此前没进 <code>test_text_reject</code>，已搬过去，现在只剩 C 侧一份。</p>
+<hr />
+<h3 id="m4-3">M4 · 性能补齐（约 3 周）—— <strong>进行中（第一批已完成）</strong></h3>
+<p><strong>目标</strong>：把 CPU 路径拉回 LVGL 量级，并让静态界面几乎零开销。</p>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>对应缺口</th>
+<th>状态 / 实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>~~CPU 行循环 + 格式特化~~</td>
+<td>G1</td>
+<td>✅ 1080p 44ms → 1.84ms</td>
+</tr>
+<tr>
+<td>~~SIMD（SSE2/NEON）blitter~~</td>
+<td>G1</td>
+<td>✅ SSE2 半透明行混合 4 像素/批；阴影 0.692 → 0.280 ms/100 次</td>
+</tr>
+<tr>
+<td>~~软阴影 9-slice 分解~~</td>
+<td>G1</td>
+<td>✅ 1080p 4.93 → 2.93 ms</td>
+</tr>
+<tr>
+<td>~~阴影角区四镜像 + 合并分支~~</td>
+<td>G1</td>
+<td>✅ 阴影 0.272 → 0.186 ms/100 次</td>
+</tr>
+<tr>
+<td>~~<code>round_row_span</code> 解析求解~~</td>
+<td>G1</td>
+<td>✅ 全额重绘 -11%</td>
+</tr>
+<tr>
+<td>~~渲染脏区剪枝（<code>paint_box</code> + <code>ql_ui_render_rect</code>）~~</td>
+<td>G3</td>
+<td>✅ 局部重绘 0.048 → <strong>0.016 ms</strong>；抓到 <code>fill_shadow</code> 带子越界老 bug</td>
+</tr>
+<tr>
+<td>~~控件层接 <code>QLDraw2D</code>~~</td>
+<td>E2</td>
+<td>✅ 控件绘制函数改用 <code>QLDraw2D</code>；新增 <code>ql_render_draw2d()</code>；GL/CPU 差异 0.29%</td>
+</tr>
+<tr>
+<td>字形行级裁剪 + 缓存</td>
+<td>G4</td>
+<td>待办（文本占节点页 render 的 22%；FreeType 的位图盒已贴边，先要 SIMD 才有意义）</td>
+</tr>
+<tr>
+<td>增量布局（脏子树）</td>
+<td>G2</td>
+<td>待办，<strong>优先级下调</strong>：全树 layout 已 0.037 ms，而验收线是 0.1 ms</td>
+</tr>
+<tr>
+<td><code>style_copy</code> 改按需分配</td>
+<td>G5</td>
+<td>待办，<strong>需重新定标</strong>（见下）</td>
+</tr>
+<tr>
+<td>验收</td>
+<td>§3.1</td>
+<td>除"单节点内存 ≤96 B"外全部达标；数字见 bench.md</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么"单节点内存 ≤96 B"这一条落到待办</strong>：</p>
+<p>当前 <code>QLUINodeRT</code> ≈ 220 B，其中 <code>style_copy</code>（内嵌 96 B 的 <code>QLUIStyle</code>）占大头。
+它能按需分配（绝大多数节点不需要运行期改样式），但剩下 124 B 里
+<code>border_box + content_box + abs_cb + paint_box</code> 就占 64 B。
+要压到 96 B 得同时做三件事——<code>style_copy</code> 进池、<code>abs_cb</code> 改为布局参数、
+<code>content_box</code> 改为按需从 <code>border_box + padding</code> 推导。这是<strong>一次结构性重构</strong>，
+不属于"性能补齐"，应该在 M7 工程化里单独做，并把验收线重新定标
+（例如"静态页 ≤128 B/节点"）。现在硬做会把 M4 的风险抬高而没有可见收益。</p>
+<p><strong>M4 第一批实测（Release）</strong></p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>M4 之前</th>
+<th>现在</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1080p CPU 光栅</td>
+<td>4.929 ms</td>
+<td><strong>2.191 ms</strong></td>
+<td>≤6 ms ✅（余量 2.7×）</td>
+</tr>
+<tr>
+<td>320×240 CPU 光栅</td>
+<td>0.696 ms</td>
+<td><strong>0.296 ms</strong></td>
+<td>≤1.5 ms ✅（余量 5×）</td>
+</tr>
+<tr>
+<td>211 节点全量重绘</td>
+<td>0.975 ms</td>
+<td><strong>0.348 ms</strong></td>
+<td>归一化 0.165 ms/100 节点 ✅</td>
+</tr>
+<tr>
+<td>80×60 局部重绘</td>
+<td>0.048 ms</td>
+<td><strong>0.016 ms</strong></td>
+<td>全量的 4.5%</td>
+</tr>
+<tr>
+<td>全树 layout</td>
+<td>0.134 ms</td>
+<td><strong>0.034 ms</strong></td>
+<td>≤0.1 ms ✅</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>护栏</strong>：<code>test_effects</code> 里有朴素参考实现 <code>ref_shadow()</code>（整块外框逐像素 SDF），
+用 432 组参数逐像素对照九宫格分解。它已经抓到 3 个真 bug（<code>rad=0</code> 方角留白、
+右/下角块锚点内偏、角区混错 alpha）。<strong>任何后续阴影优化都必须先让它继续通过。</strong></p>
+</blockquote>
+<hr />
+<h3 id="m5-dpi-2026-11-08">M5 · 逻辑坐标 / 高 DPI / 亚像素 —— <strong>已完成（2026-11-08）</strong></h3>
+<p><strong>目标</strong>：同一份 CSS 在 1x/1.25x/1.5x/2x/3x 屏上视觉一致；动画在 CPU 上也是连续的。</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>任务</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>M5.1</td>
+<td><strong>布局精度</strong>：消灭"各自取整"导致的空隙</td>
+<td>✅ 见下</td>
+</tr>
+<tr>
+<td>M5.2</td>
+<td><strong>DPR</strong>：布局在 CSS px、光栅在设备 px；缩放只在后端入口乘一次</td>
+<td>✅ 见下</td>
+</tr>
+<tr>
+<td>M5.3</td>
+<td><strong>绘制期亚像素</strong>：<code>QLRectFx</code> + 面积覆盖率抗锯齿；<code>QLDraw2D</code> 绘制期偏移（GPU 顶点本来就是浮点，天然免费）</td>
+<td>✅ 见下</td>
+</tr>
+<tr>
+<td>验收</td>
+<td>DPR=2 与 DPR=1 的截图缩放到同尺寸后像素差 &lt; 3%</td>
+<td>✅ <strong>0.57%</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>M5 结论</strong>：DPR 与亚像素都只影响<strong>绘制入口</strong>，布局始终是 CSS px 整数运算，
+所以上层代码一行没改。三条安全阀（M5.1 累计分配、M5.2 按边缩放、M5.3 对齐时逐字节不变）
+保证了这些改动不会悄悄改变已有像素。</p>
+</blockquote>
+<h4 id="m51">M5.1 的过程与结论（重要，改了这一节的原始设计）</h4>
+<p>原计划是"<code>ql_coord_t</code> 语义整体改成 26.6"。开工前先量了真实缺陷，结论是<strong>要分两步走</strong>：</p>
+<ol>
+<li><strong>先修真正的病根</strong>：flex / justify 的每一项都是"各自整除"，
+   余数被直接丢掉。实测 <code>100px</code> 分三个 <code>flex:1</code> 得到 <code>33+33+33 = 99</code>，
+   右边留 1px 空隙。这<strong>不需要定点</strong>，只要把分配改成<strong>累计推进</strong>：
+   <code>num += 总额 × 权重;   份额 = num / 权重和;   num %= 权重和;</code>
+   这样份额之和恒等于总额。改完实测 <code>33+34+33 = 100</code>，space-between 也精确落到行尾。</li>
+<li><strong>再决定要不要 26.6</strong>：查下来，"整数输入 + 整数输出"的布局里，
+   26.6 的额外精度<strong>只来自除法</strong>，而除法已被第 1 步解决。
+   其余精度损失来自<strong>样式表本身的表示</strong>（<code>QLUILength.value</code> 是 <code>int16</code> 整数 px / 整数百分比），
+   要让 <code>33.33%</code> 或 <code>margin: 5.5px</code> 可表达就必须改 <code>QLUIStyle</code> → <strong>改 blob 格式</strong>，
+   那是另一件事。
+   而 <code>border_box</code> 是 <code>QLRect</code>（设备像素整数），
+   光栅化的落点本来就是整像素——<strong>26.6 在这里体现不出任何视觉差别</strong>。</li>
+</ol>
+<p><strong>所以 <code>ql_coord_t</code> 全局改 26.6 撤出 M5.1</strong>，改到 M5.3 与"边缘覆盖率 AA"一起做：
+只有光栅化肯吃小数，定点才有意义。这样也避开了 424 处调用点的无收益风险。</p>
+<blockquote>
+<p>剩下真正受益于 26.6 的地方只有两处，都记在 M5.3：
+① 光栅化落点（边缘覆盖率）；② 字形前进宽（FreeType 给的就是 26.6，
+现在被 <code>adv_w = (slot-&gt;advance.x + 32) &gt;&gt; 6</code> 取整，长行会累计漂移，
+居中/右对齐会偏几个像素）。</p>
+</blockquote>
+<p><strong>M5.1 的验收</strong>：<code>test_flex</code> 新增第 12 组用例（<code>test/web/flex/frac.*</code>）：
+100px÷3 的边界、space-between 的末项贴边、shrink 后无空隙，共 14 项断言。
+原有 84 项全部保持通过（说明累计分配只改"除不尽"的情形）。</p>
+<h4 id="m52">M5.2 的设计：缩放只在一处发生</h4>
+<p><strong>单位三层，各管一段</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>单位</th>
+<th>谁负责换算</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局 / qlui / 控件 / 自定义绘制</td>
+<td><strong>CSS px</strong></td>
+<td>不换算，始终是 CSS px</td>
+</tr>
+<tr>
+<td><code>QLDraw2D</code> 后端入口（CPU 与 GL）</td>
+<td>设备像素</td>
+<td><strong>唯一</strong>的换算点</td>
+</tr>
+<tr>
+<td>驱动 <code>flush(area)</code> / 清屏</td>
+<td>设备像素</td>
+<td><code>ql_render()</code> 各自换一次</td>
+</tr>
+</tbody>
+</table>
+<p>缩放系数是 26.6 定点（<code>QL_SCALE_ONE</code> = 1.0，96 = 1.5），挂在"表面"上：
+<code>QLDispDriver.scale_fx</code> → <code>QLCanvas.scale_fx</code> → <code>QLDraw2D.scale_fx</code>，
+GL 侧是 <code>QLGfxGL.scale_fx</code>。上层代码<strong>一行都不用改</strong>——这就是选这个设计的原因。</p>
+<p>两条容易写错的地方：</p>
+<ol>
+<li><strong>矩形必须按"边"缩放</strong>（<code>ql_scale_rect</code> 用 <code>ql_rect_right</code> 算同一条边界），
+   不能 <code>x*scale + w*scale</code>：相邻矩形各自算宽度会在接缝处裂开或重叠 1px。
+   （和 M5.1 的累计分配是同一个道理。）</li>
+<li><strong>文本要按设备字号重新取字体</strong>（<code>ql_draw2d_device_font</code>）：DPR&gt;1 时
+   <code>ql_font_default(css_px * scale)</code>，否则字形会被拉伸糊掉。只有动态字体能真正
+   重取；位图字体在 MCU 上不缩放（固有限制）。</li>
+</ol>
+<p><strong>顺手修掉一个 GPU 的真 bug（重要）</strong></p>
+<p>写 DPR 测试时发现 GPU 后端和 CPU 差 28%，查下来是：本后端是<strong>单批次</strong>
+（整帧一次 <code>glDrawArrays</code>），注释里写着"顶点已按最终 clip 画好"，
+但 <code>emit_quad</code> / <code>emit_quad_gradient</code> / <code>emit_shadow</code> <strong>从来没做这个裁剪</strong>，
+<code>g-&gt;clip</code> 只是存着。结果是 <strong><code>overflow:hidden</code> 在 GPU 上完全没生效</strong>——
+测试页里那个 120×70 的子节点整块画了出来，正好多出 5422 像素。</p>
+<p>修法：发顶点前把四边形范围与 <code>g-&gt;clip</code> 求交（<code>clip_quad</code>），
+但<strong>形状参数（<code>hx/hy</code>、radius、border、渐变跨度）必须继续用未裁剪的矩形</strong>，
+否则片元里的 SDF 会算错——被裁掉的只是光栅化范围。
+纹理四边形（字形）裁剪后按顶点位置线性插值重算 UV（图集 UV 是轴对齐的，插值精确）。</p>
+<p>结果：CPU vs GL 从 <strong>28.24% → 0.77%</strong>（scale=1）/ <strong>27.87% → 0.40%</strong>（scale=2），
+仍是<strong>单 draw call</strong>。</p>
+<p><strong>M5.2 的验收</strong>：<code>test/web/test_dpr.c</code>（22 项）：
+1. 布局与 DPR 无关（两种 DPR 下 <code>border_box</code> 逐字段相同）；
+2. <code>scale=2</code> 渲染后 2×2 盒式降采样 vs <code>scale=1</code>：<strong>0.57%</strong> 像素超差（门槛 3%）；
+3. GPU 与 CPU 在 <code>scale=2</code> 下：<strong>0.40%</strong>；
+4. <code>ql_scale_rect</code> 按边缩放：1.5× 下相邻矩形边界相接、设备→CSS 往返不丢像素。</p>
+<h4 id="m53">M5.3 的设计：先把"能画在半个像素上"做出来</h4>
+<p>动画的"顺滑"本质是<strong>矩形边落在非整像素上也能画</strong>，所以这一步只加光栅化原语：</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLRectFx</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 设备像素 26.6 */</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_rect_fx</span><span class="p">(...);</span><span class="w">        </span><span class="cm">/* 面积覆盖率 AA */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_round_rect_fx</span><span class="p">(...);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_stroke_rect_fx</span><span class="p">(...);</span>
+</code></pre></div>
+
+<p>配一个<strong>绘制期平移</strong>，这就是动画的落点：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_draw2d_set_offset</span><span class="p">(</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">x_css_26_6</span><span class="p">,</span><span class="w"> </span><span class="n">y_css_26_6</span><span class="p">);</span><span class="w">   </span><span class="cm">/* translate(0.5px) → 32 */</span>
+</code></pre></div>
+
+<ul>
+<li>CPU：把矩形转成 <code>QLRectFx</code> 走覆盖率填充；</li>
+<li>GPU：<strong>直接加进顶点浮点</strong>（本来就免费，且是精确的，比 CPU 更准）；</li>
+<li><strong>不影响布局</strong>（与 CSS <code>transform</code> 语义一致）→ 滑动/缩放动画零重排；</li>
+<li>文本与阴影只吃偏移的整数部分（亚像素会让字形糊；阴影本来就软）。</li>
+</ul>
+<p>三个关键实现选择，都是为了"不引入跳变"：</p>
+<ol>
+<li><strong>圆角跨度复用整数版 <code>round_row_span</code></strong>，再把整像素跨度平移亚像素余量。
+   一开始用中心采样（直接算 SDF），结果圆角比整数版<strong>大将近 2px</strong>——
+   动画跨过 0 时拐角会"突然胀一圈"。改用整数跨度后，对齐时<strong>逐字节相同</strong>。</li>
+<li><strong>整数矩形 = 低 6 位全 0 的 fx 矩形</strong>，覆盖率恰好全满 → 与整数路径<strong>逐像素相同</strong>。
+   这就是本次改造的安全阀（<code>test_subpx</code> 用 5 种矩形 × 4 种半径 × 3 种 alpha 对照）。</li>
+<li><strong>每行只在两端各多一次 <code>put_px</code></strong>，中间整像素仍走 <code>fill_row</code> 的 SIMD 快路径，
+   所以亚像素不是"全逐像素"的代价。</li>
+</ol>
+<p><strong>缓动曲线能看到几个台阶</strong>（12px 的矩形从 0 移到 1px）：</p>
+<table>
+<thead>
+<tr>
+<th>实现</th>
+<th>一个像素内的不同落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整像素</td>
+<td>1 个（直接跳过去）</td>
+</tr>
+<tr>
+<td>26.6 亚像素</td>
+<td><strong>64 个</strong>（<code>test_subpx</code> 抽查 6 个偏移得到 6 个不同边缘值）</td>
+</tr>
+</tbody>
+</table>
+<h4 id="m53-testdrawtest_subpxc23">M5.3 的验收：<code>test/draw/test_subpx.c</code>（23 项）</h4>
+<ol>
+<li><strong>对齐时逐字节不变</strong>：5 种矩形 × 4 种半径 × 3 种 alpha 的填充与描边，
+   fx 版与整数版<strong>逐像素相同</strong>；</li>
+<li><strong>覆盖率按面积</strong>：0.5px 偏移的首尾像素各 50%，一行内覆盖率之和 = 真实宽度
+   （10px → 2550 ± 6）；</li>
+<li><strong>1px 偏移退化成纯平移</strong>：整幅图与"矩形右移 1px"逐像素相同；</li>
+<li><strong>一个像素内有多个台阶</strong>：6 个不同偏移得到 ≥5 个不同边缘值；</li>
+<li><strong>GPU 吃同一个偏移</strong>：亚像素偏移下 CPU vs GPU <strong>1.62%</strong>（门槛 2%，差异全在圆角 AA）。</li>
+</ol>
+<p><strong>后端上报</strong></p>
+<table>
+<thead>
+<tr>
+<th>平台</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X11</td>
+<td>✅ 读 <code>Xft.dpi</code> 资源（<code>dpi/96</code>）自动设置；应用可用 <code>ql_disp_set_scale()</code> 覆盖</td>
+</tr>
+<tr>
+<td>GL 窗口</td>
+<td>✅ <code>ql_gfx_gl_set_scale()</code>；<code>example_gl_window --dpr N</code> 可直接看效果</td>
+</tr>
+<tr>
+<td>Wayland</td>
+<td>⏳ <strong>待办</strong>，写法已定：绑定 <code>wl_output</code> 听 <code>scale</code> 事件 → 分配<strong>物理尺寸</strong>的 shm 缓冲 → <code>wl_surface.set_buffer_scale(scale)</code>；本机无合成器无法验证，不写未测过的协议代码</td>
+</tr>
+<tr>
+<td>输入</td>
+<td>✅ X11 事件坐标按 <code>scale_fx</code> 换回 CSS px（<code>ql_x11_push_input_scaled</code>）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>这件事越晚做越贵：rect 已经扩散到 qlui/widget/canvas/GL 四处，必须单独一个里程碑完成。</p>
+</blockquote>
+<hr />
+<h3 id="m55-ui-45-pcmcu">M5.5 · 动效与现代 UI（约 4~5 周）—— <strong>PC/移动优先；MCU 暂缓</strong></h3>
+<p><strong>目标</strong>：做到"现代 UI"的观感。<strong>平台优先级已定：PC/移动全量支持，MCU 只做子集且暂缓。</strong></p>
+<p><strong>核心判断（这是本里程碑能成立的前提）</strong></p>
+<p>动画只动 <code>transform</code> / <code>opacity</code> / 颜色时，本架构几乎零成本：
+没有保留式场景图要更新、布局不重跑、每帧本来就在重新发 quad。
+<strong>这点比浏览器还简单</strong>——浏览器要做"能不能跳过重排/重绘"的判断，我们没有可跳过的状态。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>量级</th>
+<th>依赖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 帧时钟</td>
+<td>单调时钟 + 每帧 <code>dt</code>；<strong>无活动动画时完全跳过</strong>（省电，也是 MCU 必需）</td>
+<td>~150 行</td>
+<td>—</td>
+</tr>
+<tr>
+<td>② transition</td>
+<td>color / opacity / transform；cubic-bezier + <code>steps()</code>；中断时从当前插值重基</td>
+<td>~350 行</td>
+<td>①</td>
+</tr>
+<tr>
+<td>③ <code>@keyframes</code></td>
+<td><strong>构建期编译成静态关键帧表</strong>（运行时零解析）；迭代/方向/fill-mode；<code>animationend</code> 事件</td>
+<td>~300 行</td>
+<td>①</td>
+</tr>
+<tr>
+<td>④ transform</td>
+<td>绘制期矩阵（<strong>不进布局</strong>）；命中测试逆变换</td>
+<td>~400 行</td>
+<td>⑤ M5 的定点坐标</td>
+</tr>
+<tr>
+<td>⑤ 路径动画</td>
+<td><code>offset-path</code> 三次贝塞尔 + 弧长参数化 + <code>offset-rotate</code></td>
+<td>~100 行</td>
+<td>④</td>
+</tr>
+<tr>
+<td>⑥ SDF 扩展</td>
+<td><strong>软阴影 / 外发光 / 线性·径向渐变</strong></td>
+<td>各 20~30 行</td>
+<td>—</td>
+</tr>
+<tr>
+<td>⑦ 遮罩揭示</td>
+<td>圆形/圆角（扩 SDF，单趟）→ 任意形状（mask 纹理，单趟）</td>
+<td>30 + ~150 行</td>
+<td>—</td>
+</tr>
+<tr>
+<td>⑧ 3D 翻转</td>
+<td>~~真 3D~~ → <strong>假翻转</strong>：<code>scaleX: 1→0→1</code>（轴对齐非等比缩放）</td>
+<td>~150 行</td>
+<td>④</td>
+</tr>
+<tr>
+<td>⑨ 毛玻璃</td>
+<td><code>backdrop-filter: blur()</code>；GPU 半分辨率两趟、CPU 就地盒式</td>
+<td>~400 行</td>
+<td>FBO 地基（§13）</td>
+</tr>
+</tbody>
+</table>
+<h5 id="1-2-transition">① 帧时钟 + ② transition —— <strong>已完成</strong></h5>
+<p>新增模块 <code>qlanim</code>（<code>include/qlgl/qlanim.h</code> + <code>src/core/qlanim.c</code>，独立编译单元，不依赖 ui/draw）：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+<th>为什么这样做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>帧时钟</td>
+<td><code>ql_anim_now_ms()</code> 默认 <code>CLOCK_MONOTONIC</code>，<code>ql_anim_set_time_source()</code> 可换</td>
+<td>MCU 用 tick 计数器；测试用假时钟才能断言中间帧</td>
+</tr>
+<tr>
+<td>无动画跳过</td>
+<td><code>ql_anim_tick()</code> 返回<strong>仍在进行</strong>的动画数，0 表示可以整帧跳过</td>
+<td>MCU 没有动画就不该烧 CPU；PC 省电</td>
+</tr>
+<tr>
+<td>缓动</td>
+<td>三次贝塞尔牛顿迭代 <strong>固定 8 次</strong>（不按误差循环）</td>
+<td>同一输入必得同一输出：可测、可复现、时长可预测</td>
+</tr>
+<tr>
+<td>重基</td>
+<td><code>QLAnimKey.cur</code> 既是当前值也是新动画起点，<code>start</code> 不去 cancel 旧动画</td>
+<td>中断时从当前插值接着走 → 视觉零跳变（与浏览器一致）</td>
+</tr>
+<tr>
+<td>池</td>
+<td>静态数组 <code>QL_CFG_ANIM_MAX</code>=64，槽满返回 <code>QL_ERR_NOMEM</code>，<strong>调用方直接落到终值，不排队</strong></td>
+<td>排队会让延迟累积，比"跳一下"更糟</td>
+</tr>
+</tbody>
+</table>
+<p>CSS <code>transition</code> 端到端：<code>QLUIStyle</code> 增加 <code>trans_ms/trans_ease/trans_props</code>
+（96 → <strong>100 字节</strong>，blob version 2 → 3），解析器展简写与长写，运行期用<strong>独立池</strong>
+<code>QLUIRoot.trans[]</code>（不占用 <code>style_copy</code>，避免与 flex 强制尺寸互相踩）。</p>
+<ul>
+<li>可过渡属性：<code>background-color</code>(<code>QL_UI_TRANS_BG</code>)、<code>opacity</code>(<code>QL_UI_TRANS_ALPHA</code>)、<code>all</code>。</li>
+<li><code>color</code>/<code>border-color</code>/<code>transform</code>/<code>delay</code> 构建期<strong>明确报错</strong>（沿用"不静默降级"红线）。</li>
+<li><code>ql_ui_anim_tick(ui, now)</code> 推进并返回脏区；<code>ql_ui_consume_dirty(ui, areas, max)</code> 取走。</li>
+</ul>
+<p><strong>踩到并修掉的真实 bug（两个，都属同一类）</strong>：<code>ql_ui_pointer_move</code> 与 <code>ql_ui_pointer_up</code>
+原本直接遍历清 <code>QL_UI_RT_HOVER/ACTIVE</code> 标志，<strong>绕过了 <code>set_state_chain</code> → 不触发
+<code>trans_retarget</code></strong>，后果是"按下后松手"过渡继续往按下时的颜色走，颜色永久卡在中间值。
+两处均改为走 <code>set_state_chain</code>。这条是 M5.5 期间确立的新红线：
+<strong>状态标志只能通过 <code>set_state_chain</code> 改，禁止直接写 <code>flags</code>。</strong></p>
+<p><strong>验收</strong>：<code>test_anim</code>（64 项）+ <code>test_transition</code>（41 项）全绿；<code>test_web_ui</code> 63 项在
+demo CSS 带 <code>transition: 180ms ease-out</code> 的前提下仍全部通过（断言前用 <code>settle()</code> 推进到静止）。
+文档：<a href="./手册/anim/QLAnim阅读指南.md">QLAnim 阅读指南</a> · <a href="./手册/anim/QLAnim%20API手册.md">QLAnim API手册</a>，
+<code>QLUI</code> 两本手册补 transition 小节。</p>
+<h5 id="3-keyframes">③ <code>@keyframes</code> —— <strong>已完成</strong></h5>
+<p>关键帧在<strong>构建期编译成静态表</strong>，运行期零解析、零分配：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>内容</th>
+<th>量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数据</td>
+<td><code>QLUIKeyframe</code>（16 B：offset 千分比 + 缓动 + 通道位 + 颜色/alpha）、<code>QLUIAnimation</code>（帧区间 + 时长 + 迭代 + 方向 + fill）</td>
+<td><code>QLUIStyle</code> +2 B（→ 102 B），blob version 4</td>
+</tr>
+<tr>
+<td>构建期</td>
+<td><code>@keyframes</code> 解析（含嵌套花括号）、帧合并/排序、<code>animation</code> 简写展开、段表去重</td>
+<td><code>qlui_parse.c</code> +约 260 行</td>
+</tr>
+<tr>
+<td>运行期</td>
+<td>帧表扫描 + 段内插值，写进 <code>QLUIAnimRun.style</code>（与过渡同一套"绘制期覆盖样式"机制）</td>
+<td><code>qlui.c</code> +约 300 行</td>
+</tr>
+</tbody>
+</table>
+<p>三条设计选择：</p>
+<ol>
+<li><strong>时间驱动，不是帧驱动</strong>：<code>elapsed = now - start_ms</code> 直接算进度，
+   不累加 <code>dt</code>。窗口最小化、掉帧、补帧都不会产生漂移，<code>uint32</code> 回绕天然安全。</li>
+<li><strong>进度不进布局</strong>：只覆盖 <code>bg_color</code> / <code>bg_color2</code> / <code>bg_alpha</code>，
+   于是动画期间<strong>零重排</strong>，<code>paint_box</code> 不变，脏区就是这个节点自己的盒子。</li>
+<li><strong>隐式关键帧用"基础样式"补齐</strong>：<code>@keyframes x { 50% { opacity: 0 } }</code> 的首末帧
+   标成 <code>QL_UI_KF_BASE</code>，运行期取节点自己的基础样式——与 CSS 语义一致，
+   不需要为每个元素生成一份帧表。</li>
+</ol>
+<p><strong>明确报错</strong>（"不静默降级"）：关键帧里只允许 <code>background</code> / <code>background-color</code> /
+<code>background-image</code> / <code>opacity</code> / <code>animation-timing-function</code>；各帧的属性集合必须一致；
+<code>animation-play-state: paused</code> / <code>steps()</code> / <code>cubic-bezier()</code> 构建期拒绝
+（<code>animation-delay</code> 在 ⑧ 里补上了，见下文）。
+新增 <code>test_qlui_errors</code>（Python，16 个用例）守住这条线——它不需要编译，直接跑生成器。</p>
+<p><strong>与 transition 的优先级</strong>：同一节点两者都有时<strong>动画赢</strong>，<code>trans_retarget</code> 直接跳过
+（动画已经占了颜色通道，再让过渡去改同一个通道只会互相打架）。</p>
+<p><strong>验收</strong>：<code>test_keyframes</code>（86 项）覆盖构建期落 0% 帧、线性/alternate/reverse、
+隐式关键帧、<code>fill: forwards</code> 停留与 <code>fill: none</code> 回落、无限循环、重播、
+脏区覆盖、blob 往返逐字节一致、无 <code>@keyframes</code> 时零成本。
+文档：<a href="./手册/anim/QLAnim阅读指南.md">QLAnim 阅读指南</a> §9 · <a href="./手册/ui/QLUI%20API手册.md">QLUI API手册</a> §3.10。</p>
+<h5 id="4-transform-translate-scalerotate">④ transform —— <strong><code>translate</code> 已完成；<code>scale</code>/<code>rotate</code> 待做</strong></h5>
+<p><code>transform</code> 是<strong>绘制期属性</strong>（与 CSS 一致），所以移动元素<strong>零重排</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>绘制</td>
+<td><code>render_node</code> 把 <code>transform</code> 加到 <code>QLDraw2D</code> 的偏移上，<strong>逐层累加</strong>（子树跟着走，等价于 CSS 的"transform 建立包含块"）；GPU 侧同一个字段直接进顶点，零额外成本</td>
+</tr>
+<tr>
+<td>布局</td>
+<td>完全不参与。<code>border_box</code> / flex 计算里没有它的影子</td>
+</tr>
+<tr>
+<td>命中测试</td>
+<td><code>hit_walk_ui</code> 逐层累加平移，把屏幕坐标映射回节点的布局空间；用<strong>生效样式</strong>（动画中的值），所以移动中的元素也点得中</td>
+</tr>
+<tr>
+<td>脏区</td>
+<td>这是唯一需要小心的地方：<code>paint_box</code> 必须覆盖"旧位置 ∪ 新位置"。布局末尾自上而下算出每个节点的<strong>绝对平移</strong>（<code>tf_abs_*</code>）与<strong>动画位移区间</strong>（<code>tf_dev_*</code>），<code>paint_box</code> 取 Minkowski 包围盒——只膨胀不收缩，所以脏区偏大一点但绝不漏画</td>
+</tr>
+</tbody>
+</table>
+<p>支持范围（<strong>明确报错</strong>而非降级）：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">-40</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* ✅ */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translateX</span><span class="p">(</span><span class="mi">8</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">       </span><span class="c">/* ✅ */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* ✅ */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scale</span><span class="p">(</span><span class="mf">1.2</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">            </span><span class="c">/* ❌ 报错：非轴对齐光栅化，M5.5 ④ 后续 */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">30</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">         </span><span class="c">/* ❌ 报错 */</span>
+</code></pre></div>
+
+<p><code>@keyframes</code> 里也能写 <code>transform: translate(...)</code>（通道位 <code>QL_UI_KF_MOVE</code>），
+于是"滑入/滑出"这类最常见的入场动效已经能做了。
+<code>transition-property: transform</code> 当时还报错（过渡的 4 个 float 通道已排满，扩通道要改 <code>qlanim</code>），
+后来在 ⑧ 之后补上了——过渡槽改成"三份样式 + 一个进度"后，通道数不再受 <code>QLAnimValue</code> 限制。</p>
+<p><strong>另一处顺手修掉的坑</strong>：关键帧只写 <code>background-color</code> 时，alpha 原来取自<strong>基础样式</strong>
+（透明元素永远动不出一块底色）。CSS 里 <code>background-color</code> 是<strong>带 alpha 的颜色</strong>，
+所以现在 alpha 跟着背景色通道一起插值（显式写了 <code>opacity</code> 时才由它说了算）。</p>
+<p><strong>验收</strong>：<code>test_keyframes</code> 扩到 118 项，新增静态 <code>transform</code>、动画平移的逐帧值、
+命中测试在平移前后都正确、<code>paint_box</code> 覆盖滑入起点、<strong>像素级</strong>断言
+"平移后的位置有内容、原位只剩父背景"。
+窗口样例 <code>example_anim_window</code>（空格重播 / Esc 退出，每帧只重绘 3 块脏区）。</p>
+<h5 id="gpu">GPU 文本路径的三处修复 + 保留式脏区 —— <strong>已完成</strong></h5>
+<p>窗口里的字"又糊又乱"（笔画连成一片、字距被吃掉、被 transform 平移的节点显示成
+完全不相干的字）——全部在 <code>emit_quad()</code> 一个函数里：</p>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>后果</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>字形 quad 也外扩 1px（那 1px 是给 SDF 抗锯齿的）</td>
+<td>字形被横向拉宽 (w+2)/w（8px 的字 +25%），字距被吃掉、笔画相连；还会采到图集里邻字的像素</td>
+<td><code>pad = (use_tex == 1) ? 0.0f : 1.0f</code></td>
+</tr>
+<tr>
+<td>uv 插值基准用<strong>平移前</strong>的 <code>bx0/bx1</code>，而顶点坐标已含 <code>ox</code></td>
+<td><code>translate(-70px)</code> 的节点采到不相干的字形</td>
+<td>先算 <code>ux0 = bx0 + ox</code></td>
+</tr>
+<tr>
+<td>片段着色器 <code>precision mediump float</code></td>
+<td>图集 1024 宽，uv 需要 2⁻¹⁰ 分辨力，mediump 尾数刚好也是 10 位 → 整片文字发虚</td>
+<td><code>GL_FRAGMENT_PRECISION_HIGH</code> 时用 highp</td>
+</tr>
+</tbody>
+</table>
+<p>量化（<code>test_gl_vs_cpu</code>）：示例页 CPU vs GPU 像素差异 <strong>5.72% → 0.73%</strong>，
+阈值从 8% 收紧到 <strong>2%</strong>；新增"一行字的墨迹宽度 CPU vs GPU 差 ≤ 1 px"直接盯住第一条。</p>
+<p><strong>保留式脏区</strong>（同一次修复里发现的第二件事）：窗口是双缓冲，<code>eglSwapBuffers</code> 后
+后缓冲内容没有保证，只重画脏区等于把其余部分清成底色——现象是<strong>动画一停，
+所有没在动的元素消失</strong>。新增 <code>ql_gfx_gl_set_retained()</code> + <code>ql_gfx_gl_begin_rects()</code>：
+画布放在自己的 FBO 里，每帧只清 + 只画脏区，帧末整块 blit。FBO 刚建/窗口改尺寸
+时 <code>begin_rects()</code> 返回 1 要求整屏重画（新 FBO 内容是未定义的）。</p>
+<p><code>test_gl_dirty</code>（75 项）：连续 12 帧"只画脏区"与"整屏重画"<strong>逐像素相同</strong>，
+跨过 <code>fill: forwards</code> 终点后仍相同。这块 FBO 也是将来毛玻璃（⑨）的地基。</p>
+<h5 id="m55-animationend-10">M5.5 收尾：<code>animationend</code> + 文本/边框色过渡 + 示例接脏区 + 10 元素实测 —— <strong>已完成</strong></h5>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>animationend</code> / <code>transitionend</code></td>
+<td><code>ql_ui_set_anim_end_cb(ui, cb, user)</code>，事件在 tick <strong>末尾</strong>统一派发，队列有界（<code>QL_CFG_UI_ANIM_EVENT_MAX</code>=16，满了丢新的并告警）。回调里再 <code>restart</code> / 改文本都安全。被 <code>restart</code> 打断的、目标样式没有过渡而撤销的，都<strong>不</strong>触发（那不算"结束"）</td>
+</tr>
+<tr>
+<td><code>transition: color</code> / <code>border-color</code></td>
+<td>过渡槽从"4 个 float 装颜色"改成 <code>from</code>/<code>to</code>/<code>style</code> <strong>三份样式 + 一个进度</strong>（<code>key.cur.v[0]</code>），通道数不再受 <code>QLAnimValue</code> 限制。<code>transition: all</code> = 背景色(含渐变终止色) + 背景 alpha + 文本色 + 边框色</td>
+</tr>
+<tr>
+<td><code>@keyframes</code> 同步扩展</td>
+<td>关键帧也能插值 <code>color</code> / <code>border-color</code>（<code>QLUIKeyframe</code> 20 → <strong>28 B</strong>，blob version 4 → <strong>5</strong>）</td>
+</tr>
+<tr>
+<td><code>example_gl_window</code></td>
+<td>接上 <code>ql_ui_anim_tick</code> + 保留式脏区：<strong>2 块脏区 / 1 draw call</strong>，vsync 59.3 fps</td>
+</tr>
+<tr>
+<td>10 元素实测</td>
+<td><code>test_anim_stress</code>：<strong>0.0259 ms/帧</strong>（预算 16.7 ms，645× 余量），10 段动画颜色互不相同，脏区总面积 62400 px² &lt; 整屏</td>
+</tr>
+</tbody>
+</table>
+<p><strong>顺带修掉一个级联级 bug（影响所有 shorthand）</strong>：<code>finalize_style</code> 在<strong>级联合并之后</strong>
+才展开 shorthand，于是后出现的 <code>animation-name</code> 被前面规则里的 <code>animation: x 1s</code> 覆盖回去 ——
+<code>.card{animation:...} .a{animation-name:pulse10} .b{animation-name:pulse10b}...</code>
+10 张卡片全部退化成同一段关键帧（<code>anim_count</code> 只有 1）。改成 <code>expand_shorthands()</code>
+在<strong>单条规则内</strong>展开（<code>transition</code>/<code>animation</code>/<code>flex</code>/<code>gap</code>/<code>background</code>/<code>border</code> 全部受益）。
+这条修改同时纠正了 demo 页 <code>.primary:hover</code> 的取值：<code>background</code> shorthand 按级联规则
+整体替换 <code>background-color</code>，所以拿到的是渐变起始色而不是 <code>.btn:hover</code> 的纯色。</p>
+<h5 id="67-radial-gradient-border-radius">⑥⑦ 的一半：<code>radial-gradient</code> + <code>border-radius</code> 可动画 —— <strong>已完成</strong></h5>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+<th>为什么这样够用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>圆角 / 圆形揭示</strong></td>
+<td><code>border-radius</code> 变成可过渡 / 可关键帧（<code>QL_UI_TRANS_RADIUS</code>、<code>QL_UI_KF_RADIUS</code>）</td>
+<td><code>border-radius &gt;= 短边一半</code> 时圆角矩形<strong>就是内切圆/胶囊</strong>，所以 <code>@keyframes { from{border-radius:0} to{border-radius:30px} }</code> 在正方形元素上<strong>就是圆形揭示</strong>，零新原语、零离屏缓冲</td>
+</tr>
+<tr>
+<td><strong>径向渐变</strong></td>
+<td><code>bg_grad_dir</code> 新增 3 = 径向；CPU 用增量法逐像素（<code>(x-cx)²</code> 相邻点差 <code>2(x-cx)+1</code>，无逐像素乘法），GPU 在同一个 SDF 上按 <code>length(v_local)/length(v_half)</code> 混合</td>
+<td>圆心固定在元素中心（CSS <code>farthest-corner</code>），这正是 UI 里 99% 的用法：光晕、暗角</td>
+</tr>
+<tr>
+<td><strong>第二色怎么上 GPU</strong></td>
+<td>打包成一个 <code>float</code> 塞进 <code>a_uv.x</code>：RGB888 最大 <code>0xFFFFFF &lt; 2²⁴</code>，float32 尾数也是 24 位，<strong>逐位精确</strong></td>
+<td>顶点结构不增长（仍 64 B/顶点）、仍是单批次</td>
+</tr>
+</tbody>
+</table>
+<p><code>border-radius</code> 从 <code>uint8_t</code> 变 <code>int16_t</code>（<code>: 999px</code> / 动画都需要），<code>QLUIStyle</code> 104 → <strong>108 B</strong>、
+blob version 5 → <strong>6</strong>。</p>
+<p><strong>明确报错</strong>：<code>radial-gradient</code> 只接受圆心在元素中心（<code>circle</code> / <code>circle at center</code> / <code>ellipse</code>）；
+写 <code>at 偏移</code>、自定义半径、color stop 位置一律拒绝。</p>
+<p><strong>GPU 侧踩到的两个坑</strong>（都被 <code>test_gl_vs_cpu</code> 抓住）：
+1. <strong>mode 分派写成区间夹逼会漏档</strong>：原来是 <code>if (mode&gt;1.5) {阴影} else if (mode&gt;0.5) {字形} else {形状}</code>，
+   加径向时改成 <code>mode&gt;1.5 &amp;&amp; mode&lt;2.5</code> 之类，结果径向（3）和阴影（2）都掉进第一档 →
+   阴影用错公式、径向算错 → 示例页 29% 像素错。改成<strong>从大到小</strong>排：<code>&gt;2.5</code>, <code>&gt;1.5</code>, <code>&gt;0.5</code>, else。
+2. <strong><code>if (dir != HORIZONTAL) dir = VERTICAL;</code> 会把径向静默归一成竖直渐变</strong>（16.14% → 1.47%）。
+3. <code>packed</code> 是 GLSL 保留字，变量名要避开。</p>
+<p><strong>验收</strong>：<code>test_keyframes</code> 145 项（新增圆角揭示逐帧值 + 像素断言"圆心亮/边缘暗/圆角露父背景"）；
+<code>test_transition</code> 75 项（<code>transition: all</code> 含 <code>border-radius</code>，4 → 12 px 中途 8）；
+<code>test_gl_vs_cpu</code> 新增无文字的渐变页面专测，CPU vs GPU <strong>1.47%</strong>（阈值 3%）。</p>
+<h5 id="7-clip-path-circle">⑦ 完成：<code>clip-path: circle()</code> 子树圆形遮罩 —— <strong>已完成</strong></h5>
+<p>语义：<code>clip-path: circle(&lt;百分比&gt;)</code>，圆心固定在元素中心，百分比是<strong>最远角距离的千分比</strong>
+（0% = 全裁，100% = 完全覆盖）。用千分比而不是 px 是因为揭示动画要走完整个过程——
+px 半径会在动画早期就把元素盖满，剩下 90% 的时长"看起来没动"。</p>
+<p><strong>关键设计：在像素汇点上做遮罩，而不是为每个原语各写一遍。</strong></p>
+<table>
+<thead>
+<tr>
+<th>后端</th>
+<th>做法</th>
+<th>为什么这样最省</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td><code>fill_row</code> 把每行跨度与圆的水平范围求交（每行一次 <code>sqrt</code>），内层仍走 SIMD 快路径，两端各留一个像素给覆盖率；单像素走 <code>put_px</code>，alpha 乘圆覆盖率</td>
+<td><code>fill_row</code> / <code>put_px</code> 是全部图元（填充/圆角/渐变/阴影/字形）的<strong>共同汇点</strong>，只改 2 个函数就自动全覆盖</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>新增顶点属性 <code>a_mask</code>（设备像素的 cx, cy, r），在 <code>emit_vertex</code>（唯一出口）统一填；片元里 <code>cov *= 1 - smoothstep(-0.5,0.5,length(gl_FragCoord-中心)-r)</code></td>
+<td>所有 <code>emit_*</code> 都从 <code>emit_vertex</code> 出去，同样一处改动全覆盖；<code>gl_FragCoord</code> 要按 <code>u_viewport.y</code> 翻一次（GL 原点在左下）</td>
+</tr>
+</tbody>
+</table>
+<p>顶点因此从 64 B 涨到 <strong>80 B</strong>（65536 顶点 ≈ 5.2 MB 静态），换来"遮罩对任何图元成立"。</p>
+<p><strong>约定："关闭"必须是 -1，不能是 0。</strong> 0 的语义是"遮罩存在但半径 0 = 全裁掉"，
+这正是揭示动画的第一帧。这条约定踩了三次坑：
+1. <code>memset</code> 出来的 <code>QLCanvas</code>/<code>QLDraw2D</code> 是 0 → 默认变成"全裁" → 整屏全黑；
+2. GPU 侧只重置了 <code>g-&gt;mask_r</code> 没重置 <code>g-&gt;draw.mask_r</code>，<code>render_node</code> 收尾恢复时
+   用 0 又把遮罩打开了 → 除第一个节点外全部消失；
+3. 顶点属性 <code>a_mask</code> 只写了 <code>glDisableVertexAttribArray(6)</code> 却忘了
+   <code>glVertexAttribPointer(6, ...)</code>，未绑定的属性默认值是 <code>(0,0,0,1)</code> → <code>mr=0</code> → 全黑。</p>
+<p><strong>已知限制（刻意保留并告警）</strong>：只支持一层遮罩。嵌套 <code>clip-path</code> 的 CSS 语义是
+"取交集"，而两个圆盘的交集不是圆盘，所以运行期保留外层并 <code>QL_LOGW</code>。</p>
+<p><strong>验收</strong>：<code>test_clip</code> 30 项——0% 零墨迹、100% 完全恢复、50% 圆内/圆外分明、
+<strong>子元素伸出父盒子的部分被一起裁掉</strong>（这是"子树遮罩"与"只裁自己背景"的关键区别）、
+遮罩 50% 时 CPU vs GPU 差 <strong>0.26%</strong>。</p>
+<h5 id="4-transform-scale">④ 完成：<code>transform: scale()</code> —— <strong>已完成</strong></h5>
+<p>只做<strong>等比</strong>缩放（绕元素中心）。非等比会让圆角/描边/字形的语义变得没有定义，
+<code>rotate</code>/<code>skew</code>/<code>matrix</code>/3d 需要非轴对齐光栅化，全部构建期报错。</p>
+<p><strong>关键洞察：等比缩放一个轴对齐矩形，还是轴对齐矩形。</strong> 于是 CPU 侧完全不用碰光栅化本身——
+两个入口助手 <code>sx()</code>（矩形）与 <code>sl()</code>（长度）把元素缩放折进去就行，所有图元自动受益：</p>
+<div class="highlight"><pre><span></span><code>sx(rect) : 先绕中心按边缩放 → 再乘 DPR
+sl(len)  : 先按元素缩放 → 再乘 DPR
+</code></pre></div>
+
+<p>GPU 侧同理：<code>gsx()</code> / <code>gsl()</code> 里同样两步，顶点数/draw call 不变。</p>
+<p>四条配套改动：</p>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文本</td>
+<td>字形按"元素缩放 × DPR"<strong>重新取字号</strong>（<code>ql_draw2d_device_font(font, font_fx)</code>），与浏览器一致：<code>transform: scale()</code> 会让文字一起变大且清晰。只缩位置不换字号会让字又小又错位</td>
+</tr>
+<tr>
+<td><code>paint_box</code></td>
+<td>放大时按 scale 撑开（缩小时保持原范围），只膨胀不收缩</td>
+</tr>
+<tr>
+<td>命中测试</td>
+<td>把屏幕坐标<strong>逆缩放</strong>回布局空间（缩放中心要跟着平移量一起算），自身命中时把 box 按 scale 撑开</td>
+</tr>
+<tr>
+<td>通道</td>
+<td><code>transform</code> 通道（<code>QL_UI_KF_MOVE</code>）现在同时携带 <code>tf_x/tf_y/sc</code>；<code>QLUIStyle</code> 加 <code>sc</code>（千分比）、<code>QLUIKeyframe</code> 32 B、blob version 7 → <strong>8</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>验收</strong>：<code>test_scale</code> 21 项——布局尺寸与 scale 无关、视觉宽度 40→60px、绕中心、
+命中测试在放大后的位置、关键帧插值（200ms 时 1250）、<strong>CPU vs GPU 0.00%</strong>。
+<code>test_qlui_errors</code> 28 项（新增 <code>scale(1.2, 2)</code> / <code>rotate()</code> / <code>matrix()</code> 必须报错）。</p>
+<p><strong>还没做</strong>：<code>rotate()</code> 与 <code>skew()</code>——它们让矩形变成非轴对齐四边形，行跨度扫描失效，
+需要改成逐行求交或加 shader 顶点变换。</p>
+<h5 id="8-scalexscaley-3d">⑧ 完成：<code>scaleX()</code>/<code>scaleY()</code> 假 3D 翻转 —— <strong>已完成</strong></h5>
+<p>真 3D 要透视矩阵、深度排序、背面剔除——独立技术路线。而"卡片翻面"只需要
+<code>scaleX: 1 → 0 → 1</code>。<strong>关键判断：轴对齐矩形在轴对齐缩放下仍是轴对齐矩形</strong>，
+所以 CPU 行跨度扫描一行都不用改，只把 <code>elem_fx</code> 拆成 <code>elem_x_fx</code>/<code>elem_y_fx</code>。</p>
+<p>代价是三个歧义，全部按 <code>min(sx, sy)</code> 近似并在文档里写明：圆角、描边/阴影、字号。
+字形<strong>不做横向挤压</strong>——<code>scaleX(0.7)</code> 时文字高度也会变成 0.7 倍；翻转动画中途宽度趋 0，
+察觉不到；真要逐像素压扁得给字形位图加重采样（MCU 上不可能）。</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>样式</td>
+<td><code>QLUIStyle.sc</code> → <code>sc_x</code> + <code>sc_y</code>（<code>int16_t</code>），<strong>112 → 116 字节</strong>，blob version 8 → <strong>9</strong></td>
+</tr>
+<tr>
+<td>关键帧</td>
+<td><code>QLUIKeyframe.sc</code> → <code>sc_x</code> + <code>sc_y</code>，<strong>32 → 36 字节</strong>（<code>-1</code> = 用基础值，<strong><code>0</code> 是合法值</strong>）</td>
+</tr>
+<tr>
+<td>绘制后端</td>
+<td><code>QLDraw2D.elem_fx</code> → <code>elem_x_fx</code>/<code>elem_y_fx</code>，新增 <code>ql_draw2d_set_elem_scale_xy()</code>；<code>sl()</code> 用 <code>min</code></td>
+</tr>
+<tr>
+<td>文本</td>
+<td>压到 0 宽时<strong>一个字都不画</strong>（否则几十个字形叠成一条墨线）</td>
+</tr>
+<tr>
+<td>命中</td>
+<td>从"<code>sc &gt; 1000</code> 就撑大命中盒"的近似，改成<strong>精确逆缩放</strong>（<code>hx = cx + (x-cx)*1000/sc_x</code>）；<code>sc == 0</code> 直接 <code>return NULL</code></td>
+</tr>
+<tr>
+<td><code>backface-visibility</code></td>
+<td><strong>构建期报错</strong>——假翻转没有背面，没有"背面朝后不画"这回事</td>
+</tr>
+<tr>
+<td><code>animation-delay</code></td>
+<td>顺手补上（<code>QLUIAnimation.delay_ms</code> + <code>QLUIAnimRun.phase</code>）：错开相位才能做出"两张脸"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>踩到的 bug</strong>：<code>ql_draw2d_set_elem_scale_xy()</code> 的钳位写成 <code>fx &gt; 0</code>，把合法的
+<code>scaleX(0)</code> 悄悄变成 <code>1.0</code>——翻转动画在中点闪一下满宽。改成 <code>fx &gt;= 0</code>。
+另一个：延迟判断写成 <code>phase == 0 &amp;&amp; elapsed &lt; delay</code>，第二天 tick 起 <code>phase</code> 已是 1，
+直接掉进 <code>elapsed -= delay</code> 的<strong>无符号下溢</strong>，延迟中的元素被算成天文数字。</p>
+<h5 id="8-transition-transform-clip-path">⑧ 收尾：<code>transition: transform</code> / <code>clip-path</code> —— <strong>已完成</strong></h5>
+<p>过渡槽在收尾包里已重构成"<code>from</code>/<code>to</code>/<code>style</code> 三份样式 + 一个进度"，所以这里只是加通道位：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>通道位</td>
+<td><code>QL_UI_TRANS_XFORM</code>(0x20) / <code>QL_UI_TRANS_CLIP</code>(0x40)，<code>ALL</code> 31 → <strong>127</strong></td>
+</tr>
+<tr>
+<td><code>trans_apply</code></td>
+<td><code>tf_x</code>/<code>tf_y</code>/<code>sc_x</code>/<code>sc_y</code> <strong>四个分量一起插值</strong>（只动 translate 不动 scale 会"边缩边移"错位）；<code>clip_r</code> 单独插值</td>
+</tr>
+<tr>
+<td>生成器</td>
+<td><code>transition-property</code> 接受 <code>transform</code> / <code>clip-path</code>，简写里也能写</td>
+</tr>
+<tr>
+<td><strong>顺带修的脏区 bug</strong></td>
+<td><code>scale_extent()</code> 原来只看基础样式的 <code>sc</code> → <code>@keyframes</code> 里放大、<code>:hover</code> 里放大的元素 <code>paint_box</code> 算小，脏区漏掉放大的那一圈，缩回去留残影。新增 <code>scale_max()</code>，与 <code>move_extent()</code> 一样取三个来源（基础样式 / 状态变体 / 关键帧）的最大值</td>
+</tr>
+</tbody>
+</table>
+<p><strong>验收</strong>：<code>test_transition</code> 75 → <strong>109 项</strong>（<code>transform</code> 一半时 <code>sc_x</code> 1250 / <code>tf_x</code> 2、
+放大后的脏区必须包住 1.5× 可见范围、<code>clip-path</code> 20% → 100% 中途 600）。</p>
+<h5 id="m55-gpu-bug">M5.5 效果总览窗口 + 一个 GPU 遮罩 bug —— <strong>已完成</strong></h5>
+<p><code>test/web/flex/showcase.*</code> + <code>example_showcase_window</code>：六个格子把 M5.5 的全部能力
+摆在一起（hover 过渡 / 滑入 / 圆角揭示 / 圆形遮罩 / 径向渐变 / 假翻转），
+既是"有窗口的测试程序"，也是以后做视觉回归的基准画面。</p>
+<p>顺带为了覆盖"渐变 + 遮罩"这种组合，给 <code>flex/grad.*</code> 的 <code>.rad2</code> 同时加了
+<code>radial-gradient</code> + <code>border-radius</code> + <code>clip-path</code>，<strong>当场抓到一个真 bug</strong>：</p>
+<blockquote>
+<p>片元着色器按 <code>mode</code> 分派形状，径向渐变那一档 <code>return</code> 得太早，<strong>遮罩块根本没跑到</strong>。
+于是 <code>clip-path</code> + <code>radial-gradient</code> 在 GPU 上静默丢掉遮罩（CPU 是对的）。
+比例断言抓不住——整块丢遮罩只把差异从 1.47% 推到 3.00%，刚好卡在阈值上通过。</p>
+</blockquote>
+<p>修法：遮罩算成 <code>float m</code> 挪到分派之前，所有出口都乘 <code>m</code>。
+并把比例阈值 3% → <strong>2%</strong>，另加<strong>结构性断言</strong>（遮罩盖不到的角落必须是底色、中心必须真画出渐变）。</p>
+<h5 id="13-b2-2026-11-08">⑬ 字体变体与装饰线（B2）—— <strong>已完成（2026-11-08）</strong></h5>
+<p>⑫ 把 32 个标签补齐之后，<code>em</code>/<code>strong</code>/<code>u</code>/<code>s</code> 还是空壳 —— 语义标签配不上字体变体
+就只是"高级 <code>span</code>"。这一步把变体补上，全部<strong>合成</strong>，不加载第二个字体文件
+（MCU 上也不可能）。</p>
+<table>
+<thead>
+<tr>
+<th>效果</th>
+<th>CPU</th>
+<th>GPU</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加粗</td>
+<td><code>glyph_blit()</code> 跑两遍，第二遍右移 1px</td>
+<td>同一个 quad 发两遍，<code>x+1</code></td>
+<td>墨迹约 +60% 面积</td>
+</tr>
+<tr>
+<td>斜体</td>
+<td>逐行右移，1/16 像素定点</td>
+<td>顶边顶点右移 <code>shear</code></td>
+<td>斜率 0.21（FreeType oblique 量级）</td>
+</tr>
+<tr>
+<td>下划线 / 删除线</td>
+<td><code>fill_rect</code> 1px</td>
+<td>同一条 <code>fill_rect</code></td>
+<td>基线下方 2px / 基线上方 <code>ascent/2</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>接口先收紧再加参</strong>：<code>draw_text()</code> 这次是第三次加参数，于是把
+<code>(color, line_h, align, wrap, bold, italic, deco)</code> 收成 <code>QLTextStyle</code> 结构体，
+<code>emit_glyph</code> 也改成拿它。再加东西就不用动签名了。</p>
+<p>数据侧：<code>QLUIStyle.font_flags</code>（一个字节装四个位）塞进最后一个 padding 字节，
+<strong>仍是 120 字节</strong>，blob 版本不用动（旧 blob 该字节为 0 = 无变体，行为与旧版一致）。</p>
+<p><strong>三个必须记住的坑</strong></p>
+<ol>
+<li><strong>斜体不能用整数像素剪切</strong>：9px 高的小字整数剪切只有 1px，分摊到 9 行里每行
+   要么 0 要么 1，视觉上就是"没斜"。改成 1/16 定点后才像斜体。</li>
+<li><strong>加粗的第二遍要带同样的剪切</strong>，否则加粗斜体的右下角缺一块。</li>
+<li><strong>GPU 的 uv 必须按剪切前的角点算</strong>（<code>emit_quad_shear()</code> 里另存一份 <code>xsu[]</code>），
+   否则纹理采样跟着四边形一起歪。</li>
+</ol>
+<p><strong>装饰线画在 <code>ql_draw2d_text_layout()</code> 里</strong>，不放在各后端：只有它知道每行的起止与
+基线。放这里两个后端自动都有，且"空行不画"只写一次。</p>
+<p>验收：<code>test_text_style</code>（33 项）—— 三种写法/数字字重/组合装饰线都落到位；
+UA 默认样式让 <code>b/strong/i/em/u/s</code> 各自不同；继承；<strong>加粗墨迹比正体多</strong>；
+<strong>斜体顶行比正体靠右</strong>；下划线让墨迹底边更低、删除线让墨迹更多；五类非法值报错。
+golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <code>tags</code> 两页变化，其余 26 页逐字节不变 ——
+证明默认路径零影响。</p>
+<h5 id="14-c1-2026-11-08">⑭ 滚动容器（C1）—— <strong>已完成（2026-11-08）</strong></h5>
+<p><code>overflow: hidden</code> 之前只裁不滚，等于"能藏不能看"。这一步把 <code>auto</code> 补成真的能滚。</p>
+<p><strong>最关键的决策：滚动偏移烘进布局，不在绘制时加。</strong></p>
+<div class="highlight"><pre><span></span><code>ql_ui_scroll_by() → node-&gt;scroll_y → ql_ui_layout() → translate_subtree(子节点, -scroll)
+</code></pre></div>
+
+<p>理由：绘制、命中测试、<code>paint_box</code>、脏区读的都是 <code>node-&gt;border_box</code>。坐标对了，
+四件事自动一致。不然就要维护"绘制加了偏移、命中忘了加"这类四份不同步的正确性 ——
+那是最难查的一类 bug。代价是滚动时重排一次：211 节点 <strong>0.037 ms</strong>，60fps 预算 16.6 ms。</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>滚轮</td>
+<td>命中 → 往上找最近可滚祖先 → <code>scroll_by(dx, dy)</code></td>
+</tr>
+<tr>
+<td>拖滚动条</td>
+<td>右侧 10px 热区；位移按"可拖动行程 / 可滚动范围"换算；<strong>不算点击</strong></td>
+</tr>
+<tr>
+<td>PageUp/PageDown/Home/End</td>
+<td>作用于焦点节点所在的可滚容器</td>
+</tr>
+<tr>
+<td>滚动条</td>
+<td>覆盖式 4px 滑块（中灰 60% alpha），不占布局；<code>hidden</code> 永远不画</td>
+</tr>
+<tr>
+<td>夹紧</td>
+<td>范围变化时自动夹回 <code>[0, max]</code>，不会卡在越界位置</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>scroll_to</code> 不重排、<code>scroll_by</code> 重排</strong>：前者是设状态（连设多次只该排一次），
+后者是执行一次操作（用户滚一下就该看到）。</p>
+<p>坑：拖滚动条若先走 <code>set_state_chain(ACTIVE)</code>，整个列表会闪一下 <code>:active</code> 样式；
+所以 <code>pointer_down</code> 必须先判滚动条热区并直接接管。</p>
+<p>验收：<code>test_scroll</code>（46 项）—— auto/hidden 分工、滚轮方向、夹紧、<code>scroll_by</code> 标脏
+（顶到头不白重绘）、命中测试跟着滚、横向滚动、拖滚动条不算点击、无溢出时不画滚动条、
+嵌套时滚最近的可滚祖先。</p>
+<p>例程：<code>example/09_scroll.c</code>（播放列表，滚轮/拖滚动条/PageDown）；教程第 9 章。</p>
+<p><strong>已知缺口</strong>：没有滚动惯性（触屏会"硬"）；滚轮滚到底<strong>不传给父级</strong>（浏览器是链式滚动）。</p>
+<h5 id="18-img-2026-11-09">⑱ 图像管线（<code>&lt;img&gt;</code>）—— <strong>设计定案（2026-11-09）</strong></h5>
+<p>完整设计见 <a href="./图像管线设计.md">图像管线设计</a>。三条与"调库还是自己写"直接相关的决定：</p>
+<ol>
+<li><strong>自有解码器只做 BMP / QOI / PNG</strong>。PNG 的难点只有 DEFLATE 一处，而它是无状态
+   纯算法（32KB 固定窗口、输出直接喂反滤波），可完全有界、可 fuzz；JPEG 是"一整套
+   色彩管线"，手写的失败模式是<strong>色偏</strong>而不是崩溃 —— 收益/风险完全不划算。</li>
+<li><strong>PC/移动的 JPEG/GIF 走两条路</strong>：① 构建期 <code>qltext assets</code> 用系统库把它转成 QOI
+   （运行时零依赖，MCU 侧一字节代价都没有）；② 运行期交给<strong>平台后端</strong>
+   （libjpeg-turbo / ImageIO / WIC / BitmapFactory），MCU 侧没有后端 → 明确报错。</li>
+<li><strong>stb_image 不进产线</strong>（7k 行不可裁、整幅 malloc、顺带扩大攻击面），只当测试对拍。</li>
+</ol>
+<p>其余要点：<code>node-&gt;text</code> 复用为资源名（不加节点字段）；<code>w/h</code> 存进 doc，所以<strong>布局不依赖
+解码</strong>；<code>object-fit</code> 在绘制期算、不动布局；<code>blend</code> 与现有 <code>fill_rect(alpha)</code> 同一套；
+MCU 的推荐姿势是 <strong><code>RAW</code> + 指向 Flash</strong>（<code>owned=0</code>，RAM 为 0）。</p>
+<p>分期：P3a 基础设施（3–4 天）→ P3b BMP/QOI（1 天）→ P3f 工具链（1 天）→ P3d <code>object-fit</code>
+（1 天）→ P3c PNG（3–4 天）→ P3e 热区（0.5 天）→ P3g 平台后端（1 天），合计 11–14 天。</p>
+<hr />
+<h5 id="17-html5-2026-11-08">⑰ HTML5 全覆盖 + 能力包裁剪 —— <strong>计划（2026-11-08 定案）</strong></h5>
+<p>目标改口径：不再按"缺哪个补哪个"推进，而是<strong>先把 114 个标签全部认下来</strong>，
+再按"能力包"把渲染补齐；MCU 侧编译期裁包。详见
+<a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a>（全量清单 + 行为矩阵）。</p>
+<p><strong>P0（已完成）</strong>：31 个纯语义标签（<code>a</code> <code>code</code> <code>kbd</code> <code>samp</code> <code>var</code> <code>q</code> <code>dfn</code> <code>cite</code>
+<code>data</code> <code>time</code> <code>small</code> <code>bdi</code> <code>bdo</code> <code>wbr</code> <code>del</code> <code>ins</code> <code>dl</code> <code>dt</code> <code>dd</code> <code>menu</code> <code>address</code>
+<code>hgroup</code> <code>search</code> <code>html</code> <code>body</code> <code>form</code> <code>label</code> <code>fieldset</code> <code>legend</code> <code>optgroup</code>）。
+35 → <strong>66</strong> 个标签。零新能力：UA 默认只有 block/inline，外加五处"真的看得出"的
+（<code>dd</code> 缩进、<code>cite/var/dfn/address</code> 斜体、<code>del</code> 删除线、<code>ins</code> 下划线、<code>fieldset</code> 边框）。</p>
+<p><strong>P1（已完成）</strong>：<code>META</code> 包 + 包机制骨架。126 行的"只看结构"小扫描器
+（<code>skip_element()</code>）负责跳过整个元素：认注释/声明/raw text/同名嵌套；
+<code>&lt;style&gt;</code> 与 <code>&lt;title&gt;</code> 按 <strong>raw text</strong> 处理（内容里不认标签，只认 <code>&lt;/style&gt;</code>），
+所以样式文本不会变成界面上的字 —— 这是"整页 HTML 贴进来能编译"的关键。
+开关：<code>QL_FEAT_UI_META</code>（默认 1）、<code>QL_CFG_UI_LENIENT_TAGS</code>（默认 0）；
+lenient 时会计入 <code>QLUIDoc.degraded_tags</code>（<strong>不写进 blob</strong>，加载出来的 doc 恒为 0）。</p>
+<p><strong>P2a（已完成）</strong>：<code>&lt;progress&gt;</code> / <code>&lt;meter&gt;</code> / <code>&lt;output&gt;</code> / <code>&lt;datalist&gt;</code>。
+进度条只存<strong>完成度</strong>（0..1000），不存 value/max —— 布局与绘制都只需要"多满"。
+<code>value</code> / <code>max</code> 用 <code>"70/100"</code> 这串十进制经 <code>node-&gt;text</code> 运输一趟，<code>ql_ui_build</code>
+里折成完成度后立刻清空；<strong>不给 QLUINode 加字段</strong>（那是每个节点 4 字节的常驻成本，
+而这里只需要一份去重后的字符串）。轨道用 <code>background-color</code>、填充用 <code>color</code>，
+所以换配色是纯 CSS。不确定进度画固定 1/3，<strong>不做动画</strong>（省电优先）。</p>
+<p><strong>P2b（已完成）</strong>：<code>&lt;details&gt;</code> / <code>&lt;summary&gt;</code>。收起时把非 <code>summary</code> 的子节点指向
+<strong>共享的 <code>s_style_hidden</code></strong>（与"只含空白的 flex 项"同一份），布局本来就跳过
+<code>display:none</code>，所以一行布局代码都没改。状态位注意：doc 里的 <code>QL_UI_NODE_OPEN</code>
+是初始值（<code>0x02</code>），运行期状态必须用 <strong><code>QL_UI_RT_OPEN</code>（<code>1&lt;&lt;4</code>）</strong> —— 同一个
+<code>flags</code> 字节既装 NODE 又装 RT 会撞位（<code>NODE_OPEN</code> 和 <code>RT_ACTIVE</code> 都是 <code>0x02</code>）。
+切换会重排（高度变了），所以 <code>ql_ui_details_set_open()</code> 内部直接调 <code>ql_ui_layout</code>。</p>
+<p><strong>P2c（已完成）</strong>：<code>&lt;dialog&gt;</code> 浮层。画法是"<strong>整棵树画完 → 压暗视口 → 再把对话框
+子树画一遍</strong>"：遮罩必须盖住除对话框以外的一切，而树是父先子后画的，先画遮罩会盖掉
+后画的兄弟。代价是开着时那个子树每帧多画一次（opaque，结果一致）。
+居中靠<strong>平移子树</strong>（与滚动同一招），所以在 <code>sort_tree_by_z</code> 之后、<code>compute_paint_box</code>
+之前做。三个容易漏的联动：<code>ql_ui_paint_bounds</code> 在浮层打开时必须返回整个视口
+（否则脏区重绘不会画遮罩）；点遮罩要<strong>吃掉</strong>这次点击（不穿透）；<code>Esc</code> 要排在输入框
+之前处理，否则输入框先把 <code>Esc</code> 当"取消焦点"吃掉。</p>
+<p><strong>一条硬约束（写进文档，不许破）</strong>：<code>QLUITag</code> <strong>只能末尾追加、永不加条件编译</strong>。
+理由：<code>node.tag</code> 的数值写进 blob，且三张表必须同序；一旦"MCU 上少几个枚举"，
+同一份 <code>.qlui</code> 在两个平台就解释成不同标签。所以<strong>裁的是代码路径，不是枚举</strong>，
+代价是 <code>.rodata</code> 里常驻约 1.2 KB 名字表。</p>
+<table>
+<thead>
+<tr>
+<th>期</th>
+<th>能力包</th>
+<th>新增可画</th>
+<th>估时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1 ✅</td>
+<td><code>META</code>：<code>base head link meta style title</code> 一律跳过（<code>&lt;style&gt;</code> 内容整段不解析）</td>
+<td>72</td>
+<td>0.5 天</td>
+</tr>
+<tr>
+<td>P2a ✅</td>
+<td><code>WIDGET</code> 一半：<code>progress</code> <code>meter</code> <code>output</code> <code>datalist</code></td>
+<td>76</td>
+<td>1 天</td>
+</tr>
+<tr>
+<td>P2b ✅</td>
+<td><code>details</code> <code>summary</code></td>
+<td>78</td>
+<td>0.5 天</td>
+</tr>
+<tr>
+<td>P2c ✅</td>
+<td><code>dialog</code>：真正的浮层</td>
+<td>79</td>
+<td>1 天</td>
+</tr>
+<tr>
+<td>P3</td>
+<td><code>IMAGE</code>：PNG/BMP/QOI <strong>有界</strong>解码 + <code>object-fit</code> + <code>map</code>/<code>area</code> 热区</td>
+<td>84</td>
+<td>3–4 天</td>
+</tr>
+<tr>
+<td>P4</td>
+<td><code>TEXT</code>：文本内 <code>\n</code> + <code>white-space: pre</code> + 等宽字体族 + <code>sub</code>/<code>sup</code> + <code>ruby</code></td>
+<td>90</td>
+<td>5–6 天</td>
+</tr>
+<tr>
+<td>P5</td>
+<td><code>WIDGET</code> 补齐：<code>textarea</code> 多行编辑</td>
+<td>91</td>
+<td>2–3 天</td>
+</tr>
+<tr>
+<td>P6</td>
+<td><code>TABLE</code>：表格布局算法（列宽分配、跨行跨列、边框合并）</td>
+<td>101</td>
+<td>5–8 天，<strong>风险最高</strong></td>
+</tr>
+<tr>
+<td>P7</td>
+<td><code>EMBED</code>：13 个占位盒 + <code>script</code> 内容跳过</td>
+<td>114</td>
+<td>1–2 天</td>
+</tr>
+<tr>
+<td>P8</td>
+<td><code>&lt;input&gt;</code> 其余 <code>type</code>：<code>checkbox</code> <code>radio</code> <code>range</code> <code>number</code> <code>search</code></td>
+<td>—</td>
+<td>3–5 天</td>
+</tr>
+</tbody>
+</table>
+<p>合计约 <strong>24–34 人日</strong>。<code>EMBED</code> 那 13 个<strong>永远只做占位</strong>（<code>script</code>/<code>svg</code>/<code>math</code>/<code>iframe</code>/
+<code>video</code> 触碰架构红线：要么要 JS 引擎，要么要第二个渲染器，要么外来内容无法有界）。</p>
+<p><strong>裁包后的行为必须二选一并显式声明</strong>：<code>strict</code> 报错并点名缺哪个包；<code>lenient</code> 降级成
+<code>div</code>/<code>span</code> 并计入 <code>doc-&gt;degraded_tags</code>（可查名单）。默认 <code>strict</code> ——
+降级只允许发生在"你明确说要降级"的时候。<code>qltext check --features core,image</code>
+在构建期就把"哪几处会被降级"列出来，不用等跑起来才发现。</p>
+<hr />
+<h5 id="15-c2-2026-11-08">⑮ 单行输入框（C2）—— <strong>已完成（2026-11-08）</strong></h5>
+<p>⑭ 之后界面能滚了，但<strong>一个字都改不了</strong> —— 整套数据模型是编译期算完的静态表。
+这一步把 <code>&lt;input type="text|password"&gt;</code> 补上，并把它做成<strong>唯一一处运行期可变的文本</strong>。</p>
+<div class="highlight"><pre><span></span><code>doc.nodes[i].text ──▶ 池里的可变缓冲（build 时把初始值拷进去）
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>决策</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>值不另设字段</td>
+<td>让 <code>node-&gt;text</code> 指向池缓冲，绘制/<code>text-align</code>/自动折行/横向滚动<strong>一行都不用改</strong></td>
+</tr>
+<tr>
+<td>池按需分配</td>
+<td><code>QL_CFG_UI_INPUT_MAX × QL_CFG_UI_INPUT_LEN</code>（默认 8×96）；界面里没有 <code>&lt;input&gt;</code> 就零字节</td>
+</tr>
+<tr>
+<td>光标与选区都是<strong>字节</strong>偏移</td>
+<td><code>prev_boundary</code>/<code>next_boundary</code> 跨过 UTF-8 续字节，中文删一个字符不会删半个</td>
+</tr>
+<tr>
+<td>标志位</td>
+<td>新增 <code>QLUINode.flags</code>（<code>QL_UI_NODE_PASSWORD</code>）+ <code>reserved</code>：<code>sizeof(QLUINode)</code> 18 → 20，blob <strong>v11 → v12</strong></td>
+</tr>
+<tr>
+<td>密码显示</td>
+<td>绘制前把串换成圆点串走原管线；<strong>测宽必须按圆点量</strong>，否则光标飘出框外</td>
+</tr>
+<tr>
+<td>超长插入</td>
+<td><strong>静默截断</strong>（用户打字不该因为"满了"而失败）；<code>input_set_value()</code> 同样夹紧</td>
+</tr>
+<tr>
+<td>光标不闪</td>
+<td>闪烁要求主循环一直醒着，省电优先（已写进文档的诚实清单）</td>
+</tr>
+<tr>
+<td>没有剪贴板 / IME</td>
+<td>都要平台层提供事件；本库只接一个 <code>QL_INPUT_TEXT</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>两个自己埋的坑</strong>：<code>s_tag_names[]</code> 漏加 <code>"input"</code> → <code>strcmp(NULL)</code> 段错误
+（三张表必须同步）；<code>ql_ui_input_cb</code> typedef 写在 <code>QLUIRoot</code> 之后 → 结构体里存不了函数指针。</p>
+<p>验收：<code>test_input_edit</code>（130 项）—— 初始值、点击定位光标、插入/删除/选区、
+UTF-8 边界、密码显示宽度、回调只在值真的变了时发、无 <code>&lt;input&gt;</code> 时池为 NULL。</p>
+<p>例程：<code>example/10_input.c</code>；教程第 11 章；手册 §5.7。</p>
+<h5 id="16-c3-2026-11-08">⑯ 下拉框（C3）—— <strong>已完成（2026-11-08）</strong></h5>
+<p><code>&lt;select&gt;</code> + <code>&lt;option&gt;</code>：点击展开一个<strong>覆盖式</strong>面板。</p>
+<table>
+<thead>
+<tr>
+<th>决策</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;option&gt;</code> 自动 <code>display:none</code></td>
+<td>它只活在面板里，不进布局 —— 不需要用户自己写样式</td>
+</tr>
+<tr>
+<td>面板是覆盖层</td>
+<td><strong><code>ql_ui_render</code>/<code>render_rect</code> 末尾单独画</strong>：不占布局、不受父级 <code>overflow</code> 裁剪（与浏览器 popup 一致）</td>
+</tr>
+<tr>
+<td>同一时刻只开一个</td>
+<td><code>ui-&gt;open_select</code> 一个指针</td>
+</tr>
+<tr>
+<td>键盘</td>
+<td><code>↑</code>/<code>↓</code> 改选中（到头停住），<code>空格</code>/<code>回车</code> 展开收起</td>
+</tr>
+<tr>
+<td>顺带补的：Tab</td>
+<td><code>focus_step()</code> 在 <code>input</code>/<code>select</code>/<code>button</code> 之间按树序循环，到头绕回</td>
+</tr>
+</tbody>
+</table>
+<p><strong>一个被测试抓到的分支错误</strong>：点面板外要"收起 + 继续走普通点击"，但点的是这个
+select 自己时是"再点一次关掉"，必须 <code>return</code>；否则 <code>open</code> 先清 0 又立刻走到展开分支，
+表现出来就是"点一下永远关不掉"（<code>test_select</code> 第 4 项拿白色像素数回到原值抓的）。</p>
+<p>验收：<code>test_select</code>（62 项）—— option 的 <code>display:none</code>、默认选中 0、点击展开/选中/收起、
+点面板外只收起、面板真的画出来（白色像素数）、<code>set_index</code> 夹紧与回调、
+Tab 顺序与 Shift+Tab、下拉框键盘、无 select 时池为 NULL。</p>
+<p>例程：<code>example/10_input.c</code>（输入框 + 密码框 + 下拉框同一界面）；教程第 11 章；手册 §5.8。</p>
+<p><strong>已知缺口</strong>：<code>&lt;textarea&gt;</code>（多行）、<code>&lt;form&gt;</code>/提交/校验、剪贴板、IME 候选框。</p>
+<hr />
+<h5 id="12-ua-2026-11-08">⑫ 标签集与 UA 默认样式 —— <strong>已完成（2026-11-08）</strong></h5>
+<p>标签在这套架构里只影响三件事：UA 默认样式、<code>tag</code> 选择器、调试名。布局与绘制只看
+编译出来的 <code>QLUIStyle</code>，所以加标签的边际成本几乎为零 —— 真正的问题一直是"不够用"。</p>
+<p><strong>10 → 32 个</strong>：容器 11（<code>header/footer/nav/main/article/aside/figure/figcaption/blockquote</code>
++ 原有 <code>div/section</code>）、标题 6、文本块 <code>p</code>、行内 8（<code>span/b/i/em/strong/u/s/mark</code>）、
+列表 3（<code>ul/ol/li</code>）、空元素 2（<code>hr/br</code>）、控件 <code>button</code>。</p>
+<table>
+<thead>
+<tr>
+<th>决策</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>三张表要同步</td>
+<td><code>QLUITag</code>（qlui.h）/ <code>k_tags[]</code>（解析）/ <code>s_tag_names[]</code>（查询）顺序必须一致，<strong>只能末尾追加</strong>（<code>node.tag</code> 存进 blob）</td>
+</tr>
+<tr>
+<td>UA 默认值</td>
+<td>只给"看结构就该知道"的：块/行内、标题字号、列表缩进、<code>hr</code> 的 1px 线、<code>mark</code> 的高亮。<strong>不追求与 Chrome 逐像素一致</strong></td>
+</tr>
+<tr>
+<td><code>&lt;br&gt;</code></td>
+<td>做成"高度 0 的块"：块级自然结束当前行内行 = 换行。没有生成内容，也不想在文本节点里塞 <code>\n</code></td>
+</tr>
+<tr>
+<td><code>&lt;hr&gt;</code></td>
+<td>块级 + <code>height: 1px</code> + <strong>显式背景色</strong>（不给就是黑的，这个坑很多库踩）</td>
+</tr>
+<tr>
+<td>空元素</td>
+<td><code>br/hr</code> 不压栈；给它们补结束标签（<code>&lt;/br&gt;</code>）<strong>明确报错</strong></td>
+</tr>
+<tr>
+<td>不画列表符号</td>
+<td>没有 <code>::marker</code>/<code>::before</code>，标记自己写字符（文档里写清楚）</td>
+</tr>
+<tr>
+<td><code>em/strong/u/s</code> 目前与 <code>span</code> 等价</td>
+<td>加粗/斜体/下划线需要字体变体（合成加粗、合成斜体、装饰线），是下一步</td>
+</tr>
+</tbody>
+</table>
+<p><strong>顺手修掉一个真 bug（行内空白）</strong>：<code>&lt;mark&gt;a&lt;/mark&gt; &lt;em&gt;b&lt;/em&gt;</code> 渲染成 <code>ab</code>。
+解析期把所有"只有空白"的文本段一律丢掉，于是行内元素之间的空格没了。
+现在按 CSS 的规则分情况：</p>
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>两个<strong>行内</strong>元素之间的空白</td>
+<td>保留成一个空格 <code>span</code></td>
+</tr>
+<tr>
+<td>两个<strong>块级</strong>元素之间的空白</td>
+<td>丢掉（否则每个缩进都变成一行）</td>
+</tr>
+<tr>
+<td>行首/行尾</td>
+<td>丢掉</td>
+</tr>
+<tr>
+<td>flex 容器里只含空白的项</td>
+<td><code>ql_ui_build</code> 时换成一份<strong>共享的隐藏样式</strong>（<code>display:none</code>），零额外内存</td>
+</tr>
+</tbody>
+</table>
+<p>判断用的是标签的<strong>默认</strong> display（级联还没跑），已在文档里注明这个限制。
+两个细节：① 不能用 <code>first_text/last_text</code> 判"行首行尾"——<code>&lt;em&gt;a&lt;/em&gt; &lt;strong&gt;b&lt;/strong&gt;</code>
+里那段空格恰好是最后一个文本段，但它夹在两个元素中间；② 保留空格会让
+<code>ui_demo.html</code> 多 2 个节点（24 → 26），测试里的节点数断言已更新。</p>
+<p>验收：<code>test_html_tags</code>（216 项）—— 32 个标签逐个解析并核对 tag 值与名字、标题六级字号递减、
+块/行内 display、<code>mark</code> 背景、<code>hr</code> 尺寸与颜色、<code>br</code> 真的换行且自身 0 高、空元素不压栈、
+<code>ul/li</code> 缩进、行内空白保留 / 块级空白丢弃 / flex 里不产生项、<code>tag</code> 选择器、三类报错文案。
+新增 golden 页 <code>tags</code>（28 页），<code>test_text_parse</code> 同步加一页（365 项）。</p>
+<p>例程：<code>example/08_tags.c</code>（上半部分纯 UA 默认值排版，下半部分同标签只改 CSS）；
+教程新增第 8 章「标签与语义」。</p>
+<h5 id="11-white-space-normal-2026-11-08">⑪ 自动折行 <code>white-space: normal</code> —— <strong>已完成（2026-11-08）</strong></h5>
+<p>有了 <code>line-height</code> 打底，多行文本只剩"按宽度断行 + 行数决定高度"两件事。</p>
+<table>
+<thead>
+<tr>
+<th>决策</th>
+<th>选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认值</td>
+<td><strong><code>nowrap</code></strong>（浏览器是 <code>normal</code>）</td>
+<td>v0 文本模型是"一段文本一行"，27 页逐像素基准都建立在这上面；默认改成 <code>normal</code> 会让已有界面在你没改任何东西时重排。折行显式打开</td>
+</tr>
+<tr>
+<td>断行实现</td>
+<td><code>ql_text_wrap()</code> 一个函数，布局与绘制都调它</td>
+<td>"布局按一行算、绘制画三行"这类 bug 只能靠共用一份断行来杜绝</td>
+</tr>
+<tr>
+<td>宽度的写法</td>
+<td>空格<strong>照算</strong>宽度，断行后再 trim 尾随空白</td>
+<td>第一版把空格当零宽，含空格的英文行实际 120px 被判成放得下，折行直接失效</td>
+</tr>
+<tr>
+<td>行数上限</td>
+<td>绘制时栈上 <code>QL_CFG_TEXT_MAX_LINES</code>（64）条记录</td>
+<td>不 malloc；<strong>行数统计不受此限</strong>，否则长文本高度算少</td>
+</tr>
+<tr>
+<td>结构体</td>
+<td><code>uint8_t white_space</code> 塞进 padding，<strong>仍是 120 字节</strong></td>
+<td>blob v11 不变（旧 blob 该字节为 0 = nowrap，行为与旧版一致）</td>
+</tr>
+<tr>
+<td>不支持</td>
+<td><code>pre</code> / <code>pre-wrap</code> / <code>break-spaces</code> / <code>text-overflow: ellipsis</code></td>
+<td>要保留空白与制表符语义，本库不做；写了报错不降级</td>
+</tr>
+</tbody>
+</table>
+<p><strong>顺带修掉一个真 bug（分轴）</strong>：<code>max_content_main()</code> 给 flex 项算 max-content 主轴
+尺寸时，对文本节点<strong>一律返回文本宽度</strong>。可 <code>flex-direction: column</code> 时主轴是竖直，
+max-content 应该是高度（行数 × 行高）。后果：46 个汉字的简介在 column 容器里声称
+自己 <strong>322px 高</strong>，整页被撑爆、折行高度也算不出来（写 <code>example/07_player</code> 时撞上）。
+现在按 <code>row ? 文本宽度 : 行数 × 行高</code> 分轴，折行时行数用父容器给的可用宽度估。</p>
+<p>验收：<code>test_text_wrap</code>（59 项）—— 英文按词断且每行不超宽、CJK 随处断、超长单词硬断、
+<code>'\n'</code> 叠加折行、默认 nowrap 高度 = 1 行、<code>normal</code> 高度随行数增长、绘制真的画出多行、
+继承、column flex 回归（高度 = 行数 × 行高且等于容器高）、三类非法值报错。</p>
+<p>例程：<code>example/07_player.c</code> —— 一个真实的播放器界面（渐变封面 / 进度条 / 折行简介 /
+<code>line-height</code> 居中的按钮），顺带当"这套子集够不够写真实界面"的靶子。</p>
+<h5 id="10-line-height-2026-11-08">⑩ <code>line-height</code> —— <strong>已完成（2026-11-08）</strong></h5>
+<p>写 <code>example/03_layout</code> 时暴露的真实缺口：<code>height: 26px; text-align: center</code> 的按钮，
+文字水平居中但<strong>贴着内容盒顶部</strong>。查下来引擎是对的（CSS 块布局本来就这样，
+浏览器也一样），错的是<strong>库里根本没有表达"垂直居中"的手段</strong> —— <code>text-align</code> 的
+竖直 counterpart 就是 <code>line-height</code>。</p>
+<p>于是补上：<code>QLUIStyle.line_h</code>（<code>int16_t</code>，0 = <code>normal</code>），<code>QLUIStyle</code> <strong>116 → 120 字节</strong>，
+blob v10 → <strong>v11</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>关键点</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>半行距</td>
+<td><code>(line_h - (ascent + descent)) / 2</code>，第一行基线 = <code>box.y + 半行距 + ascent</code></td>
+</tr>
+<tr>
+<td>默认零变化</td>
+<td><code>line_h == 0</code> 时半行距恒为 0，与旧版<strong>逐像素相同</strong>（27 页基准图未动，只有 blob 变了）</td>
+</tr>
+<tr>
+<td>三种写法</td>
+<td><code>normal</code> / <code>&lt;N&gt;px</code> / 无单位倍数（按 <code>font-size</code> 折算成 px）</td>
+</tr>
+<tr>
+<td>继承</td>
+<td>进 <code>k_inherited</code>，与 <code>font-size</code> 同等待遇</td>
+</tr>
+<tr>
+<td>排版入口</td>
+<td>只有一个（<code>ql_draw2d_text_layout</code>），CPU/GPU 共用，所以 <code>draw_text</code> 多了一个 <code>line_h</code> 参数</td>
+</tr>
+<tr>
+<td>auto 高度</td>
+<td>文本节点的内容高用 <code>line_h</code> 撑开，不再固定用字体行高</td>
+</tr>
+</tbody>
+</table>
+<p>验收：新增 <code>test_line_height</code>（21 项，<strong>按渲染出来的墨迹包围盒</strong>判断，不看结构体）——
+<code>line-height == height</code> 时墨迹中心与盒中心重合（2 倍值相等）；不给值时墨迹贴顶；
+<code>2</code> 与 <code>40px</code> 在同字号下墨迹中心完全一致；负例（<code>1.5em</code> / <code>0</code> / <code>40000px</code> / <code>auto</code>）全部明确报错。</p>
+<p>顺带把 4 个例程的按钮/胶囊都补上 <code>line-height: &lt;box 高度&gt;px</code> —— 截图里那些
+"字浮在上面"的地方一次性对齐。</p>
+<h5 id="9-backdrop-filter-blur">⑨ 毛玻璃 <code>backdrop-filter: blur()</code> —— <strong>已完成</strong></h5>
+<p>唯一会"回头读自己画过的东西"的效果。数据侧几乎零成本：<code>QLUIStyle</code> 加一个
+<code>uint8_t backdrop_blur</code>（塞进原 padding，<strong>116 字节不变</strong>，blob v9 → v10）；
+<code>render_node</code> 里在"画自己的背景之前"插一句调用。</p>
+<table>
+<thead>
+<tr>
+<th>后端</th>
+<th>做法</th>
+<th>代价（实测）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>画布就地模糊：取区域 → <strong>两趟 H/V 滑动窗口盒式卷积</strong>（每像素 O(1)）→ 写回</td>
+<td>108×56 卡片 <strong>0.159 ms</strong>；300×200 <strong>1.68 ms</strong>（整屏重绘是 0.304 ms）</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td><strong>中途 flush 一次批次</strong> → <code>glBlitFramebuffer</code> 降到半分辨率 → H/V 两趟 9 抽头 → <code>mode 4</code> 画回</td>
+<td>额外 <strong>1 个 draw call</strong>、6 个顶点、两块半分辨率 RGBA8</td>
+</tr>
+</tbody>
+</table>
+<p><strong>这一步打破了"单批次"这条性能红线</strong>，所以把提交动作抽成 <code>flush_batch(g)</code>：
+正常帧仍然只被 <code>end()</code> 调一次（行为完全不变），毛玻璃自己先 flush 再继续摞顶点。</p>
+<p>GPU 侧三个"错了就整块黑"的坑（都写进 <code>QLRender阅读指南</code> §15）：
+<code>u_bg</code> 采样器没绑东西 = 未定义值；忘了还原 FBO/视口 = 后续全画进半分辨率缓冲；
+纹理上下颠倒 = 玻璃里出现倒影。</p>
+<p><strong>两条后端故意不一致</strong>：CPU 全分辨率盒式、GPU 半分辨率高斯近似 →
+<code>test_blur</code> 不比逐像素，只断言性质：玻璃内出现一长串"中间色"（硬边摊开了）、
+玻璃外一个中间色都没有（模糊不外溢）、半透明玻璃自己叠在模糊结果上。
+实测 CPU 13 个中间色像素 / GPU 7 个。</p>
+<p><code>example_showcase_window</code> 底排加了一条滑动的毛玻璃（12px）压在一排带数字的色块上，
+数字被糊开是"糊"最直观的证据。</p>
+<p><strong>顺带修掉两个真 bug</strong>（都是"窗口很卡"排查出来的）：</p>
+<table>
+<thead>
+<tr>
+<th>bug</th>
+<th>表现</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_font_default()</code> 的字号缓存只有 <strong>8 个槽</strong>，满了以后"造一个不缓存的新字体"</td>
+<td>缩放动画每帧重载 TTF + 重光栅化：<strong>8.077 ms/帧</strong>（0.567 → 修好后 0.570），并泄漏</td>
+<td>槽位 8 → 32，满了<strong>轮转淘汰并销毁</strong>最老的一个</td>
+</tr>
+<tr>
+<td><code>(ql_coord_t)s-&gt;tf_x &lt;&lt; QL_FX_SHIFT</code></td>
+<td><code>tf_x</code> 为负时<strong>左移负数是 UB</strong>（UBSan 报 <code>left shift of negative value -32</code>）</td>
+<td>改成乘以 <code>QL_FX_ONE</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>example_showcase_window</code> 也改成<strong>每帧整屏重绘 + 60fps 上限</strong>：毛玻璃在脏区模式下
+每块脏区都要单独走一遍模糊（一次 blit + 两次全屏 pass），比整屏画还慢且会一顿一顿的。</p>
+<hr />
+<p><strong>验收</strong>：<code>test_flip</code> 46 项（分轴缩放不进布局、宽度 40→20 高度不变、<code>0</code> 时零墨迹且点不中、
+逆缩放命中、关键帧分轴插值、<code>animation-delay</code> 全周期、<strong>CPU vs GPU 0.00%</strong>）；
+<code>example_flip_window</code> 三张卡片错开相位（水平翻 / 垂直翻 / 圆形硬币）真窗口验证。
+<code>test_qlui_errors</code> 32 项（<code>scale(1.2, 2)</code> / <code>scaleX(0)</code> 放行，<code>scale(-1)</code> / <code>rotate()</code> / <code>matrix()</code> 报错）。</p>
+<h4 id="_1">效果 × 平台 能力矩阵（正式版）</h4>
+<p>判据不是"GPU 支不支持"，而是三条 MCU/CPU 的真实瓶颈：
+<strong>A. 非轴对齐光栅化</strong>（行跨度扫描失效）、<strong>B. 离屏缓冲的 RAM</strong>、<strong>C. 每像素代价</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>效果</th>
+<th>PC / 移动</th>
+<th>MCU</th>
+<th>卡在哪</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓动 / 关键帧 / 状态过渡</td>
+<td>✅</td>
+<td>✅</td>
+<td>—</td>
+<td>纯数学</td>
+</tr>
+<tr>
+<td>路径动画（平移）</td>
+<td>✅</td>
+<td>✅</td>
+<td>—</td>
+<td>贝塞尔求值，几十个乘法</td>
+</tr>
+<tr>
+<td>路径动画（沿路径旋转）</td>
+<td>✅</td>
+<td>⚠️ 降级</td>
+<td>A</td>
+<td>数学能算，旋转后画不出来 → 退化：跟随平移、朝向固定</td>
+</tr>
+<tr>
+<td>圆形 / 圆角揭示</td>
+<td>✅</td>
+<td>✅</td>
+<td>—</td>
+<td>行跨度光栅本身就是"按行求交集"，加个随半径变化的 sqrt</td>
+</tr>
+<tr>
+<td>交叉淡入淡出</td>
+<td>✅</td>
+<td>✅</td>
+<td>—</td>
+<td>两个 quad 动 alpha</td>
+</tr>
+<tr>
+<td>任意形状遮罩</td>
+<td>✅</td>
+<td>⚠️ 看精度</td>
+<td>B+C</td>
+<td>1bpp 遮罩 320×240 = 9.4KB 可接受；4bpp = 37.5KB 偏重</td>
+</tr>
+<tr>
+<td>线性 / 径向渐变</td>
+<td>✅</td>
+<td>✅</td>
+<td>—</td>
+<td>逐行算"起始色 + 每像素增量"，<strong>MCU 上最便宜的效果</strong></td>
+</tr>
+<tr>
+<td>软阴影 / 外发光（实时 SDF）</td>
+<td>✅</td>
+<td>⚠️ 仅小编码区域</td>
+<td>C</td>
+<td>每像素 sqrt，全屏不可行；一张卡片约 1 万像素可接受</td>
+</tr>
+<tr>
+<td>软阴影（9-slice 预烘焙）</td>
+<td>✅</td>
+<td>✅ <strong>推荐替代</strong></td>
+<td>—</td>
+<td>64×64 4bpp 贴图 = 2KB，九宫格拉伸 + alpha blit</td>
+</tr>
+<tr>
+<td>单元素 3D 翻转（真透视）</td>
+<td>✅</td>
+<td>❌</td>
+<td>A</td>
+<td>透视后的四边形非轴对齐</td>
+</tr>
+<tr>
+<td>单元素 3D 翻转（假翻转）</td>
+<td>✅ <strong>已实现</strong></td>
+<td>✅ <strong>推荐替代</strong></td>
+<td>—</td>
+<td><code>scaleX: 1→0→1</code>，轴对齐照样走行跨度；无透视缩短但视觉上就是翻转（<code>test_flip</code>）</td>
+</tr>
+<tr>
+<td>组透明度（父 <code>opacity</code>）</td>
+<td>✅（GL 走 FBO 图层）</td>
+<td>❌</td>
+<td>B</td>
+<td>退化：逐元素 alpha（重叠处偏暗）</td>
+</tr>
+<tr>
+<td>模糊 / 毛玻璃</td>
+<td>✅ <strong>已实现</strong>（GL + CPU）</td>
+<td>❌</td>
+<td>B / C</td>
+<td>GPU 1/2 降采样 ping-pong；CPU 就地卷积 O(面积)，一张卡 ≈ 半次整屏重绘</td>
+</tr>
+<tr>
+<td>毛玻璃（近似）</td>
+<td>—</td>
+<td>⚠️ 视觉近似</td>
+<td>—</td>
+<td>半透明底 + 预烘焙噪点叠层，看着像磨砂，其实没模糊</td>
+</tr>
+<tr>
+<td>多平面 3D 场景</td>
+<td>❌</td>
+<td>❌</td>
+<td>A</td>
+<td>需深度缓冲 + z 测试；与画家算法冲突</td>
+</tr>
+<tr>
+<td><code>backface-visibility</code></td>
+<td>❌ 报错</td>
+<td>❌ 报错</td>
+<td>—</td>
+<td>假翻转没有背面，<code>scale == 0</code> 时零面积即"看不见"；换脸用两个元素错开 delay</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MCU 上真正做不了的只有三件</strong>：真透视 3D、真毛玻璃、组透明度语义。
+其余全部可做，其中 <strong>4 项有"几乎无损"的替代做法</strong>（上表"推荐替代"）。</p>
+<h4 id="m55">M5.5 收尾状态</h4>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 帧时钟 ② transition ③ @keyframes ④ transform ⑥ SDF 扩展 ⑦ 遮罩 ⑧ 假翻转 ⑨ 毛玻璃</td>
+<td>✅ 全部完成</td>
+</tr>
+<tr>
+<td>⑤ 路径动画（<code>offset-path</code>）</td>
+<td>⏸ 明确不做（报错）：需要贝塞尔弧长参数化，价值低于成本</td>
+</tr>
+<tr>
+<td><code>rotate()</code> / <code>skew()</code></td>
+<td>⏸ 报错：矩形会变成非轴对齐四边形，行跨度扫描失效（要改成逐行求交或 shader 顶点变换，是一条独立路线）</td>
+</tr>
+<tr>
+<td>组透明度（父 <code>opacity</code>）</td>
+<td>⏸ 报错：需要离屏合成；GL 侧可以借毛玻璃的 FBO 地基做，排在 M6 之后</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>MCU 为<strong>第二平台、当前暂缓</strong>。上表右列先记录，防止将来重新发明。
+四个替代方案（假翻转 / 9-slice 阴影 / 噪点毛玻璃 / 行跨度揭示）<strong>必须按上表实现，
+不允许在 MCU 阶段换另一套做法</strong>。</p>
+</blockquote>
+<h4 id="_2">三条强制约束</h4>
+<ol>
+<li><strong>动画必须走脏区，禁止依赖整屏重画</strong></li>
+</ol>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>320×240 整屏重绘</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86 实测</td>
+<td>0.196 ms</td>
+<td>PC 上随便全画（1080p 全屏 2.37ms，占 16.7ms 预算 14%）</td>
+</tr>
+<tr>
+<td>Cortex-M4 估算</td>
+<td>4~8 ms（含文字/圆角/混合实际 15~25ms）</td>
+<td><strong>MCU 必须脏区</strong>，否则没有帧预算</td>
+</tr>
+</tbody>
+</table>
+<p>动画系统从第一版就要<strong>跟踪被动画元素的脏矩形</strong>（旧位置 ∪ 新位置），
+   不能"PC 能全画，所以先不做脏区"——那等于把 MCU 路堵死。</p>
+<ol start="2">
+<li>
+<p><strong><code>transform</code> 是绘制期属性，不是布局期属性</strong>
+   与 CSS 语义一致（<code>transform</code> 不影响布局），所以滑入/缩放动画<strong>零重排</strong>。
+   代价是命中测试必须做逆变换。反过来，动画 <code>width</code>/<code>padding</code> <strong>会</strong>触发每帧重排，
+   允许但要在文档里明确劝阻（和浏览器一样）。</p>
+</li>
+<li>
+<p><strong>亚像素坐标是"顺滑"的分水岭</strong>
+   <code>ql_coord_t</code> 现在是整数像素：<code>x</code> 从 10 动到 20 只有 10 个离散位置，
+   60fps / 300ms 的动画只有 18 个台阶，肉眼可辨。
+   <strong><code>M5</code> 的定点坐标（26.6）恰好是这件事的基础，所以 M5 必须在 M5.5 之前</strong>
+   （PC 端 GPU 路径天然亚像素，CPU 路径最终仍落在整像素上——这是可接受的偏差）。</p>
+</li>
+</ol>
+<h4 id="_3">验收</h4>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>微交互</td>
+<td>hover/press 过渡在 GPU 与 CPU 两条路径上均无跳变</td>
+</tr>
+<tr>
+<td>帧率</td>
+<td>320×320 窗口，10 个元素同时动画，vsync 60fps 不掉帧 ✅（CPU 侧 0.026 ms/帧，窗口实测 59.3 fps）</td>
+</tr>
+<tr>
+<td>脏区正确性</td>
+<td>动画元素的<strong>旧位置</strong>必须被重绘（新增 <code>test_anim_dirty</code> 逐像素断言）</td>
+</tr>
+<tr>
+<td>语义</td>
+<td>中断动画从当前插值重基；<code>animation-fill-mode</code> 四值正确；<code>animationend</code> 可收到 ✅</td>
+</tr>
+<tr>
+<td>3D 翻转</td>
+<td>单卡片翻面正确，<code>backface-visibility: hidden</code> 不显示背面，命中测试在翻转后仍准确</td>
+</tr>
+<tr>
+<td>效果</td>
+<td>软阴影 / 渐变 / 圆形揭示 / mask 揭示 各有 golden image 测试</td>
+</tr>
+<tr>
+<td>不支持的</td>
+<td><code>filter</code> / <code>clip-path</code> / 3D 场景 在构建期<strong>报错</strong>（沿用"不静默降级"红线）</td>
+</tr>
+</tbody>
+</table>
+<h4 id="_4">明确不做</h4>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filter: blur()</code> / <code>backdrop-filter</code> 的 MCU 实现</td>
+<td>无离屏缓冲</td>
+</tr>
+<tr>
+<td><code>clip-path</code> 任意路径</td>
+<td>需 stencil 或 shader 采样，收益不抵复杂度</td>
+</tr>
+<tr>
+<td>多平面 3D / <code>perspective</code> 场景</td>
+<td>与画家算法冲突，需深度缓冲</td>
+</tr>
+<tr>
+<td><code>motion-path</code> 的多段复合路径</td>
+<td>极低频；单段贝塞尔够用</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="m6-68">M6 · 平台扩展（约 6~8 周，可并行）</h3>
+<p><strong>目标</strong>：兑现"PC/移动第一平台"。</p>
+<table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>平台</th>
+<th>需要的后端</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Linux Wayland（GPU）</td>
+<td>EGL + <code>wl_egl_window</code>（当前靠 XWayland）</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Windows</td>
+<td>Win32 窗口 + <strong>D3D11</strong> 渲染 + DPI</td>
+</tr>
+<tr>
+<td>3</td>
+<td>macOS / iOS</td>
+<td>AppKit/UIKit + <strong>Metal</strong> 渲染</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Android</td>
+<td>ANativeWindow + <strong>GLES3</strong>（复用现有 GL 后端）+ 触摸</td>
+</tr>
+</tbody>
+</table>
+<p><strong>约束</strong>：每个新后端必须通过 <code>test_gl_vs_cpu</code> 的等价测试（"该后端 vs CPU" 像素一致）。</p>
+<hr />
+<h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>说明</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>benchmark 回归</td>
+<td><code>example_bench_fps</code> 结果进 CI，阈值超标即失败</td>
+<td>⏳</td>
+</tr>
+<tr>
+<td>~~golden image 套件~~</td>
+<td>27 个 CSS 用例 × 两层比对（blob 逐字节 + 基准图容差）</td>
+<td>✅ <code>test_golden</code></td>
+</tr>
+<tr>
+<td>~~CI~~</td>
+<td>GitHub Actions 三档：Release / ASan+UBSan / <code>-Werror</code></td>
+<td>✅ <code>.github/workflows/ci.yml</code></td>
+</tr>
+<tr>
+<td>模板实例化</td>
+<td>支持动态列表：<code>qlui</code> 生成 template，运行期 <code>ql_ui_instantiate(tpl, n)</code></td>
+<td></td>
+</tr>
+<tr>
+<td>文档</td>
+<td>每个模块"阅读指南 + API 手册"（已有 5 组，继续补齐）+ 迁移指南（Web 写法 → QLGL 写法）</td>
+<td></td>
+</tr>
+<tr>
+<td>打包</td>
+<td>CMake install/export、pkg-config、示例仓库</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5">5. 关键路径与依赖</h2>
+<div class="highlight"><pre><span></span><code>M1 输入 ✅ ┐
+M2 文本 ✅ ┼─▶ 可演示的产品级界面 ─────────────────┐
+M3 布局 ✅ ┘            ▲                          │
+                        │                          ▼
+M3.5 前端统一 ──────────┤（blob 已完成；C 解析器要等 M3 属性集定型）
+M4 性能 ────────────────┤（基线稳定后再铺平台，避免在 5 个平台重复优化）
+M5 坐标/DPR ────────────┤ ★ M5.1/M5.2 已完成；M5.3 亚像素是动画顺滑的基础
+M5.5 动效与现代 UI ─────┘ ★ PC/移动全量，MCU 只做子集（暂缓）
+M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
+</code></pre></div>
+
+<p><strong>平台优先级（已定案）</strong>：<strong>PC / 移动是第一平台，全量效果；MCU 第二平台，暂缓且只做子集。</strong></p>
+<p><strong>建议节奏</strong>：~~M1~~ → ~~M2~~ → ~~M3~~ → M3.5（blob 已完成；C 解析器待办）→ <strong>M4（下一个）</strong> → M5 → M5.5 → M6，M7 穿插进行。</p>
+<hr />
+<h2 id="6">6. 架构红线（写进规范，防止走偏）</h2>
+<table>
+<thead>
+<tr>
+<th>红线</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>不做保留式场景图 / render tree</strong></td>
+<td>那会变成 GTK4 的 GSK，每帧重建节点，性能优势全丢</td>
+</tr>
+<tr>
+<td><strong>不做运行期 CSS 匹配</strong></td>
+<td>样式在构建期消解，这是性能与体积的根基。M3.5 的运行时解析是"加载时算一次"，<strong>不是</strong>每帧匹配，且解析器可整块摘掉</td>
+</tr>
+<tr>
+<td><strong>不做 DOM API / JS 引擎</strong></td>
+<td>PC 高兼容用系统 WebView，不在本项目范围内</td>
+</tr>
+<tr>
+<td><strong>不与 Qt/GTK 比功能广度</strong></td>
+<td>只做 UI；可访问性、IME、多媒体不做</td>
+</tr>
+<tr>
+<td><strong>不允许静默降级</strong></td>
+<td>不支持的 CSS/HTML 必须构建期报错</td>
+</tr>
+<tr>
+<td><strong>稳态零 malloc</strong></td>
+<td>所有热路径预分配；新增分配要有断言兜底</td>
+</tr>
+<tr>
+<td><strong>外来数据必须有界</strong></td>
+<td>静态 doc 是编译器常量；<code>.qlui</code> 与将来的 HTML/CSS 文本是<strong>外来字节</strong>，所有计数/递归都要有 <code>QL_CFG_UI_MAX_*</code> 上限</td>
+</tr>
+<tr>
+<td><strong>明确失败优于半个正确</strong></td>
+<td>加载失败一律返回 NULL + 带原因的错误，禁止"跳过坏数据继续画"</td>
+</tr>
+<tr>
+<td><strong>混用单位是面板</strong></td>
+<td>doc 之间是 <code>uint16</code> 下标，跨 doc 引用物理上不存在；不做元素级混合</td>
+</tr>
+<tr>
+<td><strong>动画必须走脏区</strong></td>
+<td>PC 上可以整屏重画（占预算 14%），MCU 上没有这个余量。第一版就做对，否则 MCU 路堵死</td>
+</tr>
+<tr>
+<td><strong>不打破"单批次"除非有里程碑授权</strong></td>
+<td>毛玻璃是唯一会打破它的特性，且必须作为可选编译开关</td>
+</tr>
+<tr>
+<td><strong>同一份源，两个平台</strong></td>
+<td>能力差异靠 <code>qlui --platform</code> 的<strong>构建期降级报告</strong>表达，不靠 <code>#ifdef</code> 满天飞；"不静默降级"依然成立</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7">7. 风险登记</h2>
+<table>
+<thead>
+<tr>
+<th>风险</th>
+<th>概率</th>
+<th>影响</th>
+<th>缓解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>flexbox 语义细节踩坑（基线对齐、百分比循环依赖）</td>
+<td>高</td>
+<td>M3 超期</td>
+<td>先做 20 个用例驱动，与浏览器差分测试</td>
+</tr>
+<tr>
+<td>FreeType/HarfBuzz 体积膨胀（+1.5~2.5 MB）</td>
+<td>中</td>
+<td>MCU 档不可用</td>
+<td>分档裁剪：MCU 只保留位图字体</td>
+</tr>
+<tr>
+<td>多平台后端维护成本</td>
+<td>中</td>
+<td>人力稀释</td>
+<td>只做 4 个主力平台；每加一个都要过 golden 测试</td>
+</tr>
+<tr>
+<td>GPU 驱动差异/上下文丢失</td>
+<td>中</td>
+<td>移动端白屏</td>
+<td>CPU 后端始终可回退；资源重建路径</td>
+</tr>
+<tr>
+<td>需求继续膨胀（又要 JS、又要完美兼容）</td>
+<td>中</td>
+<td>方向漂移</td>
+<td>用本文 §6 红线挡住</td>
+</tr>
+<tr>
+<td>动效里程碑变成"兼容全部 CSS3 动画"</td>
+<td>中</td>
+<td>M5.5 无限膨胀</td>
+<td>只做 transition / @keyframes / 2D transform 三件；filter / clip-path / 3D 场景明确报错</td>
+</tr>
+<tr>
+<td>毛玻璃打破单批次后帧率模型失效</td>
+<td>中</td>
+<td>性能不可预测</td>
+<td>作为可选编译开关；开启前后各跑一次 bench，进 CI</td>
+</tr>
+<tr>
+<td>亚像素坐标改动扩散（rect 已遍布 4 处）</td>
+<td>中</td>
+<td>M5 超期</td>
+<td>M5 必须单独一个里程碑，不与 M5.5 混做</td>
+</tr>
+<tr>
+<td>C 解析器复刻 Python 语义时悄悄漂移</td>
+<td>高</td>
+<td>M3.5 第 3 步失败</td>
+<td><strong>已就位</strong>：<code>test_golden</code> 的 27 页 blob 逐字节比对 + 基准图（改 1 个色阶就红）；CI 三档自动跑</td>
+</tr>
+<tr>
+<td>「左移负数」这类 UB 只在特定输入下发作</td>
+<td>中</td>
+<td>罕见崩溃 / 结果不确定</td>
+<td>CI 的 ASan+UBSan 档带 <code>-fno-sanitize-recover</code>；第一跑就抓到 <code>ql_rectfx_from_rect</code> 对负坐标左移，已收敛到 <code>ql_fx_of()</code> 一个入口</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="golden-m7-2026-11-08">golden 护栏（M7 前置）—— <strong>已完成（2026-11-08）</strong></h3>
+<p><strong>为什么先做这个</strong>：M3.5 第 3 步（C 版 HTML/CSS 解析器）的验收标准是
+"构建期产出的 blob 与提交的基准<strong>逐字节相同</strong>，且拒绝的输入集合不变"。
+那是在 C 里复刻一套 Python 语义——没有自动回归，每次改 shorthand 展开或级联顺序
+都只能靠肉眼，做不下去。</p>
+<p><strong>两层比对，各自独立咬合</strong>（<code>test/web/test_golden.c</code>，27 个用例）：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>判据</th>
+<th>抓什么</th>
+<th>已验证的咬合度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.qlui</code> blob</td>
+<td><strong>逐字节相同</strong></td>
+<td>任何数据层变化（色阶、间距、圆角、简写展开顺序…）</td>
+<td>改 <code>#F0B030</code> → <code>#F0B031</code>、改 <code>border-radius: 24px</code> → <code>25px</code>：<strong>都红</strong></td>
+</tr>
+<tr>
+<td>基准图</td>
+<td>单通道差 &gt; 12 的像素 ≤ 0.5%</td>
+<td>版面/几何/绘制回归</td>
+<td>只坏基准里一个像素 run：<strong>红</strong>（1.77% 超差）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>顺带扩了 CPU vs GPU 的覆盖面</strong>：从手挑 3 页变成<strong>全部 27 页</strong>，每页一个容差
+（绝大多数是 2%，<code>blur</code> 6% —— CPU 全分辨率盒式 vs GPU 半分辨率 9 抽头，斜坡本来不同宽）。</p>
+<p><strong>体积与速度</strong>：基准用自带的极简 RLE（<code>.qlg</code>）+ 按内容裁剪，<strong>528 KB</strong>（等价 PPM 是 8.2 MB）；
+单次运行 <strong>0.19 s</strong>。</p>
+<p><strong>CI 三档</strong>（<code>.github/workflows/ci.yml</code>）：Release/ctest、ASan+UBSan/ctest、<code>-Werror</code> 构建。
+第一跑就抓到一个真 UB（<code>ql_rectfx_from_rect</code> 里对负坐标左移，见 §7 风险表下方）。</p>
+<p><strong>用法</strong></p>
+<div class="highlight"><pre><span></span><code>./build/test_golden<span class="w">                        </span><span class="c1"># 比基准</span>
+<span class="nv">QLGL_GOLDEN_UPDATE</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>./build/test_golden<span class="w">    </span><span class="c1"># 重建基准（**先确认画面是对的**）</span>
+<span class="nv">QLGL_GOLDEN_EXACT</span><span class="o">=</span><span class="m">1</span><span class="w">  </span>./build/test_golden<span class="w">    </span><span class="c1"># 逐像素严格相等（本机自测）</span>
+<span class="nv">QLGL_GOLDEN_PPM</span><span class="o">=</span><span class="m">1</span><span class="w">    </span>./build/test_golden<span class="w">    </span><span class="c1"># 另外写 /tmp/golden_*.ppm 供肉眼查看</span>
+</code></pre></div>
+
+<hr />
+<h3 id="2026-11-08">例程与文档站 —— <strong>已完成（2026-11-08）</strong></h3>
+<p><strong><code>example/</code>：六个自包含的基本例程</strong></p>
+<table>
+<thead>
+<tr>
+<th>程序</th>
+<th>讲什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>01_window</code></td>
+<td>最小闭环：<code>load_text</code> → <code>build</code> → <code>layout</code> → 显示/离屏</td>
+</tr>
+<tr>
+<td><code>02_text</code></td>
+<td>字号 / 颜色 / 对齐 / 文本规则</td>
+</tr>
+<tr>
+<td><code>03_layout</code></td>
+<td>flex / 百分比 / 绝对定位 / 读布局结果</td>
+</tr>
+<tr>
+<td><code>04_interaction</code></td>
+<td>状态样式 / 事件派发 / 点击回调 / 合成事件</td>
+</tr>
+<tr>
+<td><code>05_animation</code></td>
+<td><code>@keyframes</code> / 脏区 / 动画属性白名单</td>
+</tr>
+<tr>
+<td><code>06_theme</code></td>
+<td>同一份 HTML 三份 CSS / <code>.qlui</code> 缓存</td>
+</tr>
+</tbody>
+</table>
+<p>刻意<strong>不依赖 <code>test/</code>、也不需要先跑代码生成</strong>：界面用 <code>ql_ui_load_text()</code> 内联在
+源文件里，一个 <code>.c</code> 编译完就能跑，没有窗口时自动退回离屏 + PPM。</p>
+<p><strong>文档站：<code>doc/html/</code>（布局参照 GTK 文档）</strong></p>
+<p><code>tools/doc/gen_html.py</code> 把 <code>doc/tutorial/*.md</code> 与 <code>doc/手册/**/*.md</code> 生成静态站点：
+顶栏 + 左侧导航（指南/API 分区）+ 正文 + 上一页/下一页，无 JS、无外部资源，
+<code>cmake --build build --target doc_html</code> 重新生成。</p>
+<p><strong>教程（7 章，GTK <code>getting_started</code> 那种递进写法）</strong>：
+基础知识 → 文本 → 布局 → 交互 → 动画 → 换皮肤 → 进阶。
+每章先给<strong>可编译运行的完整程序</strong>，再逐段解释新增的部分，配真实截图
+（截图就是 <code>example/</code> 跑出来的 PPM，转 PNG 存在 <code>doc/img/</code>）。</p>
+<p><strong>顺带修掉一个真 flex bug（有回归测试）</strong></p>
+<p>写 <code>03_layout</code> 时发现 <code>.btn { width: 56px }</code> 被压成 24px：</p>
+<blockquote>
+<p>flex 项的 <code>width: auto</code> 被当成 block 布局的"撑满包含块"。于是空的
+<code>flex-grow: 1</code> 占位块基准尺寸 = 整个容器宽 → <code>sum_base</code> 超过容器 →
+算出一份<strong>负剩余空间</strong> → 触发 shrink → 把旁边固定宽度的兄弟一起压扁
+（实测 <code>40px</code>→29px、<code>56px</code>→40px）。</p>
+</blockquote>
+<p>修法：新增 <code>max_content_main()</code>，在 <code>measure_flex_items()</code> 里先把 auto 主轴尺寸
+按 <strong>max-content</strong> 落成显式值（空盒子 0 / 只有文本取文本宽 / 有子节点按主轴求
+和或取最大）。注意<strong>不能顺手把 <code>box_sizing</code> 改成 1</strong> —— 那会把同一项的交叉轴
+也算错（带 1px 边框的 20px 格子从 22 变 20，<code>test_golden</code> 的 <code>bench100</code> 当场红）。</p>
+<p><code>test/web/test_flex_auto.c</code>（15 项）钉住这条语义：固定宽不被压、空 auto 项基准为 0、
+文本项基准是文本宽、<code>flex-basis</code> 显式给了就不用 max-content、content-box 不变。</p>
+<hr />
+<h2 id="8">8. 立即可开工（按性价比）</h2>
+<ol>
+<li>~~M4-G1：CPU 行循环 + 格式特化~~ <strong>已完成</strong>（1080p 44.4 → 1.95 ms）</li>
+<li>~~M1：输入系统 + 状态样式~~ <strong>已完成</strong></li>
+<li>~~M2：FreeType 接入 + 动态字形图集~~ <strong>已完成</strong></li>
+<li>~~<code>.qlui</code> blob + doc 所有权~~ <strong>已完成</strong>（M3.5 第 0/1 步）</li>
+<li>~~M3：flexbox + position + z-index + overflow + 混合内容~~ <strong>已完成</strong></li>
+<li><strong>M4：性能补齐</strong>（进行中，第一批已完成）：剩下增量布局、渲染脏区剪枝、
+   字形行级裁剪、<code>style_copy</code> 按需分配、控件层接 <code>QLDraw2D</code></li>
+<li>~~M5.5 先行项：SDF 软阴影 + 线性渐变~~ <strong>已完成（2026-11-08）</strong>
+   - <code>ql_canvas_fill_shadow</code> / <code>fill_round_rect_gradient</code> + <code>QLDraw2D</code> 对应两个函数；
+   - GPU 侧渐变<strong>零成本</strong>（顶点颜色插值，不改着色器），阴影用 <code>mode=2</code> 复用现有 SDF；
+   - <code>box-shadow</code> / <code>linear-gradient</code> 已进 CSS 编译；<code>test_effects</code> 26 项像素断言；</li>
+</ol>
+<hr />
+<h2 id="9">9. 附录：术语与对应模块</h2>
+<table>
+<thead>
+<tr>
+<th>术语</th>
+<th>模块</th>
+<th>文档</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对象/属性/事件</td>
+<td><code>src/core/</code></td>
+<td><a href="./手册/object/QLObject阅读指南.md">QLObject 手册</a></td>
+</tr>
+<tr>
+<td>画布/绘制原语</td>
+<td><code>src/draw/qlcanvas.c</code></td>
+<td><a href="./手册/widget/QLWidget阅读指南.md">QLWidget 手册</a></td>
+</tr>
+<tr>
+<td>控件</td>
+<td><code>src/widget/</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>字体/文本</td>
+<td><code>src/text/</code></td>
+<td><a href="./手册/text/QLText阅读指南.md">QLText 手册</a></td>
+</tr>
+<tr>
+<td>HTML/CSS 编译</td>
+<td><code>tools/qlui</code></td>
+<td><a href="./手册/ui/QLUI阅读指南.md">QLUI 手册</a></td>
+</tr>
+<tr>
+<td>绘制接口/GPU</td>
+<td><code>src/draw/qldraw2d.c</code>、<code>src/port/qlgfx_gl.c</code></td>
+<td><a href="./手册/render/QLRender阅读指南.md">QLRender 手册</a></td>
+</tr>
+<tr>
+<td>显示后端</td>
+<td><code>src/port/</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>Web 兼容策略</td>
+<td>—</td>
+<td><a href="./Web兼容设计.md">Web 兼容设计</a></td>
+</tr>
+</tbody>
+</table>
+<div class='pager'>
+<a href='../design/Web兼容设计.html'><span class='dir'>上一页</span>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='next' href='../design/bench.html'><span class='dir'>下一页</span>性能基线（bench.md）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

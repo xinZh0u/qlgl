@@ -230,6 +230,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
 - HTML5 覆盖度：[HTML5 标签覆盖与裁剪](doc/手册/ui/HTML5标签覆盖与裁剪.md)（114 个元素逐条状态 + MCU 能力包裁剪）
+- 图像：[图像管线设计](doc/图像管线设计.md)（解码分工 / `<img>` 布局 / 两个后端的 blit）
 - 动效：[QLAnim 阅读指南](doc/手册/anim/QLAnim阅读指南.md) / [QLAnim API 手册](doc/手册/anim/QLAnim%20API手册.md)
 - 运行期解析：[QLUIText 阅读指南](doc/手册/uitext/QLUIText阅读指南.md) / [QLUIText API 手册](doc/手册/uitext/QLUIText%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)

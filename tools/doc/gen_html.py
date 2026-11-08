@@ -15,6 +15,7 @@
 目录结构约定：
     doc/tutorial/*.md          教程（按文件名数字排序）
     doc/手册/<模块>/*.md        手册（阅读指南 → API 手册）
+    doc/<名字>.md              设计文档（按 DESIGN_DOCS 的顺序，只收根目录）
 """
 import argparse
 import html
@@ -40,6 +41,15 @@ MODULES = [
     ("render", "QLRender", "渲染：画布、GPU 后端、脏区"),
     ("anim", "QLAnim", "动效：帧时钟、缓动、补间"),
     ("input", "QLInput", "输入：事件队列、指针、键盘"),
+]
+
+# 根目录的设计文档：按这里的顺序出现在侧栏（不在表里的根目录 .md 不收）
+DESIGN_DOCS = [
+    ("图像管线设计", "图像管线：解码、绘制、<img>"),
+    ("底层实现设计", "底层实现：对象、绘制、字体"),
+    ("Web兼容设计", "与 Web 的兼容边界"),
+    ("开发规划", "开发规划与分期"),
+    ("bench", "性能基准"),
 ]
 
 CSS = r"""
@@ -266,6 +276,14 @@ class Page:
 
 def collect():
     pages = []
+    for name, sub in DESIGN_DOCS:
+        path = os.path.join(ROOT, "doc", name + ".md")
+        if not os.path.isfile(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        pages.append(Page(path, "design/" + name + ".html",
+                          first_heading(text) or name, "设计文档",
+                          ("design", "设计文档"), sub))
     tut_dir = os.path.join(ROOT, "doc", "tutorial")
     if os.path.isdir(tut_dir):
         for name in sorted(os.listdir(tut_dir)):
@@ -301,6 +319,9 @@ def build(pages, out_dir):
     tut = [(p.out, p.title) for p in pages if p.section[0] == "tutorial"]
     if tut:
         groups.append(("入门教程", tut))
+    design = [(p.out, p.title) for p in pages if p.section[0] == "design"]
+    if design:
+        groups.append(("设计文档", design))
     by_mod = {}
     for p in pages:
         if p.section[0] == "manual":
