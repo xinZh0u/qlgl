@@ -1895,16 +1895,19 @@ golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <c
 <li><strong>自有解码器只做 BMP / QOI / PNG</strong>。PNG 的难点只有 DEFLATE 一处，而它是无状态
    纯算法（32KB 固定窗口、输出直接喂反滤波），可完全有界、可 fuzz；JPEG 是"一整套
    色彩管线"，手写的失败模式是<strong>色偏</strong>而不是崩溃 —— 收益/风险完全不划算。</li>
-<li><strong>PC/移动的 JPEG/GIF 走两条路</strong>：① 构建期 <code>qltext assets</code> 用系统库把它转成 QOI
-   （运行时零依赖，MCU 侧一字节代价都没有）；② 运行期交给<strong>平台后端</strong>
-   （libjpeg-turbo / ImageIO / WIC / BitmapFactory），MCU 侧没有后端 → 明确报错。</li>
+<li><strong>构建期转码是所有平台的默认路径，MCU 尤其靠它</strong>：<code>qltext assets</code> 在开发机上解码，
+   直接产出<strong>目标像素格式</strong>（MCU 常是 RGB565）的 <code>RAW</code>，放 <code>.rodata</code>、<code>px</code> 直指、
+   <code>owned=0</code> → 运行时<strong>零解码、零图片 RAM</strong>；MCU 默认 <code>QL_FEAT_UI_IMAGE_DECODE=0</code>，
+   固件里连 inflate/QOI/BMP 代码都没有。PC 额外可选：运行期自有解码器（BMP/QOI/PNG）
+   与平台后端（libjpeg-turbo / ImageIO / WIC / BitmapFactory），MCU 侧没有后端 → 明确报错。</li>
 <li><strong>stb_image 不进产线</strong>（7k 行不可裁、整幅 malloc、顺带扩大攻击面），只当测试对拍。</li>
 </ol>
 <p>其余要点：<code>node-&gt;text</code> 复用为资源名（不加节点字段）；<code>w/h</code> 存进 doc，所以<strong>布局不依赖
 解码</strong>；<code>object-fit</code> 在绘制期算、不动布局；<code>blend</code> 与现有 <code>fill_rect(alpha)</code> 同一套；
 MCU 的推荐姿势是 <strong><code>RAW</code> + 指向 Flash</strong>（<code>owned=0</code>，RAM 为 0）。</p>
-<p>分期：P3a 基础设施（3–4 天）→ P3b BMP/QOI（1 天）→ P3f 工具链（1 天）→ P3d <code>object-fit</code>
-（1 天）→ P3c PNG（3–4 天）→ P3e 热区（0.5 天）→ P3g 平台后端（1 天），合计 11–14 天。</p>
+<p>分期：P3a 基础设施（3–4 天）→ <strong>P3f 工具链（1.5–2 天）</strong> → P3b BMP/QOI（1 天）→
+P3d <code>object-fit</code>（1 天）→ P3c PNG（3–4 天）→ P3e 热区（0.5 天）→ P3g 平台后端（1 天），
+合计 12–15 天。P3a + P3f 就打通"图片文件 → 构建期转码 → 固件里显示"这条<strong>必达路径</strong>。</p>
 <hr />
 <h5 id="17-html5-2026-11-08">⑰ HTML5 全覆盖 + 能力包裁剪 —— <strong>计划（2026-11-08 定案）</strong></h5>
 <p>目标改口径：不再按"缺哪个补哪个"推进，而是<strong>先把 114 个标签全部认下来</strong>，

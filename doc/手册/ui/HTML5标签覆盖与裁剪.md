@@ -159,7 +159,7 @@ P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`）、**⏳ 35 个
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
 | `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | ✅ | ❌ | 文本内 `\n`、`white-space: pre`、等宽字体族、行内注音 |
 | `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
-| `IMAGE` | `QL_FEAT_UI_IMAGE` | 5（`img picture source map area`） | ✅ | ❌ | 自有解码器（BMP/QOI/PNG）+ 可选平台后端（PC 的 JPEG/GIF）+ `object-fit` + 热区。设计见[图像管线设计](../../design/图像管线设计.html) |
+| `IMAGE` | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_UI_IMAGE_DECODE`（PC 默认 1 / MCU 默认 0） | 5（`img picture source map area`） | ✅ | ✅（**只吃构建期转好的 `RAW`**，零解码器、零图片 RAM） | 构建期转码（`qltext assets --pixel-format`）是所有平台的默认路径；PC 额外有自有解码器（BMP/QOI/PNG）与平台后端（JPEG/GIF）。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `WIDGET` | `QL_FEAT_UI_WIDGET` | 8（`progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | 复用已有池/覆盖层机制 + `
 `（`textarea`） |
 | `EMBED` | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ❌ | **只做占位盒 / 忽略**，见 §5 |
@@ -255,7 +255,7 @@ app.html: 42 个节点，使用标签 9 种
 | P2a ✅ 已完成 | `WIDGET` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
 | P2b ✅ 已完成 | `details` `summary`：收起时把子节点指向共享隐藏样式 | 78 | 0.5 天 |
 | P2c ✅ 已完成 | `dialog`：真正的浮层（居中 + 遮罩 + `Esc` / 点外面关闭） | 79 | 1 天 |
-| P3 | `IMAGE` 包：BMP/QOI/PNG 有界解码 + `object-fit` + `map`/`area` 热区<br>（JPEG/GIF 走构建期转码或平台后端，见[图像管线设计](../../design/图像管线设计.html)） | 84 | 11–14 天（拆成 P3a–P3g） |
+| P3 | `IMAGE` 包：构建期转码（`RAW` 直指 Flash，**MCU 的默认路径**）+ `blit_image` + `object-fit` + 热区；PC 侧再加 BMP/QOI/PNG 解码与平台后端<br>（见[图像管线设计](../../design/图像管线设计.html)） | 84 | 12–15 天（拆成 P3a–P3g） |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |
