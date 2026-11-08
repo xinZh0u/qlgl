@@ -51,7 +51,7 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     /* --- META 包：解析期跳过，不进树 --- */
     "base", "head", "link", "meta", "style", "title",
     /* --- WIDGET 包 --- */
-    "output", "datalist", "progress", "meter",
+    "output", "datalist", "progress", "meter", "details", "summary",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -114,8 +114,9 @@ struct QLUIProgress {
     uint8_t     known;         /* 0 = 没有 value 属性（不确定进度） */
 };
 
-/* progress_of 的定义在下面（绘制与 API 两边都要用），这里先声明 */
+/* 下面这几组定义在文件后部（构建期就要用），先声明 */
 static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node);
+static void details_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -294,6 +295,16 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
         if (rt->parent != NULL && rt->text != NULL && rt->first_child == NULL &&
             is_flex_container(rt->parent->style) && text_is_only_ws(rt->text))
             rt->style = &s_style_hidden;
+    }
+
+    /*
+     * <details> 的初始状态：没写 open 就把非 summary 的子节点关掉。
+     * 必须在布局之前做完（布局只认 style->display）。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++) {
+        QLUINodeRT *rt = &ui->nodes[i];
+        if (rt->src != NULL && rt->src->tag == QL_UI_TAG_DETAILS)
+            details_apply(ui, rt, (rt->src->flags & QL_UI_NODE_OPEN) != 0);
     }
 
     /*
@@ -2449,6 +2460,72 @@ static int select_key(QLUIRoot *ui, struct QLUISelectState *st, const QLInputEve
     }
 }
 
+/* ------------------------------ 折叠面板 ------------------------------ */
+
+/*
+ * 收起时把"非 summary 的子节点"指向共享隐藏样式；展开时指回 doc 里的原样式。
+ *
+ * 为什么能做到零额外状态：`node->flags` 里的 QL_UI_NODE_OPEN 是 doc 带过来的，
+ * 而"原样式是哪个"由 `src->style` 唯一决定（doc 里存的是下标），不需要记指针。
+ */
+static void details_apply(QLUIRoot *ui, QLUINodeRT *nd, int open)
+{
+    for (QLUINodeRT *c = nd->first_child; c != NULL; c = c->next_sibling) {
+        if (c->src == NULL || c->src->tag == QL_UI_TAG_SUMMARY)
+            continue;
+        c->style = open ? &ui->doc->styles[c->src->style] : &s_style_hidden;
+    }
+    /*
+     * 注意：doc 里的 `QL_UI_NODE_OPEN` 是**初始值**（字节与 RT 位不共用），
+     * 运行期状态存在 `QL_UI_RT_OPEN` 里 —— 同一个字节既装 NODE 又装 RT 会撞位。
+     */
+    if (open)
+        nd->flags |= QL_UI_RT_OPEN;
+    else
+        nd->flags = (uint8_t)(nd->flags & ~(uint8_t)QL_UI_RT_OPEN);
+    nd->flags |= QL_UI_RT_DIRTY;
+}
+
+int ql_ui_details_open(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || node->src == NULL ||
+        node->src->tag != QL_UI_TAG_DETAILS)
+        return -1;
+    return (node->flags & QL_UI_RT_OPEN) != 0;
+}
+
+ql_err_t ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open)
+{
+    if (ql_ui_details_open(ui, node) < 0)
+        return QL_ERR_INVAL;
+    const int want = (open != 0);
+    if (want == ql_ui_details_open(ui, node))
+        return QL_OK;                    /* 状态没变：不重排 */
+    details_apply(ui, node, want);
+    ql_ui_layout(ui, ui->width, ui->height);   /* 高度变了，必须重排 */
+    return QL_OK;
+}
+
+/* 点中 <summary>（或 details 自己）时切换；返回 1 表示这次点击被吃掉了 */
+static int details_pointer_down(QLUIRoot *ui, QLUINodeRT *hit, ql_coord_t x,
+                               ql_coord_t y)
+{
+    (void)x;
+    (void)y;
+    if (hit == NULL || hit->src == NULL)
+        return 0;
+    /* 从命中点往上找最近的 <summary>，它的父节点就是 <details> */
+    QLUINodeRT *n = hit;
+    while (n != NULL && n->src != NULL && n->src->tag != QL_UI_TAG_SUMMARY)
+        n = n->parent;
+    if (n == NULL || n->parent == NULL || n->parent->src == NULL ||
+        n->parent->src->tag != QL_UI_TAG_DETAILS)
+        return 0;
+    QLUINodeRT *details = n->parent;
+    (void)ql_ui_details_set_open(ui, details, !ql_ui_details_open(ui, details));
+    return 1;
+}
+
 /* ------------------------------ 进度条 ------------------------------ */
 
 static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node)
@@ -3616,6 +3693,10 @@ int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
         if (input_pointer_down(ui, hit, x))
             return 1;
     }
+
+    /* <details>：点标题行切换展开/收起（吃掉落点击，不标 :active） */
+    if (details_pointer_down(ui, hit, x, y))
+        return 1;
 
     QLUINodeRT *node = hit;
     if (node == NULL)

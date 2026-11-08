@@ -213,8 +213,8 @@ main img.shot { max-width: 100%; }
 </ol>
 <p>所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。</p>
-<h2 id="76">现支持的 76 个标签</h2>
-<p>HTML5 一共 114 个元素，本库现在认其中 <strong>76 个</strong>。全量清单（含每个标签的状态、能力包、
+<h2 id="78">现支持的 78 个标签</h2>
+<p>HTML5 一共 114 个元素，本库现在认其中 <strong>78 个</strong>。全量清单（含每个标签的状态、能力包、
 MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>，这里只给常用分组：</p>
 <table>
 <thead>
@@ -275,6 +275,10 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 <tr>
 <td>进度 / 度量</td>
 <td><code>progress</code> <code>meter</code>（见下面"进度条"）、<code>output</code>、<code>datalist</code>（不显示）</td>
+</tr>
+<tr>
+<td>折叠面板</td>
+<td><code>details</code> <code>summary</code>（见下面"折叠面板"）</td>
 </tr>
 </tbody>
 </table>
@@ -352,6 +356,19 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 </tbody>
 </table>
+<h3 id="_2">折叠面板：点标题行展开</h3>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">details</span> <span class="na">open</span><span class="p">&gt;</span>              <span class="cm">&lt;!-- 去掉 open 就是默认收起 --&gt;</span>
+  <span class="p">&lt;</span><span class="nt">summary</span><span class="p">&gt;</span>点我展开<span class="p">&lt;/</span><span class="nt">summary</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span><span class="p">&gt;</span>只有展开时才占位<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">details</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<p>运行期：<code>ql_ui_details_set_open(ui, node, 1)</code> / <code>ql_ui_details_open(ui, node)</code>。</p>
+<p>收起时把<strong>非 <code>summary</code> 的子节点</strong>指向一份共享的隐藏样式（<code>display: none</code>），
+所以布局、绘制、命中测试一行都不用改；切换内部会重排（高度变了）。</p>
+<blockquote>
+<p>没有三角标记（本库没有生成内容 <code>::marker</code>），可以自己写一个 <code>▸</code> 字符。</p>
+</blockquote>
 <h3 id="css">进度条：轨道与填充都是 CSS</h3>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">progress</span> <span class="na">value</span><span class="o">=</span><span class="s">&quot;70&quot;</span> <span class="na">max</span><span class="o">=</span><span class="s">&quot;100&quot;</span><span class="p">&gt;&lt;/</span><span class="nt">progress</span><span class="p">&gt;</span>   <span class="cm">&lt;!-- 70% --&gt;</span>
 <span class="p">&lt;</span><span class="nt">meter</span> <span class="na">value</span><span class="o">=</span><span class="s">&quot;1&quot;</span> <span class="na">max</span><span class="o">=</span><span class="s">&quot;4&quot;</span><span class="p">&gt;&lt;/</span><span class="nt">meter</span><span class="p">&gt;</span>            <span class="cm">&lt;!-- 25% --&gt;</span>
@@ -405,7 +422,7 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 
 <p>注意这是<strong>给这个库的观感</strong>调的，不是"和 Chrome 截图一致"调的（比如 <code>p</code> 的
 margin 是 8px 而不是 1em）。</p>
-<h2 id="_2">一个完整的文章页</h2>
+<h2 id="_3">一个完整的文章页</h2>
 <p><img src="../img/08-tags.png" alt="标签示例" width="260"></p>
 <div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_html</span><span class="w"> </span><span class="o">=</span>
 <span class="w">    </span><span class="s">&quot;&lt;div id=</span><span class="se">\&quot;</span><span class="s">root</span><span class="se">\&quot;</span><span class="s">&gt;&quot;</span>
@@ -429,7 +446,7 @@ margin 是 8px 而不是 1em）。</p>
 </code></pre></div>
 
 <p>完整可运行的版本见 <code>example/08_tags.c</code>。</p>
-<h2 id="_3">三个必须知道的"不完美"</h2>
+<h2 id="_4">三个必须知道的"不完美"</h2>
 <h3 id="1">1. 字体变体是<strong>合成</strong>的，不是换了字体文件</h3>
 <p><code>b</code>/<code>strong</code> = 加粗，<code>i</code>/<code>em</code> = 斜体，<code>u</code> = 下划线，<code>s</code> = 删除线。
 它们靠三个"穷人版"实现，不加载第二个字体文件（MCU 上也不可能）：</p>
@@ -481,7 +498,7 @@ margin 是 8px 而不是 1em）。</p>
 </code></pre></div>
 
 <p>代价是它占一个节点（不是纯文本里的 <code>\n</code>）。</p>
-<h2 id="_4">行内元素之间的空格会被保留</h2>
+<h2 id="_5">行内元素之间的空格会被保留</h2>
 <p>这件事看起来小，但真实 HTML 里到处都是：</p>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">p</span><span class="p">&gt;</span>plain <span class="p">&lt;</span><span class="nt">mark</span><span class="p">&gt;</span>mark<span class="p">&lt;/</span><span class="nt">mark</span><span class="p">&gt;</span> <span class="p">&lt;</span><span class="nt">em</span><span class="p">&gt;</span>em<span class="p">&lt;/</span><span class="nt">em</span><span class="p">&gt;</span> <span class="p">&lt;</span><span class="nt">strong</span><span class="p">&gt;</span>strong<span class="p">&lt;/</span><span class="nt">strong</span><span class="p">&gt;&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
 <span class="cm">&lt;!-- 渲染成 &quot;plain mark em strong&quot;，不是 &quot;plain markemstrong&quot; --&gt;</span>
@@ -516,7 +533,7 @@ margin 是 8px 而不是 1em）。</p>
 </table>
 <p>它是在<strong>解析期</strong>决定的，靠的是标签的<strong>默认</strong> display —— 那时级联还没跑。
 所以你把 <code>span</code> 改成 <code>display: block</code>，这个判断不会跟着变（这种写法本来就该自己管空白）。</p>
-<h2 id="_5">明确报错的三个标签</h2>
+<h2 id="_6">明确报错的三个标签</h2>
 <p>写不了就直说，并且告诉你替代做法：</p>
 <div class="highlight"><pre><span></span><code>HTML: 不支持 &lt;img&gt;（本库没有图片解码器）：装饰用 div + background-image / 圆角做，
       图标用字体字符或 SDF 图元做

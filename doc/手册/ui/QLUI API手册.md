@@ -72,7 +72,7 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `input` | `display:inline-block`，带内边距/边框/圆角；`type` 只支持 `text` / `password` |
 | `select` / `option` | 与 `input` 同形 / **`display:none`**（只活在面板里） |
 
-目前认 **76 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+目前认 **78 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)；UA 默认样式细节见
 [阅读指南 §5.4.7](QLUI阅读指南.html)。
 
@@ -753,6 +753,16 @@ ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
 | `progress_set` | 按 `value`/`max` 设置（夹到 `[0,max]`；`max<=0` 视为 100） |
 
 轨道 = `background-color`，填充 = `color`。不确定进度画固定 1/3（不做动画）。
+
+### 折叠面板
+
+```c
+int      ql_ui_details_open(const QLUIRoot *ui, const QLUINodeRT *node);
+ql_err_t ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
+```
+
+`<details>` 收起时把非 `<summary>` 的子节点指向共享隐藏样式（`display:none`）。
+`set_open` 会重排（高度变了）；状态没变时是空操作。点 `<summary>` 也会切换。
 
 ### 下拉框
 

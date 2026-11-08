@@ -133,9 +133,9 @@
 | 表单 | `<progress>` | `WIDGET` | ✅ 已支持 |
 | 表单 | `<select>` | `CORE` | ✅ 已支持 |
 | 表单 | `<textarea>` | `WIDGET` | ⏳ 计划 |
-| 交互 | `<details>` | `WIDGET` | ⏳ 计划 |
+| 交互 | `<details>` | `WIDGET` | ✅ 已支持 |
 | 交互 | `<dialog>` | `WIDGET` | ⏳ 计划 |
-| 交互 | `<summary>` | `WIDGET` | ⏳ 计划 |
+| 交互 | `<summary>` | `WIDGET` | ✅ 已支持 |
 | 脚本 | `<canvas>` | `EMBED` | ⏳ 计划 |
 | 脚本 | `<noscript>` | `EMBED` | ⏳ 计划 |
 | 脚本 | `<script>` | `EMBED` | ⏳ 计划 |
@@ -144,8 +144,8 @@
 | SVG / MathML | `<math>` | `EMBED` | ⏳ 计划 |
 | SVG / MathML | `<svg>` | `EMBED` | ⏳ 计划 |
 
-统计：**✅ 76 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、P2a 加 4 个控件）、
-**⏳ 38 个**、**❌ 0 个**。
+统计：**✅ 78 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+P2a 加 4 个控件、P2b 加 `details`/`summary`）、**⏳ 36 个**、**❌ 0 个**。
 
 ---
 
@@ -253,7 +253,8 @@ app.html: 42 个节点，使用标签 9 种
 | P0 ✅ 已完成 | 31 个纯语义标签（`a` `code` `del` `ins` `dl` `form` `fieldset`…） | 66 | 1 天 |
 | P1 ✅ 已完成 | `META` 包：元数据标签一律跳过（`<style>` 内容整段不解析）+ 包机制骨架 | 72 | 0.5 天 |
 | P2a ✅ 已完成 | `WIDGET` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
-| P2b | `WIDGET` 剩下的 `details` `summary` `dialog` | 79 | 2–3 天 |
+| P2b ✅ 已完成 | `details` `summary`：收起时把子节点指向共享隐藏样式 | 78 | 0.5 天 |
+| P2c | `dialog`：真正的浮层（居中 + 遮罩 + `Esc` 关闭） | 79 | 1–2 天 |
 | P3 | `IMAGE` 包：PNG/BMP/QOI 有界解码 + `object-fit` + `map`/`area` 热区 | 84 | 3–4 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |

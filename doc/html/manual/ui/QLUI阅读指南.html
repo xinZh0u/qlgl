@@ -935,7 +935,7 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <h3 id="547-ua">5.4.7 标签与 UA 默认样式</h3>
 <p>标签在本架构里<strong>只影响三件事</strong>：UA 默认样式、<code>tag</code> 选择器、调试名。
 布局与绘制只看编译出来的 <code>QLUIStyle</code>，不看标签——所以加标签几乎零成本（只加枚举）。</p>
-<p>共 76 个（HTML5 共 114 个；全量状态见 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>）。
+<p>共 78 个（HTML5 共 114 个；全量状态见 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>）。
 <code>QLUITag</code> / <code>k_tags[]</code> / <code>s_tag_names[]</code> <strong>三处顺序必须一致</strong>，
 且只能在末尾追加：<code>node.tag</code> 是存进 blob 的数字）：</p>
 <table>
@@ -1001,6 +1001,11 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <td>下拉</td>
 <td><code>select</code> / <code>option</code> / <code>optgroup</code></td>
 <td>与 <code>input</code> 同形 / <strong><code>display: none</code></strong></td>
+</tr>
+<tr>
+<td>折叠</td>
+<td><code>details</code> / <code>summary</code></td>
+<td>block；收起时非 <code>summary</code> 子节点指向共享隐藏样式</td>
 </tr>
 <tr>
 <td>控件</td>

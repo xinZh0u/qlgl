@@ -50,7 +50,7 @@ QL_TEST_BEGIN("test_html_tags")
             /* --- META 包：解析期跳过，不进树 --- */
             "base", "head", "link", "meta", "style", "title",
             /* --- WIDGET 包 --- */
-            "output", "datalist", "progress", "meter",
+            "output", "datalist", "progress", "meter", "details", "summary",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)

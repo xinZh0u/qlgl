@@ -149,6 +149,8 @@ typedef enum {
     QL_UI_TAG_DATALIST,   /* 候选列表：display:none；`list=` 补全框还没做 */
     QL_UI_TAG_PROGRESS,   /* 进度条：value/max → 0..1000 的完成度 */
     QL_UI_TAG_METER,      /* 度量条：同上（low/high 分色还没做） */
+    QL_UI_TAG_DETAILS,    /* 折叠面板：open 状态控制子节点可见性 */
+    QL_UI_TAG_SUMMARY,    /* 折叠面板的标题行（点击它切换） */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -421,6 +423,7 @@ typedef struct {
 
 /* QLUINode.flags 的位 */
 #define QL_UI_NODE_PASSWORD  0x01u   /* <input type="password">：显示成圆点 */
+#define QL_UI_NODE_OPEN      0x02u   /* <details open>：展开状态 */
 
 typedef struct {
     uint16_t tag;          /* QLUITag */
@@ -534,6 +537,7 @@ enum {
     QL_UI_RT_ACTIVE  = 1u << 1,
     QL_UI_RT_DIRTY   = 1u << 2,
     QL_UI_RT_FOCUS   = 1u << 3,
+    QL_UI_RT_OPEN    = 1u << 4,   /* <details> 当前的展开状态（从 QL_UI_NODE_OPEN 初始化） */
 };
 
 /*
@@ -761,6 +765,20 @@ ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *va
 int         ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 按 value/max 设置（夹到 [0, max]；max <= 0 视为 100） */
 ql_err_t    ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
+
+/* ------------------------------ 折叠面板 ------------------------------ */
+
+/*
+ * `<details>` / `<summary>`：点标题行展开或收起。
+ *
+ * 收起时把非 `<summary>` 的子节点指向一份**共享的隐藏样式**（与"只含空白的
+ * flex 项"用的是同一份 `s_style_hidden`）—— 零额外内存，也不用改任何布局循环。
+ * 切换**会重排**（高度变了），所以 `ql_ui_details_set_open()` 内部直接调 `ql_ui_layout`。
+ */
+/* 1 = 展开，0 = 收起；不是 <details> 返回 -1 */
+int         ql_ui_details_open(const QLUIRoot *ui, const QLUINodeRT *node);
+/* 设置展开状态（会重排；状态没变时是空操作） */
+ql_err_t    ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 
 /* ------------------------------ 下拉框 ------------------------------ */
 

@@ -2465,7 +2465,7 @@ static const char *const k_tags[] = {
     /* --- META 包：解析期跳过，不进树 --- */
     "base", "head", "link", "meta", "style", "title",
     /* --- WIDGET 包 --- */
-    "output", "datalist", "progress", "meter",
+    "output", "datalist", "progress", "meter", "details", "summary",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2865,6 +2865,7 @@ typedef struct {
     char *value;      /* <input value> / <progress value> */
     char *type;       /* <input type="text|password"> */
     char *max;        /* <progress max> / <meter max> */
+    uint8_t has_open; /* <details open> / <dialog open>：布尔属性，只需"有没有" */
 } Attrs;
 
 static void attrs_free(Attrs *a)
@@ -2948,6 +2949,10 @@ static const char *parse_attrs(const char *p, Attrs *a)
             }
             p = q;
         }
+
+        /* 布尔属性：`open` 没有值也算（`<details open>` 是常见写法） */
+        if (strcmp(name, "open") == 0)
+            a->has_open = 1;
 
         if (val != NULL && (strcmp(name, "class") == 0 || strcmp(name, "id") == 0 ||
                             strcmp(name, "style") == 0 || strcmp(name, "value") == 0 ||
@@ -3502,6 +3507,9 @@ static PNode *parse_html(const char *html)
              * 为什么不给 QLUINode 加两个字段：那是每个节点都要付的 4 字节，
              * 而这里只是一串去重后的十进制数字（"70/100" 全文只存一份）。
              */
+            if (strcmp(name, "details") == 0 && at.has_open)
+                n->flags |= QL_UI_NODE_OPEN;
+
             if (strcmp(name, "progress") == 0 || strcmp(name, "meter") == 0) {
                 if (at.value != NULL && at.value[0] != '\0') {
                     char spec[32];
@@ -3728,6 +3736,10 @@ static int ua_defaults(const char *tag, Decls *out)
     }
     if (strcmp(tag, "output") == 0)
         return ua_set_inline(out);
+
+    /* <details> 是块；<summary> 是它的标题行（没有三角标记，见文档） */
+    if (strcmp(tag, "details") == 0 || strcmp(tag, "summary") == 0)
+        return decls_set(out, "display", "block");
 
     /* ---- 纯语义标签：只给"看结构就该知道"的 display ---- */
     /*
