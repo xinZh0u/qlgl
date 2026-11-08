@@ -1292,30 +1292,43 @@ index.html + index.css ──qltext cc──┤
 </code></pre></div>
 
 <h4 id="_3">为什么加载这么便宜</h4>
-<p><code>QLUIDoc</code> 里<strong>所有内部引用都是 <code>uint16</code> 下标</strong>，唯一的指针是 doc 自己的 6 个基址字段：</p>
+<p><code>QLUIDoc</code> 里<strong>所有内部引用都是 <code>uint16</code> 下标</strong>，唯一的指针是 doc 自己的
+那几个基址字段（nodes / styles / 文本池 / 动画 / 图片 / 热区 / name）：</p>
 <div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">nodes</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">styles</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">text_pool</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">text_offsets</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">font_sizes</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">name</span><span class="w">   </span><span class="err">←</span><span class="w"> </span><span class="n">只有这</span><span class="w"> </span><span class="mi">6</span><span class="w"> </span><span class="n">个指针</span>
-<span class="w">    </span><span class="n">node_count</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">style_count</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">text_count</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">font_size_count</span>
+<span class="w">    </span><span class="n">nodes</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">styles</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">text_pool</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">text_offsets</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">font_sizes</span>
+<span class="w">    </span><span class="n">anims</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">keyframes</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">images</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">image_data</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">areas</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">area_coords</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">name</span>
+<span class="w">    </span><span class="n">node_count</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">style_count</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">text_count</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">area_count</span>
 <span class="w">    </span><span class="n">arena</span><span class="w">        </span><span class="err">←</span><span class="w"> </span><span class="nb">NULL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">静态数据</span><span class="err">，</span><span class="n">不归我管</span>
 <span class="p">}</span>
 </code></pre></div>
 
-<p>所以"解码"= 校验 + 设 6 个指针，<strong>没有任何递归重定位</strong>。这是当初"用下标不用指针"
+<p>所以"解码"= 校验 + 设这些指针，<strong>没有任何递归重定位</strong>。这是当初"用下标不用指针"
 的一个意外红利。</p>
-<h4 id="_4">格式</h4>
-<div class="highlight"><pre><span></span><code>[ QLUIDocBlobHeader 64 字节 ]
-[ nodes      ] node_count      * 18 字节
-[ styles     ] style_count     * 44 字节
+<h4 id="v14">格式（<strong>v14</strong>）</h4>
+<div class="highlight"><pre><span></span><code>[ QLUIDocBlobHeader 96 字节 ]
+[ nodes      ] node_count       * 20 字节
+[ styles     ] style_count      * 120 字节
 [ text_pool  ] 以 &#39;\0&#39; 分隔的 UTF-8
-[ text_ofs   ] text_count      * 2 字节
-[ font_sizes ] font_size_count * 2 字节
+[ text_ofs   ] text_count       * 2 字节
+[ font_sizes ] font_size_count  * 2 字节
+[ anims      ] anim_count       * 12 字节
+[ keyframes  ] keyframe_count   * 36 字节
+[ images     ] image_count      * 20 字节
+[ image_data ] image_data_size 字节（编码后的资源字节）
+[ areas      ] area_count       * 10 字节
+[ area_coords] area_coord_count * 2 字节（int16，全部热区共用一段）
 [ name       ] name_len 字节
 </code></pre></div>
 
 <p>各段按 8 字节对齐。头部含：magic(<code>QLUI</code>)、version、header_size、
-4 个计数、<code>node_struct_size</code> / <code>style_struct_size</code>（<strong>ABI 校验</strong>）、
-total_size、FNV-1a 32 校验和、6 个段偏移。</p>
-<h4 id="_5">加载时的校验（缺一不可）</h4>
+各段计数、<code>node_struct_size</code> / <code>style_struct_size</code> / <code>anim_struct_size</code> /
+<code>keyframe_struct_size</code>（<strong>ABI 校验</strong>）、total_size、FNV-1a 32 校验和、各段偏移。</p>
+<p><strong>没有图片/热区的界面，那四段是 0 字节</strong> —— 这也正是"MCU 上砍掉图片功能
+不会多付一个字节"的原因。</p>
+<p>版本历史：v12 = <code>&lt;input&gt;</code>（<code>QLUINode</code> 18 → 20）；v13 = 图片资源段；
+<strong>v14 = <code>&lt;area&gt;</code> 热区段</strong>（<code>area_count</code> / <code>area_coord_count</code> 与两个段偏移，
+头 84 → 96 字节）。</p>
+<h4 id="_4">加载时的校验（缺一不可）</h4>
 <table>
 <thead>
 <tr>
@@ -1356,11 +1369,11 @@ total_size、FNV-1a 32 校验和、6 个段偏移。</p>
 </table>
 <p>策略是<strong>明确失败</strong>，绝不"跳过坏数据继续画"——半个正确的界面比报错难查十倍。
 失败原因用 <code>ql_ui_doc_last_error()</code> 取。</p>
-<h4 id="_6">为什么不跨架构</h4>
+<h4 id="_5">为什么不跨架构</h4>
 <p>blob 里是<strong>结构体内存镜像</strong>，<code>QLUIStyle</code> 的布局随编译器和 ABI 变。
 所以格式刻意不追求可移植：头里存 <code>sizeof</code> 并在加载时逐项校验，
 不匹配就明确拒绝。要跨架构分发就分发 HTML/CSS 源（等 M3.5 的 C 解析器）。</p>
-<h4 id="_7">所有权：一条判据</h4>
+<h4 id="_6">所有权：一条判据</h4>
 <div class="highlight"><pre><span></span><code><span class="n">arena</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="w">   </span><span class="err">→</span><span class="w"> </span><span class="n">静态</span><span class="w"> </span><span class="n">doc</span><span class="err">（</span><span class="p">.</span><span class="n">rodata</span><span class="w"> </span><span class="n">或调用方自己管</span><span class="err">），</span><span class="n">ql_ui_doc_free</span><span class="w"> </span><span class="n">是空操作</span>
 <span class="n">arena</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="w">   </span><span class="err">→</span><span class="w"> </span><span class="n">ql_ui_doc_load</span><span class="o">*</span><span class="w"> </span><span class="n">分配</span><span class="err">，</span><span class="n">ql_ui_doc_free</span><span class="w"> </span><span class="n">释放</span>
 </code></pre></div>
@@ -1406,7 +1419,7 @@ total_size、FNV-1a 32 校验和、6 个段偏移。</p>
    不给 layout 增加新接口。代价是<strong>每次 <code>ql_ui_layout</code> 开头必须清掉上一轮的
    <code>style_copy</code></strong>，否则视口变化时会把旧尺寸带到新一帧（这个 bug 踩过）。</li>
 </ol>
-<h4 id="_8">定位</h4>
+<h4 id="_7">定位</h4>
 <ul>
 <li><code>abs_cb</code> 字段在布局时自上而下传递：最近的非 static 祖先的 <strong>padding box</strong>；</li>
 <li>绝对/固定子项在主流程结束后单独布局（主循环里 <code>is_out_of_flow()</code> 直接跳过）；</li>
@@ -1419,7 +1432,7 @@ total_size、FNV-1a 32 校验和、6 个段偏移。</p>
 <p><code>render_node</code> 进入 overflow 容器时 <code>set_clip(intersect(saved, box))</code>，退出恢复；
 <code>hit_walk_ui</code> 传一个 <code>clip</code> 参数做同样的事。两处必须同步，否则会出现
 "看不见但能点到"。</p>
-<h4 id="_9">混合内容：在生成期消解</h4>
+<h4 id="_8">混合内容：在生成期消解</h4>
 <div class="highlight"><pre><span></span><code>&lt;p&gt;Hello &lt;b&gt;bold&lt;/b&gt;!&lt;/p&gt;
    ↓ qlui_parse.c 的扁平化
 &lt;p&gt;&lt;span&gt;Hello &lt;/span&gt;&lt;b&gt;bold&lt;/b&gt;&lt;span&gt;!&lt;/span&gt;&lt;/p&gt;

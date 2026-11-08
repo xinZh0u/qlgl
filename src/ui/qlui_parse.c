@@ -2434,6 +2434,13 @@ struct PNode {
     char  *id;
     char  *style_attr;
     uint8_t flags;           /* QL_UI_NODE_*（<input type="password">） */
+    /* 图像热区（`<map>` / `<img usemap>` / `<area>`）：解析完就地解析成 doc->areas */
+    char  *map_name;         /* <map name="m"> */
+    char  *usemap;           /* <img usemap="#m"> */
+    char  *coords;           /* <area coords="x0 y0 x1 y1"> */
+    char  *href;             /* <area href> */
+    char  *alt;              /* <area alt> */
+    uint8_t area_shape;      /* QLUIAreaShape（<area shape> 的解析结果） */
     PNode *parent;
     PNode *first_child;
     PNode *next_sibling;
@@ -2468,6 +2475,8 @@ static const char *const k_tags[] = {
     /* --- WIDGET 包 --- */
     "output", "datalist", "progress", "meter", "details", "summary", "dialog",
     "img",
+    /* --- IMAGE 包（P3e）：响应式图片与图像热区 --- */
+    "picture", "source", "map", "area",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2521,7 +2530,8 @@ static int tag_is_void(const char *tag)
 {
     return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0 ||
            strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0 ||
-           strcmp(tag, "img") == 0;
+           strcmp(tag, "img") == 0 || strcmp(tag, "source") == 0 ||
+           strcmp(tag, "area") == 0;
 }
 
 /* ---------------- META 包：文档元数据（解析期整段跳过） ---------------- */
@@ -2671,6 +2681,11 @@ static void pnode_free(PNode *n)
     ql_mem_free(n->id);
     ql_mem_free(n->style_attr);
     ql_mem_free(n->text);
+    ql_mem_free(n->map_name);
+    ql_mem_free(n->usemap);
+    ql_mem_free(n->coords);
+    ql_mem_free(n->href);
+    ql_mem_free(n->alt);
     if (n->nitems > 0) {
         /* 还没 flatten：子元素在 items 里 */
         for (int i = 0; i < n->nitems; i++) {
@@ -2856,10 +2871,11 @@ static int decode_entities(const char *s, size_t len, SB *out)
 /*
  * 解析起始标签的属性表。
  *
- * 只留五个：`class` / `id` / `style`（样式与选择器用），
- * `value` / `type`（只对 `<input>` 有意义）。
- * 其余属性（`data-*` / `aria-*` / `href` …）**静默忽略** —— 它们不影响渲染，
- * 为它们报错只会让真实 HTML 片段跑不起来。
+ * 只留渲染真正用得上的那几个：`class` / `id` / `style`（样式与选择器用），
+ * `value` / `type` / `max`（表单控件），`src`（`<img>`），
+ * `name` / `usemap` / `shape` / `coords` / `href` / `alt`（图像热区）。
+ * 其余属性（`data-*` / `aria-*` / `srcset` / `media` …）**静默忽略** ——
+ * 它们不影响渲染，为它们报错只会让真实 HTML 片段跑不起来。
  */
 typedef struct {
     char *cls;
@@ -2869,6 +2885,12 @@ typedef struct {
     char *type;       /* <input type="text|password"> */
     char *max;        /* <progress max> / <meter max> */
     char *src;        /* <img src>：只是资源名，字节另找（见图像管线设计） */
+    char *map_name;   /* <map name>：热区表的名字 */
+    char *usemap;     /* <img usemap="#name">：指向哪个 <map> */
+    char *coords;     /* <area coords="x0 y0 …">：图片像素坐标 */
+    char *href;       /* <area href>：热区要跳哪去（本库不跳，交给回调） */
+    char *alt;        /* <area alt> */
+    char *shape;      /* <area shape="rect|circle|poly|default"> */
     uint8_t has_open; /* <details open> / <dialog open>：布尔属性，只需"有没有" */
 } Attrs;
 
@@ -2881,6 +2903,12 @@ static void attrs_free(Attrs *a)
     ql_mem_free(a->src);
     ql_mem_free(a->id);
     ql_mem_free(a->style);
+    ql_mem_free(a->map_name);
+    ql_mem_free(a->usemap);
+    ql_mem_free(a->coords);
+    ql_mem_free(a->href);
+    ql_mem_free(a->alt);
+    ql_mem_free(a->shape);
     memset(a, 0, sizeof(*a));
 }
 
@@ -2962,7 +2990,10 @@ static const char *parse_attrs(const char *p, Attrs *a)
         if (val != NULL && (strcmp(name, "class") == 0 || strcmp(name, "id") == 0 ||
                             strcmp(name, "style") == 0 || strcmp(name, "value") == 0 ||
                             strcmp(name, "type") == 0 || strcmp(name, "max") == 0 ||
-                            strcmp(name, "src") == 0)) {
+                            strcmp(name, "src") == 0 || strcmp(name, "name") == 0 ||
+                            strcmp(name, "usemap") == 0 || strcmp(name, "shape") == 0 ||
+                            strcmp(name, "coords") == 0 || strcmp(name, "href") == 0 ||
+                            strcmp(name, "alt") == 0)) {
             SB sb = { 0 };
             if (!decode_entities(val, vlen, &sb)) {
                 sb_free(&sb);
@@ -2989,6 +3020,24 @@ static const char *parse_attrs(const char *p, Attrs *a)
             } else if (strcmp(name, "src") == 0) {
                 ql_mem_free(a->src);
                 a->src = s;
+            } else if (strcmp(name, "name") == 0) {
+                ql_mem_free(a->map_name);
+                a->map_name = s;
+            } else if (strcmp(name, "usemap") == 0) {
+                ql_mem_free(a->usemap);
+                a->usemap = s;
+            } else if (strcmp(name, "shape") == 0) {
+                ql_mem_free(a->shape);
+                a->shape = s;
+            } else if (strcmp(name, "coords") == 0) {
+                ql_mem_free(a->coords);
+                a->coords = s;
+            } else if (strcmp(name, "href") == 0) {
+                ql_mem_free(a->href);
+                a->href = s;
+            } else if (strcmp(name, "alt") == 0) {
+                ql_mem_free(a->alt);
+                a->alt = s;
             } else {
                 ql_mem_free(a->style);
                 a->style = s;
@@ -3260,6 +3309,49 @@ static int flatten_node(PNode *n)
             ql_mem_free(n->items[i].text);
     n->nitems = 0;
     return 1;
+}
+
+/* ---------------------- 图像热区（<map> / <area>） ---------------------- */
+
+/*
+ * `<area shape="…">` → 枚举。HTML 允许大小写混写（`Rect` / `RECT`），
+ * 所以这里做一次小写化比较。缺省是 rect（与规范一致）。
+ */
+static int area_shape_of(const char *s, uint8_t *out)
+{
+    if (s == NULL || s[0] == '\0') {
+        *out = QL_UI_AREA_RECT;
+        return 1;
+    }
+    char buf[8];
+    size_t i = 0;
+    for (; s[i] != '\0' && i < sizeof(buf) - 1u; i++) {
+        char c = s[i];
+        buf[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+    }
+    if (s[i] != '\0')
+        return 0;
+    buf[i] = '\0';
+    if (strcmp(buf, "rect") == 0)
+        *out = QL_UI_AREA_RECT;
+    else if (strcmp(buf, "circle") == 0)
+        *out = QL_UI_AREA_CIRCLE;
+    else if (strcmp(buf, "poly") == 0)
+        *out = QL_UI_AREA_POLY;
+    else if (strcmp(buf, "default") == 0)
+        *out = QL_UI_AREA_DEFAULT;
+    else
+        return 0;
+    return 1;
+}
+
+/* 把属性值搬到 PNode 上（空值当作"没有"）。OOM 返回 0。 */
+static int pnode_take(char **dst, const char *v)
+{
+    if (v == NULL || v[0] == '\0')
+        return 1;
+    *dst = xstrdup(v);
+    return *dst != NULL;
 }
 
 /* 解析整份 HTML，返回 #document 节点 */
@@ -3538,6 +3630,36 @@ static PNode *parse_html(const char *html)
                 at.has_open)
                 n->flags |= QL_UI_NODE_OPEN;
 
+            /*
+             * 图像热区的三件套属性：`<map name>` / `<img usemap>` / `<area …>`。
+             * 这里只把字符串搬到 PNode 上；"usemap ↔ map name" 的配对在解析完
+             * 整棵树之后统一做（见 build_areas），因为 `<map>` 可能写在 `<img>` 后面。
+             */
+            {
+                int ok = 1;
+                if (strcmp(name, "map") == 0)
+                    ok = pnode_take(&n->map_name, at.map_name);
+                else if (strcmp(name, "img") == 0)
+                    ok = pnode_take(&n->usemap, at.usemap);
+                else if (strcmp(name, "area") == 0) {
+                    ok = pnode_take(&n->coords, at.coords) &&
+                         pnode_take(&n->href, at.href) &&
+                         pnode_take(&n->alt, at.alt);
+                    if (ok && !area_shape_of(at.shape, &n->area_shape)) {
+                        set_error("HTML: <area shape=\"%.16s\"> 不支持"
+                                  "（只支持 rect / circle / poly / default）",
+                                  (at.shape != NULL) ? at.shape : "");
+                        ok = 0;
+                    }
+                }
+                if (!ok) {
+                    attrs_free(&at);
+                    pnode_free(n);
+                    pnode_free(root);
+                    return NULL;
+                }
+            }
+
             if (strcmp(name, "progress") == 0 || strcmp(name, "meter") == 0) {
                 if (at.value != NULL && at.value[0] != '\0') {
                     char spec[32];
@@ -3771,6 +3893,25 @@ static int ua_defaults(const char *tag, Decls *out)
      */
     if (strcmp(tag, "img") == 0)
         return decls_set(out, "display", "inline-block");
+
+    /*
+     * <picture>：响应式图片容器。浏览器给的是 display:inline，但这里用
+     * inline-block —— 它里面装的永远是行内块的 <img>，两者视觉一致，
+     * 而 inline-block 让"收缩到内容宽"由布局自己算出来，不用赌
+     * "行内元素里套行内块"的那条少见路径。
+     */
+    if (strcmp(tag, "picture") == 0)
+        return decls_set(out, "display", "inline-block");
+
+    /*
+     * <source> 与 <map>/<area>：**不产生盒子**。
+     * <source> 的候选选择（media / type / srcset）没做，<area> 的几何另存进
+     * doc->areas（见 热区 API），两者都不该参与布局。
+     */
+    if (strcmp(tag, "source") == 0 || strcmp(tag, "map") == 0 ||
+        strcmp(tag, "area") == 0) {
+        return decls_set(out, "display", "none");
+    }
 
     /*
      * <dialog>：默认 70% 宽、居中（居中在布局末尾做）。自带白底与圆角，
@@ -5525,6 +5666,195 @@ static int flatten_tree(const PNode *root, Flat **out, int *out_n)
     return 1;
 }
 
+/* ============================== 图像热区 ============================== */
+
+/*
+ * `<map name="m">` 里的 `<area>` 与 `<img usemap="#m">` 在**构建期**配对：
+ * 每条热区直接记下 `<img>` 的节点序号，运行期就不用按名字查表，也没有
+ * 字符串比较。`<map>` 可以写在 `<img>` 后面（甚至前面），所以配对放在
+ * 整棵树展开之后。
+ *
+ * 坐标是**图片像素**（原点 = 图片左上角），与 HTML 的 `coords` 一致；
+ * 运行期按图片实际绘制尺寸缩放（见 ql_ui_area_at）。
+ */
+
+/* 每条热区最多多少个坐标（poly 的点数上限 = 这个数 / 2） */
+#define QL_AREA_COORD_MAX 128
+
+typedef struct {
+    QLUIArea *v;
+    int16_t  *c;
+    int       n;
+    int       cn;
+    int       vcap, ccap;
+} AreaOut;
+
+typedef struct {
+    const char  *map;
+    const PNode *area;
+} AreaRef;
+
+/* 把 "x0 y0 x1 y1"（空格或逗号分隔）解析成 int16；越界或格式错都在这里挡住 */
+static int area_parse_coords(const char *s, int16_t *dst, int cap, int *out_n)
+{
+    int n = 0;
+    const char *p = s;
+    while (p != NULL && *p != '\0') {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')
+            p++;
+        if (*p == '\0')
+            break;
+        char *end = NULL;
+        const long v = strtol(p, &end, 10);
+        if (end == p) {
+            set_error("HTML: <area coords=\"%.24s\"> 里有多余字符", s);
+            return 0;
+        }
+        if (v < -32768L || v > 32767L) {
+            set_error("HTML: <area coords> 的值 %ld 超出范围（±32767）", v);
+            return 0;
+        }
+        if (n >= cap) {
+            set_error("HTML: <area coords> 最多 %d 个坐标", (int)QL_AREA_COORD_MAX);
+            return 0;
+        }
+        dst[n++] = (int16_t)v;
+        p = end;
+    }
+    *out_n = n;
+    return 1;
+}
+
+static int area_push(AreaOut *out, TextPool *pool, uint16_t img, const AreaRef *ref)
+{
+    const PNode *a = ref->area;
+
+    if (out->n >= (int)QL_CFG_UI_AREA_MAX) {
+        set_error("<area> 超过上限 %d 个（见 QL_CFG_UI_AREA_MAX）",
+                  (int)QL_CFG_UI_AREA_MAX);
+        return 0;
+    }
+
+    int16_t tmp[QL_AREA_COORD_MAX];
+    int ncoord = 0;
+    if (a->coords != NULL && !area_parse_coords(a->coords, tmp, (int)QL_AREA_COORD_MAX,
+                                                &ncoord))
+        return 0;
+
+    /* 形状与坐标个数必须自洽 —— 数量不对就直接报错，不猜 */
+    switch (a->area_shape) {
+    case QL_UI_AREA_RECT:
+        if (ncoord != 4) {
+            set_error("HTML: <area shape=\"rect\"> 需要 4 个坐标（x0 y0 x1 y1），"
+                      "实际 %d 个", ncoord);
+            return 0;
+        }
+        break;
+    case QL_UI_AREA_CIRCLE:
+        if (ncoord != 3 || tmp[2] < 0) {
+            set_error("HTML: <area shape=\"circle\"> 需要 \"cx cy r\"（r >= 0）");
+            return 0;
+        }
+        break;
+    case QL_UI_AREA_POLY:
+        if (ncoord < 6 || (ncoord & 1) != 0) {
+            set_error("HTML: <area shape=\"poly\"> 需要偶数个坐标且至少 6 个，"
+                      "实际 %d 个", ncoord);
+            return 0;
+        }
+        break;
+    default: /* QL_UI_AREA_DEFAULT */
+        if (ncoord != 0) {
+            set_error("HTML: <area shape=\"default\"> 不该有 coords");
+            return 0;
+        }
+        break;
+    }
+
+    /* 扩容（两条数组各自按需倍增，最后一次性拷进 arena） */
+    if (out->n == out->vcap) {
+        int cap = (out->vcap > 0) ? out->vcap * 2 : 8;
+        QLUIArea *nv = (QLUIArea *)ql_mem_realloc(out->v, (size_t)cap * sizeof(QLUIArea));
+        if (nv == NULL)
+            return 0;
+        out->v = nv;
+        out->vcap = cap;
+    }
+    if (out->cn + ncoord > out->ccap) {
+        int cap = (out->ccap > 0) ? out->ccap : 32;
+        while (cap < out->cn + ncoord)
+            cap *= 2;
+        int16_t *nc = (int16_t *)ql_mem_realloc(out->c, (size_t)cap * sizeof(int16_t));
+        if (nc == NULL)
+            return 0;
+        out->c = nc;
+        out->ccap = cap;
+    }
+
+    QLUIArea *e = &out->v[out->n];
+    memset(e, 0, sizeof(*e));
+    e->img = img;
+    e->coord_off = (uint16_t)out->cn;
+    e->shape = a->area_shape;
+    e->ncoord = (uint8_t)ncoord;
+    if (!text_pool_intern(pool, a->href, &e->href) ||
+        !text_pool_intern(pool, a->alt, &e->alt))
+        return 0;
+    for (int i = 0; i < ncoord; i++)
+        out->c[out->cn + i] = tmp[i];
+    out->cn += ncoord;
+    out->n++;
+    return 1;
+}
+
+static int build_areas(const Flat *flat, int nflat, TextPool *pool, AreaOut *out)
+{
+    if (QL_CFG_UI_AREA_MAX <= 0)
+        return 1;
+
+    AreaRef *refs = NULL;
+    int nrefs = 0, cap = 0;
+
+    for (int i = 0; i < nflat; i++) {
+        const PNode *m = flat[i].node;
+        if (strcmp(m->tag, "map") != 0 || m->map_name == NULL)
+            continue;
+        for (const PNode *c = m->first_child; c != NULL; c = c->next_sibling) {
+            if (strcmp(c->tag, "area") != 0)
+                continue;
+            if (nrefs == cap) {
+                int nc = (cap > 0) ? cap * 2 : 8;
+                AreaRef *nr = (AreaRef *)ql_mem_realloc(refs,
+                                                        (size_t)nc * sizeof(AreaRef));
+                if (nr == NULL) {
+                    ql_mem_free(refs);
+                    return 0;
+                }
+                refs = nr;
+                cap = nc;
+            }
+            refs[nrefs].map = m->map_name;
+            refs[nrefs].area = c;
+            nrefs++;
+        }
+    }
+
+    int ok = 1;
+    for (int i = 0; ok && i < nflat; i++) {
+        const PNode *im = flat[i].node;
+        if (strcmp(im->tag, "img") != 0 || im->usemap == NULL)
+            continue;
+        const char *want = (im->usemap[0] == '#') ? im->usemap + 1 : im->usemap;
+        for (int r = 0; ok && r < nrefs; r++) {
+            if (strcmp(refs[r].map, want) == 0)
+                ok = area_push(out, pool, (uint16_t)i, &refs[r]);
+        }
+    }
+
+    ql_mem_free(refs);
+    return ok;
+}
+
 /* 继承只带走这三个属性（与 Python 的 INHERITED 一致） */
 static const char *const k_inherited[] = { "color", "font-size", "text-align",
                                            "line-height", "white-space",
@@ -5559,6 +5889,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     StyleTab styles;
     TextPool pool;
     IntList fonts;
+    AreaOut areas;
     Flat *flat = NULL;
     int nflat = 0;
     QLUIDoc *doc = NULL;
@@ -5572,6 +5903,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     memset(&styles, 0, sizeof(styles));
     memset(&pool, 0, sizeof(pool));
     memset(&fonts, 0, sizeof(fonts));
+    memset(&areas, 0, sizeof(areas));
 
     root = parse_html(html);
     if (root == NULL)
@@ -5714,6 +6046,10 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         e->text_index = tidx;
     }
 
+    /* 热区要在文本池定稿之前收（href / alt 也要进池） */
+    if (!build_areas(flat, nflat, &pool, &areas))
+        goto done;
+
     /* ------------------------------ 一次分配 arena ------------------------------ */
     {
         const char *nm = (g_doc_name != NULL) ? g_doc_name : "text";
@@ -5734,6 +6070,10 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         off += QL_UI_ALIGN8((size_t)kftab.n * sizeof(QLUIKeyframe));
         const size_t off_anims = off;
         off += QL_UI_ALIGN8((size_t)anims.n * sizeof(QLUIAnimation));
+        const size_t off_areas = off;
+        off += QL_UI_ALIGN8((size_t)areas.n * sizeof(QLUIArea));
+        const size_t off_area_coords = off;
+        off += QL_UI_ALIGN8((size_t)areas.cn * sizeof(int16_t));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -5795,6 +6135,14 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         for (int i = 0; i < anims.n; i++)
             and[i] = anims.a[i];
 
+        QLUIArea *ard = (QLUIArea *)(void *)(base + off_areas);
+        for (int i = 0; i < areas.n; i++)
+            ard[i] = areas.v[i];
+
+        int16_t *acd = (int16_t *)(void *)(base + off_area_coords);
+        for (int i = 0; i < areas.cn; i++)
+            acd[i] = areas.c[i];
+
         char *nmd = (char *)(base + off_name);
         memcpy(nmd, nm, name_len);
 
@@ -5823,6 +6171,10 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         doc->font_sizes = (fonts.n > 0) ? fnt : NULL;
         doc->anims = (anims.n > 0) ? and : NULL;
         doc->keyframes = (kftab.n > 0) ? kfd : NULL;
+        doc->area_count = (uint16_t)areas.n;
+        doc->area_coord_count = (uint16_t)areas.cn;
+        doc->areas = (areas.n > 0) ? ard : NULL;
+        doc->area_coords = (areas.cn > 0) ? acd : NULL;
         doc->arena = arena;
         arena = NULL;         /* 所有权交给 doc */
     }
@@ -5849,6 +6201,8 @@ done:
     rules_free(&rules);
     if (arena != NULL)
         ql_mem_free(arena);
+    ql_mem_free(areas.v);
+    ql_mem_free(areas.c);
 
     return doc;
 }

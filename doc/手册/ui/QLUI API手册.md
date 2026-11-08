@@ -796,6 +796,53 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 `GL_NEAREST` 以对齐 CPU 的
 最近邻；想要双线性就把 `QL_CFG_IMAGE_BILINEAR` 设成 1（两条后端一起变）。
 
+### 图像热区（`<map>` / `<area>`）
+
+```c
+int              ql_ui_area_at(const QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
+int              ql_ui_area_count(const QLUIRoot *ui);
+const QLUIArea  *ql_ui_area_get(const QLUIRoot *ui, int index);
+const QLUINodeRT *ql_ui_area_image(const QLUIRoot *ui, int index);
+QLRect           ql_ui_area_rect(const QLUIRoot *ui, int index);
+const char      *ql_ui_area_href(const QLUIRoot *ui, int index);
+const char      *ql_ui_area_alt(const QLUIRoot *ui, int index);
+void             ql_ui_set_area_cb(QLUIRoot *ui, ql_ui_area_cb cb, void *user);
+```
+
+| 函数 | 说明 |
+|---|---|
+| `area_at` | 命中的热区下标；没命中 / 没有热区返回 `-1` |
+| `area_count` | 这份界面里的热区条数（doc 里没有 `<area>` 时为 0） |
+| `area_get` | 只读描述（`img` / `shape` / `ncoord` / `href` / `alt` 的池下标）；越界返回 `NULL` |
+| `area_image` | 该热区所属的 `<img>` 节点 |
+| `area_rect` | 当前布局下热区在屏幕上的包围盒（已与内容盒求交） |
+| `area_href` / `area_alt` | 字符串；没写返回 `NULL` |
+| `set_area_cb` | 点击回调 `(ui, index, user)`；注册后**接管**图片上的点击 |
+
+```html
+<div id="root">
+  <img src="map.png" usemap="#board">
+  <map name="board">
+    <area shape="rect"   coords="0 0 63 31"   href="#cpu"  alt="CPU">
+    <area shape="circle" coords="96 64 20"     href="#ram"  alt="RAM">
+    <area shape="poly"   coords="10 90 50 90 30 120" href="#io">
+    <area shape="default"                      href="#bg">
+  </map>
+</div>
+```
+
+要点：
+
+- **坐标是图片像素**（原点 = 图片左上角），与 HTML 一致；图片被缩放到别的尺寸时
+  热区跟着缩放（一次整数换算），所以 `img { width: 200px }` 不会让热区错位。
+- `shape` 缺省是 `rect`；`rect` 只要 4 个坐标、`circle` 3 个、`poly` 偶数个且 ≥ 6、
+  `default` 不许带坐标。**数量不对就是编译错误**，不会"猜一半"。
+- `<map>` / `<area>` / `<source>` 是 `display:none`，**不占空间**；`<picture>` 是透明容器。
+- 命中时派发 `area_cb`，**不再**派发 `click_cb`（与浏览器一致：点击的 target 是 `<area>`）。
+- 不做导航：`href` 只是字符串，跳转/换页由回调里的应用逻辑决定。
+- 上限 `QL_CFG_UI_AREA_MAX`（默认 16 条，每条 ≤ 128 个坐标）；设成 0 则整套裁掉
+  （doc 里再多 `<area>` 也解析成 0 条，`area_at` 恒返回 `-1`）。
+
 ### 浮层（`<dialog>`）
 
 ```c

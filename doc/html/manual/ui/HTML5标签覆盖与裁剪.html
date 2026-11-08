@@ -679,7 +679,7 @@ main img.shot { max-width: 100%; }
 <td>嵌入</td>
 <td><code>&lt;area&gt;</code></td>
 <td><code>IMAGE</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（P3e：热区，不产生盒子）</td>
 </tr>
 <tr>
 <td>嵌入</td>
@@ -703,7 +703,7 @@ main img.shot { max-width: 100%; }
 <td>嵌入</td>
 <td><code>&lt;map&gt;</code></td>
 <td><code>IMAGE</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（P3e：热区表，<code>display:none</code>）</td>
 </tr>
 <tr>
 <td>嵌入</td>
@@ -715,13 +715,13 @@ main img.shot { max-width: 100%; }
 <td>嵌入</td>
 <td><code>&lt;picture&gt;</code></td>
 <td><code>IMAGE</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（P3e：透明容器，<code>inline-block</code>）</td>
 </tr>
 <tr>
 <td>嵌入</td>
 <td><code>&lt;source&gt;</code></td>
 <td><code>IMAGE</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（P3e：空元素，<code>display:none</code>；不做候选选择）</td>
 </tr>
 <tr>
 <td>媒体</td>
@@ -947,8 +947,9 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p>统计：<strong>✅ 80 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
-P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<code>dialog</code>、P3a 加 <code>img</code>）、<strong>⏳ 34 个</strong>、<strong>❌ 0 个</strong>。</p>
+<p>统计：<strong>✅ 84 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<code>dialog</code>、P3a 加 <code>img</code>、
+P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</code>）、<strong>⏳ 30 个</strong>、<strong>❌ 0 个</strong>。</p>
 <hr />
 <h2 id="2">2. 能力包</h2>
 <p>一个"包"= 一组标签 + 支撑它们的那部分引擎。包是<strong>编译期开关</strong>，也是<strong>构建期报告的单位</strong>。</p>
@@ -997,7 +998,7 @@ P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<cod
 <td>表格布局算法（列宽分配、跨行跨列、边框合并）</td>
 </tr>
 <tr>
-<td><code>IMAGE</code></td>
+<td><code>IMAGE</code> ✅</td>
 <td><code>QL_FEAT_UI_IMAGE</code><br>+ <code>QL_FEAT_IMG_BMP/QOI/PNG</code>（各自一个开关）<br>+ <code>QL_FEAT_IMG_PLATFORM</code>（JPEG/GIF）</td>
 <td>5（<code>img picture source map area</code>）</td>
 <td>✅</td>
@@ -1209,10 +1210,22 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <td>1 天</td>
 </tr>
 <tr>
-<td>P3c–g</td>
-<td>PNG 解码、<code>object-fit</code>、热区、平台后端</td>
+<td>P3d ✅ 已完成</td>
+<td><code>object-fit</code> 五态 + 图片跟随 <code>border-radius</code> 裁剪</td>
+<td>80</td>
+<td>1 天</td>
+</tr>
+<tr>
+<td>P3e ✅ 已完成</td>
+<td><code>map</code>/<code>area</code> 热区（rect/circle/poly/default，构建期绑定 <code>&lt;img&gt;</code>）+ <code>picture</code>/<code>source</code></td>
 <td>84</td>
-<td>7–9 天</td>
+<td>0.5 天</td>
+</tr>
+<tr>
+<td>P3c / P3g</td>
+<td>PNG 解码、平台后端（JPEG/GIF）</td>
+<td>84</td>
+<td>4–5 天</td>
 </tr>
 <tr>
 <td>P4</td>

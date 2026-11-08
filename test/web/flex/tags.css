@@ -11,3 +11,6 @@
        background-color: #2E6BE6; }
 figcaption { font-size: 11px; color: #6C7783; }
 mark { background-color: #FFE58F; color: #101010; }
+.pic { margin: 4px 0; }
+.box2 { width: 60px; height: 12px; border-radius: 3px;
+        background-color: #E6A02E; }

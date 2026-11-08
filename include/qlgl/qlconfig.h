@@ -161,6 +161,9 @@
 #ifndef QL_CFG_UI_IMAGE_MAX
 #define QL_CFG_UI_IMAGE_MAX         8       /* 一个界面最多几张图 */
 #endif
+#ifndef QL_CFG_UI_AREA_MAX
+#define QL_CFG_UI_AREA_MAX          16      /* 一个界面最多几个 <area> 热区（0 = 整套裁掉） */
+#endif
 #ifndef QL_CFG_IMAGE_MAX_BYTES
 #define QL_CFG_IMAGE_MAX_BYTES      (512u * 1024u)   /* 单张编码字节上限 */
 #endif

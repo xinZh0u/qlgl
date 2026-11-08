@@ -65,6 +65,26 @@ static ql_color_t px(int x, int y)
     return ql_disp_mem_pixel(s_disp, (ql_coord_t)x, (ql_coord_t)y);
 }
 
+/* 热区 / 点击回调的计数器（验证"热区优先，不重复派发"） */
+static int s_area_hits;
+static int s_click_hits;
+
+static void on_area(QLUIRoot *ui, int index, void *user)
+{
+    (void)ui;
+    (void)user;
+    if (index == 0)
+        s_area_hits++;
+}
+
+static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+{
+    (void)ui;
+    (void)node;
+    (void)user;
+    s_click_hits++;
+}
+
 QL_TEST_BEGIN("test_image")
 
     fill_raw();
@@ -299,6 +319,7 @@ QL_TEST_BEGIN("test_image")
         req.len = sizeof(bmp);
         req.src_format = QL_IMAGE_SRC_AUTO;
         QLImage img;
+#if QL_FEAT_IMG_BMP
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
         QL_CHECK_EQ((int)img.w, 2);
         QL_CHECK_EQ((int)img.h, 2);
@@ -327,6 +348,10 @@ QL_TEST_BEGIN("test_image")
         /* 截断的文件：不猜，直接失败 */
         req.len = 60;
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+#else
+        /* 这个构建把 BMP 解码器裁了：同一份字节必须明确说"不支持"，不猜 */
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_UNSUPPORTED);
+#endif
     }
 
     /* ---------- 9. QOI 解码（含 RUN） ---------- */
@@ -351,6 +376,7 @@ QL_TEST_BEGIN("test_image")
         req.len = p;
         req.src_format = QL_IMAGE_SRC_AUTO;
         QLImage img;
+#if QL_FEAT_IMG_QOI
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
         const uint8_t *e = img.px;
         QL_CHECK_EQ((int)e[0], 0xFF); QL_CHECK_EQ((int)e[1], 0x00);
@@ -365,6 +391,9 @@ QL_TEST_BEGIN("test_image")
         memcpy(qoi + 8, &bh, 4);
         req.len = 14 + 4;
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+#else
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_UNSUPPORTED);
+#endif
     }
 
     /* ---------- 10. doc 资源段：编码 → 加载 → 建树 → 出图 ---------- */
@@ -528,6 +557,273 @@ QL_TEST_BEGIN("test_image")
             QL_CHECK(QL_COLOR_GET_R(px(ql_rect_right(b) - 1, b.y)) == 0);
             /* 中心照旧有像素 */
             QL_CHECK(QL_COLOR_GET_R(px((int)(b.x + b.w / 2), (int)(b.y + b.h / 2))) > 0x40);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 13. <picture> / <source>：容器照排，候选源不参与渲染 ---------- */
+    {
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk("<div id=r><picture><source srcset=\"a.png\" "
+                          "type=\"image/png\"><img src=\"pic\"></picture></div>",
+                          "#r { width: 64px; height: 64px }", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUIImageInput in = raw_input("pic");
+            QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+            /*
+             * picture 是 inline-block。本实现的行内块**不收缩**（宽取可用宽），
+             * 但它是透明的、不画任何东西，所以视觉上与"包着图片"一致；
+             * 只有高度跟着里面的 <img> 走。
+             */
+            QL_CHECK_EQ((int)ui->nodes[1].style->display,
+                        (int)QL_UI_DISPLAY_INLINE_BLOCK);
+            QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[1]).h, 8);
+            QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[3]).w, 8);
+            QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[3]).h, 8);
+            /* <source> 是 display:none，盒子为零、位置跟着父级起点 */
+            const QLUINodeRT *src = &ui->nodes[2];
+            QL_CHECK(strcmp(ql_ui_tag_name(src->src->tag), "source") == 0);
+            QL_CHECK_EQ((int)src->style->display, (int)QL_UI_DISPLAY_NONE);
+            QL_CHECK_EQ((int)ql_ui_node_rect(src).w, 0);
+            QL_CHECK_EQ((int)ql_ui_node_rect(src).h, 0);
+            /* img 真的在 picture 里面 */
+            QL_CHECK(ui->nodes[3].parent == &ui->nodes[1]);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 14. 热区：rect / circle / poly / default 的命中 ---------- */
+    {
+        static const char *const html =
+            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<map name=\"m\">"
+            "<area shape=\"rect\" coords=\"0 0 3 3\" href=\"#tl\" alt=\"左上\">"
+            "<area shape=\"circle\" coords=\"6 6 1\" href=\"#br\" alt=\"右下\">"
+            "<area shape=\"poly\" coords=\"4 0 7 0 7 3\" href=\"#tri\">"
+            "</map></div>";
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk(html, "#r { width: 64px; height: 64px }", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUIImageInput in = raw_input("pic");
+            QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+
+            QL_CHECK_EQ(ql_ui_area_count(ui), 3);
+            QL_CHECK(ql_ui_area_image(ui, 0) == &ui->nodes[2]);
+            QL_CHECK(strcmp(ql_ui_area_href(ui, 0), "#tl") == 0);
+            QL_CHECK(strcmp(ql_ui_area_alt(ui, 0), "左上") == 0);
+            QL_CHECK(strcmp(ql_ui_area_href(ui, 2), "#tri") == 0);
+            QL_CHECK(ql_ui_area_alt(ui, 2) == NULL);    /* 没写 alt */
+            QL_CHECK(ql_ui_area_get(ui, 3) == NULL);    /* 越界 */
+
+            const QLRect r = ql_ui_node_rect(&ui->nodes[2]);   /* 8×8 */
+            /* rect (0,0)-(3,3)：包含左上象限的内点，(4,4) 在外面 */
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 1, r.y + 1), 0);
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 3, r.y + 3), 0);  /* 边界含 */
+            /* circle (6,6) r=1 */
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 6, r.y + 6), 1);
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 4, r.y + 6), -1);
+            /* poly (4,0)-(7,0)-(7,3)（斜边从 (4,0) 到 (7,3)） */
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 6, r.y + 1), 2);
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 4, r.y + 3), -1);  /* 斜边外侧 */
+            /* 图外一点：不算命中 */
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 40, r.y + 40), -1);
+
+            /* 包围盒：rect 是 4×4，circle 是 3×3（r=1） */
+            const QLRect b0 = ql_ui_area_rect(ui, 0);
+            QL_CHECK_EQ((int)b0.x, (int)r.x);
+            QL_CHECK_EQ((int)b0.y, (int)r.y);
+            QL_CHECK_EQ((int)b0.w, 4);
+            QL_CHECK_EQ((int)b0.h, 4);
+            const QLRect b1 = ql_ui_area_rect(ui, 1);
+            QL_CHECK_EQ((int)b1.w, 3);
+            QL_CHECK_EQ((int)b1.h, 3);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 15. 热区跟着图片缩放走（坐标是图片像素） ---------- */
+    {
+        static const char *const html =
+            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<map name=\"m\"><area coords=\"0 0 3 3\"></map></div>";
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk(html, "#r { width: 64px; height: 64px } img { width: 32px }",
+                          &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUIImageInput in = raw_input("pic");
+            QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+            const QLRect r = ql_ui_node_rect(&ui->nodes[2]);   /* 32×32（4 倍） */
+            QL_CHECK_EQ((int)r.w, 32);
+            /* 图片像素 (0..3) 映射到屏幕 (0..15] */
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 14, r.y + 14), 0);
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 18, r.y + 18), -1);
+            const QLRect b = ql_ui_area_rect(ui, 0);
+            QL_CHECK_EQ((int)b.w, 16);   /* 4 图片像素 × 4 倍 */
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 16. shape=default 覆盖整张图 ---------- */
+    {
+        static const char *const html =
+            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<map name=\"m\"><area shape=\"default\" href=\"#all\"></map></div>";
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk(html, "#r { width: 64px; height: 64px }", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUIImageInput in = raw_input("pic");
+            QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+            const QLRect r = ql_ui_node_rect(&ui->nodes[2]);
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 7, r.y + 7), 0);
+            QL_CHECK_EQ(ql_ui_area_at(ui, r.x + 9, r.y + 9), -1);
+            const QLRect b = ql_ui_area_rect(ui, 0);
+            QL_CHECK_EQ((int)b.w, 8);
+            QL_CHECK_EQ((int)b.h, 8);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 17. 点击派发：热区优先，不发 click_cb ---------- */
+    {
+        static const char *const html =
+            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<map name=\"m\"><area coords=\"0 0 3 3\" href=\"#a\"></map></div>";
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk(html, "#r { width: 64px; height: 64px }", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUIImageInput in = raw_input("pic");
+            QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+            const QLRect r = ql_ui_node_rect(&ui->nodes[2]);
+
+            s_area_hits = 0;
+            s_click_hits = 0;
+            ql_ui_set_area_cb(ui, on_area, NULL);
+            ql_ui_set_click_cb(ui, on_click, NULL);
+
+            ql_ui_pointer_down(ui, r.x + 1, r.y + 1);
+            ql_ui_pointer_up(ui, r.x + 1, r.y + 1);
+            QL_CHECK_EQ(s_area_hits, 1);
+            QL_CHECK_EQ(s_click_hits, 0);
+
+            /* 热区外（同一张图上）：照旧走 click_cb */
+            ql_ui_pointer_down(ui, r.x + 7, r.y + 7);
+            ql_ui_pointer_up(ui, r.x + 7, r.y + 7);
+            QL_CHECK_EQ(s_area_hits, 1);
+            QL_CHECK_EQ(s_click_hits, 1);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 18. doc 热区段：编码 → 加载 → 数值不变 ---------- */
+    {
+        static const char *const html =
+            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<map name=\"m\">"
+            "<area shape=\"rect\" coords=\"0 0 3 3\" href=\"#p1\" alt=\"A\">"
+            "<area shape=\"poly\" coords=\"4 0 7 0 7 3\">"
+            "</map></div>";
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk(html, "#r { width: 64px; height: 64px }", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)doc->area_count, 2);
+            const size_t need = ql_ui_doc_encode(doc, NULL, 0);
+            QL_CHECK(need > 0);
+            uint8_t *buf = (uint8_t *)ql_mem_alloc(need);
+            QL_CHECK(buf != NULL);
+            QL_CHECK_EQ(ql_ui_doc_encode(doc, buf, need), need);
+            QLUIDoc *back = ql_ui_doc_load_mem(buf, need);
+            QL_CHECK(back != NULL);
+            if (back != NULL) {
+                QL_CHECK_EQ((int)back->area_count, 2);
+                QL_CHECK_EQ((int)back->area_coord_count,
+                            (int)doc->area_coord_count);
+                for (int i = 0; i < (int)doc->area_coord_count; i++)
+                    QL_CHECK_EQ((int)back->area_coords[i], (int)doc->area_coords[i]);
+                QL_CHECK_EQ((int)back->areas[0].img, (int)doc->areas[0].img);
+                QL_CHECK_EQ((int)back->areas[1].shape, (int)QL_UI_AREA_POLY);
+                QL_CHECK_EQ((int)back->areas[1].ncoord, 6);
+                /* 加载回来的 doc 照样能命中 */
+                QLUIRoot *ui2 = ql_ui_build(back);
+                QL_CHECK(ui2 != NULL);
+                if (ui2 != NULL) {
+                    QLUIImageInput in = raw_input("pic");
+                    QL_CHECK_EQ(ql_ui_register_image(ui2, &in), QL_OK);
+                    const QLRect r2 = ql_ui_node_rect(&ui2->nodes[2]);
+                    QL_CHECK_EQ(ql_ui_area_at(ui2, r2.x + 1, r2.y + 1), 0);
+                    QL_CHECK_EQ(ql_ui_area_at(ui2, r2.x + 6, r2.y + 1), 1);
+                    QL_CHECK(strcmp(ql_ui_area_href(ui2, 0), "#p1") == 0);
+                    ql_ui_free(ui2);
+                }
+                ql_ui_doc_free(back);
+            }
+            ql_mem_free(buf);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 19. 明确失败：coords / shape 不合法就编译报错 ---------- */
+    {
+        static const char *const bad[] = {
+            /* rect 只要 4 个 */
+            "<area shape=\"rect\" coords=\"0 0 3\">",
+            /* circle 要 3 个 */
+            "<area shape=\"circle\" coords=\"6 6\">",
+            /* poly 必须偶数且 >= 6 */
+            "<area shape=\"poly\" coords=\"0 0 3 3 6\">",
+            /* 未知 shape */
+            "<area shape=\"triangle\" coords=\"0 0 3 3\">",
+            /* default 不该有 coords */
+            "<area shape=\"default\" coords=\"0 0 3 3\">",
+            /* 非数字 */
+            "<area coords=\"0 0 abc 3\">",
+        };
+        for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+            char html[256];
+            snprintf(html, sizeof(html),
+                     "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+                     "<map name=\"m\">%s</map></div>", bad[i]);
+            QLUIDoc *doc = ql_ui_load_text(html, "");
+            QL_CHECK(doc == NULL);
+            if (doc != NULL)
+                ql_ui_doc_free(doc);
+            ql_ui_text_last_error();   /* 只确认有错误信息可用 */
+        }
+        /* 合法的写法不报错（对照组） */
+        QLUIDoc *ok = ql_ui_load_text(
+            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<map name=\"m\"><area shape=\"poly\" coords=\"0 0 3 3 6 0\">"
+            "</map></div>", "");
+        QL_CHECK(ok != NULL);
+        if (ok != NULL) {
+            QL_CHECK_EQ((int)ok->area_count, 1);
+            ql_ui_doc_free(ok);
+        }
+    }
+
+    /* ---------- 20. 没有 <area> 时热区段是空的 ---------- */
+    {
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk("<div id=r><img src=\"pic\"></div>", "", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ(ql_ui_area_count(ui), 0);
+            QL_CHECK_EQ(ql_ui_area_at(ui, 1, 1), -1);
+            QL_CHECK_EQ((int)doc->area_count, 0);
+            QL_CHECK(doc->areas == NULL);
+            QL_CHECK(doc->area_coords == NULL);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }

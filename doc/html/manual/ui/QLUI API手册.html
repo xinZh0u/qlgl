@@ -1476,6 +1476,78 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <p><strong>CPU 与 GPU 都有 <code>blit_image</code></strong>，两者逐像素一致（<code>test_gl_vs_cpu</code> 里有一页专门比对，
 差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 <code>GL_NEAREST</code> 以对齐 CPU 的
 最近邻；想要双线性就把 <code>QL_CFG_IMAGE_BILINEAR</code> 设成 1（两条后端一起变）。</p>
+<h3 id="map-area">图像热区（<code>&lt;map&gt;</code> / <code>&lt;area&gt;</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">              </span><span class="nf">ql_ui_area_at</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">              </span><span class="nf">ql_ui_area_count</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLUIArea</span><span class="w">  </span><span class="o">*</span><span class="nf">ql_ui_area_get</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_area_image</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
+<span class="n">QLRect</span><span class="w">           </span><span class="nf">ql_ui_area_rect</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">      </span><span class="o">*</span><span class="nf">ql_ui_area_href</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">      </span><span class="o">*</span><span class="nf">ql_ui_area_alt</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">             </span><span class="nf">ql_ui_set_area_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_area_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>area_at</code></td>
+<td>命中的热区下标；没命中 / 没有热区返回 <code>-1</code></td>
+</tr>
+<tr>
+<td><code>area_count</code></td>
+<td>这份界面里的热区条数（doc 里没有 <code>&lt;area&gt;</code> 时为 0）</td>
+</tr>
+<tr>
+<td><code>area_get</code></td>
+<td>只读描述（<code>img</code> / <code>shape</code> / <code>ncoord</code> / <code>href</code> / <code>alt</code> 的池下标）；越界返回 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>area_image</code></td>
+<td>该热区所属的 <code>&lt;img&gt;</code> 节点</td>
+</tr>
+<tr>
+<td><code>area_rect</code></td>
+<td>当前布局下热区在屏幕上的包围盒（已与内容盒求交）</td>
+</tr>
+<tr>
+<td><code>area_href</code> / <code>area_alt</code></td>
+<td>字符串；没写返回 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>set_area_cb</code></td>
+<td>点击回调 <code>(ui, index, user)</code>；注册后<strong>接管</strong>图片上的点击</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;root&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">img</span> <span class="na">src</span><span class="o">=</span><span class="s">&quot;map.png&quot;</span> <span class="na">usemap</span><span class="o">=</span><span class="s">&quot;#board&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">map</span> <span class="na">name</span><span class="o">=</span><span class="s">&quot;board&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">area</span> <span class="na">shape</span><span class="o">=</span><span class="s">&quot;rect&quot;</span>   <span class="na">coords</span><span class="o">=</span><span class="s">&quot;0 0 63 31&quot;</span>   <span class="na">href</span><span class="o">=</span><span class="s">&quot;#cpu&quot;</span>  <span class="na">alt</span><span class="o">=</span><span class="s">&quot;CPU&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">area</span> <span class="na">shape</span><span class="o">=</span><span class="s">&quot;circle&quot;</span> <span class="na">coords</span><span class="o">=</span><span class="s">&quot;96 64 20&quot;</span>     <span class="na">href</span><span class="o">=</span><span class="s">&quot;#ram&quot;</span>  <span class="na">alt</span><span class="o">=</span><span class="s">&quot;RAM&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">area</span> <span class="na">shape</span><span class="o">=</span><span class="s">&quot;poly&quot;</span>   <span class="na">coords</span><span class="o">=</span><span class="s">&quot;10 90 50 90 30 120&quot;</span> <span class="na">href</span><span class="o">=</span><span class="s">&quot;#io&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">area</span> <span class="na">shape</span><span class="o">=</span><span class="s">&quot;default&quot;</span>                      <span class="na">href</span><span class="o">=</span><span class="s">&quot;#bg&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">map</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<p>要点：</p>
+<ul>
+<li><strong>坐标是图片像素</strong>（原点 = 图片左上角），与 HTML 一致；图片被缩放到别的尺寸时
+  热区跟着缩放（一次整数换算），所以 <code>img { width: 200px }</code> 不会让热区错位。</li>
+<li><code>shape</code> 缺省是 <code>rect</code>；<code>rect</code> 只要 4 个坐标、<code>circle</code> 3 个、<code>poly</code> 偶数个且 ≥ 6、
+  <code>default</code> 不许带坐标。<strong>数量不对就是编译错误</strong>，不会"猜一半"。</li>
+<li><code>&lt;map&gt;</code> / <code>&lt;area&gt;</code> / <code>&lt;source&gt;</code> 是 <code>display:none</code>，<strong>不占空间</strong>；<code>&lt;picture&gt;</code> 是透明容器。</li>
+<li>命中时派发 <code>area_cb</code>，<strong>不再</strong>派发 <code>click_cb</code>（与浏览器一致：点击的 target 是 <code>&lt;area&gt;</code>）。</li>
+<li>不做导航：<code>href</code> 只是字符串，跳转/换页由回调里的应用逻辑决定。</li>
+<li>上限 <code>QL_CFG_UI_AREA_MAX</code>（默认 16 条，每条 ≤ 128 个坐标）；设成 0 则整套裁掉
+  （doc 里再多 <code>&lt;area&gt;</code> 也解析成 0 条，<code>area_at</code> 恒返回 <code>-1</code>）。</li>
+</ul>
 <h3 id="dialog">浮层（<code>&lt;dialog&gt;</code>）</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_dialog_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_dialog_set_open</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">open</span><span class="p">);</span>

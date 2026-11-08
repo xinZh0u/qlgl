@@ -87,7 +87,7 @@ static QLDispDriver *render_doc(const QLUIDoc *doc)
 QL_TEST_BEGIN("test_ui_blob")
 
     /* ---------- 1. 头结构与 ABI 自检 ---------- */
-    QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 84);   /* v13：+ image_count + 3 个段偏移 */
+    QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 96);   /* v14：+ <area> 热区段 */
     QL_CHECK_EQ(sizeof(QLUINode), 20);   /* 9 个 uint16 + flags + reserved */
     /* 渐变/阴影 + flex + 定位 + 过渡 + transform(分轴) + anim + backdrop_blur + line_h */
     QL_CHECK_EQ(sizeof(QLUIStyle), 120);

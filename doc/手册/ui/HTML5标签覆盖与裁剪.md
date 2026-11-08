@@ -98,14 +98,14 @@
 | 行内文本 | `<wbr>` | `CORE` | ✅ 已支持 |
 | 编辑标记 | `<del>` | `CORE` | ✅ 已支持 |
 | 编辑标记 | `<ins>` | `CORE` | ✅ 已支持 |
-| 嵌入 | `<area>` | `IMAGE` | ⏳ 计划 |
+| 嵌入 | `<area>` | `IMAGE` | ✅ 已支持（P3e：热区，不产生盒子） |
 | 嵌入 | `<embed>` | `EMBED` | ⏳ 计划 |
 | 嵌入 | `<iframe>` | `EMBED` | ⏳ 计划 |
 | 嵌入 | `<img>` | `IMAGE` | ✅ 已支持（P3a） |
-| 嵌入 | `<map>` | `IMAGE` | ⏳ 计划 |
+| 嵌入 | `<map>` | `IMAGE` | ✅ 已支持（P3e：热区表，`display:none`） |
 | 嵌入 | `<object>` | `EMBED` | ⏳ 计划 |
-| 嵌入 | `<picture>` | `IMAGE` | ⏳ 计划 |
-| 嵌入 | `<source>` | `IMAGE` | ⏳ 计划 |
+| 嵌入 | `<picture>` | `IMAGE` | ✅ 已支持（P3e：透明容器，`inline-block`） |
+| 嵌入 | `<source>` | `IMAGE` | ✅ 已支持（P3e：空元素，`display:none`；不做候选选择） |
 | 媒体 | `<audio>` | `EMBED` | ⏳ 计划 |
 | 媒体 | `<track>` | `EMBED` | ⏳ 计划 |
 | 媒体 | `<video>` | `EMBED` | ⏳ 计划 |
@@ -144,8 +144,9 @@
 | SVG / MathML | `<math>` | `EMBED` | ⏳ 计划 |
 | SVG / MathML | `<svg>` | `EMBED` | ⏳ 计划 |
 
-统计：**✅ 80 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
-P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`）、**⏳ 34 个**、**❌ 0 个**。
+统计：**✅ 84 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`、
+P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 
 ---
 
@@ -159,7 +160,7 @@ P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`�
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
 | `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | ✅ | ❌ | 文本内 `\n`、`white-space: pre`、等宽字体族、行内注音 |
 | `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
-| `IMAGE` | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM`（JPEG/GIF） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
+| `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM`（JPEG/GIF） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `WIDGET` | `QL_FEAT_UI_WIDGET` | 8（`progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | 复用已有池/覆盖层机制 + `
 `（`textarea`） |
 | `EMBED` | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ❌ | **只做占位盒 / 忽略**，见 §5 |
@@ -258,7 +259,9 @@ app.html: 42 个节点，使用标签 9 种
 | P3a ✅ 已完成 | `QLImage` + `blit_image`（**CPU + GPU**）+ `<img>` + doc 资源段（blob v13）+ 固有尺寸 | 80 | 3–4 天 |
 | P3f ✅ 已完成 | `qltext cc --root`：构建期把图片解码成目标像素格式并嵌入 doc | 80 | 1.5–2 天 |
 | P3b ✅ 已完成 | BMP + QOI 解码器（构建期与运行时共用同一份） | 80 | 1 天 |
-| P3c–g | PNG 解码、`object-fit`、热区、平台后端 | 84 | 7–9 天 |
+| P3d ✅ 已完成 | `object-fit` 五态 + 图片跟随 `border-radius` 裁剪 | 80 | 1 天 |
+| P3e ✅ 已完成 | `map`/`area` 热区（rect/circle/poly/default，构建期绑定 `<img>`）+ `picture`/`source` | 84 | 0.5 天 |
+| P3c / P3g | PNG 解码、平台后端（JPEG/GIF） | 84 | 4–5 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |

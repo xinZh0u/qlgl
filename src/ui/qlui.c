@@ -53,6 +53,8 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     /* --- WIDGET 包 --- */
     "output", "datalist", "progress", "meter", "details", "summary", "dialog",
     "img",
+    /* --- IMAGE 包（P3e）：响应式图片与图像热区 --- */
+    "picture", "source", "map", "area",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -142,6 +144,8 @@ static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *no
 static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node);
 static void image_node_size(const QLUIRoot *ui, const QLUINodeRT *node, ql_coord_t *w,
                             ql_coord_t *h);
+static int image_fit_rect(int32_t iw, int32_t ih, QLRect box, uint8_t fit,
+                          QLRect *out_dst, QLRect *out_src);
 static void details_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
 static QLUINodeRT *dialog_top(const QLUIRoot *ui);
 static void dialog_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
@@ -2771,6 +2775,207 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
     return &ir->img;
 }
 
+/* ------------------------------ 图像热区 ------------------------------ */
+
+/* 点是否在矩形内（右/下边界不含，与布局的半开区间一致） */
+static int rect_has_point(QLRect r, ql_coord_t x, ql_coord_t y)
+{
+    return x >= r.x && y >= r.y && x < ql_rect_right(r) && y < ql_rect_bottom(r);
+}
+
+/*
+ * 热区命中需要两个矩形：
+ *   dst  —— 图片**画在哪**（object-fit 之后，可能比内容盒大）
+ *   clip —— `dst ∩ 内容盒`，超出内容盒的部分在屏幕上看不见
+ * 坐标换算以 dst 为准（原点 = 图片左上角），可见性判定以 clip 为准。
+ */
+static int image_draw_box(const QLUIRoot *ui, const QLUINodeRT *node, QLRect *dst,
+                          QLRect *clip, ql_coord_t *iw, ql_coord_t *ih)
+{
+    if (node == NULL || node->src == NULL || node->src->tag != QL_UI_TAG_IMG)
+        return 0;
+    ql_coord_t nw = 0, nh = 0;
+    image_node_size(ui, node, &nw, &nh);
+    if (nw <= 0 || nh <= 0)
+        return 0;
+    QLRect src;
+    if (!image_fit_rect((int32_t)nw, (int32_t)nh, node->content_box,
+                        ql_ui_style_object_fit(ql_ui_node_style(node)), dst, &src))
+        return 0;
+    *clip = ql_rect_intersect(*dst, node->content_box);
+    *iw = nw;
+    *ih = nh;
+    return 1;
+}
+
+const QLUIArea *ql_ui_area_get(const QLUIRoot *ui, int index)
+{
+    if (ui == NULL || ui->doc == NULL || index < 0 || index >= (int)ui->doc->area_count)
+        return NULL;
+    return &ui->doc->areas[index];
+}
+
+int ql_ui_area_count(const QLUIRoot *ui)
+{
+    if (ui == NULL || ui->doc == NULL)
+        return 0;
+    return (int)ui->doc->area_count;
+}
+
+const QLUINodeRT *ql_ui_area_image(const QLUIRoot *ui, int index)
+{
+    const QLUIArea *a = ql_ui_area_get(ui, index);
+    if (a == NULL || a->img >= ui->node_count)
+        return NULL;
+    return &ui->nodes[a->img];
+}
+
+static const char *area_str(const QLUIRoot *ui, uint16_t off)
+{
+    if (off == 0xFFFFu || ui->doc->text_pool == NULL || ui->doc->text_offsets == NULL)
+        return NULL;
+    return ui->doc->text_pool + ui->doc->text_offsets[off];
+}
+
+const char *ql_ui_area_href(const QLUIRoot *ui, int index)
+{
+    const QLUIArea *a = ql_ui_area_get(ui, index);
+    return (a != NULL) ? area_str(ui, a->href) : NULL;
+}
+
+const char *ql_ui_area_alt(const QLUIRoot *ui, int index)
+{
+    const QLUIArea *a = ql_ui_area_get(ui, index);
+    return (a != NULL) ? area_str(ui, a->alt) : NULL;
+}
+
+/* 奇偶环绕规则（crossing number）：点在多边形内 ⇔ 向右射线与边界的交点个数是奇数 */
+static int poly_contains(const int16_t *c, int n, int32_t px, int32_t py)
+{
+    int inside = 0;
+    for (int i = 0, j = n / 2 - 1; i < n / 2; j = i++) {
+        const int32_t xi = c[2 * i], yi = c[2 * i + 1];
+        const int32_t xj = c[2 * j], yj = c[2 * j + 1];
+        if (((yi > py) != (yj > py)) &&
+            ((int64_t)px < (int64_t)(xj - xi) * (py - yi) / (yj - yi) + xi))
+            inside = !inside;
+    }
+    return inside;
+}
+
+/* 热区在**图片像素坐标系**里的包围盒（DEFAULT 用整张图） */
+static void area_bbox(const QLUIArea *a, const int16_t *c, int32_t iw, int32_t ih,
+                      int32_t *x0, int32_t *y0, int32_t *x1, int32_t *y1)
+{
+    if (a->ncoord == 0) {
+        *x0 = 0;
+        *y0 = 0;
+        *x1 = iw - 1;
+        *y1 = ih - 1;
+        return;
+    }
+    if (a->shape == QL_UI_AREA_CIRCLE) {
+        *x0 = (int32_t)c[0] - c[2];
+        *y0 = (int32_t)c[1] - c[2];
+        *x1 = (int32_t)c[0] + c[2];
+        *y1 = (int32_t)c[1] + c[2];
+        return;
+    }
+    int32_t minx = c[0], maxx = c[0], miny = c[1], maxy = c[1];
+    for (int i = 2; i + 1 < a->ncoord; i += 2) {
+        if (c[i] < minx) minx = c[i];
+        if (c[i] > maxx) maxx = c[i];
+        if (c[i + 1] < miny) miny = c[i + 1];
+        if (c[i + 1] > maxy) maxy = c[i + 1];
+    }
+    *x0 = minx;
+    *y0 = miny;
+    *x1 = maxx;
+    *y1 = maxy;
+}
+
+/* 单个热区是否包含"点"（点在屏幕空间，映射到图片像素后再判） */
+static int area_contains(const QLUIArea *a, const int16_t *c, QLRect dst, ql_coord_t iw,
+                         ql_coord_t ih, ql_coord_t x, ql_coord_t y)
+{
+    /* 屏幕 → 图片像素（整数除法，除数为 0 已在调用方挡住） */
+    const int32_t lx = (int32_t)(x - dst.x) * (int32_t)iw / (int32_t)dst.w;
+    const int32_t ly = (int32_t)(y - dst.y) * (int32_t)ih / (int32_t)dst.h;
+
+    switch (a->shape) {
+    case QL_UI_AREA_CIRCLE: {
+        const int64_t dx = lx - c[0], dy = ly - c[1], r = c[2];
+        return dx * dx + dy * dy <= r * r;
+    }
+    case QL_UI_AREA_POLY:
+        return poly_contains(c, a->ncoord, lx, ly);
+    case QL_UI_AREA_DEFAULT:
+        return 1;
+    default: { /* RECT：允许 x0 > x1 的写法，交换一下就行 */
+        int32_t x0 = c[0], y0 = c[1], x1 = c[2], y1 = c[3];
+        if (x0 > x1) { const int32_t t = x0; x0 = x1; x1 = t; }
+        if (y0 > y1) { const int32_t t = y0; y0 = y1; y1 = t; }
+        return lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1;
+    }
+    }
+}
+
+int ql_ui_area_at(const QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
+{
+    if (ui == NULL || ui->doc == NULL || ui->doc->area_count == 0)
+        return -1;
+    for (uint16_t i = 0; i < ui->doc->area_count; i++) {
+        const QLUIArea *a = &ui->doc->areas[i];
+        if (a->img >= ui->node_count)
+            continue;
+        QLRect dst, clip;
+        ql_coord_t iw = 0, ih = 0;
+        if (!image_draw_box(ui, &ui->nodes[a->img], &dst, &clip, &iw, &ih))
+            continue;
+        if (!rect_has_point(clip, x, y))
+            continue;
+        const int16_t *c = (a->ncoord > 0) ? ui->doc->area_coords + a->coord_off : NULL;
+        if (area_contains(a, c, dst, iw, ih, x, y))
+            return (int)i;
+    }
+    return -1;
+}
+
+QLRect ql_ui_area_rect(const QLUIRoot *ui, int index)
+{
+    const QLUIArea *a = ql_ui_area_get(ui, index);
+    if (a == NULL || a->img >= ui->node_count)
+        return ql_rect_make(0, 0, 0, 0);
+    if (a->ncoord > 0 && ui->doc->area_coords == NULL)
+        return ql_rect_make(0, 0, 0, 0);
+    QLRect dst, clip;
+    ql_coord_t iw = 0, ih = 0;
+    if (!image_draw_box(ui, &ui->nodes[a->img], &dst, &clip, &iw, &ih))
+        return ql_rect_make(0, 0, 0, 0);
+
+    int32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    const int16_t *c = (a->ncoord > 0) ? ui->doc->area_coords + a->coord_off : NULL;
+    area_bbox(a, c, (int32_t)iw, (int32_t)ih, &x0, &y0, &x1, &y1);
+
+    /* 图片像素 → 屏幕（与 area_contains 的反向换算一致）。
+     * 远端用 x1 + 1 算"排他边界"，这样 4 个图片像素在 4 倍缩放下正好 16 px 宽。 */
+    const ql_coord_t sx0 = dst.x + (ql_coord_t)(x0 * (int32_t)dst.w / (int32_t)iw);
+    const ql_coord_t sy0 = dst.y + (ql_coord_t)(y0 * (int32_t)dst.h / (int32_t)ih);
+    const ql_coord_t sx1 = dst.x + (ql_coord_t)((x1 + 1) * (int32_t)dst.w / (int32_t)iw);
+    const ql_coord_t sy1 = dst.y + (ql_coord_t)((y1 + 1) * (int32_t)dst.h / (int32_t)ih);
+
+    const QLRect r = ql_rect_make(sx0, sy0, sx1 - sx0, sy1 - sy0);
+    return ql_rect_intersect(r, clip);
+}
+
+void ql_ui_set_area_cb(QLUIRoot *ui, ql_ui_area_cb cb, void *user)
+{
+    if (ui == NULL)
+        return;
+    ui->area_cb = cb;
+    ui->area_user = user;
+}
+
 /*
  * 布局需要的"固有尺寸"。**不看解码是否成功** —— 尺寸来自 doc 的资源条目，
  * 所以图没解出来也能占对位置（只是画不出来）。
@@ -2854,13 +3059,11 @@ ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
  *
  * 返回 0 表示不用画。
  */
-static int image_fit_rect(const QLImage *img, QLRect box, uint8_t fit, QLRect *out_dst,
-                          QLRect *out_src)
+static int image_fit_rect(int32_t iw, int32_t ih, QLRect box, uint8_t fit,
+                          QLRect *out_dst, QLRect *out_src)
 {
-    if (img == NULL || img->w == 0 || img->h == 0 || ql_rect_is_empty(box))
+    if (iw <= 0 || ih <= 0 || ql_rect_is_empty(box))
         return 0;
-
-    const int32_t iw = img->w, ih = img->h;
 
     switch (fit) {
     case QL_UI_FIT_NONE:
@@ -2945,7 +3148,8 @@ static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
         return;
 
     QLRect dst, src;
-    if (!image_fit_rect(img, node->content_box, ql_ui_style_object_fit(s), &dst, &src))
+    if (!image_fit_rect((int32_t)img->w, (int32_t)img->h, node->content_box,
+                        ql_ui_style_object_fit(s), &dst, &src))
         return;
 
     /*
@@ -4217,6 +4421,18 @@ int ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     }
     if (node == NULL || !was_active)
         return 0;
+
+    /*
+     * 图像热区优先：点在 <img> 的热区里就派发 area_cb，**不再**派发 click_cb
+     * —— 与浏览器一致（点击的 target 是 <area>，不是 <img>）。
+     */
+    if (ui->area_cb != NULL) {
+        const int ai = ql_ui_area_at(ui, x, y);
+        if (ai >= 0) {
+            ui->area_cb(ui, ai, ui->area_user);
+            return 1;
+        }
+    }
 
     if (ui->click_cb != NULL)
         ui->click_cb(ui, node, ui->click_user_data);

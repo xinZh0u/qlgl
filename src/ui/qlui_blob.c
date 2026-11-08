@@ -71,6 +71,8 @@ typedef struct {
     size_t keyframes;
     size_t images;
     size_t image_data;
+    size_t areas;
+    size_t area_coords;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -83,6 +85,7 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t text_count, uint16_t font_size_count,
                            uint16_t anim_count, uint16_t keyframe_count,
                            uint16_t image_count, size_t image_data_size,
+                           uint16_t area_count, uint16_t area_coord_count,
                            size_t pool_size, size_t name_len,
                            QLUIBlobLayout *out)
 {
@@ -116,6 +119,12 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     out->image_data = off;
     off = QL_UI_ALIGN8(off + image_data_size);
 
+    out->areas = off;
+    off = QL_UI_ALIGN8(off + (size_t)area_count * sizeof(QLUIArea));
+
+    out->area_coords = off;
+    off = QL_UI_ALIGN8(off + (size_t)area_coord_count * sizeof(int16_t));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -145,10 +154,14 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
         return 0;
     const size_t image_data_size = (doc->image_count > 0) ? doc->image_data_size : 0u;
 
+    if (doc->area_count > 0 && (doc->areas == NULL || doc->area_coords == NULL))
+        return 0;
+
     QLUIBlobLayout lay;
     compute_layout(doc->node_count, doc->style_count, doc->text_count,
                    doc->font_size_count, doc->anim_count, doc->keyframe_count,
-                   doc->image_count, image_data_size, pool_size, name_len, &lay);
+                   doc->image_count, image_data_size, doc->area_count,
+                   doc->area_coord_count, pool_size, name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
         return lay.total;
@@ -185,6 +198,10 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.off_image_data = (uint32_t)lay.image_data;
     head.image_data_size = (uint32_t)image_data_size;
     head.off_name = (uint32_t)lay.name;
+    head.area_count = doc->area_count;
+    head.area_coord_count = doc->area_coord_count;
+    head.off_areas = (uint32_t)lay.areas;
+    head.off_area_coords = (uint32_t)lay.area_coords;
 
     if (doc->node_count > 0)
         memcpy(base + lay.nodes, doc->nodes,
@@ -211,6 +228,11 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
                (size_t)doc->image_count * sizeof(QLUIImageSrc));
     if (image_data_size > 0)
         memcpy(base + lay.image_data, doc->image_data, image_data_size);
+    if (doc->area_count > 0)
+        memcpy(base + lay.areas, doc->areas, (size_t)doc->area_count * sizeof(QLUIArea));
+    if (doc->area_coord_count > 0)
+        memcpy(base + lay.area_coords, doc->area_coords,
+               (size_t)doc->area_coord_count * sizeof(int16_t));
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -369,12 +391,20 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         set_error_str("image data too large (see QL_CFG_IMAGE_MAX_BYTES)");
         return NULL;
     }
+    if (head.area_count > QL_CFG_UI_AREA_MAX) {
+        set_error_str("too many <area> hotspots (see QL_CFG_UI_AREA_MAX)");
+        return NULL;
+    }
+    if (head.area_coord_count > (uint32_t)QL_CFG_UI_AREA_MAX * 128u) {
+        set_error_str("<area coords> too long");
+        return NULL;
+    }
 
     QLUIBlobLayout lay;
     compute_layout(head.node_count, head.style_count, head.text_count,
                    head.font_size_count, head.anim_count, head.keyframe_count,
-                   head.image_count, head.image_data_size, pool_size, head.name_len,
-                   &lay);
+                   head.image_count, head.image_data_size, head.area_count,
+                   head.area_coord_count, pool_size, head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
@@ -383,6 +413,7 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         head.off_font_sizes != lay.font_sizes ||
         head.off_anims != lay.anims || head.off_keyframes != lay.keyframes ||
         head.off_images != lay.images || head.off_image_data != lay.image_data ||
+        head.off_areas != lay.areas || head.off_area_coords != lay.area_coords ||
         head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
@@ -430,7 +461,27 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
     doc->images = (head.image_count > 0) ? (const QLUIImageSrc *)(p + lay.images) : NULL;
     doc->image_data = (head.image_data_size > 0) ? (const uint8_t *)(p + lay.image_data)
                                                  : NULL;
+    doc->area_count = head.area_count;
+    doc->area_coord_count = head.area_coord_count;
+    doc->areas = (head.area_count > 0) ? (const QLUIArea *)(p + lay.areas) : NULL;
+    doc->area_coords = (head.area_coord_count > 0)
+                           ? (const int16_t *)(p + lay.area_coords)
+                           : NULL;
     doc->name = (head.name_len > 0) ? (const char *)(p + lay.name) : "";
+
+    /* 热区：img 必须真的是 <img>，坐标区间必须落在 coords 段内 */
+    for (uint16_t i = 0; i < doc->area_count; i++) {
+        const QLUIArea *a = &doc->areas[i];
+        if (a->img >= doc->node_count ||
+            doc->nodes[a->img].tag != (uint16_t)QL_UI_TAG_IMG ||
+            (uint32_t)a->coord_off + (uint32_t)a->ncoord > doc->area_coord_count) {
+            set_error_str("<area> entry out of range or not bound to <img>");
+            ql_mem_free(doc);
+            ql_mem_free(arena);
+            return NULL;
+        }
+    }
+
     doc->arena = arena;
 
     return doc;

@@ -785,34 +785,49 @@ index.html + index.css ──qltext cc──┤
 
 #### 为什么加载这么便宜
 
-`QLUIDoc` 里**所有内部引用都是 `uint16` 下标**，唯一的指针是 doc 自己的 6 个基址字段：
+`QLUIDoc` 里**所有内部引用都是 `uint16` 下标**，唯一的指针是 doc 自己的
+那几个基址字段（nodes / styles / 文本池 / 动画 / 图片 / 热区 / name）：
 
 ```c
 QLUIDoc {
-    nodes / styles / text_pool / text_offsets / font_sizes / name   ← 只有这 6 个指针
-    node_count / style_count / text_count / font_size_count
+    nodes / styles / text_pool / text_offsets / font_sizes
+    anims / keyframes / images / image_data / areas / area_coords / name
+    node_count / style_count / text_count / ... / area_count
     arena        ← NULL = 静态数据，不归我管
 }
 ```
 
-所以"解码"= 校验 + 设 6 个指针，**没有任何递归重定位**。这是当初"用下标不用指针"
+所以"解码"= 校验 + 设这些指针，**没有任何递归重定位**。这是当初"用下标不用指针"
 的一个意外红利。
 
-#### 格式
+#### 格式（**v14**）
 
 ```
-[ QLUIDocBlobHeader 64 字节 ]
-[ nodes      ] node_count      * 18 字节
-[ styles     ] style_count     * 44 字节
+[ QLUIDocBlobHeader 96 字节 ]
+[ nodes      ] node_count       * 20 字节
+[ styles     ] style_count      * 120 字节
 [ text_pool  ] 以 '\0' 分隔的 UTF-8
-[ text_ofs   ] text_count      * 2 字节
-[ font_sizes ] font_size_count * 2 字节
+[ text_ofs   ] text_count       * 2 字节
+[ font_sizes ] font_size_count  * 2 字节
+[ anims      ] anim_count       * 12 字节
+[ keyframes  ] keyframe_count   * 36 字节
+[ images     ] image_count      * 20 字节
+[ image_data ] image_data_size 字节（编码后的资源字节）
+[ areas      ] area_count       * 10 字节
+[ area_coords] area_coord_count * 2 字节（int16，全部热区共用一段）
 [ name       ] name_len 字节
 ```
 
 各段按 8 字节对齐。头部含：magic(`QLUI`)、version、header_size、
-4 个计数、`node_struct_size` / `style_struct_size`（**ABI 校验**）、
-total_size、FNV-1a 32 校验和、6 个段偏移。
+各段计数、`node_struct_size` / `style_struct_size` / `anim_struct_size` /
+`keyframe_struct_size`（**ABI 校验**）、total_size、FNV-1a 32 校验和、各段偏移。
+
+**没有图片/热区的界面，那四段是 0 字节** —— 这也正是"MCU 上砍掉图片功能
+不会多付一个字节"的原因。
+
+版本历史：v12 = `<input>`（`QLUINode` 18 → 20）；v13 = 图片资源段；
+**v14 = `<area>` 热区段**（`area_count` / `area_coord_count` 与两个段偏移，
+头 84 → 96 字节）。
 
 #### 加载时的校验（缺一不可）
 

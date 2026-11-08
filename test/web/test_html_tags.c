@@ -53,7 +53,7 @@ QL_TEST_BEGIN("test_html_tags")
             "output", "datalist", "progress", "meter", "details", "summary",
             "dialog",
             /* --- IMAGE 包 --- */
-            "img",
+            "img", "picture", "source", "map", "area",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -70,6 +70,8 @@ QL_TEST_BEGIN("test_html_tags")
                                  strcmp(name, "input") == 0 ||
                                  strcmp(name, "wbr") == 0 ||
                                  strcmp(name, "img") == 0 ||
+                                 strcmp(name, "source") == 0 ||
+                                 strcmp(name, "area") == 0 ||
                                  strcmp(name, "base") == 0 ||
                                  strcmp(name, "link") == 0 ||
                                  strcmp(name, "meta") == 0);

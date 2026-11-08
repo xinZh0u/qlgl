@@ -130,6 +130,7 @@ static const char *const TAG_NAMES[] = {
     "QL_UI_TAG_STYLE", "QL_UI_TAG_TITLE", "QL_UI_TAG_OUTPUT",
     "QL_UI_TAG_DATALIST", "QL_UI_TAG_PROGRESS", "QL_UI_TAG_METER",
     "QL_UI_TAG_DETAILS", "QL_UI_TAG_SUMMARY", "QL_UI_TAG_DIALOG", "QL_UI_TAG_IMG",
+    "QL_UI_TAG_PICTURE", "QL_UI_TAG_SOURCE", "QL_UI_TAG_MAP", "QL_UI_TAG_AREA",
 };
 
 static const char *const DISPLAY_NAMES[] = {
@@ -179,6 +180,11 @@ static const char *const TEXT_ALIGN_NAMES[] = {
 static const char *const ANIM_DIR_NAMES[] = {
     "QL_UI_ANIM_NORMAL", "QL_UI_ANIM_REVERSE",
     "QL_UI_ANIM_ALTERNATE", "QL_UI_ANIM_ALTERNATE_REVERSE",
+};
+
+static const char *const AREA_SHAPE_NAMES[] = {
+    "QL_UI_AREA_RECT", "QL_UI_AREA_CIRCLE", "QL_UI_AREA_POLY",
+    "QL_UI_AREA_DEFAULT",
 };
 
 static const char *const ANIM_FILL_NAMES[] = {
@@ -766,6 +772,34 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fprintf(f, "};\n\n");
     }
 
+    /* ---- 图像热区：<map>/<area> 在构建期就绑定到 <img> ---- */
+    if (doc->area_count > 0) {
+        fprintf(f, "/* <area> 热区：坐标是图片像素（原点 = 图片左上角） */\n");
+        fprintf(f, "static const int16_t %s_area_coords[%u] = {", ident,
+                (unsigned)doc->area_coord_count);
+        for (uint16_t i = 0; i < doc->area_coord_count; i++) {
+            if (i % 12u == 0)
+                fprintf(f, "\n    ");
+            fprintf(f, "%5d,", (int)doc->area_coords[i]);
+        }
+        fputs("\n};\n\n", f);
+
+        fprintf(f, "static const QLUIArea %s_areas[%u] = {\n", ident,
+                (unsigned)doc->area_count);
+        for (uint16_t i = 0; i < doc->area_count; i++) {
+            const QLUIArea *ar = &doc->areas[i];
+            fprintf(f,
+                    "    { .img = %u, .coord_off = %u, .href = %u, .alt = %u,"
+                    " .shape = %s, .ncoord = %u },\n",
+                    (unsigned)ar->img, (unsigned)ar->coord_off, (unsigned)ar->href,
+                    (unsigned)ar->alt,
+                    enum_name(AREA_SHAPE_NAMES, COUNT_OF(AREA_SHAPE_NAMES), ar->shape,
+                              "QLUIAreaShape"),
+                    (unsigned)ar->ncoord);
+        }
+        fputs("};\n\n", f);
+    }
+
     /* ---- doc ---- */
     fprintf(f,
             "const QLUIDoc %s_doc = {\n"
@@ -790,6 +824,16 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
             ident, ident,   /* font_size_cnt: sizeof(%s_font_sizes) x2 */
             (unsigned)doc->anim_count, (unsigned)doc->keyframe_count,
             ident, ident, ident, ident, ident, ident, ident);
+
+    /* 热区接在 doc 字面量里：没有 <area> 时一个字都不多 */
+    if (doc->area_count > 0) {
+        fprintf(f,
+                "    .area_count    = %u,\n"
+                "    .area_coord_count = %u,\n"
+                "    .areas         = %s_areas,\n"
+                "    .area_coords   = %s_area_coords,\n",
+                (unsigned)doc->area_count, (unsigned)doc->area_coord_count, ident, ident);
+    }
 
     /* 图片资源接在 doc 字面量里：没有资源时一个字都不多 */
     if (assets != NULL && assets->count > 0) {

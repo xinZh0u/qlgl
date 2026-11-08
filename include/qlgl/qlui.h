@@ -153,6 +153,10 @@ typedef enum {
     QL_UI_TAG_SUMMARY,    /* 折叠面板的标题行（点击它切换） */
     QL_UI_TAG_DIALOG,     /* 浮层：居中的模态框 + 遮罩 */
     QL_UI_TAG_IMG,        /* 位图：src 是资源名，见 doc/图像管线设计.md */
+    QL_UI_TAG_PICTURE,    /* 响应式图片容器：自身不画，子节点里的 <img> 照常排 */
+    QL_UI_TAG_SOURCE,     /* <picture>/<video> 的候选源：空元素，完全不参与渲染 */
+    QL_UI_TAG_MAP,        /* 图像热区表：display:none，只为 <area> 提供名字 */
+    QL_UI_TAG_AREA,       /* 热区：空元素，几何存进 doc->areas（见热区 API） */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -470,6 +474,31 @@ typedef struct {
     uint8_t  pixel_format;  /* QLImageFormat，仅 format == RAW 时有效 */
 } QLUIImageSrc;
 
+/* ----- 图像热区（`<map>` / `<area>`，doc 里的一条） ----- */
+
+typedef enum {
+    QL_UI_AREA_RECT = 0,   /* coords = x0 y0 x1 y1 */
+    QL_UI_AREA_CIRCLE,     /* coords = cx cy r */
+    QL_UI_AREA_POLY,       /* coords = x0 y0 x1 y1 …（偶数个，>= 6） */
+    QL_UI_AREA_DEFAULT,    /* 整张图（coords 为空） */
+} QLUIAreaShape;
+
+/*
+ * 一个热区。坐标是**图片像素**（原点 = 图片左上角），与 HTML `coords` 一致；
+ * 运行期按图片实际绘制尺寸缩放后做命中测试（见 `ql_ui_area_at`）。
+ *
+ * `img` 是关联的 `<img>` 节点序号 —— 在**构建期**就把 `usemap` 与 `<map name>`
+ * 对上了，所以运行期不需要按名字查表。
+ */
+typedef struct {
+    uint16_t img;        /* 关联的 QLUINode 序号（一定是 <img>） */
+    uint16_t coord_off;  /* 在 doc->area_coords[] 里的起始下标 */
+    uint16_t href;       /* text 池下标；0xFFFF = 没有 */
+    uint16_t alt;        /* 同上 */
+    uint8_t  shape;      /* QLUIAreaShape */
+    uint8_t  ncoord;     /* coords 个数（RECT=4 / CIRCLE=3 / POLY=偶数 / DEFAULT=0） */
+} QLUIArea;              /* 10 字节 */
+
 typedef struct {
     const char       *name;
     uint16_t          node_count;
@@ -485,8 +514,12 @@ typedef struct {
     uint16_t          degraded_tags;
     uint16_t          image_count;      /* 图像资源条数 */
     uint32_t          image_data_size;  /* 资源字节段的总长度 */
+    uint16_t          area_count;       /* <area> 热区条数 */
+    uint16_t          area_coord_count; /* area_coords[] 的元素个数 */
     const QLUIImageSrc *images;         /* image_count 条 */
     const uint8_t     *image_data;      /* 所有资源的字节（RAW 的像素也在这里） */
+    const QLUIArea    *areas;           /* area_count 条（按 img 节点序号升序） */
+    const int16_t     *area_coords;     /* area_coord_count 个 int16 */
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
@@ -679,6 +712,9 @@ typedef struct {
 
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user_data);
 
+/* 图像热区被点击（`<area>`）；`index` 是 doc->areas 下标 */
+typedef void (*ql_ui_area_cb)(QLUIRoot *ui, int index, void *user);
+
 /* 输入框的值变化 / 回车回调（定义在这里是因为 QLUIRoot 要存函数指针） */
 typedef void (*ql_ui_input_cb)(QLUIRoot *ui, QLUINodeRT *node, const char *value,
                                void *user);
@@ -726,6 +762,8 @@ struct QLUIRoot {
     int            input_drag;       /* 正在拖动选字 */
     ql_ui_input_cb input_cb;
     void          *input_user;
+    ql_ui_area_cb  area_cb;          /* 热区点击回调（可为 NULL） */
+    void          *area_user;
 };
 
 /* ----- 生命周期 ----- */
@@ -845,6 +883,36 @@ ql_err_t    ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
 /* 节点当前的解码结果；没有/失败返回 NULL，不是 <img> 返回 NULL */
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 
+/* ------------------------------ 图像热区 ------------------------------ */
+
+/*
+ * `<map name="m"><area shape=… coords=… href=…></map>` + `<img usemap="#m">`：
+ * 一张图上可以有几块可点区域。
+ *
+ * **几何在构建期就定型**：解析时把 `usemap` 与 `<map name>` 对上，热区条目直接
+ * 记下 `<img>` 的节点序号，所以运行期没有"按名字查表"，也没有字符串比较。
+ * 坐标是图片像素（原点 = 图片左上角），命中测试时按图片**实际绘制尺寸**缩放
+ * （`object-fit` 生效后的矩形）。
+ *
+ * 热区不是节点：`<map>` / `<area>` 的 UA 样式是 `display:none`，不产生盒子。
+ * 点击回调见 `ql_ui_set_area_cb`。
+ */
+/* 命中的热区下标（doc->areas 下标）；没命中 / 没有热区返回 -1 */
+int         ql_ui_area_at(const QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
+int         ql_ui_area_count(const QLUIRoot *ui);
+/* 第 index 条热区的只读描述；越界返回 NULL */
+const QLUIArea *ql_ui_area_get(const QLUIRoot *ui, int index);
+/* 热区所属的 <img> 节点；index 越界返回 NULL */
+const QLUINodeRT *ql_ui_area_image(const QLUIRoot *ui, int index);
+/* 热区在屏幕上（当前布局）的包围盒；index 越界返回空矩形 */
+QLRect      ql_ui_area_rect(const QLUIRoot *ui, int index);
+/* `href` / `alt`；没有返回 NULL */
+const char *ql_ui_area_href(const QLUIRoot *ui, int index);
+const char *ql_ui_area_alt(const QLUIRoot *ui, int index);
+
+/* 热区被点击（指针在热区内抬起）：*替代* click_cb，不再重复派发 */
+void        ql_ui_set_area_cb(QLUIRoot *ui, ql_ui_area_cb cb, void *user);
+
 /* ------------------------------ 折叠面板 ------------------------------ */
 
 /*
@@ -917,7 +985,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 /*
  * 格式（little-endian，各段按 8 字节对齐）：
  *
- *   [ QLUIDocBlobHeader 64 字节 ]
+ *   [ QLUIDocBlobHeader 96 字节 ]
  *   [ nodes      ] node_count      * sizeof(QLUINode)
  *   [ styles     ] style_count     * sizeof(QLUIStyle)
  *   [ text_pool  ] 以 '\0' 分隔的 UTF-8 字节
@@ -925,6 +993,10 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ font_sizes ] font_size_count * uint16
  *   [ anims      ] anim_count      * sizeof(QLUIAnimation)
  *   [ keyframes  ] keyframe_count  * sizeof(QLUIKeyframe)
+ *   [ images     ] image_count     * sizeof(QLUIImageSrc)
+ *   [ image_data ] image_data_size 字节（编码后的资源字节）
+ *   [ areas      ] area_count      * sizeof(QLUIArea)
+ *   [ area_coords] area_coord_count * int16
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -932,12 +1004,12 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    13u  /* 13: 图像资源段（images / image_data） */
+#define QL_UI_BLOB_VERSION    14u  /* 14: 图像热区段（areas / area_coords） */
 
 typedef struct {
     uint32_t magic;
     uint16_t version;
-    uint16_t header_size;         /* 固定 72 */
+    uint16_t header_size;         /* 固定 96 */
     uint16_t node_count;
     uint16_t style_count;
     uint16_t text_count;
@@ -963,9 +1035,13 @@ typedef struct {
     uint32_t off_image_data;      /* 资源字节 */
     uint32_t image_data_size;
     uint32_t off_name;
+    uint16_t area_count;          /* <area> 热区条数 */
+    uint16_t area_coord_count;    /* area_coords[] 元素个数 */
+    uint32_t off_areas;           /* QLUIArea[] */
+    uint32_t off_area_coords;     /* int16[]，全部热区共用一段 */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 84, "blob 头必须是 84 字节（v13）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 96, "blob 头必须是 96 字节（v14）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

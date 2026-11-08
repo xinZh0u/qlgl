@@ -286,13 +286,16 @@ if(QLGL_BUILD_TESTS)
              COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
 
-    # 构建期转码（qltext cc --root）：生成物与基准逐字节比对
-    add_test(NAME test_qltext_assets
-             COMMAND ${CMAKE_COMMAND}
-                     -DQLTEXT=$<TARGET_FILE:qltext>
-                     -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
-                     -DBIN=${CMAKE_CURRENT_BINARY_DIR}
-                     -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/gen_assets.cmake)
+    # 构建期转码（qltext cc --root）：生成物与基准逐字节比对。
+    # 样例是 BMP，raw-only 预设把 BMP 解码器砍掉了 → 这条测不了，就不注册。
+    if(NOT DEFINED QL_FEAT_IMG_BMP OR QL_FEAT_IMG_BMP)
+        add_test(NAME test_qltext_assets
+                 COMMAND ${CMAKE_COMMAND}
+                         -DQLTEXT=$<TARGET_FILE:qltext>
+                         -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
+                         -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/gen_assets.cmake)
+    endif()
 endif()
 
 # 重新生成类型 id 表：cmake --build build --target qlgen
