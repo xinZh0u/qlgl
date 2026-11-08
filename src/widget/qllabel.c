@@ -116,7 +116,7 @@ static void ql_label_draw(QLWidget *widget, QLDraw2D *d2d)
 
     d2d->draw_text(d2d, priv->font, ql_str_data(&priv->text),
                    (int32_t)ql_str_len(&priv->text), rect, priv->text_color,
-                   (QLTextAlign)priv->align, 0);
+                   (QLTextAlign)priv->align, 0, 0);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */

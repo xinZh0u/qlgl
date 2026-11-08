@@ -1240,7 +1240,7 @@ static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gly
 
 static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                          QLRect box, ql_color_t color, QLTextAlign align,
-                         ql_coord_t line_h)
+                         ql_coord_t line_h, int wrap)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (elem_len_fx_gl(g) == 0)
@@ -1253,7 +1253,7 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
     const ql_coord_t dev_line_h =
         (line_h > 0) ? (ql_coord_t)((int64_t)line_h * font_fx / QL_SCALE_ONE) : 0;
     ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), color, align, dev_line_h,
-                          gl_emit_glyph);
+                          wrap, gl_emit_glyph);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */

@@ -2,6 +2,8 @@
  * @file    qldraw2d.c
  * @brief   绘制接口的公共排版逻辑 + CPU（QLCanvas）后端适配。
  */
+#include <string.h>
+
 #include <qlgl/qlgl.h>
 
 void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_t x2,
@@ -37,9 +39,133 @@ void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_
     }
 }
 
+/* ------------------------------ 折行 ------------------------------ */
+
+/* 是否 CJK：U+2E80 以上的表意/假名/谚文等，浏览器允许在它们之间任意断行 */
+static int is_cjk(uint32_t cp)
+{
+    return cp >= 0x2E80u;
+}
+
+static int is_space_cp(uint32_t cp)
+{
+    return cp == ' ' || cp == '\t' || cp == '\r';
+}
+
+/*
+ * 从 [pos, end) 里挑一个断点，返回**下一行的起点**（等于 end 表示这一行吃到最后）。
+ * max_w <= 0 表示不折行。
+ */
+static int32_t wrap_next(const QLFont *font, const char *t, int32_t pos, int32_t end,
+                         ql_coord_t max_w)
+{
+    if (max_w <= 0)
+        return end;
+
+    ql_coord_t w = 0;
+    int32_t last_break = -1;      /* 候选断点（空格之后 / CJK 边界） */
+    int32_t i = pos;
+
+    while (i < end) {
+        uint32_t cp = 0;
+        int32_t used = ql_utf8_decode(t + i, &cp);
+        if (used <= 0)
+            break;
+
+        const QLGlyph *g = ql_font_find_glyph(font, cp);
+        const ql_coord_t adv = (g != NULL) ? g->adv_w : 0;
+
+        /*
+         * 宽度里**必须算上空格**：不然后面接的词会被当成"还放得下"，
+         * 一行实际宽 120px 却以为只有 90px（这个 bug 第一次实现时就有）。
+         * 行尾空格在断行后由 trim_line_end() 去掉，不影响视觉。
+         */
+        if (w + adv > max_w && i > pos) {
+            if (last_break > pos)
+                return last_break;
+            /* 没有可用的软断点：硬断在当前字符前（超长单词/长串数字） */
+            return i;
+        }
+        w += adv;
+
+        if (is_space_cp(cp)) {
+            /* 空格之后是断点；跳过连续空白，下一行不以前导空格开头 */
+            int32_t j = i + used;
+            while (j < end) {
+                uint32_t c2 = 0;
+                int32_t u2 = ql_utf8_decode(t + j, &c2);
+                if (u2 <= 0 || !is_space_cp(c2))
+                    break;
+                j += u2;
+            }
+            last_break = j;
+        } else if (is_cjk(cp) && i + used < end) {
+            last_break = i + used;   /* CJK 字之间可以断 */
+        }
+
+        i += used;
+    }
+    return end;
+}
+
+/* 去掉行尾空白（'\n' 之前、折行点之前的尾随空格不该占宽度） */
+static int32_t trim_line_end(const char *t, int32_t start, int32_t end)
+{
+    while (end > start) {
+        /* 只看 ASCII 空白与常见 Unicode 空白 */
+        unsigned char c = (unsigned char)t[end - 1];
+        if (c == ' ' || c == '\t' || c == '\r')
+            end--;
+        else
+            break;
+    }
+    return end;
+}
+
+int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
+                 QLTextLine *out, int max_lines)
+{
+    if (font == NULL || text == NULL)
+        return 0;
+
+    const int32_t total = (int32_t)strlen(text);
+    int32_t pos = 0;
+    int n = 0;
+
+    for (;;) {
+        /* 当前显式行（到 '\n' 或结尾） */
+        int32_t hard = pos;
+        while (hard < total && text[hard] != '\n')
+            hard++;
+
+        /* 这一行要拆成几个折行 */
+        int32_t p = pos;
+        for (;;) {
+            int32_t next = wrap_next(font, text, p, hard, max_w);
+            int32_t line_end = trim_line_end(text, p, next);
+            if (out != NULL && n < max_lines) {
+                out[n].start = text + p;
+                out[n].len = line_end - p;
+            }
+            n++;
+            if (next >= hard)
+                break;
+            p = next;
+        }
+
+        if (hard >= total)
+            break;
+        pos = hard + 1;               /* 跳过 '\n' */
+        if (pos > total)
+            break;
+    }
+    return n;
+}
+
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, ql_color_t color, QLTextAlign align,
-                           ql_coord_t line_h, ql_draw2d_glyph_fn emit_glyph)
+                           ql_coord_t line_h, int wrap,
+                           ql_draw2d_glyph_fn emit_glyph)
 {
     if (self == NULL || font == NULL || text == NULL || emit_glyph == NULL)
         return;
@@ -52,8 +178,7 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
      * L == ascent + descent 时半行距为 0 —— 这就是 `line-height: normal`
      * 以及旧版本的行为，所以默认路径逐像素不变。
      */
-    const ql_coord_t lead_total =
-        (ql_coord_t)(font->ascent + font->descent);
+    const ql_coord_t lead_total = (ql_coord_t)(font->ascent + font->descent);
     ql_coord_t line_step = font->line_height;
     ql_coord_t half_lead = 0;
     if (line_h > 0) {
@@ -61,43 +186,48 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
         half_lead = (ql_coord_t)(line_h - lead_total) / 2;
     }
 
+    /* `len < 0` 时按 NUL 结尾；有显式长度时截一段临时缓冲交给折行函数 */
+    char buf[256];
+    const char *src = text;
+    if (len >= 0) {
+        int32_t n = (len < (int32_t)sizeof(buf)) ? len : (int32_t)sizeof(buf) - 1;
+        memcpy(buf, text, (size_t)n);
+        buf[n] = '\0';
+        src = buf;
+    }
+
+    QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+    const int max_lines = (int)(sizeof(lines) / sizeof(lines[0]));
+    int count = ql_text_wrap(font, src, wrap ? box.w : 0, lines, max_lines);
+    if (count > max_lines)
+        count = max_lines;      /* 超出的行不画（布局统计不受此限） */
+
     ql_coord_t baseline = box.y + half_lead + font->ascent;
-    int32_t i = 0;
-    int32_t line_start = 0;
+    for (int li = 0; li < count; li++) {
+        const char *lt = lines[li].start;
+        const int32_t llen = lines[li].len;
+        const ql_coord_t line_w = ql_font_line_width(font, lt, llen);
 
-    for (;;) {
-        int at_end = (len < 0) ? (text[i] == '\0')
-                               : (i >= len || text[i] == '\0');
-        if (at_end || text[i] == '\n') {
-            int32_t line_len = i - line_start;
-            ql_coord_t line_w = ql_font_line_width(font, text + line_start, line_len);
+        ql_coord_t pen_x = box.x;
+        if (align == QL_TEXT_ALIGN_CENTER)
+            pen_x = box.x + (box.w - line_w) / 2;
+        else if (align == QL_TEXT_ALIGN_RIGHT)
+            pen_x = box.x + box.w - line_w;
 
-            ql_coord_t pen_x = box.x;
-            if (align == QL_TEXT_ALIGN_CENTER)
-                pen_x = box.x + (box.w - line_w) / 2;
-            else if (align == QL_TEXT_ALIGN_RIGHT)
-                pen_x = box.x + box.w - line_w;
-
-            int32_t j = 0;
-            while (j < line_len) {
-                uint32_t cp = 0;
-                int32_t used = ql_utf8_decode(text + line_start + j, &cp);
-                if (used <= 0)
-                    break;
-                const QLGlyph *glyph = ql_font_find_glyph(font, cp);
-                if (glyph != NULL && glyph->box_w > 0)
-                    emit_glyph(self, font, glyph, pen_x, baseline, color);
-                if (glyph != NULL)
-                    pen_x += glyph->adv_w;
-                j += used;
-            }
-
-            if (at_end)
+        int32_t j = 0;
+        while (j < llen) {
+            uint32_t cp = 0;
+            int32_t used = ql_utf8_decode(lt + j, &cp);
+            if (used <= 0)
                 break;
-            baseline += line_step;
-            line_start = i + 1;
+            const QLGlyph *glyph = ql_font_find_glyph(font, cp);
+            if (glyph != NULL && glyph->box_w > 0)
+                emit_glyph(self, font, glyph, pen_x, baseline, color);
+            if (glyph != NULL)
+                pen_x += glyph->adv_w;
+            j += used;
         }
-        i++;
+        baseline += line_step;
     }
 }
 
@@ -321,7 +451,7 @@ const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx)
 
 static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                           QLRect box, ql_color_t color, QLTextAlign align,
-                          ql_coord_t line_h)
+                          ql_coord_t line_h, int wrap)
 {
     /*
      * 字形按"元素缩放 × DPR"重取字号：transform: scale() 在浏览器里会让文字
@@ -334,7 +464,7 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
     const QLFont *dev = ql_draw2d_device_font(font, font_fx);
     /* 文本取偏移的整数部分：亚像素平移会让字形糊掉 */
     ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
-                          color, align, line_h, cpu_emit_glyph);
+                          color, align, line_h, wrap, cpu_emit_glyph);
 }
 
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)

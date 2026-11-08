@@ -592,8 +592,21 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         content_h = cursor_y - content_y;
     } else if (node->text != NULL) {
         const ql_coord_t lh = text_line_h_of(s, font);
-        content_h = s->height.unit == QL_UI_UNIT_AUTO ? lh
-                                                      : resolve_length(s->height, 0, lh);
+        if (s->height.unit == QL_UI_UNIT_AUTO) {
+            /*
+             * 折行时高度由行数决定：这里必须用**和绘制同一份**行数统计
+             * （ql_text_wrap 传 out = NULL 就只数行），否则会出现
+             * "布局按一行算、绘制画了三行"的错位。
+             */
+            int lines = 1;
+            if (s->white_space == 1)
+                lines = ql_text_wrap(font, node->text, content_w, NULL, 0);
+            if (lines < 1)
+                lines = 1;
+            content_h = lh * (ql_coord_t)lines;
+        } else {
+            content_h = resolve_length(s->height, 0, lh);
+        }
     } else {
         content_h = 0;
     }
@@ -693,7 +706,8 @@ static int count_flex_items(QLUINodeRT *node)
  * 递归有界：树深度已经被 QL_CFG_UI_MAX_DEPTH 限住，这里再加一个深度参数
  * 兜底，避免将来某个环状结构把它拖死。
  */
-static ql_coord_t max_content_main(const QLUINodeRT *node, int row, int depth)
+static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t avail_w,
+                                   int depth)
 {
     if (node == NULL || depth > (int)QL_CFG_UI_MAX_DEPTH)
         return 0;
@@ -720,7 +734,31 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, int depth)
     } else if (len->unit == QL_UI_UNIT_AUTO) {
         if (node->text != NULL && node->first_child == NULL) {
             const QLFont *font = font_of_style(node, s);
-            own = (font != NULL) ? ql_font_line_width(font, node->text, -1) : 0;
+            if (row) {
+                /* 主轴水平：max-content 就是把文本摊平不折行的宽度 */
+                own = (font != NULL) ? ql_font_line_width(font, node->text, -1) : 0;
+            } else {
+                /*
+                 * 主轴竖直：max-content 高度 = 行数 × 行高。
+                 * 折行时行数取决于宽度，而这里只能拿到"父容器给的宽度"
+                 * （column 容器 + stretch 时子项宽度就是它）——用它估算，
+                 * 与浏览器"先按可得宽度折行、再取高度"的结果一致。
+                 *
+                 * 之前这里错用了**文本宽度**，于是 column 容器里的每个文本项
+                 * 都声称自己有那么高（46 个汉字 322px），整页被撑爆。
+                 */
+                const ql_coord_t lh = text_line_h_of(s, font);
+                int lines = 1;
+                if (s->white_space == 1 && font != NULL) {
+                    ql_coord_t inner = avail_w - pad_border - margin;
+                    if (inner > 0) {
+                        lines = ql_text_wrap(font, node->text, inner, NULL, 0);
+                        if (lines < 1)
+                            lines = 1;
+                    }
+                }
+                own = lh * (ql_coord_t)lines;
+            }
             own += pad_border;
         } else if (node->first_child == NULL) {
             own = pad_border;              /* 空盒子：内容 0 */
@@ -732,7 +770,10 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, int depth)
             for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
                 if (c->style->display == QL_UI_DISPLAY_NONE)
                     continue;
-                sum += max_content_main(c, row, depth + 1);
+                sum += max_content_main(c, row,
+                                        avail_w - pad_border - s->margin.left -
+                                            s->margin.right,
+                                        depth + 1);
                 n++;
             }
             if (n > 1)
@@ -744,7 +785,10 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, int depth)
             for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
                 if (c->style->display == QL_UI_DISPLAY_NONE)
                     continue;
-                ql_coord_t v = max_content_main(c, row, depth + 1);
+                ql_coord_t v = max_content_main(c, row,
+                                                avail_w - pad_border - s->margin.left -
+                                                    s->margin.right,
+                                                depth + 1);
                 if (v > mx)
                     mx = v;
             }
@@ -778,7 +822,8 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
         const QLUILength *len = flex_is_row(node->style) ? &c->style->width
                                                         : &c->style->height;
         if (len->unit == QL_UI_UNIT_AUTO) {
-            const ql_coord_t mc = max_content_main(c, flex_is_row(node->style), 0);
+            const ql_coord_t mc =
+                max_content_main(c, flex_is_row(node->style), content_w, 0);
             const ql_coord_t mb = flex_is_row(node->style)
                                       ? (ql_coord_t)(c->style->margin.left +
                                                      c->style->margin.right)
@@ -1609,7 +1654,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 
     if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box))
         d2d->draw_text(d2d, font_of(node), node->text, -1, node->content_box,
-                       s->text_color, (QLTextAlign)s->text_align, s->line_h);
+                       s->text_color, (QLTextAlign)s->text_align, s->line_h,
+                       s->white_space == 1);
 
     /* overflow != visible 时，子树被裁到本节点的边框盒（含圆角） */
     if (s->overflow != QL_UI_OVERFLOW_VISIBLE && d2d->set_clip != NULL) {

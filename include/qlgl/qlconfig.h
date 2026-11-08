@@ -93,6 +93,14 @@
 #ifndef QL_CFG_UI_MAX_TEXT_NODES
 #define QL_CFG_UI_MAX_TEXT_NODES    4096    /* 去重后的文本条数 */
 #endif
+/*
+ * 一次绘制最多排多少行（`white-space: normal` 折行后）。
+ * 绘制时在栈上开 `QL_CFG_TEXT_MAX_LINES` 条行记录，超出的行不画——
+ * 布局统计总行数时不受这个上限影响。64 行 ≈ 45 行/屏的两屏多。
+ */
+#ifndef QL_CFG_TEXT_MAX_LINES
+#define QL_CFG_TEXT_MAX_LINES       64
+#endif
 
 /* 输入事件队列容量（后端只入队，主循环统一派发；静态分配不 malloc） */
 #ifndef QL_CFG_INPUT_QUEUE

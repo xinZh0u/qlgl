@@ -260,7 +260,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             " .flex_basis_pct = %u,\n"
             "      .position = %s, .overflow = %s, .z_index = %d,\n"
             "      .trans_ms = %u, .trans_ease = %s, .trans_props = 0x%02X,\n"
-            "      .backdrop_blur = %u, .line_h = %d,\n"
+            "      .backdrop_blur = %u, .line_h = %d, .white_space = %u,\n"
             "      .clip_kind = %u, .clip_r = %u,\n"
             "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
             "      .anim = ",
@@ -291,6 +291,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->trans_ms, ease_name(s->trans_ease),
             (unsigned)s->trans_props,
             (unsigned)s->backdrop_blur, (int)s->line_h,
+            (unsigned)s->white_space,
             (unsigned)s->clip_kind, (unsigned)s->clip_r,
             (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y);
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);

@@ -514,31 +514,6 @@ CSS 的 `backface-visibility: hidden` 靠"这个面朝后（变换行列式为�
 
 ---
 
-### 5.4.5 文本的竖直位置：`line-height` 是 `text-align` 的 counterpart
-
-`text-align` 管水平，`line-height` 管竖直。少了后者，"按钮里的字对不齐"
-就**没法表达**——只能靠 `padding-top` 硬凑，`box-sizing` 一改就散。
-
-实现只有一条公式（`ql_draw2d_text_layout`，CPU/GPU 共用）：
-
-```
-行盒高 L  = line_h > 0 ? line_h : 字体自身 line_height
-半行距  h = (L - (ascent + descent)) / 2      ← L == a + d 时为 0
-第一行基线 = box.y + h + ascent
-后续每行   += L
-```
-
-因为 `QLFont.line_height == ascent + descent`，不给 `line-height` 时半行距恒为 0，
-**与旧版本逐像素相同**（这也是为什么加这个属性只需重生成 blob、基准图一张都没动）。
-给了 `line-height: 26px` 而盒高也是 26px 时，字形区上下各得 13 - a/2 的空间，
-墨迹中心正好落在盒中心——这就是"完美居中"的由来。
-
-`line_h` 同时参与两处：绘制时的基线计算，以及**文本节点 auto 高度**的内容高
-（`text_line_h_of()`）。后者保证 `line-height: 30px` 的裸文本行真的占 30px 高，
-而不是字体行高。
-
----
-
 ### 5.4.4 毛玻璃：唯一会"回头读自己画过的东西"的效果
 
 `backdrop-filter: blur(Npx)` 要模糊**元素背后已经画好的内容**。
@@ -567,6 +542,63 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 
 **两条后端不一致是故意的**：CPU 全分辨率盒式、GPU 半分辨率高斯近似，
 所以 `test_blur` 不比逐像素，而是断言性质（玻璃内出现长串中间色、玻璃外一个都没有）。
+
+---
+
+### 5.4.5 文本的竖直位置：`line-height` 是 `text-align` 的 counterpart
+
+`text-align` 管水平，`line-height` 管竖直。少了后者，"按钮里的字对不齐"
+就**没法表达**——只能靠 `padding-top` 硬凑，`box-sizing` 一改就散。
+
+实现只有一条公式（`ql_draw2d_text_layout`，CPU/GPU 共用）：
+
+```
+行盒高 L  = line_h > 0 ? line_h : 字体自身 line_height
+半行距  h = (L - (ascent + descent)) / 2      ← L == a + d 时为 0
+第一行基线 = box.y + h + ascent
+后续每行   += L
+```
+
+因为 `QLFont.line_height == ascent + descent`，不给 `line-height` 时半行距恒为 0，
+**与旧版本逐像素相同**（这也是为什么加这个属性只需重生成 blob、基准图一张都没动）。
+给了 `line-height: 26px` 而盒高也是 26px 时，字形区上下各得 13 - a/2 的空间，
+墨迹中心正好落在盒中心——这就是"完美居中"的由来。
+
+`line_h` 同时参与两处：绘制时的基线计算，以及**文本节点 auto 高度**的内容高
+（`text_line_h_of()`）。后者保证 `line-height: 30px` 的裸文本行真的占 30px 高，
+而不是字体行高。
+
+
+### 5.4.6 自动折行：`white-space: normal`
+
+**默认 `nowrap`（与浏览器不同）**，这是刻意的：v0 的文本模型是"一段文本一行"，
+整套逐像素基准都建立在这个前提上。折行要显式打开。
+
+断行只有一个实现：`ql_text_wrap()`（`src/draw/qldraw2d.c`）。它同时被
+**布局**（数行数 → 算高度）和**绘制**（逐行发射字形）调用 —— 这是唯一能保证
+"布局与绘制对行数有分歧"这类 bug 不出现的方式。
+
+```
+ql_text_wrap(font, text, max_w, out, max_lines)
+    max_w = 0        → 只按 '\n' 断（nowrap）
+    out   = NULL     → 只数行数（布局用，不分配内存）
+```
+
+规则：空格后断（丢弃行首行尾空白）、CJK 之间随处断、超长单词硬断、`'\n'` 强制断。
+
+绘制侧在栈上开 `QL_CFG_TEXT_MAX_LINES`（默认 64）条行记录，超出的行不画；
+**行数统计不受这个上限影响**（否则长文本的高度会算少）。
+
+**踩到的两个坑**
+
+1. **宽度里必须算上空格**。第一版把空格当成"零宽"（想省掉行尾空白），结果
+   含空格的英文行实际宽 120px 却被判成放得下 —— 直接把折行逻辑废掉了。
+   正确处理是：宽度照算，断行**之后**再 `trim_line_end()` 去掉尾随空白。
+2. **`max_content_main()` 没分轴**。它给 flex 项算 max-content 主轴尺寸时，
+   对文本节点一律返回"文本宽度"。可主轴是竖直（`flex-direction: column`）时，
+   max-content 应该是**高度**（行数 × 行高）。后果很夸张：一个 46 个汉字的
+   简介在 column 容器里声称自己 322px 高，整页被撑爆、折行高度也算不出来。
+   现在按 `row ? 文本宽度 : 行数 × 行高` 分轴，折行时行数用"父容器给的可用宽度"估。
 
 ---
 

@@ -300,23 +300,59 @@ main img.shot { max-width: 100%; }
 想要"文字在任意高度的盒子里居中而不用算像素"，当前没有 <code>flex</code> 那套
 匿名文本盒，还是得让 <code>line-height</code> 等于盒高。</p>
 </blockquote>
-<h2 id="_3">规则四：不自动折行</h2>
-<p>一段文本就是一行。超长就溢出（被父级 <code>overflow: hidden</code> 裁掉）。</p>
-<p>想做"自动换行的段落"有两种办法：</p>
-<div class="highlight"><pre><span></span><code><span class="cm">&lt;!-- 办法一：手动切行（最可控，UI 里 99% 是这么干的） --&gt;</span>
-<span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;line&quot;</span><span class="p">&gt;</span>第一行<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
-<span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;line&quot;</span><span class="p">&gt;</span>第二行<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<h2 id="white-space-normal">规则四：默认不折行，<code>white-space: normal</code> 才折</h2>
+<p><strong>这是本库与浏览器唯一有意为之的差异</strong>：浏览器默认就折行（<code>white-space: normal</code>），
+本库默认 <code>nowrap</code> —— 一段文本就是一行，超长就溢出（被父级 <code>overflow: hidden</code> 裁掉）。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">268</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">nowrap</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 默认：一行，超长溢出 */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">268</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">normal</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 按宽度折行 */</span>
 </code></pre></div>
 
-<div class="highlight"><pre><span></span><code><span class="cm">/* 办法二：运行期按宽度切 */</span>
-<span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;很长很长的一段话……&quot;</span><span class="p">);</span>
-<span class="cm">/* 想要真正的多行排版用 QLText 的 ql_text_layout()，见 QLText 手册 */</span>
+<p>为什么默认反过来：v0 的文本模型就是"一段文本一行"，大量已有界面（包括一整套
+逐像素基准图）都建立在这个前提上。改成浏览器默认会让那些页面在你没改任何东西的
+情况下重新排版。所以折行要<strong>显式打开</strong>：一行 CSS 换一个明确的语义。</p>
+<p>打开之后长度就自动长了 —— 节点高度 = 行数 × <code>line-height</code>，布局与绘制用的是
+<strong>同一份断行结果</strong>（<code>ql_text_wrap()</code>），所以不会出现"布局按一行算、画了三行"。</p>
+<p>断行规则（<code>ql_text_wrap()</code>，PC/MCU 同一份）：</p>
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>空格</td>
+<td>在空格之后断，行首行尾的连续空白丢弃</td>
+</tr>
+<tr>
+<td>中文</td>
+<td>汉字之间随处可断（和浏览器一致）</td>
+</tr>
+<tr>
+<td>超长单词</td>
+<td>一行放不下一个词时<strong>硬断</strong>，不做连字符</td>
+</tr>
+<tr>
+<td><code>\n</code></td>
+<td>永远强制断行，与折行叠加</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c">/* 一个真实的例子：播放器里的简介 */</span>
+<span class="p">.</span><span class="nc">desc</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">268</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">11</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">line-height</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">        </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#7A8794</span><span class="p">;</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">normal</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 
-<p>QLGL 的选择是：<strong>布局不猜你的意图</strong>。文本换行是个排版问题（要处理断词、CJK
-的换行规则、连字符），塞进布局算法里会让布局的复杂度失控。所以基础库给的是
-"一段文本 + 对齐"，需要真段落时用 <code>QLText</code> 的排版接口。</p>
-<h2 id="_4">运行期改文本</h2>
+<p><img src="../img/07-player.png" alt="播放器界面" width="260"></p>
+<p><code>line-height</code> 在这里同时干两件事：单行居中（上一节）和多行行距（这一节）。
+<code>white-space</code> 也<strong>会被继承</strong>，所以可以在容器上写一次。</p>
+<blockquote>
+<p>还不支持的：<code>pre</code> / <code>pre-wrap</code> / <code>break-spaces</code>（要保留空白与制表符语义，
+本库不做），以及 <code>text-overflow: ellipsis</code>（"太长就省略号"）。写了会<strong>报错</strong>，
+不会静默降级。</p>
+</blockquote>
+<h2 id="_3">运行期改文本</h2>
 <div class="highlight"><pre><span></span><code><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;新的内容&quot;</span><span class="p">);</span>
 </code></pre></div>
 

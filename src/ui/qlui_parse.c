@@ -1648,7 +1648,8 @@ static int expand_shorthands(Decls *ds)
 static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
-    "font-size", "text-align", "line-height", "box-sizing", "box-shadow",
+    "font-size", "text-align", "line-height", "white-space", "box-sizing",
+    "box-shadow",
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
@@ -4197,6 +4198,28 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         return 0;
 
     /*
+     * white-space：默认 nowrap（与浏览器的**故意差异**，见 qlui.h 里该字段的注释）。
+     * 只支持 nowrap / normal —— pre* 系列需要保留空白与制表符语义，本库不做。
+     */
+    int white_space = 0;
+    {
+        const char *ws = decls_get(st, "white-space");
+        if (ws != NULL) {
+            char wt[64];
+            trim_lower(ws, wt, sizeof(wt));
+            if (strcmp(wt, "normal") == 0) {
+                white_space = 1;
+            } else if (strcmp(wt, "nowrap") == 0) {
+                white_space = 0;
+            } else {
+                set_error("%s: 不支持的 white-space '%s'（只支持 nowrap / normal）",
+                          where, ws);
+                return 0;
+            }
+        }
+    }
+
+    /*
      * line-height：0 = normal（半行距 0，与旧行为一致）。
      * 三写法：`normal` / `<N>px` / 无单位倍数（按当前 font-size 折算成 px）。
      * 单行垂直居中就靠它：`height: 26px; line-height: 26px`。
@@ -4584,6 +4607,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->anim = (uint16_t)anim_idx;
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
+    out->white_space = (uint8_t)white_space;
     return 1;
 }
 
@@ -4799,7 +4823,7 @@ static int flatten_tree(const PNode *root, Flat **out, int *out_n)
 
 /* 继承只带走这三个属性（与 Python 的 INHERITED 一致） */
 static const char *const k_inherited[] = { "color", "font-size", "text-align",
-                                           "line-height" };
+                                           "line-height", "white-space" };
 
 static int collect_inherited(const Decls *parent, Decls *out)
 {

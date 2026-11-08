@@ -61,7 +61,7 @@ struct QLDraw2D {
      */
     void (*draw_text)(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                       QLRect box, ql_color_t color, QLTextAlign align,
-                      ql_coord_t line_h);
+                      ql_coord_t line_h, int wrap);
 
     /*
      * 毛玻璃（CSS px）：把 `rect` 区域里**已经画好的内容**就地模糊。
@@ -118,13 +118,39 @@ struct QLDraw2D {
     void *user;   /* 后端私有数据 */
 };
 
+/* 折行后的一行：指向原文里的一段（不拷贝） */
+typedef struct {
+    const char *start;
+    int32_t     len;
+} QLTextLine;
+
+/*
+ * 按像素宽度断行（`white-space: normal` 的实现，布局与绘制共用同一份）。
+ *
+ * 规则（刻意简单，但覆盖中英文）：
+ *   1. `'\n'` 强制断行；
+ *   2. 优先在**空格之后**断（空格与行尾连续空白不占宽度）；
+ *   3. CJK 字符之间可以随处断（U+2E80 以上视为 CJK，与浏览器的"任意断点"一致）；
+ *   4. 一个词比整行还宽时硬断（否则会死循环式溢出）。
+ *
+ * `out` 可以为 NULL —— 这时只数行数（布局阶段用，不必分配）。
+ * 返回总行数；超过 `max_lines` 时只填前 `max_lines` 条，但返回值仍是总数。
+ */
+int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
+                 QLTextLine *out, int max_lines);
+
 /* 单行绘制文字的公共实现：后端可直接复用它的排版逻辑 */
 typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,
                                    const QLGlyph *glyph, ql_coord_t pen_x,
                                    ql_coord_t baseline_y, ql_color_t color);
+/*
+ * `wrap` = 0：只按 '\n' 断行（`white-space: nowrap`）；
+ * `wrap` = 1：再按 `box.w` 折行（`white-space: normal`，走 ql_text_wrap()）。
+ */
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, ql_color_t color, QLTextAlign align,
-                           ql_coord_t line_h, ql_draw2d_glyph_fn emit_glyph);
+                           ql_coord_t line_h, int wrap,
+                           ql_draw2d_glyph_fn emit_glyph);
 
 /*
  * 直线的**公共实现**：CPU 与 GPU 后端都应把 draw_line 指向它。

@@ -208,6 +208,17 @@ typedef struct {
      * 不给值时半行距恒为 0，与旧版本逐像素一致。
      */
     int16_t     line_h;
+
+    /*
+     * white-space：0 = `nowrap`（默认，本库与浏览器的**故意差异**，见下），
+     *              1 = `normal`（按内容盒宽度折行）。
+     *
+     * 为什么默认是 nowrap：本库的 v0 文本模型是"一段文本就是一行"，
+     * 大量已有界面（含 golden 基准）都建立在这个前提上。改成浏览器默认的
+     * `normal` 会让那些页面在你没改任何东西的情况下重新排版。
+     * 想要折行就显式写 `white-space: normal` —— 一行 CSS 换一个明确的语义。
+     */
+    uint8_t     white_space;
 } QLUIStyle;
 
 /* 能过渡的属性（"transition: all" = 四个都开） */

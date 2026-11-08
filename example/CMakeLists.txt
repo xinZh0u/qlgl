@@ -18,6 +18,7 @@ set(QL_EXAMPLES
     04_interaction
     05_animation
     06_theme
+    07_player
 )
 
 foreach(e ${QL_EXAMPLES})
