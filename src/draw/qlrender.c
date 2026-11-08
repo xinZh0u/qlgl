@@ -18,11 +18,10 @@ static void render_tree_hook(QLObject *obj)
 
 ql_err_t ql_render_set_root(QLObject *root)
 {
-    if (root == NULL)
-        return QL_ERR_INVAL;
+    /* 传 NULL 表示解绑（销毁控件树前必须调用，否则脏矩形钩子会打到野指针） */
     s_root = root;
     s_all_dirty = 1;
-    ql_object_set_tree_hook(render_tree_hook);
+    ql_object_set_tree_hook(root != NULL ? render_tree_hook : NULL);
     return QL_OK;
 }
 
@@ -119,7 +118,7 @@ void ql_render_dirty_rect(uint32_t index, QLRect *out)
 /* ------------------------------ 遍历绘制 ------------------------------ */
 
 static void render_node(QLObject *node, ql_coord_t ox, ql_coord_t oy,
-                        QLRect clip, QLCanvas *canvas)
+                        QLRect clip, QLDraw2D *d2d)
 {
     if (node == NULL)
         return;
@@ -144,9 +143,9 @@ static void render_node(QLObject *node, ql_coord_t ox, ql_coord_t oy,
         if (!ql_rect_is_empty(self_clip)) {
             ql_widget_draw_func draw = ql_widget_get_draw(node);
             if (draw != NULL) {
-                QLCanvas sub = *canvas;
-                ql_canvas_set_clip(&sub, self_clip);
-                draw((QLWidget *)(void *)node, &sub);
+                /* 控件自己只看到自己的盒子：画到盒子外的内容一律丢弃 */
+                d2d->set_clip(d2d, self_clip);
+                draw((QLWidget *)(void *)node, d2d);
             }
         }
 
@@ -157,10 +156,46 @@ static void render_node(QLObject *node, ql_coord_t ox, ql_coord_t oy,
     if (ql_rect_is_empty(child_clip))
         return;
 
+    d2d->set_clip(d2d, child_clip);
     for (QLObject *child = ql_object_first_child(node); child != NULL;
          child = ql_object_next_sibling(child)) {
-        render_node(child, child_ox, child_oy, child_clip, canvas);
+        render_node(child, child_ox, child_oy, child_clip, d2d);
     }
+}
+
+static uint32_t collect_areas(QLRect *areas, uint32_t cap, ql_coord_t surface_w,
+                             ql_coord_t surface_h)
+{
+    if (s_all_dirty) {
+        areas[0] = ql_rect_make(0, 0, surface_w, surface_h);
+        return 1;
+    }
+    uint32_t count = s_dirty_count;
+    if (count > cap)
+        count = cap;
+    for (uint32_t i = 0; i < count; i++)
+        areas[i] = s_dirty[i];
+    return count;
+}
+
+int ql_render_draw2d(QLDraw2D *d2d, ql_coord_t surface_w, ql_coord_t surface_h)
+{
+    if (d2d == NULL || s_root == NULL || d2d->set_clip == NULL)
+        return QL_ERR_INVAL;
+
+    QLRect areas[QL_CFG_DIRTY_RECT_MAX];
+    uint32_t count = collect_areas(areas, QL_CFG_DIRTY_RECT_MAX, surface_w, surface_h);
+    if (count == 0)
+        return 0;
+
+    for (uint32_t i = 0; i < count; i++) {
+        QLRect area = areas[i];
+        if (ql_rect_is_empty(area))
+            continue;
+        d2d->set_clip(d2d, area);
+        render_node(s_root, 0, 0, area, d2d);
+    }
+    return (int)count;
 }
 
 int ql_render(void)
@@ -169,26 +204,17 @@ int ql_render(void)
     if (disp == NULL || s_root == NULL)
         return QL_ERR_NOT_INIT;
 
-    QLRect screen = ql_rect_make(0, 0, disp->width, disp->height);
-
-    /* 收集本次要画的区域 */
     QLRect areas[QL_CFG_DIRTY_RECT_MAX];
-    uint32_t count;
-
-    if (s_all_dirty) {
-        areas[0] = screen;
-        count = 1;
-    } else {
-        count = s_dirty_count;
-        for (uint32_t i = 0; i < count; i++)
-            areas[i] = s_dirty[i];
-    }
-
+    uint32_t count = collect_areas(areas, QL_CFG_DIRTY_RECT_MAX, disp->width, disp->height);
     if (count == 0)
         return 0;
 
     QLCanvas canvas;
     if (ql_canvas_from_disp(&canvas, disp) != QL_OK)
+        return QL_ERR_NOT_INIT;
+
+    QLDraw2D d2d;
+    if (ql_draw2d_canvas_init(&d2d, &canvas) != QL_OK)
         return QL_ERR_NOT_INIT;
 
     ql_color_t bg = ql_disp_bg_color();
@@ -198,15 +224,14 @@ int ql_render(void)
         if (ql_rect_is_empty(area))
             continue;
 
-        /* 1. 背景 */
+        /* 1. 背景（CPU 后端顺手清掉；GPU 由调用方用 ql_render_draw2d 自己处理） */
         QLCanvas clear_canvas = canvas;
         ql_canvas_set_clip(&clear_canvas, area);
         ql_canvas_clear(&clear_canvas, bg);
 
         /* 2. 控件树（裁剪到脏区） */
-        QLCanvas draw_canvas = canvas;
-        ql_canvas_set_clip(&draw_canvas, area);
-        render_node(s_root, 0, 0, area, &draw_canvas);
+        d2d.set_clip(&d2d, area);
+        render_node(s_root, 0, 0, area, &d2d);
 
         /* 3. 推屏 */
         if (disp->flush != NULL) {

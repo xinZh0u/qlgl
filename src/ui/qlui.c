@@ -921,6 +921,90 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
     return used_main;
 }
 
+/*
+ * ------------------------- 绘制包围盒（paint_box） -------------------------
+ *
+ * 布局结束后自下而上算一次，供绘制做子树剪枝。
+ *
+ * 三个坑，都靠"取上界"躲过去：
+ *   1. 伪类可以改 box-shadow —— 阴影会把包围盒向外扩 blur+1 并平移 (dx,dy)，
+ *      所以要把 :hover/:active/:focus 三份样式也并进去，只算基础样式会漏画；
+ *   2. 伪类也可以改 display / overflow —— 任一变体不是 none 就不能把包围盒清空；
+ *      任一变体是 visible 就不能按 overflow 裁剪子树（并集必须偏大）；
+ *   3. overflow != visible 的子树被裁到本节点边框盒，此时子包围盒并进来也不会变大，
+ *      但仍然要递归算下去：子节点自己的 paint_box 不能是上一轮的陈旧值。
+ */
+
+/* 取本节点可能用到的全部样式（基础 + 三个状态变体），最多 4 份 */
+static int collect_node_styles(const QLUINodeRT *node, const QLUIStyle *out[4])
+{
+    out[0] = node->style;
+    int n = (node->style != NULL) ? 1 : 0;
+
+    const QLUIDoc *doc = (node->owner != NULL) ? node->owner->doc : NULL;
+    const QLUINode *src = node->src;
+    if (doc == NULL || src == NULL)
+        return n;
+
+    const uint16_t idx[3] = { src->style_hover, src->style_active, src->style_focus };
+    for (int i = 0; i < 3; i++) {
+        if (idx[i] != 0xFFFF && idx[i] < doc->style_count)
+            out[n++] = &doc->styles[idx[i]];
+    }
+    return n;
+}
+
+/* 阴影可能画到的矩形（不算阴影时返回空矩形） */
+static QLRect shadow_extent(QLRect box, const QLUIStyle *s)
+{
+    if (s == NULL || s->shadow_alpha == 0 || ql_rect_is_empty(box))
+        return ql_rect_make(0, 0, 0, 0);
+    ql_coord_t pad = s->shadow_blur + 1;
+    return ql_rect_make(box.x + s->shadow_dx - pad, box.y + s->shadow_dy - pad,
+                        box.w + 2 * pad, box.h + 2 * pad);
+}
+
+static QLRect compute_paint_box(QLUINodeRT *node)
+{
+    const QLUIStyle *styles[4];
+    int nstyle = collect_node_styles(node, styles);
+
+    int any_visible = 0;
+    int any_unclipped = 0;
+    for (int i = 0; i < nstyle; i++) {
+        if (styles[i]->display != QL_UI_DISPLAY_NONE)
+            any_visible = 1;
+        if (styles[i]->overflow == QL_UI_OVERFLOW_VISIBLE)
+            any_unclipped = 1;
+    }
+
+    QLRect box = node->border_box;
+    QLRect acc = ql_rect_make(0, 0, 0, 0);
+
+    if (any_visible && !ql_rect_is_empty(box)) {
+        acc = box;
+        for (int i = 0; i < nstyle; i++)
+            acc = ql_rect_union(acc, shadow_extent(box, styles[i]));
+    }
+
+    /* 子节点始终递归（见上面第 3 条），是否并进本节点取决于 overflow */
+    for (QLUINodeRT *child = node->first_child; child != NULL;
+         child = child->next_sibling) {
+        QLRect cb = compute_paint_box(child);
+        if (ql_rect_is_empty(cb))
+            continue;
+        if (!any_unclipped) {
+            if (ql_rect_is_empty(box))
+                continue;
+            cb = ql_rect_intersect(cb, box);
+        }
+        acc = ql_rect_union(acc, cb);
+    }
+
+    node->paint_box = acc;
+    return acc;
+}
+
 void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
 {
     if (ui == NULL || ui->node_count == 0)
@@ -955,6 +1039,9 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
 
     /* z-index 排序放在最后：之后绘制与命中测试都自动遵循 z 序 */
     sort_tree_by_z(root);
+
+    /* 绘制包围盒：必须在布局之后（尺寸定稿） */
+    compute_paint_box(root);
 }
 
 /* ------------------------------ 绘制 ------------------------------ */
@@ -1007,6 +1094,14 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
     if (s->display == QL_UI_DISPLAY_NONE)
         return;
 
+    /*
+     * 脏区剪枝：paint_box 是整个子树可能画到的范围的上界，
+     * 与当前裁剪不相交就整棵跳过——一次矩形判断替代一次子树遍历。
+     */
+    const QLRect clip = node->owner->clip;
+    if (!ql_rect_overlaps(node->paint_box, clip))
+        return;
+
     QLRect box = node->border_box;
 
     /* 阴影先画（在背景之下）；阴影轮廓取边框盒，与 CSS box-shadow 一致 */
@@ -1033,14 +1128,18 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 
     /* overflow != visible 时，子树被裁到本节点的边框盒（含圆角） */
     if (s->overflow != QL_UI_OVERFLOW_VISIBLE && d2d->set_clip != NULL) {
-        QLRect saved = node->owner != NULL ? node->owner->clip : ql_rect_make(0, 0, 0, 0);
+        QLRect saved = clip;
         QLRect clipped = ql_rect_intersect(saved, box);
+        /* 裁剪同时记进 ui->clip：子节点的剪枝判断必须用真实裁剪，
+           否则会按外层更大的裁剪放行，白跑一遍 */
+        node->owner->clip = clipped;
         d2d->set_clip(d2d, clipped);
         for (QLUINodeRT *child = node->first_child; child != NULL;
              child = child->next_sibling) {
             render_node(child, d2d);
         }
         d2d->set_clip(d2d, saved);
+        node->owner->clip = saved;
         return;
     }
 
@@ -1060,6 +1159,29 @@ void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
     if (ui->root_clip_valid)
         ui->clip = ui->root_clip;
     render_node(&ui->nodes[0], d2d);
+}
+
+void ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty)
+{
+    if (ui == NULL || d2d == NULL || ui->node_count == 0 || d2d->set_clip == NULL)
+        return;
+
+    QLRect want = ql_rect_intersect(dirty, ql_rect_make(0, 0, ui->width, ui->height));
+    if (ui->root_clip_valid)
+        want = ql_rect_intersect(want, ui->root_clip);
+    if (ql_rect_is_empty(want))
+        return;
+
+    d2d->set_clip(d2d, want);
+    ui->clip = want;
+    render_node(&ui->nodes[0], d2d);
+}
+
+QLRect ql_ui_paint_bounds(const QLUIRoot *ui)
+{
+    if (ui == NULL || ui->node_count == 0)
+        return ql_rect_make(0, 0, 0, 0);
+    return ui->nodes[0].paint_box;
 }
 
 void ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas)

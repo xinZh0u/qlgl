@@ -885,6 +885,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.fill_round_rect_gradient = gl_fill_round_rect_gradient;
     g->draw.fill_shadow = gl_fill_shadow;
     g->draw.stroke_round_rect = gl_stroke_round_rect;
+    g->draw.draw_line = ql_draw2d_draw_line;
     g->draw.draw_text = gl_draw_text;
     g->draw.flush = NULL;
     g->draw.user = g;

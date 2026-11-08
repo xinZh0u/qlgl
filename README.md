@@ -17,6 +17,9 @@
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
 - **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
   （垂直走行填充快路径，GPU 走顶点颜色插值、零额外 draw call）；
+- **性能与脏区（M4）** —— CPU 光栅 1080p **2.19 ms**、320×240 **0.30 ms**（比 M4 之前快 2.3~2.7×）；
+  每个节点带 `paint_box`，`ql_ui_render_rect()` 只重绘脏区（局部刷新是全量的 4.5%）；
+  控件层的绘制函数也走 `QLDraw2D`，同一棵控件树可以直接上 GPU（`ql_render_draw2d()`）；
 - **`.qlui` blob 已完成** —— 同一份 doc 可导出成二进制，运行时 `ql_ui_load_file()` 加载
   （改 UI **不用重编译**，实测热重载）；序列化只在 C 侧实现一次，与静态路径逐字节一致；
 - **GPU 后端已完成（v0.1）** —— `QLDraw2D` 绘制接口 + GLES3/EGL 后端（SDF 圆角、字形图集、单 draw call），
@@ -42,6 +45,9 @@ ctest --test-dir build --output-on-failure
 ./build/example_widget --frames 120       # 控件示例，默认打开窗口
 ./build/example_text --frames 120         # 文本示例，默认打开窗口
 ./build/test_web_ui                       # HTML+CSS 编译成 C 后的布局/绘制断言
+./build/test_render                       # 脏区重绘与全量重绘的逐像素一致性
+./build/test_effects                      # 渐变/软阴影的像素断言 + 九宫格分解等价性
+./build/example_bench_ui                  # QLUI 节点级基准（布局/全量/局部/命中）
 ./build/test_gl_vs_cpu                    # GPU 与 CPU 后端的像素一致性
 ./build/example_window                    # 打开真实窗口（自动选 Wayland 或 X11）
 ./build/example_window --backend=x11      # 强制 X11；--backend=wayland 强制 Wayland

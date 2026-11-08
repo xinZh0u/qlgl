@@ -212,6 +212,17 @@ typedef struct QLUINodeRT {
      * 没有的话就是视口。布局时自上而下传递。
      */
     QLRect           abs_cb;
+    /*
+     * 本节点 + 整个子树可能画到的范围（绝对坐标），布局末尾自下而上算出。
+     *
+     * 它是"上界"：自己的边框盒 ∪ 阴影外扩 ∪ 未裁剪子树的包围盒。
+     * 绘制时只要 `paint_box` 与当前裁剪不相交，整棵子树就可以直接跳过——
+     * 一个节点一次矩形相交判断，替代整棵子树的遍历。
+     *
+     * 状态变体样式（:hover/:active/:focus）也会参与取上界：
+     * 伪类可以改 box-shadow / overflow，不做并集就会漏画。
+     */
+    QLRect           paint_box;
 
     uint16_t         depth;
     uint8_t          flags;      /* QL_UI_RT_* */
@@ -257,6 +268,20 @@ void        ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height);
 void        ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d);
 /* 便捷入口：内部包一层 CPU 接口 */
 void        ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas);
+
+/*
+ * 只重绘 dirty 区域（动画 / 局部刷新的入口）。
+ *
+ * 内部把 d2d 的裁剪设成 `dirty ∩ 视口`（再与之前 ql_ui_render_canvas 记下的
+ * root_clip 求交），然后靠每个节点的 `paint_box` 做子树剪枝：
+ * 包围盒不相交的整棵子树一次判断就跳过。
+ *
+ * 保证：**在 dirty 区域内的结果与全量 ql_ui_render 逐像素相同**（test_render 守着）。
+ * 注意 dirty 之外的内容不会被重画，调用方负责那部分保持上一帧。
+ */
+void        ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty);
+/* 跑完一次布局后，整棵树的绘制范围（= 根节点的 paint_box） */
+QLRect      ql_ui_paint_bounds(const QLUIRoot *ui);
 
 /* ----- 查询 / 交互 ----- */
 QLUINodeRT *ql_ui_root_node(QLUIRoot *ui);

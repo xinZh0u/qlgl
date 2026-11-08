@@ -17,7 +17,7 @@
 #include "qlwidget.h"
 #include "qldisp.h"
 
-/* 设置/获取渲染根节点（根可以不是控件） */
+/* 设置/获取渲染根节点（根可以不是控件）；传 NULL 解绑，销毁树之前必须先解绑 */
 ql_err_t   ql_render_set_root(QLObject *root);
 QLObject  *ql_render_root(void);
 
@@ -39,5 +39,18 @@ void     ql_render_dirty_rect(uint32_t index, QLRect *out);
  * 返回实际绘制的脏区数量；无显示或未设根时返回 QL_ERR_NOT_INIT。
  */
 int ql_render(void);
+
+/*
+ * 把控件树画到任意 QLDraw2D（CPU 或 GPU），用于"自己管理窗口/上下文"的场景：
+ *
+ *     ql_gfx_gl_begin(gfx, bg);                       // 自己的清屏
+ *     ql_render_draw2d(ql_gfx_gl_draw(gfx), w, h);     // 只画脏区
+ *     ql_gfx_gl_end(gfx);
+ *
+ * 与 ql_render() 的区别：**不清背景、不推屏、不清空脏区队列**（脏区由 ql_render
+ * 或 ql_render_invalidate_* 管理）。s_all_dirty 时会画满 surface_w × surface_h。
+ * 返回本次画了几个区域。
+ */
+int ql_render_draw2d(QLDraw2D *d2d, ql_coord_t surface_w, ql_coord_t surface_h);
 
 #endif /* QLGL_RENDER_H */

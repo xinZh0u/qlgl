@@ -103,9 +103,9 @@ static QLValue ql_label_get_property(QLObject *obj, ql_property_t property)
 
 /* ------------------------------ 绘制 ------------------------------ */
 
-static void ql_label_draw(QLWidget *widget, QLCanvas *canvas)
+static void ql_label_draw(QLWidget *widget, QLDraw2D *d2d)
 {
-    ql_widget_draw_default(widget, canvas);      /* 背景 + 边框 */
+    ql_widget_draw_default(widget, d2d);         /* 背景 + 边框 */
 
     QLLabel *self = (QLLabel *)(void *)widget;
     struct QLLabelPrivate *priv = ql_label_get_private(self);
@@ -114,9 +114,9 @@ static void ql_label_draw(QLWidget *widget, QLCanvas *canvas)
     if (ql_rect_is_empty(rect) || ql_str_len(&priv->text) == 0)
         return;
 
-    ql_canvas_draw_text(canvas, priv->font, ql_str_data(&priv->text),
-                        (int32_t)ql_str_len(&priv->text), rect, priv->text_color,
-                        (QLTextAlign)priv->align);
+    d2d->draw_text(d2d, priv->font, ql_str_data(&priv->text),
+                   (int32_t)ql_str_len(&priv->text), rect, priv->text_color,
+                   (QLTextAlign)priv->align);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */

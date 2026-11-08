@@ -38,7 +38,7 @@ struct QLDotPrivate { ql_color_t color; };
 QL_DEFINE_WITH_PRIVATE(QL_DOT, QLDot, ql_dot, ql_widget)
 
 /* 用逐行扫描线画圆，避免引入额外依赖 */
-static void ql_dot_draw(QLWidget *self, QLCanvas *canvas)
+static void ql_dot_draw(QLWidget *self, QLDraw2D *d2d)
 {
     struct QLDotPrivate *priv = ql_dot_get_private((QLDot *)(void *)self);
     QLRect r = ql_widget_abs_rect((QLObject *)self);
@@ -52,7 +52,8 @@ static void ql_dot_draw(QLWidget *self, QLCanvas *canvas)
         ql_coord_t limit = rad * rad - dy * dy;
         while ((dx + 1) * (dx + 1) <= limit)
             dx++;
-        ql_canvas_draw_hline(canvas, cx - dx, cx + dx, cy + dy, 1, priv->color);
+        d2d->fill_rect(d2d, ql_rect_make(cx - dx, cy + dy, 2 * dx + 1, 1), priv->color,
+                       255);
     }
 }
 

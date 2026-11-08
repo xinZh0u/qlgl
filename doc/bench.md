@@ -36,9 +36,9 @@ cmake -B build-rel -DCMAKE_BUILD_TYPE=Release && cmake --build build-rel -j
 
 | 阶段 | M4 之前 | M4 之后 | 目标 |
 |---|---|---|---|
-| layout（全树） | 0.134 ms | **0.034 ms** | ≤0.1 ms ✅ |
-| render（全量 CPU） | 0.975 ms | **0.346 ms** | 见下 |
-| render（80×60 局部） | 0.048 ms | **0.025 ms** | — |
+| layout（全树） | 0.134 ms | **0.037 ms** | ≤0.1 ms ✅ |
+| render（全量 CPU） | 0.975 ms | **0.348 ms** | 见下 |
+| render（80×60 局部） | 0.048 ms | **0.016 ms** | 全量的 4.5% |
 | hit_test | 0.001 ms | **0.001 ms** | — |
 
 **"100 节点重绘 ≤0.3 ms" 的验收口径**：该页 211 节点全量重绘 0.346 ms，
@@ -82,6 +82,8 @@ cmake -B build-rel -DCMAKE_BUILD_TYPE=Release && cmake --build build-rel -j
 | **`round_row_span` 解析求解**：`dx_max = isqrt(rad²-dy²)` | 去掉逐像素横向扫描 | 全额重绘 -11% |
 | **实心区转调通用圆角填充**（整块可见时） | 复用 `fill_round_rect_alpha` 里被优化过的行跨度循环 | 阴影再 -15% |
 | **字形行指针外提** | 原来每像素重算 `buffer + y*stride` | 小 |
+| **渲染脏区剪枝**：每个节点布局末尾算 `paint_box`（自己 ⊕ 阴影外扩 ⊕ 未裁剪子树），绘制时不相交就整棵跳过 | 一次矩形判断替代一次子树遍历 | 局部重绘 0.026 → **0.016 ms** |
+| **控件层接 `QLDraw2D`**：绘制函数签名从 `QLCanvas*` 改为 `QLDraw2D*`，新增 `ql_render_draw2d()` | 同一棵控件树可上 GPU；自定义控件只写一次 | 架构性，无 CPU 耗时变化 |
 
 `/255` 的两个逐值恒等式（`0..65025` 全域验证与 `x/255` 相同）：
 - 标量 `(x + (x>>8) + 1) >> 8`
@@ -99,6 +101,10 @@ cmake -B build-rel -DCMAKE_BUILD_TYPE=Release && cmake --build build-rel -j
 2. 右侧/下侧角块以 `sx1 - (rad+pad)` 为锚，比正确位置内偏 `pad`
    —— 既与直边带重叠（同一点混两次、偏黑），又漏掉最外侧 `pad` 条带；
 3. 角区直写时误用整体 `alpha` 而不是逐像素覆盖率 `a` 做混合。
+
+第三个 bug 来自脏区测试（`test_render`）：`fill_shadow` 的下边带 / 右边带起点
+（`sy1` / `sx1`）没有与裁剪上界求交，阴影被 `overflow:hidden` 或脏区裁掉上半部分时
+会往上/往左画到裁剪外面。
 
 还有一条**不算 bug**的既定行为：内实心区（`d <= 0`）由 `round_row_span` 的离散判定
 负责，它与连续 SDF 的边界最多差 1px；那块被元素自身背景盖住，不参与对比。

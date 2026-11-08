@@ -296,15 +296,16 @@ struct QLBoxPrivate { ql_color_t color; };
 /* ③ 定义 */
 QL_DEFINE_WITH_PRIVATE(QL_BOX, QLBox, ql_box, ql_widget)
 
-/* ④ 绘制：先画背景边框，再画自己的内容 */
-static void ql_box_draw(QLWidget *self, QLCanvas *canvas)
+/* ④ 绘制：先画背景边框，再画自己的内容
+      签名用 QLDraw2D 而不是 QLCanvas —— 同一份代码 CPU / GPU 都能跑 */
+static void ql_box_draw(QLWidget *self, QLDraw2D *d2d)
 {
-    ql_widget_draw_default(self, canvas);
+    ql_widget_draw_default(self, d2d);
 
     struct QLBoxPrivate *priv = ql_box_get_private((QLBox *)(void *)self);
     QLRect r = ql_widget_abs_rect((QLObject *)self);
-    ql_canvas_draw_line(canvas, r.x, r.y, ql_rect_right(r) - 1,
-                        ql_rect_bottom(r) - 1, 1, priv->color);
+    d2d->draw_line(d2d, r.x, r.y, ql_rect_right(r) - 1,
+                   ql_rect_bottom(r) - 1, 1, priv->color);
 }
 
 /* ⑤ 钩子 */
@@ -326,20 +327,22 @@ QLBox *box = (QLBox *)ql_object_new(type);
 
 要点：
 
-- 绘制函数签名 `void (*)(QLWidget *self, QLCanvas *canvas)`；
-- 画布是**屏幕坐标**，用 `ql_widget_abs_rect(self)` 取自己的位置；
+- 绘制函数签名 `void (*)(QLWidget *self, QLDraw2D *d2d)`；
+- 坐标是**屏幕坐标**，用 `ql_widget_abs_rect(self)` 取自己的位置；
 - 只画内容，背景/边框调用 `ql_widget_draw_default`；
+- `QLDraw2D` 里可用的原语：`fill_rect` / `fill_round_rect` / `stroke_round_rect` /
+  `fill_round_rect_gradient` / `fill_shadow` / `draw_line` / `draw_text` / `set_clip`；
 - 绘制函数通过 `ql_widget_class_set_draw` 登记到**本类型的 id** 上，子类再覆盖即可。
 
 ### 5.6 绘制相关接口
 
 ```c
-typedef void (*ql_widget_draw_func)(QLWidget *self, QLCanvas *canvas);
+typedef void (*ql_widget_draw_func)(QLWidget *self, QLDraw2D *d2d);
 
 void                ql_widget_class_set_draw(QLType type, ql_widget_draw_func draw);
 ql_widget_draw_func ql_widget_class_get_draw(QLType type);
 ql_widget_draw_func ql_widget_get_draw(QLObject *obj);   /* 沿类链找最近的 */
-void                ql_widget_draw_default(QLWidget *self, QLCanvas *canvas);
+void                ql_widget_draw_default(QLWidget *self, QLDraw2D *d2d);
 void                ql_widget_reset(void);               /* qlgl_init/shutdown 内部用 */
 ```
 
@@ -449,14 +452,28 @@ void      ql_render_invalidate(QLObject *obj);   /* 按控件绝对矩形 */
 uint32_t  ql_render_dirty_count(void);
 void      ql_render_dirty_rect(uint32_t index, QLRect *out);
 
-int       ql_render(void);                       /* 返回绘制的脏区数量 */
+int       ql_render(void);                       /* CPU：清背景 + 画 + flush + 清脏区 */
+/* 任意后端：只画脏区，不清背景、不推屏、不清空脏区队列 */
+int       ql_render_draw2d(QLDraw2D *d2d, ql_coord_t surface_w, ql_coord_t surface_h);
 ```
 
-| 情况 | `ql_render()` 返回 |
+| 情况 | 返回值 |
 |---|---|
 | 正常绘制 n 个脏区 | `n` |
 | 无脏区 | `0`（不做任何工作） |
 | 未设显示或未设根 | `QL_ERR_NOT_INIT`（负数） |
+
+`ql_render_set_root(NULL)` 用于**解绑**——销毁控件树之前必须先调用，否则脏矩形钩子会打到野指针。
+
+GPU 用法（自己管理窗口与上下文）：
+
+```c
+ql_render_set_root((QLObject *)root);
+ql_render_invalidate_all();
+ql_gfx_gl_begin(gfx, bg);                        /* 自己清屏 */
+ql_render_draw2d(ql_gfx_gl_draw(gfx), w, h);     /* 只画脏区 */
+ql_gfx_gl_end(gfx);
+```
 
 ### 典型主循环
 

@@ -443,9 +443,9 @@ ql_widget_draw_func ql_widget_get_draw(QLObject *obj)
     return NULL;
 }
 
-void ql_widget_draw_default(QLWidget *self, QLCanvas *canvas)
+void ql_widget_draw_default(QLWidget *self, QLDraw2D *d2d)
 {
-    if (self == NULL || canvas == NULL)
+    if (self == NULL || d2d == NULL)
         return;
 
     struct QLWidgetPrivate *priv = ql_widget_get_private(self);
@@ -467,10 +467,9 @@ void ql_widget_draw_default(QLWidget *self, QLCanvas *canvas)
     }
 
     if (bg_alpha > 0)
-        ql_canvas_fill_round_rect_alpha(canvas, rect, priv->border_radius,
-                                        bg_color, bg_alpha);
+        d2d->fill_round_rect(d2d, rect, priv->border_radius, bg_color, bg_alpha);
 
     if (priv->border_width > 0)
-        ql_canvas_stroke_rect(canvas, rect, priv->border_radius,
-                              priv->border_width, priv->border_color);
+        d2d->stroke_round_rect(d2d, rect, priv->border_radius,
+                               priv->border_width, priv->border_color);
 }

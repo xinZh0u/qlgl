@@ -31,9 +31,9 @@ struct QLMarkPrivate { ql_color_t color; ql_coord_t thickness; };
 
 QL_DEFINE_WITH_PRIVATE(QL_MARK, QLMark, ql_mark, ql_widget)
 
-static void ql_mark_draw(QLWidget *self, QLCanvas *canvas)
+static void ql_mark_draw(QLWidget *self, QLDraw2D *d2d)
 {
-    ql_widget_draw_default(self, canvas);          /* 背景 + 边框 */
+    ql_widget_draw_default(self, d2d);          /* 背景 + 边框 */
 
     struct QLMarkPrivate *priv = ql_mark_get_private((QLMark *)(void *)self);
     QLRect r = ql_widget_abs_rect((QLObject *)self);
@@ -41,8 +41,8 @@ static void ql_mark_draw(QLWidget *self, QLCanvas *canvas)
     ql_coord_t cy = r.y + r.h / 2;
     ql_coord_t arm = (r.w < r.h ? r.w : r.h) / 2 - 4;
 
-    ql_canvas_draw_line(canvas, cx - arm, cy, cx + arm, cy, priv->thickness, priv->color);
-    ql_canvas_draw_line(canvas, cx, cy - arm, cx, cy + arm, priv->thickness, priv->color);
+    d2d->draw_line(d2d, cx - arm, cy, cx + arm, cy, priv->thickness, priv->color);
+    d2d->draw_line(d2d, cx, cy - arm, cx, cy + arm, priv->thickness, priv->color);
 }
 
 static void ql_mark_class_init(QLMarkClass *klass)

@@ -16,15 +16,15 @@ struct QLCrossPrivate { ql_color_t line_color; };
 
 QL_DEFINE_WITH_PRIVATE(QL_CROSS, QLCross, ql_cross, ql_widget)
 
-static void ql_cross_draw(QLWidget *self, QLCanvas *canvas)
+static void ql_cross_draw(QLWidget *self, QLDraw2D *d2d)
 {
-    ql_widget_draw_default(self, canvas);        /* 背景 + 边框 */
+    ql_widget_draw_default(self, d2d);        /* 背景 + 边框 */
 
     struct QLCrossPrivate *priv = ql_cross_get_private((QLCross *)(void *)self);
     QLRect r = ql_widget_abs_rect((QLObject *)self);
-    ql_canvas_draw_line(canvas, r.x, r.y, ql_rect_right(r) - 1, ql_rect_bottom(r) - 1, 1,
+    d2d->draw_line(d2d, r.x, r.y, ql_rect_right(r) - 1, ql_rect_bottom(r) - 1, 1,
                         priv->line_color);
-    ql_canvas_draw_line(canvas, ql_rect_right(r) - 1, r.y, r.x, ql_rect_bottom(r) - 1, 1,
+    d2d->draw_line(d2d, ql_rect_right(r) - 1, r.y, r.x, ql_rect_bottom(r) - 1, 1,
                         priv->line_color);
 }
 

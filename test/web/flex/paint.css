@@ -1,0 +1,42 @@
+#root {
+  width: 100%;
+  padding: 10px;
+  background-color: #101820;
+  font-size: 12px;
+}
+.page { display: flex; flex-direction: column; gap: 12px; }
+.card {
+  width: 120px;
+  height: 40px;
+  background-color: #24344a;
+  border-width: 1px;
+  border-color: #5878a0;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+  color: #d8e8ff;
+}
+.clip {
+  overflow: hidden;
+  width: 80px;
+  height: 30px;
+  background-color: #1a2633;
+  border-radius: 4px;
+  color: #80c0ff;
+}
+.big {
+  width: 200px;
+  height: 90px;
+  background-color: #3399ff;
+}
+.badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 46px;
+  height: 22px;
+  border-radius: 11px;
+  background-color: #ff8844;
+  box-shadow: 0 0 8px rgba(255, 136, 68, 0.8);
+  color: #201008;
+  font-size: 11px;
+}

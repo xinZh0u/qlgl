@@ -10,6 +10,7 @@
 
 #include "qlgl.h"
 #include "qlcanvas.h"
+#include "qldraw2d.h"
 
 typedef struct QLWidget QLWidget;
 typedef struct QLWidgetClass QLWidgetClass;
@@ -75,8 +76,14 @@ struct QLWidget {
     QLObject parent;
 };
 
-/* 绘制函数的类型：self 提供属性，canvas 提供裁剪与原语 */
-typedef void (*ql_widget_draw_func)(QLWidget *self, QLCanvas *canvas);
+/*
+ * 绘制函数的类型：self 提供属性，d2d 提供裁剪与原语。
+ *
+ * 用 QLDraw2D 而不是 QLCanvas，是为了让同一棵控件树既能 CPU 光栅也能走 GPU：
+ * ql_render() 内部包一层 CPU 后端，ql_render_draw2d() 则接受任意后端。
+ * 自定义控件也只需实现一次。
+ */
+typedef void (*ql_widget_draw_func)(QLWidget *self, QLDraw2D *d2d);
 
 /*
  * 类结构统一为 { 父类 parent; }，字段布局必须与 QLObjectClass 完全一致，
@@ -139,6 +146,6 @@ void       ql_widget_reset(void);
 /* 返回该类链上最近一个实现了 draw 的函数；没有则返回 NULL */
 ql_widget_draw_func ql_widget_get_draw(QLObject *obj);
 /* 默认绘制：背景 + 边框（子类可以直接调用它） */
-void ql_widget_draw_default(QLWidget *self, QLCanvas *canvas);
+void ql_widget_draw_default(QLWidget *self, QLDraw2D *d2d);
 
 #endif /* QLGL_WIDGET_H */

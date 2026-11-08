@@ -4,6 +4,39 @@
  */
 #include <qlgl/qlgl.h>
 
+void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_t x2,
+                         ql_coord_t y2, ql_coord_t thickness, ql_color_t color)
+{
+    if (self == NULL || self->fill_rect == NULL)
+        return;
+
+    /* 与 ql_canvas_draw_line 完全相同的 Bresenham 参数，步进里只调用 fill_rect */
+    ql_coord_t dx = (x2 > x1) ? (x2 - x1) : (x1 - x2);
+    ql_coord_t dy = (y2 > y1) ? (y2 - y1) : (y1 - y2);
+    ql_coord_t sx = (x1 < x2) ? 1 : -1;
+    ql_coord_t sy = (y1 < y2) ? 1 : -1;
+    ql_coord_t err = dx - dy;
+    ql_coord_t t = (thickness > 0) ? thickness : 1;
+    ql_coord_t half = t / 2;
+
+    for (;;) {
+        self->fill_rect(self, ql_rect_make(x1 - half, y1 - half, t, t), color, 255);
+
+        if (x1 == x2 && y1 == y2)
+            break;
+
+        ql_coord_t e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x1 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y1 += sy;
+        }
+    }
+}
+
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, ql_color_t color, QLTextAlign align,
                            ql_draw2d_glyph_fn emit_glyph)
@@ -132,6 +165,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->fill_round_rect_gradient = cpu_fill_round_rect_gradient;
     out->fill_shadow = cpu_fill_shadow;
     out->stroke_round_rect = cpu_stroke_round_rect;
+    out->draw_line = ql_draw2d_draw_line;
     out->draw_text = cpu_draw_text;
     out->flush = NULL;
     out->user = &s_cpu;

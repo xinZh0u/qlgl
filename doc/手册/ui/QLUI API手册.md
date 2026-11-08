@@ -341,15 +341,20 @@ QLUIRoot *ql_ui_build(const QLUIDoc *doc);
 void      ql_ui_free(QLUIRoot *ui);
 
 void      ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height);
-void      ql_ui_render(QLUIRoot *ui, QLCanvas *canvas);
+void      ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d);          /* CPU 或 GPU */
+void      ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas); /* 便捷：包一层 CPU */
+void      ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty);
+QLRect    ql_ui_paint_bounds(const QLUIRoot *ui);
 ```
 
 | 函数 | 说明 |
 |---|---|
 | `ql_ui_build` | 把静态表物化成节点树；一次分配，失败返回 `NULL` |
 | `ql_ui_free` | 释放（不负责显示驱动） |
-| `ql_ui_layout` | 按视口尺寸做完整布局，结果写入每个节点的 `border_box`/`content_box` |
-| `ql_ui_render` | 按树顺序绘制：背景 → 边框 → 文本 → 子节点 |
+| `ql_ui_layout` | 按视口尺寸做完整布局 + 算 `paint_box` |
+| `ql_ui_render` | 按树顺序绘制：阴影 → 背景 → 边框 → 文本 → 子节点 |
+| `ql_ui_render_rect` | 只重绘 `dirty`：裁剪设成 `dirty∩视口`，靠 `paint_box` 剪掉不相交的子树。**dirty 内的结果与全量重绘逐像素相同** |
+| `ql_ui_paint_bounds` | 整棵树的绘制范围（= 根节点的 `paint_box`，可能超出视口，例如带阴影的贴边元素） |
 
 ### 查询
 

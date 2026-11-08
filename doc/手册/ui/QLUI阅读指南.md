@@ -215,11 +215,50 @@ layout_node(node, x, y, avail_w):
 
 ### 5.3 绘制 `ql_ui_render`
 
-按树顺序（父先子后）：背景 → 边框 → 文本 → 递归子节点。
-全部复用已有的 `QLCanvas` 原语（`fill_round_rect_alpha` / `stroke_rect` / `draw_text`）。
+按树顺序（父先子后）：阴影 → 背景 → 边框 → 文本 → 递归子节点。
+全部通过 `QLDraw2D`（所以 CPU/GPU 同一份代码）；GPU 上整页仍是**单批次**。
 
 字体由 `font-size` 决定：生成期把用到的字号汇总成 `font_sizes[]`，
 运行期 `ql_font_default(N)` 按字号取字体（配了矢量字体就是动态字体，支持中文/任意字号）。
+
+#### 脏区剪枝：`paint_box`
+
+每个节点在布局末尾多算一个字段：
+
+```c
+QLRect paint_box;   /* 本节点 + 整个子树可能画到的范围（绝对坐标，取上界） */
+```
+
+绘制时只要 `paint_box` 与当前裁剪不相交，**整棵子树一次判断就跳过**——
+一个矩形相交判断替代一次子树遍历。
+
+`paint_box` 的组成：自己的边框盒 ∪ 阴影外扩（`blur+1` 并平移 `(dx,dy)`）∪
+未裁剪子树的包围盒。三个容易算小的地方：
+
+1. **伪类能改 `box-shadow`** —— 所以要把 `:hover/:active/:focus` 三份样式也并进去，
+   只算基础样式会在悬停时少画一圈光晕；
+2. **伪类也能改 `display` / `overflow`** —— 任一变体不是 `none` 就不能清空包围盒；
+   任一变体是 `visible` 就不能按 `overflow` 裁剪子树（并集必须偏大）；
+3. **`overflow:hidden` 的子树被裁到本节点边框盒** —— 子包围盒并进来不会变大，
+   但仍然要递归算下去，否则子节点自己会留着上一轮的陈旧值。
+
+#### 局部重绘：`ql_ui_render_rect`
+
+```c
+void   ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty);
+QLRect ql_ui_paint_bounds(const QLUIRoot *ui);   /* = 根节点的 paint_box */
+```
+
+`ql_ui_render_rect` 把 d2d 裁剪设成 `dirty ∩ 视口`，然后靠 `paint_box` 剪枝。
+契约是硬性的：**在 dirty 区域内的结果必须与全量 `ql_ui_render` 逐像素相同**。
+
+`test/web/test_render.c` 就是守这条的：9 个脏区（整幅 / 只覆盖卡片 / 只有阴影光晕 /
+裁剪容器 / 跨裁剪边界 / 绝对定位 / 角落小片 / 视口外 / 空白区）逐一对比，
+同时检查"脏区外一个像素都没被碰"。
+
+这份测试上线时立刻抓到一个真 bug：`fill_shadow` 的下边带 / 右边带起点
+（`sy1` / `sx1`）没有与裁剪上界求交，阴影被裁掉上半部分时会往上画到裁剪外面。
+**这正是"动画必须走脏区"（M5.5）之前必须先把剪枝做对的原因。**
 
 ### 5.5 `.qlui` blob：换界面不用重编译
 

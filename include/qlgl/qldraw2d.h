@@ -45,6 +45,13 @@ struct QLDraw2D {
     void (*fill_shadow)(QLDraw2D *self, QLRect inner, ql_coord_t radius, ql_coord_t blur,
                         ql_coord_t dx, ql_coord_t dy, ql_color_t color, uint8_t alpha);
 
+    /*
+     * 直线：Bresenham，thickness > 1 时按方形笔刷加粗（与 ql_canvas_draw_line 同式）。
+     * 两个后端都应指向公共实现 ql_draw2d_draw_line()，这样细线不会因后端差像素。
+     */
+    void (*draw_line)(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_t x2,
+                      ql_coord_t y2, ql_coord_t thickness, ql_color_t color);
+
     void (*draw_text)(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                       QLRect box, ql_color_t color, QLTextAlign align);
 
@@ -61,6 +68,13 @@ typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, ql_color_t color, QLTextAlign align,
                            ql_draw2d_glyph_fn emit_glyph);
+
+/*
+ * 直线的**公共实现**：CPU 与 GPU 后端都应把 draw_line 指向它。
+ * 只用 fill_rect 组合，因此两个后端的几何天然一致（不会因为各自的光栅化差像素）。
+ */
+void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_t x2,
+                         ql_coord_t y2, ql_coord_t thickness, ql_color_t color);
 
 /* ----- CPU 后端（包一层 QLCanvas） ----- */
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas);

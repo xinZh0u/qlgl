@@ -792,10 +792,14 @@ void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
     ql_coord_t strip1 = sx1 - rad;
 
     for (int side = 0; side < 2; side++) {
-        ql_coord_t y_begin = (side == 0) ? ay0 : sy1;
+        /*
+         * 起点必须与裁剪求交：下边带的自然起点是 sy1，它在裁剪上界之下时
+         * （比如阴影被 overflow:hidden 或脏区裁掉上半部分）会往上画到裁剪外面。
+         */
+        ql_coord_t y_begin = (side == 0) ? ay0 : ((sy1 > ay0) ? sy1 : ay0);
         ql_coord_t y_end   = (side == 0) ? ((sy0 < ay1) ? sy0 : ay1)
-                                         : ((outer.y + outer.h < ay1) ? ql_rect_bottom(outer)
-                                                                      : ay1);
+                                         : ((ql_rect_bottom(outer) < ay1)
+                                                ? ql_rect_bottom(outer) : ay1);
         if (side == 0 && sy0 <= ay0)
             continue;      /* 上边带不在可见区域内 */
         if (side == 1 && sy1 >= ay1)
@@ -822,7 +826,8 @@ void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
     ql_coord_t vstrip1 = sy1 - rad;
 
     for (int side = 0; side < 2; side++) {
-        ql_coord_t x_begin = (side == 0) ? ax0 : sx1;
+        /* 同 ②：右边带的自然起点 sx1 也要与裁剪求交 */
+        ql_coord_t x_begin = (side == 0) ? ax0 : ((sx1 > ax0) ? sx1 : ax0);
         ql_coord_t x_end   = (side == 0) ? ((sx0 < ax1) ? sx0 : ax1)
                                          : ((ql_rect_right(outer) < ax1)
                                                 ? ql_rect_right(outer) : ax1);

@@ -36,10 +36,10 @@
  ql_widget_new_ex()  ──┐
  set 属性            ──┼─→ 脏矩形队列 ─→ ql_render() ─→ 清屏 + 遍历树 ─→ flush(area)
  ql_object_add_child()─┘                     │
-                                             └─→ QLCanvas 原语 → 直接写 framebuffer
+                                             └─→ QLDraw2D → CPU 光栅 / GPU
 ```
 
-**v0.1 的渲染模型：帧缓冲直绘。**
+**渲染模型：帧缓冲直绘，但出口是 `QLDraw2D`。**
 
 - 驱动提供一块连续像素内存（`framebuffer` + `stride`）；
 - 渲染器把控件直接画进去；
@@ -48,6 +48,30 @@
 
 这样做的原因：可测试（测试直接读像素）、可移植（MCU 只需提供显存指针）。
 代价是要求至少一整屏显存；需要"部分缓冲"的 MCU 后续再补行缓冲后端。
+
+### 2.1 控件层也走 `QLDraw2D`（M4）
+
+控件的绘制函数签名是
+
+```c
+typedef void (*ql_widget_draw_func)(QLWidget *self, QLDraw2D *d2d);
+```
+
+**不是 `QLCanvas *`**。这样同一棵控件树既能 CPU 光栅也能上 GPU，自定义控件只写一次：
+
+```c
+/* 自己管理上下文/窗口时 */
+ql_gfx_gl_begin(gfx, bg);                        /* 自己清屏 */
+ql_render_draw2d(ql_gfx_gl_draw(gfx), w, h);     /* 只画脏区 */
+ql_gfx_gl_end(gfx);
+```
+
+`ql_render()` 内部就是把 `QLDraw2D` 包了一层 CPU 后端，再负责"清背景 + flush"。
+`ql_render_draw2d()` **不清背景、不推屏、不清空脏区队列**——脏区由
+`ql_render_invalidate_*` 管理，用什么颜色清屏由调用方决定（GPU 上通常是 `glClear`）。
+
+`test_gl_vs_cpu` 里有一段专门对照：同一棵控件树分别画到 CPU 画布和 GL 离屏帧缓冲，
+差异 0.29%（全在圆角边沿的 AA 上）。
 
 ### 2.1 三种现成后端
 
@@ -170,7 +194,13 @@ ql_widget_class_get_draw(type);       /* 按 id 查 */
 
 ```c
 /* 子类写法 */
-static void ql_box_draw(QLWidget *self, QLCanvas *canvas);
+static void ql_box_draw(QLWidget *self, QLDraw2D *d2d)
+{
+    ql_widget_draw_default(self, d2d);          /* 背景 + 边框 */
+    QLRect r = ql_widget_abs_rect((QLObject *)self);
+    d2d->draw_line(d2d, r.x, r.y, ql_rect_right(r) - 1, ql_rect_bottom(r) - 1, 1,
+                   QL_COLOR_RED);
+}
 
 static void ql_box_class_init(QLBoxClass *klass)
 {
@@ -190,11 +220,13 @@ int ql_render(void);
 
 1. 取活动显示与根节点，缺一个就返回 `QL_ERR_NOT_INIT`；
 2. 收集区域：首帧 / `ql_render_invalidate_all()` 之后是整屏，否则是脏矩形队列；
-3. 对每个区域：
+3. 包一层 CPU `QLDraw2D`，对每个区域：
    1. 用显示背景色清空（`ql_disp_bg_color()`）；
-   2. `render_node(root, 0, 0, area, canvas)` 遍历对象树；
+   2. `render_node(root, 0, 0, area, d2d)` 遍历对象树；
    3. `disp->flush(area)`；
 4. 清空脏矩形队列。
+
+换后端只需要换成 `ql_render_draw2d(d2d, w, h)`，其余完全不变。
 
 ### `render_node` 的规则
 
@@ -206,7 +238,7 @@ render_node(node, ox, oy, clip):
     ox += node.x; oy += node.y
     box = (ox, oy, w, h)
     draw = 查 type 到根的绘制表
-    if draw: 用 clip ∩ box 作为画布裁剪调用 draw
+    if draw: d2d->set_clip(clip ∩ box) 后调用 draw
     if node.clip_children: clip = clip ∩ box
     以 (ox, oy, clip) 递归子节点
 ```
