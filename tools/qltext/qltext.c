@@ -358,8 +358,262 @@ static FILE *open_out(const char *out_dir, const char *ident, const char *ext)
     return f;
 }
 
-static void write_source(const QLUIDoc *doc, const char *ident,
-                         const char *out_dir)
+
+typedef struct {
+    const char *html;
+    const char *css;
+    const char *name;
+    const char *out;
+    const char *root;          /* --root：图片资源根目录（给了才嵌入资源） */
+    const char *pixel_format;  /* --pixel-format rgb565|rgb888|rgba8888|a8 */
+    const char *format;        /* --format raw（目前只支持 raw） */
+    int         scale;         /* --scale N：构建期整数倍缩小（面积平均） */
+} Args;
+
+/* ------------------------------------------------------------------ */
+/* 图片资源：构建期转码（--root）                                       */
+/* ------------------------------------------------------------------ */
+
+#define QL_ASSET_MAX   32
+#define QL_ASSET_PATH  512
+
+typedef struct {
+    uint16_t text_index;      /* doc 文本池下标：资源名（<img src> 的值） */
+    uint32_t off, len;        /* 像素字节在合并后的 image_data 里的位置 */
+    uint16_t w, h;
+} Asset;
+
+typedef struct {
+    Asset    item[QL_ASSET_MAX];
+    int      count;
+    uint8_t *data;            /* 所有资源的像素（拼在一起） */
+    size_t   data_len, data_cap;
+    uint8_t  pixel_format;
+    int      scale;
+} Assets;
+
+static const char *pixel_format_name(uint8_t f)
+{
+    switch (f) {
+    case QL_IMAGE_RGB565:   return "QL_IMAGE_RGB565";
+    case QL_IMAGE_RGB888:   return "QL_IMAGE_RGB888";
+    case QL_IMAGE_RGBA8888: return "QL_IMAGE_RGBA8888";
+    default:                return "QL_IMAGE_A8";
+    }
+}
+
+static int parse_pixel_format(const char *s)
+{
+    if (s == NULL || strcmp(s, "rgb565") == 0)
+        return QL_IMAGE_RGB565;
+    if (strcmp(s, "rgb888") == 0)
+        return QL_IMAGE_RGB888;
+    if (strcmp(s, "rgba8888") == 0)
+        return QL_IMAGE_RGBA8888;
+    if (strcmp(s, "a8") == 0)
+        return QL_IMAGE_A8;
+    return -1;
+}
+
+/* 整数倍面积平均缩小（构建期做，运行时就不用再缩） */
+static uint8_t *downscale(const uint8_t *src, uint32_t w, uint32_t h, uint32_t stride,
+                          uint8_t format, int factor, uint16_t *ow, uint16_t *oh,
+                          uint32_t *olen)
+{
+    if (factor <= 1)
+        return NULL;
+    const uint32_t bpp = ql_image_format_bpp(format);
+    const uint32_t nw = w / (uint32_t)factor, nh = h / (uint32_t)factor;
+    if (nw == 0 || nh == 0 || bpp == 0)
+        return NULL;
+    const size_t nlen = (size_t)nw * nh * bpp;
+    uint8_t *out = (uint8_t *)calloc(1, nlen);
+    if (out == NULL)
+        return NULL;
+
+    for (uint32_t y = 0; y < nh; y++) {
+        for (uint32_t x = 0; x < nw; x++) {
+            uint32_t acc[4] = { 0, 0, 0, 0 };
+            for (int dy = 0; dy < factor; dy++) {
+                const uint8_t *row =
+                    src + (size_t)(y * (uint32_t)factor + (uint32_t)dy) * stride;
+                for (int dx = 0; dx < factor; dx++) {
+                    const uint8_t *p =
+                        row + (size_t)(x * (uint32_t)factor + (uint32_t)dx) * bpp;
+                    if (format == QL_IMAGE_RGB565) {
+                        uint16_t v;
+                        memcpy(&v, p, 2);
+                        acc[0] += (v >> 11) & 0x1Fu;
+                        acc[1] += (v >> 5) & 0x3Fu;
+                        acc[2] += v & 0x1Fu;
+                    } else if (format == QL_IMAGE_RGB888) {
+                        acc[0] += p[0];
+                        acc[1] += p[1];
+                        acc[2] += p[2];
+                    } else if (format == QL_IMAGE_RGBA8888) {
+                        acc[0] += p[0];
+                        acc[1] += p[1];
+                        acc[2] += p[2];
+                        acc[3] += p[3];
+                    } else {
+                        acc[0] += p[0];
+                    }
+                }
+            }
+            const uint32_t d = (uint32_t)(factor * factor);
+            uint8_t *o = out + ((size_t)y * nw + x) * bpp;
+            if (format == QL_IMAGE_RGB565) {
+                const uint16_t v = (uint16_t)(((acc[0] / d) << 11) |
+                                              ((acc[1] / d) << 5) | (acc[2] / d));
+                memcpy(o, &v, 2);
+            } else if (format == QL_IMAGE_RGB888) {
+                o[0] = (uint8_t)(acc[0] / d);
+                o[1] = (uint8_t)(acc[1] / d);
+                o[2] = (uint8_t)(acc[2] / d);
+            } else if (format == QL_IMAGE_RGBA8888) {
+                o[0] = (uint8_t)(acc[0] / d);
+                o[1] = (uint8_t)(acc[1] / d);
+                o[2] = (uint8_t)(acc[2] / d);
+                o[3] = (uint8_t)(acc[3] / d);
+            } else {
+                o[0] = (uint8_t)(acc[0] / d);
+            }
+        }
+    }
+    *ow = (uint16_t)nw;
+    *oh = (uint16_t)nh;
+    *olen = (uint32_t)nlen;
+    return out;
+}
+
+/*
+ * 扫描 doc 里的 `<img src>`，按名字把文件解码成目标像素格式并拼进 Assets。
+ * 任何一步失败都返回 0（调用方打印原因并中止构建）—— 构建期失败远好过运行时。
+ */
+static int collect_assets(const QLUIDoc *doc, const Args *a, Assets *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->scale = (a->scale > 0) ? a->scale : 1;
+    const int pf = parse_pixel_format(a->pixel_format);
+    if (pf < 0) {
+        fprintf(stderr, "qltext: 未知 --pixel-format \"%s\"（rgb565/rgb888/rgba8888/a8）\n",
+                a->pixel_format);
+        return 0;
+    }
+    out->pixel_format = (uint8_t)pf;
+    if (a->format != NULL && strcmp(a->format, "raw") != 0) {
+        fprintf(stderr, "qltext: 目前只支持 --format raw（qoi 编码器待做）\n");
+        return 0;
+    }
+
+    for (uint16_t i = 0; i < doc->node_count; i++) {
+        if (doc->nodes[i].tag != QL_UI_TAG_IMG)
+            continue;
+        const uint16_t ti = doc->nodes[i].text;
+        if (ti == 0xFFFFu)
+            continue;
+        const char *name = doc->text_pool + doc->text_offsets[ti];
+
+        int dup = 0;
+        for (int k = 0; k < out->count; k++)
+            if (out->item[k].text_index == ti)
+                dup = 1;
+        if (dup)
+            continue;                      /* 同一张图多处使用：只嵌一份 */
+        if (out->count >= QL_ASSET_MAX) {
+            fprintf(stderr, "qltext: 图片资源超过 %d 张（QL_ASSET_MAX）\n", QL_ASSET_MAX);
+            return 0;
+        }
+
+        char path[QL_ASSET_PATH];
+        snprintf(path, sizeof(path), "%s/%s", a->root, name);
+        FILE *f = fopen(path, "rb");
+        if (f == NULL) {
+            fprintf(stderr, "qltext: 找不到图片资源 \"%s\"（相对 --root 找的）\n", path);
+            return 0;
+        }
+        fseek(f, 0, SEEK_END);
+        const long fsz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (fsz <= 0 || (size_t)fsz > QL_CFG_IMAGE_MAX_BYTES) {
+            fclose(f);
+            fprintf(stderr, "qltext: \"%s\" 大小非法或超过 QL_CFG_IMAGE_MAX_BYTES\n", path);
+            return 0;
+        }
+        uint8_t *bytes = (uint8_t *)malloc((size_t)fsz);
+        if (bytes == NULL || fread(bytes, 1, (size_t)fsz, f) != (size_t)fsz) {
+            free(bytes);
+            fclose(f);
+            fprintf(stderr, "qltext: 读不了 \"%s\"\n", path);
+            return 0;
+        }
+        fclose(f);
+
+        QLImageDecodeReq req;
+        memset(&req, 0, sizeof(req));
+        req.data = bytes;
+        req.len = (size_t)fsz;
+        req.src_format = QL_IMAGE_SRC_AUTO;      /* 按魔数判断，不看扩展名 */
+        req.out_format = out->pixel_format;
+        QLImage img;
+        const int rc = ql_image_decode(&req, &img);
+        free(bytes);
+        if (rc != QL_OK) {
+            fprintf(stderr,
+                    "qltext: 解不了 \"%s\"（%s）：本构建的解码器只支持 BMP/QOI，"
+                    "PNG/JPEG 请先用其它工具转成 BMP/QOI\n",
+                    path, (rc == QL_ERR_UNSUPPORTED) ? "格式不支持" : "数据非法");
+            return 0;
+        }
+
+        uint16_t ow = img.w, oh = img.h;
+        uint32_t olen = img.len;
+        uint8_t *scaled = NULL;
+        if (out->scale > 1) {
+            scaled = downscale(img.px, img.w, img.h, img.stride, img.format, out->scale,
+                               &ow, &oh, &olen);
+            if (scaled == NULL) {
+                fprintf(stderr, "qltext: \"%s\" 无法按 %d 倍缩小（尺寸太小）\n", path,
+                        out->scale);
+                if (img.owned)
+                    ql_mem_free((void *)img.px);
+                return 0;
+            }
+        }
+
+        if (out->data_len + olen > out->data_cap) {
+            size_t cap = (out->data_cap == 0) ? 4096u : out->data_cap;
+            while (cap < out->data_len + olen)
+                cap *= 2u;
+            uint8_t *nd = (uint8_t *)realloc(out->data, cap);
+            if (nd == NULL) {
+                free(scaled);
+                if (img.owned)
+                    ql_mem_free((void *)img.px);
+                return 0;
+            }
+            out->data = nd;
+            out->data_cap = cap;
+        }
+
+        Asset *as = &out->item[out->count++];
+        memset(as, 0, sizeof(*as));
+        as->text_index = ti;
+        as->off = (uint32_t)out->data_len;
+        as->len = olen;
+        as->w = ow;
+        as->h = oh;
+        memcpy(out->data + out->data_len, scaled != NULL ? scaled : img.px, olen);
+        out->data_len += olen;
+        free(scaled);
+        if (img.owned)
+            ql_mem_free((void *)img.px);
+    }
+    return 1;
+}
+
+static void write_source(const QLUIDoc *doc, const char *ident, const char *out_dir,
+                         const Assets *assets)
 {
     FILE *f = open_out(out_dir, ident, ".c");
     size_t pool_len = ql_ui_doc_text_pool_size(doc);
@@ -483,6 +737,35 @@ static void write_source(const QLUIDoc *doc, const char *ident,
                 ident);
     }
 
+    /* ---- 图片资源（只有 --root 才会走到这里） ---- */
+    if (assets != NULL && assets->count > 0) {
+        fprintf(f, "/* <img src> 的资源：构建期已解码并转成目标像素格式（RAW） */\n");
+        fprintf(f, "static const uint8_t %s_img_data[%u] = {\n", ident,
+                (unsigned)assets->data_len);
+        for (size_t i = 0; i < assets->data_len; i++) {
+            if (i % 16u == 0)
+                fprintf(f, "    ");
+            fprintf(f, "0x%02X,", (unsigned)assets->data[i]);
+            if (i % 16u == 15u || i + 1u == assets->data_len)
+                fprintf(f, "\n");
+            else
+                fprintf(f, " ");
+        }
+        fprintf(f, "};\n\n");
+        fprintf(f, "static const QLUIImageSrc %s_images[%d] = {\n", ident,
+                assets->count);
+        for (int i = 0; i < assets->count; i++) {
+            const Asset *as = &assets->item[i];
+            fprintf(f,
+                    "    { .name = %u, .off = %u, .len = %u, .w = %u, .h = %u, "
+                    ".format = QL_IMAGE_SRC_RAW, .pixel_format = %s },\n",
+                    (unsigned)as->text_index, (unsigned)as->off, (unsigned)as->len,
+                    (unsigned)as->w, (unsigned)as->h,
+                    pixel_format_name(assets->pixel_format));
+        }
+        fprintf(f, "};\n\n");
+    }
+
     /* ---- doc ---- */
     fprintf(f,
             "const QLUIDoc %s_doc = {\n"
@@ -499,8 +782,7 @@ static void write_source(const QLUIDoc *doc, const char *ident,
             "    .nodes        = %s_nodes,\n"
             "    .styles       = %s_styles,\n"
             "    .text_pool    = %s_text,\n"
-            "    .text_offsets = %s_text_ofs,\n"
-            "};\n",
+            "    .text_offsets = %s_text_ofs,\n",
             ident, doc->name != NULL ? doc->name : "",
             ident, ident,   /* .node_count  : sizeof(%s_nodes) x2 */
             ident, ident,   /* .style_count : sizeof(%s_styles) x2 */
@@ -508,6 +790,17 @@ static void write_source(const QLUIDoc *doc, const char *ident,
             ident, ident,   /* font_size_cnt: sizeof(%s_font_sizes) x2 */
             (unsigned)doc->anim_count, (unsigned)doc->keyframe_count,
             ident, ident, ident, ident, ident, ident, ident);
+
+    /* 图片资源接在 doc 字面量里：没有资源时一个字都不多 */
+    if (assets != NULL && assets->count > 0) {
+        fprintf(f,
+                "    .image_count   = %d,\n"
+                "    .image_data_size = %u,\n"
+                "    .images        = %s_images,\n"
+                "    .image_data    = %s_img_data,\n",
+                assets->count, (unsigned)assets->data_len, ident, ident);
+    }
+    fprintf(f, "};\n");
     fclose(f);
 }
 
@@ -567,16 +860,12 @@ static void usage(void)
     fprintf(stderr,
             "用法：\n"
             "  qltext cc    --html A.html --css B.css --name foo --out DIR\n"
-            "  qltext blob  --html A.html --css B.css --out out.qlui [--name foo]\n"
+            "               [--root DIR] [--pixel-format rgb565|rgb888|rgba8888|a8]\n"
+            "               [--scale N]   构建期把 <img src> 的图片转成目标像素格式并嵌入\n"
+            "  qltext blob  --html A.html --css B.css --out out.qlui [--name foo] [--root DIR]\n"
             "  qltext check --html A.html --css B.css [--name foo]\n");
 }
 
-typedef struct {
-    const char *html;
-    const char *css;
-    const char *name;
-    const char *out;
-} Args;
 
 static int parse_args(int argc, char **argv, Args *a)
 {
@@ -592,6 +881,10 @@ static int parse_args(int argc, char **argv, Args *a)
         else if (strcmp(k, "--css") == 0)  { a->css = v; i++; }
         else if (strcmp(k, "--name") == 0) { a->name = v; i++; }
         else if (strcmp(k, "--out") == 0)  { a->out = v; i++; }
+        else if (strcmp(k, "--root") == 0) { a->root = v; i++; }
+        else if (strcmp(k, "--pixel-format") == 0) { a->pixel_format = v; i++; }
+        else if (strcmp(k, "--format") == 0) { a->format = v; i++; }
+        else if (strcmp(k, "--scale") == 0) { a->scale = atoi(v); i++; }
         else {
             fprintf(stderr, "qltext: 未知参数 %s\n", k);
             return 0;
@@ -678,11 +971,49 @@ int main(int argc, char **argv)
     int rc = 0;
     size_t pool = ql_ui_doc_text_pool_size(doc);
 
+    /* --root：把 <img src> 指向的图片在构建期解码，按目标像素格式嵌入 */
+    Assets assets;
+    memset(&assets, 0, sizeof(assets));
+    if (a.root != NULL) {
+        if (!collect_assets(doc, &a, &assets)) {
+            free(assets.data);
+            ql_ui_doc_free(doc);
+            ql_ui_text_set_name(NULL);
+            return 1;
+        }
+        if (assets.count > 0)
+            printf("qltext: 嵌入 %d 张图片（%u 字节，%s）\n", assets.count,
+                   (unsigned)assets.data_len,
+                   pixel_format_name(assets.pixel_format) + 9 /* 跳过 "QL_IMAGE_" */);
+    }
+
     if (is_check) {
         printf("qltext: %s 可以编译（%u 节点，%u 样式，%zu 字节文本）\n", sname,
                (unsigned)doc->node_count, (unsigned)doc->style_count, pool);
     } else if (is_blob) {
-        if (ql_ui_doc_save(doc, a.out) != QL_OK) {
+        /*
+         * blob 也要带上资源：把 doc 拷一份接上 images（QLUIDoc 是纯数据，
+         * 拷结构体是安全的），编码器会把资源段一起写出。
+         */
+        QLUIDoc withdoc = *doc;
+        QLUIImageSrc srcs[QL_ASSET_MAX];
+        if (assets.count > 0) {
+            for (int k = 0; k < assets.count; k++) {
+                memset(&srcs[k], 0, sizeof(srcs[k]));
+                srcs[k].name = assets.item[k].text_index;
+                srcs[k].off = assets.item[k].off;
+                srcs[k].len = assets.item[k].len;
+                srcs[k].w = assets.item[k].w;
+                srcs[k].h = assets.item[k].h;
+                srcs[k].format = QL_IMAGE_SRC_RAW;
+                srcs[k].pixel_format = assets.pixel_format;
+            }
+            withdoc.images = srcs;
+            withdoc.image_count = (uint16_t)assets.count;
+            withdoc.image_data = assets.data;
+            withdoc.image_data_size = (uint32_t)assets.data_len;
+        }
+        if (ql_ui_doc_save(&withdoc, a.out) != QL_OK) {
             fprintf(stderr, "qltext: 写不了 \"%s\"\n", a.out);
             rc = 1;
         } else {
@@ -692,7 +1023,7 @@ int main(int argc, char **argv)
         }
     } else {
         ensure_dir(a.out);
-        write_source(doc, ident, a.out);
+        write_source(doc, ident, a.out, &assets);
         write_header(ident, a.out);
         write_blob_helper(ident, a.out);
         printf("qltext: %s -> %s/%s.c（%u 节点，%u 样式，%zu 字节文本）\n", sname,
@@ -701,6 +1032,7 @@ int main(int argc, char **argv)
     }
 
     ql_ui_doc_free(doc);
+    free(assets.data);
     ql_ui_text_set_name(NULL);
     return rc;
 }

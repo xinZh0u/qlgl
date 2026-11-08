@@ -945,13 +945,28 @@ CPU vs GPU 逐像素差异 <strong>0.00%</strong>，并断言批次数 ≥ 2（�
 </ul>
 <hr />
 <h2 id="9">9. 工具链：构建期转码（所有平台的默认路径）</h2>
-<div class="highlight"><pre><span></span><code>$<span class="w"> </span>qltext<span class="w"> </span>assets<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--root<span class="w"> </span>.<span class="w"> </span>--out<span class="w"> </span>build/<span class="w"> </span><span class="se">\</span>
-<span class="w">                </span>--pixel-format<span class="w"> </span>rgb565<span class="w"> </span><span class="se">\ </span><span class="w">     </span><span class="c1"># 目标设备像素格式（决定产物）</span>
-<span class="w">                </span>--format<span class="w"> </span>raw<span class="w">                  </span><span class="c1"># raw | qoi | png-pass</span>
-<span class="c1"># 扫描 HTML 里所有 src，构建期解码（可用系统库/任何工具），</span>
-<span class="c1"># 直接转成**目标像素格式**，生成：</span>
-<span class="c1">#   build/ui_app_img_logo_raw[]   （C 数组 / .rodata）</span>
-<span class="c1">#   build/ui_app_img.h            （名字 → {ptr,len,w,h,format} 表）</span>
+<p>实现形态与最初的草案不同：<strong>资源跟着 doc 走</strong>，所以不单开 <code>assets</code> 子命令，
+而是给 <code>cc</code> / <code>blob</code> 加 <code>--root</code> —— 一个界面只有一份 <code>.c</code> / 一份 <code>.qlui</code>。</p>
+<div class="highlight"><pre><span></span><code>$<span class="w"> </span>qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--name<span class="w"> </span>app<span class="w"> </span>--out<span class="w"> </span>build/<span class="w"> </span><span class="se">\</span>
+<span class="w">            </span>--root<span class="w"> </span>assets/<span class="w"> </span><span class="se">\ </span><span class="w">             </span><span class="c1"># &lt;img src=&quot;x.bmp&quot;&gt; 按 assets/x.bmp 找</span>
+<span class="w">            </span>--pixel-format<span class="w"> </span>rgb565<span class="w"> </span><span class="se">\ </span><span class="w">      </span><span class="c1"># 目标设备像素格式（决定产物）</span>
+<span class="w">            </span>--scale<span class="w"> </span><span class="m">1</span><span class="w">                      </span><span class="c1"># 可选：构建期整数倍缩小（面积平均）</span>
+
+qltext:<span class="w"> </span>嵌入<span class="w"> </span><span class="m">1</span><span class="w"> </span>张图片（32<span class="w"> </span>字节，RGB565）
+qltext:<span class="w"> </span>app<span class="w"> </span>-&gt;<span class="w"> </span>build/ui_app.c（3<span class="w"> </span>节点，…）
+</code></pre></div>
+
+<p>产出的 <code>ui_app.c</code> 里多两段，doc 字面量多四个字段：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">ui_app_img_data</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mh">0xF8</span><span class="p">,</span><span class="mh">0x00</span><span class="p">,</span><span class="w"> </span><span class="err">…</span><span class="w"> </span><span class="p">};</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUIImageSrc</span><span class="w"> </span><span class="n">ui_app_images</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="p">.</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">off</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">32</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">w</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">h</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w">      </span><span class="p">.</span><span class="n">format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_SRC_RAW</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">pixel_format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_RGB565</span><span class="w"> </span><span class="p">},</span>
+<span class="p">};</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="n">ui_app_doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="err">…</span>
+<span class="w">    </span><span class="p">.</span><span class="n">image_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">image_data_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">32</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">images</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_app_images</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">image_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_app_img_data</span><span class="p">,</span>
+<span class="p">};</span>
 </code></pre></div>
 
 <table>
@@ -964,43 +979,34 @@ CPU vs GPU 逐像素差异 <strong>0.00%</strong>，并断言批次数 ≥ 2（�
 </thead>
 <tbody>
 <tr>
+<td><code>--root DIR</code></td>
+<td>—</td>
+<td>资源根目录。不给就<strong>不嵌入</strong>任何图片（<code>&lt;img&gt;</code> 只能靠运行期注册）</td>
+</tr>
+<tr>
 <td><code>--pixel-format</code></td>
-<td><code>rgb565</code> / <code>rgb888</code> / <code>rgba8888</code> / <code>a8</code></td>
-<td><strong>构建期就定型</strong>，运行时零转换。<code>a8</code> 给蒙版/单色图标</td>
+<td><code>rgb565</code>（默认）/ <code>rgb888</code> / <code>rgba8888</code> / <code>a8</code></td>
+<td><strong>构建期定型</strong>，运行时零转换</td>
 </tr>
 <tr>
 <td><code>--format</code></td>
-<td><code>raw</code></td>
-<td>已解码，<code>.rodata</code> 直指；<strong>零解码路径，任何平台可选用</strong></td>
+<td><code>raw</code>（目前唯一）</td>
+<td><code>qoi</code> 需要编码器，待做</td>
 </tr>
 <tr>
-<td></td>
-<td><code>qoi</code></td>
-<td>无损压缩，需运行时 QOI 解码（<code>DECODE=1</code>）</td>
-</tr>
-<tr>
-<td></td>
-<td><code>png-pass</code></td>
-<td>原样嵌入 PNG，需运行时 PNG 解码</td>
-</tr>
-<tr>
-<td><code>--scale</code></td>
-<td><code>1</code> / <code>2</code> / <code>WxH</code></td>
-<td><strong>构建期预缩放</strong>：直接拿目标尺寸，省 Flash 也省绘制期缩放</td>
-</tr>
-<tr>
-<td><code>--dither</code></td>
-<td>开关</td>
-<td><code>RGB565</code> 量化时的有序抖动（默认关，避免 golden 抖动）</td>
+<td><code>--scale N</code></td>
+<td>整数</td>
+<td>面积平均缩小；MCU 上直接拿目标尺寸</td>
 </tr>
 </tbody>
 </table>
-<p>三条规矩：</p>
+<p>来源格式：<strong>现在支持 BMP 与 QOI</strong>（库里的解码器，与运行时是同一份代码，不会漂移）。
+PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接吃 PNG。</p>
+<p>规矩没变：</p>
 <ol>
-<li><strong>构建期允许用任何库</strong>（PIL / libjpeg / gdk-pixbuf）—— 那是在开发机上跑，不进固件。</li>
-<li>找不到文件 / 解码失败 / 超上限（§5.3）/ 目标格式不支持 → <strong>构建失败</strong>，信息带路径。</li>
-<li>同一张图在 <code>--pixel-format</code> 不同时会产出不同字节 —— 这是<strong>故意的</strong>：把转换代价
-   留在构建期。所以 golden 基准要按目标格式分开存（或者只对 PC 格式做基准）。</li>
+<li><strong>构建期允许用任何库</strong>（那是在开发机上跑），运行时只认自有解码器。</li>
+<li>文件缺失 / 解码失败 / 超上限 / 目标格式非法 → <strong>构建失败</strong>，信息带路径。</li>
+<li>同一张图多处使用只嵌一份；产出可提交进版本库（<code>test/assets/</code> 就是这么用的）。</li>
 </ol>
 <h2 id="10">10. 测试策略</h2>
 <table>
@@ -1135,13 +1141,13 @@ CPU vs GPU 逐像素差异 <strong>0.00%</strong>，并断言批次数 ≥ 2（�
 <td>3–4 天</td>
 </tr>
 <tr>
-<td><strong>P3f</strong></td>
-<td><code>qltext assets</code>：<code>--format raw</code> + <code>--pixel-format</code> + <code>--scale</code>（<strong>零解码路径的入口</strong>，任何平台可用）</td>
+<td><strong>P3f</strong> ✅</td>
+<td><code>qltext cc/blob --root</code>：<code>--pixel-format</code> + <code>--scale</code>（<strong>零解码路径的入口</strong>，任何平台可用）</td>
 <td>1.5–2 天</td>
 </tr>
 <tr>
-<td><strong>P3b</strong></td>
-<td>BMP + QOI 解码器 + fuzz（各自一个开关，默认开）</td>
+<td><strong>P3b</strong> ✅</td>
+<td>BMP（24/32/8 位、BITFIELDS、上下翻转）+ QOI（六种 op）解码器</td>
 <td>1 天</td>
 </tr>
 <tr>
@@ -1167,7 +1173,7 @@ CPU vs GPU 逐像素差异 <strong>0.00%</strong>，并断言批次数 ≥ 2（�
 </tbody>
 </table>
 <p>合计 <strong>≈ 12–15 天</strong>，<code>img</code> <code>picture</code> <code>source</code> <code>map</code> <code>area</code> 五个标签一次到位。</p>
-<p>建议顺序：<strong>P3a → P3f → P3b → P3d → P3c → P3e → P3g</strong>。
+<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d → P3c → P3e → P3g</strong>。
 理由：P3a + P3f 就能端到端跑通"图片文件 → 构建期转码 → 固件里显示"这条
 <strong>零解码路径</strong>（它不依赖任何解码器开关，是唯一"关掉一切也能用"的路）；
 解码器与 PNG 都是在这之上的增量开关。</p>

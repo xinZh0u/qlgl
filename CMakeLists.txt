@@ -285,6 +285,14 @@ if(QLGL_BUILD_TESTS)
     add_test(NAME test_qltext_blob
              COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
+
+    # 构建期转码（qltext cc --root）：生成物与基准逐字节比对
+    add_test(NAME test_qltext_assets
+             COMMAND ${CMAKE_COMMAND}
+                     -DQLTEXT=$<TARGET_FILE:qltext>
+                     -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
+                     -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/gen_assets.cmake)
 endif()
 
 # 重新生成类型 id 表：cmake --build build --target qlgen

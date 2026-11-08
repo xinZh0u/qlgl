@@ -1,0 +1,108 @@
+/* 本文件由 tools/qltext/qltext.c 生成，请勿手工修改。 */
+/* 源：app */
+
+#include "ui_app.h"
+
+static const QLUINode ui_app_nodes[] = {
+    /* tag                     parent first  next   style  text   hover  active focus  flags */
+    { QL_UI_TAG_DIV         , 0xFFFF,     1, 0xFFFF,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+    { QL_UI_TAG_IMG         ,     0, 0xFFFF,     2,     1,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+    { QL_UI_TAG_SPAN        ,     0, 0xFFFF, 0xFFFF,     2,     1, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+};
+
+static const uint16_t ui_app_font_sizes[] = { 16 };
+
+static const QLUIStyle ui_app_styles[] = {
+    { .bg_color = 0x000000, .text_color = 0x000000, .border_color = 0x000000,
+      .bg_color2 = 0x000000, .shadow_color = 0x000000,
+      .width = { 40, QL_UI_UNIT_PX }, .height = { 40, QL_UI_UNIT_PX },
+      .margin = { 0, 0, 0, 0 }, .padding = { 0, 0, 0, 0 },
+      .display = QL_UI_DISPLAY_BLOCK, .bg_alpha = 0, .border_width = 0,
+      .shadow_dx = 0, .shadow_dy = 0,
+      .border_radius = 0, .text_align = QL_TEXT_ALIGN_LEFT, .font_id = 0, .box_sizing = 0,
+      .bg_grad_dir = 0, .shadow_blur = 0, .shadow_alpha = 0,
+      .flex_direction = QL_UI_FLEX_ROW, .justify_content = QL_UI_JUSTIFY_START,
+      .align_items = QL_UI_ALIGN_STRETCH, .flex_wrap = 0, .gap_row = 0, .gap_col = 0,
+      .flex_grow = 0, .flex_shrink = 100, .flex_basis = -1, .flex_basis_pct = 0,
+      .position = QL_UI_POSITION_STATIC, .overflow = QL_UI_OVERFLOW_VISIBLE, .z_index = 0,
+      .trans_ms = 0, .trans_ease = QL_EASE_LINEAR, .trans_props = 0x00,
+      .backdrop_blur = 0, .line_h = 0, .white_space = 0, .font_flags = 0x00,
+      .clip_kind = 0, .clip_r = 0,
+      .tf_x = 0, .tf_y = 0, .sc_x = 1000, .sc_y = 1000,
+      .anim = 0xFFFF,
+      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
+    { .bg_color = 0x000000, .text_color = 0x000000, .border_color = 0x000000,
+      .bg_color2 = 0x000000, .shadow_color = 0x000000,
+      .width = { 0, QL_UI_UNIT_AUTO }, .height = { 0, QL_UI_UNIT_AUTO },
+      .margin = { 0, 0, 0, 0 }, .padding = { 0, 0, 0, 0 },
+      .display = QL_UI_DISPLAY_INLINE_BLOCK, .bg_alpha = 0, .border_width = 0,
+      .shadow_dx = 0, .shadow_dy = 0,
+      .border_radius = 0, .text_align = QL_TEXT_ALIGN_LEFT, .font_id = 0, .box_sizing = 0,
+      .bg_grad_dir = 0, .shadow_blur = 0, .shadow_alpha = 0,
+      .flex_direction = QL_UI_FLEX_ROW, .justify_content = QL_UI_JUSTIFY_START,
+      .align_items = QL_UI_ALIGN_STRETCH, .flex_wrap = 0, .gap_row = 0, .gap_col = 0,
+      .flex_grow = 0, .flex_shrink = 100, .flex_basis = -1, .flex_basis_pct = 0,
+      .position = QL_UI_POSITION_STATIC, .overflow = QL_UI_OVERFLOW_VISIBLE, .z_index = 0,
+      .trans_ms = 0, .trans_ease = QL_EASE_LINEAR, .trans_props = 0x00,
+      .backdrop_blur = 0, .line_h = 0, .white_space = 0, .font_flags = 0x00,
+      .clip_kind = 0, .clip_r = 0,
+      .tf_x = 0, .tf_y = 0, .sc_x = 1000, .sc_y = 1000,
+      .anim = 0xFFFF,
+      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
+    { .bg_color = 0x000000, .text_color = 0x000000, .border_color = 0x000000,
+      .bg_color2 = 0x000000, .shadow_color = 0x000000,
+      .width = { 0, QL_UI_UNIT_AUTO }, .height = { 0, QL_UI_UNIT_AUTO },
+      .margin = { 0, 0, 0, 0 }, .padding = { 0, 0, 0, 0 },
+      .display = QL_UI_DISPLAY_INLINE, .bg_alpha = 0, .border_width = 0,
+      .shadow_dx = 0, .shadow_dy = 0,
+      .border_radius = 0, .text_align = QL_TEXT_ALIGN_LEFT, .font_id = 0, .box_sizing = 0,
+      .bg_grad_dir = 0, .shadow_blur = 0, .shadow_alpha = 0,
+      .flex_direction = QL_UI_FLEX_ROW, .justify_content = QL_UI_JUSTIFY_START,
+      .align_items = QL_UI_ALIGN_STRETCH, .flex_wrap = 0, .gap_row = 0, .gap_col = 0,
+      .flex_grow = 0, .flex_shrink = 100, .flex_basis = -1, .flex_basis_pct = 0,
+      .position = QL_UI_POSITION_STATIC, .overflow = QL_UI_OVERFLOW_VISIBLE, .z_index = 0,
+      .trans_ms = 0, .trans_ease = QL_EASE_LINEAR, .trans_props = 0x00,
+      .backdrop_blur = 0, .line_h = 0, .white_space = 0, .font_flags = 0x00,
+      .clip_kind = 0, .clip_r = 0,
+      .tf_x = 0, .tf_y = 0, .sc_x = 1000, .sc_y = 1000,
+      .anim = 0xFFFF,
+      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
+};
+
+static const char ui_app_text[] = "logo.bmp\000hi\000";
+static const uint16_t ui_app_text_ofs[] = { 0, 9 };
+
+static const QLUIKeyframe ui_app_keyframes[1] = { { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0 } };
+
+static const QLUIAnimation ui_app_anims[1] = { { 0, 0, 0, 0, 0, 0, 0, 0 } };
+
+/* <img src> 的资源：构建期已解码并转成目标像素格式（RAW） */
+static const uint8_t ui_app_img_data[32] = {
+    0x00, 0xF8, 0x00, 0xF8, 0xE0, 0x07, 0xE0, 0x07, 0x00, 0xF8, 0x00, 0xF8, 0xE0, 0x07, 0xE0, 0x07,
+    0x00, 0xF8, 0x00, 0xF8, 0xE0, 0x07, 0xE0, 0x07, 0x00, 0xF8, 0x00, 0xF8, 0xE0, 0x07, 0xE0, 0x07,
+};
+
+static const QLUIImageSrc ui_app_images[1] = {
+    { .name = 0, .off = 0, .len = 32, .w = 4, .h = 4, .format = QL_IMAGE_SRC_RAW, .pixel_format = QL_IMAGE_RGB565 },
+};
+
+const QLUIDoc ui_app_doc = {
+    .name         = "app",
+    .node_count   = (uint16_t)(sizeof(ui_app_nodes) / sizeof(ui_app_nodes[0])),
+    .style_count  = (uint16_t)(sizeof(ui_app_styles) / sizeof(ui_app_styles[0])),
+    .text_count   = (uint16_t)(sizeof(ui_app_text_ofs) / sizeof(ui_app_text_ofs[0])),
+    .font_size_count = (uint16_t)(sizeof(ui_app_font_sizes) / sizeof(ui_app_font_sizes[0])),
+    .anim_count   = 0,
+    .keyframe_count = 0,
+    .font_sizes   = ui_app_font_sizes,
+    .anims        = ui_app_anims,
+    .keyframes    = ui_app_keyframes,
+    .nodes        = ui_app_nodes,
+    .styles       = ui_app_styles,
+    .text_pool    = ui_app_text,
+    .text_offsets = ui_app_text_ofs,
+    .image_count   = 1,
+    .image_data_size = 32,
+    .images        = ui_app_images,
+    .image_data    = ui_app_img_data,
+};

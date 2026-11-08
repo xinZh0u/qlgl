@@ -78,7 +78,9 @@ QLUIImageInput in = {
 };
 ql_ui_register_image(ui, &in);            /* 内部会重排 */
 
-/* ② 构建期转码：qltext assets 转成 RAW 塞进 doc 的资源段（P3f，待做） */
+/* ② 构建期转码：qltext 把文件解码成目标像素格式，直接嵌进 doc 的资源段 */
+/*    qltext cc --html app.html --css app.css --name app --out build/ \
+                 --root assets/ --pixel-format rgb565                        */
 ```
 
 几条规矩：
@@ -89,8 +91,9 @@ ql_ui_register_image(ui, &in);            /* 内部会重排 */
 | CSS 给了宽度、高度 auto | 按宽高比推高（整数运算） |
 | 没给任何尺寸 | 用图片的固有像素尺寸 |
 | `object-fit` | 只有 `fill`（拉伸）；其余四态还没做 |
-| 格式 | 现在只认 **RAW**（构建期已解好的像素）；PNG/BMP/QOI 按开关逐个落地 |
+| 格式 | 运行期注册只认 **RAW**；构建期（`--root`）能吃 **BMP / QOI**（PNG 待做） |
 | 名字对不上 / 格式不支持 | **明确报错**（`QL_ERR_INVAL` / `QL_ERR_UNSUPPORTED`），不静默画空白 |
+| 构建期找不到文件 / 解不了 | **构建失败**（信息带路径），不是运行时才发现 |
 
 ### 浮层：`<dialog>` 是真的盖在最上面
 

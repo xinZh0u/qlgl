@@ -1438,6 +1438,41 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 </table>
 <p><code>ql_image_validate()</code> / <code>ql_image_decode()</code>（<code>&lt;qlgl/qlimage.h&gt;</code>）是通用入口：
 任何外来字节进绘制层之前都要过 <code>validate</code>（"先除后乘"挡 <code>w*h*bpp</code> 溢出）。</p>
+<table>
+<thead>
+<tr>
+<th>输入格式</th>
+<th>现在支持</th>
+<th>输出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_IMAGE_SRC_RAW</code></td>
+<td>✅（不复制，<code>owned = 0</code>，零 RAM）</td>
+<td>直通</td>
+</tr>
+<tr>
+<td><code>QL_IMAGE_SRC_BMP</code></td>
+<td>✅ 24/32 位、8 位调色板、<code>BITFIELDS</code>、上下翻转（不解 RLE）</td>
+<td>按 <code>out_format</code> 转换</td>
+</tr>
+<tr>
+<td><code>QL_IMAGE_SRC_QOI</code></td>
+<td>✅ 六种 op</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>QL_IMAGE_SRC_PNG</code></td>
+<td>⏳ 待做（现在返回 <code>QL_ERR_UNSUPPORTED</code>）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><code>out_format</code> 默认 <strong>RGBA8888</strong>（它的枚举值就是 0，所以 <code>memset</code> 清零的请求即默认）。
+<code>src_format = QL_IMAGE_SRC_AUTO</code> 时按魔数探测（PNG/BMP/QOI；RAW 无法探测，必须显式给）。</p>
+<p><strong>构建期</strong>用同一份解码器：<code>qltext cc --root DIR --pixel-format rgb565</code> 会把
+<code>&lt;img src&gt;</code> 指向的文件解成目标格式嵌入 doc，运行时<strong>零解码</strong>。</p>
 <p><strong>CPU 与 GPU 都有 <code>blit_image</code></strong>，两者逐像素一致（<code>test_gl_vs_cpu</code> 里有一页专门比对，
 差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 <code>GL_NEAREST</code> 以对齐 CPU 的
 最近邻；想要双线性就把 <code>QL_CFG_IMAGE_BILINEAR</code> 设成 1（两条后端一起变）。</p>

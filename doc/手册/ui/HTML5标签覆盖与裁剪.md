@@ -256,8 +256,9 @@ app.html: 42 个节点，使用标签 9 种
 | P2b ✅ 已完成 | `details` `summary`：收起时把子节点指向共享隐藏样式 | 78 | 0.5 天 |
 | P2c ✅ 已完成 | `dialog`：真正的浮层（居中 + 遮罩 + `Esc` / 点外面关闭） | 79 | 1 天 |
 | P3a ✅ 已完成 | `QLImage` + `blit_image`（**CPU + GPU**）+ `<img>` + doc 资源段（blob v13）+ 固有尺寸 | 80 | 3–4 天 |
-| P3f | `qltext assets`：`--format raw --pixel-format` | 80 | 1.5–2 天 |
-| P3b–g | BMP/QOI/PNG 解码、`object-fit`、热区、平台后端 | 84 | 8–10 天 |
+| P3f ✅ 已完成 | `qltext cc --root`：构建期把图片解码成目标像素格式并嵌入 doc | 80 | 1.5–2 天 |
+| P3b ✅ 已完成 | BMP + QOI 解码器（构建期与运行时共用同一份） | 80 | 1 天 |
+| P3c–g | PNG 解码、`object-fit`、热区、平台后端 | 84 | 7–9 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |

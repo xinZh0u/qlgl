@@ -18,12 +18,22 @@
 
 /* 解码后像素的排布。与 QLColorFormat 刻意分开：
  *   前者是"图片缓冲"，后者是"显示表面"，转换只发生在 blit 里。 */
+/*
+ * 顺序有讲究：**RGBA8888 必须是 0**。
+ *
+ * 它是最常见的"解码输出"格式，而 `QLImageDecodeReq` 通常被 memset 清零后只填
+ * 关心里几个字段 —— 让 0 表示 RGBA8888，"没指定就用 RGBA8888"就是自然行为。
+ * 反过来（RGB565 = 0）会踩坑：memset 出来的 0 会被当成"要 RGB565"。
+ */
 typedef enum {
-    QL_IMAGE_RGB565   = 0,   /* 2 B/px */
-    QL_IMAGE_RGB888   = 1,   /* 3 B/px */
-    QL_IMAGE_RGBA8888 = 2,   /* 4 B/px，**非预乘** */
+    QL_IMAGE_RGBA8888 = 0,   /* 4 B/px，**非预乘** */
+    QL_IMAGE_RGB565   = 1,   /* 2 B/px */
+    QL_IMAGE_RGB888   = 2,   /* 3 B/px */
     QL_IMAGE_A8       = 3,   /* 1 B/px，灰度/蒙版 */
 } QLImageFormat;
+
+/* 解码输出的默认格式（= 0，所以 memset 出来的请求就是"要 RGBA8888"） */
+#define QL_IMAGE_OUT_DEFAULT  ((uint8_t)QL_IMAGE_RGBA8888)
 
 /* 资源在固件里的**编码**形式（不是像素格式） */
 typedef enum {
@@ -63,9 +73,10 @@ int ql_image_validate(const QLImage *img);
 typedef struct {
     const uint8_t *data;
     size_t         len;
-    uint8_t        src_format;   /* QLImageSrcFormat */
-    uint8_t        pixel_format; /* RAW 时的 QLImageFormat */
-    uint16_t       w, h;         /* RAW 时的尺寸 */
+    uint8_t        src_format;   /* QLImageSrcFormat；AUTO = 按魔数探测 */
+    uint8_t        pixel_format; /* **输入**是 RAW 时的像素格式（其他格式忽略） */
+    uint8_t        out_format;   /* 想要的输出格式；0 = RGBA8888（见 QLImageFormat 顺序） */
+    uint16_t       w, h;         /* **输入**是 RAW 时的尺寸（其他格式由文件头决定） */
 } QLImageDecodeReq;
 
 /* 返回 QL_OK / QL_ERR_INVAL / QL_ERR_NOMEM / QL_ERR_UNSUPPORTED */

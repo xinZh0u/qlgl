@@ -114,7 +114,8 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 ./build/test_progress                     # <progress>/<meter>：value/max → 完成度，填充按比例变宽
 ./build/test_details                      # <details>/<summary>：折叠、点击切换、重排
 ./build/test_dialog                       # <dialog>：居中/遮罩/点外面与 Esc 关闭/脏区重绘也不漏遮罩
-./build/test_image                        # <img>：资源注册/固有尺寸/缩放上屏/有界校验
+./build/test_image                        # <img>：资源注册/固有尺寸/缩放上屏/BMP·QOI 解码/有界校验
+./build/test_qltext_assets                # 构建期转码：qltext cc --root 的产物与基准逐字节一致
 ./build/test_text_reject                  # 拒绝集合一致：35 个正负用例
 ./build/example_load_text --dump a.ppm    # 运行期编译 HTML+CSS 并渲染（不用重新编译程序）
 ./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)

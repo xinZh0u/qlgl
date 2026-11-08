@@ -386,7 +386,9 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 <span class="p">};</span>
 <span class="n">ql_ui_register_image</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">in</span><span class="p">);</span><span class="w">            </span><span class="cm">/* 内部会重排 */</span>
 
-<span class="cm">/* ② 构建期转码：qltext assets 转成 RAW 塞进 doc 的资源段（P3f，待做） */</span>
+<span class="cm">/* ② 构建期转码：qltext 把文件解码成目标像素格式，直接嵌进 doc 的资源段 */</span>
+<span class="cm">/*    qltext cc --html app.html --css app.css --name app --out build/ \</span>
+<span class="cm">                 --root assets/ --pixel-format rgb565                        */</span>
 </code></pre></div>
 
 <p>几条规矩：</p>
@@ -416,11 +418,15 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 <tr>
 <td>格式</td>
-<td>现在只认 <strong>RAW</strong>（构建期已解好的像素）；PNG/BMP/QOI 按开关逐个落地</td>
+<td>运行期注册只认 <strong>RAW</strong>；构建期（<code>--root</code>）能吃 <strong>BMP / QOI</strong>（PNG 待做）</td>
 </tr>
 <tr>
 <td>名字对不上 / 格式不支持</td>
 <td><strong>明确报错</strong>（<code>QL_ERR_INVAL</code> / <code>QL_ERR_UNSUPPORTED</code>），不静默画空白</td>
+</tr>
+<tr>
+<td>构建期找不到文件 / 解不了</td>
+<td><strong>构建失败</strong>（信息带路径），不是运行时才发现</td>
 </tr>
 </tbody>
 </table>

@@ -779,6 +779,19 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 `ql_image_validate()` / `ql_image_decode()`（`<qlgl/qlimage.h>`）是通用入口：
 任何外来字节进绘制层之前都要过 `validate`（"先除后乘"挡 `w*h*bpp` 溢出）。
 
+| 输入格式 | 现在支持 | 输出 |
+|---|---|---|
+| `QL_IMAGE_SRC_RAW` | ✅（不复制，`owned = 0`，零 RAM） | 直通 |
+| `QL_IMAGE_SRC_BMP` | ✅ 24/32 位、8 位调色板、`BITFIELDS`、上下翻转（不解 RLE） | 按 `out_format` 转换 |
+| `QL_IMAGE_SRC_QOI` | ✅ 六种 op | 同上 |
+| `QL_IMAGE_SRC_PNG` | ⏳ 待做（现在返回 `QL_ERR_UNSUPPORTED`） | — |
+
+`out_format` 默认 **RGBA8888**（它的枚举值就是 0，所以 `memset` 清零的请求即默认）。
+`src_format = QL_IMAGE_SRC_AUTO` 时按魔数探测（PNG/BMP/QOI；RAW 无法探测，必须显式给）。
+
+**构建期**用同一份解码器：`qltext cc --root DIR --pixel-format rgb565` 会把
+`<img src>` 指向的文件解成目标格式嵌入 doc，运行时**零解码**。
+
 **CPU 与 GPU 都有 `blit_image`**，两者逐像素一致（`test_gl_vs_cpu` 里有一页专门比对，
 差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 `GL_NEAREST` 以对齐 CPU 的
 最近邻；想要双线性就把 `QL_CFG_IMAGE_BILINEAR` 设成 1（两条后端一起变）。

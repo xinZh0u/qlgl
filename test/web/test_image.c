@@ -269,6 +269,160 @@ QL_TEST_BEGIN("test_image")
         QL_CHECK_EQ((int)out.len, 128);
     }
 
+    /* ---------- 8. BMP 解码（24 位、自下而上、行补齐） ---------- */
+    {
+        /* 2×2：左上红 右上绿 左下蓝 右下白；行 8 字节对齐 */
+        static uint8_t bmp[54 + 2 * 8];
+        memset(bmp, 0, sizeof(bmp));
+        bmp[0] = 'B'; bmp[1] = 'M';
+        uint32_t v32 = sizeof(bmp);
+        memcpy(bmp + 2, &v32, 4);
+        v32 = 54;
+        memcpy(bmp + 10, &v32, 4);
+        v32 = 40;
+        memcpy(bmp + 14, &v32, 4);
+        int32_t i32 = 2;
+        memcpy(bmp + 18, &i32, 4);
+        memcpy(bmp + 22, &i32, 4);
+        uint16_t v16 = 1;
+        memcpy(bmp + 26, &v16, 2);
+        v16 = 24;
+        memcpy(bmp + 28, &v16, 2);
+        uint8_t *r0 = bmp + 54;        /* 最下面一行：蓝 白 */
+        uint8_t *r1 = bmp + 54 + 8;    /* 上面一行：红 绿 */
+        r0[0] = 0xFF; r0[3] = 0xFF; r0[4] = 0xFF; r0[5] = 0xFF;
+        r1[2] = 0xFF; r1[4] = 0xFF;
+
+        QLImageDecodeReq req;
+        memset(&req, 0, sizeof(req));
+        req.data = bmp;
+        req.len = sizeof(bmp);
+        req.src_format = QL_IMAGE_SRC_AUTO;
+        QLImage img;
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
+        QL_CHECK_EQ((int)img.w, 2);
+        QL_CHECK_EQ((int)img.h, 2);
+        QL_CHECK_EQ((int)img.owned, 1);
+        const uint8_t *p0 = img.px;                        /* (0,0) 红 */
+        const uint8_t *p1 = img.px + 4;                    /* (1,0) 绿 */
+        const uint8_t *p2 = img.px + img.stride;           /* (0,1) 蓝 */
+        const uint8_t *p3 = img.px + img.stride + 4;       /* (1,1) 白 */
+        QL_CHECK_EQ((int)p0[0], 0xFF); QL_CHECK_EQ((int)p0[1], 0x00);
+        QL_CHECK_EQ((int)p1[1], 0xFF); QL_CHECK_EQ((int)p1[0], 0x00);
+        QL_CHECK_EQ((int)p2[2], 0xFF); QL_CHECK_EQ((int)p2[0], 0x00);
+        QL_CHECK_EQ((int)p3[0], 0xFF); QL_CHECK_EQ((int)p3[2], 0xFF);
+        ql_mem_free((void *)img.px);
+
+        /* 输出 RGB565：红 F800 / 绿 07E0 / 蓝 001F / 白 FFFF */
+        req.out_format = QL_IMAGE_RGB565;
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
+        QL_CHECK_EQ((int)img.format, (int)QL_IMAGE_RGB565);
+        const uint16_t *q = (const uint16_t *)img.px;
+        QL_CHECK_EQ((int)q[0], 0xF800);
+        QL_CHECK_EQ((int)q[1], 0x07E0);
+        QL_CHECK_EQ((int)q[2], 0x001F);
+        QL_CHECK_EQ((int)q[3], 0xFFFF);
+        ql_mem_free((void *)img.px);
+
+        /* 截断的文件：不猜，直接失败 */
+        req.len = 60;
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+    }
+
+    /* ---------- 9. QOI 解码（含 RUN） ---------- */
+    {
+        static uint8_t qoi[14 + 16 + 8];
+        memset(qoi, 0, sizeof(qoi));
+        memcpy(qoi, "qoif", 4);
+        uint32_t w = 2, h = 2;
+        memcpy(qoi + 4, &w, 4);
+        memcpy(qoi + 8, &h, 4);
+        qoi[12] = 4;
+        qoi[13] = 0;
+        size_t p = 14;
+        qoi[p++] = 0xFE; qoi[p++] = 0xFF; qoi[p++] = 0x00; qoi[p++] = 0x00;  /* 红 */
+        qoi[p++] = 0xFE; qoi[p++] = 0x00; qoi[p++] = 0xFF; qoi[p++] = 0x00;  /* 绿 */
+        qoi[p++] = 0xFE; qoi[p++] = 0x00; qoi[p++] = 0x00; qoi[p++] = 0xFF;  /* 蓝 */
+        qoi[p++] = 0xFE; qoi[p++] = 0xFF; qoi[p++] = 0xFF; qoi[p++] = 0xFF;  /* 白 */
+
+        QLImageDecodeReq req;
+        memset(&req, 0, sizeof(req));
+        req.data = qoi;
+        req.len = p;
+        req.src_format = QL_IMAGE_SRC_AUTO;
+        QLImage img;
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
+        const uint8_t *e = img.px;
+        QL_CHECK_EQ((int)e[0], 0xFF); QL_CHECK_EQ((int)e[1], 0x00);
+        QL_CHECK_EQ((int)e[4], 0x00); QL_CHECK_EQ((int)e[5], 0xFF);
+        QL_CHECK_EQ((int)e[8], 0x00); QL_CHECK_EQ((int)e[10], 0xFF);
+        QL_CHECK_EQ((int)e[12], 0xFF); QL_CHECK_EQ((int)e[13], 0xFF);
+        ql_mem_free((void *)img.px);
+
+        /* 声明 4 个像素但只给了 1 个：必须失败 */
+        uint32_t bw = 4, bh = 1;
+        memcpy(qoi + 4, &bw, 4);
+        memcpy(qoi + 8, &bh, 4);
+        req.len = 14 + 4;
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+    }
+
+    /* ---------- 10. doc 资源段：编码 → 加载 → 建树 → 出图 ---------- */
+    {
+        /* 先长出"有 <img> 的树"，再把资源挂到 doc 上（qltext 就是这么做的） */
+        QLUIDoc *doc = ql_ui_load_text("<div id=r><img src=\"pic\"></div>",
+                                       "#r { width: 16px; height: 16px }");
+        QL_CHECK(doc != NULL);
+        if (doc != NULL) {
+            uint8_t pixels[8 * 8 * 2];
+            memcpy(pixels, s_raw, sizeof(s_raw));
+            QLUIImageSrc src;
+            memset(&src, 0, sizeof(src));
+            src.name = doc->nodes[1].text;   /* 资源名在文本池里的下标 */
+            src.off = 0;
+            src.len = (uint32_t)sizeof(pixels);
+            src.w = 8;
+            src.h = 8;
+            src.format = QL_IMAGE_SRC_RAW;
+            src.pixel_format = QL_IMAGE_RGB565;
+
+            QLUIDoc withimg = *doc;
+            withimg.images = &src;
+            withimg.image_count = 1;
+            withimg.image_data = pixels;
+            withimg.image_data_size = (uint32_t)sizeof(pixels);
+
+            const size_t size = ql_ui_doc_encode(&withimg, NULL, 0);
+            QL_CHECK(size > 0);
+            uint8_t *buf = (uint8_t *)ql_mem_alloc(size);
+            QL_CHECK(buf != NULL);
+            if (buf != NULL) {
+                QL_CHECK_EQ((int)ql_ui_doc_encode(&withimg, buf, size), (int)size);
+                QLUIDoc *back = ql_ui_doc_load_mem(buf, size);
+                QL_CHECK(back != NULL);
+                if (back != NULL) {
+                    QL_CHECK_EQ((int)back->image_count, 1);
+                    QL_CHECK_EQ((int)back->image_data_size, (int)sizeof(pixels));
+                    QLUIRoot *iu = ql_ui_build(back);
+                    QL_CHECK(iu != NULL);
+                    if (iu != NULL) {
+                        ql_ui_layout(iu, 16, 16);
+                        const QLImage *ri = ql_ui_node_image(iu, &iu->nodes[1]);
+                        QL_CHECK(ri != NULL);
+                        if (ri != NULL) {
+                            QL_CHECK_EQ((int)ri->w, 8);
+                            QL_CHECK_EQ((int)ri->owned, 0);   /* 指向 blob 里的资源段 */
+                        }
+                        ql_ui_free(iu);
+                    }
+                    ql_ui_doc_free(back);
+                }
+                ql_mem_free(buf);
+            }
+            ql_ui_doc_free(doc);
+        }
+    }
+
     ql_disp_mem_destroy(s_disp);
 
 QL_TEST_END()
