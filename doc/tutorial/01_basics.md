@@ -45,11 +45,14 @@ cmake --build build -j --target example_01_window
 ./build/example/example_01_window
 ```
 
-没有显示器也能跑 —— 给 `--dump` 就会离屏渲染成图片：
+只给 `--dump` 就是**截图模式**：渲染一帧、写图片、退出（不会卡住等你关窗口）。
+所以没有显示器也能跑：
 
 ```bash
 ./build/example/example_01_window --dump /tmp/01.ppm
 ```
+
+想先看窗口、看完再截图，就显式给帧数：`--frames 120 --dump /tmp/01.ppm`。
 
 ## 一个程序的四步
 

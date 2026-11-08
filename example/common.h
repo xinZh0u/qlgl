@@ -58,8 +58,9 @@ static int ex_dump_ppm(QLUIRoot *ui, int w, int h, const char *path)
 
 /*
  * 打开一个真实窗口跑主循环（需要 -DQLGL_BUILD_GL=ON 且有 EGL/X11）。
- * `--frames N` 跑 N 帧后退出，`--dump out.ppm` 存最后一帧；没有窗口时自动
- * 退回离屏渲染 + PPM，所以这个函数在没有显示器的机器上也能跑通。
+ * `--frames N` 跑 N 帧后退出，`--dump out.ppm` 存最后一帧；
+ * 只给 `--dump` 不给 `--frames` 时按 1 帧算（截图模式，不会卡住等关窗口）；
+ * 没有窗口时自动退回离屏渲染 + PPM，所以这个函数在没有显示器的机器上也能跑通。
  */
 static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                   char **argv)
@@ -72,6 +73,9 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
         else if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
             dump = argv[++i];
     }
+    /* 截图模式下别等着人关窗口 */
+    if (dump != NULL && max_frames == 0)
+        max_frames = 1;
 
 #if HAS_GL
     QLGfxGL *gfx = ql_gfx_gl_create(title, w, h, QL_GFX_GL_WINDOW);

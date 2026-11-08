@@ -251,10 +251,12 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 ./build/example/example_01_window
 </code></pre></div>
 
-<p>没有显示器也能跑 —— 给 <code>--dump</code> 就会离屏渲染成图片：</p>
+<p>只给 <code>--dump</code> 就是<strong>截图模式</strong>：渲染一帧、写图片、退出（不会卡住等你关窗口）。
+所以没有显示器也能跑：</p>
 <div class="highlight"><pre><span></span><code>./build/example/example_01_window<span class="w"> </span>--dump<span class="w"> </span>/tmp/01.ppm
 </code></pre></div>
 
+<p>想先看窗口、看完再截图，就显式给帧数：<code>--frames 120 --dump /tmp/01.ppm</code>。</p>
 <h2 id="_3">一个程序的四步</h2>
 <p>每个 QLGL 程序都是这四步，看一眼 <code>example/01_window.c</code>：</p>
 <p><img src="../img/01-hello.png" alt="第一个窗口" width="240"></p>

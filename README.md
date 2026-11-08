@@ -46,8 +46,8 @@
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
-# 跑第一个例程（没有显示器也能跑：--dump 会离屏渲染成图片）
-./build/example/example_01_window --frames 3 --dump /tmp/01.ppm
+# 跑第一个例程（不给 --frames 就一直跑；只给 --dump 是截图模式：一帧后退出）
+./build/example/example_01_window --dump /tmp/01.ppm
 ```
 
 **想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，7 章，每章配一个
