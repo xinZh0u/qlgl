@@ -94,6 +94,26 @@
 #define QL_CFG_UI_MAX_TEXT_NODES    4096    /* 去重后的文本条数 */
 #endif
 /*
+ * 输入框（`<input>`）：
+ *   QL_CFG_UI_INPUT_MAX  一个有输入的界面上最多几个输入框；
+ *   QL_CFG_UI_INPUT_LEN  单个输入框的长度上限（UTF-8 字节，含结尾 0）。
+ * 池只在 doc 里真的出现 `<input>` 时才分配。
+ */
+#ifndef QL_CFG_UI_INPUT_MAX
+#define QL_CFG_UI_INPUT_MAX         8
+#endif
+#ifndef QL_CFG_UI_INPUT_LEN
+#define QL_CFG_UI_INPUT_LEN         96
+#endif
+/* 下拉框：最多几个、面板最高多少像素（超出就滚动） */
+#ifndef QL_CFG_UI_SELECT_MAX
+#define QL_CFG_UI_SELECT_MAX        8
+#endif
+#ifndef QL_CFG_UI_SELECT_PANEL_H
+#define QL_CFG_UI_SELECT_PANEL_H    160
+#endif
+
+/*
  * 一次绘制最多排多少行（`white-space: normal` 折行后）。
  * 绘制时在栈上开 `QL_CFG_TEXT_MAX_LINES` 条行记录，超出的行不画——
  * 布局统计总行数时不受这个上限影响。64 行 ≈ 45 行/屏的两屏多。

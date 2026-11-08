@@ -608,7 +608,7 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 标签在本架构里**只影响三件事**：UA 默认样式、`tag` 选择器、调试名。
 布局与绘制只看编译出来的 `QLUIStyle`，不看标签——所以加标签几乎零成本（只加枚举）。
 
-共 32 个（`QLUITag` / `k_tags[]` / `s_tag_names[]` **三处顺序必须一致**，
+共 35 个（`QLUITag` / `k_tags[]` / `s_tag_names[]` **三处顺序必须一致**，
 且只能在末尾追加：`node.tag` 是存进 blob 的数字）：
 
 | 类 | 标签 | UA 默认样式 |
@@ -622,6 +622,8 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 列表 | `ul` `ol` / `li` | block + `margin: 8px 0` / block；`padding-left: 18px` |
 | 空元素 | `hr` / `br` | 1px 细线 + margin / 高度 0 的块 |
 | 控件 | `button` | inline-block + 内边距 + 边框 + 圆角 |
+| 输入 | `input` | inline-block + 内边距 + 边框 + 圆角（`type=password` 额外置位） |
+| 下拉 | `select` / `option` | 与 `input` 同形 / **`display: none`** |
 
 **几处必须知道的取舍**
 
@@ -630,8 +632,9 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 2. **列表不画项目符号**：本库没有生成内容（`::before` / `::marker`），标记请自己写字符。
 3. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。
-4. **`<img>` / `<input>` / `<table>` 明确报错**，错误信息里给出替代做法
-   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。
+4. **`<img>` / `<table>` 明确报错**，错误信息里给出替代做法
+   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。`<input type="date">`
+   这类没实现的 `type` 也报错，并列出支持的两个。
 
 **行内元素之间的空白保留成一个空格**（`<b>a</b> <i>b</i>` 不能变成 `ab`）。
 这一步在解析期做，靠的是标签的**默认** display（级联还没跑），所以如果你把
@@ -697,6 +700,71 @@ ql_ui_scroll_by() → node->scroll_y → ql_ui_layout() → 布局末尾 transla
    样式。所以 `pointer_down` 里必须先判滚动条热区，命中就直接接管。
 2. `translate_subtree` 会一并平移 `abs_cb`，所以容器里的绝对定位子元素也跟着滚
    —— 这是对的（CSS 里绝对定位相对的是 padding box，滚动会让它移动）。
+
+---
+
+### 5.7 输入框：唯一的运行期可变文本
+
+```
+doc.nodes[i].text ──▶ 池里的可变缓冲（build 时把初始值拷进去）
+```
+
+整套数据模型都是编译期算完的静态表，`<input>` 是**唯一例外**：它有自己的一条池
+（`struct QLUIInput`），`build_internal()` 按需分配 —— 界面里没有 `<input>` 就一个字节都不花。
+
+| 项 | 字段 | 说明 |
+|---|---|---|
+| 值 | `buf` / `len` | UTF-8，上限 `QL_CFG_UI_INPUT_LEN − 1` 字节 |
+| 光标 | `caret` | **字节**偏移（`prev_boundary` / `next_boundary` 负责跨过 UTF-8 续字节） |
+| 选区 | `sel` | 锚点；`sel == caret` 表示没有选区 |
+| 横向滚 | `scroll_x` | 文本比盒子宽时，**只在绘制期**用（`DISP_OFF` 宏），不进布局 |
+
+**为什么值要放进池、而不是另开一个"值字段"**：让 `node->text` 指过去，
+绘制、`text-align`、自动折行、横向滚动**一行都不用改** —— 它们读的就是最新值。
+
+**节点标志位**：`QLUINode.flags` 一个字节省着用（`QL_UI_NODE_PASSWORD`），
+旁边留了 `reserved`。这就是 blob **v11 → v12** 的原因，`sizeof(QLUINode)` 18 → 20。
+
+| 功能 | 实现位置 | 坑 |
+|---|---|---|
+| 密码圆点 | `input_display_text()` | 宽度必须按**圆点**量，否则光标飘出框外 |
+| 光标/选区绘制 | `draw_input_decor()` | 1px 竖线 + 半透明矩形，画在文字之后 |
+| 键盘 | `input_key()` | `Enter` 只发回调（没有 `<form>`）；`Esc` 收焦点 |
+| 超长插入 | `input_insert()` | **静默截断**（用户打字不该因为满了而失败） |
+| 回调 | `input_emit()` | 只在值真的变了时发 |
+
+**没有剪贴板、没有 IME、光标不闪**：前两个要平台层提供事件，第三个要求主循环
+一直醒着（省电优先）。都写进了 §6 的诚实清单。
+
+### 5.8 下拉框：覆盖式面板
+
+```
+<select>  →  struct QLUISelectState { node, sel, open }   池：QL_CFG_UI_SELECT_MAX
+<option>  →  display: none 的普通节点（只被面板读文字）
+```
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| 面板矩形 | `select_panel_rect()` | 贴在 select 下方，高度夹到 `QL_CFG_UI_SELECT_PANEL_H` |
+| 绘制 | `draw_select_panel()` | **`ql_ui_render` / `render_rect` 末尾单独画**：不占布局、不受父级 `overflow` 裁剪 |
+| 命中 | `select_pointer_down()` | 先判面板（它在最上层），再判"点面板外 → 收起" |
+| 同步显示文本 | `select_sync_text()` | 选中项的文字就是 select 的文字（`node->text` 直接指过去） |
+| 键盘 | `select_key()` | `↑`/`↓` 改选中，`空格`/`回车` 展开收起 |
+
+**一个容易写错的分支**：点面板外要"收起 + 继续走普通点击"，但如果点的正是这个
+select 自己，那就是"再点一次关掉"，必须 **return**，否则会立刻又展开（`open` 先清 0
+再走到展开分支）。这个 bug 是被 `test_select` 第 4 项（白色像素数回到原值）抓到的。
+
+**同一时刻只开一个**：`ui->open_select` 只有一个指针，够用且省事。
+
+### 5.9 焦点：Tab 在控件之间循环
+
+可聚焦 = `input` / `select` / `button` 且 `display != none`（`node_is_focusable()`）。
+`Tab` / `Shift+Tab` 按**树序**步进，到头上绕回（`focus_step()`）；
+聚焦到输入框时光标放末尾，不选中全文（"一打字就覆盖整串"的语义留给多行编辑一起定）。
+
+焦点本身只做两件事：点亮 `QL_UI_RT_FOCUS`（`:focus` 样式靠它，`state_chain` 一路传到父级），
+以及决定键盘事件归谁。**绘制不读焦点**，所以焦点变化只标脏、不重排。
 
 ---
 

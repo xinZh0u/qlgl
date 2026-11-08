@@ -174,6 +174,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/08_tags.html'>标签与语义</a>
 <a href='../../tutorial/09_scroll.html'>滚动</a>
 <a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../../tutorial/11_input.html'>输入控件</a>
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
@@ -302,12 +303,21 @@ tools/qltext/qltext.c ┘
 <td><code>h3</code></td>
 <td><code>display:block</code>，<code>font-size:12px</code></td>
 </tr>
+<tr>
+<td><code>input</code></td>
+<td><code>display:inline-block</code>，带内边距/边框/圆角；<code>type</code> 只支持 <code>text</code> / <code>password</code></td>
+</tr>
+<tr>
+<td><code>select</code> / <code>option</code></td>
+<td>与 <code>input</code> 同形 / <strong><code>display:none</code></strong>（只活在面板里）</td>
+</tr>
 </tbody>
 </table>
+<p>完整 35 个标签见<a href="QLUI阅读指南.md">阅读指南 §5.4.7</a>。</p>
 <p><strong>限制</strong>：
 - 文档必须<strong>有且只有一个根元素</strong>；
 - 元素不能同时包含文本和子元素（混合内容）→ 报错，请把文本包进 <code>&lt;span&gt;</code>；
-- 其他标签（<code>img</code>/<code>table</code>/<code>input</code>/<code>ul</code>…）→ 报错。</p>
+- <code>img</code> / <code>table</code> / <code>textarea</code> / 任意未实现的 <code>type</code> → 报错，错误信息给出替代做法；</p>
 <hr />
 <h2 id="3-css">3. 支持的 CSS</h2>
 <h3 id="31">3.1 选择器</h3>
@@ -1188,11 +1198,12 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <span class="cm">       line-height 是 int16_t line_h（0 = normal），</span>
 <span class="cm">       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），</span>
 <span class="cm">       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 120（blob v11） */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 120（blob v12） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">,</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">;</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">flags</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w">      </span><span class="cm">/* QL_UI_NODE_PASSWORD 等 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 20（blob v12） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>
@@ -1322,6 +1333,84 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <p>注意：状态位<strong>会影响绘制</strong>（<code>:hover</code>/<code>:active</code>/<code>:focus</code> 有独立样式），但<strong>不影响布局</strong>（M1 限制），
 需要高亮请在 <code>click</code> 回调或渲染后自行处理。</p>
 </blockquote>
+<h3 id="_4">输入框</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_ui_input_cb</span><span class="p">)(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span>
+<span class="w">                               </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">value</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w">        </span><span class="nf">ql_ui_set_input_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_input_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_input_value</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">    </span><span class="nf">ql_ui_input_set_value</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">value</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_input_cb</code></td>
+<td>值变化 / 按回车时回调；<code>cb == NULL</code> 取消</td>
+</tr>
+<tr>
+<td><code>input_value</code></td>
+<td>当前值；不是 <code>&lt;input&gt;</code> 返回 <code>NULL</code>。指针在下次编辑前有效</td>
+</tr>
+<tr>
+<td><code>input_set_value</code></td>
+<td>改值（夹到 <code>QL_CFG_UI_INPUT_LEN−1</code>），光标移到末尾</td>
+</tr>
+</tbody>
+</table>
+<p>编辑能力：点击定位、拖动选字、<code>Backspace</code>/<code>Delete</code>、<code>←</code>/<code>→</code>/<code>Home</code>/<code>End</code>、
+<code>Shift+方向</code> 扩展选区、<code>QL_INPUT_TEXT</code> 插入、<code>Esc</code> 收焦点。
+<strong>没有剪贴板、没有 IME、光标不闪。</strong></p>
+<h3 id="_5">下拉框</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">     </span><span class="nf">ql_ui_set_select_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_input_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_select_index</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_select_set_index</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_select_cb</code></td>
+<td>用户改了选中项或程序设值时回调（<code>value</code> = 选项文字）</td>
+</tr>
+<tr>
+<td><code>select_index</code></td>
+<td>当前第几项；不是 <code>&lt;select&gt;</code> 返回 <code>-1</code></td>
+</tr>
+<tr>
+<td><code>select_set_index</code></td>
+<td>设置选中项（<strong>越界夹紧</strong>，不报错）</td>
+</tr>
+</tbody>
+</table>
+<p>面板是<strong>覆盖层</strong>：不占布局、不受父级 <code>overflow</code> 裁剪、同一时刻只开一个。
+键盘：<code>↑</code>/<code>↓</code> 改选中，<code>空格</code>/<code>回车</code> 展开收起。</p>
+<h3 id="_6">滚动</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_scroll_to</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_scroll_by</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dy</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_scrollable</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>scroll_to</code> 只设状态（<strong>需要自己再调一次 <code>ql_ui_layout</code></strong>），<code>scroll_by</code> 内部重排并标脏。</p>
+<h3 id="_7">焦点</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">        </span><span class="nf">ql_ui_set_focus_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_focus_node</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>Tab</code> / <code>Shift+Tab</code> 在 <code>input</code> / <code>select</code> / <code>button</code> 之间按树序循环。
+焦点只点亮 <code>QL_UI_RT_FOCUS</code>（<code>:focus</code> 样式靠它），<strong>不影响布局</strong>。</p>
 <hr />
 <h2 id="6">6. 完整示例</h2>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
@@ -1526,7 +1615,7 @@ MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
 </tr>
 <tr>
 <td>运行期</td>
-<td>只能改文本，不能改结构/样式类（要改结构就换一份 doc）</td>
+<td>只能改文本（含 <code>&lt;input&gt;</code> 的值），不能改结构/样式类（要改结构就换一份 doc）</td>
 </tr>
 <tr>
 <td>换 UI</td>
@@ -1535,6 +1624,10 @@ MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
 <tr>
 <td>JS</td>
 <td>不支持（交互用 C 回调）</td>
+</tr>
+<tr>
+<td>表单</td>
+<td>有 <code>&lt;input&gt;</code> / <code>&lt;select&gt;</code>，但<strong>没有 <code>&lt;form&gt;</code></strong>、没有提交、没有校验、没有剪贴板/IME</td>
 </tr>
 <tr>
 <td>性能</td>

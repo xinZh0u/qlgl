@@ -51,7 +51,7 @@ cmake --build build -j
 ```
 
 **想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，10 章，每章配一个
-可编译运行的完整程序）。也可以直接看 [`example/`](example/)：六个自包含的 `.c`。
+可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十个自包含的 `.c`。
 
 | 例程 | 讲什么 |
 |---|---|
@@ -64,6 +64,7 @@ cmake --build build -j
 | `07_player` | 一个真实界面（播放器）：纵向 flex / 渐变封面 / 进度条 / **自动折行**的简介 |
 | `08_tags` | HTML 标签与 UA 默认样式：一半纯默认值，一半只用 CSS 改观感 |
 | `09_scroll` | 滚动容器：`overflow: auto` + 滚轮 / 拖滚动条 / PageDown |
+| `10_input` | 输入控件：`<input>`（含密码框）+ `<select>` 下拉面板 + Tab 切换焦点 |
 
 ## 构建与测试
 
@@ -104,10 +105,12 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 ./build/test_qltext_blob                  # qltext blob 直接产出的 .qlui 与提交基准逐字节相同
 ./build/test_line_height                  # line-height：单行文字垂直居中（按渲染墨迹判断）
 ./build/test_text_wrap                    # 自动折行：断行规则 + 布局/绘制共用一份行数
-./build/test_html_tags                    # 32 个标签的 UA 默认样式 + 行内空白规则
+./build/test_html_tags                    # 35 个标签的 UA 默认样式 + 行内空白规则
 ./build/test_text_style                   # 合成加粗/斜体/下划线 + 装饰线
 ./build/test_scroll                       # overflow: auto 的滚动（滚轮/拖动/夹紧/命中）
-./build/test_text_reject                  # 拒绝集合一致：32 个正负用例
+./build/test_input_edit                   # <input>：值/光标/选区/UTF-8 边界/密码显示
+./build/test_select                       # <select>：覆盖式面板/命中/键盘/Tab 焦点循环
+./build/test_text_reject                  # 拒绝集合一致：35 个正负用例
 ./build/example_load_text --dump a.ppm    # 运行期编译 HTML+CSS 并渲染（不用重新编译程序）
 ./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
 QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
@@ -212,7 +215,8 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [布局](doc/tutorial/03_layout.md) → [交互](doc/tutorial/04_interaction.md) →
 [动画](doc/tutorial/05_animation.md) → [换皮肤](doc/tutorial/06_theme.md) →
 [进阶](doc/tutorial/07_advanced.md) → [标签](doc/tutorial/08_tags.md) →
-[滚动](doc/tutorial/09_scroll.md) → **[与 Web 的差别](doc/tutorial/10_vs_web.md)**。
+[滚动](doc/tutorial/09_scroll.md) → [与 Web 的差别](doc/tutorial/10_vs_web.md) →
+**[输入控件](doc/tutorial/11_input.md)**。
 
 模块手册：
 

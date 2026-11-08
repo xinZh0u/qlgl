@@ -38,7 +38,8 @@ QL_TEST_BEGIN("test_html_tags")
             "div", "section", "p", "span", "b", "i", "button", "h1", "h2", "h3",
             "h4", "h5", "h6", "header", "footer", "nav", "main", "article",
             "aside", "figure", "figcaption", "blockquote", "ul", "ol", "li",
-            "hr", "br", "mark", "em", "strong", "u", "s",
+            "hr", "br", "mark", "em", "strong", "u", "s", "input", "select",
+            "option",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -51,7 +52,8 @@ QL_TEST_BEGIN("test_html_tags")
         for (int i = 0; i < (int)QL_UI_TAG_COUNT; i++) {
             const char *name = ql_ui_tag_name((uint16_t)i);
             char html[256];
-            const int is_void = (strcmp(name, "br") == 0 || strcmp(name, "hr") == 0);
+            const int is_void = (strcmp(name, "br") == 0 || strcmp(name, "hr") == 0 ||
+                                 strcmp(name, "input") == 0);
             if (is_void)
                 snprintf(html, sizeof(html), "<div id=r><%s></div>", name);
             else
@@ -217,9 +219,9 @@ QL_TEST_BEGIN("test_html_tags")
         struct { const char *html; const char *needle; } bad[] = {
             { "<div id=r><img src=x></div>", "没有图片解码器" },
             { "<div id=r><table><tr><td>x</td></tr></table></div>", "用嵌套的 flex" },
-            { "<div id=r><input></div>", "还没有输入控件" },
             { "<div id=r><textarea></textarea></div>", "还没有输入控件" },
-            { "<div id=r><select></select></div>", "还没有输入控件" },
+
+            { "<div id=r><input type=\"date\"></div>", "只支持 text / password" },
         };
         for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
             QLUIDoc *doc = ql_ui_load_text(bad[i].html, "");

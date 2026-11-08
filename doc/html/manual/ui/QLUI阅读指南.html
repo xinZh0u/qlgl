@@ -174,6 +174,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/08_tags.html'>标签与语义</a>
 <a href='../../tutorial/09_scroll.html'>滚动</a>
 <a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../../tutorial/11_input.html'>输入控件</a>
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
@@ -933,7 +934,7 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <h3 id="547-ua">5.4.7 标签与 UA 默认样式</h3>
 <p>标签在本架构里<strong>只影响三件事</strong>：UA 默认样式、<code>tag</code> 选择器、调试名。
 布局与绘制只看编译出来的 <code>QLUIStyle</code>，不看标签——所以加标签几乎零成本（只加枚举）。</p>
-<p>共 32 个（<code>QLUITag</code> / <code>k_tags[]</code> / <code>s_tag_names[]</code> <strong>三处顺序必须一致</strong>，
+<p>共 35 个（<code>QLUITag</code> / <code>k_tags[]</code> / <code>s_tag_names[]</code> <strong>三处顺序必须一致</strong>，
 且只能在末尾追加：<code>node.tag</code> 是存进 blob 的数字）：</p>
 <table>
 <thead>
@@ -989,6 +990,16 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <td><code>button</code></td>
 <td>inline-block + 内边距 + 边框 + 圆角</td>
 </tr>
+<tr>
+<td>输入</td>
+<td><code>input</code></td>
+<td>inline-block + 内边距 + 边框 + 圆角（<code>type=password</code> 额外置位）</td>
+</tr>
+<tr>
+<td>下拉</td>
+<td><code>select</code> / <code>option</code></td>
+<td>与 <code>input</code> 同形 / <strong><code>display: none</code></strong></td>
+</tr>
 </tbody>
 </table>
 <p><strong>几处必须知道的取舍</strong></p>
@@ -998,8 +1009,9 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <li><strong>列表不画项目符号</strong>：本库没有生成内容（<code>::before</code> / <code>::marker</code>），标记请自己写字符。</li>
 <li><strong><code>&lt;br&gt;</code> 是一个"高度为 0 的块"</strong>：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。</li>
-<li><strong><code>&lt;img&gt;</code> / <code>&lt;input&gt;</code> / <code>&lt;table&gt;</code> 明确报错</strong>，错误信息里给出替代做法
-   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。</li>
+<li><strong><code>&lt;img&gt;</code> / <code>&lt;table&gt;</code> 明确报错</strong>，错误信息里给出替代做法
+   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。<code>&lt;input type="date"&gt;</code>
+   这类没实现的 <code>type</code> 也报错，并列出支持的两个。</li>
 </ol>
 <p><strong>行内元素之间的空白保留成一个空格</strong>（<code>&lt;b&gt;a&lt;/b&gt; &lt;i&gt;b&lt;/i&gt;</code> 不能变成 <code>ab</code>）。
 这一步在解析期做，靠的是标签的<strong>默认</strong> display（级联还没跑），所以如果你把
@@ -1103,6 +1115,137 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <li><code>translate_subtree</code> 会一并平移 <code>abs_cb</code>，所以容器里的绝对定位子元素也跟着滚
    —— 这是对的（CSS 里绝对定位相对的是 padding box，滚动会让它移动）。</li>
 </ol>
+<hr />
+<h3 id="57">5.7 输入框：唯一的运行期可变文本</h3>
+<div class="highlight"><pre><span></span><code>doc.nodes[i].text ──▶ 池里的可变缓冲（build 时把初始值拷进去）
+</code></pre></div>
+
+<p>整套数据模型都是编译期算完的静态表，<code>&lt;input&gt;</code> 是<strong>唯一例外</strong>：它有自己的一条池
+（<code>struct QLUIInput</code>），<code>build_internal()</code> 按需分配 —— 界面里没有 <code>&lt;input&gt;</code> 就一个字节都不花。</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>值</td>
+<td><code>buf</code> / <code>len</code></td>
+<td>UTF-8，上限 <code>QL_CFG_UI_INPUT_LEN − 1</code> 字节</td>
+</tr>
+<tr>
+<td>光标</td>
+<td><code>caret</code></td>
+<td><strong>字节</strong>偏移（<code>prev_boundary</code> / <code>next_boundary</code> 负责跨过 UTF-8 续字节）</td>
+</tr>
+<tr>
+<td>选区</td>
+<td><code>sel</code></td>
+<td>锚点；<code>sel == caret</code> 表示没有选区</td>
+</tr>
+<tr>
+<td>横向滚</td>
+<td><code>scroll_x</code></td>
+<td>文本比盒子宽时，<strong>只在绘制期</strong>用（<code>DISP_OFF</code> 宏），不进布局</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么值要放进池、而不是另开一个"值字段"</strong>：让 <code>node-&gt;text</code> 指过去，
+绘制、<code>text-align</code>、自动折行、横向滚动<strong>一行都不用改</strong> —— 它们读的就是最新值。</p>
+<p><strong>节点标志位</strong>：<code>QLUINode.flags</code> 一个字节省着用（<code>QL_UI_NODE_PASSWORD</code>），
+旁边留了 <code>reserved</code>。这就是 blob <strong>v11 → v12</strong> 的原因，<code>sizeof(QLUINode)</code> 18 → 20。</p>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>实现位置</th>
+<th>坑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>密码圆点</td>
+<td><code>input_display_text()</code></td>
+<td>宽度必须按<strong>圆点</strong>量，否则光标飘出框外</td>
+</tr>
+<tr>
+<td>光标/选区绘制</td>
+<td><code>draw_input_decor()</code></td>
+<td>1px 竖线 + 半透明矩形，画在文字之后</td>
+</tr>
+<tr>
+<td>键盘</td>
+<td><code>input_key()</code></td>
+<td><code>Enter</code> 只发回调（没有 <code>&lt;form&gt;</code>）；<code>Esc</code> 收焦点</td>
+</tr>
+<tr>
+<td>超长插入</td>
+<td><code>input_insert()</code></td>
+<td><strong>静默截断</strong>（用户打字不该因为满了而失败）</td>
+</tr>
+<tr>
+<td>回调</td>
+<td><code>input_emit()</code></td>
+<td>只在值真的变了时发</td>
+</tr>
+</tbody>
+</table>
+<p><strong>没有剪贴板、没有 IME、光标不闪</strong>：前两个要平台层提供事件，第三个要求主循环
+一直醒着（省电优先）。都写进了 §6 的诚实清单。</p>
+<h3 id="58">5.8 下拉框：覆盖式面板</h3>
+<div class="highlight"><pre><span></span><code>&lt;select&gt;  →  struct QLUISelectState { node, sel, open }   池：QL_CFG_UI_SELECT_MAX
+&lt;option&gt;  →  display: none 的普通节点（只被面板读文字）
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>面板矩形</td>
+<td><code>select_panel_rect()</code></td>
+<td>贴在 select 下方，高度夹到 <code>QL_CFG_UI_SELECT_PANEL_H</code></td>
+</tr>
+<tr>
+<td>绘制</td>
+<td><code>draw_select_panel()</code></td>
+<td><strong><code>ql_ui_render</code> / <code>render_rect</code> 末尾单独画</strong>：不占布局、不受父级 <code>overflow</code> 裁剪</td>
+</tr>
+<tr>
+<td>命中</td>
+<td><code>select_pointer_down()</code></td>
+<td>先判面板（它在最上层），再判"点面板外 → 收起"</td>
+</tr>
+<tr>
+<td>同步显示文本</td>
+<td><code>select_sync_text()</code></td>
+<td>选中项的文字就是 select 的文字（<code>node-&gt;text</code> 直接指过去）</td>
+</tr>
+<tr>
+<td>键盘</td>
+<td><code>select_key()</code></td>
+<td><code>↑</code>/<code>↓</code> 改选中，<code>空格</code>/<code>回车</code> 展开收起</td>
+</tr>
+</tbody>
+</table>
+<p><strong>一个容易写错的分支</strong>：点面板外要"收起 + 继续走普通点击"，但如果点的正是这个
+select 自己，那就是"再点一次关掉"，必须 <strong>return</strong>，否则会立刻又展开（<code>open</code> 先清 0
+再走到展开分支）。这个 bug 是被 <code>test_select</code> 第 4 项（白色像素数回到原值）抓到的。</p>
+<p><strong>同一时刻只开一个</strong>：<code>ui-&gt;open_select</code> 只有一个指针，够用且省事。</p>
+<h3 id="59-tab">5.9 焦点：Tab 在控件之间循环</h3>
+<p>可聚焦 = <code>input</code> / <code>select</code> / <code>button</code> 且 <code>display != none</code>（<code>node_is_focusable()</code>）。
+<code>Tab</code> / <code>Shift+Tab</code> 按<strong>树序</strong>步进，到头上绕回（<code>focus_step()</code>）；
+聚焦到输入框时光标放末尾，不选中全文（"一打字就覆盖整串"的语义留给多行编辑一起定）。</p>
+<p>焦点本身只做两件事：点亮 <code>QL_UI_RT_FOCUS</code>（<code>:focus</code> 样式靠它，<code>state_chain</code> 一路传到父级），
+以及决定键盘事件归谁。<strong>绘制不读焦点</strong>，所以焦点变化只标脏、不重排。</p>
 <hr />
 <h3 id="55-qlui-blob">5.5 <code>.qlui</code> blob：换界面不用重编译</h3>
 <div class="highlight"><pre><span></span><code>                    ┌──▶ ui_demo.c ──▶ 编译器 ──▶ .rodata ──▶ ql_ui_build()

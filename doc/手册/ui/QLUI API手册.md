@@ -69,11 +69,15 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `button` | `display:inline-block`，带内边距/边框/背景 |
 | `h1` / `h2` | `display:block`，`font-size:16px` |
 | `h3` | `display:block`，`font-size:12px` |
+| `input` | `display:inline-block`，带内边距/边框/圆角；`type` 只支持 `text` / `password` |
+| `select` / `option` | 与 `input` 同形 / **`display:none`**（只活在面板里） |
+
+完整 35 个标签见[阅读指南 §5.4.7](QLUI阅读指南.md)。
 
 **限制**：
 - 文档必须**有且只有一个根元素**；
 - 元素不能同时包含文本和子元素（混合内容）→ 报错，请把文本包进 `<span>`；
-- 其他标签（`img`/`table`/`input`/`ul`…）→ 报错。
+- `img` / `table` / `textarea` / 任意未实现的 `type` → 报错，错误信息给出替代做法；
 
 ---
 
@@ -612,11 +616,12 @@ typedef struct {
        line-height 是 int16_t line_h（0 = normal），
        white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），
        font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */
-} QLUIStyle;  /* sizeof == 120（blob v11） */
+} QLUIStyle;  /* sizeof == 120（blob v12） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;
-} QLUINode;
+    uint8_t  flags, reserved;      /* QL_UI_NODE_PASSWORD 等 */
+} QLUINode;  /* sizeof == 20（blob v12） */
 
 typedef struct {
     const char *name;
@@ -711,6 +716,64 @@ int  ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 
 > 注意：状态位**会影响绘制**（`:hover`/`:active`/`:focus` 有独立样式），但**不影响布局**（M1 限制），
 > 需要高亮请在 `click` 回调或渲染后自行处理。
+
+### 输入框
+
+```c
+typedef void (*ql_ui_input_cb)(QLUIRoot *ui, QLUINodeRT *node,
+                               const char *value, void *user);
+
+void        ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
+const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node);
+ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
+```
+
+| 函数 | 说明 |
+|---|---|
+| `set_input_cb` | 值变化 / 按回车时回调；`cb == NULL` 取消 |
+| `input_value` | 当前值；不是 `<input>` 返回 `NULL`。指针在下次编辑前有效 |
+| `input_set_value` | 改值（夹到 `QL_CFG_UI_INPUT_LEN−1`），光标移到末尾 |
+
+编辑能力：点击定位、拖动选字、`Backspace`/`Delete`、`←`/`→`/`Home`/`End`、
+`Shift+方向` 扩展选区、`QL_INPUT_TEXT` 插入、`Esc` 收焦点。
+**没有剪贴板、没有 IME、光标不闪。**
+
+### 下拉框
+
+```c
+void     ql_ui_set_select_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
+int      ql_ui_select_index(const QLUIRoot *ui, const QLUINodeRT *node);
+ql_err_t ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
+```
+
+| 函数 | 说明 |
+|---|---|
+| `set_select_cb` | 用户改了选中项或程序设值时回调（`value` = 选项文字） |
+| `select_index` | 当前第几项；不是 `<select>` 返回 `-1` |
+| `select_set_index` | 设置选中项（**越界夹紧**，不报错） |
+
+面板是**覆盖层**：不占布局、不受父级 `overflow` 裁剪、同一时刻只开一个。
+键盘：`↑`/`↓` 改选中，`空格`/`回车` 展开收起。
+
+### 滚动
+
+```c
+ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y);
+ql_err_t ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy);
+int      ql_ui_scrollable(const QLUINodeRT *node);
+```
+
+`scroll_to` 只设状态（**需要自己再调一次 `ql_ui_layout`**），`scroll_by` 内部重排并标脏。
+
+### 焦点
+
+```c
+void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
+QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
+```
+
+`Tab` / `Shift+Tab` 在 `input` / `select` / `button` 之间按树序循环。
+焦点只点亮 `QL_UI_RT_FOCUS`（`:focus` 样式靠它），**不影响布局**。
 
 ---
 
@@ -868,9 +931,10 @@ ql_ui_layout(panel, 120, 480);
 | 高度 | 不支持 `%`，不支持 `min/max-height` |
 | 文本 | 不支持混合内容、不自动换行、无字距/行距调整 |
 | 伪类 | `:hover`/`:active`/`:focus` 编译成变体样式；布局仍按基础样式 |
-| 运行期 | 只能改文本，不能改结构/样式类（要改结构就换一份 doc） |
+| 运行期 | 只能改文本（含 `<input>` 的值），不能改结构/样式类（要改结构就换一份 doc） |
 | 换 UI | 支持 `.qlui` blob，**不用重编译**；但不支持目标机上解析 HTML/CSS 文本（M3.5） |
 | JS | 不支持（交互用 C 回调） |
+| 表单 | 有 `<input>` / `<select>`，但**没有 `<form>`**、没有提交、没有校验、没有剪贴板/IME |
 | 性能 | 一次 `layout` 遍历整棵树；节点数 ≤ 数百时足够 |
 
 需要更高兼容度 → 用 PC + WebView（[设计文档 §7.3](../../Web兼容设计.md)）。

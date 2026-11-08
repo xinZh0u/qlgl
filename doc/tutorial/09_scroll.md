@@ -76,4 +76,4 @@ ql_ui_layout(ui, w, h);            /* scroll_to 不重排，要自己调 */
 
 ---
 
-上一章：[标签与语义](08_tags.html)
+上一章：[标签与语义](08_tags.html) ｜ 下一章：[与 Web 的差别](10_vs_web.html)

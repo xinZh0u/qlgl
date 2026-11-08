@@ -58,7 +58,7 @@ ql_ui_free(ui);
 ql_ui_doc_free(doc);
 ```
 
-**支持的 HTML（32 个标签）**
+**支持的 HTML（35 个标签）**
 
 | 类 | 标签 |
 |---|---|
@@ -68,8 +68,9 @@ ql_ui_doc_free(doc);
 | 列表 | `ul` `ol` `li`（结构与缩进；**不画项目符号**，本库没有生成内容） |
 | 空元素 | `hr`（块级细线）、`br`（换一行） |
 | 控件 | `button`（只是一个样式化的盒子，点击靠事件） |
+| 输入控件 | `input`（`type` 只支持 `text` / `password`）、`select` + `option`（覆盖式面板） |
 
-属性只看 `class` / `id` / `style`；注释与 `<!DOCTYPE>` 跳过。
+属性只看 `class` / `id` / `style` / `value` / `type`；注释与 `<!DOCTYPE>` 跳过。
 混合内容（`<p>a<b>b</b></p>`）在编译期消解成匿名 `span`，
 **行内元素之间的空白会保留成一个空格**（`<b>a</b> <i>b</i>` 不会变成 `ab`）。
 标签名可用 `ql_ui_tag_name(node->src->tag)` 取回。

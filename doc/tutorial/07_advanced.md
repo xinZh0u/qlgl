@@ -149,4 +149,4 @@ done
 
 ---
 
-上一章：[换皮肤](06_theme.html)
+上一章：[换皮肤](06_theme.html) ｜ 下一章：[标签](08_tags.html)

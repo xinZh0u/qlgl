@@ -21,6 +21,9 @@
 
 #include <qlgl/qlgl.h>
 
+/* 定义在下拉框那一段；构建时初始化要用 */
+static void select_sync_text(struct QLUISelectState *st);
+
 /* 起播关键帧动画（定义在过渡那一段，构建时要先用） */
 static void anim_boot(QLUIRoot *ui);
 
@@ -36,6 +39,7 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "ul", "ol", "li",
     "hr", "br",
     "mark", "em", "strong", "u", "s",
+    "input", "select", "option",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -63,6 +67,26 @@ static int text_is_only_ws(const char *t)
 
 /* 共享的隐藏样式：只用来关掉"只含空白的 flex 项" */
 static const QLUIStyle s_style_hidden = { .display = QL_UI_DISPLAY_NONE };
+
+struct QLUISelectState {
+    QLUINodeRT *node;
+    uint16_t    sel;        /* 选中第几个 <option>（0 基） */
+    uint8_t     open;       /* 面板是否展开 */
+};
+
+
+/*
+ * 每个 <input> 对应池里的一条。值缓冲是**运行期唯一可变**的文本，
+ * 所以长度有硬上限（QL_CFG_UI_INPUT_LEN）。池只在 doc 里真的有 <input> 时分配。
+ */
+struct QLUIInput {
+    QLUINodeRT *node;
+    char        buf[QL_CFG_UI_INPUT_LEN];
+    uint16_t    len;      /* 字节数（不含结尾 0） */
+    uint16_t    caret;    /* 光标：字节偏移，0..len */
+    uint16_t    sel;      /* 选区锚点；== caret 表示没有选区 */
+    ql_coord_t  scroll_x; /* 文本比盒子宽时横向滚动的像素 */
+};
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -113,6 +137,76 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
                     sibling = sibling->next_sibling;
                 sibling->next_sibling = rt;
             }
+        }
+    }
+
+    /*
+     * 输入框池：doc 里真的出现 <input> 才分配（静态界面 + MCU 的常态是零字节）。
+     * 顺便把每个输入框的 node->text 指到池里的可变缓冲 —— 之后编辑只改缓冲，
+     * 绘制、ql_ui_set_text 那套一行都不用改。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++) {
+        if (doc->nodes[i].tag == QL_UI_TAG_INPUT) {
+            ui->input_count = (uint16_t)(ui->input_count + 1u);
+        }
+    }
+    if (ui->input_count > 0) {
+        if (ui->input_count > QL_CFG_UI_INPUT_MAX)
+            ui->input_count = QL_CFG_UI_INPUT_MAX;
+        ui->inputs = (struct QLUIInput *)ql_mem_calloc(ui->input_count,
+                                                       sizeof(struct QLUIInput));
+        if (ui->inputs == NULL) {
+            ql_ui_free(ui);
+            return NULL;
+        }
+        uint16_t k = 0;
+        for (uint16_t i = 0; i < doc->node_count && k < ui->input_count; i++) {
+            QLUINodeRT *rt = &ui->nodes[i];
+            if (rt->src->tag != QL_UI_TAG_INPUT)
+                continue;
+            struct QLUIInput *in = &ui->inputs[k++];
+            in->node = rt;
+            /* 初始值 = 解析期从 value 属性带进来的文本（可能没有） */
+            const char *init = rt->text;
+            size_t n = (init != NULL) ? strlen(init) : 0u;
+            if (n > (size_t)QL_CFG_UI_INPUT_LEN - 1u)
+                n = (size_t)QL_CFG_UI_INPUT_LEN - 1u;
+            if (n > 0)
+                memcpy(in->buf, init, n);
+            in->buf[n] = '\0';
+            in->len = (uint16_t)n;
+            in->caret = 0;
+            in->sel = 0;
+            rt->text = in->buf;
+        }
+    }
+
+    /*
+     * 下拉框池：同样按需分配。默认选中第 0 项，并把 select 显示的文字
+     * 指到那一项的文本上（之后换选中项只改指针，不复制字符串）。
+     */
+    for (uint16_t i = 0; i < doc->node_count; i++)
+        if (doc->nodes[i].tag == QL_UI_TAG_SELECT)
+            ui->select_count = (uint16_t)(ui->select_count + 1u);
+    if (ui->select_count > 0) {
+        if (ui->select_count > QL_CFG_UI_SELECT_MAX)
+            ui->select_count = QL_CFG_UI_SELECT_MAX;
+        ui->selects = (struct QLUISelectState *)ql_mem_calloc(
+            ui->select_count, sizeof(struct QLUISelectState));
+        if (ui->selects == NULL) {
+            ql_ui_free(ui);
+            return NULL;
+        }
+        uint16_t k = 0;
+        for (uint16_t i = 0; i < doc->node_count && k < ui->select_count; i++) {
+            QLUINodeRT *rt = &ui->nodes[i];
+            if (rt->src->tag != QL_UI_TAG_SELECT)
+                continue;
+            struct QLUISelectState *st = &ui->selects[k++];
+            st->node = rt;
+            st->sel = 0;
+            st->open = 0;
+            select_sync_text(st);
         }
     }
 
@@ -191,6 +285,8 @@ void ql_ui_free(QLUIRoot *ui)
         ql_mem_free(ui->trans);
     }
     ql_mem_free(ui->runs);
+    ql_mem_free(ui->inputs);
+    ql_mem_free(ui->selects);
     ql_mem_free(ui->nodes);
     if (ui->owns_doc)
         ql_ui_doc_free((QLUIDoc *)(uintptr_t)ui->doc);
@@ -544,6 +640,309 @@ static void sort_tree_by_z(QLUINodeRT *node)
     sort_children_by_z(node);
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling)
         sort_tree_by_z(c);
+}
+
+/* ------------------------------ 输入框 ------------------------------ */
+
+
+/* [0, off) 里有几个码点（密码框把每个码点画成一个圆点） */
+static uint16_t cp_count(const char *text, uint16_t off)
+{
+    uint16_t k = 0;
+    uint16_t i = 0;
+    while (i < off) {
+        uint32_t cp = 0;
+        const int32_t used = ql_utf8_decode(text + i, &cp);
+        if (used <= 0)
+            break;
+        i = (uint16_t)(i + (uint16_t)used);
+        k++;
+    }
+    return k;
+}
+
+/*
+ * 密码框的显示文本：每个码点换成一个圆点。
+ * 返回的指针要么是 in->buf（普通框），要么是 tmp（调用方给的栈缓冲）。
+ * caret 的横向位置也按这份显示文本算，否则光会飘。
+ */
+static const char *input_display_text(const struct QLUIInput *in, int password,
+                                      char *tmp, size_t cap)
+{
+    if (!password)
+        return in->buf;
+    size_t n = 0;
+    for (uint16_t i = 0; i < in->len && n + 3u < cap;) {
+        uint32_t cp = 0;
+        const int32_t used = ql_utf8_decode(in->buf + i, &cp);
+        if (used <= 0)
+            break;
+        memcpy(tmp + n, "\xE2\x80\xA2", 3u);   /* U+2022 BULLET */
+        n += 3u;
+        i = (uint16_t)(i + used);
+    }
+    tmp[n] = '\0';
+    return tmp;
+}
+
+/* 像素 x → 最近的字符边界（往上/下取更近的那个） */
+static uint16_t caret_at_px(const QLFont *font, const char *text, uint16_t len,
+                            ql_coord_t x)
+{
+    uint16_t best = 0;
+    ql_coord_t best_d = 0x7FFFFFFF;
+    uint16_t i = 0;
+    while (i <= len) {
+        const ql_coord_t px = ql_font_line_width(font, text, (int32_t)i);
+        const ql_coord_t d = (px > x) ? (px - x) : (x - px);
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+        if (i == len)
+            break;
+        uint32_t cp = 0;
+        const int32_t used = ql_utf8_decode(text + i, &cp);
+        if (used <= 0)
+            break;
+        i = (uint16_t)(i + (uint16_t)used);
+    }
+    return best;
+}
+
+/* 光标前一个字符的起点（UTF-8 安全） */
+static uint16_t prev_boundary(const char *text, uint16_t off)
+{
+    if (off == 0)
+        return 0;
+    uint16_t i = (uint16_t)(off - 1u);
+    while (i > 0 && ((unsigned char)text[i] & 0xC0u) == 0x80u)
+        i--;
+    return i;
+}
+
+static uint16_t next_boundary(const char *text, uint16_t len, uint16_t off)
+{
+    if (off >= len)
+        return len;
+    uint32_t cp = 0;
+    const int32_t used = ql_utf8_decode(text + off, &cp);
+    if (used <= 0)
+        return len;
+    const uint16_t nx = (uint16_t)(off + (uint16_t)used);
+    return (nx > len) ? len : nx;
+}
+
+static struct QLUIInput *input_of(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || ui->inputs == NULL)
+        return NULL;
+    if (node->src == NULL || node->src->tag != QL_UI_TAG_INPUT)
+        return NULL;
+    for (uint16_t i = 0; i < ui->input_count; i++)
+        if (ui->inputs[i].node == node)
+            return &ui->inputs[i];
+    return NULL;
+}
+
+static void input_emit(QLUIRoot *ui, struct QLUIInput *in)
+{
+    if (ui->input_cb != NULL)
+        ui->input_cb(ui, in->node, in->buf, ui->input_user);
+    /* 值变了：这个节点要重画 */
+    if (in->node != NULL)
+        in->node->flags |= QL_UI_RT_DIRTY;
+}
+
+/* 把 [sel, caret) 选区删掉（sel 与 caret 顺序无关）；返回删除后的光标位置 */
+static uint16_t input_drop_selection(struct QLUIInput *in)
+{
+    if (in->sel == in->caret)
+        return in->caret;
+    uint16_t a = in->sel;
+    uint16_t b = in->caret;
+    if (a > b) {
+        const uint16_t t = a;
+        a = b;
+        b = t;
+    }
+    memmove(in->buf + a, in->buf + b, (size_t)(in->len - b) + 1u);
+    in->len = (uint16_t)(in->len - (b - a));
+    in->caret = a;
+    in->sel = a;
+    return a;
+}
+
+/* 在光标处插入一段 UTF-8；超长就截断（不报错：用户打字不该因为满而失败） */
+static void input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
+{
+    size_t add = strlen(s);
+    if (add == 0)
+        return;
+    (void)input_drop_selection(in);
+
+    const size_t room = (size_t)(QL_CFG_UI_INPUT_LEN - 1u) - in->len;
+    if (add > room)
+        add = room;
+    if (add == 0)
+        return;
+
+    memmove(in->buf + in->caret + add, in->buf + in->caret,
+            (size_t)(in->len - in->caret) + 1u);
+    memcpy(in->buf + in->caret, s, add);
+    in->len = (uint16_t)(in->len + add);
+    in->caret = (uint16_t)(in->caret + add);
+    in->sel = in->caret;
+    input_emit(ui, in);
+}
+
+static void input_set_caret(QLUIRoot *ui, struct QLUIInput *in, uint16_t pos, int extend)
+{
+    if (pos > in->len)
+        pos = in->len;
+    in->caret = pos;
+    if (!extend)
+        in->sel = pos;
+    if (in->node != NULL)
+        in->node->flags |= QL_UI_RT_DIRTY;
+    (void)ui;
+}
+
+/* 点进来：聚焦 + 定光标（并开始拖动选字） */
+static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x)
+{
+    struct QLUIInput *in = input_of(ui, node);
+    if (in == NULL)
+        return 0;
+    ql_ui_set_focus_node(ui, node);
+    const QLFont *font = font_of_style(node, node->style);
+    const QLRect cb = node->content_box;
+    const ql_coord_t rel = x - cb.x + in->scroll_x;
+    const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
+    input_set_caret(ui, in, pos, 0);
+    ui->input_drag = 1;
+    return 1;
+}
+
+static void input_pointer_move(QLUIRoot *ui, ql_coord_t x)
+{
+    struct QLUIInput *in = (ui->focus != NULL) ? input_of(ui, ui->focus) : NULL;
+    if (in == NULL || !ui->input_drag)
+        return;
+    const QLFont *font = font_of_style(in->node, in->node->style);
+    const QLRect cb = in->node->content_box;
+    const ql_coord_t rel = x - cb.x + in->scroll_x;
+    const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
+    input_set_caret(ui, in, pos, 1);
+}
+
+/* 键盘：只处理"编辑"这一层；没有剪贴板（平台层不提供） */
+static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
+{
+    const int shift = (ev->mods & QL_MOD_SHIFT) != 0;
+    switch (ev->key) {
+    case QL_KEY_BACKSPACE:
+        if (in->sel != in->caret) {
+            (void)input_drop_selection(in);
+            input_emit(ui, in);
+        } else if (in->caret > 0) {
+            const uint16_t from = prev_boundary(in->buf, in->caret);
+            memmove(in->buf + from, in->buf + in->caret,
+                    (size_t)(in->len - in->caret) + 1u);
+            in->len = (uint16_t)(in->len - (in->caret - from));
+            in->caret = from;
+            in->sel = from;
+            input_emit(ui, in);
+        }
+        return 1;
+    case QL_KEY_DELETE:
+        if (in->sel != in->caret) {
+            (void)input_drop_selection(in);
+            input_emit(ui, in);
+        } else if (in->caret < in->len) {
+            const uint16_t to = next_boundary(in->buf, in->len, in->caret);
+            memmove(in->buf + in->caret, in->buf + to,
+                    (size_t)(in->len - to) + 1u);
+            in->len = (uint16_t)(in->len - (to - in->caret));
+            in->sel = in->caret;
+            input_emit(ui, in);
+        }
+        return 1;
+    case QL_KEY_LEFT:
+        input_set_caret(ui, in, prev_boundary(in->buf, in->caret), shift);
+        return 1;
+    case QL_KEY_RIGHT:
+        input_set_caret(ui, in, next_boundary(in->buf, in->len, in->caret), shift);
+        return 1;
+    case QL_KEY_HOME:
+        input_set_caret(ui, in, 0, shift);
+        return 1;
+    case QL_KEY_END:
+        input_set_caret(ui, in, in->len, shift);
+        return 1;
+    case QL_KEY_ENTER:
+        if (ui->input_cb != NULL)
+            ui->input_cb(ui, in->node, in->buf, ui->input_user);
+        return 1;
+    case QL_KEY_ESCAPE:
+        ui->input_drag = 0;
+        ql_ui_set_focus_node(ui, NULL);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* ------------------------------ 键盘焦点 ------------------------------ */
+
+/* 能接受键盘操作的控件（也决定 Tab 的落点） */
+static int node_is_focusable(const QLUINodeRT *nd)
+{
+    if (nd == NULL || nd->src == NULL || nd->style == NULL)
+        return 0;
+    if (nd->style->display == QL_UI_DISPLAY_NONE)
+        return 0;
+    const uint16_t tag = nd->src->tag;
+    return tag == QL_UI_TAG_INPUT || tag == QL_UI_TAG_SELECT ||
+           tag == QL_UI_TAG_BUTTON;
+}
+
+/*
+ * Tab / Shift+Tab：按树序在可聚焦节点之间循环，到头上就绕回。
+ *
+ * 聚焦到输入框时光标放到末尾（不选中全文）—— 选中全文就得再处理"一打字就
+ * 覆盖整串"的语义，那是 `<textarea>`/多行编辑该一起决定的事，先不做。
+ */
+static void focus_set(QLUIRoot *ui, QLUINodeRT *nd)
+{
+    ql_ui_set_focus_node(ui, nd);
+    struct QLUIInput *in = input_of(ui, nd);
+    if (in != NULL) {
+        in->caret = in->len;
+        in->sel = in->len;
+        in->scroll_x = 0;
+        nd->flags |= QL_UI_RT_DIRTY;
+    }
+}
+
+static void focus_step(QLUIRoot *ui, int dir)
+{
+    const int n = (int)ui->node_count;
+    if (n <= 0)
+        return;
+    int i = (ui->focus != NULL) ? (int)(ui->focus - ui->nodes) : (dir > 0 ? -1 : n);
+    for (int k = 0; k < n; k++) {
+        i += dir;
+        if (i < 0)
+            i = n - 1;
+        else if (i >= n)
+            i = 0;
+        if (node_is_focusable(&ui->nodes[i])) {
+            focus_set(ui, &ui->nodes[i]);
+            return;
+        }
+    }
+    ql_ui_set_focus_node(ui, NULL);  /* 一个能聚焦的都没有 */
 }
 
 /* ------------------------------ 滚动 ------------------------------ */
@@ -1725,6 +2124,269 @@ static void draw_scrollbar(QLUINodeRT *node, QLDraw2D *d2d)
     d2d->fill_round_rect(d2d, bar, SCROLLBAR_W / 2, 0x808080, 0x96);
 }
 
+
+/* ------------------------------ 下拉框 ------------------------------ */
+
+
+/* 第 i 个 <option> 子节点（display:none 的不算） */
+static QLUINodeRT *select_option_at(const QLUINodeRT *sel, int index)
+{
+    int i = 0;
+    for (QLUINodeRT *c = sel->first_child; c != NULL; c = c->next_sibling) {
+        if (c->src == NULL || c->src->tag != QL_UI_TAG_OPTION)
+            continue;
+        if (i == index)
+            return c;
+        i++;
+    }
+    return NULL;
+}
+
+static int select_option_count(const QLUINodeRT *sel)
+{
+    int n = 0;
+    for (QLUINodeRT *c = sel->first_child; c != NULL; c = c->next_sibling)
+        if (c->src != NULL && c->src->tag == QL_UI_TAG_OPTION)
+            n++;
+    return n;
+}
+
+static struct QLUISelectState *select_of(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || ui->selects == NULL || node->src == NULL)
+        return NULL;
+    if (node->src->tag != QL_UI_TAG_SELECT)
+        return NULL;
+    for (uint16_t i = 0; i < ui->select_count; i++)
+        if (ui->selects[i].node == node)
+            return &ui->selects[i];
+    return NULL;
+}
+
+/* 把 select 显示的文字换成选中项的（node->text 指过去即可，不复制） */
+static void select_sync_text(struct QLUISelectState *st)
+{
+    QLUINodeRT *opt = select_option_at(st->node, (int)st->sel);
+    st->node->text = (opt != NULL) ? opt->text : NULL;
+    st->node->flags |= QL_UI_RT_DIRTY;
+}
+
+/* 面板几何：贴在 select 下沿，宽度与它一致；太高就截到 QL_CFG_UI_SELECT_PANEL_H */
+static QLRect select_panel_rect(const struct QLUISelectState *st)
+{
+    const QLRect box = ql_ui_node_rect(st->node);
+    const int n = select_option_count(st->node);
+    const ql_coord_t row_h = (ql_coord_t)(st->node->style->line_h > 0
+                                             ? st->node->style->line_h
+                                             : 24);
+    ql_coord_t h = row_h * (ql_coord_t)n;
+    if (h > (ql_coord_t)QL_CFG_UI_SELECT_PANEL_H)
+        h = (ql_coord_t)QL_CFG_UI_SELECT_PANEL_H;
+    return ql_rect_make(box.x, ql_rect_bottom(box), box.w, h);
+}
+
+/* 画展开的面板（覆盖在整棵树之上，不受 overflow 裁剪） */
+static void draw_select_panel(QLUIRoot *ui, QLDraw2D *d2d)
+{
+    struct QLUISelectState *st = ui->open_select;
+    if (st == NULL || !st->open || d2d->fill_rect == NULL)
+        return;
+
+    const QLRect panel = select_panel_rect(st);
+    const QLFont *font = font_of_style(st->node, st->node->style);
+    const ql_coord_t row_h = (ql_coord_t)(st->node->style->line_h > 0
+                                             ? st->node->style->line_h
+                                             : 24);
+
+    /* 底板 + 选中的那一行高亮 */
+    d2d->fill_rect(d2d, panel, 0xFFFFFF, 255);
+    int idx = 0;
+    for (QLUINodeRT *c = st->node->first_child; c != NULL; c = c->next_sibling) {
+        if (c->src == NULL || c->src->tag != QL_UI_TAG_OPTION)
+            continue;
+        const ql_coord_t y = panel.y + (ql_coord_t)idx * row_h;
+        if (y + row_h > ql_rect_bottom(panel))
+            break;
+        QLRect row = ql_rect_make(panel.x, y, panel.w, row_h);
+        if ((uint16_t)idx == st->sel)
+            d2d->fill_rect(d2d, row, 0x2E6BE6, 255);
+
+        if (c->text != NULL && c->text[0] != '\0') {
+            QLTextStyle ts;
+            memset(&ts, 0, sizeof(ts));
+            ts.color = ((uint16_t)idx == st->sel) ? 0xFFFFFF : 0x000000;
+            ts.line_h = row_h;
+            QLRect tb = ql_rect_make(panel.x + 8, y, panel.w - 16, row_h);
+            d2d->draw_text(d2d, font, c->text, -1, tb, &ts);
+        }
+        idx++;
+    }
+}
+
+void ql_ui_set_select_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user)
+{
+    if (ui == NULL)
+        return;
+    ui->input_cb = cb;      /* 与输入框共用一个回调位：两者不会同时用 */
+    ui->input_user = user;
+}
+
+int ql_ui_select_index(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    const struct QLUISelectState *st = select_of(ui, node);
+    return (st != NULL) ? (int)st->sel : -1;
+}
+
+ql_err_t ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index)
+{
+    struct QLUISelectState *st = select_of(ui, node);
+    if (st == NULL)
+        return QL_ERR_INVAL;
+    const int n = select_option_count(node);
+    if (n <= 0)
+        return QL_ERR_INVAL;
+    if (index < 0)
+        index = 0;
+    if (index >= n)
+        index = n - 1;
+    if ((uint16_t)index != st->sel) {
+        st->sel = (uint16_t)index;
+        select_sync_text(st);
+        if (ui->input_cb != NULL) {
+            const QLUINodeRT *opt = select_option_at(node, index);
+            ui->input_cb(ui, node, (opt != NULL && opt->text != NULL) ? opt->text : "",
+                         ui->input_user);
+        }
+    }
+    return QL_OK;
+}
+
+/* 点在下拉框上：展开/收起；点开着的面板上：选中那一项 */
+static int select_pointer_down(QLUIRoot *ui, QLUINodeRT *hit, ql_coord_t x, ql_coord_t y)
+{
+    /* 先看有没有开着的面板（它在最上层，优先命中） */
+    struct QLUISelectState *open = ui->open_select;
+    if (open != NULL && open->open) {
+        const QLRect panel = select_panel_rect(open);
+        if (x >= panel.x && x < ql_rect_right(panel) && y >= panel.y &&
+            y < ql_rect_bottom(panel)) {
+            const ql_coord_t row_h = (ql_coord_t)(open->node->style->line_h > 0
+                                                     ? open->node->style->line_h
+                                                     : 24);
+            const int idx = (row_h > 0) ? (int)((y - panel.y) / row_h) : 0;
+            (void)ql_ui_select_set_index(ui, open->node, idx);
+            open->open = 0;
+            ui->open_select = NULL;
+            open->node->flags |= QL_UI_RT_DIRTY;
+            return 1;
+        }
+        /*
+         * 点在面板外：收起。
+         * 如果点的就是这个 select 自己，那就是"再点一次关掉"，到此为止；
+         * 点的是别处，就继续走普通点击流程（一箭双雕：关面板 + 正常交互）。
+         */
+        const int self = (select_of(ui, hit) == open);
+        open->open = 0;
+        ui->open_select = NULL;
+        open->node->flags |= QL_UI_RT_DIRTY;
+        if (self)
+            return 1;
+        return 0;  /* 面板关了，这次点击交给下面的普通流程 */
+    }
+
+    struct QLUISelectState *st = select_of(ui, hit);
+    if (st == NULL)
+        return 0;
+    st->open = 1;
+    ui->open_select = st;
+    st->node->flags |= QL_UI_RT_DIRTY;
+    ql_ui_set_focus_node(ui, st->node);  /* 让 :focus 与后续键盘都跟得上 */
+    return 1;
+}
+
+/* 焦点在下拉框上时的键盘：上下改选中，空格/回车展开或收起 */
+static int select_key(QLUIRoot *ui, struct QLUISelectState *st, const QLInputEvent *ev)
+{
+    const int n = select_option_count(st->node);
+    switch (ev->key) {
+    case QL_KEY_UP:
+        if (n > 0)
+            (void)ql_ui_select_set_index(ui, st->node, (int)st->sel - 1);
+        return 1;
+    case QL_KEY_DOWN:
+        if (n > 0)
+            (void)ql_ui_select_set_index(ui, st->node, (int)st->sel + 1);
+        return 1;
+    case QL_KEY_SPACE:
+    case QL_KEY_ENTER:
+        if (n <= 0)
+            return 1;
+        st->open = (uint8_t)(!st->open);
+        ui->open_select = st->open ? st : NULL;
+        st->node->flags |= QL_UI_RT_DIRTY;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* ------------------------------ 输入框绘制 ------------------------------ */
+
+/*
+ * 输入框在文字之后多画两样：选区（半透明高亮）与光标（1px 竖线）。
+ *
+ * 密码框：文本已经在上一步画过了 —— 所以这里不重复处理，
+ * 而是在 draw_text 之前把显示用的字符串换掉（见 render_node 里 password_text）。
+ */
+static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
+{
+    QLUIRoot *ui = node->owner;
+    struct QLUIInput *in = input_of(ui, node);
+    if (in == NULL)
+        return;
+    const QLFont *font = font_of_style(node, node->style);
+    if (font == NULL)
+        return;
+
+    const QLRect cb = node->content_box;
+    const ql_coord_t base_x = cb.x - in->scroll_x;
+
+    /* 密码框显示成圆点，所以宽度必须按**显示文本**量，否则光标会飘 */
+    char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
+    const int pw = (node->src->flags & QL_UI_NODE_PASSWORD) != 0;
+    const char *disp = input_display_text(in, pw, dots, sizeof(dots));
+
+    /* 原字节偏移 → 显示文本的字节偏移 */
+    #define DISP_OFF(o)                                                        \
+        ((uint16_t)((pw) ? (uint16_t)(cp_count(in->buf, (o)) * 3) : (o)))
+
+    /* 选区 */
+    if (in->sel != in->caret && d2d->fill_rect != NULL) {
+        uint16_t a = in->sel;
+        uint16_t b = in->caret;
+        if (a > b) {
+            const uint16_t t = a;
+            a = b;
+            b = t;
+        }
+        const ql_coord_t x0 = base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(a));
+        const ql_coord_t x1 = base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(b));
+        if (x1 > x0) {
+            QLRect r = ql_rect_make(x0, cb.y, x1 - x0, cb.h);
+            d2d->fill_rect(d2d, r, node->style->text_color, 0x50);
+        }
+    }
+
+    /* 光标：只在聚焦时画（不闪 —— 闪烁要主循环一直醒着，省电优先） */
+    if (ui->focus == node && d2d->fill_rect != NULL) {
+        const ql_coord_t cx =
+            base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(in->caret));
+        QLRect r = ql_rect_make(cx, cb.y + 2, 1, (cb.h > 4) ? cb.h - 4 : cb.h);
+        d2d->fill_rect(d2d, r, node->style->text_color, 255);
+    }
+    #undef DISP_OFF
+}
+
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = ql_ui_node_style(node);
@@ -1811,6 +2473,20 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
                                s->border_color);
 
     if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box)) {
+        /*
+         * 输入框：显示文本可能被换成圆点（密码），而且比盒子宽时要横向滚。
+         * 这两件事都只在输入框上发生，普通文本节点走的是同一条 draw_text。
+         */
+        struct QLUIInput *in = input_of(node->owner, node);
+        char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
+        const char *shown = node->text;
+        QLRect tbox = node->content_box;
+        if (in != NULL) {
+            shown = input_display_text(in, (node->src->flags & QL_UI_NODE_PASSWORD) != 0,
+                                       dots, sizeof(dots));
+            tbox.x -= in->scroll_x;
+        }
+
         QLTextStyle ts;
         memset(&ts, 0, sizeof(ts));
         ts.color = s->text_color;
@@ -1824,7 +2500,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
                             ((s->font_flags & QL_UI_FONT_LINE_THROUGH)
                                  ? QL_TEXT_DECO_LINE_THROUGH
                                  : 0u));
-        d2d->draw_text(d2d, font_of(node), node->text, -1, node->content_box, &ts);
+        d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
+        draw_input_decor(node, d2d);
     }
 
     /* overflow != visible 时，子树被裁到本节点的边框盒（含圆角） */
@@ -1871,6 +2548,7 @@ void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
     if (ui->root_clip_valid)
         ui->clip = ui->root_clip;
     render_node(&ui->nodes[0], d2d);
+    draw_select_panel(ui, d2d);
 }
 
 void ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty)
@@ -1887,6 +2565,8 @@ void ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty)
     d2d->set_clip(d2d, want);
     ui->clip = want;
     render_node(&ui->nodes[0], d2d);
+    d2d->set_clip(d2d, want);
+    draw_select_panel(ui, d2d);
 }
 
 QLRect ql_ui_paint_bounds(const QLUIRoot *ui)
@@ -2763,9 +3443,26 @@ int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
         return 1;
     }
 
+    /* 下拉框：展开/收起/选中（面板在最上层，优先） */
+    if (select_pointer_down(ui, hit, x, y))
+        return 1;
+
+    /*
+     * 输入框：点进来就聚焦 + 定光标（并进入"拖动选字"状态）。
+     * 命中点是输入框自己（它是 void 元素，没有子节点）。
+     */
+    if (hit != NULL && hit->src != NULL && hit->src->tag == QL_UI_TAG_INPUT) {
+        if (input_pointer_down(ui, hit, x))
+            return 1;
+    }
+
     QLUINodeRT *node = hit;
     if (node == NULL)
         return 0;
+    /* 点到别处：输入框失焦（光标随之消失） */
+    if (ui->focus != NULL && ui->focus->src != NULL &&
+        ui->focus->src->tag == QL_UI_TAG_INPUT)
+        ql_ui_set_focus_node(ui, NULL);
     set_state_chain(node, QL_UI_RT_ACTIVE, 1);
     return 1;
 }
@@ -2778,6 +3475,10 @@ int ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     if (ui->scroll_drag != NULL) {
         ui->scroll_drag = NULL;
         return 1;              /* 拖滚动条不算点击 */
+    }
+    if (ui->input_drag) {
+        ui->input_drag = 0;
+        return 1;              /* 选字结束，不算点击 */
     }
 
     QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
@@ -2825,6 +3526,11 @@ int ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
         return 1;
     }
 
+    if (ui->input_drag) {
+        input_pointer_move(ui, x);
+        return 1;
+    }
+
     QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
     if (ui->hover == node)
         return 0;
@@ -2853,6 +3559,39 @@ void ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node)
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui)
 {
     return (ui != NULL) ? ui->focus : NULL;
+}
+
+void ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user)
+{
+    if (ui == NULL)
+        return;
+    ui->input_cb = cb;
+    ui->input_user = user;
+}
+
+const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    const struct QLUIInput *in = input_of(ui, node);
+    return (in != NULL) ? in->buf : NULL;
+}
+
+ql_err_t ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value)
+{
+    struct QLUIInput *in = input_of(ui, node);
+    if (in == NULL)
+        return QL_ERR_INVAL;
+
+    size_t n = (value != NULL) ? strlen(value) : 0u;
+    if (n > (size_t)QL_CFG_UI_INPUT_LEN - 1u)
+        n = (size_t)QL_CFG_UI_INPUT_LEN - 1u;
+    if (n > 0)
+        memcpy(in->buf, value, n);
+    in->buf[n] = '\0';
+    in->len = (uint16_t)n;
+    in->caret = in->len;          /* 光标到末尾，符合"程序改值"的直觉 */
+    in->sel = in->caret;
+    node->flags |= QL_UI_RT_DIRTY;
+    return QL_OK;
 }
 
 /* ------------------------------ 滚动 API ------------------------------ */
@@ -2952,7 +3691,30 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
             (void)ql_ui_scroll_by(ui, target, ev->dx, ev->dy);
         break;
     }
+    case QL_INPUT_TEXT: {
+        /* 输入框拿到字符就插入（平台层已经把它翻译成 UTF-8 了） */
+        struct QLUIInput *in = (ui->focus != NULL) ? input_of(ui, ui->focus) : NULL;
+        if (in != NULL)
+            input_insert(ui, in, ev->text);
+        break;
+    }
     case QL_INPUT_KEY_DOWN: {
+        /* Tab / Shift+Tab 先走：它要在可聚焦控件之间跳，和控件自身无关 */
+        if (ev->key == QL_KEY_TAB) {
+            focus_step(ui, (ev->mods & QL_MOD_SHIFT) ? -1 : 1);
+            break;
+        }
+
+        /* 焦点在下拉框上：上下键改选中，空格/回车展开 */
+        struct QLUISelectState *ss = select_of(ui, ui->focus);
+        if (ss != NULL && select_key(ui, ss, ev))
+            break;
+
+        /* 焦点在输入框上：方向键/删除/回车都归它 */
+        struct QLUIInput *in = (ui->focus != NULL) ? input_of(ui, ui->focus) : NULL;
+        if (in != NULL && input_key(ui, in, ev))
+            break;
+
         /* PageUp/PageDown/Home/End 作用于焦点节点所在的可滚动容器 */
         QLUINodeRT *target = nearest_scrollable(ui->focus);
         if (target == NULL)

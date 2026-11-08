@@ -77,6 +77,10 @@ typedef enum {
     QL_UI_TAG_STRONG,
     QL_UI_TAG_U,
     QL_UI_TAG_S,
+    /* --- 输入框 / 下拉框（运行期值会变，值是 ql_ui_build 时建的池） --- */
+    QL_UI_TAG_INPUT,
+    QL_UI_TAG_SELECT,
+    QL_UI_TAG_OPTION,
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -347,6 +351,9 @@ typedef struct {
     uint16_t delay_ms;    /* animation-delay：起播前干等多久 */
 } QLUIAnimation;
 
+/* QLUINode.flags 的位 */
+#define QL_UI_NODE_PASSWORD  0x01u   /* <input type="password">：显示成圆点 */
+
 typedef struct {
     uint16_t tag;          /* QLUITag */
     uint16_t parent;       /* 0xFFFF = 根 */
@@ -358,6 +365,8 @@ typedef struct {
     uint16_t style_hover;
     uint16_t style_active;
     uint16_t style_focus;
+    uint8_t  flags;        /* QL_UI_NODE_* */
+    uint8_t  reserved;
 } QLUINode;
 
 typedef struct {
@@ -559,6 +568,10 @@ typedef struct {
 
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user_data);
 
+/* 输入框的值变化 / 回车回调（定义在这里是因为 QLUIRoot 要存函数指针） */
+typedef void (*ql_ui_input_cb)(QLUIRoot *ui, QLUINodeRT *node, const char *value,
+                               void *user);
+
 struct QLUIRoot {
     const QLUIDoc *doc;
     uint8_t        owns_doc;     /* 1 = ql_ui_free 时一并释放 doc（ql_ui_load_file 用） */
@@ -587,6 +600,16 @@ struct QLUIRoot {
     QLUINodeRT    *scroll_drag;
     ql_coord_t     scroll_drag_y0;
     ql_coord_t     scroll_drag_scroll0;
+
+    /* 输入框池：doc 里没有 <input> 时为 NULL（零字节） */
+    struct QLUIInput *inputs;      /* 输入框池（没有 <input> 时为 NULL） */
+    uint16_t       input_count;
+    struct QLUISelectState *selects;   /* 下拉框池（没有 <select> 时为 NULL） */
+    uint16_t       select_count;
+    struct QLUISelectState *open_select;   /* 当前展开的那个下拉框 */
+    int            input_drag;       /* 正在拖动选字 */
+    ql_ui_input_cb input_cb;
+    void          *input_user;
 };
 
 /* ----- 生命周期 ----- */
@@ -631,6 +654,38 @@ ql_err_t    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 
 /* 交互状态：命中测试 + 状态位 + 点击回调 */
 void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
+/* ------------------------------ 输入框 ------------------------------ */
+
+/*
+ * `<input>` 的值存在**运行期池**里（`ql_ui_build` 时按需分配），长度上限
+ * `QL_CFG_UI_INPUT_LEN - 1` 字节（UTF-8）。这是本库唯一一处"运行期会变的文本"。
+ *
+ * 编辑：点击定位光标、拖动选字、Backspace/Delete/方向键/Home/End、
+ * Shift+方向扩展选区、`QL_INPUT_TEXT` 插入字符。**没有剪贴板**（平台层不提供），
+ * 光标也**不闪**（闪烁要主循环一直醒着，省电优先）。
+ */
+/* 值变化 / 按回车时回调；cb 为 NULL 取消 */
+void        ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
+/* 当前值；node 不是输入框返回 NULL。指针在下次编辑前有效。 */
+const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node);
+/* 改值（会被夹到上限；光标移到末尾） */
+ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
+
+/* ------------------------------ 下拉框 ------------------------------ */
+
+/*
+ * `<select>` + `<option>`：点击展开一个**覆盖式**面板（不进布局、不占空间），
+ * 选中项的文字就是这个 select 显示的文字。
+ *
+ * 面板是最后一层直接画在视口上的，**不受父级 overflow 裁剪** —— 与浏览器的
+ * popup 行为一致。简单实现：同一时刻只有一个下拉框能展开。
+ */
+void        ql_ui_set_select_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
+/* 当前选中项下标；不是 <select> 返回 -1 */
+int         ql_ui_select_index(const QLUIRoot *ui, const QLUINodeRT *node);
+/* 设置选中项（越界夹紧） */
+ql_err_t    ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
+
 /*
  * 滚动（`overflow: auto`）。
  *
@@ -689,7 +744,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    11u  /* 11: line-height（QLUIStyle 116 → 120 字节） */
+#define QL_UI_BLOB_VERSION    12u  /* 12: <input>（QLUINode 加 flags） */
 
 typedef struct {
     uint32_t magic;

@@ -21,6 +21,7 @@ set(QL_EXAMPLES
     07_player
     08_tags
     09_scroll
+    10_input
 )
 
 foreach(e ${QL_EXAMPLES})

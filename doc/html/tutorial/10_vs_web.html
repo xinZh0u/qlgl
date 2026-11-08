@@ -174,6 +174,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/08_tags.html'>标签与语义</a>
 <a href='../tutorial/09_scroll.html'>滚动</a>
 <a href='../tutorial/10_vs_web.html' class='active'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
 <h4>QLObject</h4>
 <a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
@@ -238,7 +239,7 @@ main img.shot { max-width: 100%; }
 默认改成 <code>normal</code> 会让已有界面在你没改任何东西时重新排版。详见
 <a href="02_text.html">文本</a>。</p>
 <hr />
-<h2 id="2-html-32">2. HTML：只认 32 个标签</h2>
+<h2 id="2-html-35">2. HTML：只认 35 个标签</h2>
 <table>
 <thead>
 <tr>
@@ -264,8 +265,16 @@ main img.shot { max-width: 100%; }
 <td>❌ 没有图片解码器</td>
 </tr>
 <tr>
-<td><code>&lt;input&gt;</code> <code>&lt;textarea&gt;</code> <code>&lt;select&gt;</code></td>
-<td>❌ 还没有输入控件</td>
+<td><code>&lt;input type="text\|password"&gt;</code></td>
+<td>✅ 单行输入（见下）</td>
+</tr>
+<tr>
+<td><code>&lt;select&gt;</code> <code>&lt;option&gt;</code></td>
+<td>✅ 覆盖式下拉面板（见下）</td>
+</tr>
+<tr>
+<td><code>&lt;textarea&gt;</code></td>
+<td>❌ 还没有多行输入</td>
 </tr>
 <tr>
 <td><code>&lt;table&gt;</code> <code>&lt;tr&gt;</code> <code>&lt;td&gt;</code></td>
@@ -276,14 +285,15 @@ main img.shot { max-width: 100%; }
 <td>❌ 没有样式表标签，也没有脚本</td>
 </tr>
 <tr>
-<td>其它 32 个标签</td>
+<td>其它 35 个标签</td>
 <td>✅ 见<a href="08_tags.html">标签与语义</a></td>
 </tr>
 </tbody>
 </table>
-<p><strong>属性只有三个有用</strong>：<code>class</code> / <code>id</code> / <code>style</code>。其余（<code>data-*</code>、<code>aria-*</code>、
-<code>href</code>、<code>title</code>…）会被<strong>静默忽略</strong> —— 这是本库唯一"不报错的宽容"，
-因为属性不影响渲染。</p>
+<p><strong>属性只有五个有用</strong>：<code>class</code> / <code>id</code> / <code>style</code> / <code>value</code> / <code>type</code>。其余（<code>data-*</code>、
+<code>aria-*</code>、<code>href</code>、<code>title</code>…）会被<strong>静默忽略</strong> —— 这是本库唯一"不报错的宽容"，
+因为属性不影响渲染。<code>value</code> / <code>type</code> 只管 <code>&lt;input&gt;</code>，<code>type</code> 写别的值会<strong>报错</strong>
+（<code>只支持 text / password</code>）。</p>
 <p>几个结构性差异：</p>
 <table>
 <thead>
@@ -315,6 +325,66 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
+<hr />
+<h3 id="21">2.1 输入控件：没有表单</h3>
+<p><code>&lt;input&gt;</code> 与 <code>&lt;select&gt;</code> 能用，但不要指望表单语义：</p>
+<table>
+<thead>
+<tr>
+<th>在浏览器里</th>
+<th>在 QLGL 里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;form&gt;</code> <code>submit</code></td>
+<td>❌ 没有 <code>&lt;form&gt;</code>，也没有提交；用 <code>ql_ui_set_input_cb()</code> 接"值变了/按了回车"</td>
+</tr>
+<tr>
+<td><code>placeholder</code></td>
+<td>❌ 静默忽略；用 <code>&lt;input value="..."&gt;</code> 或旁边放一行灰色提示</td>
+</tr>
+<tr>
+<td><code>disabled</code> / <code>readonly</code></td>
+<td>❌ 静默忽略</td>
+</tr>
+<tr>
+<td><code>required</code> / <code>pattern</code> / <code>maxlength</code></td>
+<td>❌ 没有校验；长度上限是编译期常量 <code>QL_CFG_UI_INPUT_LEN</code></td>
+</tr>
+<tr>
+<td><code>type="date"</code> <code>type="number"</code></td>
+<td>❌ 报错（只支持 <code>text</code> / <code>password</code>）</td>
+</tr>
+<tr>
+<td><code>Tab</code> 切换焦点</td>
+<td>✅ 在 <code>input</code> / <code>select</code> / <code>button</code> 之间按树序循环，到头绕回</td>
+</tr>
+<tr>
+<td>剪贴板（Ctrl+C/V）</td>
+<td>❌ 没有（平台层不提供）</td>
+</tr>
+<tr>
+<td>中文输入法（IME）</td>
+<td>⚠️ 要平台层把上屏文本翻译成 <code>QL_INPUT_TEXT</code></td>
+</tr>
+<tr>
+<td>光标闪烁</td>
+<td>❌ 不闪（闪烁要求主循环一直醒着，省电优先）</td>
+</tr>
+<tr>
+<td><code>&lt;select&gt;</code> 展开的面板</td>
+<td>✅ 是<strong>覆盖层</strong>：不占布局、不被父级 <code>overflow</code> 裁剪、同一时刻只开一个</td>
+</tr>
+<tr>
+<td><code>&lt;option&gt;</code></td>
+<td>✅ 自动 <code>display: none</code>（只活在面板里），不要再给它写尺寸</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么 <code>&lt;input&gt;</code> 的值是"运行期唯一可变文本"</strong>：整套数据模型是编译期算完的静态表，
+输入框是唯一例外 —— 它有一条自己的池（<code>QL_CFG_UI_INPUT_MAX</code> 条 ×
+<code>QL_CFG_UI_INPUT_LEN</code> 字节），界面里没有 <code>&lt;input&gt;</code> 时是零字节。</p>
 <hr />
 <h2 id="3-css">3. CSS：选择器只有一小撮</h2>
 <p>支持：</p>
@@ -641,13 +711,15 @@ main img.shot { max-width: 100%; }
 <li><strong>给每段长文本加 <code>white-space: normal</code></strong>（否则不折行）。</li>
 <li><strong>给每个固定高度的文字盒子加 <code>line-height</code></strong>（否则字贴顶）。</li>
 <li><strong>把 <code>:hover</code> 之外的状态都换成事件</strong>：没有 JS，交互靠点击回调 + 三个伪类。</li>
+<li><strong>表单控件换成回调</strong>：<code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> 的值不会随提交一起走，
+   要用 <code>ql_ui_input_value()</code> / <code>ql_ui_select_index()</code> 自己读。</li>
 <li><strong>跑一遍</strong>：报错会一条条告诉你剩下什么，按报错改。</li>
 </ol>
 <hr />
-<p>上一章：<a href="09_scroll.html">滚动</a></p>
+<p>上一章：<a href="09_scroll.html">滚动</a> ｜ 下一章：<a href="11_input.html">输入控件</a></p>
 <div class='pager'>
 <a href='../tutorial/09_scroll.html'><span class='dir'>上一页</span>滚动</a>
-<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+<a class='next' href='../tutorial/11_input.html'><span class='dir'>下一页</span>输入控件</a>
 </div>
 </main>
 </div>

@@ -2432,6 +2432,7 @@ struct PNode {
     int    nclasses;
     char  *id;
     char  *style_attr;
+    uint8_t flags;           /* QL_UI_NODE_*（<input type="password">） */
     PNode *parent;
     PNode *first_child;
     PNode *next_sibling;
@@ -2450,6 +2451,7 @@ static const char *const k_tags[] = {
     "ul", "ol", "li",
     "hr", "br",
     "mark", "em", "strong", "u", "s",
+    "input", "select", "option",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2496,7 +2498,8 @@ static int tag_inline_by_default(const char *tag)
  */
 static int tag_is_void(const char *tag)
 {
-    return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0;
+    return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0 ||
+           strcmp(tag, "input") == 0;
 }
 
 static void pnode_free(PNode *n)
@@ -2692,16 +2695,27 @@ static int decode_entities(const char *s, size_t len, SB *out)
     return 1;
 }
 
-/* 解析起始标签的属性表；只关心 class / id / style */
+/*
+ * 解析起始标签的属性表。
+ *
+ * 只留五个：`class` / `id` / `style`（样式与选择器用），
+ * `value` / `type`（只对 `<input>` 有意义）。
+ * 其余属性（`data-*` / `aria-*` / `href` …）**静默忽略** —— 它们不影响渲染，
+ * 为它们报错只会让真实 HTML 片段跑不起来。
+ */
 typedef struct {
     char *cls;
     char *id;
     char *style;
+    char *value;      /* <input value="..."> */
+    char *type;       /* <input type="text|password"> */
 } Attrs;
 
 static void attrs_free(Attrs *a)
 {
     ql_mem_free(a->cls);
+    ql_mem_free(a->value);
+    ql_mem_free(a->type);
     ql_mem_free(a->id);
     ql_mem_free(a->style);
     memset(a, 0, sizeof(*a));
@@ -2779,7 +2793,8 @@ static const char *parse_attrs(const char *p, Attrs *a)
         }
 
         if (val != NULL && (strcmp(name, "class") == 0 || strcmp(name, "id") == 0 ||
-                            strcmp(name, "style") == 0)) {
+                            strcmp(name, "style") == 0 || strcmp(name, "value") == 0 ||
+                            strcmp(name, "type") == 0)) {
             SB sb = { 0 };
             if (!decode_entities(val, vlen, &sb)) {
                 sb_free(&sb);
@@ -2794,6 +2809,12 @@ static const char *parse_attrs(const char *p, Attrs *a)
             } else if (strcmp(name, "id") == 0) {
                 ql_mem_free(a->id);
                 a->id = s;
+            } else if (strcmp(name, "value") == 0) {
+                ql_mem_free(a->value);
+                a->value = s;
+            } else if (strcmp(name, "type") == 0) {
+                ql_mem_free(a->type);
+                a->type = s;
             } else {
                 ql_mem_free(a->style);
                 a->style = s;
@@ -3250,6 +3271,46 @@ static PNode *parse_html(const char *html)
                     return NULL;
                 }
             }
+            /*
+             * <input>：`value` 变成这个节点的初始文本（之后由运行期池接管），
+             * `type` 只认 text / password。
+             */
+            if (strcmp(name, "input") == 0) {
+                if (at.type != NULL && at.type[0] != '\0') {
+                    char t[16];
+                    size_t tn = strlen(at.type);
+                    if (tn >= sizeof(t)) tn = sizeof(t) - 1u;
+                    for (size_t i = 0; i < tn; i++) {
+                        const char c = at.type[i];
+                        t[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+                    }
+                    t[tn] = '\0';
+                    if (strcmp(t, "password") == 0) {
+                        n->flags |= QL_UI_NODE_PASSWORD;
+                    } else if (strcmp(t, "text") != 0 && strcmp(t, "search") != 0 &&
+                               strcmp(t, "email") != 0 && strcmp(t, "number") != 0) {
+                        set_error("HTML: 不支持的 <input type=\"%s\">"
+                                  "（只支持 text / password）", at.type);
+                        attrs_free(&at);
+                        pnode_free(n);
+                        pnode_free(root);
+                        return NULL;
+                    }
+                }
+                if (at.value != NULL && at.value[0] != '\0') {
+                    Item tit;
+                    tit.is_text = 1;
+                    tit.text = xstrdup(at.value);
+                    tit.node = NULL;
+                    if (tit.text == NULL || !pnode_add_item(n, tit)) {
+                        ql_mem_free(tit.text);
+                        attrs_free(&at);
+                        pnode_free(n);
+                        pnode_free(root);
+                        return NULL;
+                    }
+                }
+            }
             attrs_free(&at);
 
             Item it;
@@ -3405,6 +3466,41 @@ static int ua_defaults(const char *tag, Decls *out)
 
     if (strcmp(tag, "p") == 0)
         return decls_set(out, "display", "block") && decls_set(out, "margin", "8px 0");
+
+    /*
+     * <input>：单行输入框。默认高度 + 内边距给足可点面积；宽度 auto 时按
+     * max-content 走（和文本节点一样），想固定就自己写 width。
+     */
+    if (strcmp(tag, "input") == 0) {
+        return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "height", "24px") &&
+               decls_set(out, "padding", "0 8px") &&
+               decls_set(out, "line-height", "24px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-radius", "4px") &&
+               decls_set(out, "border-color", "#555555") &&
+               decls_set(out, "background-color", "#FFFFFF") &&
+               decls_set(out, "color", "#000000");
+    }
+
+    /*
+     * <select>：长得像输入框，但显示的是选中项的文字。
+     * <option>：**不参与布局**（display:none），只在展开的面板里画。
+     */
+    if (strcmp(tag, "select") == 0) {
+        return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "height", "24px") &&
+               decls_set(out, "padding", "0 8px") &&
+               decls_set(out, "line-height", "24px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-radius", "4px") &&
+               decls_set(out, "border-color", "#555555") &&
+               decls_set(out, "background-color", "#FFFFFF") &&
+               decls_set(out, "color", "#000000");
+    }
+    if (strcmp(tag, "option") == 0) {
+        return decls_set(out, "display", "none");
+    }
 
     /* ---- 按钮：一行能看见的边框 + 内边距（用 line-height 撑不出来的高度） ---- */
     if (strcmp(tag, "button") == 0) {
@@ -5310,6 +5406,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             nd->style_hover = (uint16_t)flat[i].state[0];
             nd->style_active = (uint16_t)flat[i].state[1];
             nd->style_focus = (uint16_t)flat[i].state[2];
+            nd->flags = flat[i].node->flags;
         }
 
         QLUIStyle *stl = (QLUIStyle *)(void *)(base + off_styles);

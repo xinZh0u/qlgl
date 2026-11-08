@@ -35,7 +35,7 @@
 
 ---
 
-## 2. HTML：只认 32 个标签
+## 2. HTML：只认 35 个标签
 
 | 在浏览器里能写 | 在 QLGL 里 |
 |---|---|
@@ -43,14 +43,17 @@
 | `<!DOCTYPE html>` `<!-- 注释 -->` | ✅ 直接跳过 |
 | `<a href>` | ❌ 还没有链接（没有光标、没有导航） |
 | `<img src>` | ❌ 没有图片解码器 |
-| `<input>` `<textarea>` `<select>` | ❌ 还没有输入控件 |
+| `<input type="text\|password">` | ✅ 单行输入（见下） |
+| `<select>` `<option>` | ✅ 覆盖式下拉面板（见下） |
+| `<textarea>` | ❌ 还没有多行输入 |
 | `<table>` `<tr>` `<td>` | ❌ 用嵌套 flex 代替 |
 | `<style>` `<script>` | ❌ 没有样式表标签，也没有脚本 |
-| 其它 32 个标签 | ✅ 见[标签与语义](08_tags.html) |
+| 其它 35 个标签 | ✅ 见[标签与语义](08_tags.html) |
 
-**属性只有三个有用**：`class` / `id` / `style`。其余（`data-*`、`aria-*`、
-`href`、`title`…）会被**静默忽略** —— 这是本库唯一"不报错的宽容"，
-因为属性不影响渲染。
+**属性只有五个有用**：`class` / `id` / `style` / `value` / `type`。其余（`data-*`、
+`aria-*`、`href`、`title`…）会被**静默忽略** —— 这是本库唯一"不报错的宽容"，
+因为属性不影响渲染。`value` / `type` 只管 `<input>`，`type` 写别的值会**报错**
+（`只支持 text / password`）。
 
 几个结构性差异：
 
@@ -61,6 +64,30 @@
 | `<ul><li>` | 结构与缩进都有，但**不画项目符号**（没有 `::marker`） |
 | `<em>` `<strong>` `<u>` `<s>` | 合成加粗/斜体/装饰线（不加载第二个字体文件） |
 | `<button>` | 只是一个样式化盒子；点击靠事件回调，没有表单语义 |
+
+---
+
+### 2.1 输入控件：没有表单
+
+`<input>` 与 `<select>` 能用，但不要指望表单语义：
+
+| 在浏览器里 | 在 QLGL 里 |
+|---|---|
+| `<form>` `submit` | ❌ 没有 `<form>`，也没有提交；用 `ql_ui_set_input_cb()` 接"值变了/按了回车" |
+| `placeholder` | ❌ 静默忽略；用 `<input value="...">` 或旁边放一行灰色提示 |
+| `disabled` / `readonly` | ❌ 静默忽略 |
+| `required` / `pattern` / `maxlength` | ❌ 没有校验；长度上限是编译期常量 `QL_CFG_UI_INPUT_LEN` |
+| `type="date"` `type="number"` | ❌ 报错（只支持 `text` / `password`） |
+| `Tab` 切换焦点 | ✅ 在 `input` / `select` / `button` 之间按树序循环，到头绕回 |
+| 剪贴板（Ctrl+C/V） | ❌ 没有（平台层不提供） |
+| 中文输入法（IME） | ⚠️ 要平台层把上屏文本翻译成 `QL_INPUT_TEXT` |
+| 光标闪烁 | ❌ 不闪（闪烁要求主循环一直醒着，省电优先） |
+| `<select>` 展开的面板 | ✅ 是**覆盖层**：不占布局、不被父级 `overflow` 裁剪、同一时刻只开一个 |
+| `<option>` | ✅ 自动 `display: none`（只活在面板里），不要再给它写尺寸 |
+
+**为什么 `<input>` 的值是"运行期唯一可变文本"**：整套数据模型是编译期算完的静态表，
+输入框是唯一例外 —— 它有一条自己的池（`QL_CFG_UI_INPUT_MAX` 条 ×
+`QL_CFG_UI_INPUT_LEN` 字节），界面里没有 `<input>` 时是零字节。
 
 ---
 
@@ -229,8 +256,10 @@ css:12: 不支持的属性 'outline'
 4. **给每段长文本加 `white-space: normal`**（否则不折行）。
 5. **给每个固定高度的文字盒子加 `line-height`**（否则字贴顶）。
 6. **把 `:hover` 之外的状态都换成事件**：没有 JS，交互靠点击回调 + 三个伪类。
-7. **跑一遍**：报错会一条条告诉你剩下什么，按报错改。
+7. **表单控件换成回调**：`<input>` / `<select>` 的值不会随提交一起走，
+   要用 `ql_ui_input_value()` / `ql_ui_select_index()` 自己读。
+8. **跑一遍**：报错会一条条告诉你剩下什么，按报错改。
 
 ---
 
-上一章：[滚动](09_scroll.html)
+上一章：[滚动](09_scroll.html) ｜ 下一章：[输入控件](11_input.html)

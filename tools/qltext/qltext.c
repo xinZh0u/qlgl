@@ -115,7 +115,8 @@ static const char *const TAG_NAMES[] = {
     "QL_UI_TAG_FIGURE", "QL_UI_TAG_FIGCAPTION", "QL_UI_TAG_BLOCKQUOTE",
     "QL_UI_TAG_UL", "QL_UI_TAG_OL", "QL_UI_TAG_LI", "QL_UI_TAG_HR",
     "QL_UI_TAG_BR", "QL_UI_TAG_MARK", "QL_UI_TAG_EM", "QL_UI_TAG_STRONG",
-    "QL_UI_TAG_U", "QL_UI_TAG_S",
+    "QL_UI_TAG_U", "QL_UI_TAG_S", "QL_UI_TAG_INPUT", "QL_UI_TAG_SELECT",
+    "QL_UI_TAG_OPTION",
 };
 
 static const char *const DISPLAY_NAMES[] = {
@@ -363,7 +364,7 @@ static void write_source(const QLUIDoc *doc, const char *ident,
     fprintf(f,
             "static const QLUINode %s_nodes[] = {\n"
             "    /* tag                     parent first  next   style  text   hover"
-            "  active focus */\n",
+            "  active focus  flags */\n",
             ident);
     for (uint16_t i = 0; i < doc->node_count; i++) {
         const QLUINode *n = &doc->nodes[i];
@@ -377,7 +378,7 @@ static void write_source(const QLUIDoc *doc, const char *ident,
         idx_ofs(f, n->style_hover, 0);
         idx_ofs(f, n->style_active, 0);
         idx_ofs(f, n->style_focus, 0);
-        fputs(" },\n", f);
+        fprintf(f, ", 0x%02X, 0x00 },\n", (unsigned)n->flags);
     }
     fputs("};\n\n", f);
 

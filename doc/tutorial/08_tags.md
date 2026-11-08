@@ -12,7 +12,7 @@
 所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。
 
-## 现支持的 32 个标签
+## 现支持的 35 个标签
 
 | 类 | 标签 |
 |---|---|
@@ -23,6 +23,8 @@
 | 列表 | `ul` `ol` `li` |
 | 空元素 | `hr` `br` |
 | 控件 | `button` |
+| 输入 | `input`（`type` 只支持 `text` / `password`，见[输入控件](11_input.html)） |
+| 下拉 | `select` `option`（`option` 自动 `display: none`，见[输入控件](11_input.html)） |
 
 UA 默认样式都很薄，只有"看结构就该知道"的那些：
 
@@ -37,6 +39,8 @@ p  { margin: 8px 0 }
 ul, ol { margin: 8px 0; padding-left: 18px }
 hr { height: 1px; background-color: #8A8A8A; margin: 8px 0 }
 mark { background-color: #FFE58F; color: #000 }
+input, select { display: inline-block; /* 内边距 + 边框 + 圆角 */ }
+option { display: none }                 /* 只活在下拉面板里 */
 ```
 
 注意这是**给这个库的观感**调的，不是"和 Chrome 截图一致"调的（比如 `p` 的
@@ -150,4 +154,4 @@ HTML: 不支持表格 <table>：用嵌套的 flex 行来做
 
 ---
 
-上一章：[进阶](07_advanced.html)
+上一章：[进阶](07_advanced.html) ｜ 下一章：[滚动](09_scroll.html)
