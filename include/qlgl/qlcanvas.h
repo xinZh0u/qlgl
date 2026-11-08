@@ -104,7 +104,7 @@ void ql_canvas_clear(QLCanvas *canvas, ql_color_t color);
  * ql_image_validate() 验过一遍，这里只是兜底。
  */
 void ql_canvas_blit_image(QLCanvas *canvas, const QLImage *img, QLRect dst,
-                          const QLRect *src, uint8_t alpha);
+                          const QLRect *src, ql_coord_t radius, uint8_t alpha);
 void ql_canvas_fill_rect(QLCanvas *canvas, QLRect rect, ql_color_t color);
 /* alpha: 0 完全透明（跳过），255 完全不透明 */
 void ql_canvas_fill_rect_alpha(QLCanvas *canvas, QLRect rect, ql_color_t color, uint8_t alpha);

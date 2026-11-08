@@ -2848,21 +2848,126 @@ ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
     return first_err;
 }
 
-/* 绘制：P3a 只有 object-fit: fill（拉伸到内容盒）；其余四态见设计文档 §7.2 */
+/*
+ * 把图片按 object-fit 摆进内容盒。全部**整数运算**（避免浮点在 MCU 上的代价
+ * 与两端不一致）：比较用交叉相乘，尺寸用整数除法。
+ *
+ * 返回 0 表示不用画。
+ */
+static int image_fit_rect(const QLImage *img, QLRect box, uint8_t fit, QLRect *out_dst,
+                          QLRect *out_src)
+{
+    if (img == NULL || img->w == 0 || img->h == 0 || ql_rect_is_empty(box))
+        return 0;
+
+    const int32_t iw = img->w, ih = img->h;
+
+    switch (fit) {
+    case QL_UI_FIT_NONE:
+        /* 原始像素尺寸，居中；超出部分由调用方按内容盒裁 */
+        out_dst->x = box.x + (box.w - (ql_coord_t)iw) / 2;
+        out_dst->y = box.y + (box.h - (ql_coord_t)ih) / 2;
+        out_dst->w = (ql_coord_t)iw;
+        out_dst->h = (ql_coord_t)ih;
+        *out_src = ql_rect_make(0, 0, (ql_coord_t)iw, (ql_coord_t)ih);
+        return 1;
+
+    case QL_UI_FIT_CONTAIN:
+    case QL_UI_FIT_SCALE_DOWN: {
+        /*
+         * 等比装进去：scale = min(box.w/iw, box.h/ih)。
+         * 用交叉相乘比较大小，避免浮点：box.w*ih <= box.h*iw 表示受宽度限制。
+         */
+        int64_t bw = (int64_t)box.w * ih;
+        int64_t bh = (int64_t)box.h * iw;
+        int shrink = 0;
+        if (fit == QL_UI_FIT_SCALE_DOWN)
+            shrink = (box.w < iw || box.h < ih);
+        if (bw <= bh) {
+            out_dst->w = box.w;
+            out_dst->h = (ql_coord_t)((int64_t)box.w * ih / iw);
+        } else {
+            out_dst->h = box.h;
+            out_dst->w = (ql_coord_t)((int64_t)box.h * iw / ih);
+        }
+        if (fit == QL_UI_FIT_SCALE_DOWN && !shrink) {
+            /* 不缩小：等同于 none（原始尺寸），但不超过内容盒 */
+            out_dst->w = (ql_coord_t)((iw < box.w) ? iw : box.w);
+            out_dst->h = (ql_coord_t)((ih < box.h) ? ih : box.h);
+        }
+        out_dst->x = box.x + (box.w - out_dst->w) / 2;
+        out_dst->y = box.y + (box.h - out_dst->h) / 2;
+        *out_src = ql_rect_make(0, 0, (ql_coord_t)iw, (ql_coord_t)ih);
+        return 1;
+    }
+
+    case QL_UI_FIT_COVER: {
+        /*
+         * 等比盖满：目标就是内容盒，源取中间那一块。
+         * 受宽度限制时源高 = box.h * iw / box.w（小于 ih），居中裁上下。
+         */
+        out_dst->x = box.x;
+        out_dst->y = box.y;
+        out_dst->w = box.w;
+        out_dst->h = box.h;
+        /*
+         * scale = max(box.w/iw, box.h/ih)，用交叉相乘比较：
+         *   bw > bh  ⟺  box.w/iw > box.h/ih  ⟺  受**高度**限制 → 裁上下
+         *   bw <= bh                          ⟺  受宽度限制 → 裁左右
+         */
+        int64_t bw = (int64_t)box.w * ih;
+        int64_t bh = (int64_t)box.h * iw;
+        if (bw > bh) {
+            const ql_coord_t sh = (ql_coord_t)((int64_t)box.h * iw / box.w);
+            *out_src = ql_rect_make(0, (ql_coord_t)((ih - sh) / 2), (ql_coord_t)iw,
+                                    (sh > 0) ? sh : 1);
+        } else {
+            const ql_coord_t sw = (ql_coord_t)((int64_t)box.w * ih / box.h);
+            *out_src = ql_rect_make((ql_coord_t)((iw - sw) / 2), 0,
+                                    (sw > 0) ? sw : 1, (ql_coord_t)ih);
+        }
+        return 1;
+    }
+
+    default:   /* fill */
+        *out_dst = box;
+        *out_src = ql_rect_make(0, 0, (ql_coord_t)iw, (ql_coord_t)ih);
+        return 1;
+    }
+}
+
+/* 绘制：object-fit 五态 + 跟随 border-radius 的圆角裁剪 */
 static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLImage *img = ql_ui_node_image(ui, node);
-    if (img == NULL || ql_rect_is_empty(node->content_box))
+    const QLUIStyle *s = ql_ui_node_style(node);
+    if (img == NULL || ql_rect_is_empty(node->content_box) || d2d->blit_image == NULL)
         return;
-    if (d2d->blit_image == NULL) {
-        static int warned = 0;
-        if (!warned) {
-            warned = 1;
-            QL_LOGW("ui: <img> 已注册，但当前后端没有 blit_image（GPU 侧待实现）");
-        }
+
+    QLRect dst, src;
+    if (!image_fit_rect(img, node->content_box, ql_ui_style_object_fit(s), &dst, &src))
         return;
+
+    /*
+     * `object-fit: none`/`contain` 时图可能比内容盒大（或位置超出），
+     * 按内容盒裁一下 —— 与 overflow: hidden 的效果一致。
+     * 圆角继续交给 blit 的 radius（用它自己的 SDF，边缘才平滑）。
+     */
+    const QLRect saved = node->owner->clip;
+    const int need_clip = dst.w > node->content_box.w || dst.h > node->content_box.h;
+    if (need_clip) {
+        const QLRect c = ql_rect_intersect(node->content_box, saved);
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, c);
+        node->owner->clip = c;
     }
-    d2d->blit_image(d2d, img, node->content_box, NULL, 255);
+    const ql_coord_t radius = (ql_coord_t)s->border_radius;
+    d2d->blit_image(d2d, img, dst, &src, radius, 255);
+    if (need_clip) {
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, saved);
+        node->owner->clip = saved;
+    }
 }
 
 /* ------------------------------ 进度条 ------------------------------ */

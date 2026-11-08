@@ -247,13 +247,16 @@ static const char *FS_SRC =
      * mode 5 = 位图（直接采样 RGBA）。两者都不做形状 AA：位图自身是矩形，
      * 边缘对齐由调用方保证（与字形同一个道理，外扩反而会糊）。
      */
-    "  if (mode > 5.5) {\n"
-    "    frag = vec4(v_color.rgb, v_color.a * texture(u_image, v_uv).r * m);\n"
-    "    return;\n"
-    "  }\n"
     "  if (mode > 4.5) {\n"
-    "    vec4 t = texture(u_image, v_uv);\n"
-    "    frag = vec4(t.rgb, t.a * v_color.a * m);\n"
+    /* 图片也要跟着 border-radius 裁：圆角用同一个 SDF 算覆盖率 */
+    "    float d = sdRoundBox(v_local, v_half, radius);\n"
+    "    float cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
+    "    if (mode > 5.5) {\n"
+    "      frag = vec4(v_color.rgb, v_color.a * texture(u_image, v_uv).r * cov * m);\n"
+    "    } else {\n"
+    "      vec4 t = texture(u_image, v_uv);\n"
+    "      frag = vec4(t.rgb, t.a * v_color.a * cov * m);\n"
+    "    }\n"
     "    return;\n"
     "  }\n"
     "  if (mode > 3.5) {\n"
@@ -789,8 +792,9 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
  *   - uv 是"整张图的一个窗口"（给将来 object-fit: cover 用），而且
  *     **必须按未裁剪的矩形插值**，否则裁剪后采样会错位（与字形同一个坑）。
  */
-static void emit_image_quad(QLGfxGL *g, QLRect r, ql_color_t tint, uint8_t alpha,
-                            float u0, float v0, float u1, float v1, float mode)
+static void emit_image_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_color_t tint,
+                            uint8_t alpha, float u0, float v0, float u1, float v1,
+                            float mode)
 {
     if (ql_rect_is_empty(r) || alpha == 0)
         return;
@@ -812,7 +816,7 @@ static void emit_image_quad(QLGfxGL *g, QLRect r, ql_color_t tint, uint8_t alpha
     memset(&v, 0, sizeof(v));
     v.hx = hx;
     v.hy = hy;
-    v.radius = 0.0f;
+    v.radius = (float)radius;         /* 圆角：片元里用同一个 SDF 算覆盖率 */
     v.border = -1.0f;
     v.use_tex = mode;                 /* 5 = 位图，6 = A8 蒙版（着色用顶点色） */
     v.r = (float)QL_COLOR_GET_R(tint) / 255.0f;
@@ -1388,7 +1392,7 @@ static GLuint gl_image_tex(QLGfxGL *g, const QLImage *img)
  * 与毛玻璃是同一个套路（它也要中途提交）。
  */
 static void gl_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
-                          const QLRect *src, uint8_t alpha)
+                          const QLRect *src, ql_coord_t radius, uint8_t alpha)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (g == NULL || img == NULL || img->px == NULL || alpha == 0)
@@ -1422,7 +1426,8 @@ static void gl_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
     const float v1 = (float)(s.y + s.h) / ih;
 
     const float mode = (img->format == QL_IMAGE_A8) ? 6.0f : 5.0f;
-    emit_image_quad(g, gsx(g, dst), 0xFFFFFF, alpha, u0, v0, u1, v1, mode);
+    emit_image_quad(g, gsx(g, dst), gsl(g, radius), 0xFFFFFF, alpha, u0, v0, u1, v1,
+                    mode);
     flush_batch(g);
     g->cur_img_tex = 0;
 }

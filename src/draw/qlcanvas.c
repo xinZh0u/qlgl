@@ -1827,8 +1827,44 @@ static void image_read_rgba(const QLImage *img, ql_coord_t x, ql_coord_t y,
     }
 }
 
+/* 圆角矩形的单像素覆盖率（0..255）。radius == 0 时恒 255（省掉 SDF 的开销） */
+static uint32_t round_cov_at(const QLRect box, ql_coord_t radius, ql_coord_t x,
+                             ql_coord_t y)
+{
+    if (radius <= 0)
+        return 255u;
+    const ql_coord_t hx = box.w / 2;
+    const ql_coord_t hy = box.h / 2;
+    ql_coord_t r = radius;
+    const ql_coord_t half_min = (hx < hy) ? hx : hy;
+    if (r > half_min)
+        r = half_min;
+
+    /* 与 fill_round_rect 同一个 SDF：中心到"内缩矩形"的距离 - 半径 */
+    const float px = ((float)x + 0.5f) - ((float)box.x + (float)hx);
+    const float py = ((float)y + 0.5f) - ((float)box.y + (float)hy);
+    const float bx = (float)hx - (float)r;
+    const float by = (float)hy - (float)r;
+    float qx = px < 0.0f ? -px : px;
+    float qy = py < 0.0f ? -py : py;
+    qx -= bx;
+    qy -= by;
+    float outside = 0.0f;
+    if (qx > 0.0f || qy > 0.0f) {
+        const float ex = qx > 0.0f ? qx : 0.0f;
+        const float ey = qy > 0.0f ? qy : 0.0f;
+        outside = sqrtf(ex * ex + ey * ey);
+    }
+    const float inner = (qx > qy ? qx : qy);
+    float d = (inner < 0.0f ? inner : 0.0f) + outside - (float)r;
+    const float cov = 1.0f - ql_smoothstep(-0.5f, 0.5f, d);
+    if (cov <= 0.0f)
+        return 0u;
+    return (uint32_t)(cov * 255.0f + 0.5f);
+}
+
 void ql_canvas_blit_image(QLCanvas *canvas, const QLImage *img, QLRect dst,
-                          const QLRect *src, uint8_t alpha)
+                          const QLRect *src, ql_coord_t radius, uint8_t alpha)
 {
     if (canvas == NULL || img == NULL || alpha == 0)
         return;
@@ -1873,6 +1909,12 @@ void ql_canvas_blit_image(QLCanvas *canvas, const QLImage *img, QLRect dst,
             uint32_t cov = mask_cov_at(canvas, x, y);
             if (cov == 0u)
                 continue;
+            if (radius > 0) {
+                const uint32_t rc = round_cov_at(area, radius, x, y);
+                if (rc == 0u)
+                    continue;
+                cov = cov * rc / 255u;
+            }
             uint32_t total = (uint32_t)a * (uint32_t)alpha * cov / (255u * 255u);
             if (total == 0u)
                 continue;

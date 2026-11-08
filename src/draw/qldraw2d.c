@@ -498,13 +498,13 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
 }
 
 static void cpu_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
-                           const QLRect *src, uint8_t alpha)
+                           const QLRect *src, ql_coord_t radius, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     /* dst 走与其它图元完全相同的坐标变换（offset / DPR / elem scale） */
     ql_canvas_blit_image(ctx->canvas, img,
                          ql_rect_from_fx(sxf(self, shift_rect_rounded(self, dst))), src,
-                         alpha);
+                         sl(self, radius), alpha);
 }
 
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)

@@ -101,8 +101,12 @@ struct QLDraw2D {
      * `src == NULL` 取整幅；否则取子矩形（给 object-fit: cover 用）。
      * 缩放、alpha 混合都在后端里做；裁剪与圆遮罩沿用 set_clip / set_mask。
      */
+    /*
+     * `radius` = 圆角半径（0 = 直角）。图片必须跟着 `border-radius` 裁，
+     * 否则"圆形头像"这种最常见的用法就得自己套一层 mask。
+     */
     void (*blit_image)(QLDraw2D *self, const QLImage *img, QLRect dst,
-                       const QLRect *src, uint8_t alpha);
+                       const QLRect *src, ql_coord_t radius, uint8_t alpha);
 
     void (*flush)(QLDraw2D *self);
 

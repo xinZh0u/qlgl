@@ -922,7 +922,18 @@ CPU vs GPU 逐像素差异 <strong>0.00%</strong>，并断言批次数 ≥ 2（�
 </tr>
 </tbody>
 </table>
-<p>全部整数运算（用 16.16 定点算比例，最后取整），避免浮点代价与平台差异。</p>
+<p>全部整数运算（用交叉相乘比较比例、整数除法取整），避免浮点代价与平台差异。</p>
+<p>实现要点：</p>
+<ul>
+<li><strong><code>cover</code> 的两个分支容易写反</strong>：<code>box.w/iw &gt; box.h/ih</code>（受高度限制）时要裁<strong>上下</strong>，
+  否则裁左右。用交叉相乘判断，别用浮点除法。</li>
+<li><code>none</code> / <code>contain</code> 的目标矩形可能超出内容盒，绘制期用 <code>set_clip</code> 临时裁一下
+  （与 <code>overflow: hidden</code> 同效），画完恢复。</li>
+<li><strong>圆角</strong>：<code>blit_image</code> 带 <code>radius</code> 参数，CPU 用与 <code>fill_round_rect</code> 同一个圆角 SDF
+  算覆盖率，GPU 在片元里用 <code>sdRoundBox</code> 乘进 alpha —— "圆形头像"不用自己套 mask。</li>
+<li>存储：<code>QLUIStyle.font_flags</code> 低 4 位是字体变体位，<strong>高 4 位是 object-fit</strong>
+  （结构体仍是 120 字节，blob 不用再升版）；读取统一走 <code>ql_ui_style_object_fit()</code>。</li>
+</ul>
 <hr />
 <h2 id="8-html-css">8. HTML / CSS 面</h2>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">img</span> <span class="na">src</span><span class="o">=</span><span class="s">&quot;logo.png&quot;</span> <span class="na">alt</span><span class="o">=</span><span class="s">&quot;QLGL&quot;</span><span class="p">&gt;</span>
@@ -1151,8 +1162,8 @@ PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接
 <td>1 天</td>
 </tr>
 <tr>
-<td><strong>P3d</strong></td>
-<td><code>object-fit</code> 五态 + 圆角/遮罩组合 + golden 页</td>
+<td><strong>P3d</strong> ✅</td>
+<td><code>object-fit</code> 五态 + 图片跟随 <code>border-radius</code> 裁剪</td>
 <td>1 天</td>
 </tr>
 <tr>
@@ -1173,7 +1184,7 @@ PNG/JPEG 要先转成 BMP/QOI —— PNG 解码器落地（P3c）后可以直接
 </tbody>
 </table>
 <p>合计 <strong>≈ 12–15 天</strong>，<code>img</code> <code>picture</code> <code>source</code> <code>map</code> <code>area</code> 五个标签一次到位。</p>
-<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d → P3c → P3e → P3g</strong>。
+<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d ✅ → P3c → P3e → P3g</strong>。
 理由：P3a + P3f 就能端到端跑通"图片文件 → 构建期转码 → 固件里显示"这条
 <strong>零解码路径</strong>（它不依赖任何解码器开关，是唯一"关掉一切也能用"的路）；
 解码器与 PNG 都是在这之上的增量开关。</p>

@@ -423,6 +423,116 @@ QL_TEST_BEGIN("test_image")
         }
     }
 
+    /* ---------- 11. object-fit 五态 ---------- */
+    {
+        /* 8×8 图：左半红/右半绿（上行）、左半蓝/右半白（下行） */
+        struct { const char *fit; int bw, bh; } cases[] = {
+            { "fill", 16, 16 },
+            { "contain", 32, 8 },
+            { "cover", 32, 8 },
+            { "none", 32, 32 },
+            { "scale-down", 32, 32 },
+            { "scale-down", 4, 4 },
+        };
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[192];
+            snprintf(css, sizeof(css),
+                     "#r { width: 40px; height: 40px; background-color: #000000 }"
+                     "img { width: %dpx; height: %dpx; object-fit: %s }", cases[i].bw,
+                     cases[i].bh, cases[i].fit);
+            QLUIDoc *doc = NULL;
+            QLUIRoot *ui = mk("<div id=r><img src=\"pic\"></div>", css, &doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLUIImageInput in = raw_input("pic");
+                QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+                ql_canvas_from_disp(&s_cv, s_disp);
+                ql_canvas_clear(&s_cv, 0x000000);
+                ql_ui_render_canvas(ui, &s_cv);
+                const QLRect b = ql_ui_node_rect(&ui->nodes[1]);
+                const int cx = (int)(b.x + b.w / 2), cy = (int)(b.y + b.h / 2);
+
+                /* 内容盒中心永远是图里的某个像素（除了被裁掉的极端情况） */
+                const ql_color_t mid = px(cx, cy);
+                QL_CHECK(!(QL_COLOR_GET_R(mid) == 0 && QL_COLOR_GET_G(mid) == 0 &&
+                           QL_COLOR_GET_B(mid) == 0));
+
+                if (strcmp(cases[i].fit, "fill") == 0) {
+                    /* 拉伸：内容盒四角都被图覆盖 */
+                    QL_CHECK(QL_COLOR_GET_R(px(b.x + 1, b.y + 1)) > 0x40);
+                    QL_CHECK(QL_COLOR_GET_G(px(ql_rect_right(b) - 2, b.y + 1)) > 0x40);
+                } else if (strcmp(cases[i].fit, "contain") == 0) {
+                    /* 装进去：左右留空（32 宽盒装 8 宽的图，等比后只有 8 宽） */
+                    QL_CHECK(QL_COLOR_GET_R(px(b.x + 1, cy)) == 0);
+                    QL_CHECK(QL_COLOR_GET_R(px(ql_rect_right(b) - 2, cy)) == 0);
+                } else if (strcmp(cases[i].fit, "cover") == 0) {
+                    /*
+                     * 盖满：32×8 的盒装 8×8 的图 → 受高度限制，上下各裁 3 行，
+                     * 只剩中间 2 行（都是下半部分：左蓝右白）。左右必须被覆盖。
+                     */
+                    const ql_color_t l = px(b.x + 1, cy);
+                    const ql_color_t r2 = px(ql_rect_right(b) - 2, cy);
+                    QL_CHECK(QL_COLOR_GET_B(l) > 0x40);       /* 左：蓝 */
+                    QL_CHECK(QL_COLOR_GET_R(r2) > 0x40);      /* 右：白 */
+                } else if (strcmp(cases[i].fit, "none") == 0) {
+                    /* 原始尺寸居中：四角是空的，中心有像素 */
+                    QL_CHECK(QL_COLOR_GET_R(px(b.x + 1, b.y + 1)) == 0);
+                    /* 中心 -2 落在左下象限（蓝），只要不是黑就算画上了 */
+                    const ql_color_t c2 = px(cx - 2, cy);
+                    QL_CHECK(QL_COLOR_GET_R(c2) + QL_COLOR_GET_G(c2) +
+                                 QL_COLOR_GET_B(c2) >
+                             0x40);
+                } else {   /* scale-down */
+                    if (cases[i].bw > 8) {
+                        /* 不放大：8×8 居中，四角空 */
+                        QL_CHECK(QL_COLOR_GET_R(px(b.x + 1, b.y + 1)) == 0);
+                    } else {
+                        /* 4×4 盒：缩到 4×4 铺满 */
+                        QL_CHECK(QL_COLOR_GET_R(px(b.x, b.y)) > 0x40);
+                    }
+                }
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+        }
+
+        /* 非法取值：明确报错 */
+        {
+            QLUIDoc *bad = ql_ui_load_text("<div id=r><img src=x></div>",
+                                           "img { object-fit: squish }");
+            QL_CHECK(bad == NULL);
+            if (bad != NULL)
+                ql_ui_doc_free(bad);
+            else
+                QL_CHECK(strstr(ql_ui_text_last_error(), "object-fit") != NULL);
+        }
+    }
+
+    /* ---------- 12. border-radius 会裁掉图片的角 ---------- */
+    {
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk("<div id=r><img src=\"pic\"></div>",
+                          "#r { width: 40px; height: 40px; background-color: #000000 }"
+                          "img { width: 16px; height: 16px; border-radius: 8px }",
+                          &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUIImageInput in = raw_input("pic");
+            QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+            ql_canvas_from_disp(&s_cv, s_disp);
+            ql_canvas_clear(&s_cv, 0x000000);
+            ql_ui_render_canvas(ui, &s_cv);
+            const QLRect b = ql_ui_node_rect(&ui->nodes[1]);
+            /* 角被裁掉（半径 8 = 半宽，四角都是圆的） */
+            QL_CHECK(QL_COLOR_GET_R(px(b.x, b.y)) == 0);
+            QL_CHECK(QL_COLOR_GET_R(px(ql_rect_right(b) - 1, b.y)) == 0);
+            /* 中心照旧有像素 */
+            QL_CHECK(QL_COLOR_GET_R(px((int)(b.x + b.w / 2), (int)(b.y + b.h / 2))) > 0x40);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
     ql_disp_mem_destroy(s_disp);
 
 QL_TEST_END()

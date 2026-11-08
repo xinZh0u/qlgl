@@ -1649,6 +1649,7 @@ static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
+    "object-fit",
     "box-shadow", "font-weight", "font-style", "text-decoration",
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
@@ -4894,6 +4895,34 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     }
 
     /*
+     * object-fit：只对 `<img>` 有效。装进 font_flags 的高 4 位（见 qlui.h），
+     * 所以这里的变量最后会被移位合并。
+     */
+    uint8_t object_fit = QL_UI_FIT_FILL;
+    {
+        const char *of = decls_get(st, "object-fit");
+        if (of != NULL) {
+            char ot[32];
+            trim_lower(of, ot, sizeof(ot));
+            if (strcmp(ot, "fill") == 0)
+                object_fit = QL_UI_FIT_FILL;
+            else if (strcmp(ot, "contain") == 0)
+                object_fit = QL_UI_FIT_CONTAIN;
+            else if (strcmp(ot, "cover") == 0)
+                object_fit = QL_UI_FIT_COVER;
+            else if (strcmp(ot, "none") == 0)
+                object_fit = QL_UI_FIT_NONE;
+            else if (strcmp(ot, "scale-down") == 0)
+                object_fit = QL_UI_FIT_SCALE_DOWN;
+            else {
+                set_error("%s: 不支持的 object-fit '%s'"
+                          "（fill / contain / cover / none / scale-down）", where, of);
+                return 0;
+            }
+        }
+    }
+
+    /*
      * line-height：0 = normal（半行距 0，与旧行为一致）。
      * 三写法：`normal` / `<N>px` / 无单位倍数（按当前 font-size 折算成 px）。
      * 单行垂直居中就靠它：`height: 26px; line-height: 26px`。
@@ -5282,7 +5311,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
-    out->font_flags = font_flags;
+    out->font_flags = (uint8_t)(font_flags | (uint8_t)(object_fit << QL_UI_FIT_SHIFT));
     return 1;
 }
 

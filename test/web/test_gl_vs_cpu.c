@@ -148,10 +148,10 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
         }
 
         const char *html =
-            "<div id=r><img src=a><img src=b></div>";
-        const char *css =
-            "#r { width: 64px; height: 64px; background-color: #000000 }"
-            "img { width: 24px; height: 24px }";
+            "<div id=r><img src=a><img src=b class=cover></div>";
+        const char *css = "#r { width: 64px; height: 64px; background-color: #000000 }"
+                          "img { width: 24px; height: 24px }"
+                          "img.cover { object-fit: cover; border-radius: 12px }";
         QLUIDoc *doc = ql_ui_load_text(html, css);
         QL_CHECK(doc != NULL);
         if (doc != NULL) {
