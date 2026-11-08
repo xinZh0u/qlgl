@@ -126,6 +126,8 @@ static const char *const TAG_NAMES[] = {
     "QL_UI_TAG_WBR", "QL_UI_TAG_DEL", "QL_UI_TAG_INS", "QL_UI_TAG_FORM",
     "QL_UI_TAG_LABEL", "QL_UI_TAG_FIELDSET", "QL_UI_TAG_LEGEND",
     "QL_UI_TAG_OPTGROUP",
+    "QL_UI_TAG_BASE", "QL_UI_TAG_HEAD", "QL_UI_TAG_LINK", "QL_UI_TAG_META",
+    "QL_UI_TAG_STYLE", "QL_UI_TAG_TITLE",
 };
 
 static const char *const DISPLAY_NAMES[] = {

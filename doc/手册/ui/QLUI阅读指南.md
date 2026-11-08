@@ -608,7 +608,7 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 标签在本架构里**只影响三件事**：UA 默认样式、`tag` 选择器、调试名。
 布局与绘制只看编译出来的 `QLUIStyle`，不看标签——所以加标签几乎零成本（只加枚举）。
 
-共 66 个（HTML5 共 114 个；全量状态见 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)）。
+共 72 个（HTML5 共 114 个；全量状态见 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)）。
 `QLUITag` / `k_tags[]` / `s_tag_names[]` **三处顺序必须一致**，
 且只能在末尾追加：`node.tag` 是存进 blob 的数字）：
 
@@ -625,6 +625,7 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 控件 | `button` | inline-block + 内边距 + 边框 + 圆角 |
 | 输入 | `input` | inline-block + 内边距 + 边框 + 圆角（`type=password` 额外置位） |
 | 下拉 | `select` / `option` / `optgroup` | 与 `input` 同形 / **`display: none`** |
+| 元数据 | `base` `head` `link` `meta` `style` `title` | **解析期整段跳过**：不进树、不产生盒子；`<style>`/`<title>` 按 raw text 处理（内容里不认标签） |
 | 纯语义 | `html` `body` `a` `abbr` `code` `kbd` `samp` `var` `q` `dfn` `cite` `data` `time` `small` `bdi` `bdo` `del` `ins` `dl` `dt` `dd` `menu` `address` `hgroup` `search` `form` `label` `fieldset` `legend` `wbr` | 只给 `display`，另有几处"真的看得出"：`dd` 缩进 18px、`cite`/`var`/`dfn`/`address` 斜体、`del` 删除线、`ins` 下划线、`fieldset` 边框 |
 
 **几处必须知道的取舍**

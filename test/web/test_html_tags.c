@@ -47,6 +47,8 @@ QL_TEST_BEGIN("test_html_tags")
             "data", "time", "small", "bdi", "bdo", "wbr",
             "del", "ins",
             "form", "label", "fieldset", "legend", "optgroup",
+            /* --- META 包：解析期跳过，不进树 --- */
+            "base", "head", "link", "meta", "style", "title",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -61,7 +63,10 @@ QL_TEST_BEGIN("test_html_tags")
             char html[256];
             const int is_void = (strcmp(name, "br") == 0 || strcmp(name, "hr") == 0 ||
                                  strcmp(name, "input") == 0 ||
-                                 strcmp(name, "wbr") == 0);
+                                 strcmp(name, "wbr") == 0 ||
+                                 strcmp(name, "base") == 0 ||
+                                 strcmp(name, "link") == 0 ||
+                                 strcmp(name, "meta") == 0);
             if (is_void)
                 snprintf(html, sizeof(html), "<div id=r><%s></div>", name);
             else
@@ -71,8 +76,18 @@ QL_TEST_BEGIN("test_html_tags")
             QLUIRoot *ui = build(html, "", 200, 200, &doc);
             QL_CHECK(ui != NULL);
             if (ui != NULL) {
-                QL_CHECK_EQ((int)ui->nodes[1].src->tag, i);
-                QL_CHECK(strcmp(ql_ui_tag_name(ui->nodes[1].src->tag), name) == 0);
+                /* META 包的标签在解析期就跳过了：树里只剩外面那个 div */
+                if (strcmp(ql_ui_tag_name((uint16_t)i), "base") == 0 ||
+                    strcmp(ql_ui_tag_name((uint16_t)i), "head") == 0 ||
+                    strcmp(ql_ui_tag_name((uint16_t)i), "link") == 0 ||
+                    strcmp(ql_ui_tag_name((uint16_t)i), "meta") == 0 ||
+                    strcmp(ql_ui_tag_name((uint16_t)i), "style") == 0 ||
+                    strcmp(ql_ui_tag_name((uint16_t)i), "title") == 0) {
+                    QL_CHECK_EQ((int)doc->node_count, 1);
+                } else {
+                    QL_CHECK_EQ((int)ui->nodes[1].src->tag, i);
+                    QL_CHECK(strcmp(ql_ui_tag_name(ui->nodes[1].src->tag), name) == 0);
+                }
                 ql_ui_free(ui);
                 ql_ui_doc_free(doc);
             }
@@ -410,6 +425,80 @@ QL_TEST_BEGIN("test_html_tags")
                 ql_ui_free(ui);
                 ql_ui_doc_free(doc);
             }
+        }
+    }
+
+    /* ---------- 15. META 包：整页 HTML 贴进来能编译 ---------- */
+    {
+        /* 真实页面：doctype + html/head/body + title/meta/link/style 全都在 */
+        const char *page =
+            "<!DOCTYPE html><html><head>"
+            "<meta charset=\"utf-8\"><title>标题</title>"
+            "<link rel=\"stylesheet\" href=\"x.css\">"
+            "<style>.a { color: #f00 }</style>"
+            "</head><body><div id=r>hello</div></body></html>";
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = build(page, "", 200, 80, &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            /* html > body > div，元数据一个都不进树 */
+            QL_CHECK_EQ((int)doc->node_count, 3);
+            QL_CHECK(strcmp(ql_ui_tag_name(ui->nodes[0].src->tag), "html") == 0);
+            QL_CHECK(strcmp(ql_ui_tag_name(ui->nodes[1].src->tag), "body") == 0);
+            QL_CHECK_STR(ui->nodes[2].text, "hello");
+            /* 关键：<style> 的内容没有变成界面上的文字 */
+            for (uint16_t i = 0; i < ui->node_count; i++)
+                if (ui->nodes[i].text != NULL)
+                    QL_CHECK(strstr(ui->nodes[i].text, "color") == NULL);
+            QL_CHECK_EQ((int)doc->degraded_tags, 0);
+            QL_CHECK(ql_ui_node_rect(&ui->nodes[2]).h > 0);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+
+        /* 元数据写在 body 里同样被跳过（浏览器也这么干） */
+        doc = NULL;
+        ui = build("<div id=r><style>.a{}</style><span>hi</span></div>", "", 200, 80,
+                   &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)doc->node_count, 2);
+            QL_CHECK_STR(ui->nodes[1].text, "hi");
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+
+        /* <style> 未闭合：明确报错，不猜 */
+        {
+            QLUIDoc *bad = ql_ui_load_text("<div id=r><style>.a{}</div>", "");
+            QL_CHECK(bad == NULL);
+            if (bad != NULL)
+                ql_ui_doc_free(bad);
+            else
+                QL_CHECK(strstr(ql_ui_text_last_error(), "未闭合") != NULL);
+        }
+
+        /* <title> 的内容里出现 "</head>" 字样也只当文本（raw text 的规矩） */
+        doc = NULL;
+        ui = build("<div id=r><head><title>a</head>b</title></head><span>hi</span></div>",
+                   "", 200, 80, &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)doc->node_count, 2);
+            QL_CHECK_STR(ui->nodes[1].text, "hi");
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+
+        /* 空元素写法：<meta> <link> <base> 不需要结束标签 */
+        doc = NULL;
+        ui = build("<div id=r><meta><link><base><span>x</span></div>", "", 200, 80,
+                   &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)doc->node_count, 2);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
         }
     }
 

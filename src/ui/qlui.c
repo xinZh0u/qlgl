@@ -47,6 +47,8 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "time", "small", "bdi", "bdo", "wbr",
     "del", "ins",
     "form", "label", "fieldset", "legend", "optgroup",
+    /* --- META 包：解析期跳过，不进树 --- */
+    "base", "head", "link", "meta", "style", "title",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)

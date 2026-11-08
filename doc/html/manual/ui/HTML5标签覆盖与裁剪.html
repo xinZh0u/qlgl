@@ -236,6 +236,10 @@ main img.shot { max-width: 100%; }
 <td>标签能解析（或即将能），但渲染要么需要新能力（能力包），要么只做占位盒</td>
 </tr>
 <tr>
+<td>✅ 已支持（解析跳过）</td>
+<td>能解析，但<strong>不进树</strong>：元数据本来就不产生盒子</td>
+</tr>
+<tr>
 <td>❌ 不做</td>
 <td>连占位都不做，解析期报错（本表里已经没有了 —— 见 §5）</td>
 </tr>
@@ -261,37 +265,37 @@ main img.shot { max-width: 100%; }
 <td>文档元数据</td>
 <td><code>&lt;base&gt;</code></td>
 <td><code>META</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（解析跳过）</td>
 </tr>
 <tr>
 <td>文档元数据</td>
 <td><code>&lt;head&gt;</code></td>
 <td><code>META</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（解析跳过）</td>
 </tr>
 <tr>
 <td>文档元数据</td>
 <td><code>&lt;link&gt;</code></td>
 <td><code>META</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（解析跳过）</td>
 </tr>
 <tr>
 <td>文档元数据</td>
 <td><code>&lt;meta&gt;</code></td>
 <td><code>META</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（解析跳过）</td>
 </tr>
 <tr>
 <td>文档元数据</td>
 <td><code>&lt;style&gt;</code></td>
 <td><code>META</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（解析跳过）</td>
 </tr>
 <tr>
 <td>文档元数据</td>
 <td><code>&lt;title&gt;</code></td>
 <td><code>META</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已支持（解析跳过）</td>
 </tr>
 <tr>
 <td>分段</td>
@@ -937,7 +941,7 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p>统计：<strong>✅ 66 个</strong>（本轮之前 35，本轮加 31 个纯语义标签）、<strong>⏳ 48 个</strong>、<strong>❌ 0 个</strong>。</p>
+<p>统计：<strong>✅ 72 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签）、<strong>⏳ 42 个</strong>、<strong>❌ 0 个</strong>。</p>
 <hr />
 <h2 id="2">2. 能力包</h2>
 <p>一个"包"= 一组标签 + 支撑它们的那部分引擎。包是<strong>编译期开关</strong>，也是<strong>构建期报告的单位</strong>。</p>
@@ -962,12 +966,12 @@ main img.shot { max-width: 100%; }
 <td>无（永远有）</td>
 </tr>
 <tr>
-<td><code>META</code></td>
+<td><code>META</code> ✅</td>
 <td><code>QL_FEAT_UI_META</code></td>
 <td>6（<code>base head link meta style title</code>）</td>
 <td>✅</td>
 <td>✅</td>
-<td>无 —— 只做"解析期跳过"，零代码</td>
+<td>无 —— 解析期整段跳过，不产生盒子</td>
 </tr>
 <tr>
 <td><code>TEXT</code></td>
@@ -1056,11 +1060,12 @@ main img.shot { max-width: 100%; }
 <hr />
 <h2 id="4">4. 裁包之后会发生什么</h2>
 <blockquote>
-<p><strong>现状</strong>：包机制还没落地（P1 才做）。在那之前<strong>所有 114 个已知标签都能解析</strong>，
-未实现的标签按其 UA 默认样式渲染，不会降级也不会报错 —— 也就是说，
-今天"标签能编译通过"已经成立，缺的是"画得像"。</p>
+<p><strong>现状</strong>：机制与第一个包（<code>META</code>）已经落地，开关在 <code>qlconfig.h</code>：
+<code>QL_FEAT_UI_META</code>（默认 1）与 <code>QL_CFG_UI_LENIENT_TAGS</code>（默认 0）。
+其余包（<code>TEXT</code> / <code>TABLE</code> / <code>IMAGE</code> / <code>WIDGET</code> / <code>EMBED</code>）随实现追加，
+在那之前它们的标签还不在枚举里，遇到就是"不认识的标签"报错。</p>
 </blockquote>
-<p>包机制落地后，解析器先按名字认标签（<code>tag_index()</code>，全量表），再看这个标签所属的包开没开：</p>
+<p>解析器先按名字认标签（<code>tag_index()</code>，全量表），再看这个标签所属的包开没开：</p>
 <table>
 <thead>
 <tr>
@@ -1155,8 +1160,8 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <td>1 天</td>
 </tr>
 <tr>
-<td>P1</td>
-<td><code>META</code> 包：元数据标签一律跳过（<code>&lt;style&gt;</code> 内容整段不解析）</td>
+<td>P1 ✅ 已完成</td>
+<td><code>META</code> 包：元数据标签一律跳过（<code>&lt;style&gt;</code> 内容整段不解析）+ 包机制骨架</td>
 <td>72</td>
 <td>0.5 天</td>
 </tr>

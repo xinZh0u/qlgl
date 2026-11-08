@@ -124,6 +124,20 @@ typedef enum {
     QL_UI_TAG_FIELDSET,
     QL_UI_TAG_LEGEND,
     QL_UI_TAG_OPTGROUP,
+
+    /*
+     * --- META 包：文档元数据。**不进树、不产生盒子** ---
+     *
+     * 加它们是为了"整页 HTML 直接贴进来能编译"：`<head>` / `<title>` / `<meta>` /
+     * `<link>` / `<base>` / `<style>` 在解析期整段跳过（`<style>` 的内容连字都不进文本池）。
+     * 所以这些枚举值**永远不会出现在 node.tag 里**，列在这里只为名字表与报错文案。
+     */
+    QL_UI_TAG_BASE,
+    QL_UI_TAG_HEAD,
+    QL_UI_TAG_LINK,
+    QL_UI_TAG_META,
+    QL_UI_TAG_STYLE,
+    QL_UI_TAG_TITLE,
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -420,6 +434,11 @@ typedef struct {
     uint16_t          font_size_count;
     uint16_t          anim_count;      /* @keyframes 段数；没有动画时为 0 */
     uint16_t          keyframe_count;  /* 所有段的关键帧总数 */
+    /*
+     * 被降级/裁掉的标签个数（`QL_CFG_UI_LENIENT_TAGS=1` 或某个能力包关掉时会计数）。
+     * **不写进 blob**：加载出来的 doc 这个字段恒为 0，它只描述"这份 doc 是被解析出来的"。
+     */
+    uint16_t          degraded_tags;
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */

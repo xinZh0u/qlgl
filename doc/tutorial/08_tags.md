@@ -12,9 +12,9 @@
 所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。
 
-## 现支持的 66 个标签
+## 现支持的 72 个标签
 
-HTML5 一共 114 个元素，本库现在认其中 **66 个**。全量清单（含每个标签的状态、能力包、
+HTML5 一共 114 个元素，本库现在认其中 **72 个**。全量清单（含每个标签的状态、能力包、
 MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)，这里只给常用分组：
 
 | 类 | 标签 |
@@ -30,6 +30,7 @@ MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与
 | 输入 | `input`（`type` 只支持 `text` / `password`，见[输入控件](11_input.html)） |
 | 下拉 | `select` `option` `optgroup`（后两个自动 `display: none`，见[输入控件](11_input.html)） |
 | 表单外壳 | `form` `label` `fieldset` `legend`（**没有提交、没有校验**） |
+| 文档元数据 | `base` `head` `link` `meta` `style` `title`（**解析期整段跳过**，不进树） |
 
 新加的这批叫**纯语义标签**：它们不引入任何新能力，只是"别再报错"。所以要说清楚
 哪些看得出区别、哪些看不出：
@@ -52,6 +53,16 @@ MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与
 | `bdi` / `bdo` | 没有双向文本（RTL）支持 |
 | `wbr` | 没有"可选断点"（不影响折行） |
 | `form` / `label` / `legend` / `optgroup` | 纯排版盒子；`optgroup` 的组名不画 |
+
+顺带一个很实用的能力：**整页 HTML 可以直接贴**。`<head>` / `<title>` / `<meta>` /
+`<link>` / `<style>` 会在解析期整段跳过，`<style>` 的内容连字都不会进界面：
+
+```html
+<!DOCTYPE html>
+<html><head><title>标题</title>
+  <meta charset="utf-8"><style>.a { color: #f00 }</style>
+</head><body><div class="a">hello</div></body></html>
+```
 
 一张全是语义标签的页面（`dl` 缩进、`cite` 斜体、`del`/`ins` 装饰线、`fieldset` 边框）：
 

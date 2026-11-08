@@ -2443,6 +2443,9 @@ struct PNode {
 };
 
 /* 下标 == QLUITag 的枚举值，顺序不能改（只在末尾追加） */
+/* 本次解析里被降级/裁掉的标签个数；ql_ui_load_text 开始时清零 */
+static uint16_t s_degraded_tags;
+
 static const char *const k_tags[] = {
     "div", "section", "p", "span", "b", "i", "button", "h1", "h2", "h3",
     "h4", "h5", "h6",
@@ -2459,6 +2462,8 @@ static const char *const k_tags[] = {
     "time", "small", "bdi", "bdo", "wbr",
     "del", "ins",
     "form", "label", "fieldset", "legend", "optgroup",
+    /* --- META 包：解析期跳过，不进树 --- */
+    "base", "head", "link", "meta", "style", "title",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2512,6 +2517,142 @@ static int tag_is_void(const char *tag)
 {
     return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0 ||
            strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0;
+}
+
+/* ---------------- META 包：文档元数据（解析期整段跳过） ---------------- */
+
+static int is_name_char(char c);   /* 定义在解析器里，这里先声明 */
+
+/* 这批标签不进树、不产生盒子，只为了让"整页 HTML 贴进来"能编译 */
+static int tag_is_metadata(const char *tag)
+{
+    return strcmp(tag, "base") == 0 || strcmp(tag, "head") == 0 ||
+           strcmp(tag, "link") == 0 || strcmp(tag, "meta") == 0 ||
+           strcmp(tag, "style") == 0 || strcmp(tag, "title") == 0;
+}
+
+/* 大小写不敏感地比较 s[0..len) 与 name（HTML 标签名不分大小写） */
+static int name_is_ci(const char *s, size_t len, const char *name)
+{
+    size_t i = 0;
+    for (; i < len; i++) {
+        char c = s[i];
+        if (c >= 'A' && c <= 'Z')
+            c = (char)(c - 'A' + 'a');
+        if (name[i] == '\0' || name[i] != c)
+            return 0;
+    }
+    return name[i] == '\0';
+}
+
+/*
+ * 跳过 raw text 元素（`<style>` / `<title>`）的内容，返回结束标签之后的位置。
+ * raw text 的规矩：内容里**不认标签**，只认 `</style>` / `</title>` 本身。
+ */
+static const char *skip_raw_text(const char *body, const char *name)
+{
+    const size_t nlen = strlen(name);
+    for (const char *p = body; *p != '\0'; p++) {
+        if (p[0] != '<' || p[1] != '/')
+            continue;
+        if (!name_is_ci(p + 2, nlen, name))
+            continue;
+        const char *q = p + 2 + nlen;
+        while (is_space(*q))
+            q++;
+        if (*q == '>')
+            return q + 1;
+    }
+    set_error("HTML: <%s> 未闭合", name);
+    return NULL;
+}
+
+/*
+ * 从元素内容起点开始，跳过整个元素（内容 + 结束标签），返回之后的位置。
+ * 空元素（`<base>` / `<link>` / `<meta>`）与自闭合写法没有内容，直接跳过起始标签。
+ *
+ * 这里是个**只看结构**的小扫描器：认注释、声明、raw text 与同名嵌套，
+ * 不做实体解码、不建节点 —— 元数据本来就不该出现在树里。
+ */
+static const char *skip_element(const char *content, const char *name, int self_closing)
+{
+    if (self_closing || strcmp(name, "base") == 0 || strcmp(name, "link") == 0 ||
+        strcmp(name, "meta") == 0)
+        return content;
+
+    if (strcmp(name, "style") == 0 || strcmp(name, "title") == 0)
+        return skip_raw_text(content, name);
+
+    /* 容器（目前只有 <head>）：按标签配平扫到匹配的结束标签 */
+    int depth = 1;
+    const char *p = content;
+    while (*p != '\0') {
+        if (*p != '<') {
+            p++;
+            continue;
+        }
+        if (strncmp(p, "<!--", 4) == 0) {
+            const char *e = strstr(p + 4, "-->");
+            if (e == NULL) {
+                set_error("HTML: 注释未闭合");
+                return NULL;
+            }
+            p = e + 3;
+            continue;
+        }
+        if (p[1] == '!' || p[1] == '?') {
+            const char *e = strchr(p, '>');
+            if (e == NULL) {
+                set_error("HTML: 声明未闭合");
+                return NULL;
+            }
+            p = e + 1;
+            continue;
+        }
+
+        const int closing = (p[1] == '/');
+        const char *ns = p + (closing ? 2 : 1);
+        const char *q = ns;
+        while (is_name_char(*q))
+            q++;
+        const size_t len = (size_t)(q - ns);
+
+        if (!closing && (name_is_ci(ns, len, "style") || name_is_ci(ns, len, "title"))) {
+            /* 里面可能有 </head> 字样的文本，先按 raw text 跳过去 */
+            const char *gt = strchr(q, '>');
+            if (gt == NULL) {
+                set_error("HTML: 标签格式错误");
+                return NULL;
+            }
+            const char *e = name_is_ci(ns, len, "style") ? skip_raw_text(gt + 1, "style")
+                                                         : skip_raw_text(gt + 1, "title");
+            if (e == NULL)
+                return NULL;
+            p = e;
+            continue;
+        }
+
+        if (name_is_ci(ns, len, name)) {
+            if (!closing) {
+                depth++;
+            } else if (--depth == 0) {
+                const char *gt = strchr(q, '>');
+                if (gt == NULL) {
+                    set_error("HTML: 结束标签格式错误 </%s>", name);
+                    return NULL;
+                }
+                return gt + 1;
+            }
+        }
+        const char *gt = strchr(q, '>');
+        if (gt == NULL) {
+            set_error("HTML: 标签格式错误");
+            return NULL;
+        }
+        p = gt + 1;
+    }
+    set_error("HTML: <%s> 未闭合", name);
+    return NULL;
 }
 
 static void pnode_free(PNode *n)
@@ -3226,6 +3367,31 @@ static PNode *parse_html(const char *html)
                 return NULL;
             }
             int self_closing = (after[-2] == '/');
+
+            /*
+             * 文档元数据（META 包）：整段跳过，不进树。
+             * `<style>` / `<title>` 的内容连字都不进文本池 —— 这一条是"整页 HTML
+             * 贴进来能编译"的关键：不跳过的话样式文本会变成界面上的文字。
+             */
+            if (tag_is_metadata(name)) {
+                if (!QL_FEAT_UI_META && !QL_CFG_UI_LENIENT_TAGS) {
+                    set_error("HTML: <%s> 需要 QL_FEAT_UI_META（文档元数据），本构建没有启用",
+                              name);
+                    attrs_free(&at);
+                    pnode_free(root);
+                    return NULL;
+                }
+                if (!QL_FEAT_UI_META)
+                    s_degraded_tags++;   /* 裁掉的包：明确允许时只计数 */
+                const char *next = skip_element(after, name, self_closing);
+                attrs_free(&at);
+                if (next == NULL) {
+                    pnode_free(root);
+                    return NULL;
+                }
+                p = next;
+                continue;
+            }
 
             if (!tag_supported(name)) {
                 /* 对几个"一定会有人写"的标签给出比"不支持"更有用的提示 */
@@ -5243,6 +5409,7 @@ static int collect_inherited(const Decls *parent, Decls *out)
 QLUIDoc *ql_ui_load_text(const char *html, const char *css)
 {
     s_error[0] = '\0';
+    s_degraded_tags = 0;
     if (html == NULL)
         html = "";
     if (css == NULL)
@@ -5513,6 +5680,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         doc->font_size_count = (uint16_t)fonts.n;
         doc->anim_count = (uint16_t)anims.n;
         doc->keyframe_count = (uint16_t)kftab.n;
+        doc->degraded_tags = s_degraded_tags;
         doc->nodes = (nflat > 0) ? nodes : NULL;
         doc->styles = (styles.n > 0) ? stl : NULL;
         doc->text_pool = pool_dst;

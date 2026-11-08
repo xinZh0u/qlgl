@@ -240,7 +240,7 @@ main img.shot { max-width: 100%; }
 默认改成 <code>normal</code> 会让已有界面在你没改任何东西时重新排版。详见
 <a href="02_text.html">文本</a>。</p>
 <hr />
-<h2 id="2-html-114-66">2. HTML：认 114 个标签，画 66 个</h2>
+<h2 id="2-html-114-72">2. HTML：认 114 个标签，画 72 个</h2>
 <table>
 <thead>
 <tr>
@@ -254,8 +254,8 @@ main img.shot { max-width: 100%; }
 <td>✅ 当普通块级容器（<strong>整个文档仍然只有一个根元素</strong>）</td>
 </tr>
 <tr>
-<td><code>&lt;head&gt;</code> <code>&lt;title&gt;</code> <code>&lt;meta&gt;</code> <code>&lt;link&gt;</code></td>
-<td>❌ 报错（文档元数据还没做）</td>
+<td><code>&lt;head&gt;</code> <code>&lt;title&gt;</code> <code>&lt;meta&gt;</code> <code>&lt;link&gt;</code> <code>&lt;style&gt;</code> <code>&lt;base&gt;</code></td>
+<td>✅ <strong>整段跳过</strong>（不进树、不占位；<code>&lt;style&gt;</code> 内容不会变成文字）</td>
 </tr>
 <tr>
 <td><code>&lt;!DOCTYPE html&gt;</code> <code>&lt;!-- 注释 --&gt;</code></td>
@@ -290,7 +290,7 @@ main img.shot { max-width: 100%; }
 <td>❌ 没有样式表标签，也没有脚本</td>
 </tr>
 <tr>
-<td>其余 66 个标签</td>
+<td>其余 72 个标签</td>
 <td>✅ 见<a href="08_tags.html">标签与语义</a></td>
 </tr>
 </tbody>

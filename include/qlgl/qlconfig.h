@@ -99,6 +99,31 @@
  *   QL_CFG_UI_INPUT_LEN  单个输入框的长度上限（UTF-8 字节，含结尾 0）。
  * 池只在 doc 里真的出现 `<input>` 时才分配。
  */
+/*
+ * ---- HTML5 能力包开关（见 doc/手册/ui/HTML5标签覆盖与裁剪.md） ----
+ *
+ * 一个"包"= 一组标签 + 支撑它们的引擎部分。PC/移动默认全开，MCU 按需关掉。
+ *
+ * **硬约束**：关包只裁代码路径与错误文案，**不许改 QLUITag 枚举**
+ * （枚举值写进 blob，一旦按平台变，同一份 .qlui 两边就解释成不同标签）。
+ *
+ * 目前只有 META 一个包落地，其余（TEXT/TABLE/IMAGE/WIDGET/EMBED）随实现追加。
+ */
+#ifndef QL_FEAT_UI_META
+#define QL_FEAT_UI_META             1   /* base head link meta style title：解析期跳过 */
+#endif
+
+/*
+ * 未知/未启用标签的处理方式：
+ *   0（默认）= strict，明确报错并点名缺哪个包；
+ *   1        = lenient，降级成 div/span（元数据直接丢掉），并计入 doc->degraded_tags。
+ *
+ * 默认 strict：降级只允许发生在"你明确说要降级"的时候。
+ */
+#ifndef QL_CFG_UI_LENIENT_TAGS
+#define QL_CFG_UI_LENIENT_TAGS      0
+#endif
+
 #ifndef QL_CFG_UI_INPUT_MAX
 #define QL_CFG_UI_INPUT_MAX         8
 #endif

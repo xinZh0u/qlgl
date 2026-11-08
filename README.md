@@ -106,7 +106,7 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 ./build/test_qltext_blob                  # qltext blob 直接产出的 .qlui 与提交基准逐字节相同
 ./build/test_line_height                  # line-height：单行文字垂直居中（按渲染墨迹判断）
 ./build/test_text_wrap                    # 自动折行：断行规则 + 布局/绘制共用一份行数
-./build/test_html_tags                    # 66 个标签的 UA 默认样式 + 行内空白规则
+./build/test_html_tags                    # 72 个标签的 UA 默认样式 + 元数据跳过 + 行内空白规则
 ./build/test_text_style                   # 合成加粗/斜体/下划线 + 装饰线
 ./build/test_scroll                       # overflow: auto 的滚动（滚轮/拖动/夹紧/命中）
 ./build/test_input_edit                   # <input>：值/光标/选区/UTF-8 边界/密码显示
