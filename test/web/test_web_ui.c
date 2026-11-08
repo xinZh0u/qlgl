@@ -19,7 +19,7 @@ static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user_data)
 QL_TEST_BEGIN("test_web_ui")
 
     /* 1. 文档内容符合预期：14 个节点（section + 3 div + 5 p + 4 span） */
-    QL_CHECK_EQ(ui_demo_doc.node_count, 17);   /* 含 M2 加入的中文条 + 2 个 p */
+    QL_CHECK_EQ(ui_demo_doc.node_count, 24);   /* M3 示例页：flex + 混合内容 */
     QL_CHECK(ui_demo_doc.nodes != NULL);
     QL_CHECK(ui_demo_doc.styles != NULL);
     QL_CHECK_STR(ui_demo_doc.name, "ui_demo");
@@ -30,7 +30,7 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK_EQ(ui->node_count, ui_demo_doc.node_count);
     QLUINodeRT *root = ql_ui_root_node(ui);
     QL_CHECK(root != NULL);
-    QL_CHECK(root->src->tag == QL_UI_TAG_SECTION);
+    QL_CHECK(root->src->tag == QL_UI_TAG_DIV);
     QL_CHECK(root->first_child != NULL);
     QL_CHECK(root->first_child->parent == root);
 

@@ -59,6 +59,49 @@ DISPLAYS = {
     "inline": "QL_UI_DISPLAY_INLINE",
     "inline-block": "QL_UI_DISPLAY_INLINE_BLOCK",
     "none": "QL_UI_DISPLAY_NONE",
+    "flex": "QL_UI_DISPLAY_FLEX",
+    "inline-flex": "QL_UI_DISPLAY_INLINE_FLEX",
+}
+
+FLEX_DIRECTIONS = {
+    "row": "QL_UI_FLEX_ROW",
+    "row-reverse": "QL_UI_FLEX_ROW_REVERSE",
+    "column": "QL_UI_FLEX_COLUMN",
+    "column-reverse": "QL_UI_FLEX_COLUMN_REVERSE",
+}
+
+JUSTIFY = {
+    "flex-start": "QL_UI_JUSTIFY_START",
+    "start": "QL_UI_JUSTIFY_START",
+    "center": "QL_UI_JUSTIFY_CENTER",
+    "flex-end": "QL_UI_JUSTIFY_END",
+    "end": "QL_UI_JUSTIFY_END",
+    "space-between": "QL_UI_JUSTIFY_SPACE_BETWEEN",
+    "space-around": "QL_UI_JUSTIFY_SPACE_AROUND",
+    "space-evenly": "QL_UI_JUSTIFY_SPACE_EVENLY",
+}
+
+ALIGN_ITEMS = {
+    "stretch": "QL_UI_ALIGN_STRETCH",
+    "flex-start": "QL_UI_ALIGN_START",
+    "start": "QL_UI_ALIGN_START",
+    "center": "QL_UI_ALIGN_CENTER",
+    "flex-end": "QL_UI_ALIGN_END",
+    "end": "QL_UI_ALIGN_END",
+}
+
+POSITIONS = {
+    "static": "QL_UI_POSITION_STATIC",
+    "relative": "QL_UI_POSITION_RELATIVE",
+    "absolute": "QL_UI_POSITION_ABSOLUTE",
+    "fixed": "QL_UI_POSITION_FIXED",
+}
+
+OVERFLOWS = {
+    "visible": "QL_UI_OVERFLOW_VISIBLE",
+    "hidden": "QL_UI_OVERFLOW_HIDDEN",
+    "auto": "QL_UI_OVERFLOW_AUTO",
+    "scroll": "QL_UI_OVERFLOW_AUTO",
 }
 
 ALIGNS = {
@@ -91,6 +134,9 @@ SUPPORTED_PROPS = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
     "font-size", "text-align", "box-sizing", "box-shadow",
+    "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
+    "justify-content", "align-items", "gap", "row-gap", "column-gap",
+    "position", "top", "right", "bottom", "left", "z-index", "overflow",
 } | {"%s-%s" % (base, side) for base in ("margin", "padding") for side in SIDES}
 
 
@@ -375,7 +421,16 @@ def parse_css(text, origin):
 # ---------------------------------------------------------------- HTML 解析
 
 class Node:
-    __slots__ = ("tag", "classes", "id", "attrs", "children", "parent", "text")
+    """元素节点。
+
+    items 按**文档顺序**保存内容：str（文本段）或 Node（子元素）。
+    只有文本时 → text 直接放文本（快路径，绝大多数节点走这条）；
+    文本与元素混排时 → 由 _flatten_mixed 把文本段包成匿名 <span> 子节点，
+    这样运行期数据模型完全不用改（混合内容在**生成期**就消解掉了）。
+    """
+
+    __slots__ = ("tag", "classes", "id", "attrs", "children", "parent", "text",
+                 "items")
 
     def __init__(self, tag, attrs=None, parent=None):
         self.tag = tag
@@ -385,14 +440,19 @@ class Node:
         self.children = []
         self.parent = parent
         self.text = None
+        self.items = []
 
     def add_text(self, chunk):
         chunk = re.sub(r"\s+", " ", chunk)
-        if not chunk.strip():
+        if not chunk:
             return
-        if self.text is None:
-            self.text = ""
-        self.text += chunk.strip()
+        self.items.append(chunk)
+
+    def add_child(self, node):
+        self.children.append(node)
+        self.items.append(node)
+
+
 
 
 class TreeBuilder(HTMLParser):
@@ -412,7 +472,7 @@ class TreeBuilder(HTMLParser):
             node.classes = [c for c in a["class"].split() if c]
         if "id" in a:
             node.id = a["id"]
-        self.stack[-1].children.append(node)
+        self.stack[-1].add_child(node)
         self.stack.append(node)
 
     def handle_endtag(self, tag):
@@ -430,15 +490,62 @@ class TreeBuilder(HTMLParser):
     def finish(self):
         if len(self.stack) != 1:
             raise CssError("标签未闭合：<%s>" % self.stack[-1].tag)
-        self._check_mixed(self.root)
+        self._flatten(self.root)
         return self.root
 
-    def _check_mixed(self, node):
-        if node.tag != "#document" and node.text is not None and node.children:
-            raise CssError("<%s> 同时包含文本和子元素（混合内容）——v0 不支持，"
-                           "请把文本放进独立的 <span>/<p>" % node.tag)
-        for c in node.children:
-            self._check_mixed(c)
+    def _flatten(self, node):
+        """把"文本与元素混排"在生成期消解成匿名的 inline 子节点。
+
+        <p>Hello <b>world</b>!</p>
+          → <p><span>Hello </span><b>world</b><span>!</span></p>
+
+        这样运行期只认识"元素树"，混合内容不需要任何新的数据模型与布局代码。
+        纯文本节点（无子元素）保持 text 快路径不变。
+        """
+        # 先递归处理子节点
+        for c in list(node.children):
+            self._flatten(c)
+
+        if node.tag == "#document":
+            return
+
+        has_text = any(isinstance(it, str) for it in node.items)
+        has_elem = any(isinstance(it, Node) for it in node.items)
+
+        if not has_text:
+            node.items = []
+            return
+        if not has_elem:
+            node.text = "".join(it for it in node.items if isinstance(it, str)).strip()
+            node.text = re.sub(r"\s+", " ", node.text) or None
+            node.items = []
+            return
+
+        # 混排：按文档顺序重建 children，每个文本段包一个匿名 span
+        str_positions = [i for i, it in enumerate(node.items) if isinstance(it, str)]
+        first_i = str_positions[0] if str_positions else -1
+        last_i = str_positions[-1] if str_positions else -1
+
+        ordered = []
+        for i, it in enumerate(node.items):
+            if isinstance(it, str):
+                txt = it
+                if i == first_i:
+                    txt = txt.lstrip()
+                if i == last_i:
+                    txt = txt.rstrip()
+                # 元素之间的纯空白不产生盒子（HTML 的空白折叠规则）——
+                # 否则每个换行缩进都会变成一个 4px 宽的匿名 span，撑高整页。
+                if not txt.strip():
+                    continue
+                span = Node("span", {}, node)
+                span.text = txt
+                ordered.append(span)
+            else:
+                ordered.append(it)
+
+        node.children = ordered
+        node.items = []
 
 
 # ---------------------------------------------------------------- 选择器匹配
@@ -478,6 +585,77 @@ def matches(node, parts):
 
 # 文档里出现的所有 font-size 会汇总成一张表，节点的 font_id 是表下标
 FONT_SIZES = []
+
+
+def parse_number(text, where, allow_percent=False, allow_auto=False):
+    """返回 ('px'|'percent'|'auto', 值)"""
+    t = text.strip().lower()
+    if allow_auto and t == "auto":
+        return "auto", 0
+    m = re.fullmatch(r"(-?\d+(?:\.\d+)?)px", t)
+    if m:
+        return "px", int(round(float(m.group(1))))
+    if allow_percent:
+        m = re.fullmatch(r"(-?\d+(?:\.\d+)?)%", t)
+        if m:
+            return "percent", int(round(float(m.group(1))))
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", t):
+        return "number", float(t)
+    if t == "0":
+        return "px", 0
+    raise CssError("%s: 无法解析数值 %r" % (where, text))
+
+
+def parse_flex_shorthand(text, where):
+    """flex: 1 / 1 0 auto / 0 0 100px / none / auto → (grow, shrink, basis)
+
+    与 CSS 的展开规则一致（单值 = grow，双值 = grow shrink，三值 = 全写）。
+    """
+    t = text.strip().lower()
+    if t == "none":
+        return 0, 0, ("auto", 0)
+    if t == "auto":
+        return 1, 1, ("auto", 0)
+    parts = t.split()
+    if not 1 <= len(parts) <= 3:
+        raise CssError("%s: flex 只能是 1~3 个值，收到 %r" % (where, text))
+
+    def num(p):
+        try:
+            return float(p)
+        except ValueError:
+            raise CssError("%s: flex 里的 %r 不是数字" % (where, p))
+
+    if len(parts) == 1:
+        kind, val = parse_number(parts[0], where, allow_percent=True, allow_auto=True)
+        if kind in ("px", "percent") or parts[0] == "auto":
+            return 1, 1, (kind, val)          # flex: <basis>
+        return num(parts[0]), 1, ("auto", 0)
+    if len(parts) == 2:
+        kind, val = parse_number(parts[1], where, allow_percent=True, allow_auto=True)
+        if kind in ("px", "percent") or parts[1] == "auto":
+            return num(parts[0]), 1, (kind, val)
+        return num(parts[0]), num(parts[1]), ("auto", 0)
+
+    kind, val = parse_number(parts[2], where, allow_percent=True, allow_auto=True)
+    return num(parts[0]), num(parts[1]), (kind, val)
+
+
+def parse_gap(text, where):
+    """gap: <row> [<col>] → (row_px, col_px)"""
+    parts = text.split()
+    if len(parts) == 1:
+        kind, v = parse_number(parts[0], where)
+        if kind == "percent":
+            raise CssError("%s: gap 不支持百分比" % where)
+        return v, v
+    if len(parts) == 2:
+        k1, v1 = parse_number(parts[0], where)
+        k2, v2 = parse_number(parts[1], where)
+        if k1 == "percent" or k2 == "percent":
+            raise CssError("%s: gap 不支持百分比" % where)
+        return v1, v2
+    raise CssError("%s: gap 只支持 1~2 个值，收到 %r" % (where, text))
 
 
 def font_id_for(size_px):
@@ -535,6 +713,22 @@ def finalize_style(decls, node, inherited):
             if prop not in SUPPORTED_PROPS:
                 raise CssError("行内 style 不支持属性 %r" % prop)
             decls[prop] = value.strip()
+
+    # flex 简写展开成三个长写（放在继承合并之后，避免被覆盖）
+    if "flex" in decls and "flex-grow" not in decls:
+        g, sh, (bk, bv) = parse_flex_shorthand(decls["flex"], "flex")
+        decls["flex-grow"] = ("%g" % g)
+        decls["flex-shrink"] = ("%g" % sh)
+        if bk == "auto":
+            decls["flex-basis"] = "auto"
+        elif bk == "percent":
+            decls["flex-basis"] = "%d%%" % bv
+        else:
+            decls["flex-basis"] = "%dpx" % bv
+    if "gap" in decls and "row-gap" not in decls:
+        gr, gc = parse_gap(decls["gap"], "gap")
+        decls["row-gap"] = "%dpx" % gr
+        decls["column-gap"] = "%dpx" % gc
 
     style = dict(inherited)      # 继承
     style.update(decls)
@@ -751,9 +945,91 @@ def emit(doc_root, rules, name, out_dir):
             "      .border_radius = %d, .text_align = %s, .font_id = %d,"
             " .box_sizing = %d," % (radius, align, font_id_for(size_px),
                                     1 if box_sizing == "border-box" else 0))
+        # ---- flex 容器 ----
+        fdir = FLEX_DIRECTIONS.get(st.get("flex-direction", "row"))
+        if fdir is None:
+            raise CssError("%s: 不支持的 flex-direction %r"
+                           % (where, st.get("flex-direction")))
+        jc = JUSTIFY.get(st.get("justify-content", "flex-start"))
+        if jc is None:
+            raise CssError("%s: 不支持的 justify-content %r"
+                           % (where, st.get("justify-content")))
+        ai = ALIGN_ITEMS.get(st.get("align-items", "stretch"))
+        if ai is None:
+            raise CssError("%s: 不支持的 align-items %r" % (where, st.get("align-items")))
+        wrap_txt = st.get("flex-wrap", "nowrap")
+        if wrap_txt not in ("nowrap", "wrap"):
+            raise CssError("%s: 不支持的 flex-wrap %r（只支持 nowrap/wrap）"
+                           % (where, wrap_txt))
+        wrap = 1 if wrap_txt == "wrap" else 0
+        _, gap_r = parse_number(st.get("row-gap", "0"), where)
+        _, gap_c = parse_number(st.get("column-gap", "0"), where)
+
+        # ---- flex 项 ----
+        fg_txt = st.get("flex-grow", "0")
+        fs_txt = st.get("flex-shrink", "1")
+        try:
+            grow = int(round(float(fg_txt) * 100))
+            shrink = int(round(float(fs_txt) * 100))
+        except ValueError:
+            raise CssError("%s: flex-grow/flex-shrink 必须是数字" % where)
+        if grow < 0 or shrink < 0:
+            raise CssError("%s: flex-grow/flex-shrink 不能为负" % where)
+
+        basis_txt = st.get("flex-basis", "auto")
+        bk, bv = parse_number(basis_txt, where, allow_percent=True, allow_auto=True)
+        if bk == "auto":
+            basis_px, basis_pct = -1, 0
+        elif bk == "percent":
+            basis_px, basis_pct = 0, max(1, bv)
+        else:
+            basis_px, basis_pct = bv, 0
+
+        # ---- 定位 ----
+        pos = POSITIONS.get(st.get("position", "static"))
+        if pos is None:
+            raise CssError("%s: 不支持的 position %r" % (where, st.get("position")))
+        ov = OVERFLOWS.get(st.get("overflow", "visible"))
+        if ov is None:
+            raise CssError("%s: 不支持的 overflow %r" % (where, st.get("overflow")))
+        try:
+            zidx = int(st.get("z-index", "0"))
+        except ValueError:
+            raise CssError("%s: z-index 必须是整数" % where)
+        if zidx < -32768 or zidx > 32767:
+            raise CssError("%s: z-index 超出 int16 范围" % where)
+
+        inset = []
+        for side in SIDES:          # top, right, bottom, left
+            key = st.get(side, "auto")
+            k, v = parse_number(key, where, allow_percent=True, allow_auto=True)
+            if k == "auto":
+                inset.append((0, "QL_UI_UNIT_AUTO"))
+            elif k == "percent":
+                inset.append((max(0, v), "QL_UI_UNIT_PERCENT"))
+            else:
+                inset.append((v, "QL_UI_UNIT_PX"))
+
         lines.append(
-            "      .bg_grad_dir = %d, .shadow_blur = %d, .shadow_alpha = %d },"
+            "      .bg_grad_dir = %d, .shadow_blur = %d, .shadow_alpha = %d,"
             % (grad_dir, sh_blur, sh_a))
+        lines.append(
+            "      .flex_direction = %s, .justify_content = %s,"
+            % (fdir, jc))
+        lines.append(
+            "      .align_items = %s, .flex_wrap = %d, .gap_row = %d, .gap_col = %d,"
+            % (ai, wrap, gap_r, gap_c))
+        lines.append(
+            "      .flex_grow = %d, .flex_shrink = %d,"
+            " .flex_basis = %d, .flex_basis_pct = %d,"
+            % (grow, shrink, basis_px, basis_pct))
+        lines.append(
+            "      .position = %s, .overflow = %s, .z_index = %d,"
+            % (pos, ov, zidx))
+        lines.append(
+            "      .inset = { { %d, %s }, { %d, %s }, { %d, %s }, { %d, %s } } },"
+            % (inset[0][0], inset[0][1], inset[1][0], inset[1][1],
+               inset[2][0], inset[2][1], inset[3][0], inset[3][1]))
     lines.append("};")
     lines.append("")
     lines.insert(font_sizes_line,

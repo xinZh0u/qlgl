@@ -48,7 +48,45 @@ typedef enum {
     QL_UI_DISPLAY_INLINE,
     QL_UI_DISPLAY_INLINE_BLOCK,
     QL_UI_DISPLAY_NONE,
+    QL_UI_DISPLAY_FLEX,
+    QL_UI_DISPLAY_INLINE_FLEX,
 } QLUIDisplay;
+
+typedef enum {
+    QL_UI_FLEX_ROW = 0,
+    QL_UI_FLEX_ROW_REVERSE,
+    QL_UI_FLEX_COLUMN,
+    QL_UI_FLEX_COLUMN_REVERSE,
+} QLUIDirection;
+
+typedef enum {
+    QL_UI_JUSTIFY_START = 0,
+    QL_UI_JUSTIFY_CENTER,
+    QL_UI_JUSTIFY_END,
+    QL_UI_JUSTIFY_SPACE_BETWEEN,
+    QL_UI_JUSTIFY_SPACE_AROUND,
+    QL_UI_JUSTIFY_SPACE_EVENLY,
+} QLUIJustify;
+
+typedef enum {
+    QL_UI_ALIGN_STRETCH = 0,
+    QL_UI_ALIGN_START,
+    QL_UI_ALIGN_CENTER,
+    QL_UI_ALIGN_END,
+} QLUIAlign;
+
+typedef enum {
+    QL_UI_POSITION_STATIC = 0,
+    QL_UI_POSITION_RELATIVE,
+    QL_UI_POSITION_ABSOLUTE,
+    QL_UI_POSITION_FIXED,
+} QLUIPosition;
+
+typedef enum {
+    QL_UI_OVERFLOW_VISIBLE = 0,
+    QL_UI_OVERFLOW_HIDDEN,
+    QL_UI_OVERFLOW_AUTO,
+} QLUIOverflow;
 
 typedef enum {
     QL_UI_UNIT_AUTO = 0,   /* 由布局决定 */
@@ -65,7 +103,7 @@ typedef struct {
 } QLUIEdges;
 
 typedef struct {
-    uint16_t value;        /* px 值，或百分比整数（如 50 表示 50%） */
+    int16_t  value;        /* px 值（可为负，定位用），或百分比整数 */
     uint8_t  unit;         /* QLUIUnit */
     uint8_t  reserved;
 } QLUILength;
@@ -96,7 +134,26 @@ typedef struct {
     uint8_t     bg_grad_dir;   /* 0 = 纯色；1 = 垂直；2 = 水平（见 QLGradientDir+1） */
     uint8_t     shadow_blur;   /* 0 = 硬阴影 */
     uint8_t     shadow_alpha;  /* 0 = 无阴影 */
-    uint8_t     reserved[2];
+
+    /* ----- flex 容器 ----- */
+    uint8_t     flex_direction;  /* QLUIDirection */
+    uint8_t     justify_content; /* QLUIJustify */
+    uint8_t     align_items;     /* QLUIAlign */
+    uint8_t     flex_wrap;       /* 0 = nowrap，1 = wrap */
+    int16_t     gap_row;
+    int16_t     gap_col;
+
+    /* ----- flex 项 ----- */
+    uint16_t    flex_grow;     /* 定点 /100：100 表示 flex-grow:1，默认 0 */
+    uint16_t    flex_shrink;   /* 定点 /100：默认 100（即 flex-shrink:1） */
+    int16_t     flex_basis;    /* -1 = auto（用 width）；>=0 = px */
+    uint16_t    flex_basis_pct;/* 当 basis 是百分比时有效；0 = 不是百分比 */
+
+    /* ----- 定位与裁剪 ----- */
+    uint8_t     position;      /* QLUIPosition */
+    uint8_t     overflow;      /* QLUIOverflow */
+    int16_t     z_index;
+    QLUILength  inset[4];      /* top / right / bottom / left（只有非 static 时用） */
 } QLUIStyle;
 
 typedef struct {
@@ -150,6 +207,11 @@ typedef struct QLUINodeRT {
 
     QLRect           border_box; /* 边框盒的绝对矩形（布局结果） */
     QLRect           content_box;/* 内容盒的绝对矩形 */
+    /*
+     * 绝对定位子节点的"包含块"：最近的非 static 祖先的内容盒，
+     * 没有的话就是视口。布局时自上而下传递。
+     */
+    QLRect           abs_cb;
 
     uint16_t         depth;
     uint8_t          flags;      /* QL_UI_RT_* */
@@ -177,6 +239,9 @@ struct QLUIRoot {
     ql_coord_t     height;
     ql_ui_click_cb click_cb;     /* 点击回调（可为 NULL） */
     void          *click_user_data;
+    QLRect         root_clip;    /* 调用方给定的初始裁剪（渲染器与画布 clip 对齐用） */
+    uint8_t        root_clip_valid;
+    QLRect         clip;         /* 当前裁剪（render_node 进出 overflow 容器时保存/恢复） */
     QLUINodeRT    *hover;        /* 悬停节点（驱动 :hover 样式） */
     QLUINodeRT    *focus;        /* 键盘焦点节点（驱动 :focus 样式） */
 };

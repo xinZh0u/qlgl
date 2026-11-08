@@ -89,13 +89,13 @@ QL_TEST_BEGIN("test_ui_blob")
     /* ---------- 1. 头结构与 ABI 自检 ---------- */
     QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 64);
     QL_CHECK_EQ(sizeof(QLUINode), 18);
-    QL_CHECK_EQ(sizeof(QLUIStyle), 60);   /* 渐变 + 阴影字段 */
+    QL_CHECK_EQ(sizeof(QLUIStyle), 96);   /* 渐变/阴影 + flex + 定位字段 */
 
     /* ---------- 2. 静态 doc 没有 arena，释放是空操作 ---------- */
     QL_CHECK_EQ(ui_demo_doc.arena, NULL);
     QL_CHECK_EQ(ql_ui_doc_is_owned(&ui_demo_doc), 0);
     ql_ui_doc_free((QLUIDoc *)(uintptr_t)&ui_demo_doc);   /* 不应崩、不应 free */
-    QL_CHECK_EQ(ui_demo_doc.node_count, 17);              /* 仍然有效 */
+    QL_CHECK_EQ(ui_demo_doc.node_count, 24);              /* 仍然有效 */
 
     /* ---------- 3. 编码：容量查询与写入 ---------- */
     size_t need = ql_ui_doc_encode(&ui_demo_doc, NULL, 0);
@@ -152,7 +152,7 @@ QL_TEST_BEGIN("test_ui_blob")
     QL_CHECK_EQ(memcmp(loaded->text_pool, ui_demo_doc.text_pool, pool), 0);
 
     /* 中文文本仍然可读（UTF-8 没有被截断） */
-    QL_CHECK_STR(loaded->text_pool + loaded->text_offsets[2], "中文字体渲染");
+    QL_CHECK_STR(loaded->text_pool + loaded->text_offsets[2], "中文字体");
 
     /* ---------- 5. 重新编码是幂等的（字节层面完全一致） ---------- */
     uint8_t *blob2 = (uint8_t *)ql_mem_alloc(need);

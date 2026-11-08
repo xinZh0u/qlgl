@@ -1,15 +1,26 @@
-<section id="root">
+<div id="root">
   <div class="bar">
     <p class="title">QLGL UI</p>
     <p class="hint">HTML + CSS compiled to C</p>
   </div>
-  <div class="bar2">
-    <p class="cjk">中文字体渲染</p>
-    <p class="cjk-small">任意字号 · 12px</p>
+  <div class="cards">
+    <div class="card">
+      <p class="cjk">中文字体</p>
+      <p class="cjk-small">任意字号</p>
+    </div>
+    <div class="card alt">
+      <p class="cjk">Flex 布局</p>
+      <p class="cjk-small">row / gap / grow</p>
+    </div>
   </div>
-  <div class="row"><span class="btn primary">Primary</span><span class="btn ghost">Ghost</span></div>
+  <div class="row">
+    <span class="btn primary">Primary</span>
+    <span class="btn ghost">Ghost</span>
+    <span class="btn fill">Grow me</span>
+  </div>
   <div class="panel">
-    <p class="line"><span class="txt">inline</span><span class="bold">bold</span><span class="txt">and</span><span class="italic">italic</span></p>
+    <div class="badge">NEW</div>
+    <p class="line">mixed <b>content</b> works <i>natively</i> now</p>
     <p class="pct">50% width box</p>
   </div>
-</section>
+</div>

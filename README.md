@@ -11,6 +11,9 @@
   UTF-8 解码、文本度量、`QLLabel` 控件；
 - **交互闭环已完成** —— 命中测试、hover/pressed/focus 状态、点击合成、键盘焦点，
   事件沿控件树冒泡；HTML/CSS 的 `:hover/:active/:focus` 在构建期编译成状态样式；
+- **布局表达力（M3）已完成** —— flexbox（row/column × nowrap/wrap、grow/shrink/basis、gap、
+  justify-content、align-items）、`position: relative/absolute/fixed`、`z-index`、`overflow` 裁剪、
+  文本与行内元素混排（生成期消解成匿名节点）；
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
 - **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
   （垂直走行填充快路径，GPU 走顶点颜色插值、零额外 draw call）；

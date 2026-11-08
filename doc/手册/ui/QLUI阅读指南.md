@@ -185,7 +185,8 @@ for (i = 0..node_count) {
 
 ### 5.2 布局 `ql_ui_layout`
 
-单趟递归，不需要两趟（因为不支持 `height: %`，也没有 flex）：
+单趟递归。**flex 容器会在内部做"测量 → 分配 → 定位"三步**（见 §5.6），
+外层仍是单趟，因为不支持 `height: %`：
 
 ```
 layout_node(node, x, y, avail_w):
@@ -315,12 +316,67 @@ ql_ui_free(ui);      /* doc 一起释放 */
 不把 `qlui_blob.c` 加进构建，blob 相关代码一个字节都不进镜像；
 `qlui.h` 里的声明不产生引用，链接器不会拖入。
 
+### 5.5.1 flexbox / 定位 / 混合内容的实现
+
+#### flex 的三步法
+
+```
+layout_flex_children(容器):
+  (1) 测量   对每个子项跑一遍 layout_node（哑位置），把自然尺寸写进 border_box
+  (2) 分配   sum_base / sum_grow / 加权 sum_shrink → 算 free_space
+             正 → 按 flex-grow 比例加；负 → 按 shrink × basis 加权减
+             交叉轴：stretch 拉满，或按 align-items 对齐
+  (3) 定位   写出最终尺寸（写进 style_copy，border-box 语义）再 layout 一次
+```
+
+三个设计决定：
+
+1. **测量复用 `layout_node` 本身**，不另写一套 measure。
+   多一次遍历，但保证 flex 子项的尺寸计算与 block/inline 路径**完全一致**。
+   布局不在渲染热路径上（M4 会做增量布局），这个取舍是对的。
+2. **不分配任何数组**：所有信息都暂存在子节点的 `border_box` 里，
+   需要汇总时再走一遍链表。`QL_CFG_UI_FLEX_MAX_ITEMS` 只用于"是否降级"的判断。
+3. **最终尺寸写进 `style_copy`**，复用既有的"运行期改写样式"机制，
+   不给 layout 增加新接口。代价是**每次 `ql_ui_layout` 开头必须清掉上一轮的
+   `style_copy`**，否则视口变化时会把旧尺寸带到新一帧（这个 bug 踩过）。
+
+#### 定位
+
+- `abs_cb` 字段在布局时自上而下传递：最近的非 static 祖先的 **padding box**；
+- 绝对/固定子项在主流程结束后单独布局（主循环里 `is_out_of_flow()` 直接跳过）；
+- `relative` 用 `translate_subtree()` 把整棵子树平移，**不改占位**；
+- `z-index` 在布局末尾对每个父节点的子链表做**稳定插入排序**。
+  这样绘制与命中测试**都自动遵循 z 序**，不必各自排序：
+  `render_node` 正向遍历（先画的在下），`hit_walk_ui` 正向遍历并覆盖（最后的在上）。
+
+#### overflow
+
+`render_node` 进入 overflow 容器时 `set_clip(intersect(saved, box))`，退出恢复；
+`hit_walk_ui` 传一个 `clip` 参数做同样的事。两处必须同步，否则会出现
+"看不见但能点到"。
+
+#### 混合内容：在生成期消解
+
+```
+<p>Hello <b>bold</b>!</p>
+   ↓ qlui.py 的 _flatten()
+<p><span>Hello </span><b>bold</b><span>!</span></p>
+```
+
+运行期只认识元素树，所以**布局与绘制零改动**。
+两个细节：文本段空白按 HTML 规则折叠；元素之间的纯空白**不产生盒子**
+（否则每个换行缩进都会变成 4px 宽的匿名 span，把整页撑高——这个 bug 踩过）。
+
 ---
 
 ## 6. 与"真浏览器"的差距（诚实清单）
 
 | 项 | 现状 | 影响 |
 |---|---|---|
+| flex 完整度 | 无 `align-self` / `align-content` / `order` / `flex-flow`；百分比高度不给 grow 用 | 大多数卡片/工具栏/表单布局够用 |
+| 绝对定位 | 无 "static position" 与完整 shrink-to-fit | 没给 inset 时贴左上角；非文本内容撑满 |
+| overflow | 只有裁剪，**没有滚动** | 长列表不能滚动（后续里程碑） |
+| 文本折行 | 只有 `\n`，不自动折行 | 长中文段落会溢出 |
 | flexbox / grid | ❌ 未实现 | 现代页面大量使用，是下一优先级 |
 | 伪类 `:hover`/`:active`/`:focus` | ✅ 构建期编译成状态变体样式表（M1） | 只支持单个伪类；`:hover:active` 组合报错 |
 | 混合内容 | ❌ 报错 | 需把文本包进 `<span>` |

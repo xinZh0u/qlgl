@@ -13,33 +13,47 @@
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
 }
-.title {
-  font-size: 16px;
-  color: #0c1a2a;
-  margin: 0;
-}
-.hint {
-  font-size: 12px;
-  color: #1f3a55;
-  margin: 2px 0 0 0;
-}
-.row {
+.title { font-size: 16px; color: #0c1a2a; margin: 0; }
+.hint  { font-size: 12px; color: #1f3a55; margin: 2px 0 0 0; }
+
+.cards {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
   margin: 10px 0 0 0;
-  height: 28px;
+}
+.card {
+  flex: 1 1 0px;
+  padding: 8px;
+  background-color: #1e2533;
+  border-width: 1px;
+  border-color: #3a4860;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.card.alt { border-color: #3399ff; }
+.cjk       { font-size: 20px; color: #8fd0ff; margin: 0; }
+.cjk-small { font-size: 12px; color: #a0b0c0; margin: 2px 0 0 0; }
+
+.row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0 0;
+  height: 34px;
 }
 .btn {
-  display: inline-block;
   border-radius: 8px;
   padding: 6px 14px;
   font-size: 12px;
-  margin-right: 8px;
 }
 .primary {
   background: linear-gradient(to bottom, #4ad08a, #2a9a5c);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   border-width: 1px;
   border-color: #ffffff;
   color: #000000;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 .ghost {
   background-color: #2a3444;
@@ -47,79 +61,35 @@
   border-color: #808080;
   color: #d0d8e4;
 }
+.fill { flex: 1 1 auto; background-color: #33415c; color: #d0d8e4; }
+
 .panel {
+  position: relative;
   margin: 10px 0 0 0;
   padding: 8px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
   background-color: #1e2533;
   border-width: 1px;
   border-color: #3a4860;
   border-radius: 12px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
 }
-.line {
-  margin: 0;
-}
-.txt {
-  display: inline;
+.badge {
+  position: absolute;
+  top: -6px;
+  right: 8px;
+  padding: 2px 6px;
   font-size: 12px;
+  background-color: #f0b030;
+  color: #000000;
+  border-radius: 6px;
 }
-.bold {
-  display: inline;
-  font-size: 12px;
-  color: #ffffff;
-}
-.italic {
-  display: inline;
-  font-size: 12px;
-  color: #f0b030;
-}
-.pct {
-  width: 50%;
-  font-size: 12px;
-  color: #f0b030;
-  margin: 6px 0 0 0;
-}
+.line { margin: 0; font-size: 12px; color: #c8d2e0; }
+.pct  { width: 50%; font-size: 12px; color: #f0b030; margin: 6px 0 0 0; }
+.bold   { display: inline; font-size: 12px; color: #ffffff; }
+.italic { display: inline; font-size: 12px; color: #f0b030; }
 
-.bar2 {
-  box-sizing: border-box;
-  width: 100%;
-  margin: 8px 0 0 0;
-  padding: 8px 10px;
-  background-color: #1e2a3a;
-  border-radius: 10px;
-  border-width: 1px;
-  border-color: #3399ff;
-}
-.cjk {
-  font-size: 24px;
-  color: #8fd0ff;
-  margin: 0;
-}
-.cjk-small {
-  font-size: 12px;
-  color: #a0b0c0;
-  margin: 2px 0 0 0;
-}
-
-/* 交互状态：M1 起 :hover / :active / :focus 在构建期编译成独立样式表 */
-.btn:hover {
-  background-color: #4ad08a;
-  border-color: #e0ffe0;
-}
-.btn:active {
-  background-color: #2a9a5c;
-}
-/* 渐变按钮的状态样式要显式给渐变，否则会退回纯色（见 QLUI 手册的说明） */
-.primary:hover {
-  background: linear-gradient(to bottom, #58e09a, #35a869);
-}
-.primary:active {
-  background: linear-gradient(to bottom, #35a869, #1f7a46);
-}
-.btn.ghost:hover {
-  background-color: #3a485c;
-  border-color: #b0b8c4;
-}
-.btn:focus {
-  border-color: #ffd060;
-}
+.btn:hover  { background-color: #4ad08a; border-color: #e0ffe0; }
+.btn:active { background-color: #2a9a5c; }
+.primary:hover  { background: linear-gradient(to bottom, #58e09a, #35a869); }
+.primary:active { background: linear-gradient(to bottom, #35a869, #1f7a46); }
+.btn:focus { border-color: #ffd060; }

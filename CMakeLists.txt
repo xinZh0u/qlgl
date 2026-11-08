@@ -57,6 +57,27 @@ if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
         COMMENT "编译 HTML+CSS 为 C")
     add_custom_target(qlui ALL DEPENDS ${QL_UI_GEN})
 
+    # ---- flex 布局用例：每个 html/css 组合编译成一个 doc ----
+    set(QL_FLEX_CASES row grow justify align wrap column
+                    posabs posfix posrel zidx ovf mixed)
+    set(QL_FLEX_GEN "")
+    foreach(c ${QL_FLEX_CASES})
+        set(_c  ${CMAKE_CURRENT_SOURCE_DIR}/test/web/flex/${c})
+        set(_g  ${QL_UI_OUT}/ui_flex_${c}.c)
+        add_custom_command(
+            OUTPUT ${_g} ${QL_UI_OUT}/ui_flex_${c}.h
+                   ${QL_UI_OUT}/ui_flex_${c}_blob.c
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_UI_OUT}
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+                    --html ${_c}.html --css ${_c}.css
+                    --name flex_${c} --out ${QL_UI_OUT}
+            DEPENDS ${_c}.html ${_c}.css ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+            COMMENT "编译 flex 用例 ${c}")
+        list(APPEND QL_FLEX_GEN ${_g} ${QL_UI_OUT}/ui_flex_${c}.h
+                                 ${QL_UI_OUT}/ui_flex_${c}_blob.c)
+    endforeach()
+    add_custom_target(qlui_flex ALL DEPENDS ${QL_FLEX_GEN})
+
     # ---- 构建期顺便产出 .qlui blob ----
     # 序列化只在 C 侧实现一次（src/ui/qlui_blob.c），因此这里链一个宿主工具，
     # 而不是让 Python 再实现一遍二进制格式（避免两份实现漂移）。
@@ -149,7 +170,7 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$" AND Python3_Interpreter_FOUND)
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$" AND Python3_Interpreter_FOUND)
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
@@ -158,6 +179,13 @@ if(QLGL_BUILD_TESTS)
                 add_dependencies(${test_name} qlui_blob)
                 target_compile_definitions(${test_name} PRIVATE
                     QL_UI_BLOB_PATH="${QL_UI_OUT}/ui_demo.qlui")
+            endif()
+            if(test_name STREQUAL "test_flex")
+                add_dependencies(${test_name} qlui_flex)
+                # 只要 doc 本体；_blob.c 会重复定义 qlui_blob_doc()
+                foreach(c ${QL_FLEX_CASES})
+                    target_sources(${test_name} PRIVATE ${QL_UI_OUT}/ui_flex_${c}.c)
+                endforeach()
             endif()
             if(test_name STREQUAL "example_ui_blob")
                 add_dependencies(${test_name} qlui_blob)

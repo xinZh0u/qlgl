@@ -96,7 +96,7 @@ target_include_directories(app PRIVATE ${UI_OUT})
 
 | 属性 | 值 | 说明 |
 |---|---|---|
-| `display` | `block` `inline` `inline-block` `none` | |
+| `display` | `block` `inline` `inline-block` `none` `flex` `inline-flex` | `flex` 见 §3.8 |
 | `width` / `height` | `auto` `Npx` `N%` | `%` 相对父**内容宽度**；`height` 的 `%` 不支持 |
 | `margin` / `padding` | `Npx`（1/2/4 值） | 也支持 `margin-top` 等长写 |
 | `border-width` | `Npx` | |
@@ -109,10 +109,36 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `font-size` | `Npx` | 任意整数；生成期汇总成 `font_sizes` 表，运行期按字号取 `ql_font_default(N)`（配置了矢量字体就是该字号的动态字体，支持中文；否则回落到内置 12/16 位图字体） |
 | `text-align` | `left` `center` `right` | |
 | `box-sizing` | `content-box` `border-box` | 默认 `content-box`（与浏览器一致） |
+| `flex` / `flex-grow` / `flex-shrink` / `flex-basis` | `1` / `1 0 auto` / `0 0 100px` | 见 §3.8 |
+| `flex-direction` | `row` `row-reverse` `column` `column-reverse` | |
+| `flex-wrap` | `nowrap` `wrap` | |
+| `justify-content` | `flex-start` `center` `flex-end` `space-between` `space-around` `space-evenly` | |
+| `align-items` | `stretch` `flex-start` `center` `flex-end` | |
+| `gap` / `row-gap` / `column-gap` | `Npx`（1~2 值） | 不支持百分比 |
+| `position` | `static` `relative` `absolute` `fixed` | 见 §3.9 |
+| `top` / `right` / `bottom` / `left` | `Npx` `N%` `auto` | 仅非 static 时生效 |
+| `z-index` | 整数（int16） | 同级兄弟间排序 |
+| `overflow` | `visible` `hidden` `auto`（`scroll` 视同 `auto`） | `hidden`/`auto` 都裁掉溢出 |
 
 ### 3.3 颜色写法
 
 `#rgb`、`#rrggbb`、`rgb(r,g,b)`、`rgba(r,g,b,a)`、命名色（`black`/`white`/`red`/`green`/`lime`/`blue`/`gray`/`silver`/`yellow`/`orange`/`purple`/`navy`/`teal`/`transparent`）。
+
+### 3.4 混合内容
+
+支持 `<p>`/`<div>` 里文本与行内元素混排：
+
+```html
+<p class="m">Hello <b>bold</b> and <i>it</i>!</p>
+```
+
+**在生成期消解**：每个文本段被包成一个匿名 `<span>` 子节点，
+运行期只认识"元素树"，因此布局与绘制代码完全不需要额外分支。
+
+- 文本段的空白按 HTML 规则折叠（连续空白变单个空格）；
+- 元素之间的**纯空白**不产生盒子（否则每个换行缩进都会变成一个 4px 宽的 span）；
+- 匿名 span 继承父元素的 `color` / `font-size` / `text-align`；
+- 相邻文本段不会自动合并，写 CSS 时按"每个文本段是一个 inline 盒子"来理解。
 
 ### 3.5 渐变
 
@@ -157,11 +183,90 @@ box-shadow: none;
 只有"距轮廓 blur 以内"的环需要逐像素算距离，内部实心区走行填充——
 所以在 PC 上几乎无感，在 MCU 上也可用（见开发规划 M5.5 的能力矩阵）。
 
-### 3.7 不支持的写法一律报错
+### 3.7 Flexbox
+
+```css
+.row { display: flex; flex-direction: row; gap: 8px; align-items: center; }
+.card { flex: 1 1 0px; }             /* 等分 */
+.btn  { flex: 1 1 auto; }            /* 按内容比例分 */
+```
+
+**支持的语义**
+
+| 项 | 说明 |
+|---|---|
+| 主轴方向 | row / row-reverse / column / column-reverse |
+| 换行 | nowrap / wrap（按主轴尺寸断行） |
+| 剩余空间 | 正：按 `flex-grow` 比例分配；负：按 `flex-shrink × basis` 加权收缩 |
+| 主轴对齐 | justify-content 六种（`grow` 生效时 justify 不再参与分配） |
+| 交叉轴对齐 | `stretch`（默认，子项无显式交叉尺寸时拉满）或 start/center/end |
+| gap | `gap` / `row-gap` / `column-gap`，px |
+| 子项上限 | 单个 flex 容器 ≤ `QL_CFG_UI_FLEX_MAX_ITEMS`（默认 256），超了降级为 block 流并告警 |
+
+**实现要点（影响你写 CSS 时的预期）**
+
+1. **`flex-direction: column` + `height: auto` 时没有剩余空间可分**，
+   `flex-grow` 不生效 —— 与浏览器一致（grow 需要确定的容器尺寸）；
+2. 布局是"**先测量、再分配、最后定位**"：容器先让每个子项按自然尺寸排一遍，
+   再根据 grow/shrink 改写尺寸重排。所以**子项的自然尺寸必须能算出来**
+   （`width: auto` 的块级子项会按容器宽度算，这是 CSS 的行为）；
+3. `flex-basis` 支持 px 与 `%`（相对容器主轴尺寸）；
+4. 百分比 `width` 在 flex 子项上是相对**容器内容宽**，不是 flex-basis。
+
+**不支持的**：`align-self`、`align-content`、`order`、`flex-flow` 简写、
+`flex-basis: auto` 的完整语义（等同"用 width"）、多行 `align-content` 对齐。
+
+### 3.8 定位与 z-index
+
+```css
+.card  { position: relative; }                    /* 成为绝对子项的包含块 */
+.badge { position: absolute; top: -6px; right: 8px; }
+.toast { position: fixed; bottom: 5px; left: 5px; }
+```
+
+| `position` | 行为 |
+|---|---|
+| `static` | 常规流 |
+| `relative` | 常规流占位不变，**绘制位置**按 `top/left`（或 `right/bottom` 取负）偏移，不影响兄弟 |
+| `absolute` | 脱离文档流；相对**最近的非 static 祖先的 padding box** 定位；没有则相对根 |
+| `fixed` | 脱离文档流；相对**视口**定位 |
+
+**绝对定位的尺寸规则**
+
+| 给了什么 | 宽度 |
+|---|---|
+| 显式 `width` | 用它 |
+| `left` + `right`（无 width） | 拉伸填满 |
+| 只有 `right`（无 width） | 从右边界往左放 |
+| 都没有 | **shrink-to-fit**：只支持"内容是本节点自己的文本"（badge/标签场景）；有块级子项时撑满包含块 |
+
+高度同理（`top` + `bottom` 拉伸，`bottom` 反推 y）。
+
+> ⚠ 已知简化：`position: absolute` 在 CSS 里还有 "static position"（没给 inset 时
+> 停在原来该在的位置）与 shrink-to-fit 的完整算法。这里都没实现，
+> 没给 inset 时贴包含块左上角。涉及这些的布局请显式写 inset。
+
+**z-index**：布局结束后对所有兄弟按 `z-index` **稳定排序**子链表，
+之后**绘制顺序与命中测试顺序自动一致**（链表顺序即绘制顺序）。
+z-index 相同则保持文档顺序（稳定）。
+
+**overflow**
+
+| 值 | 行为 |
+|---|---|
+| `visible`（默认） | 子项可以画到父盒子外 |
+| `hidden` / `auto` / `scroll` | 子树被裁到本节点边框盒；**被裁掉的部分不可命中**（命中测试同样裁剪） |
+
+> `auto`/`scroll` 目前**不产生滚动条，也不能滚动** —— 只是裁剪。
+> 滚动容器排在 M3 之后的滚动里程碑。
+
+### 3.9 不支持的写法一律报错
 
 ```
-position / float / flex / grid / z-index / overflow / opacity
-transition / animation / filter / clip-path / var() / @media / em / rem / vh / vw / calc()
+float / grid / opacity / align-self / align-content / order / flex-flow
+transform / transition / animation / filter / clip-path / var()
+min-width / max-width / min-height / max-height
+@media / em / rem / vh / vw / calc()
 ```
 
 报错示例：

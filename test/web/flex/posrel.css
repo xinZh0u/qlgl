@@ -1,0 +1,3 @@
+#root { width: 100%; height: 300px; background-color: #000000; }
+.a, .b, .c { width: 80px; height: 40px; background-color: #3399ff; }
+.b { position: relative; left: 20px; top: 5px; }

@@ -1,0 +1,2 @@
+#root { display: flex; flex-direction: row; gap: 10px; padding: 0; width: 100%; background-color: #000000; }
+.a, .b, .c { width: 60px; height: 40px; background-color: #3399ff; }

@@ -1,0 +1,3 @@
+#root { position: relative; width: 100%; height: 200px; background-color: #000000; }
+.lo { position: absolute; left: 0px; top: 0px; width: 100px; height: 100px; background-color: #3399ff; z-index: 2; }
+.hi { position: absolute; left: 40px; top: 40px; width: 100px; height: 100px; background-color: #ff3333; z-index: 1; }
