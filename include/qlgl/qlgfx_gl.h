@@ -37,6 +37,13 @@ int      ql_gfx_gl_poll(QLGfxGL *gfx);
 /* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */
 void     ql_gfx_gl_close(QLGfxGL *gfx);
 
+/*
+ * 改缩放（26.6 定点，QL_SCALE_ONE = 1.0）。
+ * framebuffer 尺寸仍是设备像素；上层绘制用 CSS px，后端入口乘这个系数。
+ * 例：1200×800 的窗口、2x DPR → 传 QL_SCALE_ONE * 2，布局按 600×400 CSS px。
+ */
+void      ql_gfx_gl_set_scale(QLGfxGL *gfx, ql_coord_t scale_fx);
+
 /* 每帧：begin → 用 ql_gfx_gl_draw() 得到的接口绘制 → end */
 void     ql_gfx_gl_begin(QLGfxGL *gfx, ql_color_t clear_color);
 void     ql_gfx_gl_end(QLGfxGL *gfx);

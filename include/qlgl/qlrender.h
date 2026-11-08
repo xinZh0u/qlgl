@@ -49,6 +49,7 @@ int ql_render(void);
  *
  * 与 ql_render() 的区别：**不清背景、不推屏、不清空脏区队列**（脏区由 ql_render
  * 或 ql_render_invalidate_* 管理）。s_all_dirty 时会画满 surface_w × surface_h。
+ * surface_w/h 是 **CSS px**（= 设备尺寸 / DPR），与控件几何同一单位。
  * 返回本次画了几个区域。
  */
 int ql_render_draw2d(QLDraw2D *d2d, ql_coord_t surface_w, ql_coord_t surface_h);

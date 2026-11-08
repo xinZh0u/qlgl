@@ -77,7 +77,9 @@ struct QLGfxGL {
     int              closed;
     uint8_t          buttons;      /* 当前按住的鼠标按钮位图 */
 
-    ql_coord_t       width, height;
+    ql_coord_t       width, height;   /* 设备像素（framebuffer 尺寸） */
+    ql_coord_t       scale_fx;        /* CSS px → 设备像素，26.6 定点 */
+
 
     GLuint           program;
     GLuint           vbo;
@@ -480,6 +482,58 @@ static void color_at(ql_color_t a, ql_color_t b, int t, float *out)
                       (uint32_t)QL_COLOR_GET_B(b) * u) / 255u) / 255.0f;
 }
 
+/*
+ * 几何裁剪：把四边形的范围与当前裁剪求交。
+ *
+ * 本后端是**单批次**（整帧一次 glDrawArrays），所以不能用 scissor 逐图元裁剪，
+ * 只能在发顶点时就把四边形切到裁剪框里。形状参数（hx/hy/radius/border/渐变跨度）
+ * 必须继续用**未裁剪**的矩形，否则片元里的 SDF 会算错——被裁掉的只是光栅化范围。
+ */
+static int clip_quad(QLGfxGL *g, float bx0, float by0, float bx1, float by1,
+                     float *qx0, float *qy0, float *qx1, float *qy1)
+{
+    float x0 = bx0, y0 = by0, x1 = bx1, y1 = by1;
+    if (g->clip_active) {
+        if (x0 < (float)g->clip.x)
+            x0 = (float)g->clip.x;
+        if (y0 < (float)g->clip.y)
+            y0 = (float)g->clip.y;
+        if (x1 > (float)ql_rect_right(g->clip))
+            x1 = (float)ql_rect_right(g->clip);
+        if (y1 > (float)ql_rect_bottom(g->clip))
+            y1 = (float)ql_rect_bottom(g->clip);
+    }
+    if (x0 >= x1 || y0 >= y1)
+        return 0;
+    *qx0 = x0;
+    *qy0 = y0;
+    *qx1 = x1;
+    *qy1 = y1;
+    return 1;
+}
+
+/*
+ * 绘制期平移：CSS px 26.6 → 设备像素（浮点，保留小数）。
+ * 每次 emit 现算，不做缓存——M5.5 的逐节点 transform 会在帧中途改它。
+ */
+static inline float off_x_of(QLGfxGL *g)
+{
+    return (float)((int64_t)g->draw.offset_x_fx * (int64_t)g->scale_fx) /
+           (float)(QL_FX_ONE * QL_SCALE_ONE);
+}
+
+static inline float off_y_of(QLGfxGL *g)
+{
+    return (float)((int64_t)g->draw.offset_y_fx * (int64_t)g->scale_fx) /
+           (float)(QL_FX_ONE * QL_SCALE_ONE);
+}
+
+/* 文本用整数部分，保证字形清晰 */
+static inline float round_to_int(float v)
+{
+    return (float)((int)(v + (v >= 0.0f ? 0.5f : -0.5f)));
+}
+
 static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border,
                       ql_color_t color, uint8_t alpha,
                       float u0, float v0, float u1, float v1, int use_tex)
@@ -487,16 +541,20 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
     if (ql_rect_is_empty(r) || alpha == 0)
         return;
 
-    /* 外扩 1px 给抗锯齿留余量 */
-    float x0 = (float)r.x - 1.0f;
-    float y0 = (float)r.y - 1.0f;
-    float x1 = (float)ql_rect_right(r) + 1.0f;
-    float y1 = (float)ql_rect_bottom(r) + 1.0f;
+    /* 外扩 1px 给抗锯齿留余量；随后与裁剪求交（几何裁剪，保持单批次） */
+    const float bx0 = (float)r.x - 1.0f;
+    const float by0 = (float)r.y - 1.0f;
+    const float bx1 = (float)ql_rect_right(r) + 1.0f;
+    const float by1 = (float)ql_rect_bottom(r) + 1.0f;
+
+    float x0, y0, x1, y1;
+    if (!clip_quad(g, bx0, by0, bx1, by1, &x0, &y0, &x1, &y1))
+        return;
 
     float cx = (float)r.x + (float)r.w * 0.5f;
     float cy = (float)r.y + (float)r.h * 0.5f;
-    float hx = (float)r.w * 0.5f;
-    float hy = (float)r.h * 0.5f;
+    const float hx = (float)r.w * 0.5f;
+    const float hy = (float)r.h * 0.5f;
 
     /* 圆角半径不能超过短边一半 */
     float half_min = (hx < hy ? hx : hy);
@@ -511,10 +569,14 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
 
     float b = (border < 0) ? -1.0f : (float)border;
 
+    /* 绘制期平移：形状吃全偏移（亚像素），字形只吃整数部分（保持清晰） */
+    const float ox = (use_tex == 1) ? round_to_int(off_x_of(g)) : off_x_of(g);
+    const float oy = (use_tex == 1) ? round_to_int(off_y_of(g)) : off_y_of(g);
+    x0 += ox; y0 += oy; x1 += ox; y1 += oy;
+    cx += ox; cy += oy;
+
     const float xs[4] = { x0, x1, x1, x0 };
     const float ys[4] = { y0, y0, y1, y1 };
-    const float us[4] = { u0, u1, u1, u0 };
-    const float vs[4] = { v0, v0, v1, v1 };
 
     QLGLVertex v;
     memset(&v, 0, sizeof(v));
@@ -532,8 +594,10 @@ static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border
         v.y = ys[k];
         v.lx = xs[k] - cx;
         v.ly = ys[k] - cy;
-        v.u = us[k];
-        v.v = vs[k];
+        /* uv 由顶点在（外扩后的）形状矩形里的相对位置线性插值得到：
+           未裁剪时与"角点对 uv"完全一致，裁剪后也仍然对得上图集 */
+        v.u = u0 + ((bx1 > bx0) ? (xs[k] - bx0) / (bx1 - bx0) : 0.0f) * (u1 - u0);
+        v.v = v0 + ((by1 > by0) ? (ys[k] - by0) / (by1 - by0) : 0.0f) * (v1 - v0);
         emit_vertex(g, &v);
     }
 }
@@ -548,10 +612,11 @@ static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
     if (dir != QL_GRADIENT_HORIZONTAL)
         dir = QL_GRADIENT_VERTICAL;
 
-    float x0 = (float)r.x - 1.0f;
-    float y0 = (float)r.y - 1.0f;
-    float x1 = (float)ql_rect_right(r) + 1.0f;
-    float y1 = (float)ql_rect_bottom(r) + 1.0f;
+    float x0, y0, x1, y1;
+    if (!clip_quad(g, (float)r.x - 1.0f, (float)r.y - 1.0f,
+                   (float)ql_rect_right(r) + 1.0f, (float)ql_rect_bottom(r) + 1.0f,
+                   &x0, &y0, &x1, &y1))
+        return;
 
     float cx = (float)r.x + (float)r.w * 0.5f;
     float cy = (float)r.y + (float)r.h * 0.5f;
@@ -566,6 +631,11 @@ static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
     float ca = (float)alpha / 255.0f;
     ql_coord_t span = (dir == QL_GRADIENT_HORIZONTAL) ? r.w : r.h;
     if (span < 1) span = 1;
+
+    /* 绘制期平移直接加进顶点（浮点，零成本） */
+    const float ox = off_x_of(g), oy = off_y_of(g);
+    x0 += ox; y0 += oy; x1 += ox; y1 += oy;
+    cx += ox; cy += oy;
 
     const float xs[4] = { x0, x1, x1, x0 };
     const float ys[4] = { y0, y0, y1, y1 };
@@ -615,10 +685,11 @@ static void emit_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius, ql_coord_t 
     QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
     float pad = (float)blur + 1.0f;
 
-    float x0 = (float)shaped.x - pad;
-    float y0 = (float)shaped.y - pad;
-    float x1 = (float)ql_rect_right(shaped) + pad;
-    float y1 = (float)ql_rect_bottom(shaped) + pad;
+    float x0, y0, x1, y1;
+    if (!clip_quad(g, (float)shaped.x - pad, (float)shaped.y - pad,
+                   (float)ql_rect_right(shaped) + pad,
+                   (float)ql_rect_bottom(shaped) + pad, &x0, &y0, &x1, &y1))
+        return;
 
     float cx = (float)shaped.x + (float)shaped.w * 0.5f;
     float cy = (float)shaped.y + (float)shaped.h * 0.5f;
@@ -629,6 +700,11 @@ static void emit_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius, ql_coord_t 
     float rad = (float)radius;
     if (rad > half_min) rad = half_min;
     if (rad < 0.0f) rad = 0.0f;
+
+    /* 绘制期平移直接加进顶点（浮点，零成本） */
+    const float ox = off_x_of(g), oy = off_y_of(g);
+    x0 += ox; y0 += oy; x1 += ox; y1 += oy;
+    cx += ox; cy += oy;
 
     const float xs[4] = { x0, x1, x1, x0 };
     const float ys[4] = { y0, y0, y1, y1 };
@@ -671,10 +747,21 @@ static void gl_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
 
 /* ------------------------------ QLDraw2D 实现 ------------------------------ */
 
+/* 缩放只发生在后端入口：上层给的全是 CSS px，emit_* 收的一律是设备像素 */
+static inline QLRect gsx(QLGfxGL *g, QLRect r)
+{
+    return (g->scale_fx == QL_SCALE_ONE) ? r : ql_scale_rect(r, g->scale_fx);
+}
+
+static inline ql_coord_t gsl(QLGfxGL *g, ql_coord_t v)
+{
+    return (g->scale_fx == QL_SCALE_ONE) ? v : ql_scale_len(v, g->scale_fx);
+}
+
 static void gl_set_clip(QLDraw2D *self, QLRect clip)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
-    g->clip = ql_rect_intersect(clip, ql_rect_make(0, 0, g->width, g->height));
+    g->clip = ql_rect_intersect(gsx(g, clip), ql_rect_make(0, 0, g->width, g->height));
     g->clip_active = 1;
 
     /* 立即应用 scissor（GL 原点在左下，y 要翻转） */
@@ -686,14 +773,14 @@ static void gl_set_clip(QLDraw2D *self, QLRect clip)
 static void gl_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
-    emit_quad(g, rect, 0, -1, color, alpha, 0, 0, 0, 0, 0);
+    emit_quad(g, gsx(g, rect), 0, -1, color, alpha, 0, 0, 0, 0, 0);
 }
 
 static void gl_fill_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                ql_color_t color, uint8_t alpha)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
-    emit_quad(g, rect, radius, -1, color, alpha, 0, 0, 0, 0, 0);
+    emit_quad(g, gsx(g, rect), gsl(g, radius), -1, color, alpha, 0, 0, 0, 0, 0);
 }
 
 static void gl_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
@@ -702,7 +789,8 @@ static void gl_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (thickness <= 0)
         return;
-    emit_quad(g, rect, radius, thickness, color, 255, 0, 0, 0, 0, 0);
+    emit_quad(g, gsx(g, rect), gsl(g, radius), gsl(g, thickness), color, 255, 0, 0, 0, 0,
+              0);
 }
 
 static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *glyph,
@@ -721,7 +809,10 @@ static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gly
 static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                          QLRect box, ql_color_t color, QLTextAlign align)
 {
-    ql_draw2d_text_layout(self, font, text, len, box, color, align, gl_emit_glyph);
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    const QLFont *dev = ql_draw2d_device_font(font, g->scale_fx);
+    /* 排版在设备像素里进行：字形位图与 quad 是一一对应的，不能再缩放 */
+    ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), color, align, gl_emit_glyph);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */
@@ -743,6 +834,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 
     g->width = width;
     g->height = height;
+    g->scale_fx = QL_SCALE_ONE;
     g->offscreen = (flags & QL_GFX_GL_OFFSCREEN) ? 1 : 0;
     g->vert_capacity = QL_GL_MAX_VERTS;
     g->verts = (QLGLVertex *)ql_mem_calloc(QL_GL_MAX_VERTS, sizeof(QLGLVertex));
@@ -888,6 +980,9 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.draw_line = ql_draw2d_draw_line;
     g->draw.draw_text = gl_draw_text;
     g->draw.flush = NULL;
+    g->draw.scale_fx = g->scale_fx;
+    g->draw.offset_x_fx = 0;
+    g->draw.offset_y_fx = 0;
     g->draw.user = g;
 
     QL_LOGI("gl: ready %dx%d%s", (int)width, (int)height, g->offscreen ? " (offscreen)" : "");
@@ -896,6 +991,14 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 fail:
     ql_gfx_gl_destroy(g);
     return NULL;
+}
+
+void ql_gfx_gl_set_scale(QLGfxGL *gfx, ql_coord_t scale_fx)
+{
+    if (gfx == NULL)
+        return;
+    gfx->scale_fx = (scale_fx > 0) ? scale_fx : QL_SCALE_ONE;
+    gfx->draw.scale_fx = gfx->scale_fx;
 }
 
 QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx)
@@ -1010,7 +1113,7 @@ int ql_gfx_gl_poll(QLGfxGL *g)
             g->closed = 1;
             break;
         default:
-            ql_x11_push_input(&ev, &g->buttons);
+            ql_x11_push_input_scaled(&ev, &g->buttons, g->scale_fx);
             break;
         }
     }

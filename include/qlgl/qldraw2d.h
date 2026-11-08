@@ -58,6 +58,28 @@ struct QLDraw2D {
     /* 后端可选的批次提交（GPU 用；CPU 为 NULL） */
     void (*flush)(QLDraw2D *self);
 
+    /*
+     * CSS px → 设备像素的缩放（26.6 定点，QL_SCALE_ONE = 1.0），默认 QL_SCALE_ONE。
+     *
+     * 上层的所有坐标（qlui / 控件 / 自定义绘制）**一律是 CSS px**，
+     * 只有后端在入口乘这个系数，所以 DPR 变化不需要动任何上层代码。
+     * 由 ql_draw2d_canvas_init / ql_gfx_gl_draw 从"表面"继承，也可手动设。
+     */
+    ql_coord_t scale_fx;
+
+    /*
+     * 绘制期平移（CSS px，26.6 定点，64 = 1 CSS px）。默认 0。
+     *
+     * 这是动画的落点：`translate(0.5px)` 就是把它设成 32。
+     * CPU 后端会把矩形转成带小数的 `QLRectFx` 走**面积覆盖率抗锯齿**，
+     * GPU 后端直接加进顶点（顶点本来就是浮点，零成本）。
+     * **不影响布局**（与 CSS 的 transform 语义一致），所以滑动/缩放动画零重排。
+     *
+     * 文本与阴影为了保持清晰/性能，只取它的整数部分。
+     */
+    ql_coord_t offset_x_fx;
+    ql_coord_t offset_y_fx;
+
     void *user;   /* 后端私有数据 */
 };
 
@@ -78,5 +100,27 @@ void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_
 
 /* ----- CPU 后端（包一层 QLCanvas） ----- */
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas);
+
+/*
+ * 按缩放取"设备像素字号"的同族字体：DPR>1 时字形必须按设备字号重新光栅化，
+ * 否则会被拉伸变糊。只有动态字体能真正重取；位图字体原样返回。
+ */
+const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx);
+
+/* 绘制期平移（CSS px，26.6 定点）。下一帧的绘制整体偏移这么多 */
+static inline void ql_draw2d_set_offset(QLDraw2D *d2d, ql_coord_t x_fx, ql_coord_t y_fx)
+{
+    if (d2d != NULL) {
+        d2d->offset_x_fx = x_fx;
+        d2d->offset_y_fx = y_fx;
+    }
+}
+
+/* 直接改缩放（26.6 定点）。后端实现只在入口乘它，不缓存换算后的坐标 */
+static inline void ql_draw2d_set_scale(QLDraw2D *d2d, ql_coord_t scale_fx)
+{
+    if (d2d != NULL)
+        d2d->scale_fx = (scale_fx > 0) ? scale_fx : QL_SCALE_ONE;
+}
 
 #endif /* QLGL_DRAW2D_H */

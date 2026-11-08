@@ -115,7 +115,7 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `justify-content` | `flex-start` `center` `flex-end` `space-between` `space-around` `space-evenly` | |
 | `align-items` | `stretch` `flex-start` `center` `flex-end` | |
 | `gap` / `row-gap` / `column-gap` | `Npx`（1~2 值） | 不支持百分比 |
-| `position` | `static` `relative` `absolute` `fixed` | 见 §3.9 |
+| `position` | `static` `relative` `absolute` `fixed` | 见 §3.8 |
 | `top` / `right` / `bottom` / `left` | `Npx` `N%` `auto` | 仅非 static 时生效 |
 | `z-index` | 整数（int16） | 同级兄弟间排序 |
 | `overflow` | `visible` `hidden` `auto`（`scroll` 视同 `auto`） | `hidden`/`auto` 都裁掉溢出 |
@@ -260,13 +260,62 @@ z-index 相同则保持文档顺序（稳定）。
 > `auto`/`scroll` 目前**不产生滚动条，也不能滚动** —— 只是裁剪。
 > 滚动容器排在 M3 之后的滚动里程碑。
 
-### 3.9 不支持的写法一律报错
+### 3.9 过渡（`transition`）
+
+```css
+.btn       { transition: 180ms ease-out; }                 /* 简写：全部可过渡属性 */
+.btn       { background-color: #204060; }
+.btn:hover { background-color: #ff8000; }                  /* 180ms 内渐变过去 */
+.card      { transition: background-color 300ms ease-in-out, opacity 120ms; }
+```
+
+| 部分 | 允许值 | 默认 |
+|---|---|---|
+| `transition-property` | `background-color` / `opacity` / `all` | `all` |
+| `transition-duration` | `Nms` 或 `Ns` | `0s`（等于不写） |
+| `transition-timing-function` | `linear` `ease` `ease-in` `ease-out` `ease-in-out` `steps(n)` `cubic-bezier(a,b,c,d)` | `ease` |
+| `transition-delay` | ❌ 报错 | — |
+
+行为与浏览器一致的三条：
+
+1. **打断从当前插值重基**，不回跳、不从头开始。
+2. 过渡只改**绘制期属性**，不进布局 → 过渡期间**零重排**。
+3. 只有写进 CSS 的规则才产生动画；`transition` 可以写在 base 规则上（对所有状态生效）。
+
+**不支持**：`color` / `border-color`（文本与边框颜色）、`transform`、`transition-delay`。
+这些在构建期直接报错，不静默降级。
+
+> **`opacity` 的真实含义**：本实现没有 CSS 的"组不透明度"（那需要离屏合成），
+> `transition: opacity` 插值的是**背景 alpha**（来自 `background-color: rgba(...)` 的 a 通道）。
+> 所以 `opacity: 0` 在这里等价于"背景变全透明"，子元素不受影响——与 Web 不同，
+> 写过渡时请用 `background-color: rgba(...)` 表达淡入淡出。
+
+运行期推进（主循环里）：
+
+```c
+uint32_t dirty_count = ql_ui_anim_tick(ui, ql_anim_now_ms());
+if (dirty_count > 0) {
+    QLRect areas[8];
+    int n = ql_ui_consume_dirty(ui, areas, 8);
+    for (int i = 0; i < n; i++)
+        ql_ui_render_rect(ui, &dw, areas[i]);   /* 只重绘变化区域 */
+}
+```
+
+> `ql_ui_node_style()` 返回的是**过渡中的样式**（可能是中间色）。
+> 需要"最终值"时请等动画结束，或读 CSS 源。
+
+---
+
+### 3.10 不支持的写法一律报错
 
 ```
-float / grid / opacity / align-self / align-content / order / flex-flow
-transform / transition / animation / filter / clip-path / var()
+float / grid / align-self / align-content / order / flex-flow
+transform / animation / filter / clip-path / var()
 min-width / max-width / min-height / max-height
 @media / em / rem / vh / vw / calc()
+transition-property 里的 color / border-color（只支持 background-color / opacity / all）
+transition-delay
 ```
 
 报错示例：

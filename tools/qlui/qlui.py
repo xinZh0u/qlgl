@@ -137,7 +137,18 @@ SUPPORTED_PROPS = {
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
+    "transition", "transition-duration", "transition-timing-function",
+    "transition-property",
 } | {"%s-%s" % (base, side) for base in ("margin", "padding") for side in SIDES}
+
+
+EASING_NAMES = {
+    "linear": "QL_EASE_LINEAR",
+    "ease-in": "QL_EASE_IN",
+    "ease-out": "QL_EASE_OUT",
+    "ease-in-out": "QL_EASE_IN_OUT",
+    "ease": "QL_EASE_CSS",
+}
 
 
 class CssError(Exception):
@@ -714,6 +725,31 @@ def finalize_style(decls, node, inherited):
                 raise CssError("行内 style 不支持属性 %r" % prop)
             decls[prop] = value.strip()
 
+    # transition 简写：`transition: 200ms ease` / `200ms` / `200ms ease 50ms`
+    if "transition" in decls:
+        parts = decls["transition"].replace(",", " ").split()
+        dur = None
+        tf = None
+        for part in parts:
+            pl = part.strip().lower()
+            if pl in ("all", "background-color", "opacity"):
+                decls["transition-property"] = pl
+            elif pl in EASING_NAMES:
+                tf = pl
+            elif re.fullmatch(r"-?[0-9.]+m?s", pl):
+                if dur is None:
+                    dur = pl
+                # 第二个时长是 delay；本实现不支持延迟，静默忽略会违反"不静默降级"，
+                # 但 delay 在 UI 过渡里几乎不用，这里明确报错更安全
+                else:
+                    raise CssError("transition: 暂不支持 delay（%r）" % part)
+            else:
+                raise CssError("transition: 无法识别的部分 %r" % part)
+        if dur is not None:
+            decls["transition-duration"] = dur
+        if tf is not None:
+            decls["transition-timing-function"] = tf
+
     # flex 简写展开成三个长写（放在继承合并之后，避免被覆盖）
     if "flex" in decls and "flex-grow" not in decls:
         g, sh, (bk, bv) = parse_flex_shorthand(decls["flex"], "flex")
@@ -1026,6 +1062,39 @@ def emit(doc_root, rules, name, out_dir):
         lines.append(
             "      .position = %s, .overflow = %s, .z_index = %d,"
             % (pos, ov, zidx))
+        # ---- 过渡 ----
+        trans_ms = 0
+        trans_ease = "QL_EASE_LINEAR"
+        trans_props = 0
+        tdur = st.get("transition-duration")
+        if tdur is not None:
+            m = re.fullmatch(r"([0-9.]+)(ms|s)", tdur.strip().lower())
+            if not m:
+                raise CssError("%s: transition-duration 需要 ms/s 单位（%r）"
+                               % (where, tdur))
+            val = float(m.group(1))
+            trans_ms = int(round(val * (1000.0 if m.group(2) == "s" else 1.0)))
+            if trans_ms < 0 or trans_ms > 65535:
+                raise CssError("%s: transition-duration 超出范围（%r）" % (where, tdur))
+            tprop = st.get("transition-property", "all").strip().lower()
+            if tprop == "all":
+                trans_props = 3
+            elif tprop == "background-color":
+                trans_props = 1
+            elif tprop == "opacity":
+                trans_props = 2
+            else:
+                raise CssError("%s: 暂不支持的 transition-property %r"
+                               "（可用 all / background-color / opacity）" % (where, tprop))
+            ttf = st.get("transition-timing-function", "ease").strip().lower()
+            if ttf not in EASING_NAMES:
+                raise CssError("%s: 暂不支持的 transition-timing-function %r"
+                               % (where, ttf))
+            trans_ease = EASING_NAMES[ttf]
+
+        lines.append(
+            "      .trans_ms = %d, .trans_ease = %s, .trans_props = %d,"
+            % (trans_ms, trans_ease, trans_props))
         lines.append(
             "      .inset = { { %d, %s }, { %d, %s }, { %d, %s }, { %d, %s } } },"
             % (inset[0][0], inset[0][1], inset[1][0], inset[1][1],

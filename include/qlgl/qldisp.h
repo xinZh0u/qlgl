@@ -33,6 +33,13 @@ struct QLDispDriver {
     uint16_t   reserved;
     void      *framebuffer;    /* 像素数据起点（左上角第 0 字节） */
     uint32_t   stride;         /* 字节/行 */
+    /*
+     * 这块面板相对 CSS px 的缩放（26.6 定点，QL_SCALE_ONE = 1.0）。
+     * width/height 永远是**设备像素**；布局要的是 CSS px，用
+     * ql_disp_css_width() 取。高 DPI 后端（X11 的 Xft.dpi / Wayland 的
+     * wl_output.scale）会自己填，也可以由应用用 ql_disp_set_scale() 指定。
+     */
+    ql_coord_t scale_fx;
     /* 通知驱动某个矩形已更新；返回 0 表示成功。一帧内可能被调用多次 */
     int      (*flush)(QLDispDriver *self, QLRect area);
     /*
@@ -50,6 +57,22 @@ uint32_t ql_disp_buffer_size(QLColorFormat format, ql_coord_t width, ql_coord_t 
 /* 每像素字节数；未知格式返回 0 */
 uint32_t ql_disp_format_bytes(uint8_t format);
 const char *ql_disp_format_name(uint8_t format);
+
+/* 改缩放（26.6 定点）；会自动同步到已绑定它的 QLCanvas */
+void ql_disp_set_scale(QLDispDriver *driver, ql_coord_t scale_fx);
+
+/* CSS px 下的屏幕尺寸（布局用这个，不要用 width/height） */
+static inline ql_coord_t ql_disp_css_width(const QLDispDriver *d)
+{
+    ql_coord_t fx = (d->scale_fx > 0) ? d->scale_fx : QL_SCALE_ONE;
+    return ql_unscale_len_ceil(d->width, fx);
+}
+
+static inline ql_coord_t ql_disp_css_height(const QLDispDriver *d)
+{
+    ql_coord_t fx = (d->scale_fx > 0) ? d->scale_fx : QL_SCALE_ONE;
+    return ql_unscale_len_ceil(d->height, fx);
+}
 
 /* 设置/获取当前活动显示（同一时刻只有一个） */
 ql_err_t       ql_disp_set(QLDispDriver *driver);

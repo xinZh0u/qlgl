@@ -23,6 +23,7 @@
 #include "ui_flex_zidx.h"
 #include "ui_flex_ovf.h"
 #include "ui_flex_mixed.h"
+#include "ui_flex_frac.h"
 
 /* 按文本找节点 */
 static QLRect rect_of_text(QLUIRoot *ui, const char *text)
@@ -310,6 +311,41 @@ QL_TEST_BEGIN("test_flex")
             QL_CHECK_STR(ql_ui_node_text(p->first_child), "Hello ");
             QL_CHECK_STR(ql_ui_node_text(p->first_child->next_sibling), "bold");
         }
+
+        ql_ui_free(ui);
+    }
+
+    /* ============ 12. 除不尽的分配必须严丝合缝（累计取整，不能留 1px 空隙） ============ */
+    {
+        QLUIRoot *ui = layout(ql_ui_build(&ui_flex_frac_doc), 100, 100);
+        QL_CHECK(ui != NULL);
+
+        /* 100px 分三个 flex:1 → 33 / 34 / 33，右边界正好 100 */
+        QLRect a = rect_of_text(ui, "a");
+        QLRect b = rect_of_text(ui, "b");
+        QLRect c = rect_of_text(ui, "c");
+        QL_CHECK_EQ(a.x, 0);
+        QL_CHECK_EQ(b.x, ql_rect_right(a));
+        QL_CHECK_EQ(c.x, ql_rect_right(b));
+        QL_CHECK_EQ(ql_rect_right(c), 100);
+        QL_CHECK_EQ(a.w + b.w + c.w, 100);
+        QL_CHECK_EQ(c.w, a.w + 1);           /* 余数落在最后一项 */
+
+        /* space-between：3 × 20px，(100-60)/2 = 20px 间隔，末项贴右边界 */
+        QLRect d = rect_of_text(ui, "d");
+        QLRect e = rect_of_text(ui, "e");
+        QLRect f = rect_of_text(ui, "f");
+        QL_CHECK_EQ(d.x, 0);
+        QL_CHECK_EQ(e.x, 40);
+        QL_CHECK_EQ(f.x, 80);
+        QL_CHECK_EQ(ql_rect_right(f), 100);
+
+        /* shrink：(70+70) 超过 100 → 各 50，无空隙 */
+        QLRect g = rect_of_text(ui, "g");
+        QLRect h = rect_of_text(ui, "h");
+        QL_CHECK_EQ(g.w, 50);
+        QL_CHECK_EQ(h.x, 50);
+        QL_CHECK_EQ(ql_rect_right(h), 100);
 
         ql_ui_free(ui);
     }

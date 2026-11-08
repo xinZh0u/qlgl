@@ -15,6 +15,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
+#include <X11/Xresource.h>
 
 #include "qlinput_x11.h"
 
@@ -100,6 +101,40 @@ static int x11_flush_done(QLDispDriver *self)
     return 0;
 }
 
+/*
+ * 从 X 资源里读 Xft.dpi（桌面环境普遍会设），换算成 26.6 缩放系数。
+ * 拿不到就返回 1.0；应用随时可以用 ql_disp_set_scale() 覆盖。
+ */
+static ql_coord_t x11_query_scale(Display *dpy)
+{
+    const char *res = XResourceManagerString(dpy);
+    if (res == NULL)
+        return QL_SCALE_ONE;
+
+    XrmInitialize();
+    XrmDatabase db = XrmGetStringDatabase(res);
+    if (db == NULL)
+        return QL_SCALE_ONE;
+
+    char *type = NULL;
+    XrmValue value;
+    ql_coord_t scale = QL_SCALE_ONE;
+    if (XrmGetResource(db, "Xft.dpi", "Xft.Dpi", &type, &value) && value.addr != NULL) {
+        double dpi = atof(value.addr);
+        if (dpi > 0.0) {
+            /* CSS px 的基准是 96 dpi */
+            long fx = (long)(dpi * (double)QL_SCALE_ONE / 96.0 + 0.5);
+            if (fx < QL_SCALE_ONE)
+                fx = QL_SCALE_ONE;
+            if (fx > 8 * QL_SCALE_ONE)
+                fx = 8 * QL_SCALE_ONE;
+            scale = (ql_coord_t)fx;
+        }
+    }
+    XrmDestroyDatabase(db);
+    return scale;
+}
+
 QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t height,
                                  QLColorFormat format)
 {
@@ -183,6 +218,7 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     }
     x->base.user_data = x;
     x->base.flush_done = x11_flush_done;
+    ql_disp_set_scale(&x->base, x11_query_scale(dpy));
 
     XMapWindow(dpy, x->win);
     XFlush(dpy);
@@ -243,7 +279,7 @@ int ql_disp_x11_poll(QLDispDriver *driver)
 
         default:
             /* 其余输入事件交给输入系统；Esc/关闭改由应用决定 */
-            ql_x11_push_input(&ev, &x->buttons);
+            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx);
             break;
         }
     }

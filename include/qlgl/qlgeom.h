@@ -81,6 +81,63 @@ static inline int ql_rect_overlaps(QLRect a, QLRect b)
     return !ql_rect_is_empty(ql_rect_intersect(a, b));
 }
 
+/* ------------------------- CSS px ↔ 设备像素（DPR） ------------------------- */
+
+/*
+ * 缩放系数用 26.6 定点表示：QL_SCALE_ONE = 1.0，96 = 1.5，192 = 3.0。
+ * 布局一律在 CSS px 里做；只有后端的绘制入口才乘这个系数。
+ */
+#define QL_SCALE_SHIFT 6
+#define QL_SCALE_ONE   (1 << QL_SCALE_SHIFT)
+
+/* 长度换算：向下取整（与"像素对齐到左上"一致） */
+static inline ql_coord_t ql_scale_len(ql_coord_t v, ql_coord_t scale_fx)
+{
+    return (ql_coord_t)(((int64_t)v * (int64_t)scale_fx) >> QL_SCALE_SHIFT);
+}
+
+/*
+ * 矩形换算必须**按边**缩放，不能 x*scale + w*scale：
+ * 相邻矩形各自算宽度会因为分别取整而在接缝处裂开 1px 或重叠 1px。
+ * 用同一条边界值（ql_rect_right / ql_rect_bottom）算，天然严丝合缝。
+ */
+static inline QLRect ql_scale_rect(QLRect r, ql_coord_t scale_fx)
+{
+    ql_coord_t x1 = ql_scale_len(r.x, scale_fx);
+    ql_coord_t y1 = ql_scale_len(r.y, scale_fx);
+    ql_coord_t x2 = ql_scale_len(ql_rect_right(r), scale_fx);
+    ql_coord_t y2 = ql_scale_len(ql_rect_bottom(r), scale_fx);
+    return ql_rect_make(x1, y1, x2 - x1, y2 - y1);
+}
+
+/* 设备像素 → CSS px：近边向下、远边向上取整，保证覆盖所有设备像素 */
+static inline ql_coord_t ql_unscale_len(ql_coord_t v, ql_coord_t scale_fx)
+{
+    if (scale_fx <= 0)
+        return v;
+    return (ql_coord_t)(((int64_t)v * (int64_t)QL_SCALE_ONE) / (int64_t)scale_fx);
+}
+
+static inline ql_coord_t ql_unscale_len_ceil(ql_coord_t v, ql_coord_t scale_fx)
+{
+    if (scale_fx <= 0)
+        return v;
+    int64_t num = (int64_t)v * (int64_t)QL_SCALE_ONE;
+    int64_t q = num / (int64_t)scale_fx;
+    if (num % (int64_t)scale_fx != 0)
+        q++;
+    return (ql_coord_t)q;
+}
+
+static inline QLRect ql_unscale_rect(QLRect r, ql_coord_t scale_fx)
+{
+    ql_coord_t x1 = ql_unscale_len(r.x, scale_fx);
+    ql_coord_t y1 = ql_unscale_len(r.y, scale_fx);
+    ql_coord_t x2 = ql_unscale_len_ceil(ql_rect_right(r), scale_fx);
+    ql_coord_t y2 = ql_unscale_len_ceil(ql_rect_bottom(r), scale_fx);
+    return ql_rect_make(x1, y1, x2 - x1, y2 - y1);
+}
+
 /* 点是否落在圆角矩形内（radius 会被裁到短边的一半） */
 int ql_rect_contains_round(QLRect r, ql_coord_t px, ql_coord_t py, ql_coord_t radius);
 

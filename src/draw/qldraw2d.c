@@ -95,23 +95,86 @@ typedef struct {
 
 static QLDraw2DCanvas s_cpu;
 
+/*
+ * 缩放只发生在后端入口这一处：上层（qlui / 控件 / 自定义绘制）给的全是 CSS px。
+ * 矩形按"边"缩放（ql_scale_rect），相邻矩形不会在接缝处裂开。
+ */
+static inline QLRect sx(QLDraw2D *self, QLRect r)
+{
+    if (self->scale_fx == QL_SCALE_ONE)
+        return r;
+    return ql_scale_rect(r, self->scale_fx);
+}
+
+static inline ql_coord_t sl(QLDraw2D *self, ql_coord_t v)
+{
+    if (self->scale_fx == QL_SCALE_ONE)
+        return v;
+    return ql_scale_len(v, self->scale_fx);
+}
+
+/*
+ * CSS px 的边 → 设备像素 26.6（含绘制期平移）。
+ * 先拼成"CSS 26.6"再加偏移，最后乘缩放，避免两次取整。
+ */
+static inline ql_coord_t dev_edge_fx(QLDraw2D *self, ql_coord_t px, ql_coord_t off_fx)
+{
+    int64_t v = ((int64_t)px << QL_FX_SHIFT) + (int64_t)off_fx;        /* CSS 26.6 */
+    return (ql_coord_t)((v * (int64_t)self->scale_fx) >> QL_FX_SHIFT); /* 设备 26.6 */
+}
+
+/* CSS px 矩形 → 设备像素 26.6 矩形（按边算，接缝不裂） */
+static inline QLRectFx sxf(QLDraw2D *self, QLRect r)
+{
+    ql_coord_t x0 = dev_edge_fx(self, r.x, self->offset_x_fx);
+    ql_coord_t y0 = dev_edge_fx(self, r.y, self->offset_y_fx);
+    ql_coord_t x1 = dev_edge_fx(self, ql_rect_right(r), self->offset_x_fx);
+    ql_coord_t y1 = dev_edge_fx(self, ql_rect_bottom(r), self->offset_y_fx);
+    return ql_rectfx_make(x0, y0, x1 - x0, y1 - y0);
+}
+
+static inline int has_offset(QLDraw2D *self)
+{
+    return self->offset_x_fx != 0 || self->offset_y_fx != 0;
+}
+
+/* 把绘制期平移的**整数部分**折进矩形（文本/渐变/阴影这类整像素路径用） */
+static QLRect shift_rect_rounded(QLDraw2D *self, QLRect r)
+{
+    if (!has_offset(self))
+        return r;
+    r.x += (ql_coord_t)(self->offset_x_fx >> QL_FX_SHIFT);
+    r.y += (ql_coord_t)(self->offset_y_fx >> QL_FX_SHIFT);
+    return r;
+}
+
 static void cpu_set_clip(QLDraw2D *self, QLRect clip)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_set_clip(ctx->canvas, clip);
+    ql_canvas_set_clip(ctx->canvas, sx(self, clip));
 }
 
 static void cpu_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_fill_rect_alpha(ctx->canvas, rect, color, alpha);
+    if (!has_offset(self)) {
+        ql_canvas_fill_rect_alpha(ctx->canvas, sx(self, rect), color, alpha);
+        return;
+    }
+    ql_canvas_fill_rect_fx(ctx->canvas, sxf(self, rect), color, alpha);
 }
 
 static void cpu_fill_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                 ql_color_t color, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_fill_round_rect_alpha(ctx->canvas, rect, radius, color, alpha);
+    if (!has_offset(self)) {
+        ql_canvas_fill_round_rect_alpha(ctx->canvas, sx(self, rect), sl(self, radius), color,
+                                        alpha);
+        return;
+    }
+    ql_canvas_fill_round_rect_fx(ctx->canvas, sxf(self, rect),
+                                 sl(self, radius) << QL_FX_SHIFT, color, alpha);
 }
 
 static void cpu_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t radius,
@@ -119,8 +182,11 @@ static void cpu_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t
                                          uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_fill_round_rect_gradient(ctx->canvas, rect, radius, from, to,
-                                       (QLGradientDir)dir, alpha);
+    /* 渐变走的是逐行整像素填充：偏移只取整数部分（亚像素对渐变几乎看不出） */
+    ql_canvas_fill_round_rect_gradient(ctx->canvas,
+                                       sx(self, shift_rect_rounded(self, rect)),
+                                       sl(self, radius), from, to, (QLGradientDir)dir,
+                                       alpha);
 }
 
 static void cpu_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
@@ -128,14 +194,22 @@ static void cpu_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
                             ql_color_t color, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_fill_shadow(ctx->canvas, inner, radius, blur, dx, dy, color, alpha);
+    ql_canvas_fill_shadow(ctx->canvas, sx(self, shift_rect_rounded(self, inner)),
+                          sl(self, radius), sl(self, blur), sl(self, dx), sl(self, dy),
+                          color, alpha);
 }
 
 static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                   ql_coord_t thickness, ql_color_t color)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_stroke_rect(ctx->canvas, rect, radius, thickness, color);
+    if (!has_offset(self)) {
+        ql_canvas_stroke_rect(ctx->canvas, sx(self, rect), sl(self, radius),
+                              sl(self, thickness), color);
+        return;
+    }
+    ql_canvas_stroke_rect_fx(ctx->canvas, sxf(self, rect), sl(self, radius) << QL_FX_SHIFT,
+                             sl(self, thickness) << QL_FX_SHIFT, color);
 }
 
 static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *glyph,
@@ -145,10 +219,32 @@ static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gl
     ql_canvas_draw_glyph(ctx->canvas, font, glyph, pen_x, baseline_y, color);
 }
 
+/*
+ * 缩放后的字号：DPR>1 时要用同样字族的设备像素字号重新取一次字体，
+ * 否则字形会被拉伸（糊）。只有动态字体（有 backend）能真正按字号重取；
+ * 位图字体在 MCU 上不缩放——那是位图字体的固有限制，不是这里偷懒。
+ */
+const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx)
+{
+    if (font == NULL || font->backend == NULL || scale_fx == QL_SCALE_ONE ||
+        font->pixel_size == 0)
+        return font;
+
+    ql_coord_t px = ql_scale_len((ql_coord_t)font->pixel_size, scale_fx);
+    if (px <= 0)
+        return font;
+
+    const QLFont *dev = ql_font_default((int)px);
+    return (dev != NULL && dev->backend != NULL) ? dev : font;
+}
+
 static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                           QLRect box, ql_color_t color, QLTextAlign align)
 {
-    ql_draw2d_text_layout(self, font, text, len, box, color, align, cpu_emit_glyph);
+    const QLFont *dev = ql_draw2d_device_font(font, self->scale_fx);
+    /* 文本取偏移的整数部分：亚像素平移会让字形糊掉 */
+    ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
+                          color, align, cpu_emit_glyph);
 }
 
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
@@ -168,6 +264,9 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->draw_line = ql_draw2d_draw_line;
     out->draw_text = cpu_draw_text;
     out->flush = NULL;
+    out->scale_fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+    out->offset_x_fx = 0;
+    out->offset_y_fx = 0;
     out->user = &s_cpu;
     return QL_OK;
 }

@@ -16,6 +16,15 @@ static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user_data)
     (*(int *)user_data)++;
 }
 
+/*
+ * demo 页的 .btn 带 180ms transition，所以状态切换后样式是"渐变中"。
+ * 断言"最终样式"之前先把过渡一次跑完（真实主循环就是每帧 ql_ui_anim_tick）。
+ */
+static void settle(QLUIRoot *ui)
+{
+    (void)ql_ui_anim_tick(ui, ql_anim_now_ms() + 5000u);
+}
+
 QL_TEST_BEGIN("test_web_ui")
 
     /* 1. 文档内容符合预期：14 个节点（section + 3 div + 5 p + 4 span） */
@@ -167,6 +176,7 @@ QL_TEST_BEGIN("test_web_ui")
     QLRect pr = ql_ui_node_rect(primary);
     QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 1);
     QL_CHECK((primary->flags & QL_UI_RT_HOVER) != 0);
+    settle(ui);   /* 过渡跑完再看最终样式 */
     QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
     /* 祖先链也带 hover（与 Web 一致） */
     QL_CHECK((primary->parent->flags & QL_UI_RT_HOVER) != 0);
@@ -174,14 +184,18 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 0);   /* 同一目标不重复变脏 */
 
     QL_CHECK_EQ(ql_ui_pointer_down(ui, pr.x + 3, pr.y + 3), 1);
+    settle(ui);
     QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x2A, 0x9A, 0x5C));
     ql_ui_pointer_up(ui, pr.x + 3, pr.y + 3);
+    settle(ui);
     QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
 
     ql_ui_set_focus_node(ui, primary);
     QL_CHECK(ql_ui_focus_node(ui) == primary);
+    settle(ui);
     QL_CHECK_EQ(ql_ui_node_style(primary)->border_color, QL_COLOR_RGB(0xFF, 0xD0, 0x60));
     ql_ui_set_focus_node(ui, NULL);
+    settle(ui);
     QL_CHECK_EQ(ql_ui_node_style(primary)->border_color, QL_COLOR_RGB(0xE0, 0xFF, 0xE0));  /* 回落到 :hover */
 
     /* 15. 视口变窄：根节点宽度跟着变，百分比仍按父内容宽计算 */

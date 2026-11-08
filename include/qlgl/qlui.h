@@ -154,7 +154,20 @@ typedef struct {
     uint8_t     overflow;      /* QLUIOverflow */
     int16_t     z_index;
     QLUILength  inset[4];      /* top / right / bottom / left（只有非 static 时用） */
+
+    /* ----- 状态过渡（transition） -----
+     * 状态位（:hover/:active/:focus）切换时，这些属性在 trans_ms 内插值过去，
+     * 而不是瞬间跳变。0 = 无过渡。位图见 QL_UI_TRANS_*。
+     */
+    uint16_t    trans_ms;
+    uint8_t     trans_ease;    /* QLEasing */
+    uint8_t     trans_props;   /* QL_UI_TRANS_* 位图 */
 } QLUIStyle;
+
+/* 目前能过渡的属性（"transition: all" = 这两个都开） */
+#define QL_UI_TRANS_BG      0x01u   /* background-color */
+#define QL_UI_TRANS_ALPHA   0x02u   /* opacity（落在 bg_alpha 上） */
+#define QL_UI_TRANS_ALL     (QL_UI_TRANS_BG | QL_UI_TRANS_ALPHA)
 
 typedef struct {
     uint16_t tag;          /* QLUITag */
@@ -236,8 +249,42 @@ enum {
     QL_UI_RT_FOCUS   = 1u << 3,
 };
 
+/*
+ * 推进状态过渡（每帧调用一次）：
+ *     ql_ui_layout(...) 之后，渲染之前
+ *     if (ql_ui_anim_tick(ui, ql_anim_now_ms()) > 0) { 重绘 }
+ * 返回仍在过渡中的节点数；0 表示这一帧没有东西因为动画而改变
+ * （静态界面下应当恒为 0，主循环可据此整帧跳过）。
+ */
+uint32_t    ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms);
+
+/*
+ * 取走"因过渡而脏"的区域，并把脏标记清掉：
+ *     QLRect areas[8]; int n = ql_ui_consume_dirty(ui, areas, 8);
+ *     for (i < n) ql_ui_render_rect(ui, d2d, areas[i]);
+ * 返回写入的区域数（最多 max 个，超出的并进最后一块）。
+ */
+int         ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max);
+
 /* 状态位 → 样式下标的映射（与生成器里的 PSEUDO_STATES 一致） */
 #define QL_UI_STATE_BITS    3
+
+/*
+ * 同时在跑的"状态过渡"上限。
+ * 一个节点一个槽（同节点的多次打断会重基，不占新槽）。
+ */
+#ifndef QL_CFG_UI_TRANS_MAX
+#define QL_CFG_UI_TRANS_MAX 16
+#endif
+
+/* 过渡槽：节点 + 正在插值的整份样式 + 动画身份 */
+typedef struct {
+    struct QLUINodeRT *node;
+    QLUIStyle          style;   /* 插值中的样式（只改颜色相关字段） */
+    QLAnimKey          key;     /* 动画身份；重基从 key.cur 接着走 */
+    uint8_t            active;
+    uint8_t            props;   /* QL_UI_TRANS_* */
+} QLUITrans;
 
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user_data);
 
@@ -255,6 +302,8 @@ struct QLUIRoot {
     QLRect         clip;         /* 当前裁剪（render_node 进出 overflow 容器时保存/恢复） */
     QLUINodeRT    *hover;        /* 悬停节点（驱动 :hover 样式） */
     QLUINodeRT    *focus;        /* 键盘焦点节点（驱动 :focus 样式） */
+    /* 状态过渡池：只在本 doc 有 transition 时才分配（NULL = 完全没有过渡） */
+    QLUITrans     *trans;
 };
 
 /* ----- 生命周期 ----- */
@@ -343,7 +392,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    2u   /* 2: QLUIStyle 增加渐变与阴影字段 */
+#define QL_UI_BLOB_VERSION    3u   /* 3: QLUIStyle 增加过渡字段（trans_*） */
 
 typedef struct {
     uint32_t magic;

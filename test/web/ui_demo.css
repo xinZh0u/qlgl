@@ -47,6 +47,8 @@
   border-radius: 8px;
   padding: 6px 14px;
   font-size: 12px;
+  /* 状态切换走 180ms 渐变而不是瞬间跳变（M5.5 的 transition） */
+  transition: 180ms ease-out;
 }
 .primary {
   background: linear-gradient(to bottom, #4ad08a, #2a9a5c);

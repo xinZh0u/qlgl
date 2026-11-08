@@ -17,6 +17,12 @@
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
 - **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
   （垂直走行填充快路径，GPU 走顶点颜色插值、零额外 draw call）；
+- **绘制期亚像素（M5.3）已完成** —— `translate(0.5px)` 真的落在半像素上（12px 位移有 64 个台阶，
+  而不是 1 个）；边缘用面积覆盖率抗锯齿，对齐时与整数路径**逐像素相同**；
+  只影响绘制不影响布局（与 CSS `transform` 语义一致），GPU 侧零成本；
+- **高 DPI（M5.2）已完成** —— 布局一律 CSS px，缩放只在绘制后端入口乘一次
+  （26.6 定点）；CPU 与 GL 两条路径同步缩放，`test_dpr` 断言 DPR=2 降采样后与 DPR=1 差 **0.57%**；
+  X11 自动读 `Xft.dpi`，`example_gl_window --dpr 2` 可直接看效果；
 - **性能与脏区（M4）** —— CPU 光栅 1080p **2.19 ms**、320×240 **0.30 ms**（比 M4 之前快 2.3~2.7×）；
   每个节点带 `paint_box`，`ql_ui_render_rect()` 只重绘脏区（局部刷新是全量的 4.5%）；
   控件层的绘制函数也走 `QLDraw2D`，同一棵控件树可以直接上 GPU（`ql_render_draw2d()`）；
@@ -42,10 +48,13 @@ ctest --test-dir build --output-on-failure
 ./build/example_widget /tmp/out.ppm       # 渲染一个界面并输出 PPM 图片
 ./build/example_text /tmp/text.ppm        # 文本样张：字号/对齐/多行/缺字
 ./build/example_gl_window                 # GPU 窗口：HTML/CSS 编译出的界面 + 动画
+./build/example_gl_window --dpr 2         # 同上，2x 设备像素比
 ./build/example_widget --frames 120       # 控件示例，默认打开窗口
 ./build/example_text --frames 120         # 文本示例，默认打开窗口
 ./build/test_web_ui                       # HTML+CSS 编译成 C 后的布局/绘制断言
 ./build/test_render                       # 脏区重绘与全量重绘的逐像素一致性
+./build/test_dpr                          # DPR=1 与 DPR=2 的一致性（CPU 与 GPU）
+./build/test_subpx                        # 亚像素填充的覆盖率与"对齐时逐字节不变"
 ./build/test_effects                      # 渐变/软阴影的像素断言 + 九宫格分解等价性
 ./build/example_bench_ui                  # QLUI 节点级基准（布局/全量/局部/命中）
 ./build/test_gl_vs_cpu                    # GPU 与 CPU 后端的像素一致性
@@ -101,6 +110,7 @@ include/qlgl/      对外头文件（唯一安装目录）
   qlui.h           HTML+CSS 编译产物格式与运行期布局/绘制
   qldraw2d.h       绘制接口（CPU / GPU 后端共用）
   qlgfx_gl.h       GLES3 + EGL GPU 后端（可选）
+  qlanim.h         帧时钟、缓动曲线、补间动画池
   qltype_gen.h     自动生成的类型 id（勿手改）
 src/core/          对象系统实现
 src/draw/          几何、显示、画布、渲染器
@@ -138,6 +148,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - 交互与输入：[QLInput 阅读指南](doc/手册/input/QLInput阅读指南.md) / [QLInput API 手册](doc/手册/input/QLInput%20API手册.md)
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
+- 动效：[QLAnim 阅读指南](doc/手册/anim/QLAnim阅读指南.md) / [QLAnim API 手册](doc/手册/anim/QLAnim%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - Web 兼容策略：[Web 兼容设计](doc/Web兼容设计.md)
 - 开发规划（里程碑与验收）：[开发规划](doc/开发规划.md)

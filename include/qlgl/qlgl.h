@@ -73,6 +73,7 @@ void ql_log(int level, const char *fmt, ...);
 #include "qlgeom.h"
 #include "qldisp.h"
 #include "qlinput.h"
+#include "qlanim.h"
 #include "qlfont.h"
 #include "qlfont_ft.h"
 #include "qlcanvas.h"

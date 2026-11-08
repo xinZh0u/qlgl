@@ -257,6 +257,126 @@ y=top  │  █████████████  │   中间行： [x0, xl)
 
 ---
 
+## 10.7 高 DPI（DPR）：缩放只在后端入口发生
+
+三层单位，各管一段：
+
+| 层 | 单位 | 谁负责换算 |
+|---|---|---|
+| 布局 / qlui / 控件 / 自定义绘制 | **CSS px** | 不换算 |
+| `QLDraw2D` 后端入口（CPU 与 GL） | 设备像素 | **唯一**的换算点 |
+| 驱动 `flush(area)` / 清屏 | 设备像素 | 调用方各自换一次 |
+
+缩放系数是 26.6 定点（`QL_SCALE_ONE` = 1.0，96 = 1.5），挂在"表面"上逐层继承：
+
+```
+QLDispDriver.scale_fx ──▶ QLCanvas.scale_fx ──▶ QLDraw2D.scale_fx ──▶ 后端入口
+QLGfxGL.scale_fx     ────────────────────────▶ QLDraw2D.scale_fx
+```
+
+所以换 DPR 时**上层一行都不用改**。后端入口只有一个判断：
+
+```c
+static inline QLRect sx(QLDraw2D *self, QLRect r)
+{
+    return (self->scale_fx == QL_SCALE_ONE) ? r : ql_scale_rect(r, self->scale_fx);
+}
+```
+
+### 两个必须知道的坑
+
+1. **矩形要按"边"缩放**，不能 `x*scale + w*scale`：
+
+   ```c
+   x1 = ql_scale_len(r.x);                  /* 同一条边界 */
+   x2 = ql_scale_len(ql_rect_right(r));
+   w  = x2 - x1;
+   ```
+
+   否则相邻矩形各自算宽度，会在 1.5× 这种非整数倍下裂开或重叠 1px。
+   （和 flex 的"累计分配"是同一个道理。）
+
+2. **文本要按设备字号重新取字体**（`ql_draw2d_device_font`）：DPR>1 时用
+   `ql_font_default(css_px * scale)` 重新光栅化，否则字形被拉伸变糊。
+   只有动态字体（有 `backend`）能重取；位图字体在 MCU 上不缩放——那是固有限制。
+
+### GPU 侧：单批次的裁剪是"几何裁剪"
+
+本后端整帧只有一次 `glDrawArrays`，**不能用 scissor 逐图元裁剪**，
+只能在发顶点时把四边形范围与 `g->clip` 求交：
+
+```c
+quad = intersect(形状外扩 1px 的范围, g->clip);
+```
+
+关键：**形状参数（`hx/hy`、`radius`、`border`、渐变跨度）必须继续用未裁剪的矩形**，
+否则片元里的 SDF 会算错。被裁掉的只是光栅化范围。
+
+> 这里原来有个真 bug：`emit_quad` 从来没做这个求交，`g->clip` 只存不用，
+> 导致 **`overflow:hidden` 在 GPU 上完全没生效**（DPR 测试里 CPU vs GL 差 28%）。
+> 修好后仍是单 draw call，差异降到 0.4%。纹理四边形（字形）裁剪后按顶点位置
+> 线性插值重算 UV——图集 UV 是轴对齐的，插值精确。
+
+---
+
+## 10.8 绘制期亚像素与边缘覆盖率（M5.3）
+
+整像素矩形只能对齐到整格：`translate(0.5px)` 会变成 1px 一跳，60fps×300ms 的动画
+只有 18 个台阶，肉眼可辨。这一步给光栅化加了"边落在小数上也能画"的能力。
+
+### 三样东西
+
+```c
+typedef struct { ql_coord_t x, y, w, h; } QLRectFx;   /* 设备像素 26.6，低 6 位是亚像素 */
+
+void ql_canvas_fill_rect_fx(QLCanvas *c, QLRectFx r, ql_color_t color, uint8_t alpha);
+void ql_canvas_fill_round_rect_fx(QLCanvas *c, QLRectFx r, ql_coord_t radius_fx,
+                                  ql_color_t color, uint8_t alpha);
+void ql_canvas_stroke_rect_fx(QLCanvas *c, QLRectFx r, ql_coord_t radius_fx,
+                              ql_coord_t thickness_fx, ql_color_t color);
+
+/* 动画的落点：CSS px 26.6，translate(0.5px) 就是 32 */
+void ql_draw2d_set_offset(QLDraw2D *d2d, ql_coord_t x_fx, ql_coord_t y_fx);
+```
+
+CPU 后端把矩形转成 `QLRectFx` 走覆盖率填充；GPU 后端**直接加进顶点浮点**
+（本来就免费，而且精确）。`offset` **不影响布局**，与 CSS `transform` 语义一致，
+所以滑动/缩放动画零重排。
+
+### 覆盖率怎么算
+
+一个像素的 alpha = alpha × (横向重叠比例) × (纵向重叠比例)，都是 64 分制整数：
+
+```
+像素 [x, x+1) 与形状 [fx0, fx1) 的重叠长度 / 64
+```
+
+性能上只多两笔：**每行只在两端各多一次 `put_px`**，中间整像素仍走 `fill_row`
+的 SIMD 快路径。所以亚像素不是"全部逐像素"的代价。
+
+### 三个刻意的实现选择（都是为了不引入跳变）
+
+1. **圆角跨度复用整数版 `round_row_span`**，再把整像素跨度平移亚像素余量。
+   一开始用中心采样（直接算 SDF），圆角比整数版**大将近 2px**——
+   动画跨过 0 时拐角会"突然胀一圈"。改用整数跨度后，对齐时逐字节相同。
+2. **整数矩形 = 低 6 位全 0 的 fx 矩形**，覆盖率恰好全满 →
+   与 `ql_canvas_fill_rect_alpha` **逐像素相同**。这是安全阀：
+   `test_subpx` 用 5 种矩形 × 4 种半径 × 3 种 alpha 对照，任何偏差都会被抓住。
+3. **文本与阴影只吃偏移的整数部分**：亚像素平移会让字形发糊；阴影本来就软，
+   为了省事没必要走 fx 路径。
+
+### 效果
+
+| 实现 | 12px 矩形从 0 挪到 1px，边缘能看到几个不同灰度 |
+|---|---|
+| 整像素 | **1**（直接跳过去） |
+| 26.6 亚像素 | **64** |
+
+`test_subpx` 抽查 6 个偏移，得到 6 个不同的边缘灰度值；
+亚像素偏移下 CPU vs GPU 差 **1.62%**（全在圆角 AA 上）。
+
+---
+
 ## 11. 渐变与软阴影（M5.5 先行项）
 
 两个效果都**不需要离屏缓冲、不需要多趟渲染**，因此不打破"单批次 1 draw call"。

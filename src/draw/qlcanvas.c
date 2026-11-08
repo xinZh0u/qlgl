@@ -130,8 +130,15 @@ ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect
     canvas->width = driver->width;
     canvas->height = driver->height;
     canvas->format = driver->format;
+    canvas->scale_fx = (driver->scale_fx > 0) ? driver->scale_fx : QL_SCALE_ONE;
     canvas->clip = ql_rect_intersect(clip, ql_rect_make(0, 0, driver->width, driver->height));
     return QL_OK;
+}
+
+void ql_canvas_set_scale(QLCanvas *canvas, ql_coord_t scale_fx)
+{
+    if (canvas != NULL)
+        canvas->scale_fx = (scale_fx > 0) ? scale_fx : QL_SCALE_ONE;
 }
 
 ql_err_t ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver)
@@ -931,6 +938,206 @@ void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
                         blend_px(rb, xr, fmt, cr, cg, cb, color, a);
                 }
             }
+        }
+    }
+}
+
+/* ---------------------- 亚像素（26.6）填充：面积覆盖率 ---------------------- */
+
+/* 两个区间的重叠长度，结果 0..64 */
+static inline ql_coord_t ovl(ql_coord_t a0, ql_coord_t a1, ql_coord_t b0, ql_coord_t b1)
+{
+    ql_coord_t lo = (a0 > b0) ? a0 : b0;
+    ql_coord_t hi = (a1 < b1) ? a1 : b1;
+    return (hi > lo) ? (hi - lo) : 0;
+}
+
+/*
+ * 填一行里的一段 fx 区间 [fx0, fx1)。
+ *
+ * 两端像素按覆盖率混合，中间整像素走 fill_row（SIMD 快路径）。
+ * 所以一个带小数的矩形只比整数版本多两次 put_px，不是逐像素。
+ */
+static void fill_span_fx(QLCanvas *c, ql_coord_t y, ql_coord_t fx0, ql_coord_t fx1,
+                         ql_color_t color, uint32_t arow)
+{
+    if (fx1 <= fx0 || arow == 0)
+        return;
+
+    /* 横向先与裁剪求交：fill_row 不做边界检查（调用方保证） */
+    const ql_coord_t cx0 = c->clip.x << QL_FX_SHIFT;
+    const ql_coord_t cx1 = ql_rect_right(c->clip) << QL_FX_SHIFT;
+    if (fx0 < cx0)
+        fx0 = cx0;
+    if (fx1 > cx1)
+        fx1 = cx1;
+    if (fx1 <= fx0)
+        return;
+
+    const ql_coord_t full0 = (fx0 + QL_FX_ONE - 1) >> QL_FX_SHIFT;   /* 首个整像素 */
+    const ql_coord_t full1 = fx1 >> QL_FX_SHIFT;                    /* 整像素半开上界 */
+
+    if (full1 > full0) {
+        if ((fx0 & (QL_FX_ONE - 1)) != 0) {
+            uint32_t cov = (uint32_t)((full0 << QL_FX_SHIFT) - fx0);
+            put_px(c, full0 - 1, y, color, (uint8_t)(arow * cov / 64u));
+        }
+        fill_row(c, full0, full1 - 1, y, color, (uint8_t)arow);
+        uint32_t tail = (uint32_t)(fx1 & (QL_FX_ONE - 1));
+        if (tail != 0)
+            put_px(c, full1, y, color, (uint8_t)(arow * tail / 64u));
+        return;
+    }
+
+    /* 不足一个整像素（细边、或落在像素边界上）：只能逐像素算 */
+    ql_coord_t x0 = fx0 >> QL_FX_SHIFT;
+    ql_coord_t x1 = (fx1 - 1) >> QL_FX_SHIFT;
+    for (ql_coord_t x = x0; x <= x1; x++) {
+        ql_coord_t cov = ovl(x << QL_FX_SHIFT, (x << QL_FX_SHIFT) + QL_FX_ONE, fx0, fx1);
+        if (cov > 0)
+            put_px(c, x, y, color, (uint8_t)(arow * (uint32_t)cov / 64u));
+    }
+}
+
+/*
+ * 圆角矩形某一行的 fx 跨度。
+ *
+ * **刻意复用整数版 round_row_span**（在取整后的矩形上算），再把得到的整像素跨度
+ * 整体平移亚像素余量。理由：
+ *   · 中心采样式（直接用 SDF）算出来的圆角比整数版大将近 2px，
+ *     动画跨过 0 时会出现"拐角突然胀一圈"的跳变；
+ *   · 用整数跨度保证对齐（低 6 位为 0）时与整数路径**逐像素相同**，
+ *     这就是这次改造的安全阀。
+ */
+static int round_span_fx(QLRectFx r, ql_coord_t rad_fx, ql_coord_t y, ql_coord_t *ox0,
+                         ql_coord_t *ox1)
+{
+    const QLRect ir = ql_rect_make(r.x >> QL_FX_SHIFT, r.y >> QL_FX_SHIFT,
+                                   ((r.x + r.w + QL_FX_ONE - 1) >> QL_FX_SHIFT) -
+                                       (r.x >> QL_FX_SHIFT),
+                                   ((r.y + r.h + QL_FX_ONE - 1) >> QL_FX_SHIFT) -
+                                       (r.y >> QL_FX_SHIFT));
+    const ql_coord_t rad = (rad_fx + (QL_FX_ONE / 2)) >> QL_FX_SHIFT;
+
+    ql_coord_t sx0 = 0, sx1 = 0;
+    if (!round_row_span(ir, y, rad, &sx0, &sx1))
+        return 0;
+
+    const ql_coord_t fxoff = r.x & (QL_FX_ONE - 1);
+    ql_coord_t fx0 = (sx0 << QL_FX_SHIFT) + fxoff;
+    ql_coord_t fx1 = ((sx1 + 1) << QL_FX_SHIFT) + fxoff;
+    if (fx0 < r.x)
+        fx0 = r.x;
+    if (fx1 > r.x + r.w)
+        fx1 = r.x + r.w;
+    if (fx1 <= fx0)
+        return 0;
+    *ox0 = fx0;
+    *ox1 = fx1;
+    return 1;
+}
+
+/* 统一的 fx 填充内核：rad_fx == 0 时每行跨度就是整条矩形 */
+static void fill_round_fx(QLCanvas *c, QLRectFx r, ql_coord_t rad_fx, ql_color_t color,
+                          uint8_t alpha)
+{
+    if (c == NULL || alpha == 0 || r.w <= 0 || r.h <= 0)
+        return;
+
+    if (rad_fx > 0) {
+        ql_coord_t lim = (r.w < r.h ? r.w : r.h) / 2;
+        if (rad_fx > lim)
+            rad_fx = lim;
+    }
+
+    ql_coord_t iy0 = r.y >> QL_FX_SHIFT;
+    ql_coord_t iy1 = (r.y + r.h + QL_FX_ONE - 1) >> QL_FX_SHIFT;
+    if (iy0 < c->clip.y)
+        iy0 = c->clip.y;
+    if (iy1 > ql_rect_bottom(c->clip))
+        iy1 = ql_rect_bottom(c->clip);
+
+    for (ql_coord_t y = iy0; y < iy1; y++) {
+        ql_coord_t cov = ovl(y << QL_FX_SHIFT, (y << QL_FX_SHIFT) + QL_FX_ONE, r.y,
+                             r.y + r.h);
+        if (cov == 0)
+            continue;
+        uint32_t ay = (uint32_t)alpha * (uint32_t)cov / 64u;
+        if (ay == 0)
+            continue;
+
+        if (rad_fx <= 0) {
+            fill_span_fx(c, y, r.x, r.x + r.w, color, ay);
+            continue;
+        }
+        ql_coord_t sx0 = 0, sx1 = 0;
+        if (!round_span_fx(r, rad_fx, y, &sx0, &sx1))
+            continue;
+        fill_span_fx(c, y, sx0, sx1, color, ay);
+    }
+}
+
+void ql_canvas_fill_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_color_t color,
+                            uint8_t alpha)
+{
+    fill_round_fx(canvas, rect, 0, color, alpha);
+}
+
+void ql_canvas_fill_round_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
+                                  ql_color_t color, uint8_t alpha)
+{
+    fill_round_fx(canvas, rect, radius_fx, color, alpha);
+}
+
+/*
+ * 描边环（fx）：每行 = 外跨度减去内跨度。
+ * 与整数版本同构，只是端点带小数 → 两边都有覆盖率。
+ */
+void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
+                              ql_coord_t thickness_fx, ql_color_t color)
+{
+    if (canvas == NULL || thickness_fx <= 0 || rect.w <= 0 || rect.h <= 0)
+        return;
+
+    /* 上限与整数版逐字一致（整数除法，所以 1px 宽的框直接被判为"画不下"） */
+    const ql_coord_t lim_w = ((rect.w >> QL_FX_SHIFT) / 2) << QL_FX_SHIFT;
+    const ql_coord_t lim_h = ((rect.h >> QL_FX_SHIFT) / 2) << QL_FX_SHIFT;
+    if (thickness_fx > lim_w)
+        thickness_fx = lim_w;
+    if (thickness_fx > lim_h)
+        thickness_fx = lim_h;
+    if (thickness_fx <= 0)
+        return;
+
+    const QLRectFx inner = ql_rectfx_make(rect.x + thickness_fx, rect.y + thickness_fx,
+                                          rect.w - 2 * thickness_fx,
+                                          rect.h - 2 * thickness_fx);
+
+    ql_coord_t iy0 = rect.y >> QL_FX_SHIFT;
+    ql_coord_t iy1 = (rect.y + rect.h + QL_FX_ONE - 1) >> QL_FX_SHIFT;
+    if (iy0 < canvas->clip.y)
+        iy0 = canvas->clip.y;
+    if (iy1 > ql_rect_bottom(canvas->clip))
+        iy1 = ql_rect_bottom(canvas->clip);
+
+    for (ql_coord_t y = iy0; y < iy1; y++) {
+        ql_coord_t cov = ovl(y << QL_FX_SHIFT, (y << QL_FX_SHIFT) + QL_FX_ONE, rect.y,
+                             rect.y + rect.h);
+        if (cov == 0)
+            continue;
+        uint32_t ay = 255u * (uint32_t)cov / 64u;
+
+        ql_coord_t ox0 = 0, ox1 = 0;
+        if (!round_span_fx(rect, radius_fx, y, &ox0, &ox1))
+            continue;
+
+        ql_coord_t ix0 = 0, ix1 = 0;
+        if (round_span_fx(inner, radius_fx > thickness_fx ? radius_fx - thickness_fx : 0, y,
+                          &ix0, &ix1)) {
+            fill_span_fx(canvas, y, ox0, ix0 < ox1 ? ix0 : ox1, color, ay);
+            fill_span_fx(canvas, y, ix1 > ox0 ? ix1 : ox0, ox1, color, ay);
+        } else {
+            fill_span_fx(canvas, y, ox0, ox1, color, ay);
         }
     }
 }

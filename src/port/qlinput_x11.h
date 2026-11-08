@@ -69,7 +69,13 @@ static uint8_t ql_x11_button_of(unsigned int detail, int *is_wheel, int32_t *whe
 }
 
 /* 把一个 X 事件翻译成输入事件；不认识的类型直接忽略 */
-static void ql_x11_push_input(XEvent *ev, uint8_t *buttons)
+/* 事件坐标是**设备像素**；输入系统与 ui 树用的是 CSS px，这里统一换算 */
+static inline int32_t ql_x11_css(ql_coord_t v, ql_coord_t scale_fx)
+{
+    return (scale_fx > 0 && scale_fx != QL_SCALE_ONE) ? ql_unscale_len(v, scale_fx) : v;
+}
+
+static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t scale_fx)
 {
     int is_wheel;
     int32_t wheel;
@@ -77,8 +83,8 @@ static void ql_x11_push_input(XEvent *ev, uint8_t *buttons)
 
     switch (ev->type) {
     case MotionNotify: {
-        int32_t x = ev->xmotion.x;
-        int32_t y = ev->xmotion.y;
+        int32_t x = ql_x11_css(ev->xmotion.x, scale_fx);
+        int32_t y = ql_x11_css(ev->xmotion.y, scale_fx);
         if ((ev->xmotion.state & Button1Mask) != 0)   *buttons |= QL_BUTTON_BIT_LEFT;
         else                                         *buttons &= (uint8_t)~QL_BUTTON_BIT_LEFT;
         if ((ev->xmotion.state & Button2Mask) != 0)   *buttons |= QL_BUTTON_BIT_MIDDLE;
@@ -92,8 +98,8 @@ static void ql_x11_push_input(XEvent *ev, uint8_t *buttons)
     case ButtonPress:
     case ButtonRelease: {
         int down = (ev->type == ButtonPress);
-        int32_t x = ev->xbutton.x;
-        int32_t y = ev->xbutton.y;
+        int32_t x = ql_x11_css(ev->xbutton.x, scale_fx);
+        int32_t y = ql_x11_css(ev->xbutton.y, scale_fx);
         button = ql_x11_button_of(ev->xbutton.button, &is_wheel, &wheel);
         if (is_wheel) {
             if (down && wheel != 0)
@@ -111,7 +117,8 @@ static void ql_x11_push_input(XEvent *ev, uint8_t *buttons)
     }
 
     case EnterNotify:
-        ql_input_push_move(ev->xcrossing.x, ev->xcrossing.y, *buttons);
+        ql_input_push_move(ql_x11_css(ev->xcrossing.x, scale_fx),
+                           ql_x11_css(ev->xcrossing.y, scale_fx), *buttons);
         break;
 
     case LeaveNotify:

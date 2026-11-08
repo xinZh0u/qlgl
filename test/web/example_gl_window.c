@@ -6,6 +6,8 @@
  *   ./build/example_gl_window                 打开 GL 窗口（vsync，通常 60fps）
  *   ./build/example_gl_window --frames 300    跑 300 帧自动退出
  *   ./build/example_gl_window --bench 600     关闭 vsync + 不休眠，测真实上限
+ *   ./build/example_gl_window --dpr 2         2x 设备像素比（窗口放大 2 倍，布局仍是
+ *                                             320x320 CSS px；字体按设备字号重新光栅化）
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,12 +62,19 @@ int main(int argc, char **argv)
 {
     long max_frames = 0;
     long bench_frames = 0;
+    int dpr = 1;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
             max_frames = strtol(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--bench") == 0 && i + 1 < argc)
             bench_frames = strtol(argv[++i], NULL, 10);
+        else if (strcmp(argv[i], "--dpr") == 0 && i + 1 < argc)
+            dpr = (int)strtol(argv[++i], NULL, 10);
     }
+    if (dpr < 1)
+        dpr = 1;
+    if (dpr > 4)
+        dpr = 4;
     const int bench = (bench_frames > 0);
 
     if (qlgl_init() != QL_OK) {
@@ -73,14 +82,18 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    QLGfxGL *gfx = ql_gfx_gl_create("QLGL GPU Demo", WIN_W, WIN_H, QL_GFX_GL_WINDOW);
+    /* framebuffer 是设备像素；布局与所有绘制坐标仍是 CSS px */
+    QLGfxGL *gfx = ql_gfx_gl_create("QLGL GPU Demo", WIN_W * dpr, WIN_H * dpr,
+                                    QL_GFX_GL_WINDOW);
     if (gfx == NULL) {
         printf("GL 后端创建失败（无 EGL/X11/GLES3）\n");
         qlgl_shutdown();
         return 1;
     }
+    ql_gfx_gl_set_scale(gfx, dpr * QL_SCALE_ONE);
     s_gfx = gfx;
-    printf("GL 后端就绪 %dx%d\n", WIN_W, WIN_H);
+    printf("GL 后端就绪 %dx%d 设备像素，DPR %d → 布局 %dx%d CSS px\n", WIN_W * dpr,
+           WIN_H * dpr, dpr, WIN_W, WIN_H);
 
     /* 有矢量字体就用它（中文 + 任意字号），没有自动回落内置位图字体 */
     {

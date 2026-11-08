@@ -48,6 +48,7 @@ ql_err_t qlgl_init(void)
     ql_event_pool_init();
     ql_input_reset();
     ql_widget_reset();
+    ql_anim_reset();
     ql_class_reset();
 
     for (uint16_t i = 0; i < ql_builtin_class_count; i++) {
@@ -79,6 +80,7 @@ void qlgl_shutdown(void)
     ql_event_pool_init();
     ql_input_reset();
     ql_widget_reset();
+    ql_anim_reset();
     ql_class_reset();
     ql_mem_reset_stats();
     s_initialized = 0;

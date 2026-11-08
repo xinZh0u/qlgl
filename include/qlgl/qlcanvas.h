@@ -18,8 +18,15 @@ typedef struct {
     uint32_t  stride;    /* 字节/行 */
     ql_coord_t width;    /* 缓冲宽度（像素） */
     ql_coord_t height;   /* 缓冲高度（像素） */
-    QLRect    clip;      /* 裁剪区，屏幕坐标 */
+    QLRect    clip;      /* 裁剪区，设备像素 */
     uint8_t   format;    /* QLColorFormat */
+
+    /*
+     * 这块表面相对 CSS px 的缩放（26.6 定点，见 qlgeom.h 的 QL_SCALE_ONE）。
+     * 画布本身只认设备像素；这个字段是给 QLDraw2D 继承用的：
+     * 布局在 CSS px，绘制入口乘它。由 ql_canvas_from_disp 从驱动继承。
+     */
+    ql_coord_t scale_fx;
 } QLCanvas;
 
 /* 由显示驱动构造画布，clip 默认整屏 */
@@ -28,6 +35,22 @@ ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect
 
 void ql_canvas_set_clip(QLCanvas *canvas, QLRect clip);
 QLRect ql_canvas_clip(QLCanvas *canvas);
+
+/* 改缩放（26.6 定点）。只影响 QLDraw2D 继承到的值，画布本身仍只认设备像素 */
+void ql_canvas_set_scale(QLCanvas *canvas, ql_coord_t scale_fx);
+
+/* CSS px 下的画布尺寸（= 设备尺寸 / 缩放）。布局用这个，不要用 width/height */
+static inline ql_coord_t ql_canvas_css_width(const QLCanvas *canvas)
+{
+    ql_coord_t fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+    return ql_unscale_len_ceil(canvas->width, fx);
+}
+
+static inline ql_coord_t ql_canvas_css_height(const QLCanvas *canvas)
+{
+    ql_coord_t fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+    return ql_unscale_len_ceil(canvas->height, fx);
+}
 
 /* 单像素读写（屏幕坐标，自动按 format 转换） */
 ql_color_t ql_canvas_read_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y);
@@ -70,6 +93,48 @@ void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
                            ql_color_t color, uint8_t alpha);
 
 /* 描边：宽度向外不扩张，向内绘制 */
+/*
+ * ---- 亚像素（26.6）原语：边缘按面积覆盖率抗锯齿 ----
+ *
+ * `QLRectFx` 的所有字段都是**设备像素 26.6**（低 6 位是亚像素）。
+ * 有了它，动画里的 `translate(0.5px)` 才真的落在半像素上——用整像素矩形
+ * 只能对齐到整格，位移是 1px 一跳的。
+ *
+ * 与整数版本的关系：整数矩形 = 低 6 位全 0 的 fx 矩形，覆盖率恰好全是满值，
+ * 结果与 `ql_canvas_fill_rect_alpha` **逐像素相同**（只是慢一点）。
+ */
+typedef struct {
+    ql_coord_t x, y, w, h;   /* 设备像素 26.6 */
+} QLRectFx;
+
+#define QL_FX_SHIFT 6
+#define QL_FX_ONE   (1 << QL_FX_SHIFT)   /* 1 设备像素 */
+
+static inline QLRectFx ql_rectfx_make(ql_coord_t x_fx, ql_coord_t y_fx, ql_coord_t w_fx,
+                                      ql_coord_t h_fx)
+{
+    QLRectFx r;
+    r.x = x_fx;
+    r.y = y_fx;
+    r.w = w_fx;
+    r.h = h_fx;
+    return r;
+}
+
+/* 整数设备像素矩形 → fx（低 6 位补 0） */
+static inline QLRectFx ql_rectfx_from_rect(QLRect r)
+{
+    return ql_rectfx_make(r.x << QL_FX_SHIFT, r.y << QL_FX_SHIFT, r.w << QL_FX_SHIFT,
+                          r.h << QL_FX_SHIFT);
+}
+
+void ql_canvas_fill_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_color_t color,
+                            uint8_t alpha);
+void ql_canvas_fill_round_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
+                                  ql_color_t color, uint8_t alpha);
+void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
+                              ql_coord_t thickness_fx, ql_color_t color);
+
 void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                            ql_coord_t thickness, ql_color_t color);
 void ql_canvas_draw_hline(QLCanvas *canvas, ql_coord_t x1, ql_coord_t x2, ql_coord_t y,

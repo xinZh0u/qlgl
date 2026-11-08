@@ -39,6 +39,38 @@ typedef struct QLDraw2D {
 | `stroke_round_rect` | **向内描边**；`thickness` ≤ 0 时无操作 |
 | `fill_round_rect_gradient` | `dir` 取 `QLGradientDir`；只有 2 个停靠点 |
 | `fill_shadow` | 以 `inner` 为轮廓向外扩散 `blur` 并偏移 `(dx,dy)`；**必须先画阴影再画本体** |
+
+### 5.x 高 DPI（DPR）
+
+```c
+/* 缩放（26.6 定点）：QL_SCALE_ONE = 1.0，96 = 1.5 */
+void ql_draw2d_set_scale(QLDraw2D *d2d, ql_coord_t scale_fx);
+void ql_canvas_set_scale(QLCanvas *canvas, ql_coord_t scale_fx);
+void ql_disp_set_scale(QLDispDriver *driver, ql_coord_t scale_fx);
+void ql_gfx_gl_set_scale(QLGfxGL *gfx, ql_coord_t scale_fx);
+
+/* CSS px 下的表面尺寸（布局用这个，别用 width/height） */
+ql_coord_t ql_canvas_css_width(const QLCanvas *c);
+ql_coord_t ql_canvas_css_height(const QLCanvas *c);
+ql_coord_t ql_disp_css_width(const QLDispDriver *d);
+ql_coord_t ql_disp_css_height(const QLDispDriver *d);
+
+/* 绘制期平移（CSS px 26.6）：translate(0.5px) → 32。不影响布局 */
+void ql_draw2d_set_offset(QLDraw2D *d2d, ql_coord_t x_fx, ql_coord_t y_fx);
+
+/* 亚像素填充：边落在小数上时按面积覆盖率抗锯齿（低 6 位是亚像素） */
+typedef struct { ql_coord_t x, y, w, h; } QLRectFx;
+void ql_canvas_fill_rect_fx(QLCanvas *c, QLRectFx r, ql_color_t color, uint8_t alpha);
+void ql_canvas_fill_round_rect_fx(QLCanvas *c, QLRectFx r, ql_coord_t radius_fx,
+                                  ql_color_t color, uint8_t alpha);
+void ql_canvas_stroke_rect_fx(QLCanvas *c, QLRectFx r, ql_coord_t radius_fx,
+                              ql_coord_t thickness_fx, ql_color_t color);
+
+/* 按"边"缩放：相邻矩形不会在接缝处裂开 */
+QLRect ql_scale_rect(QLRect r, ql_coord_t scale_fx);
+QLRect ql_unscale_rect(QLRect r, ql_coord_t scale_fx);
+ql_coord_t ql_scale_len(ql_coord_t v, ql_coord_t scale_fx);
+```
 | `draw_text` | `len < 0` 表示 `'\0'` 结尾；只处理 `'\n'`；水平按 `align` 对齐 |
 | `flush` | CPU 为 `NULL`；GPU 用它提交批次 |
 

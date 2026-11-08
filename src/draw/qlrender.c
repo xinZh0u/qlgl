@@ -204,8 +204,13 @@ int ql_render(void)
     if (disp == NULL || s_root == NULL)
         return QL_ERR_NOT_INIT;
 
+    /*
+     * 脏区队列里全是 CSS px（控件几何就是 CSS px）。清屏要设备像素、
+     * 绘制接口吃 CSS px、推屏要设备像素——三种单位在下面各自换算一次。
+     */
     QLRect areas[QL_CFG_DIRTY_RECT_MAX];
-    uint32_t count = collect_areas(areas, QL_CFG_DIRTY_RECT_MAX, disp->width, disp->height);
+    uint32_t count = collect_areas(areas, QL_CFG_DIRTY_RECT_MAX, ql_disp_css_width(disp),
+                                  ql_disp_css_height(disp));
     if (count == 0)
         return 0;
 
@@ -218,26 +223,31 @@ int ql_render(void)
         return QL_ERR_NOT_INIT;
 
     ql_color_t bg = ql_disp_bg_color();
+    const ql_coord_t scale_fx = (canvas.scale_fx > 0) ? canvas.scale_fx : QL_SCALE_ONE;
 
     for (uint32_t i = 0; i < count; i++) {
         QLRect area = areas[i];
         if (ql_rect_is_empty(area))
             continue;
 
+        const QLRect area_dev = (scale_fx == QL_SCALE_ONE)
+                                    ? area
+                                    : ql_scale_rect(area, scale_fx);
+
         /* 1. 背景（CPU 后端顺手清掉；GPU 由调用方用 ql_render_draw2d 自己处理） */
         QLCanvas clear_canvas = canvas;
-        ql_canvas_set_clip(&clear_canvas, area);
+        ql_canvas_set_clip(&clear_canvas, area_dev);
         ql_canvas_clear(&clear_canvas, bg);
 
-        /* 2. 控件树（裁剪到脏区） */
+        /* 2. 控件树（裁剪到脏区，CSS px） */
         d2d.set_clip(&d2d, area);
         render_node(s_root, 0, 0, area, &d2d);
 
-        /* 3. 推屏 */
+        /* 3. 推屏（驱动只认设备像素） */
         if (disp->flush != NULL) {
-            if (disp->flush(disp, area) != 0)
+            if (disp->flush(disp, area_dev) != 0)
                 QL_LOGW("display flush failed for area %d,%d %dx%d",
-                        (int)area.x, (int)area.y, (int)area.w, (int)area.h);
+                        (int)area_dev.x, (int)area_dev.y, (int)area_dev.w, (int)area_dev.h);
         }
     }
 

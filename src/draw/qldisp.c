@@ -29,6 +29,12 @@ const char *ql_disp_format_name(uint8_t format)
     return (format < QL_COLOR_FORMAT_COUNT) ? names[format] : "invalid";
 }
 
+void ql_disp_set_scale(QLDispDriver *driver, ql_coord_t scale_fx)
+{
+    if (driver != NULL)
+        driver->scale_fx = (scale_fx > 0) ? scale_fx : QL_SCALE_ONE;
+}
+
 uint32_t ql_disp_buffer_size(QLColorFormat format, ql_coord_t width, ql_coord_t height)
 {
     uint32_t bytes = ql_disp_format_bytes((uint8_t)format);
@@ -58,6 +64,7 @@ ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t strid
     driver->width = width;
     driver->height = height;
     driver->format = (uint8_t)format;
+    driver->scale_fx = QL_SCALE_ONE;   /* 默认 1:1，高 DPI 后端自己改 */
     driver->framebuffer = framebuffer;
     driver->stride = stride;
     driver->flush = flush;

@@ -252,6 +252,21 @@ QLRect ql_ui_paint_bounds(const QLUIRoot *ui);   /* = 根节点的 paint_box */
 `ql_ui_render_rect` 把 d2d 裁剪设成 `dirty ∩ 视口`，然后靠 `paint_box` 剪枝。
 契约是硬性的：**在 dirty 区域内的结果必须与全量 `ql_ui_render` 逐像素相同**。
 
+#### 高 DPI：布局永远是 CSS px
+
+`ql_ui_layout(ui, w, h)` 的 `w/h` 是 **CSS px**，与 DPR 无关。
+设备尺寸由表面决定，换算由 `QLDraw2D` 后端统一完成（见 render 手册 §10.7）：
+
+```c
+/* 640×480 设备像素、2x DPR → 布局按 320×240 CSS px */
+ql_gfx_gl_set_scale(gfx, 2 * QL_SCALE_ONE);
+ql_ui_layout(ui, 320, 240);
+ql_ui_render(ui, ql_gfx_gl_draw(gfx));   /* 坐标仍是 CSS px */
+```
+
+CPU 路径同理，用 `ql_disp_set_scale()` / `ql_canvas_css_width()`。
+`test/web/test_dpr.c` 断言"两种 DPR 下 `border_box` 逐字段相同"。
+
 `test/web/test_render.c` 就是守这条的：9 个脏区（整幅 / 只覆盖卡片 / 只有阴影光晕 /
 裁剪容器 / 跨裁剪边界 / 绝对定位 / 角落小片 / 视口外 / 空白区）逐一对比，
 同时检查"脏区外一个像素都没被碰"。
@@ -259,6 +274,44 @@ QLRect ql_ui_paint_bounds(const QLUIRoot *ui);   /* = 根节点的 paint_box */
 这份测试上线时立刻抓到一个真 bug：`fill_shadow` 的下边带 / 右边带起点
 （`sy1` / `sx1`）没有与裁剪上界求交，阴影被裁掉上半部分时会往上画到裁剪外面。
 **这正是"动画必须走脏区"（M5.5）之前必须先把剪枝做对的原因。**
+
+### 5.4 状态过渡 `ql_ui_anim_tick`
+
+CSS 里写了 `transition` 的节点，在状态切换（`:hover` 进入/离开、`:active` 按下/松开）
+时不再瞬间跳到新样式，而是把变化量交给 `qlanim` 插值。三个实现点：
+
+1. **状态标志只能通过 `set_state_chain()` 改。**
+   它会先记下沿祖先链每个节点的旧样式，改完标志后再对每个节点调 `trans_retarget()`。
+   早期 `pointer_move` / `pointer_up` 直接遍历清 `flags`，绕过了这一步——后果是过渡
+   继续往"按下时的颜色"走，松手后颜色永久卡在中间值。**这是红线，别再直接写 `flags`。**
+
+2. **过渡样式存在独立池** `QLUIRoot.trans[]`（`QL_CFG_UI_TRANS_MAX`=16），
+   结构里带一份完整的 `QLUIStyle style`。绘制时 `style_for_state()` 若发现该节点有活跃过渡，
+   返回过渡中的那份，否则返回静态表里的那份。
+   *不用* `style_copy`：那是 flex 强制尺寸的临时位，两者会互相踩。
+
+3. **重基从当前绘制值开始**。`trans_retarget` 的起点取"这一帧实际画出来的样式"，
+   不是 base 样式，所以快速来回 hover 不会跳变。
+
+只支持 `background-color` / `opacity`，因为这两个字段一旦变化**不需要重新布局**
+（不需要重算 `paint_box`；阴影颜色/模糊不变，文字不受影响）。`width` 之类会触发重排，
+本架构明确不支持逐帧插值布局属性。
+
+主循环接法：
+
+```c
+ql_ui_layout(ui, w, h);
+if (ql_ui_anim_tick(ui, ql_anim_now_ms()) > 0) {   /* 0 = 这一帧没动，可整帧跳过 */
+    QLRect areas[8];
+    int n = ql_ui_consume_dirty(ui, areas, 8);      /* 取走脏区并清标记 */
+    for (int i = 0; i < n; i++)
+        ql_ui_render_rect(ui, &dw, areas[i]);       /* 旧位置 ∪ 新位置 */
+}
+```
+
+脏区是"旧 `paint_box` ∪ 新 `paint_box`"，所以渐隐到底色时不会留下残影。
+
+---
 
 ### 5.5 `.qlui` blob：换界面不用重编译
 
@@ -421,8 +474,9 @@ layout_flex_children(容器):
 | 混合内容 | ❌ 报错 | 需把文本包进 `<span>` |
 | 行内元素的基线对齐 | ❌ 按矩形顶对齐 | 中英文混排可能不齐 |
 | 文本换行 | 只有 `\n` | 长句不自动折行 |
-| `position` / `overflow` / `z-index` | ❌ | 弹窗、滚动容器做不了 |
-| CSS 变量 / transition / media query | ❌ | 明确不支持 |
+| `position` / `z-index` | ❌ | 弹窗做不了（`overflow` 只裁剪不滚动） |
+| `transition` | ✅ 支持 `background-color` / `opacity` / `all`（M5.5） | 只有背景色与背景 alpha 可过渡；`color`/`border-color`/`delay` 报错 |
+| CSS 变量 / `@keyframes` / media query | ❌ | 明确不支持（`@keyframes` 排 M5.5 ③） |
 | JS | ❌（编译期无 JS） | 交互靠 C 回调 |
 
 > 这些差距是**刻意的**：MPU 档的目标是"设计师给的静态页面能渲染"，不是"跑任意网页"。

@@ -79,6 +79,18 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
         }
     }
 
+    /*
+     * 过渡池按需分配：doc 里一个 transition 都没有时完全不占内存
+     * （静态界面 + MCU 的常态）。
+     */
+    for (uint16_t i = 0; i < doc->style_count; i++) {
+        if (doc->styles[i].trans_ms > 0 && doc->styles[i].trans_props != 0) {
+            ui->trans = (QLUITrans *)ql_mem_calloc(QL_CFG_UI_TRANS_MAX,
+                                                   sizeof(QLUITrans));
+            break;
+        }
+    }
+
     return ui;
 }
 
@@ -111,6 +123,14 @@ void ql_ui_free(QLUIRoot *ui)
     /* 输入汇里还握着这个指针，必须先摘掉，否则下一次事件就是 use-after-free */
     if (s_input_target == ui)
         ql_ui_detach_input();
+    /* 先把还挂着的过渡动画摘掉，避免动画池里留着指向已释放节点的指针 */
+    if (ui->trans != NULL) {
+        for (int i = 0; i < QL_CFG_UI_TRANS_MAX; i++) {
+            if (ui->trans[i].active)
+                ql_anim_cancel(&ui->trans[i].key);
+        }
+        ql_mem_free(ui->trans);
+    }
     ql_mem_free(ui->nodes);
     if (ui->owns_doc)
         ql_ui_doc_free((QLUIDoc *)(uintptr_t)ui->doc);
@@ -695,12 +715,20 @@ static void line_factors(QLUINodeRT *first, QLUINodeRT *last, int row,
     *count = n;
 }
 
-/* justify-content → 行首偏移 + 额外项间距 */
+/*
+ * justify-content → (行首偏移, 待摊入的剩余空间总量, 摊成几份)
+ *
+ * 注意不是"每份多少"：剩下的空间要**按累计方式**摊到各项之间
+ * （见 layout_flex_children 里的 extra_num），否则每份各自取整会把余数丢掉，
+ * 最后一项落不到行尾——100px 分三项就是 33+33+33=99，右边留 1px 空隙。
+ */
 static void justify_offsets(ql_coord_t free_space, int n, uint8_t justify,
-                            ql_coord_t *out_start, ql_coord_t *out_extra)
+                            ql_coord_t *out_start, ql_coord_t *out_extra_total,
+                            int *out_extra_div)
 {
     *out_start = 0;
-    *out_extra = 0;
+    *out_extra_total = 0;
+    *out_extra_div = 0;
     if (free_space <= 0 || n <= 0)
         return;
 
@@ -712,16 +740,20 @@ static void justify_offsets(ql_coord_t free_space, int n, uint8_t justify,
         *out_start = free_space;
         break;
     case QL_UI_JUSTIFY_SPACE_BETWEEN:
-        if (n > 1)
-            *out_extra = free_space / (n - 1);
+        if (n > 1) {
+            *out_extra_total = free_space;
+            *out_extra_div = n - 1;
+        }
         break;
     case QL_UI_JUSTIFY_SPACE_AROUND:
         *out_start = free_space / (2 * n);
-        *out_extra = free_space / n;
+        *out_extra_total = free_space;
+        *out_extra_div = n;
         break;
     case QL_UI_JUSTIFY_SPACE_EVENLY:
         *out_start = free_space / (n + 1);
-        *out_extra = free_space / (n + 1);
+        *out_extra_total = free_space;
+        *out_extra_div = n + 1;
         break;
     default:
         break;
@@ -807,12 +839,24 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
         }
 
         /* (5) justify 只在 grow 没吸收掉剩余空间时生效 */
-        ql_coord_t j_start = 0, j_extra = 0;
+        ql_coord_t j_start = 0, j_extra_total = 0;
+        int j_extra_div = 0;
         if (sum_grow <= 0)
-            justify_offsets(free_space, cnt, cs->justify_content, &j_start, &j_extra);
+            justify_offsets(free_space, cnt, cs->justify_content, &j_start,
+                            &j_extra_total, &j_extra_div);
 
-        /* (6) 分配 + 定位 */
+        /*
+         * (6) 分配 + 定位
+         *
+         * grow / shrink / justify 的份额一律**累计推进**：
+         *     num += 总额 * 权重;  份额 = num / 权重和;  num %= 权重和;
+         * 这样各项份额之和恒等于总额，不会因为"每项各自整除"把余数丢掉。
+         * 100px 三分 flex:1 从 33+33+33=99 变成 33+34+33=100，右边界严丝合缝。
+         */
         ql_coord_t cursor = j_start;
+        int64_t grow_num = 0;
+        int64_t shrink_num = 0;
+        int64_t extra_num = 0;
         for (QLUINodeRT *c = first; c != NULL; c = c->next_sibling) {
             if (c->style->display == QL_UI_DISPLAY_NONE)
                 continue;
@@ -822,14 +866,16 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
             ql_coord_t final_main = base;
 
             if (free_space > 0 && sum_grow > 0) {
-                final_main = base + (ql_coord_t)((int64_t)free_space *
-                                                 (int64_t)is->flex_grow /
-                                                 (int64_t)sum_grow);
+                grow_num += (int64_t)free_space * (int64_t)is->flex_grow;
+                ql_coord_t add = (ql_coord_t)(grow_num / (int64_t)sum_grow);
+                grow_num -= (int64_t)add * (int64_t)sum_grow;
+                final_main = base + add;
             } else if (free_space < 0 && sum_shrink_w > 0 && is->flex_shrink > 0) {
                 ql_coord_t w = (ql_coord_t)((uint32_t)is->flex_shrink *
                                             (uint32_t)((base > 0) ? base : 1) / 100u);
-                ql_coord_t cut = (ql_coord_t)((int64_t)(-free_space) * (int64_t)w /
-                                              (int64_t)sum_shrink_w);
+                shrink_num += (int64_t)(-free_space) * (int64_t)w;
+                ql_coord_t cut = (ql_coord_t)(shrink_num / (int64_t)sum_shrink_w);
+                shrink_num -= (int64_t)cut * (int64_t)sum_shrink_w;
                 final_main = base - cut;
                 if (final_main < 0)
                     final_main = 0;
@@ -884,7 +930,14 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
             else
                 (void)layout_node(c, content_x + cross_at, content_y + main_pos, content_w);
 
-            cursor += final_main + gap + j_extra;
+            /* justify 的额外间距同样累计分配：最后一项刚好落到行尾 */
+            ql_coord_t extra = 0;
+            if (j_extra_div > 0) {
+                extra_num += (int64_t)j_extra_total;
+                extra = (ql_coord_t)(extra_num / (int64_t)j_extra_div);
+                extra_num -= (int64_t)extra * (int64_t)j_extra_div;
+            }
+            cursor += final_main + gap + extra;
             if (c == last)
                 break;
         }
@@ -1046,6 +1099,9 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
 
 /* ------------------------------ 绘制 ------------------------------ */
 
+/* 状态过渡槽查找（实现放在交互那一段，绘制要先用） */
+static QLUITrans *trans_find(QLUIRoot *ui, const QLUINodeRT *node);
+
 static const QLFont *font_of(const QLUINodeRT *node)
 {
     return font_of_style(node, node->style);
@@ -1056,7 +1112,11 @@ const QLFont *ql_ui_node_font(const QLUINodeRT *node)
     return (node != NULL) ? font_of(node) : NULL;
 }
 
-const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node)
+/*
+ * 状态变体解析：ACTIVE > FOCUS > HOVER > 基础。
+ * **不看过渡**——过渡的目标值必须由它算出来，否则会"以自己为目标"。
+ */
+static const QLUIStyle *style_for_state(const QLUINodeRT *node)
 {
     if (node == NULL)
         return NULL;
@@ -1075,6 +1135,20 @@ const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node)
             return &node->owner->doc->styles[idx];
     }
     return node->style;
+}
+
+const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node)
+{
+    if (node == NULL)
+        return NULL;
+
+    /* 正在过渡：返回插值中的那一份（其它属性已经是目标样式） */
+    if (node->owner != NULL && node->owner->trans != NULL) {
+        QLUITrans *t = trans_find(node->owner, node);
+        if (t != NULL)
+            return &t->style;
+    }
+    return style_for_state(node);
 }
 
 QLRect ql_ui_node_rect(const QLUINodeRT *node)
@@ -1189,8 +1263,13 @@ void ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas)
     if (ui == NULL || canvas == NULL)
         return;
 
-    /* 画布已有 clip 时以它为准，避免 overflow 恢复时把外部裁剪冲掉 */
-    ui->root_clip = canvas->clip;
+    /*
+     * 画布已有 clip 时以它为准，避免 overflow 恢复时把外部裁剪冲掉。
+     * 画布的 clip 是**设备像素**，而整棵 ui 树的坐标是 CSS px，所以要换回 CSS px
+     * （近边向下、远边向上取整，保证覆盖全部设备像素）。
+     */
+    ql_coord_t scale_fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+    ui->root_clip = ql_unscale_rect(canvas->clip, scale_fx);
     ui->root_clip_valid = 1;
 
     QLDraw2D d2d;
@@ -1279,13 +1358,178 @@ ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text)
 }
 
 /* 交互状态位：和 Web 一样沿祖先链生效（子元素 hover 时父容器也算 hover） */
+/* ------------------------- 状态过渡（transition） ------------------------- */
+
+/* 找这个节点正在跑的过渡槽（没有就返回 NULL） */
+static QLUITrans *trans_find(QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || ui->trans == NULL || node == NULL)
+        return NULL;
+    for (int i = 0; i < QL_CFG_UI_TRANS_MAX; i++)
+        if (ui->trans[i].active && ui->trans[i].node == node)
+            return &ui->trans[i];
+    return NULL;
+}
+
+/* 动画每一帧写回插值结果 */
+static void trans_apply(void *user, const QLAnimValue *v)
+{
+    QLUITrans *t = (QLUITrans *)user;
+    if (t == NULL || t->node == NULL)
+        return;
+
+    if ((t->props & QL_UI_TRANS_BG) != 0) {
+        uint8_t r = (uint8_t)(v->v[0] + 0.5f);
+        uint8_t g = (uint8_t)(v->v[1] + 0.5f);
+        uint8_t b = (uint8_t)(v->v[2] + 0.5f);
+        t->style.bg_color = QL_COLOR_RGB(r, g, b);
+    }
+    if ((t->props & QL_UI_TRANS_ALPHA) != 0) {
+        float a = v->v[3];
+        t->style.bg_alpha = (uint8_t)((a < 0.0f) ? 0.0f : (a > 255.0f ? 255.0f : a + 0.5f));
+    }
+
+    /* 只把这一块标脏：主循环用 ql_ui_consume_dirty 拿到区域后局部重绘 */
+    t->node->flags |= QL_UI_RT_DIRTY;
+}
+
+/* 过渡结束：释放槽位，样式回落到状态变体（此时两者数值已经相同，无跳变） */
+static void trans_done(void *user)
+{
+    QLUITrans *t = (QLUITrans *)user;
+    if (t == NULL)
+        return;
+    if (t->node != NULL)
+        t->node->flags |= QL_UI_RT_DIRTY;
+    t->active = 0;
+    t->node = NULL;
+}
+
+/*
+ * 状态位变化后给节点起/改道过渡。
+ *
+ * 目标样式 = 变化**之后**该节点生效的状态变体样式。
+ * 起点 = 当前正在渲染的值（`key.cur`）——这正是"打断时从当前插值重基"，
+ * 所以 hover 上又移开也不会跳变。
+ */
+static void trans_retarget(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *before)
+{
+    if (ui->trans == NULL || node == NULL)
+        return;
+
+    /* 目标 = 状态变体样式（不能走 ql_ui_node_style，那会拿到过渡中的中间值） */
+    const QLUIStyle *target = style_for_state(node);
+
+    /* 目标没有过渡：把还在跑的撤掉，样式立刻生效 */
+    if (target == NULL || target->trans_ms == 0 || target->trans_props == 0) {
+        QLUITrans *old = trans_find(ui, node);
+        if (old != NULL) {
+            ql_anim_cancel(&old->key);
+            old->active = 0;
+            old->node = NULL;
+        }
+        return;
+    }
+
+    QLUITrans *t = trans_find(ui, node);
+    if (t == NULL) {
+        for (int i = 0; i < QL_CFG_UI_TRANS_MAX; i++) {
+            if (!ui->trans[i].active) {
+                t = &ui->trans[i];
+                break;
+            }
+        }
+        if (t == NULL) {
+            QL_LOGW("ui: transition slots full (%d), switching instantly",
+                    QL_CFG_UI_TRANS_MAX);
+            return;
+        }
+        t->node = node;
+        t->active = 1;
+        t->style = *target;
+        /* 起点 = 状态变化**之前**实际显示的样式（不是 target，也不是 node->style） */
+        const QLUIStyle *now = (before != NULL) ? before : node->style;
+        t->key.cur.v[0] = (float)QL_COLOR_GET_R(now->bg_color);
+        t->key.cur.v[1] = (float)QL_COLOR_GET_G(now->bg_color);
+        t->key.cur.v[2] = (float)QL_COLOR_GET_B(now->bg_color);
+        t->key.cur.v[3] = (float)now->bg_alpha;
+    } else {
+        /* 已经在跑：沿用插值中的值，只换目标与时长（自动重基） */
+        t->style = *target;
+    }
+
+    t->props = target->trans_props;
+
+    QLAnimValue to;
+    to.v[0] = (float)QL_COLOR_GET_R(target->bg_color);
+    to.v[1] = (float)QL_COLOR_GET_G(target->bg_color);
+    to.v[2] = (float)QL_COLOR_GET_B(target->bg_color);
+    to.v[3] = (float)target->bg_alpha;
+
+    if (ql_anim_start(&t->key, &to, target->trans_ms, target->trans_ease, 0, trans_apply,
+                      trans_done, t) != QL_OK) {
+        /* 时长 0 / 槽位满：样式已经由 trans_apply 落到终值，这里收尾 */
+        if (t->active) {
+            t->node = NULL;
+            t->active = 0;
+        }
+    }
+}
+
+uint32_t ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms)
+{
+    if (ui == NULL)
+        return 0;
+    return ql_anim_tick(now_ms);
+}
+
+int ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max)
+{
+    if (ui == NULL || out == NULL || max <= 0)
+        return 0;
+
+    int n = 0;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        QLUINodeRT *node = &ui->nodes[i];
+        if ((node->flags & QL_UI_RT_DIRTY) == 0)
+            continue;
+        node->flags = (uint8_t)(node->flags & ~QL_UI_RT_DIRTY);
+
+        /* 用绘制包围盒而不是边框盒：阴影/未裁剪子树也要重画 */
+        QLRect r = node->paint_box;
+        if (ql_rect_is_empty(r))
+            continue;
+
+        int merged = 0;
+        for (int k = 0; k < n; k++) {
+            if (ql_rect_overlaps(out[k], r)) {
+                out[k] = ql_rect_union(out[k], r);
+                merged = 1;
+                break;
+            }
+        }
+        if (merged)
+            continue;
+        if (n < max)
+            out[n++] = r;
+        else
+            out[max - 1] = ql_rect_union(out[max - 1], r);
+    }
+    return n;
+}
+
 static void set_state_chain(QLUINodeRT *node, uint8_t mask, int on)
 {
     for (QLUINodeRT *n = node; n != NULL; n = n->parent) {
+        /* 先记下变化前的生效样式：过渡的起点必须是"屏幕上正在显示的那个值" */
+        const QLUIStyle *before = ql_ui_node_style(n);
         if (on)
             n->flags = (uint8_t)(n->flags | mask);
         else
             n->flags = (uint8_t)(n->flags & ~mask);
+        /* 状态位变了：让有 transition 的节点起/改道渐变 */
+        if (n->owner != NULL)
+            trans_retarget(n->owner, n, before);
     }
 }
 
@@ -1305,10 +1549,15 @@ int ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 
     QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
     int was_active = 0;
+    /*
+     * 必须走 set_state_chain 而不是直接清标志：直接清会绕过 trans_retarget，
+     * 正在跑的过渡就会继续往"按下时的样式"走，松手后颜色卡在中间。
+     */
     for (uint16_t i = 0; i < ui->node_count; i++) {
-        if ((ui->nodes[i].flags & QL_UI_RT_ACTIVE) != 0)
+        if ((ui->nodes[i].flags & QL_UI_RT_ACTIVE) != 0) {
             was_active = 1;
-        ui->nodes[i].flags &= (uint8_t)~QL_UI_RT_ACTIVE;
+            set_state_chain(&ui->nodes[i], QL_UI_RT_ACTIVE, 0);
+        }
     }
     if (node == NULL || !was_active)
         return 0;
@@ -1327,9 +1576,11 @@ int ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     if (ui->hover == node)
         return 0;
 
-    for (uint16_t i = 0; i < ui->node_count; i++)
-        ui->nodes[i].flags &= (uint8_t)~QL_UI_RT_HOVER;
+    /* 必须走 set_state_chain 而不是直接清标志，否则"移出"不触发过渡 */
+    QLUINodeRT *old = ui->hover;
     ui->hover = node;
+    if (old != NULL)
+        set_state_chain(old, QL_UI_RT_HOVER, 0);
     if (node != NULL)
         set_state_chain(node, QL_UI_RT_HOVER, 1);
     return 1;
