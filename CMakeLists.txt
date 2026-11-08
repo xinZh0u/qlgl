@@ -5,6 +5,9 @@ project(qlgl LANGUAGES C VERSION 0.1.0)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)          # 严格 -std=c11，防止误用 POSIX/编译器扩展
+
+# 给编辑器用的编译数据库（.vscode/c_cpp_properties.json / clangd 都读它）
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
@@ -170,11 +173,16 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
             target_include_directories(${test_name} PRIVATE ${QL_UI_OUT})
+            if(test_name STREQUAL "test_golden")
+                add_dependencies(${test_name} qlui_flex)
+                target_compile_definitions(${test_name} PRIVATE
+                    QL_GL_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/golden")
+            endif()
             if(test_name STREQUAL "test_ui_blob")
                 add_dependencies(${test_name} qlui_blob)
                 target_compile_definitions(${test_name} PRIVATE
@@ -192,6 +200,7 @@ if(QLGL_BUILD_TESTS)
                OR test_name STREQUAL "test_scale"
                OR test_name STREQUAL "test_flip"
                OR test_name STREQUAL "test_blur"
+               OR test_name STREQUAL "test_golden"
                OR test_name STREQUAL "example_flip_window"
                OR test_name STREQUAL "example_showcase_window")
                 add_dependencies(${test_name} qlui_flex)

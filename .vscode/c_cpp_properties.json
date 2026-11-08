@@ -1,0 +1,46 @@
+{
+    "configurations": [
+        {
+            "name": "Linux (GCC, c11)",
+            /*
+             * compile_commands.json 由 CMake 生成（CMakeLists 里开了
+             * CMAKE_EXPORT_COMPILE_COMMANDS），里面带着每个目标真实的 -I / -D
+             * （QLGL_ENABLE_GL、QLGL_ENABLE_FREETYPE、build/ui 下的生成头）。
+             * 先 configure 一次（任意 build 目录），没有这个文件时下面的
+             * includePath / defines 兜底。
+             */
+            "compileCommands": "${workspaceFolder}/build-rel/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/test",
+                "${workspaceFolder}/build-rel/ui",
+                "${workspaceFolder}/build/ui",
+                "/usr/include/freetype2",
+                "/usr/include/EGL",
+                "/usr/include/GLES3"
+            ],
+            "defines": [
+                "QLGL_ENABLE_GL=1",
+                "QLGL_ENABLE_FREETYPE=1"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "compilerArgs": [
+                "-std=c11",
+                "-Wall",
+                "-Wextra"
+            ],
+            "cStandard": "c11",
+            "intelliSenseMode": "linux-gcc-x64",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/include",
+                    "${workspaceFolder}/src",
+                    "${workspaceFolder}/test",
+                    "${workspaceFolder}/tools"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ],
+    "version": 4
+}

@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DEPS: >-
+    cmake ninja-build gcc pkg-config python3
+    libfreetype-dev libegl-dev libgles-dev libx11-dev
+    libwayland-dev wayland-protocols libxkbcommon-dev
+
+jobs:
+  # 主档：Release 构建 + 全部测试（golden 图也在里面）
+  release:
+    name: Release / ctest
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装依赖
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: 配置
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: 构建
+        run: cmake --build build -j
+      - name: 测试
+        run: ctest --test-dir build --output-on-failure
+
+  # 干净档：ASan + UBSan（漏内存 / 越界 / UB 一律当成失败）
+  sanitizers:
+    name: ASan+UBSan / ctest
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装依赖
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: 配置
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g"
+      - name: 构建
+        run: cmake --build build -j
+      - name: 测试
+        run: |
+          export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1
+          export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
+          ctest --test-dir build --output-on-failure
+
+  # 告警档：严格告警一律当错误（-Werror）
+  strict-warnings:
+    name: -Werror / 构建
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装依赖
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: 配置
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-Werror -Wpedantic -Wshadow -Wconversion -Wsign-conversion"
+      - name: 构建
+        run: cmake --build build -j

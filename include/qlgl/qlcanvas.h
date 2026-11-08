@@ -153,6 +153,16 @@ typedef struct {
 #define QL_FX_SHIFT 6
 #define QL_FX_ONE   (1 << QL_FX_SHIFT)   /* 1 设备像素 */
 
+/*
+ * 转 26.6 定点。**别写 `v << QL_FX_SHIFT`**：坐标可以是负数（画到屏幕外的元素、
+ * 负偏移），而"左移负数"在 C 里是未定义行为（UBSan: left shift of negative value）。
+ * 乘法是良定义的，编译器也照样会把它变成移位。
+ */
+static inline ql_coord_t ql_fx_of(ql_coord_t v)
+{
+    return (ql_coord_t)(v * (ql_coord_t)QL_FX_ONE);
+}
+
 static inline QLRectFx ql_rectfx_make(ql_coord_t x_fx, ql_coord_t y_fx, ql_coord_t w_fx,
                                       ql_coord_t h_fx)
 {
@@ -167,8 +177,8 @@ static inline QLRectFx ql_rectfx_make(ql_coord_t x_fx, ql_coord_t y_fx, ql_coord
 /* 整数设备像素矩形 → fx（低 6 位补 0） */
 static inline QLRectFx ql_rectfx_from_rect(QLRect r)
 {
-    return ql_rectfx_make(r.x << QL_FX_SHIFT, r.y << QL_FX_SHIFT, r.w << QL_FX_SHIFT,
-                          r.h << QL_FX_SHIFT);
+    return ql_rectfx_make(ql_fx_of(r.x), ql_fx_of(r.y), ql_fx_of(r.w),
+                          ql_fx_of(r.h));
 }
 
 void ql_canvas_fill_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_color_t color,

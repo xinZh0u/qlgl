@@ -70,6 +70,8 @@ ctest --test-dir build --output-on-failure
 ./build/test_scale                        # transform: scale() 绘制期缩放（布局不受影响）
 ./build/test_flip                         # scaleX()/scaleY() 分轴缩放 + animation-delay（假 3D 翻转）
 ./build/test_blur                         # backdrop-filter: blur() 毛玻璃（CPU 与 GPU 各断言一遍性质）
+./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
+QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 ./build/example_flip_window               # 假翻转演示：水平翻/垂直翻/圆形硬币，错开相位
 ./build/example_showcase_window           # M5.5 效果总览（每帧整屏重绘，60fps）：过渡/滑入/圆角揭示/圆形遮罩/径向渐变/假翻转/毛玻璃
 ./build/example_window                    # 打开真实窗口（自动选 Wayland 或 X11）

@@ -240,7 +240,7 @@ static void cpu_fill_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
         return;
     }
     ql_canvas_fill_round_rect_fx(ctx->canvas, sxf(self, rect),
-                                 sl(self, radius) << QL_FX_SHIFT, color, alpha);
+                                 ql_fx_of(sl(self, radius)), color, alpha);
 }
 
 static void cpu_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t radius,
@@ -274,8 +274,8 @@ static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius
                               sl(self, thickness), color);
         return;
     }
-    ql_canvas_stroke_rect_fx(ctx->canvas, sxf(self, rect), sl(self, radius) << QL_FX_SHIFT,
-                             sl(self, thickness) << QL_FX_SHIFT, color);
+    ql_canvas_stroke_rect_fx(ctx->canvas, sxf(self, rect), ql_fx_of(sl(self, radius)),
+                             ql_fx_of(sl(self, thickness)), color);
 }
 
 static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *glyph,

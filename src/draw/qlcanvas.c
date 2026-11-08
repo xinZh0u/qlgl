@@ -1295,8 +1295,8 @@ static void fill_span_fx(QLCanvas *c, ql_coord_t y, ql_coord_t fx0, ql_coord_t f
         return;
 
     /* 横向先与裁剪求交：fill_row 不做边界检查（调用方保证） */
-    const ql_coord_t cx0 = c->clip.x << QL_FX_SHIFT;
-    const ql_coord_t cx1 = ql_rect_right(c->clip) << QL_FX_SHIFT;
+    const ql_coord_t cx0 = ql_fx_of(c->clip.x);
+    const ql_coord_t cx1 = ql_fx_of(ql_rect_right(c->clip));
     if (fx0 < cx0)
         fx0 = cx0;
     if (fx1 > cx1)
@@ -1309,7 +1309,7 @@ static void fill_span_fx(QLCanvas *c, ql_coord_t y, ql_coord_t fx0, ql_coord_t f
 
     if (full1 > full0) {
         if ((fx0 & (QL_FX_ONE - 1)) != 0) {
-            uint32_t cov = (uint32_t)((full0 << QL_FX_SHIFT) - fx0);
+            uint32_t cov = (uint32_t)((ql_fx_of(full0)) - fx0);
             put_px(c, full0 - 1, y, color, (uint8_t)(arow * cov / 64u));
         }
         fill_row(c, full0, full1 - 1, y, color, (uint8_t)arow);
@@ -1323,7 +1323,7 @@ static void fill_span_fx(QLCanvas *c, ql_coord_t y, ql_coord_t fx0, ql_coord_t f
     ql_coord_t x0 = fx0 >> QL_FX_SHIFT;
     ql_coord_t x1 = (fx1 - 1) >> QL_FX_SHIFT;
     for (ql_coord_t x = x0; x <= x1; x++) {
-        ql_coord_t cov = ovl(x << QL_FX_SHIFT, (x << QL_FX_SHIFT) + QL_FX_ONE, fx0, fx1);
+        ql_coord_t cov = ovl(ql_fx_of(x), (ql_fx_of(x)) + QL_FX_ONE, fx0, fx1);
         if (cov > 0)
             put_px(c, x, y, color, (uint8_t)(arow * (uint32_t)cov / 64u));
     }
@@ -1354,8 +1354,8 @@ static int round_span_fx(QLRectFx r, ql_coord_t rad_fx, ql_coord_t y, ql_coord_t
         return 0;
 
     const ql_coord_t fxoff = r.x & (QL_FX_ONE - 1);
-    ql_coord_t fx0 = (sx0 << QL_FX_SHIFT) + fxoff;
-    ql_coord_t fx1 = ((sx1 + 1) << QL_FX_SHIFT) + fxoff;
+    ql_coord_t fx0 = (ql_fx_of(sx0)) + fxoff;
+    ql_coord_t fx1 = (ql_fx_of(sx1 + 1)) + fxoff;
     if (fx0 < r.x)
         fx0 = r.x;
     if (fx1 > r.x + r.w)
@@ -1388,7 +1388,7 @@ static void fill_round_fx(QLCanvas *c, QLRectFx r, ql_coord_t rad_fx, ql_color_t
         iy1 = ql_rect_bottom(c->clip);
 
     for (ql_coord_t y = iy0; y < iy1; y++) {
-        ql_coord_t cov = ovl(y << QL_FX_SHIFT, (y << QL_FX_SHIFT) + QL_FX_ONE, r.y,
+        ql_coord_t cov = ovl(ql_fx_of(y), (ql_fx_of(y)) + QL_FX_ONE, r.y,
                              r.y + r.h);
         if (cov == 0)
             continue;
@@ -1430,8 +1430,8 @@ void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius
         return;
 
     /* 上限与整数版逐字一致（整数除法，所以 1px 宽的框直接被判为"画不下"） */
-    const ql_coord_t lim_w = ((rect.w >> QL_FX_SHIFT) / 2) << QL_FX_SHIFT;
-    const ql_coord_t lim_h = ((rect.h >> QL_FX_SHIFT) / 2) << QL_FX_SHIFT;
+    const ql_coord_t lim_w = ql_fx_of((rect.w >> QL_FX_SHIFT) / 2);
+    const ql_coord_t lim_h = ql_fx_of((rect.h >> QL_FX_SHIFT) / 2);
     if (thickness_fx > lim_w)
         thickness_fx = lim_w;
     if (thickness_fx > lim_h)
@@ -1451,7 +1451,7 @@ void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius
         iy1 = ql_rect_bottom(canvas->clip);
 
     for (ql_coord_t y = iy0; y < iy1; y++) {
-        ql_coord_t cov = ovl(y << QL_FX_SHIFT, (y << QL_FX_SHIFT) + QL_FX_ONE, rect.y,
+        ql_coord_t cov = ovl(ql_fx_of(y), (ql_fx_of(y)) + QL_FX_ONE, rect.y,
                              rect.y + rect.h);
         if (cov == 0)
             continue;
