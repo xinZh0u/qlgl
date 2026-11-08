@@ -164,6 +164,11 @@ GPU 侧用**顶点颜色插值**实现，不增加顶点、不增加 draw call�
 > .btn:hover { background: linear-gradient(to bottom, #58e09a, #35a869); }
 > ```
 
+> **径向渐变**：`background: radial-gradient(circle, <起色>, <止色>)`。
+> 圆心固定为元素中心，按到**最远角**的距离归一化（等价 CSS `farthest-corner`）。
+> 只支持 `circle` / `circle at center` / `ellipse`；写 `at 偏移`、自定义半径、
+> color stop 位置一律报错。UI 里的光晕、暗角就是它。
+
 ### 3.6 阴影
 
 ```css
@@ -271,7 +276,7 @@ z-index 相同则保持文档顺序（稳定）。
 
 | 部分 | 允许值 | 默认 |
 |---|---|---|
-| `transition-property` | `background-color` / `opacity` / `all` | `all` |
+| `transition-property` | `background-color` / `opacity` / `color` / `border-color` / `border-radius` / `transform` / `clip-path` / `all` | `all` |
 | `transition-duration` | `Nms` 或 `Ns` | `0s`（等于不写） |
 | `transition-timing-function` | `linear` `ease` `ease-in` `ease-out` `ease-in-out` `steps(n)` `cubic-bezier(a,b,c,d)` | `ease` |
 | `transition-delay` | ❌ 报错 | — |
@@ -282,8 +287,20 @@ z-index 相同则保持文档顺序（稳定）。
 2. 过渡只改**绘制期属性**，不进布局 → 过渡期间**零重排**。
 3. 只有写进 CSS 的规则才产生动画；`transition` 可以写在 base 规则上（对所有状态生效）。
 
-**不支持**：`color` / `border-color`（文本与边框颜色）、`transform`、`transition-delay`。
-这些在构建期直接报错，不静默降级。
+**支持**：`background-color`（渐变时连同终止色）、`opacity`、`color`、`border-color`、
+`border-radius`、`transform`、`clip-path`。`transition: all` 七个一起开。
+
+`transform` 的四个分量（`tf_x` / `tf_y` / `sc_x` / `sc_y`）**永远一起插值**——
+只动 translate 不动 scale 会出现"边缩边移"的错位。所以放大 + 位移写一条就够了：
+
+```css
+.card        { transition: transform 200ms ease-out; }
+.card:hover  { transform: translate(4px, 2px) scale(1.5); }
+.mask        { clip-path: circle(20%); transition: clip-path 300ms ease-out; }
+.mask:hover  { clip-path: circle(100%); }
+```
+
+**不支持**：`transition-delay`、`box-shadow`（构建期报错，不静默降级）。
 
 > **`opacity` 的真实含义**：本实现没有 CSS 的"组不透明度"（那需要离屏合成），
 > `transition: opacity` 插值的是**背景 alpha**（来自 `background-color: rgba(...)` 的 a 通道）。
@@ -307,15 +324,254 @@ if (dirty_count > 0) {
 
 ---
 
-### 3.10 不支持的写法一律报错
+### 3.9.1 圆形揭示（`clip-path: circle()`）
+
+```css
+.reveal { animation: iris 400ms ease-out 1 forwards; }
+@keyframes iris {
+  from { clip-path: circle(0%); }
+  to   { clip-path: circle(100%); }
+}
+```
+
+| 写法 | 支持 |
+|---|---|
+| `circle(<百分比>)` | ✅ 0%~100% |
+| `none` | ✅ |
+| `circle(<N>px)` / `inset()` / `polygon()` / `path()` / `url()` | ❌ 构建期报错 |
+
+语义：
+
+- 圆心固定在**元素中心**（与 `radial-gradient` 同一个决定）。
+- 百分比是**最远角距离**的千分比：`0%` 什么都不显示，`100%` 完全覆盖。
+  用百分比而不是 px，是因为揭示动画要"全程都在动"——100px 的半径在 200px 的盒子上
+  会在动画前半段就把元素盖满。
+- 它裁的是**整棵子树**（等价 CSS 的语义）：伸出父盒子的子元素也会被切掉。
+  这跟 `border-radius` 动画的区别就在这里——后者只切父元素自己的背景/边框。
+- **只支持一层**。嵌套 `clip-path` 的 CSS 语义是取交集，而两个圆盘的交集不是圆盘，
+  所以运行期保留外层并打一条警告。
+
+### 3.10 变换（`transform`）
+
+```css
+.slide-in { transform: translate(-40px, 0); }   /* 静态平移 */
+.icon     { transform: translateX(6px); }
+```
+
+| 写法 | 支持 |
+|---|---|
+| `translate(Xpx, Ypx)` / `translate(Xpx)` | ✅ |
+| `translateX(Xpx)` / `translateY(Ypx)` | ✅ |
+| `scale(<倍数>)` | ✅ 绕元素中心 |
+| `scale(sx)` / `scale(sx, sy)` | ✅ 轴对齐的非等比（见下） |
+| `scaleX(s)` / `scaleY(s)` | ✅ **假 3D 翻转**就靠这个 |
+| `none` | ✅ |
+| `rotate()` / `skew()` / `matrix()` / 3d | ❌ **构建期报错** |
+
+可以组合：`transform: translate(4px, 6px) scale(2)`。
+
+**`scale()` 的三条行为**：
+
+1. **不进布局**：`flex` / `border_box` 看不到它，邻居不会被挤开（与 CSS 一致）。
+2. **文字一起放大**：内部按"CSS 字号 × scale × DPR"重新取字号，所以是清晰的放大，
+   不是把小图拉大。
+3. **命中测试跟着走**：视觉上占多大就能点多大（压扁时被压掉的部分点不中）。
+
+**非等比缩放（`scaleX`/`scaleY`）的近似**：圆角、描边、阴影、字号都按
+`min(sx, sy)` 缩放，**字形不做横向挤压**。所以 `scaleX(0.7)` 的文字高度也会变成 0.7。
+`0` 是合法值（`scaleX(0)` = 零宽），此时一个字都不画、也点不中。做翻转就用它：
+
+```css
+@keyframes flip-x {
+  0%   { transform: scaleX(1); }
+  50%  { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+.coin { animation: flip-x 900ms ease-in-out infinite; }
+```
+
+`backface-visibility` **报错**：假翻转没有背面，没有"背面朝后就不画"这回事。
+要翻面换成另一张脸，用两个元素错开 `animation-delay`。
+
+三条语义（与 CSS 一致）：
+
+1. **不影响布局**：`transform` 是绘制期属性，`flex` 计算里看不到它，所以它是
+   "移动元素但不触发重排"的唯一手段。
+2. **作用于整个子树**：父元素平移，子元素跟着走。
+3. **命中测试跟着变**：视觉位置就是可点位置，动画过程中也点得中。
+
+`transform` 也可以在 `@keyframes` 里插值（见 §3.11），这是做"滑入"最省事的办法：
+
+```css
+@keyframes slidein {
+  from { transform: translate(-70px, 0); opacity: 0; }
+  to   { transform: translate(0, 0);     opacity: 1; }
+}
+.card { animation: slidein 400ms ease-out 1 forwards; }
+```
+
+> **代价（诚实说明）**：因为不进布局，被平移的元素需要把它"可能出现的所有位置"算进
+> 脏区上界——动画的位移区间越大，脏区就越大（最多大出整个位移量）。
+> 这是"零重排"换来的，正常入场动效（几十像素）完全无感。
+
+---
+
+### 3.11 关键帧动画（`@keyframes` + `animation`）
+
+```css
+.pulse { animation: pulse 1s linear infinite alternate; }
+.card  { animation-name: fade; animation-duration: 400ms;
+         animation-fill-mode: forwards; }
+
+@keyframes pulse {
+  from { background-color: #204060; }
+  to   { background-color: #ff8000; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+```
+
+`@keyframes` 在**构建期**编译成静态帧表（`QLUIKeyframe`）+ 段表（`QLUIAnimation`），
+运行期零解析。所以 `animation-name` 必须是同一份 CSS 里定义过的名字。
+
+| 部分 | 允许值 | 默认 |
+|---|---|---|
+| `animation-name` | 本文件里定义过的 `@keyframes` 名 / `none` | `none` |
+| `animation-duration` | `Nms` / `Ns`，**必须 > 0** | 必填 |
+| `animation-timing-function` | `linear` `ease` `ease-in` `ease-out` `ease-in-out` | `ease` |
+| `animation-iteration-count` | 整数 1~255 / `infinite` | `1` |
+| `animation-direction` | `normal` `reverse` `alternate` `alternate-reverse` | `normal` |
+| `animation-fill-mode` | `none` `forwards` `backwards` `both` | `none` |
+| `animation-delay` | `Nms` / `Ns`（0~65535） | `0ms` |
+| `animation-play-state: paused` | ❌ 报错 | — |
+
+**关键帧里能写什么**（只允许能插值的绘制期属性）：
+
+| 属性 | 含义 |
+|---|---|
+| `background-color` / `background` | 背景色（含 `rgba()` 的 alpha） |
+| `background-image: gradient(...)` | 渐变的首末色，两个颜色一起插值 |
+| `opacity` | **背景 alpha**（与 `transition` 同义，见 §3.9 的说明） |
+| `transform: translate(...)` | 平移（见 §3.10），和颜色一起插值 |
+| `color` | 文本颜色 |
+| `border-color` | 边框颜色 |
+| `border-radius` | 圆角半径（只切元素自身，做圆角/圆形揭示） |
+| `clip-path: circle(<pct>%)` | 圆形遮罩，**裁整棵子树**（见 §3.9.1） |
+| `animation-timing-function` | 这一帧到下一帧的缓动 |
+
+其它属性（`box-shadow` / `font-size` / `filter` …）在构建期**报错**。
+
+三条必须知道的行为：
+
+1. **各帧的属性集合必须一致**。`0% {background-color} 50% {opacity}` 会被拒绝——
+   否则运行期要额外记录"隐式值"，容易做出半正确的效果。
+2. **只写一半的关键帧是合法的**：`@keyframes x { 50% { opacity: 0 } }` 的首末帧
+   自动取**元素自己的基础样式**（与 CSS 的隐式关键帧一致），所以同一个 `@keyframes`
+   可以被不同底色的元素复用。
+3. **`animation-delay` 期间**：`fill-mode` 带 `backwards`/`both` 时显示 0% 帧，
+   否则显示元素的基础样式（即"还没开始动"）。`animation` 简写里的第二个时长就是
+   delay（`animation: pulse 1s 300ms`），写第三个时长报错。
+
+**动画与 `transition` 同时存在时，动画赢**：动画已经占用了颜色通道，
+状态过渡在这个节点上直接跳过（不会互相打架）。
+
+**`animation` 只能写在基础规则上**：动画在 `ql_ui_build` 时按基础样式起播，
+写在 `:hover` 之类里永远不会触发，所以构建期直接报错（不静默失效）。
+
+运行期接口：
+
+```c
+/* 从头重播（点击反馈、出错抖动）；节点没有动画时返回 QL_ERR_INVAL */
+ql_err_t ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node);
+
+/* 正在跑的动画数（过渡 + 未播完的关键帧动画） */
+uint32_t ql_ui_anim_running(const QLUIRoot *ui);
+```
+
+### `animationend` / `transitionend`
+
+```c
+typedef enum {
+    QL_UI_ANIM_END_KEYFRAMES = 0,   /* @keyframes 播完 */
+    QL_UI_ANIM_END_TRANSITION,      /* transition 走到终点 */
+} QLUIAnimEndKind;
+
+typedef void (*ql_ui_anim_end_cb)(QLUIRoot *ui, QLUINodeRT *node,
+                                  QLUIAnimEndKind kind, void *user_data);
+
+void ql_ui_set_anim_end_cb(QLUIRoot *ui, ql_ui_anim_end_cb cb, void *user_data);
+```
+
+典型用法——淡出后删节点：
+
+```c
+static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, void *user)
+{
+    if (kind != QL_UI_ANIM_END_TRANSITION) return;
+    if (node == (QLUINodeRT *)user) {
+        /* 这里已经安全：事件是 tick 末尾派发的，槽位早就释放了 */
+        ql_ui_set_text(ui, node, "");
+    }
+}
+```
+
+| 会触发 | 不会触发 |
+|---|---|
+| `@keyframes` 播完（非 infinite） | `animation-iteration-count: infinite` 的每一轮之间 |
+| `transition` 走到终点 | 被 `ql_ui_anim_restart()` 打断（那是新的开始） |
+| | 状态变化后目标样式没有过渡而直接撤销 |
+| | 过渡槽满 / 时长为 0 导致"瞬间到位"（没真的播过） |
+
+事件队列有界（`QL_CFG_UI_ANIM_EVENT_MAX`，默认 16）。一帧内超过这个数会丢事件并
+告警一次——**不做无界排队**（那会在慢机器上滚雪球）。
+
+推进与重绘仍然只用 `ql_ui_anim_tick` / `ql_ui_consume_dirty`（见 §3.9）。
+`animation-iteration-count: infinite` 的动画永远让 `ql_ui_anim_tick` 返回非 0，
+所以**别用"tick 返回 0"来判断能不能退出**，那不是它的语义。
+
+---
+
+### 3.11.1 毛玻璃（`backdrop-filter: blur()`）
+
+```css
+.glass {
+  background-color: rgba(255, 255, 255, 0.10);   /* 想看见效果就得带 alpha */
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+}
+```
+
+| 允许值 | 说明 |
+|---|---|
+| `blur(Npx)`，N = 1~64 | 高斯标准差（CSS 语义）；N 越大越糊 |
+| `none` | 关闭 |
+
+它模糊的是**这层元素背后已经画好的内容**，所以：
+
+1. **必须写在"上面那一层"**：靠 z 序/文档顺序决定谁是"背后"；
+2. **自己的 `background-color` 要带 alpha**，否则糊完又被不透明底色盖住，看不出效果；
+3. **只影响自己的矩形**（含 `border-radius` 的圆角），不会把外面的颜色吸进来；
+4. 它跟着 `transform` 一起走——毛玻璃卡片滑动时，糊的是它当前盖住的那块内容；
+5. 每帧多一次 draw call；CPU 后端代价约等于"半次整屏重绘"（见 `bench.md`）。
+
+**构建期报错**：`blur()` 以外的函数（`blur` 以外的 `backdrop-filter` 值）、半径 0 或 > 64。
+
+---
+
+### 3.12 不支持的写法一律报错
 
 ```
 float / grid / align-self / align-content / order / flex-flow
-transform / animation / filter / clip-path / var()
+rotate / skew / matrix / 3d transform（只支持 translate 与轴对齐 scale）
+filter / clip-path / var()
 min-width / max-width / min-height / max-height
 @media / em / rem / vh / vw / calc()
-transition-property 里的 color / border-color（只支持 background-color / opacity / all）
 transition-delay
+animation-play-state: paused
+backface-visibility（假翻转没有背面）
+backdrop-filter 的 blur() 以外的函数
 ```
 
 报错示例：
@@ -351,7 +607,9 @@ typedef struct {
     QLUIEdges margin, padding;
     uint8_t display, bg_alpha, border_width, border_radius;
     uint8_t text_align, font_id, box_sizing, reserved;
-} QLUIStyle;
+    /* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h
+       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比） */
+} QLUIStyle;  /* sizeof == 116 */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;

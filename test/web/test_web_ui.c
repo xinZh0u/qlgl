@@ -177,7 +177,13 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 1);
     QL_CHECK((primary->flags & QL_UI_RT_HOVER) != 0);
     settle(ui);   /* 过渡跑完再看最终样式 */
-    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
+    /*
+     * `.primary:hover { background: linear-gradient(...) }` 里的 `background`
+     * 是 shorthand，按级联规则**整体替换**掉 `.btn:hover` 的 background-color，
+     * 所以这里拿到的是渐变的起始色（生成器把 background-image 的 g0 写进 bg_color）。
+     */
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x58, 0xE0, 0x9A));
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color2, QL_COLOR_RGB(0x35, 0xA8, 0x69));
     /* 祖先链也带 hover（与 Web 一致） */
     QL_CHECK((primary->parent->flags & QL_UI_RT_HOVER) != 0);
 
@@ -185,10 +191,10 @@ QL_TEST_BEGIN("test_web_ui")
 
     QL_CHECK_EQ(ql_ui_pointer_down(ui, pr.x + 3, pr.y + 3), 1);
     settle(ui);
-    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x2A, 0x9A, 0x5C));
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x35, 0xA8, 0x69));
     ql_ui_pointer_up(ui, pr.x + 3, pr.y + 3);
     settle(ui);
-    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
+    QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x58, 0xE0, 0x9A));
 
     ql_ui_set_focus_node(ui, primary);
     QL_CHECK(ql_ui_focus_node(ui) == primary);

@@ -1,0 +1,19 @@
+#root { width: 120px; height: 120px; background-color: #000000; }
+.box {
+  position: absolute; left: 20px; top: 20px; width: 80px; height: 80px;
+  background-color: #204060;
+  animation: iris 400ms linear 1 forwards;
+}
+/* 子元素故意比父大：遮罩必须把它们一起裁掉 */
+.kid {
+  position: absolute; left: -12px; top: 36px; width: 120px; height: 8px;
+  background-color: #FF8000;
+}
+.kid2 {
+  position: absolute; left: 64px; top: -10px; width: 12px; height: 100px;
+  background-color: #40E080;
+}
+@keyframes iris {
+  from { clip-path: circle(0%); }
+  to   { clip-path: circle(100%); }
+}

@@ -232,3 +232,35 @@ key 用完后没 `cancel`，或者在一帧里给同一个节点起了多个互�
 
 **Q：能不能一帧插值两个值？**
 一个 key 有 4 个 float，够放 RGBA。超过 4 个就开第二个 key。
+
+---
+
+## 7. 关键帧动画（`@keyframes`）
+
+**不在本模块**。`@keyframes` 由 `qlui` 在构建期编译成静态帧表，运行期自己按时间求值，
+只用本模块的 `ql_ease_apply()` 做缓动。
+
+用 CSS 就够了，不需要写 C：
+
+```css
+.pulse { animation: pulse 1s linear infinite alternate; }
+@keyframes pulse { from { background-color: #204060 } to { background-color: #ff8000 } }
+
+/* 关键帧里也能插值平移 → 最省事的"滑入" */
+@keyframes slidein {
+  from { transform: translate(-70px, 0); opacity: 0; }
+  to   { transform: translate(0, 0);     opacity: 1; }
+}
+.card { animation: slidein 400ms ease-out 1 forwards; }
+```
+
+想看效果：`./build/example_anim_window`（空格重播，Esc 退出）。
+
+运行期重播某个节点的动画：
+
+```c
+ql_ui_anim_restart(ui, node);      /* 节点没有动画 → QL_ERR_INVAL */
+```
+
+详见 [QLUI API手册](../ui/QLUI%20API手册.md) §3.10 与
+[QLAnim 阅读指南](./QLAnim阅读指南.md) §9。

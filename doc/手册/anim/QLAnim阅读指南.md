@@ -149,3 +149,29 @@ QLUITrans { QLUINodeRT *node; QLUIStyle style; QLAnimValue from, to; ... }
 ctest --test-dir build-rel -R test_anim
 ctest --test-dir build-rel -R test_transition
 ```
+
+---
+
+## 9. 与 `@keyframes` 的分工（M5.5 ③）
+
+本模块**不负责** CSS 关键帧动画。分工如下：
+
+| | `transition`（状态过渡） | `@keyframes`（关键帧动画） |
+|---|---|---|
+| 谁驱动 | 状态位变化（`:hover`/`:active`/`:focus`） | 构建期就决定，自己一直播 |
+| 时间基准 | `qlanim` 的动画槽（可打断、可重基） | `start_ms` + `elapsed`，**无状态可打断** |
+| 求值 | 一次线性插值 | 定位帧段 + 段内插值 |
+| 实现位置 | `qlanim` 提供插值，`qlui` 负责起停 | `qlui.c` 的 `anim_*` 一组函数 |
+| 池 | `QLAnimSlot[QL_CFG_ANIM_MAX]`（qlanim） | `QLUIAnimRun[QL_CFG_UI_RUN_ANIM_MAX]`（qlui） |
+
+两者共用的东西：`ql_ease_apply()`（缓动求值）、"只改绘制期属性"的约束、
+以及同一条"标脏 → `ql_ui_consume_dirty` → 局部重绘"的出口。
+
+**为什么关键帧不用 `qlanim` 的池**：关键帧的进度是时间的**纯函数**
+（`u = f(now - start)`），不需要"当前值"状态，也就不需要重基。
+硬塞进 `qlanim` 反而要每段 `start` 一次、把 `iterations`/`direction` 拆成多次调用，
+既慢又难测。现在的写法是：一段动画 = 一次减法 + 一次除法 + 一次帧表扫描。
+
+**同一个节点两者都有时，动画赢**：`trans_retarget()` 发现该节点在播关键帧就直接返回。
+理由是两者都在改同一个颜色通道，让过渡再去改只会互相打架，而"哪个该赢"没有
+非任意的答案——动画是元素自身的持续效果，状态过渡是交互反馈，选择前者更好解释。

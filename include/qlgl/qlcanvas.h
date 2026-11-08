@@ -27,6 +27,11 @@ typedef struct {
      * 布局在 CSS px，绘制入口乘它。由 ql_canvas_from_disp 从驱动继承。
      */
     ql_coord_t scale_fx;
+
+    /* 圆遮罩（设备像素）；**r < 0 表示关闭**（r == 0 = 全裁掉）。见 ql_canvas_set_mask */
+    ql_coord_t mask_cx;
+    ql_coord_t mask_cy;
+    ql_coord_t mask_r;
 } QLCanvas;
 
 /* 由显示驱动构造画布，clip 默认整屏 */
@@ -57,6 +62,38 @@ ql_color_t ql_canvas_read_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y);
 void       ql_canvas_write_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y,
                                  ql_color_t color, uint8_t alpha);
 
+/*
+ * 圆遮罩（"圆形揭示"用）。
+ *
+ * clip 是矩形，圆形遮罩不能靠 clip 表达；这里在**像素汇点**上做：
+ *   - `fill_row` 把每行跨度与圆的水平范围求交（每行一次 sqrt）；
+ *   - `put_px` / 字形 / 阴影把 alpha 乘上圆覆盖率（边缘抗锯齿）。
+ * 因此它自动作用于背景、渐变、边框、阴影、文字——不需要每个原语各改一遍。
+ *
+ * 单位是**设备像素**（QLCanvas 本来就是设备空间）；**r < 0 表示关闭**，
+ * r == 0 表示"遮罩存在但半径为 0"（什么都不画）——揭示动画的第一帧就是这个状态。
+ * 只支持一层：嵌套遮罩的语义是"取交集"，而两个圆盘的交集不是圆盘，
+ * 所以上层（QLDraw2D）会拒绝嵌套并告警。
+ */
+void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
+/* 遮罩是否生效（r >= 0） */
+int  ql_canvas_mask_active(const QLCanvas *canvas);
+
+/*
+ * 毛玻璃（`backdrop-filter: blur()`）：把**矩形区域里已经画好的内容**就地模糊。
+ *
+ * 为什么就地做：本架构没有保留式场景图，但画布本身就是"前面已经画完的东西"，
+ * 所以模糊它等于模糊"元素背后"。调用顺序是"先模糊、再画元素自己的背景"。
+ *
+ * `rect` 与 `radius` 都是**设备像素**。半径按 2 趟可分离盒式卷积近似高斯
+ * （CSS 的参数是高斯标准差，这里取 box 半径 = sigma 并做两趟，视觉接近）。
+ * 区域边缘做钳位（不采样区域外），所以不会把外面的颜色"吸进来"。
+ *
+ * 代价：一次调用要 4 趟（H/V × 2）扫描 + 两块临时缓冲，**只在真有 blur 的元素上发生**。
+ * 只支持 8/16/24/32 位的 RGB 系格式；Alpha 通道不参与模糊（合成时才用得到）。
+ */
+ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius);
+
 /* ----- 原语 ----- */
 void ql_canvas_clear(QLCanvas *canvas, ql_color_t color);
 void ql_canvas_fill_rect(QLCanvas *canvas, QLRect rect, ql_color_t color);
@@ -70,12 +107,18 @@ void ql_canvas_fill_round_rect_alpha(QLCanvas *canvas, QLRect rect, ql_coord_t r
 typedef enum {
     QL_GRADIENT_VERTICAL = 0,     /* 从 rect 上边到下边 */
     QL_GRADIENT_HORIZONTAL,       /* 从 rect 左边到右边 */
+    /*
+     * 以矩形中心为圆心，按到"最远角"的距离归一化（等价 CSS 的 farthest-corner）。
+     * 只画在圆角矩形内部，所以圆心一定在图形内。
+     */
+    QL_GRADIENT_RADIAL,
 } QLGradientDir;
 
 /*
- * 线性渐变圆角矩形（单趟，不需要离屏缓冲）。
+ * 渐变圆角矩形（单趟，不需要离屏缓冲）。
  * 垂直方向是快路径：每行颜色相同，直接走行填充，成本≈纯色填充。
- * 水平方向每像素颜色不同，逐像素混合，比垂直慢一个量级。
+ * 水平 / 径向每像素颜色不同，逐像素混合，比垂直慢一个量级
+ * （径向用增量法算 x 方向距离平方，没有逐像素乘法）。
  */
 void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                         ql_color_t from, ql_color_t to,

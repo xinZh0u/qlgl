@@ -99,8 +99,39 @@ static QLDraw2DCanvas s_cpu;
  * 缩放只发生在后端入口这一处：上层（qlui / 控件 / 自定义绘制）给的全是 CSS px。
  * 矩形按"边"缩放（ql_scale_rect），相邻矩形不会在接缝处裂开。
  */
+/* 绕中心等比缩放一个矩形（按"边"缩放，相邻矩形不会裂缝） */
+static inline int elem_is_identity(const QLDraw2D *self)
+{
+    return self->elem_x_fx == QL_SCALE_ONE && self->elem_y_fx == QL_SCALE_ONE;
+}
+
+/* 圆角/描边这类"长度"用 min(sx, sy)：非等比时按小的来，宁可方一点也别越界 */
+static inline ql_coord_t elem_len_fx(const QLDraw2D *self)
+{
+    return (self->elem_x_fx < self->elem_y_fx) ? self->elem_x_fx : self->elem_y_fx;
+}
+
+static inline QLRect elem_rect(QLDraw2D *self, QLRect r)
+{
+    if (elem_is_identity(self))
+        return r;
+    ql_coord_t fx = self->elem_x_fx, fy = self->elem_y_fx;
+    ql_coord_t x0 = self->elem_px +
+                    (ql_coord_t)((int64_t)(r.x - self->elem_px) * fx / QL_SCALE_ONE);
+    ql_coord_t x1 = self->elem_px +
+                    (ql_coord_t)((int64_t)(ql_rect_right(r) - self->elem_px) * fx /
+                                 QL_SCALE_ONE);
+    ql_coord_t y0 = self->elem_py +
+                    (ql_coord_t)((int64_t)(r.y - self->elem_py) * fy / QL_SCALE_ONE);
+    ql_coord_t y1 = self->elem_py +
+                    (ql_coord_t)((int64_t)(ql_rect_bottom(r) - self->elem_py) * fy /
+                                 QL_SCALE_ONE);
+    return ql_rect_make(x0, y0, x1 - x0, y1 - y0);
+}
+
 static inline QLRect sx(QLDraw2D *self, QLRect r)
 {
+    r = elem_rect(self, r);
     if (self->scale_fx == QL_SCALE_ONE)
         return r;
     return ql_scale_rect(r, self->scale_fx);
@@ -108,6 +139,8 @@ static inline QLRect sx(QLDraw2D *self, QLRect r)
 
 static inline ql_coord_t sl(QLDraw2D *self, ql_coord_t v)
 {
+    if (!elem_is_identity(self))
+        v = (ql_coord_t)((int64_t)v * elem_len_fx(self) / QL_SCALE_ONE);
     if (self->scale_fx == QL_SCALE_ONE)
         return v;
     return ql_scale_len(v, self->scale_fx);
@@ -119,7 +152,7 @@ static inline ql_coord_t sl(QLDraw2D *self, ql_coord_t v)
  */
 static inline ql_coord_t dev_edge_fx(QLDraw2D *self, ql_coord_t px, ql_coord_t off_fx)
 {
-    int64_t v = ((int64_t)px << QL_FX_SHIFT) + (int64_t)off_fx;        /* CSS 26.6 */
+    int64_t v = (int64_t)px * (int64_t)QL_FX_ONE + (int64_t)off_fx;     /* CSS 26.6 */
     return (ql_coord_t)((v * (int64_t)self->scale_fx) >> QL_FX_SHIFT); /* 设备 26.6 */
 }
 
@@ -148,10 +181,43 @@ static QLRect shift_rect_rounded(QLDraw2D *self, QLRect r)
     return r;
 }
 
+/* 毛玻璃：把设备像素区域里已有的内容就地模糊（CPU 侧的"背后"就是画布本身） */
+static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (ctx->canvas == NULL)
+        return;
+
+    QLRect dev = sx(self, elem_rect(self, rect));
+    ql_coord_t fx = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
+    int r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
+    if (r < 1)
+        r = 1;
+    (void)ql_canvas_backdrop_blur(ctx->canvas, dev, r);
+}
+
+static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
+
 static void cpu_set_clip(QLDraw2D *self, QLRect clip)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     ql_canvas_set_clip(ctx->canvas, sx(self, clip));
+}
+
+/* 圆遮罩：CSS px → 设备像素（按"边"缩放，与矩形一致；半径按长度缩放） */
+static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (r < 0) {
+        ql_canvas_set_mask(ctx->canvas, 0, 0, -1);
+        return;
+    }
+    if (self->scale_fx == QL_SCALE_ONE) {
+        ql_canvas_set_mask(ctx->canvas, cx, cy, r);
+        return;
+    }
+    QLRect pt = ql_scale_rect(ql_rect_make(cx, cy, 0, 0), self->scale_fx);
+    ql_canvas_set_mask(ctx->canvas, pt.x, pt.y, ql_scale_len(r, self->scale_fx));
 }
 
 static void cpu_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
@@ -241,7 +307,15 @@ const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx)
 static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                           QLRect box, ql_color_t color, QLTextAlign align)
 {
-    const QLFont *dev = ql_draw2d_device_font(font, self->scale_fx);
+    /*
+     * 字形按"元素缩放 × DPR"重取字号：transform: scale() 在浏览器里会让文字
+     * 一起变大（而且清晰）。只缩放位置而不换字号会让字又小又错位。
+     */
+    if (elem_len_fx(self) == 0)
+        return;         /* 压到零宽：字一个都不画，否则会挤成一条墨线 */
+    const ql_coord_t font_fx =
+        (ql_coord_t)((int64_t)self->scale_fx * elem_len_fx(self) / QL_SCALE_ONE);
+    const QLFont *dev = ql_draw2d_device_font(font, font_fx);
     /* 文本取偏移的整数部分：亚像素平移会让字形糊掉 */
     ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
                           color, align, cpu_emit_glyph);
@@ -256,6 +330,8 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     s_cpu.saved_clip = canvas->clip;
 
     out->set_clip = cpu_set_clip;
+    out->set_mask = cpu_set_mask;
+    out->backdrop_blur = cpu_backdrop_blur;
     out->fill_rect = cpu_fill_rect;
     out->fill_round_rect = cpu_fill_round_rect;
     out->fill_round_rect_gradient = cpu_fill_round_rect_gradient;
@@ -267,6 +343,11 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->scale_fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
     out->offset_x_fx = 0;
     out->offset_y_fx = 0;
+    out->mask_r = -1;
+    out->elem_x_fx = QL_SCALE_ONE;
+    out->elem_y_fx = QL_SCALE_ONE;
+    out->elem_px = 0;
+    out->elem_py = 0;
     out->user = &s_cpu;
     return QL_OK;
 }

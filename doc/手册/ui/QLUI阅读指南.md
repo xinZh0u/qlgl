@@ -293,9 +293,29 @@ CSS 里写了 `transition` 的节点，在状态切换（`:hover` 进入/离开�
 3. **重基从当前绘制值开始**。`trans_retarget` 的起点取"这一帧实际画出来的样式"，
    不是 base 样式，所以快速来回 hover 不会跳变。
 
-只支持 `background-color` / `opacity`，因为这两个字段一旦变化**不需要重新布局**
-（不需要重算 `paint_box`；阴影颜色/模糊不变，文字不受影响）。`width` 之类会触发重排，
+支持的通道：`background-color`（含渐变终止色）/ `opacity` / `color` / `border-color` /
+`border-radius` / `transform` / `clip-path`。
+判据只有一条：**插值它不需要重新布局**。`width` 之类会触发重排，
 本架构明确不支持逐帧插值布局属性。
+
+`transform` 插值必须**四个分量一起动**（`tf_x`/`tf_y`/`sc_x`/`sc_y`）：
+只动 translate 不动 scale，元素会"边缩边移"错位。
+
+**顺带修掉的一个脏区 bug**：`scale_extent()` 原来只看**基础样式**的 `sc`，
+所以 `@keyframes` 里放大、`:hover` 里放大的元素 `paint_box` 都算小了——
+脏区漏掉放大的那一圈，缩回去时留下残影。现在 `scale_max()` 和 `move_extent()`
+一样把三个来源（基础样式 / 状态变体 / `@keyframes` 帧）取最大值。
+**`paint_box` 的每一条通道都要按"可能取到的极值"算，只按当前值算一定会漏。**
+
+插值的是**整份样式**：过渡槽存 `from` / `to` / `style` 三份 `QLUIStyle`，
+`QLAnimKey.v[0]` 只当 0..1 的进度用。这样通道数不受 `QLAnimValue` 的 4 个 float 限制，
+加新通道只是多一个 `trans_props` 位 + 一次 `lerp_color()`。
+
+**shorthand 必须在单条规则内展开**（`tools/qlui/qlui.py` 的 `expand_shorthands`）：
+级联合并之后再展开，会把后出现的长写覆盖回 shorthand 的值 ——
+`.card{animation: x 1s} .a{animation-name: y}` 会让 `.a` 也跑 `x`
+（踩过：10 张卡片退化成同一段关键帧）。`transition` / `flex` / `gap` /
+`background` / `border` 同理。
 
 主循环接法：
 
@@ -310,6 +330,195 @@ if (ql_ui_anim_tick(ui, ql_anim_now_ms()) > 0) {   /* 0 = 这一帧没动，可�
 ```
 
 脏区是"旧 `paint_box` ∪ 新 `paint_box`"，所以渐隐到底色时不会留下残影。
+
+---
+
+### 5.4.1 关键帧动画 `@keyframes`
+
+`transition` 是"状态变了就渐变过去"，`@keyframes` 是"自己一直播"。
+两者在运行期**共用同一条路径**（求值 → 覆盖样式 → 标脏 → 局部重绘），区别只有求值函数：
+
+```
+transition:  一次线性插值（qlanim 管，重基从当前值开始）
+@keyframes:  按时间定位到帧段 + 段内插值（qlui 自己算，无状态可打断）
+```
+
+**构建期**（`qlui.py`）：`@keyframes` 编译成两张静态表
+
+```
+QLUIKeyframe[]  每帧：offset(千分比) + 缓动 + 通道位图 + bg_color/bg_color2/alpha  （16 B）
+QLUIAnimation[] 每段：first_frame + frame_count + dur_ms + iterations + direction + fill
+QLUIStyle.anim  该节点播第几段（0xFFFF = 没有）
+```
+
+`@keyframes` 会被**去重**：`.pulse` 和 `.rev` 引用同一个 `pulse` 段时共享同一段帧表，
+只是 `QLUIAnimation` 里的 `direction` 不同（多一条 10 字节的记录）。
+
+**运行期**（`qlui.c`）：
+
+1. `ql_ui_build` 时给每个 `anim != 0xFFFF` 的节点分配一个 `QLUIAnimRun`，
+   并**立即落到 0% 帧**——第一次绘制就正确，不需要等第一帧 tick。
+2. 起始时刻在**第一次 `ql_ui_anim_tick`** 时记下（`started` 标志）。
+   这样测试可以用假时钟完全控制，主循环也不需要额外传时间。
+3. 每帧 `elapsed = now - start_ms` → `iter = elapsed / dur`、`rem = elapsed % dur`
+   → 按 `direction` 决定是否 `1-u` → 定位帧段 → 段内缓动 → 写 `run->style`。
+   **不累加 `dt`**，所以掉帧/补帧/窗口最小化都不会漂移。
+4. `style_for_state()` 之上再插一层：有动画的节点，`ql_ui_node_style()` 直接返回
+   `run->style`（基础样式 + 颜色覆盖）。
+
+**为什么用 `QL_UI_KF_BASE` 而不是给每个元素生成帧表**：
+`@keyframes x { 50% { opacity: 0 } }` 的首末帧在 CSS 里是"元素自己的值"。
+把这两帧标成"取基础样式"，同一个 `@keyframes` 就能被任意底色的元素复用——
+否则每个引用它的元素都得复制一份帧表。
+
+**`animation-delay`**：`QLUIAnimation.delay_ms`，`elapsed < delay` 时不进动画。
+`fill-mode` 带 `backwards`/`both` 时延迟期间亮出 0% 帧，否则**回到基础样式**。
+`QLUIAnimRun.phase` 记 0/1/2（未起播 / 延迟中 / 播放中），保证"延迟里每帧都改样式"
+不会把元素标脏一辈子。踩过的 bug：判延迟的条件写成 `phase == 0 && elapsed < delay`，
+第二天 tick 起 `phase` 已是 1，直接掉进 `elapsed -= delay` 的**无符号下溢**，
+延迟里的元素被算成一个天文数字的 elapsed（实测整块消失）。
+
+`animation` 简写的第二个时长是 delay（`animation: pulse 1s 300ms`），第三个报错。
+
+**三个容易踩的点**：
+
+| 坑 | 后果 | 正确做法 |
+|---|---|---|
+| 关键帧里写 `color`/`box-shadow` | 构建期报错 | 只能用 `background*` / `opacity` / `transform: translate` / `animation-timing-function` |
+| 各帧属性集合不一致 | 构建期报错 | 要么写全，要么只写中间帧（首末自动补） |
+| 用 `ql_ui_anim_tick() == 0` 判断"动画播完了" | infinite 动画永远非 0 | 那是"这一帧有没有东西要重绘"的判断 |
+
+---
+
+### 5.4.2 `transform: translate`：一处改动要动四个地方
+
+`transform` 不进布局，所以它**改变的是"节点画在哪"而不是"节点占多大"**。
+这条性质让实现很便宜（没有重排），但也意味着凡是"假设坐标 = 布局结果"的地方都要改：
+
+| 位置 | 改法 |
+|---|---|
+| 绘制 `render_node` | 把 `transform` 加到 `d2d->offset_*` 上，**逐层累加**，画完自己再画子树、最后恢复。子树跟着平移，与 CSS "transform 建立包含块"一致 |
+| 命中 `hit_walk_ui` | 反向来一遍：把祖先 + 自己的平移加起来，把框挪到"实际画的位置"再判断。用**生效样式**（动画中的值），移动中的元素也点得中 |
+| `paint_box` | 必须覆盖"旧位置 ∪ 新位置"。布局末尾 `resolve_transform()` 自上而下算出 `tf_abs_*`（静态绝对平移）与 `tf_dev_*`（动画位移区间，含祖先），`paint_box` 取 Minkowski 包围盒 |
+| 排序 / 布局 | **不用改**——这正是"绘制期属性"的收益 |
+
+**`resolve_transform` 里最容易写错的一行**：本节点的 `tf_abs` 必须**包含自己**的平移
+（`ax + sdx`），因为渲染时就是"先设自己的偏移、再画自己"。写成 `ax` 的话，
+自己平移了但 `paint_box` 不动 → 脏区漏掉新位置，画面撕裂。动画位移区间同理
+（`lo_x + nx`）——这个 bug 在实现时真的出现过，被"滑入第一帧 paint_box 覆盖旧位置"那条断言抓住。
+
+`translate` 用**整数像素**（`int16_t tf_x/tf_y`）。分数像素的需求由 M5.3 的
+`ql_draw2d_set_offset`（26.6 定点）承担，两者共用同一个绘制偏移字段，所以
+"动画平移 + 亚像素偏移"不会打架。
+
+---
+
+### 5.4.3 假 3D 翻转：`scaleX()` / `scaleY()`
+
+真 3D 需要透视矩阵、深度排序、背面剔除——那是一条独立的技术路线。
+**"卡片翻面"这个需求其实不需要 3D**：
+
+```
+scaleX: 1 → 0 → 1     元素在水平方向压到零宽再展开 = 翻转
+```
+
+`scale(1.2, 2)` 这种非等比写在 CSS 里是很自然的，所以这次放开了它：
+`QLUIStyle.sc_x` / `sc_y`（千分比，两个 `int16_t`），
+`QLDraw2D.elem_x_fx` / `elem_y_fx`（26.6）。`scale(s)` 给两轴同一个值，
+`scaleX(s)` 只改 x、`scaleY(s)` 只改 y。
+
+#### 为什么这次能做，而 `rotate()` 还是不行
+
+轴对齐矩形在**轴对齐**缩放下仍然是轴对齐矩形。所以 CPU 光栅化一行都不用改：
+
+```c
+sx()  →  按边独立缩放      /* 只要把 elem_fx 换成 elem_x_fx / elem_y_fx */
+sl()  →  长度按 min(sx, sy)
+```
+
+`rotate()`/`skew()` 会把矩形变成平行四边形，行跨度扫描得整个重写——那才是大工程。
+
+#### 非等比带来的三个歧义，以及选择
+
+| 东西 | 非等比下"正确"是什么 | 本实现 |
+|---|---|---|
+| `border-radius` | 圆角变成椭圆角（左右半径 ×sx、上下 ×sy） | 按 `min(sx, sy)` 缩放：`sx=0` 时圆角归零，但那时宽度也是 0，看不见 |
+| `box-shadow` / `border-width` | 同上，各向异性 | 同样按 `min(sx, sy)` |
+| 文字 | 字形横向压扁（真翻转的样子） | 字号按 `min(sx, sy)` 重取，位置按轴缩放。压到 0 时**一个字都不画** |
+
+文字那条是唯一"看起来不对"的地方：`scaleX(0.7)` 时文字高度也变成 0.7 倍。
+翻转动画 300~900ms，中途宽度趋 0，视觉上察觉不到；若真要逐像素压扁字形，
+得给字形位图加一次最近邻重采样（成本高于收益，且 MCU 上不可能）。
+
+#### 压到 0 的那些坑
+
+`sc == 0` 是**完全合法的值**（翻转的中间帧），所以：
+
+* `ql_draw2d_set_elem_scale_xy()` 的钳位必须是 `fx >= 0`（写 `> 0` 会把 0 悄悄变成 1，
+  翻转动画在中点闪一下满宽）；
+* 命中测试里 `sfx == 0 || sfy == 0` 直接 `return NULL`，否则是除零；
+* 文本绘制里 `elem_len_fx == 0` 提前返回，否则几十个字形全叠在中心一条线上。
+
+#### 命中测试：从"盒子膨胀"改成"逆缩放"
+
+以前（只支持放大时）的做法是"`sc > 1000` 就把命中盒按比例撑大"，这是**近似**：
+缩小时盒子不缩，被压掉的部分还能点中。有了非等比缩放后这个近似太糙，改成精确的：
+把点绕元素中心**逆缩放**回布局空间再做矩形判断。
+
+```c
+hx = cx + (x - cx) * 1000 / sc_x;
+hy = cy + (y - cy) * 1000 / sc_y;
+if (hx >= box.x && hx < right(box) && hy >= box.y && hy < bottom(box)) → 命中
+```
+
+`overflow` 的裁剪区仍然按**放大后**的可见范围算（绘制侧的 clip 也是缩放后的矩形），
+所以 `vis` 那一段留着。
+
+#### `backface-visibility` 为什么直接报错
+
+CSS 的 `backface-visibility: hidden` 靠"这个面朝后（变换行列式为负）"来决定不画。
+**假翻转根本没有背面**——没有 3D 变换，也就没有行列式符号可看。
+所以本实现里它是"不支持的属性"，构建期报错。
+真要翻面换成另一张脸，用两个元素错开 `animation-delay` 更简单：
+
+```css
+.front { animation: flip-x 900ms ease-in-out infinite; }
+.back  { animation: flip-x 900ms ease-in-out infinite; animation-delay: 450ms; }
+```
+
+`test/web/flex/flipdemo.*` + `example_flip_window` 就是这么演示的（水平翻、垂直翻、
+圆形"硬币"各一张，错开相位）。
+
+---
+
+### 5.4.4 毛玻璃：唯一会"回头读自己画过的东西"的效果
+
+`backdrop-filter: blur(Npx)` 要模糊**元素背后已经画好的内容**。
+
+布局与数据侧几乎没有成本：`QLUIStyle` 只加了一个 `uint8_t backdrop_blur`
+（正好塞进原来的 padding，**116 字节没变**，blob version 9 → 10）。
+`render_node` 里就是在"画自己的背景之前"插一句：
+
+```c
+if (s->backdrop_blur > 0 && d2d->backdrop_blur != NULL)
+    ql_draw2d_backdrop_blur(d2d, box, s->backdrop_blur);
+```
+
+真正的戏在绘制后端，两边做法完全不同：
+
+| | 做法 | 代价 |
+|---|---|---|
+| CPU | 画布就是"背后"，**就地**取区域 → 两趟滑动窗口盒式卷积 → 写回 | 108×56 卡片 **0.159 ms**；300×200 **1.68 ms** |
+| GPU | **中途 flush 一次**批次 → blit 降到半分辨率 → H/V 两趟 9 抽头 → mode 4 画回 | 额外 1 个 draw call、6 个顶点、两块半分辨率纹理 |
+
+GPU 那条要特别小心三件事（`QLRender阅读指南` §15）：`u_bg` 采样器必须始终绑着东西、
+FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变黑/变倒影"级别。
+
+**为什么 CPU 也能做**：本架构没有保留式场景图，但画布本身就是"前面画完的东西"，
+所以"模糊背后" = "模糊这块内存"。代价是 O(面积)，所以只适合小卡片；MCU 明确不支持。
+
+**两条后端不一致是故意的**：CPU 全分辨率盒式、GPU 半分辨率高斯近似，
+所以 `test_blur` 不比逐像素，而是断言性质（玻璃内出现长串中间色、玻璃外一个都没有）。
 
 ---
 
@@ -475,8 +684,13 @@ layout_flex_children(容器):
 | 行内元素的基线对齐 | ❌ 按矩形顶对齐 | 中英文混排可能不齐 |
 | 文本换行 | 只有 `\n` | 长句不自动折行 |
 | `position` / `z-index` | ❌ | 弹窗做不了（`overflow` 只裁剪不滚动） |
-| `transition` | ✅ 支持 `background-color` / `opacity` / `all`（M5.5） | 只有背景色与背景 alpha 可过渡；`color`/`border-color`/`delay` 报错 |
-| CSS 变量 / `@keyframes` / media query | ❌ | 明确不支持（`@keyframes` 排 M5.5 ③） |
+| `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path`（M5.5） | `box-shadow`/`delay` 报错 |
+| `backdrop-filter` | ✅ `blur(1~64px)`（M5.5 ⑨，PC 优先） | 其它 filter 函数报错 |
+| `@keyframes` / `animation` | ✅ 构建期编译成静态帧表（M5.5） | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()` |
+| `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` | `rotate`/`skew`/`matrix`/3d 报错 |
+| `radial-gradient` | ✅ 圆心固定在元素中心（M5.5 ⑥） | `at 偏移` / 自定义半径 / stop 位置报错 |
+| `clip-path` | ✅ 只有 `circle(<pct>%)` | 圆心固定元素中心；只支持一层；其它形状报错 |
+| CSS 变量 / media query | ❌ | 明确不支持 |
 | JS | ❌（编译期无 JS） | 交互靠 C 回调 |
 
 > 这些差距是**刻意的**：MPU 档的目标是"设计师给的静态页面能渲染"，不是"跑任意网页"。

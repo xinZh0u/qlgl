@@ -31,9 +31,32 @@ typedef struct {
     uint32_t     expose_count;
     uint8_t      buttons;       /* 当前按住的鼠标按钮位图 */
     int          closed;
-    char         title[64];
+    char         title[128];
     int          screen;
 } QLDispX11;
+
+/*
+ * 设置 UTF-8 窗口标题。
+ *
+ * ICCCM 的 WM_NAME 是 latin-1（STRING）语义，直接把 UTF-8 字节塞进去，
+ * 现代 WM 会按 latin-1 解释 → 中文变成 "â€¦" 这样的乱码。
+ * 正确的做法是同时写 EWMH 的 _NET_WM_NAME（类型 UTF8_STRING），
+ * WM_NAME 仍然写一份（老 WM 的回退，纯 ASCII 时两者一致）。
+ */
+static void x11_set_title(Display *dpy, Window win, const char *title)
+{
+    const char *utf8 = (title != NULL) ? title : "QLGL";
+
+    XStoreName(dpy, win, utf8);
+
+    Atom net_name = XInternAtom(dpy, "_NET_WM_NAME", False);
+    Atom net_icon = XInternAtom(dpy, "_NET_WM_ICON_NAME", False);
+    Atom utf8_str = XInternAtom(dpy, "UTF8_STRING", False);
+    XChangeProperty(dpy, win, net_name, utf8_str, 8, PropModeReplace,
+                    (const unsigned char *)utf8, (int)strlen(utf8));
+    XChangeProperty(dpy, win, net_icon, utf8_str, 8, PropModeReplace,
+                    (const unsigned char *)utf8, (int)strlen(utf8));
+}
 
 /* 按 X 服务器的视觉选一个我们能写的格式 */
 static int pick_format(Display *dpy, int screen, QLColorFormat hint, QLColorFormat *out)
@@ -195,7 +218,7 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     }
 
     strncpy(x->title, (title != NULL) ? title : "QLGL", sizeof(x->title) - 1);
-    XStoreName(dpy, x->win, x->title);
+    x11_set_title(dpy, x->win, x->title);
     XSelectInput(dpy, x->win,
                  ExposureMask | StructureNotifyMask |
                  KeyPressMask | KeyReleaseMask |

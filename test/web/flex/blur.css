@@ -1,0 +1,15 @@
+#root { width: 120px; height: 80px; background-color: #101010; }
+
+/* 硬边：左边 40px 纯白，右边深灰 */
+.strip {
+  position: absolute; left: 0px; top: 0px; width: 40px; height: 80px;
+  background-color: #FFFFFF;
+}
+
+/* 毛玻璃：背后那条硬边应该被糊成一段渐变；自带一点点白让"玻璃"看得见 */
+.glass {
+  position: absolute; left: 24px; top: 10px; width: 80px; height: 60px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+}

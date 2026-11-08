@@ -59,7 +59,7 @@ if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
 
     # ---- flex 布局用例：每个 html/css 组合编译成一个 doc ----
     set(QL_FLEX_CASES row grow justify align wrap column
-                    posabs posfix posrel zidx ovf mixed frac paint dpr trans bench100)
+                    posabs posfix posrel zidx ovf mixed frac paint dpr trans kf grad clip scale flip flipdemo showcase blur anim anim10 bench100)
     set(QL_FLEX_GEN "")
     foreach(c ${QL_FLEX_CASES})
         set(_c  ${CMAKE_CURRENT_SOURCE_DIR}/test/web/flex/${c})
@@ -170,7 +170,7 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
@@ -184,7 +184,16 @@ if(QLGL_BUILD_TESTS)
                 add_dependencies(${test_name} qlui_flex)
                 target_sources(${test_name} PRIVATE ${QL_UI_OUT}/ui_flex_bench100.c)
             endif()
-            if(test_name STREQUAL "test_flex" OR test_name STREQUAL "test_render" OR test_name STREQUAL "test_dpr" OR test_name STREQUAL "test_transition")
+            if(test_name STREQUAL "test_flex" OR test_name STREQUAL "test_render" OR test_name STREQUAL "test_dpr" OR test_name STREQUAL "test_transition" OR test_name STREQUAL "test_keyframes" OR test_name STREQUAL "example_anim_window"
+               OR test_name STREQUAL "test_gl_vs_cpu"
+               OR test_name STREQUAL "test_gl_dirty"
+               OR test_name STREQUAL "test_anim_stress"
+               OR test_name STREQUAL "test_clip"
+               OR test_name STREQUAL "test_scale"
+               OR test_name STREQUAL "test_flip"
+               OR test_name STREQUAL "test_blur"
+               OR test_name STREQUAL "example_flip_window"
+               OR test_name STREQUAL "example_showcase_window")
                 add_dependencies(${test_name} qlui_flex)
                 # 只要 doc 本体；_blob.c 会重复定义 qlui_blob_doc()
                 foreach(c ${QL_FLEX_CASES})
@@ -206,6 +215,13 @@ if(QLGL_BUILD_TESTS)
             add_test(NAME ${test_name} COMMAND ${test_name})
         endif()
     endforeach()
+
+    # 生成器的错误路径（"明确失败"红线）用 Python 直接跑：它不需要编译
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME test_qlui_errors
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/test/web/test_qlui_errors.py)
+    endif()
 endif()
 
 # 重新生成类型 id 表：cmake --build build --target qlgen

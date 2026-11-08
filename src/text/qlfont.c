@@ -283,19 +283,28 @@ void ql_font_destroy(QLFont *font)
  * 默认字体表：qlui / qllabel 用"字号"选字体。
  * 字号 → 字体的映射由 qlfont_ft.c 在加载矢量字体后挂进来（见 ql_font_set_default_file）。
  */
-#define QL_FONT_DEFAULT_SLOTS 8
+/*
+ * 槽位数要够 `transform: scale()` 用：一个 1.0 → 1.5 的缩放动画会走到
+ * 十几个不同字号，8 个槽根本装不下。装不下的时候旧实现是"造一个不缓存的新字体"，
+ * 于是**每帧重新加载一次 TTF 字面并光栅化所有字形**（实测 0.57 → 8.1 ms/帧），
+ * 而且泄漏。现在改成够用 + 满了就淘汰最老的一个。
+ */
+#ifndef QL_FONT_DEFAULT_SLOTS
+#define QL_FONT_DEFAULT_SLOTS 32
+#endif
 
 static struct {
     int      size;
     QLFont  *font;
 } s_defaults[QL_FONT_DEFAULT_SLOTS];
 static int s_default_count;
+static int s_default_next;        /* 满了以后轮转淘汰的游标 */
 static QLFont *(*s_default_factory)(int pixel_size);
 
 void ql_font_set_default_factory(QLFont *(*factory)(int pixel_size))
 {
+    ql_font_reset_defaults();
     s_default_factory = factory;
-    s_default_count = 0;          /* 工厂换了，旧缓存全部作废 */
 }
 
 const QLFont *ql_font_default(int pixel_size)
@@ -317,11 +326,17 @@ const QLFont *ql_font_default(int pixel_size)
         return (pixel_size >= 14) ? &ql_font_mono_16 : &ql_font_mono_12;
     }
 
+    int slot;
     if (s_default_count < QL_FONT_DEFAULT_SLOTS) {
-        s_defaults[s_default_count].size = pixel_size;
-        s_defaults[s_default_count].font = font;
-        s_default_count++;
+        slot = s_default_count++;
+    } else {
+        /* 满了：淘汰最老的一个（轮转）。只有"字体的持有者是本表"时才能销毁 */
+        slot = s_default_next;
+        s_default_next = (s_default_next + 1) % QL_FONT_DEFAULT_SLOTS;
+        ql_font_destroy(s_defaults[slot].font);
     }
+    s_defaults[slot].size = pixel_size;
+    s_defaults[slot].font = font;
     return font;
 }
 
@@ -330,4 +345,5 @@ void ql_font_reset_defaults(void)
     for (int i = 0; i < s_default_count; i++)
         ql_font_destroy(s_defaults[i].font);
     s_default_count = 0;
+    s_default_next = 0;
 }

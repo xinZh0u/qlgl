@@ -127,11 +127,11 @@ typedef struct {
     uint8_t     display;       /* QLUIDisplay */
     uint8_t     bg_alpha;      /* 0..255 */
     uint8_t     border_width;
-    uint8_t     border_radius;
+    int16_t     border_radius;  /* px；>= 短边一半时就是内切圆/胶囊 */
     uint8_t     text_align;    /* QLTextAlign */
     uint8_t     font_id;       /* doc->font_sizes 的下标（字号，像素） */
     uint8_t     box_sizing;    /* 0 = content-box, 1 = border-box */
-    uint8_t     bg_grad_dir;   /* 0 = 纯色；1 = 垂直；2 = 水平（见 QLGradientDir+1） */
+    uint8_t     bg_grad_dir;   /* 0 = 纯色；1 = 垂直；2 = 水平；3 = 径向（= QLGradientDir+1） */
     uint8_t     shadow_blur;   /* 0 = 硬阴影 */
     uint8_t     shadow_alpha;  /* 0 = 无阴影 */
 
@@ -162,12 +162,118 @@ typedef struct {
     uint16_t    trans_ms;
     uint8_t     trans_ease;    /* QLEasing */
     uint8_t     trans_props;   /* QL_UI_TRANS_* 位图 */
+
+    /*
+     * clip-path: circle()（子树圆形揭示）。
+     *   clip_kind: 0 = 无，1 = 圆（圆心固定在元素中心）
+     *   clip_r   : 半径，**千分比 of 最远角距离**（0..1000，1000 = 完全覆盖）
+     * 用千分比而不是 px：动画 0 → 1000 视觉上一直有效（px 会"提前跑完"）。
+     * 目前只支持一层（嵌套遮罩取交集，而两个圆盘的交集不是圆盘）。
+     */
+    uint8_t     clip_kind;
+    uint16_t    clip_r;
+
+    /* ----- transform（只有 translate，不进布局） -----
+     * 绘制期把它加到绘制偏移上，所以移动元素**零重排**；
+     * 代价是命中测试要做逆变换，paint_box 要按位移范围膨胀。
+     */
+    int16_t     tf_x;
+    int16_t     tf_y;
+    /*
+     * transform: scale() / scaleX() / scaleY()，千分比（1000 = 1.0），绕元素中心。
+     * 非等比缩放时圆角与文字按 min(sx, sy) 近似——见 QLUI阅读指南 §5.4.3。
+     */
+    int16_t     sc_x;
+    int16_t     sc_y;
+
+    /* ----- 关键帧动画（@keyframes） -----
+     * doc->anims 的下标，0xFFFF = 没有动画。动画在 ql_ui_build 时起播，
+     * 之后与状态位无关（:hover 不会打断它）。
+     */
+    uint16_t    anim;
+
+    /*
+     * backdrop-filter: blur(Npx)：把这层元素**背后**已经画好的内容模糊掉。
+     * 0 = 关闭。想看见效果，元素自己的 background-color 必须带 alpha（否则糊了也盖住）。
+     * PC/GL 走半分辨率两趟可分离模糊；CPU 后端就地模糊画布（同一条像素路径）。
+     */
+    uint8_t     backdrop_blur;
 } QLUIStyle;
 
-/* 目前能过渡的属性（"transition: all" = 这两个都开） */
-#define QL_UI_TRANS_BG      0x01u   /* background-color */
+/* 能过渡的属性（"transition: all" = 四个都开） */
+#define QL_UI_TRANS_BG      0x01u   /* background-color（渐变时连同终止色） */
 #define QL_UI_TRANS_ALPHA   0x02u   /* opacity（落在 bg_alpha 上） */
-#define QL_UI_TRANS_ALL     (QL_UI_TRANS_BG | QL_UI_TRANS_ALPHA)
+#define QL_UI_TRANS_TEXT    0x04u   /* color */
+#define QL_UI_TRANS_BORDER  0x08u   /* border-color */
+#define QL_UI_TRANS_RADIUS  0x10u   /* border-radius（圆角/圆形揭示） */
+#define QL_UI_TRANS_XFORM   0x20u   /* transform：translate + scale（一起动，拆开没有意义） */
+#define QL_UI_TRANS_CLIP    0x40u   /* clip-path 半径（圆形揭示） */
+#define QL_UI_TRANS_ALL     0x7Fu
+
+/* ----- 关键帧动画（@keyframes）的静态表 ----- */
+
+/* 关键帧里存了哪些通道 */
+#define QL_UI_KF_BG         0x01u   /* bg_color + bg_color2 */
+#define QL_UI_KF_ALPHA      0x02u   /* bg_alpha */
+#define QL_UI_KF_MOVE       0x04u   /* transform 通道：tf_x/tf_y（translate）+ sc（scale） */
+#define QL_UI_KF_TEXT       0x08u   /* text_color */
+#define QL_UI_KF_BORDER     0x10u   /* border_color */
+#define QL_UI_KF_RADIUS     0x20u   /* border_radius */
+#define QL_UI_KF_CLIP       0x40u   /* clip_r（圆形揭示） */
+/*
+ * 本帧不存值，全部取"节点的基础样式"。
+ * 生成器在 CSS 没写 0%/100% 时合成这样一帧（`@keyframes x { 50% { opacity: 0 } }`
+ * 等于 0%/100% 用元素自己的基础值），所以它只能出现在首帧或末帧。
+ */
+#define QL_UI_KF_BASE       0x80u
+
+/* 关键帧没写 animation-timing-function：这一段用动画自己的默认缓动 */
+#define QL_UI_KF_EASE_INHERIT  0xFFu
+
+typedef enum {
+    QL_UI_ANIM_NORMAL = 0,
+    QL_UI_ANIM_REVERSE,
+    QL_UI_ANIM_ALTERNATE,
+    QL_UI_ANIM_ALTERNATE_REVERSE,
+} QLUIAnimDirection;
+
+typedef enum {
+    QL_UI_ANIM_FILL_NONE = 0,
+    QL_UI_ANIM_FILL_FORWARDS,   /* 播完停在末帧 */
+    QL_UI_ANIM_FILL_BACKWARDS,  /* 无 delay → 等价于 NONE（保留值以对齐 CSS） */
+    QL_UI_ANIM_FILL_BOTH,
+} QLUIAnimFill;
+
+/* 一个时刻的属性快照。offset 是千分比（0..1000），对应 CSS 的 0%~100% */
+typedef struct {
+    uint16_t offset;
+    uint8_t  ease;        /* 从本帧到下一帧的缓动（末帧忽略） */
+    uint8_t  props;       /* QL_UI_KF_* 位图 */
+    uint32_t bg_color;
+    uint32_t bg_color2;
+    uint32_t text_color;
+    uint32_t border_color;
+    int16_t  tf_x;        /* transform: translate 的像素偏移 */
+    int16_t  tf_y;
+    int16_t  sc_x;        /* transform: scale，千分比（负 = 用基础值） */
+    int16_t  sc_y;
+    int16_t  radius;      /* border-radius（负 = 用基础值） */
+    int16_t  clip_r;      /* clip-path 千分比（负 = 用基础值） */
+    uint8_t  bg_alpha;
+    uint8_t  reserved;
+} QLUIKeyframe;           /* 36 字节，blob 里顺序存放 */
+
+/* 一段 @keyframes：帧表 + 播放参数。运行期只读 */
+typedef struct {
+    uint16_t first_frame; /* doc->keyframes 下标 */
+    uint16_t frame_count; /* >= 2 */
+    uint16_t dur_ms;      /* 一轮的时长；0 = 立即结束（等价于一帧） */
+    uint8_t  ease;        /* 默认缓动；帧上有 animation-timing-function 时以帧为准 */
+    uint8_t  iterations;  /* 0 = infinite */
+    uint8_t  direction;   /* QLUIAnimDirection */
+    uint8_t  fill;        /* QLUIAnimFill */
+    uint16_t delay_ms;    /* animation-delay：起播前干等多久 */
+} QLUIAnimation;
 
 typedef struct {
     uint16_t tag;          /* QLUITag */
@@ -188,11 +294,15 @@ typedef struct {
     uint16_t          style_count;
     uint16_t          text_count;
     uint16_t          font_size_count;
+    uint16_t          anim_count;      /* @keyframes 段数；没有动画时为 0 */
+    uint16_t          keyframe_count;  /* 所有段的关键帧总数 */
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
     const uint16_t   *text_offsets;   /* 文本池内偏移 */
     const uint16_t   *font_sizes;     /* 文档用到的字号（像素），font_id 索引它 */
+    const QLUIAnimation *anims;       /* anim_count 条 */
+    const QLUIKeyframe  *keyframes;   /* keyframe_count 帧 */
     /*
      * 所有权标记：
      *   NULL  → 本 doc 是静态数据（.rodata 或调用方自己管），ql_ui_doc_free 不做任何事；
@@ -237,6 +347,17 @@ typedef struct QLUINodeRT {
      */
     QLRect           paint_box;
 
+    /*
+     * transform 的绝对偏移（含祖先的），以及**动画可能带来的额外位移范围**。
+     * 只在布局末尾算一次，供 paint_box 取上界用：绘制时直接按生效样式加偏移。
+     */
+    int16_t          tf_abs_x;
+    int16_t          tf_abs_y;
+    int16_t          tf_dev_lo_x;
+    int16_t          tf_dev_lo_y;
+    int16_t          tf_dev_hi_x;
+    int16_t          tf_dev_hi_y;
+
     uint16_t         depth;
     uint8_t          flags;      /* QL_UI_RT_* */
     uint8_t          used_copy;  /* style_copy 是否启用 */
@@ -259,6 +380,39 @@ enum {
 uint32_t    ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms);
 
 /*
+ * 从头重播某个节点的 @keyframes 动画（点击反馈、出错抖动之类）。
+ * 该节点没有动画时返回 QL_ERR_INVAL。起始时刻取下一次 ql_ui_anim_tick 的 now。
+ */
+ql_err_t    ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node);
+
+/* 正在跑的动画数：过渡 + 还在走的关键帧动画（播完停在末帧的不算） */
+uint32_t    ql_ui_anim_running(const QLUIRoot *ui);
+
+/*
+ * 动画结束回调（等价于 CSS 的 transitionend / animationend）。
+ *
+ * 什么时候触发：
+ *   - `@keyframes` 播完（含 infinite 之外的最后一帧，无论 fill 是 forwards 还是 none）
+ *   - `transition` 走到终点
+ *   - 被 `ql_ui_anim_restart()` 打断的**不会**触发（那是新的开始，不是结束）
+ *   - 被状态变化撤掉（目标样式没有过渡）的也**不会**触发
+ *
+ * 回调在 `ql_ui_anim_tick()` 内部被派发，但**已经排到队列尾部**：
+ * 在回调里 `ql_ui_anim_restart()` / 改文本 / 甚至 `ql_ui_free()` 都是安全的
+ * （后者请先 dtach，见 ql_ui_free 的说明）。队列是有界的
+ * （QL_CFG_UI_ANIM_EVENT_MAX），满了会丢事件并告警一次——不做无界排队。
+ */
+typedef enum {
+    QL_UI_ANIM_END_KEYFRAMES = 0,   /* @keyframes 播完 */
+    QL_UI_ANIM_END_TRANSITION,      /* transition 走到终点 */
+} QLUIAnimEndKind;
+
+typedef void (*ql_ui_anim_end_cb)(QLUIRoot *ui, QLUINodeRT *node,
+                                  QLUIAnimEndKind kind, void *user_data);
+
+void        ql_ui_set_anim_end_cb(QLUIRoot *ui, ql_ui_anim_end_cb cb, void *user_data);
+
+/*
  * 取走"因过渡而脏"的区域，并把脏标记清掉：
  *     QLRect areas[8]; int n = ql_ui_consume_dirty(ui, areas, 8);
  *     for (i < n) ql_ui_render_rect(ui, d2d, areas[i]);
@@ -277,14 +431,47 @@ int         ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max);
 #define QL_CFG_UI_TRANS_MAX 16
 #endif
 
-/* 过渡槽：节点 + 正在插值的整份样式 + 动画身份 */
+/*
+ * 过渡槽。
+ *
+ * 插值的是**整份样式**：`from` → `to` 按进度线性混合选中的通道，
+ * 结果写进 `style`（绘制时用它）。`key.cur.v[0]` 只当 0..1 的进度用，
+ * 所以通道数不受 QLAnimValue 的 4 个 float 限制。
+ */
 typedef struct {
     struct QLUINodeRT *node;
-    QLUIStyle          style;   /* 插值中的样式（只改颜色相关字段） */
-    QLAnimKey          key;     /* 动画身份；重基从 key.cur 接着走 */
+    QLUIStyle          from;    /* 起点：状态变化前屏幕上显示的那份 */
+    QLUIStyle          to;      /* 终点：状态变体样式 */
+    QLUIStyle          style;   /* 当前插值结果 */
+    QLAnimKey          key;     /* 只用 v[0] 当进度 */
     uint8_t            active;
     uint8_t            props;   /* QL_UI_TRANS_* */
 } QLUITrans;
+
+/*
+ * 同时播放的关键帧动画上限（每节点一个槽）。
+ * 只在 doc 里真的有 @keyframes 时才分配这块内存。
+ */
+#ifndef QL_CFG_UI_RUN_ANIM_MAX
+#define QL_CFG_UI_RUN_ANIM_MAX 16
+#endif
+
+/* 一次 tick 里最多派发多少个"动画结束"事件（超出丢事件并告警） */
+#ifndef QL_CFG_UI_ANIM_EVENT_MAX
+#define QL_CFG_UI_ANIM_EVENT_MAX 16
+#endif
+
+/* 一条正在播的关键帧动画 */
+typedef struct {
+    struct QLUINodeRT   *node;
+    const QLUIAnimation *def;    /* doc->anims 里的一条 */
+    QLUIStyle            style;  /* 当前帧的生效样式（基础样式 + 动画覆盖） */
+    uint32_t             start_ms;
+    uint8_t              active;
+    uint8_t              started; /* 0 = 还没拿到起始时刻（第一次 tick 时定） */
+    uint8_t              held;    /* 1 = 已播完并停在末帧（fill: forwards） */
+    uint8_t              phase;   /* 0 = 未起播，1 = 正在 animation-delay 里，2 = 播放中 */
+} QLUIAnimRun;
 
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user_data);
 
@@ -304,6 +491,14 @@ struct QLUIRoot {
     QLUINodeRT    *focus;        /* 键盘焦点节点（驱动 :focus 样式） */
     /* 状态过渡池：只在本 doc 有 transition 时才分配（NULL = 完全没有过渡） */
     QLUITrans     *trans;
+    /* 关键帧动画池：只在本 doc 有 @keyframes 时才分配 */
+    QLUIAnimRun   *runs;
+    ql_ui_anim_end_cb anim_end_cb;
+    void             *anim_end_user;
+    /* 待派发的结束事件（有界；满了丢新的并告警） */
+    struct QLUIAnimEvent { struct QLUINodeRT *node; uint8_t kind; } anim_ev[QL_CFG_UI_ANIM_EVENT_MAX];
+    uint8_t        anim_ev_count;
+    uint8_t        anim_ev_dropped;
 };
 
 /* ----- 生命周期 ----- */
@@ -385,6 +580,8 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ text_pool  ] 以 '\0' 分隔的 UTF-8 字节
  *   [ text_ofs   ] text_count      * uint16
  *   [ font_sizes ] font_size_count * uint16
+ *   [ anims      ] anim_count      * sizeof(QLUIAnimation)
+ *   [ keyframes  ] keyframe_count  * sizeof(QLUIKeyframe)
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -392,29 +589,37 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    3u   /* 3: QLUIStyle 增加过渡字段（trans_*） */
+#define QL_UI_BLOB_VERSION    10u  /* 10: backdrop-filter: blur() */
 
 typedef struct {
     uint32_t magic;
     uint16_t version;
-    uint16_t header_size;      /* 固定 64 */
+    uint16_t header_size;         /* 固定 72 */
     uint16_t node_count;
     uint16_t style_count;
     uint16_t text_count;
     uint16_t font_size_count;
-    uint16_t name_len;         /* 不含结尾 '\0' */
-    uint16_t node_struct_size; /* sizeof(QLUINode)      —— ABI 校验 */
-    uint16_t style_struct_size;/* sizeof(QLUIStyle)     —— ABI 校验 */
-    uint32_t total_size;       /* 整个 blob 的字节数 */
-    uint32_t checksum;         /* FNV-1a 32，覆盖 [header_size, total_size) */
+    uint16_t anim_count;          /* @keyframes 段数 */
+    uint16_t keyframe_count;      /* 关键帧总数 */
+    uint16_t name_len;            /* 不含结尾 '\0' */
+    uint16_t node_struct_size;    /* sizeof(QLUINode)      —— ABI 校验 */
+    uint16_t style_struct_size;   /* sizeof(QLUIStyle)     —— ABI 校验 */
+    uint16_t anim_struct_size;    /* sizeof(QLUIAnimation) —— ABI 校验 */
+    uint16_t keyframe_struct_size;/* sizeof(QLUIKeyframe)  —— ABI 校验 */
+    uint32_t total_size;          /* 整个 blob 的字节数 */
+    uint32_t checksum;            /* FNV-1a 32，覆盖 [header_size, total_size) */
     uint32_t off_nodes;
     uint32_t off_styles;
     uint32_t off_text_pool;
     uint32_t off_text_offsets;
     uint32_t off_font_sizes;
+    uint32_t off_anims;
+    uint32_t off_keyframes;
     uint32_t off_name;
-    uint8_t  reserved[8];      /* 补齐到 64 */
 } QLUIDocBlobHeader;
+
+_Static_assert(sizeof(QLUIDocBlobHeader) == 72, "blob 头必须是 72 字节");
+_Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*
  * 把 doc 编码成 blob。buf 为 NULL 或容量不足时只返回需要的字节数（不写）。

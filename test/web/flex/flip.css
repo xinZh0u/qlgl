@@ -1,0 +1,35 @@
+#root { width: 120px; height: 120px; background-color: #000000; }
+
+/* 水平压扁一半：宽度 40 → 20，高度不变，绕中心 (30, 30) */
+.sqx {
+  position: absolute; left: 10px; top: 10px; width: 40px; height: 40px;
+  background-color: #E63B3B;
+  transform: scaleX(0.5);
+}
+
+/* 垂直压扁一半：中心 (90, 30) */
+.sqy {
+  position: absolute; left: 70px; top: 10px; width: 40px; height: 40px;
+  background-color: #2EE66B;
+  transform: scaleY(0.5);
+}
+
+/* 假翻转的第一半：1 → 0，最后停在零宽（元素完全消失） */
+.flip {
+  position: absolute; left: 10px; top: 70px; width: 40px; height: 40px;
+  background-color: #2E6BE6;
+  animation: flip 400ms linear 1 forwards;
+}
+
+/* animation-delay：前 300ms 不许动，之后才开始压扁 */
+.dl {
+  position: absolute; left: 70px; top: 70px; width: 40px; height: 40px;
+  background-color: #E6E62E;
+  animation: flip 400ms linear 1 forwards;
+  animation-delay: 300ms;
+}
+
+@keyframes flip {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}

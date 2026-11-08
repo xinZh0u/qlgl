@@ -1,0 +1,62 @@
+#root {
+  width: 360px; height: 260px;
+  background-color: #0C1018;
+  padding: 16px;
+}
+.head {
+  color: #E8EEF8; font-size: 16px;
+  width: 100%; height: 28px;
+}
+.row { width: 100%; height: 64px; display: flex; }
+.card {
+  width: 33px; height: 56px;
+  margin-right: 8px;
+  border-radius: 10px;
+  color: #0C1018; font-size: 9px;
+  padding: 6px;
+  background-color: #2E6BE6;
+  animation: slidein 1200ms ease-out 1 forwards;
+}
+.c1 { background-color: #2E6BE6; }
+.c2 { background-color: #1FB574; animation: slidein2 1200ms ease-out 1 forwards; }
+.c3 { background-color: #E6A32E; animation: slidein3 1200ms ease-out 1 forwards; }
+.glow {
+  width: 100%; height: 56px;
+  margin-top: 12px;
+  border-radius: 12px;
+  color: #E8EEF8; font-size: 11px;
+  padding: 8px;
+  animation: glow 1600ms linear infinite alternate;
+}
+.row2 { width: 100%; height: 24px; display: flex; margin-top: 14px; }
+.dot {
+  width: 12px; height: 12px; border-radius: 6px;
+  background-color: #FF5C5C;
+  animation: blink 900ms linear infinite alternate;
+}
+.hint { width: 220px; height: 20px; color: #78849A; font-size: 10px; margin-left: 10px; }
+
+/* 三张卡错开：靠关键帧 offset 做出 stagger（本实现没有 animation-delay） */
+@keyframes slidein {
+  0%   { transform: translate(-70px, 0); opacity: 0; }
+  25%  { transform: translate(-70px, 0); opacity: 0; }
+  100% { transform: translate(0, 0);     opacity: 1; }
+}
+@keyframes slidein2 {
+  0%   { transform: translate(-70px, 0); opacity: 0; }
+  45%  { transform: translate(-70px, 0); opacity: 0; }
+  100% { transform: translate(0, 0);     opacity: 1; }
+}
+@keyframes slidein3 {
+  0%   { transform: translate(-70px, 0); opacity: 0; }
+  65%  { transform: translate(-70px, 0); opacity: 0; }
+  100% { transform: translate(0, 0);     opacity: 1; }
+}
+@keyframes glow {
+  from { background-color: #1B3B7A; }
+  to   { background-color: #7A2E6B; }
+}
+@keyframes blink {
+  from { background-color: #FF5C5C; }
+  to   { background-color: #3A1216; }
+}

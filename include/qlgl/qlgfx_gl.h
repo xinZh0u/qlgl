@@ -48,6 +48,42 @@ void      ql_gfx_gl_set_scale(QLGfxGL *gfx, ql_coord_t scale_fx);
 void     ql_gfx_gl_begin(QLGfxGL *gfx, ql_color_t clear_color);
 void     ql_gfx_gl_end(QLGfxGL *gfx);
 
+/*
+ * 保留式脏区（窗口模式，M5.5"动画必须走脏区"红线的实现）。
+ *
+ * 问题：窗口是双缓冲，`eglSwapBuffers` 之后后缓冲的内容**没有任何保证**——
+ * 只重画脏区就等于把其余部分清成了底色（表现为"只动的那块画出来了，别处全没了"）。
+ *
+ * 做法：开一个和窗口同尺寸的 FBO 当"画布"，动画帧只清空 + 重画脏区，
+ * 帧末整块 blit 到窗口。这样局部重绘才是真的局部。
+ *
+ *   -- 建窗口后调一次 --
+ *   ql_gfx_gl_set_retained(gfx, 1);
+ *
+ *   -- 每一帧 --
+ *   ql_gfx_gl_begin_rects(gfx, bg, areas, n);   // n == 0 → 整屏清 + 整屏重画
+ *   ql_ui_render_rect(d2d, areas[i]) × n
+ *   ql_gfx_gl_end(gfx);
+ *   ql_gfx_gl_end(gfx);
+ *
+ * 关掉（或创建 FBO 失败）时退回"每帧整屏清"，行为与不用它时完全一致。
+ */
+ql_err_t ql_gfx_gl_set_retained(QLGfxGL *gfx, int on);
+
+/*
+ * 只重画 rects 覆盖的区域（与 ql_ui_consume_dirty 的输出同单位）。
+ *
+ * 返回 **1 表示这一帧必须整屏重画**（首帧 / 窗口改尺寸 / FBO 刚建 / 没开保留模式），
+ * 此时调用方应当忽略 rects、直接 `ql_ui_render()`：
+ *
+ *     int full = ql_gfx_gl_begin_rects(gfx, bg, areas, n);
+ *     if (full) ql_ui_render(ui, d2d);
+ *     else      for (i < n) ql_ui_render_rect(ui, d2d, areas[i]);
+ *     ql_gfx_gl_end(gfx);
+ */
+int      ql_gfx_gl_begin_rects(QLGfxGL *gfx, ql_color_t clear_color,
+                               const QLRect *rects, int count);
+
 QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx);
 
 /* 1 = 等垂直同步（默认），0 = 不限帧（基准测试用） */

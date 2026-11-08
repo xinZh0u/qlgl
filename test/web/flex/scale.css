@@ -1,0 +1,17 @@
+#root { width: 120px; height: 120px; background-color: #000000; }
+/* 静态放大 1.5×，中心 (40,40)；盒子 40x40 → 视觉 60x60 */
+.big {
+  position: absolute; left: 20px; top: 20px; width: 40px; height: 40px;
+  background-color: #2E6BE6;
+  transform: scale(1.5);
+}
+/* 动画：1.0 → 1.5 → 1.0 的"弹一下" */
+.pop {
+  position: absolute; left: 70px; top: 70px; width: 40px; height: 40px;
+  background-color: #E6A32E;
+  animation: pop 400ms linear 1 forwards;
+}
+@keyframes pop {
+  from { transform: scale(1); }
+  to   { transform: scale(1.5); }
+}

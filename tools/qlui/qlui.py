@@ -137,8 +137,13 @@ SUPPORTED_PROPS = {
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
+    "transform", "clip-path", "backdrop-filter",
     "transition", "transition-duration", "transition-timing-function",
     "transition-property",
+    "animation", "animation-name", "animation-duration",
+    "animation-timing-function", "animation-iteration-count",
+    "animation-direction", "animation-fill-mode", "animation-delay",
+    "animation-play-state",
 } | {"%s-%s" % (base, side) for base in ("margin", "padding") for side in SIDES}
 
 
@@ -194,11 +199,31 @@ GRADIENTS = {
 
 
 def parse_gradient(text, where):
-    """linear-gradient(<方向>, <起色>, <止色>) → (起色, 止色, 方向)"""
+    """linear-gradient(<方向>, <起色>, <止色>)
+       radial-gradient(<位置>, <起色>, <止色>)  → (起色, 止色, 方向)
+
+    径向渐变只支持"圆心 = 元素中心"（这是 UI 里 99% 的用法：光晕、暗角）。
+    写 at 偏移、ellipse、color stop 位置一律报错，不静默降级。
+    """
     t = text.strip()
+    m = re.fullmatch(r"radial-gradient\((.*)\)", t, re.S)
+    if m:
+        parts = [p.strip() for p in m.group(1).split(",")]
+        if len(parts) != 3:
+            raise CssError("%s: radial-gradient 需要 3 个参数（位置, 起色, 止色）"
+                           % where)
+        centre = parts[0].lower().replace(" ", "")
+        if centre not in ("circle", "circleatcenter", "ellipse", "50%", "center"):
+            raise CssError("%s: radial-gradient 只支持圆心在元素中心（收到 %r）；"
+                           "at 偏移/自定义半径请改用 linear-gradient"
+                           % (where, parts[0]))
+        c0, _, _ = parse_color(parts[1], where)
+        c1, _, _ = parse_color(parts[2], where)
+        return c0, c1, 3          # 3 → QL_GRADIENT_RADIAL（见 qlui.h 的 bg_grad_dir）
     m = re.fullmatch(r"linear-gradient\((.*)\)", t, re.S)
     if not m:
-        raise CssError("%s: 只支持 linear-gradient()，收到 %r" % (where, text))
+        raise CssError("%s: 只支持 linear-gradient() / radial-gradient()，收到 %r"
+                       % (where, text))
     parts = [p.strip() for p in m.group(1).split(",")]
     if len(parts) != 3:
         raise CssError("%s: linear-gradient 需要 3 个参数（方向, 起色, 止色）" % where)
@@ -271,6 +296,96 @@ def parse_length(text, where, allow_percent=True):
     if m:
         return "px", 0
     raise CssError("%s: 不支持的长度 %r（只支持 px 与 %%）" % (where, text))
+
+
+def _tf_px(token, where):
+    """`-40px` 或 `0`（CSS 允许非零值省略单位以外的 0）"""
+    t = token.strip()
+    if re.fullmatch(r"-?\d+px", t):
+        return int(t[:-2])
+    if re.fullmatch(r"-?0", t):
+        return 0
+    raise CssError("%s: transform 的长度必须带 px 单位（拿到 %r）" % (where, token))
+
+
+def _tf_scale(v, where, fn):
+    """缩放倍数 → 千分比。0 合法（翻转动画的中间帧就是 0）。"""
+    try:
+        sc = int(round(float(v) * 1000.0))
+    except ValueError:
+        raise CssError("%s: %s 的参数不是数字（收到 %r）" % (where, fn, v))
+    if sc < 0 or sc > 32767:
+        raise CssError("%s: scale 倍数必须在 0~32.767（收到 %r）" % (where, fn))
+    return sc
+
+
+def parse_transform(text, where):
+    """`transform` 支持 translate/scale/scaleX/scaleY，返回 (tx, ty, scx, scy)（千分比）。
+
+    只做函数内部的整数像素平移与**轴对齐**缩放（绕元素中心）。
+    scaleX/scaleY 单独出现时另一轴保持 1.0——这正是"假 3D 翻转"要的形状：
+    `scaleX: 1 → 0 → 1`，元素在水平方向压扁到零再展开。
+    非等比时圆角/描边/字号按 min(sx, sy) 近似（见 QLUI阅读指南 §5.4.3）。
+    rotate/skew/matrix/3d 需要非轴对齐光栅化，仍然报错（不静默降级）。
+    """
+    t = re.sub(r"\s+", " ", text.strip())
+    if t.lower() == "none":
+        return 0, 0, 1000, 1000
+
+    tx = ty = 0
+    scx = scy = 1000
+    seen = 0
+    for fn in re.finditer(r"([a-zA-Z]+)\(([^()]*)\)", t):
+        name = fn.group(1).lower()
+        args = [a.strip() for a in fn.group(2).split(",") if a.strip()]
+        if name == "translate":
+            tx = _tf_px(args[0], where)
+            ty = _tf_px(args[1], where) if len(args) > 1 else 0
+        elif name == "translatex":
+            tx = _tf_px(args[0], where)
+        elif name == "translatey":
+            ty = _tf_px(args[0], where)
+        elif name == "scale":
+            v0 = args[0]
+            v1 = args[1] if len(args) > 1 else args[0]
+            scx = _tf_scale(v0, where, fn.group(0))
+            scy = _tf_scale(v1, where, fn.group(0))
+        elif name == "scalex":
+            scx = _tf_scale(args[0], where, fn.group(0))
+        elif name == "scaley":
+            scy = _tf_scale(args[0], where, fn.group(0))
+        else:
+            raise CssError("%s: transform 只支持 translate()/scale()/scaleX()/"
+                           "scaleY()（收到 %r）" % (where, fn.group(0)))
+        seen += 1
+
+    if seen == 0 and t.lower() != "none":
+        raise CssError("%s: 无法解析的 transform %r" % (where, text))
+    return tx, ty, scx, scy
+
+
+CLIP_NONE = 0
+CLIP_CIRCLE = 1
+
+
+def parse_clip_path(text, where):
+    """`clip-path` 只支持 circle(<pct>%)，返回 (kind, 千分比)。
+
+    圆心的语义固定为"元素中心"（与 radial-gradient 同一个决定）。
+    inset()/polygon()/path() 一律报错——它们要 stencil 或逐像素采样。
+    """
+    t = re.sub(r"\s+", "", text.strip().lower())
+    if t in ("none", ""):
+        return CLIP_NONE, 0
+    m = re.fullmatch(r"circle\(([0-9.]+)%\)", t)
+    if not m:
+        raise CssError("%s: clip-path 只支持 circle(<百分比>)（0%%~100%%），收到 %r"
+                       % (where, text))
+    pct = float(m.group(1))
+    if pct < 0.0 or pct > 100.0:
+        raise CssError("%s: clip-path circle() 的百分比必须在 0~100（收到 %r）"
+                       % (where, text))
+    return CLIP_CIRCLE, int(round(pct * 10))
 
 
 def parse_edges(text, where):
@@ -380,9 +495,88 @@ def split_selector(sel):
     return parts, specificity, states
 
 
+def _match_brace(text, open_pos, where):
+    """从 open_pos 的 '{' 找到配对的 '}'（要跳过嵌套块，@keyframes 里有嵌套）"""
+    depth = 0
+    for i in range(open_pos, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    raise CssError("%s: 规则缺少右花括号" % where)
+
+
+def parse_decls(body, where, allowed=None):
+    """解析 `a: b; c: d` 形式的声明块"""
+    decls = {}
+    for piece in body.split(";"):
+        piece = piece.strip()
+        if not piece:
+            continue
+        if ":" not in piece:
+            raise CssError("%s: 声明缺少冒号：%r" % (where, piece))
+        prop, _, value = piece.partition(":")
+        prop = prop.strip().lower()
+        value = value.strip()
+        if allowed is not None:
+            if prop not in allowed:
+                raise CssError("%s: @keyframes 里不支持的属性 %r（可用 %s）"
+                               % (where, prop, " / ".join(sorted(allowed))))
+        elif prop not in SUPPORTED_PROPS:
+            raise CssError("%s: 不支持的属性 %r" % (where, prop))
+        decls[prop] = value
+    # 在**规则级**展开 shorthand：级联合并之后再展开会覆盖后出现的长写
+    return expand_shorthands(decls) if allowed is None else decls
+
+
+# @keyframes 里能写的属性。只允许"绘制期能插值"的那些——与 transition 同一套通道，
+# 别的一律报错，避免"写上了但不生效"这种半正确状态。
+KEYFRAME_PROPS = {"background", "background-color", "background-image",
+                  "opacity", "transform", "color", "border-color", "border-radius",
+                  "clip-path", "animation-timing-function"}
+
+
+def _kf_offset(sel, where):
+    """`from` / `to` / `N%` → 0..1000 千分比"""
+    t = sel.strip().lower()
+    if t == "from":
+        return 0
+    if t == "to":
+        return 1000
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)%", t)
+    if not m:
+        raise CssError("%s: @keyframes 里的选择器只能是 from / to / N%%（收到 %r）"
+                       % (where, sel))
+    v = float(m.group(1))
+    if v < 0 or v > 100:
+        raise CssError("%s: @keyframes 的百分比必须在 0%%~100%%（收到 %r）"
+                       % (where, sel))
+    return int(round(v * 10))
+
+
+def parse_keyframes(body, where, frames):
+    """解析 `0% { ... } 50% { ... } to { ... }`，追加到 frames"""
+    pos = 0
+    while True:
+        brace = body.find("{", pos)
+        if brace < 0:
+            break
+        sel = body[pos:brace].strip()
+        if not sel:
+            raise CssError("%s: @keyframes 里有空选择器" % where)
+        end = _match_brace(body, brace, where)
+        decls = parse_decls(body[brace + 1:end], where, KEYFRAME_PROPS)
+        for one in sel.split(","):
+            frames.append({"offset": _kf_offset(one, where), "decls": decls})
+        pos = end + 1
+
+
 def parse_css(text, origin):
     text = strip_comments(text)
     rules = []
+    keyframes = {}
     order = 0
     pos = 0
 
@@ -391,31 +585,30 @@ def parse_css(text, origin):
         if brace < 0:
             break
         prelude = text[pos:brace].strip()
-        end = text.find("}", brace)
-        if end < 0:
-            line = text[:brace].count("\n") + 1
-            raise CssError("%s:%d: 规则缺少右花括号" % (origin, line))
-        body = text[brace + 1:end]
         line = text[:brace].count("\n") + 1
         where = "%s:%d" % (origin, line)
+        end = _match_brace(text, brace, where)
+        body = text[brace + 1:end]
 
         if prelude.startswith("@"):
-            raise CssError("%s: 不支持 at-rule %r" % (where, prelude.split()[0]))
+            m = re.fullmatch(r"@keyframes\s+([-\w]+)", prelude)
+            if not m:
+                raise CssError("%s: 不支持 at-rule %r" % (where, prelude.split()[0]))
+            kf_name = m.group(1)
+            if kf_name in ("none", "initial", "inherit", "infinite"):
+                raise CssError("%s: @keyframes 名字 %r 与 CSS 关键字冲突"
+                               % (where, kf_name))
+            if kf_name in keyframes:
+                raise CssError("%s: @keyframes %r 重复定义" % (where, kf_name))
+            frames = []
+            parse_keyframes(body, where, frames)
+            if not frames:
+                raise CssError("%s: @keyframes %r 没有任何关键帧" % (where, kf_name))
+            keyframes[kf_name] = frames
+            pos = end + 1
+            continue
 
-        decls = {}
-        for piece in body.split(";"):
-            piece = piece.strip()
-            if not piece:
-                continue
-            if ":" not in piece:
-                raise CssError("%s: 声明缺少冒号：%r" % (where, piece))
-            prop, _, value = piece.partition(":")
-            prop = prop.strip().lower()
-            value = value.strip()
-            if prop not in SUPPORTED_PROPS:
-                raise CssError("%s: 不支持的属性 %r" % (where, prop))
-            decls[prop] = value
-
+        decls = parse_decls(body, where)
         for sel in prelude.split(","):
             sel = sel.strip()
             if not sel:
@@ -426,7 +619,7 @@ def parse_css(text, origin):
 
         pos = end + 1
 
-    return rules
+    return rules, keyframes
 
 
 # ---------------------------------------------------------------- HTML 解析
@@ -708,23 +901,28 @@ def build_style(node, rules, inherited):
     variants = {}
     for bit in PSEUDO_STATES.values():
         variant = finalize_style(collect_decls(node, rules, bit), node, inherited)
+        # 动画在 ql_ui_build 时按**基础样式**起播，写在伪类里永远不会被触发。
+        # 与其静默失效，不如明确报错。
+        if (variant.get("animation-name", "none") != "none" and
+                variant.get("animation-name") != base.get("animation-name", "none")):
+            raise CssError("<%s%s> 的状态规则里不支持 animation："
+                           "关键帧动画只按基础样式起播"
+                           % (node.tag,
+                              ("." + ".".join(node.classes)) if node.classes else ""))
         variants[bit] = variant
     return base, variants
 
 
-def finalize_style(decls, node, inherited):
-    """展开 shorthand、合并继承，返回最终 dict"""
-    # 行内 style 优先
-    if "style" in node.attrs:
-        for piece in node.attrs["style"].split(";"):
-            if not piece.strip():
-                continue
-            prop, _, value = piece.partition(":")
-            prop = prop.strip().lower()
-            if prop not in SUPPORTED_PROPS:
-                raise CssError("行内 style 不支持属性 %r" % prop)
-            decls[prop] = value.strip()
+def expand_shorthands(decls):
+    """把一条规则里的 shorthand 展开成对应的长写（原地修改并返回）。
 
+    必须在**单条规则内**展开，不能等到级联合并之后再做：
+    `animation: pulse 1s` 与后出现的 `animation-name: other` 属于两条规则，
+    级联合并后 `animation-name` 已经是 `other`，这时候再展开 shorthand
+    就会把它覆盖回 `pulse`——`.a{} .b{}` 这种写法会全部退化成第一条规则的值
+    （踩过：10 张卡片用了同一段关键帧）。同理适用于 transition / flex / gap /
+    background / border。
+    """
     # transition 简写：`transition: 200ms ease` / `200ms` / `200ms ease 50ms`
     if "transition" in decls:
         parts = decls["transition"].replace(",", " ").split()
@@ -732,15 +930,15 @@ def finalize_style(decls, node, inherited):
         tf = None
         for part in parts:
             pl = part.strip().lower()
-            if pl in ("all", "background-color", "opacity"):
+            if pl in ("all", "background-color", "opacity", "color", "border-color",
+                      "border-radius", "transform", "clip-path"):
                 decls["transition-property"] = pl
             elif pl in EASING_NAMES:
                 tf = pl
             elif re.fullmatch(r"-?[0-9.]+m?s", pl):
                 if dur is None:
                     dur = pl
-                # 第二个时长是 delay；本实现不支持延迟，静默忽略会违反"不静默降级"，
-                # 但 delay 在 UI 过渡里几乎不用，这里明确报错更安全
+                # 第二个时长是 delay；本实现不支持延迟，静默忽略会违反"不静默降级"
                 else:
                     raise CssError("transition: 暂不支持 delay（%r）" % part)
             else:
@@ -749,9 +947,40 @@ def finalize_style(decls, node, inherited):
             decls["transition-duration"] = dur
         if tf is not None:
             decls["transition-timing-function"] = tf
+        del decls["transition"]
 
-    # flex 简写展开成三个长写（放在继承合并之后，避免被覆盖）
-    if "flex" in decls and "flex-grow" not in decls:
+    # animation 简写：`animation: pulse 1s ease-out infinite alternate forwards`
+    if "animation" in decls:
+        if "steps(" in decls["animation"] or "cubic-bezier" in decls["animation"]:
+            raise CssError("animation: 暂不支持 steps()/cubic-bezier()，"
+                           "请用 linear / ease / ease-in / ease-out / ease-in-out")
+        for part in decls["animation"].split():
+            pl = part.strip().lower()
+            if re.fullmatch(r"-?[0-9.]+m?s", pl):
+                if "animation-duration" not in decls:
+                    decls["animation-duration"] = pl
+                elif "animation-delay" not in decls:
+                    decls["animation-delay"] = pl     # CSS：第一个时长是 duration，第二个是 delay
+                else:
+                    raise CssError("animation: 时长写了三个（%r）" % part)
+            elif pl == "infinite" or re.fullmatch(r"\d+", pl):
+                decls["animation-iteration-count"] = pl
+            elif pl in EASING_NAMES:
+                decls["animation-timing-function"] = pl
+            elif pl in ("normal", "reverse", "alternate", "alternate-reverse"):
+                decls["animation-direction"] = pl
+            elif pl in ("forwards", "backwards", "both"):
+                decls["animation-fill-mode"] = pl
+            elif pl in ("running", "paused"):
+                if pl == "paused":
+                    raise CssError("animation-play-state: 暂不支持 paused")
+            elif pl == "none":
+                decls["animation-name"] = "none"
+            else:
+                decls["animation-name"] = pl
+        del decls["animation"]
+
+    if "flex" in decls:
         g, sh, (bk, bv) = parse_flex_shorthand(decls["flex"], "flex")
         decls["flex-grow"] = ("%g" % g)
         decls["flex-shrink"] = ("%g" % sh)
@@ -761,38 +990,265 @@ def finalize_style(decls, node, inherited):
             decls["flex-basis"] = "%d%%" % bv
         else:
             decls["flex-basis"] = "%dpx" % bv
-    if "gap" in decls and "row-gap" not in decls:
+        del decls["flex"]
+
+    if "gap" in decls:
         gr, gc = parse_gap(decls["gap"], "gap")
         decls["row-gap"] = "%dpx" % gr
         decls["column-gap"] = "%dpx" % gc
+        del decls["gap"]
 
-    style = dict(inherited)      # 继承
-    style.update(decls)
-
-    # 展开 shorthand
-    if "background" in style and "background-color" not in style:
-        if "gradient(" in style["background"]:
-            style["background-image"] = style["background"]
+    if "background" in decls:
+        bg = decls.pop("background")
+        if "gradient(" in bg:
+            decls["background-image"] = bg
         else:
-            style["background-color"] = style["background"]
-    if "border" in style and "border-width" not in style:
-        # border: 1px solid #333
-        bits = style["border"].split()
+            decls["background-color"] = bg
+
+    if "border" in decls:
+        bits = decls.pop("border").split()
         for b in bits:
             if re.fullmatch(r"-?\d+(\.\d+)?px", b):
-                style["border-width"] = b
+                decls["border-width"] = b
             elif b in ("solid", "none", "dashed", "dotted"):
                 if b != "solid":
                     raise CssError("只支持 solid 边框，收到 %r" % b)
             else:
-                style["border-color"] = b
+                decls["border-color"] = b
+
+    return decls
+
+
+def finalize_style(decls, node, inherited):
+    """合并行内样式与继承，返回最终 dict（shorthand 已在规则级展开过）"""
+    # 行内 style 优先；它自己也是一条"规则"，单独展开
+    if "style" in node.attrs:
+        inline = {}
+        for piece in node.attrs["style"].split(";"):
+            if not piece.strip():
+                continue
+            prop, _, value = piece.partition(":")
+            prop = prop.strip().lower()
+            if prop not in SUPPORTED_PROPS:
+                raise CssError("行内 style 不支持属性 %r" % prop)
+            inline[prop] = value.strip()
+        decls.update(expand_shorthands(inline))
+
+    style = dict(inherited)      # 继承
+    style.update(decls)
     return style
 
 
 # ---------------------------------------------------------------- 生成 C
 
-def emit(doc_root, rules, name, out_dir):
+ANIM_DIRECTIONS = {
+    "normal": "QL_UI_ANIM_NORMAL",
+    "reverse": "QL_UI_ANIM_REVERSE",
+    "alternate": "QL_UI_ANIM_ALTERNATE",
+    "alternate-reverse": "QL_UI_ANIM_ALTERNATE_REVERSE",
+}
+
+ANIM_FILLS = {
+    "none": "QL_UI_ANIM_FILL_NONE",
+    "forwards": "QL_UI_ANIM_FILL_FORWARDS",
+    "backwards": "QL_UI_ANIM_FILL_BACKWARDS",
+    "both": "QL_UI_ANIM_FILL_BOTH",
+}
+
+KF_EASE_DEFAULT = 0xFF      # 关键帧没写 timing function → 用动画的默认缓动
+
+
+def parse_duration(text, where, prop):
+    """`200ms` / `1.5s` → 毫秒整数"""
+    m = re.fullmatch(r"([0-9.]+)(ms|s)", text.strip().lower())
+    if not m:
+        raise CssError("%s: %s 需要 ms/s 单位（%r）" % (where, prop, text))
+    val = float(m.group(1)) * (1000.0 if m.group(2) == "s" else 1.0)
+    ms = int(round(val))
+    if ms < 0 or ms > 65535:
+        raise CssError("%s: %s 超出范围（%r）" % (where, prop, text))
+    return ms
+
+
+def compile_keyframes(keyframes, cur_ease_of):
+    """把解析出的 @keyframes 编译成静态帧表。
+
+    cur_ease_of(frame) → QLEasing 名字；关键帧自带 timing function 时用它，
+    否则返回 KF_EASE_DEFAULT（运行期回落到动画的默认缓动）。
+
+    返回 (frames, ranges)：frames 是 C 侧 QLUIKeyframe 的 dict 列表，
+    ranges[name] = (first_frame, frame_count)。
+    """
+    frames = []
+    ranges = {}
+
+    for name, raw in keyframes.items():
+        where = "@keyframes %s" % name
+        offsets = [f["offset"] for f in raw]
+        if len(set(offsets)) != len(offsets):
+            raise CssError("%s: 有重复的百分比" % where)
+
+        # 每一帧的通道集合必须一致——否则"这一段插的是颜色、下一段插的是 alpha"，
+        # 运行期要额外记录隐式值，容易做出半正确的效果。宁可报错。
+        props = None
+        for f in raw:
+            p = 0
+            if any(k in f["decls"] for k in ("background", "background-color",
+                                             "background-image")):
+                p |= 1
+            if "opacity" in f["decls"]:
+                p |= 2
+            if "transform" in f["decls"]:
+                p |= 4
+            if "color" in f["decls"]:
+                p |= 8
+            if "border-color" in f["decls"]:
+                p |= 16
+            if "border-radius" in f["decls"]:
+                p |= 32
+            if "clip-path" in f["decls"]:
+                p |= 64
+            if p == 0:
+                raise CssError("%s: %d%% 这一帧没有可动画的属性"
+                               % (where, f["offset"] // 10))
+            if props is None:
+                props = p
+            elif p != props:
+                raise CssError("%s: 各帧写的属性不一致（%d%% 这帧少了别的帧有的属性）"
+                               % (where, f["offset"] // 10))
+
+        ordered = sorted(raw, key=lambda f: f["offset"])
+        # 缺 0% / 100% 时补"取元素基础样式"的隐式帧（CSS 的隐式关键帧语义）
+        if ordered[0]["offset"] != 0:
+            ordered.insert(0, {"offset": 0, "decls": None})
+        if ordered[-1]["offset"] != 1000:
+            ordered.append({"offset": 1000, "decls": None})
+
+        first = len(frames)
+        for f in ordered:
+            if f["decls"] is None:
+                frames.append({"offset": f["offset"], "ease": KF_EASE_DEFAULT,
+                               "props": props | 0x80, "bg": 0, "bg2": 0, "alpha": 0,
+                               "tf_x": 0, "tf_y": 0, "sc_x": -1, "sc_y": -1, "text": 0, "border": 0,
+                               "radius": -1, "clip": -1})
+                continue
+            bg = bg2 = 0
+            alpha = 255
+            tfx = tfy = 0
+            tfscx = tfscy = -1
+            text_c = border_c = 0
+            if (props & 4) != 0:
+                tfx, tfy, tfscx, tfscy = parse_transform(
+                    f["decls"]["transform"], where)
+            if (props & 8) != 0:
+                text_c, _, _ = parse_color(f["decls"]["color"], where)
+            if (props & 16) != 0:
+                border_c, _, _ = parse_color(f["decls"]["border-color"], where)
+            clipr = -1                                # -1 = 用元素基础值
+            if (props & 64) != 0:
+                _, clipr = parse_clip_path(f["decls"]["clip-path"], where)
+                if clipr == 0 and "none" in f["decls"]["clip-path"].lower():
+                    clipr = 0
+            rad = -1                                  # -1 = 用元素基础值
+            if (props & 32) != 0:
+                _, rad = parse_length(f["decls"]["border-radius"], where)
+                if rad < 0 or rad > 32767:
+                    raise CssError("%s: border-radius 超出 0~32767px" % where)
+            if (props & 1) != 0:
+                if "background-image" in f["decls"]:
+                    bg, bg2, _dir = parse_gradient(f["decls"]["background-image"],
+                                                   where)
+                else:
+                    txt = f["decls"].get("background-color",
+                                         f["decls"].get("background", "transparent"))
+                    bg, alpha, _ = parse_color(txt, where)
+                    bg2 = bg
+            if (props & 2) != 0:
+                try:
+                    op = float(f["decls"]["opacity"])
+                except ValueError:
+                    raise CssError("%s: opacity 必须是 0~1 的数字" % where)
+                if op < 0.0 or op > 1.0:
+                    raise CssError("%s: opacity 超出 0~1" % where)
+                alpha = int(round(op * 255.0))
+            tf = f["decls"].get("animation-timing-function")
+            if tf is None:
+                ease = KF_EASE_DEFAULT
+            elif tf.strip().lower() in EASING_NAMES:
+                ease = EASING_NAMES[tf.strip().lower()]
+            else:
+                raise CssError("%s: 暂不支持的 animation-timing-function %r"
+                               % (where, tf))
+            frames.append({"offset": f["offset"], "ease": ease, "props": props,
+                           "bg": bg, "bg2": bg2, "alpha": alpha,
+                           "tf_x": tfx, "tf_y": tfy,
+                           "sc_x": tfscx, "sc_y": tfscy,
+                           "text": text_c, "border": border_c, "radius": rad,
+                           "clip": clipr})
+        ranges[name] = (first, len(frames) - first)
+
+    return frames, ranges
+
+
+def emit(doc_root, rules, name, out_dir, keyframes):
     FONT_SIZES.clear()
+    kf_frames, kf_ranges = compile_keyframes(keyframes, None)
+
+    anim_src = []
+    anim_index = {}
+
+    def add_anim(name_, dur, ease, iters, direction, fill, delay):
+        key = (name_, dur, ease, iters, direction, fill, delay)
+        if key in anim_index:
+            return anim_index[key]
+        first, count = kf_ranges[name_]
+        anim_src.append({"first": first, "count": count, "dur": dur, "ease": ease,
+                         "iters": iters, "direction": direction, "fill": fill,
+                         "delay": delay})
+        anim_index[key] = len(anim_src) - 1
+        return anim_index[key]
+
+    def anim_index_of(st, where):
+        """样式里的 animation-* → doc->anims 下标（0xFFFF = 没有）"""
+        an = st.get("animation-name", "none").strip().lower()
+        if an in ("none", "", "initial"):
+            return 0xFFFF
+        if an not in kf_ranges:
+            raise CssError("%s: animation-name %r 没有对应的 @keyframes"
+                           % (where, an))
+        dur_txt = st.get("animation-duration")
+        if dur_txt is None:
+            raise CssError("%s: 有 animation-name 但没写 animation-duration"
+                           % where)
+        dur = parse_duration(dur_txt, where, "animation-duration")
+        if dur == 0:
+            raise CssError("%s: animation-duration 不能为 0（那等于不播）" % where)
+        tf = st.get("animation-timing-function", "ease").strip().lower()
+        if tf not in EASING_NAMES:
+            raise CssError("%s: 暂不支持的 animation-timing-function %r"
+                           % (where, tf))
+        ic = st.get("animation-iteration-count", "1").strip().lower()
+        if ic == "infinite":
+            iters = 0
+        else:
+            try:
+                iters = int(ic)
+            except ValueError:
+                raise CssError("%s: animation-iteration-count 必须是整数或 infinite"
+                               % where)
+            if iters < 1 or iters > 255:
+                raise CssError("%s: animation-iteration-count 超出 1~255" % where)
+        dr = st.get("animation-direction", "normal").strip().lower()
+        if dr not in ANIM_DIRECTIONS:
+            raise CssError("%s: 不支持的 animation-direction %r" % (where, dr))
+        fl = st.get("animation-fill-mode", "none").strip().lower()
+        if fl not in ANIM_FILLS:
+            raise CssError("%s: 不支持的 animation-fill-mode %r" % (where, fl))
+        dly = parse_duration(st.get("animation-delay", "0ms"), where,
+                             "animation-delay")
+        return add_anim(an, dur, EASING_NAMES[tf], iters, ANIM_DIRECTIONS[dr],
+                        ANIM_FILLS[fl], dly)
+
     # 文本池
     text_pool = bytearray()
     text_offsets = []
@@ -1077,15 +1533,15 @@ def emit(doc_root, rules, name, out_dir):
             if trans_ms < 0 or trans_ms > 65535:
                 raise CssError("%s: transition-duration 超出范围（%r）" % (where, tdur))
             tprop = st.get("transition-property", "all").strip().lower()
-            if tprop == "all":
-                trans_props = 3
-            elif tprop == "background-color":
-                trans_props = 1
-            elif tprop == "opacity":
-                trans_props = 2
-            else:
+            tprops = {"all": 127, "background-color": 1, "opacity": 2,
+                      "color": 4, "border-color": 8, "border-radius": 16,
+                      "transform": 32, "clip-path": 64}
+            if tprop not in tprops:
                 raise CssError("%s: 暂不支持的 transition-property %r"
-                               "（可用 all / background-color / opacity）" % (where, tprop))
+                               "（可用 all / background-color / opacity / color /"
+                               " border-color / border-radius / transform /"
+                               " clip-path）" % (where, tprop))
+            trans_props = tprops[tprop]
             ttf = st.get("transition-timing-function", "ease").strip().lower()
             if ttf not in EASING_NAMES:
                 raise CssError("%s: 暂不支持的 transition-timing-function %r"
@@ -1095,6 +1551,39 @@ def emit(doc_root, rules, name, out_dir):
         lines.append(
             "      .trans_ms = %d, .trans_ease = %s, .trans_props = %d,"
             % (trans_ms, trans_ease, trans_props))
+        # 毛玻璃：backdrop-filter: blur(Npx) / none
+        backdrop_blur = 0
+        bf = st.get("backdrop-filter")
+        if bf is not None:
+            bft = re.sub(r"\s+", " ", bf.strip().lower())
+            if bft != "none":
+                m = re.fullmatch(r"blur\(([0-9.]+)px\)", bft)
+                if not m:
+                    raise CssError("%s: backdrop-filter 只支持 blur(<N>px)（收到 %r）"
+                                   % (where, bf))
+                backdrop_blur = int(round(float(m.group(1))))
+                if backdrop_blur < 1 or backdrop_blur > 64:
+                    raise CssError("%s: backdrop-filter: blur 半径必须在 1~64px"
+                                   % where)
+        lines.append("      .backdrop_blur = %d," % backdrop_blur)
+        clip_kind, clip_r = parse_clip_path(st.get("clip-path", "none"), where)
+        tf_x, tf_y, tf_scx, tf_scy = parse_transform(
+            st.get("transform", "none"), where)
+        anim_idx = anim_index_of(st, where)
+
+        # 动画里动 clip-path 时，基础样式也要把 clip_kind 打开，
+        # 否则运行期根本不会去建遮罩（clip_r 由每一帧写进 run->style）。
+        if clip_kind == 0 and anim_idx != 0xFFFF:
+            a = anim_src[anim_idx]
+            for k in range(a["first"], a["first"] + a["count"]):
+                if (kf_frames[k]["props"] & 0x40) != 0:
+                    clip_kind = 1
+                    clip_r = kf_frames[k]["clip"] if kf_frames[k]["clip"] > 0 else 1000
+                    break
+        lines.append("      .clip_kind = %d, .clip_r = %d," % (clip_kind, clip_r))
+        lines.append("      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,"
+                     % (tf_x, tf_y, tf_scx, tf_scy))
+        lines.append("      .anim = %s," % hex16(anim_idx))
         lines.append(
             "      .inset = { { %d, %s }, { %d, %s }, { %d, %s }, { %d, %s } } },"
             % (inset[0][0], inset[0][1], inset[1][0], inset[1][1],
@@ -1131,6 +1620,39 @@ def emit(doc_root, rules, name, out_dir):
         lines.append('static const uint16_t %s_text_ofs[] = { 0 };' % ident)
     lines.append("")
 
+    # 关键帧表。空表也要给一条占位（C 不允许零长数组），count 单独写 0
+    if kf_frames:
+        lines.append("static const QLUIKeyframe %s_keyframes[] = {" % ident)
+        lines.append("    /* offset  ease                  props bg_color bg_color2 text_c"
+                     " border_c  tf_x tf_y   scx  scy radius  clip alpha */")
+        for f in kf_frames:
+            ease = ("QL_UI_KF_EASE_INHERIT" if f["ease"] == KF_EASE_DEFAULT
+                    else f["ease"])
+            lines.append("    { %4d, %-21s, 0x%02X, 0x%06X, 0x%06X, 0x%06X, 0x%06X,"
+                         " %4d, %4d, %5d, %5d, %5d, %5d, %3d, 0 },"
+                         % (f["offset"], ease, f["props"], f["bg"], f["bg2"],
+                            f["text"], f["border"], f["tf_x"], f["tf_y"], f["sc_x"], f["sc_y"],
+                            f["radius"], f["clip"], f["alpha"]))
+        lines.append("};")
+    else:
+        lines.append("static const QLUIKeyframe %s_keyframes[1] = {"
+                     " { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0 } };" % ident)
+    lines.append("")
+
+    if anim_src:
+        lines.append("static const QLUIAnimation %s_anims[] = {" % ident)
+        lines.append("    /* first count dur_ms ease        iterations direction"
+                     "                    fill                     delay */")
+        for a in anim_src:
+            lines.append("    { %5d, %5d, %6d, %-11s, %10d, %-26s, %-22s, %5d },"
+                         % (a["first"], a["count"], a["dur"], a["ease"], a["iters"],
+                            a["direction"], a["fill"], a["delay"]))
+        lines.append("};")
+    else:
+        lines.append("static const QLUIAnimation %s_anims[1] = {"
+                     " { 0, 0, 0, 0, 0, 0, 0, 0 } };" % ident)
+    lines.append("")
+
     lines.append("const QLUIDoc %s_doc = {" % ident)
     lines.append('    .name         = "%s",' % name)
     lines.append("    .node_count   = (uint16_t)(sizeof(%s_nodes) / sizeof(%s_nodes[0])),"
@@ -1141,7 +1663,11 @@ def emit(doc_root, rules, name, out_dir):
                  % (ident, ident))
     lines.append("    .font_size_count = (uint16_t)(sizeof(%s_font_sizes) / sizeof(%s_font_sizes[0])),"
                  % (ident, ident))
+    lines.append("    .anim_count   = %d," % len(anim_src))
+    lines.append("    .keyframe_count = %d," % len(kf_frames))
     lines.append("    .font_sizes   = %s_font_sizes," % ident)
+    lines.append("    .anims        = %s_anims," % ident)
+    lines.append("    .keyframes    = %s_keyframes," % ident)
     lines.append("    .nodes        = %s_nodes," % ident)
     lines.append("    .styles       = %s_styles," % ident)
     lines.append("    .text_pool    = %s_text," % ident)
@@ -1208,9 +1734,9 @@ def main():
         builder = TreeBuilder()
         builder.feed(html)
         doc_root = builder.finish()
-        rules = parse_css(css, os.path.basename(args.css))
+        rules, keyframes = parse_css(css, os.path.basename(args.css))
 
-        nodes, styles, text_bytes = emit(doc_root, rules, name, args.out)
+        nodes, styles, text_bytes = emit(doc_root, rules, name, args.out, keyframes)
         out_name = name if name.startswith("ui_") else "ui_" + name
         print("qlui: %s -> %s/%s.c（%d 节点，%d 样式，%d 字节文本）"
               % (name, args.out, out_name, nodes, styles, text_bytes))

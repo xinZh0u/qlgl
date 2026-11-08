@@ -66,6 +66,12 @@
 #ifndef QL_CFG_UI_MAX_FONT_SIZES
 #define QL_CFG_UI_MAX_FONT_SIZES    256
 #endif
+#ifndef QL_CFG_UI_MAX_ANIMS
+#define QL_CFG_UI_MAX_ANIMS         256     /* @keyframes 段数 */
+#endif
+#ifndef QL_CFG_UI_MAX_KEYFRAMES
+#define QL_CFG_UI_MAX_KEYFRAMES     4096    /* 所有段的关键帧总数 */
+#endif
 
 /* 输入事件队列容量（后端只入队，主循环统一派发；静态分配不 malloc） */
 #ifndef QL_CFG_INPUT_QUEUE

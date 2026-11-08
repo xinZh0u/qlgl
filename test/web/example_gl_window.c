@@ -45,6 +45,9 @@ static void sleep_us(long us)
     nanosleep(&ts, NULL);
 }
 
+/* 被每 5 帧改文本的那个节点（找一次就够） */
+static QLUINodeRT *s_pct_node;
+
 /* ---- 输入：Esc 退出，其余转给 QLUI ---- */
 static QLGfxGL *s_gfx;
 
@@ -92,6 +95,8 @@ int main(int argc, char **argv)
     }
     ql_gfx_gl_set_scale(gfx, dpr * QL_SCALE_ONE);
     s_gfx = gfx;
+    /* 保留式脏区：动画/交互只重绘变化的那几块（见 ql_gfx_gl_set_retained） */
+    (void)ql_gfx_gl_set_retained(gfx, 1);
     printf("GL 后端就绪 %dx%d 设备像素，DPR %d → 布局 %dx%d CSS px\n", WIN_W * dpr,
            WIN_H * dpr, dpr, WIN_W, WIN_H);
 
@@ -149,28 +154,44 @@ int main(int argc, char **argv)
         if (!running)
             break;
 
-        /* 每 5 帧改一次文本，证明运行期改内容 + GPU 重绘 */
-        if (frame % 5 == 0) {
-            QLUINodeRT *pct = NULL;
-            char buf[32];
+        /* 每 5 帧改一次文本，证明运行期改内容 + 局部重绘 */
+        if (frame == 0) {
+            /* 只找一次：改完文本之后原来的内容就不见了，每帧重找是白跑 */
             for (uint16_t i = 0; i < ui->node_count; i++) {
-                if (strncmp(ql_ui_node_text(&ui->nodes[i]), "50% width box", 5) == 0) {
-                    pct = &ui->nodes[i];
+                const char *t = ql_ui_node_text(&ui->nodes[i]);
+                if (t != NULL && strncmp(t, "50% width box", 5) == 0) {
+                    s_pct_node = &ui->nodes[i];
                     break;
                 }
             }
-            if (pct != NULL) {
-                snprintf(buf, sizeof(buf), "frame %ld", frame);
-                ql_ui_set_text(ui, pct, buf);
-            }
+        }
+        if (frame % 5 == 0 && s_pct_node != NULL) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "frame %ld", frame);
+            ql_ui_set_text(ui, s_pct_node, buf);
         }
 
-        ql_gfx_gl_begin(gfx, QL_COLOR_RGB(0x08, 0x0A, 0x10));
+        /*
+         * 推进过渡（.btn 有 transition），把"因动画而脏"的区域取出来。
+         * 每帧还要画一个随时间变化的进度条，所以把那一块也并进脏区。
+         */
+        (void)ql_ui_anim_tick(ui, ql_anim_now_ms());
 
-        /* 1. 界面（HTML/CSS 编译而来） */
-        ql_ui_render(ui, d2d);
+        QLRect areas[16];
+        int n = ql_ui_consume_dirty(ui, areas, 16);
+        if (n < 15)
+            areas[n++] = ql_rect_make(16, WIN_H - 20, WIN_W - 32, 16);  /* 进度条 */
 
-        /* 2. 直接用绘制接口画一个动画条，证明 GPU 路径可用 */
+        int full = ql_gfx_gl_begin_rects(gfx, QL_COLOR_RGB(0x08, 0x0A, 0x10),
+                                         areas, n);
+        if (full) {
+            ql_ui_render(ui, d2d);
+        } else {
+            for (int i = 0; i < n; i++)
+                ql_ui_render_rect(ui, d2d, areas[i]);
+        }
+
+        /* 进度条：直接用绘制接口画，证明 GPU 路径可用 */
         ql_coord_t bar_w = (ql_coord_t)((frame % 120) * 2);
         if (bar_w > WIN_W - 40)
             bar_w = WIN_W - 40;
@@ -184,8 +205,8 @@ int main(int argc, char **argv)
         frame_time_sum += (double)ql_gfx_gl_frame_us(gfx);
         frame_time_n++;
         if (frame % 60 == 0) {
-            printf("frame %ld | %.0f us/帧 | %u 顶点 | %u draw call\n",
-                   frame, frame_time_sum / (double)frame_time_n,
+            printf("frame %ld | %.0f us/帧 | %d 块脏区 | %u 顶点 | %u draw call\n",
+                   frame, frame_time_sum / (double)frame_time_n, n,
                    ql_gfx_gl_vertex_count(gfx), ql_gfx_gl_draw_calls(gfx));
             frame_time_sum = 0;
             frame_time_n = 0;

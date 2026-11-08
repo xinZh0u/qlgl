@@ -3,7 +3,36 @@
   position: absolute;
   left: 10px; top: 10px; width: 60px; height: 30px;
   background-color: #204060;
+  color: #102030;
+  border-width: 2px;
+  border-color: #303030;
+  border-radius: 4px;
   transition: 200ms linear;
 }
-.btn:hover { background-color: #ff8000; }
+.btn:hover { background-color: #ff8000; color: #ffeedd; border-color: #aabbcc;
+             border-radius: 12px; }
+.lnk {
+  position: absolute;
+  left: 10px; top: 40px; width: 60px; height: 16px;
+  color: #112233;
+  transition: color 400ms linear;
+}
+.lnk:hover { color: #ffffff; }
 .slow { transition: 400ms ease-out; }
+
+/* transform 过渡：位移 + 放大一起插值 */
+.zoom {
+  position: absolute; left: 74px; top: 10px; width: 36px; height: 30px;
+  background-color: #305030;
+  transition: transform 200ms linear;
+}
+.zoom:hover { transform: translate(4px, 2px) scale(1.5); }
+
+/* clip-path 过渡：圆形揭示 */
+.mask {
+  position: absolute; left: 74px; top: 40px; width: 36px; height: 16px;
+  background-color: #503050;
+  clip-path: circle(20%);
+  transition: clip-path 200ms linear;
+}
+.mask:hover { clip-path: circle(100%); }

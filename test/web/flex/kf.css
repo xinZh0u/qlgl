@@ -1,0 +1,43 @@
+#root { width: 120px; height: 180px; background-color: #101010; }
+.pulse, .rev, .fwd, .blink, .once, .slide, .plain {
+  height: 20px;
+  background-color: #000000;
+}
+/* 底色完全透明 + 只动 background-color：动画要把 alpha 一起带过来 */
+.pulse { animation: pulse 1000ms linear infinite alternate; }
+.rev   { animation: pulse 1000ms linear infinite reverse; }
+.fwd   { background-color: rgba(0, 0, 0, 0.5); animation: fade 400ms linear 2 forwards; }
+.blink { background-color: rgba(255, 255, 255, 1); animation: blink 1000ms linear infinite; }
+.once  { background-color: #00FF00; animation: pulse 400ms linear 1; }
+.slide { animation: slide 400ms linear 1 forwards; }
+.plain { background-color: #0000FF; transform: translate(5px, 3px); }
+.clear { height: 20px; background-color: rgba(0, 0, 0, 0);
+         animation: pulse 400ms linear 1 forwards; }
+
+@keyframes pulse {
+  from { background-color: #000000; }
+  to   { background-color: #FF0000; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+@keyframes slide {
+  from { transform: translate(-40px, 0); }
+  to   { transform: translate(0, 0); }
+}
+
+/* 径向渐变 + 圆角揭示（M5.5 ⑦） */
+.radial {
+  width: 60px; height: 60px; margin-top: 6px;
+  background: radial-gradient(circle, #FFE08A, #3A2C10);
+  border-radius: 30px;
+  animation: reveal 600ms linear 1 forwards;
+}
+@keyframes reveal {
+  from { border-radius: 0; }
+  to   { border-radius: 30px; }
+}

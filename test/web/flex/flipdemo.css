@@ -1,0 +1,49 @@
+#root { width: 420px; height: 240px; background-color: #0E1116; }
+
+.title {
+  position: absolute; left: 20px; top: 14px;
+  font-size: 14px; color: #AEB7C2;
+}
+
+/* 水平翻转：1 → 0 → 1 */
+.front {
+  position: absolute; left: 24px; top: 76px; width: 96px; height: 96px;
+  background-color: #E8743B; border-radius: 14px; color: #1A0E06;
+  text-align: center; font-size: 15px;
+  animation: flip-x 900ms ease-in-out infinite;
+}
+
+/* 垂直翻转，错开半个周期 */
+.back {
+  position: absolute; left: 162px; top: 76px; width: 96px; height: 96px;
+  background-color: #2FB8A6; border-radius: 14px; color: #04231F;
+  text-align: center; font-size: 15px;
+  animation: flip-y 900ms ease-in-out infinite;
+  animation-delay: 450ms;
+}
+
+/* 圆形"硬币"：半径按 min(sx,sy) 收缩，翻转时自然收成一个竖条 */
+.coin {
+  position: absolute; left: 300px; top: 76px; width: 96px; height: 96px;
+  background-color: #E6C34A; border-radius: 48px; color: #2A2000;
+  text-align: center; font-size: 22px;
+  animation: flip-x 900ms ease-in-out infinite;
+  animation-delay: 225ms;
+}
+
+.hint {
+  position: absolute; left: 20px; top: 208px;
+  font-size: 12px; color: #6C7783;
+}
+
+@keyframes flip-x {
+  0%   { transform: scaleX(1); }
+  50%  { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+@keyframes flip-y {
+  0%   { transform: scaleY(1); }
+  50%  { transform: scaleY(0); }
+  100% { transform: scaleY(1); }
+}

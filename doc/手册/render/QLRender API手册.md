@@ -123,6 +123,11 @@ void      ql_gfx_gl_begin(QLGfxGL *gfx, ql_color_t clear_color);
 void      ql_gfx_gl_end(QLGfxGL *gfx);
 QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx);
 
+/* 保留式脏区（窗口动画局部重绘）——见 §3.4 */
+ql_err_t  ql_gfx_gl_set_retained(QLGfxGL *gfx, int on);
+int       ql_gfx_gl_begin_rects(QLGfxGL *gfx, ql_color_t clear_color,
+                                const QLRect *rects, int count);
+
 int       ql_gfx_gl_poll(QLGfxGL *gfx);          /* 窗口：1 继续 / 0 关闭 */
 
 uint32_t  ql_gfx_gl_frame_count(QLGfxGL *gfx);
@@ -154,8 +159,8 @@ ql_gfx_gl_destroy(gfx);
 |---|---|
 | 平台 | Linux（EGL + X11 窗口 / pbuffer）；Wayland 窗口待补 |
 | GL 版本 | OpenGL **ES 3.0**（`#version 300 es`） |
-| 纹理 | 只建一张 512×512 R8 字形图集 |
-| 字体 | 只支持内置 `ql_font_mono_12/16`（其他字体不画文字） |
+| 纹理 | 一张 1024×1024 R8 字形图集（内置位图字体预烘，动态字体按需增量上传） |
+| 字体 | 内置位图字体 + FreeType 动态字体（`ql_font_set_default_file`）都支持 |
 | 批次 | 一帧 **1 个 draw call**；顶点上限 65536，超出丢弃 |
 | 内存 | 顶点数组预分配（~3.9 MB @65536 顶点），稳态零 malloc |
 | 失败处理 | 创建失败返回 `NULL` 并打印原因；调用方应回落 CPU 后端 |
@@ -171,6 +176,53 @@ ql_gfx_gl_destroy(gfx);
 日志会打印 `GL_RENDERER` / `GL_VERSION` / `GLSL` 版本，便于区分是 llvmpipe 还是真 GPU。
 
 ---
+### 3.4 保留式脏区（`ql_gfx_gl_begin_rects`）
+
+**问题**：窗口是双缓冲，`eglSwapBuffers` 之后后缓冲内容没有任何保证。
+只重画脏区 ≈ 把其余部分清成底色（动画一停，没在动的元素全部消失）。
+
+**做法**：`ql_gfx_gl_set_retained(gfx, 1)` 之后，后端把画布放在自己的 FBO 里，
+每帧只清 + 只画脏区，帧末整块 `glBlitFramebuffer` 到窗口：
+
+```c
+ql_gfx_gl_set_retained(gfx, 1);                     /* 建窗口后调一次 */
+
+for (;;) {
+    ql_gfx_gl_poll(gfx);
+    ql_input_dispatch();
+    uint32_t moving = ql_ui_anim_tick(ui, ql_anim_now_ms());
+
+    QLRect areas[16];
+    int n = ql_ui_consume_dirty(ui, areas, 16);
+
+    if (n == 0 && !first_frame && moving == 0) {
+        /* 静止：不提交这一帧 */
+    } else {
+        int full = ql_gfx_gl_begin_rects(gfx, BG, areas, n);
+        if (full)
+            ql_ui_render(ui, d2d);                  /* 整屏（首帧/改尺寸/不可用） */
+        else
+            for (int i = 0; i < n; i++)
+                ql_ui_render_rect(ui, d2d, areas[i]);
+        ql_gfx_gl_end(gfx);
+    }
+}
+```
+
+| 返回值 / 参数 | 含义 |
+|---|---|
+| `begin_rects(...) == 1` | **这一帧必须整屏重画**：FBO 刚建、窗口改尺寸、或保留模式不可用。此时忽略 `areas` |
+| `begin_rects(...) == 0` | 已经只清了 `areas` 覆盖的区域，按 `areas` 逐个 `ql_ui_render_rect` 即可 |
+| `count == 0` 且返回 0 | 不会发生（无脏区时按整屏处理） |
+| `set_retained(gfx, 0)` | 立刻释放 FBO，退回"每帧整屏清" |
+
+约束与代价：
+
+- `rects` 与 `ql_ui_consume_dirty()` 的输出同单位（CSS px），后端会乘 `scale_fx`。
+- 多占一块 `w×h×4` 的纹理（360×260 ≈ 366 KB，1080p ≈ 8 MB）。MCU 上不要开。
+- 局部重绘的正确性由 `test_gl_dirty` 守：连续多帧"只画脏区"与"整屏重画"逐像素相同。
+- 这块 FBO 也是将来**毛玻璃/离屏合成**（M5.5 ⑨）的基础设施。
+
 
 ## 4. 后端一致性验收
 

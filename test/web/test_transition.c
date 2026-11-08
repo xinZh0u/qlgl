@@ -18,6 +18,26 @@
 #define W 120
 #define H 60
 
+static int s_end_calls;
+static QLUIAnimEndKind s_end_kind;
+static QLUINodeRT *s_end_node;
+
+static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind,
+                        void *user)
+{
+    (void)ui;
+    (void)user;
+    s_end_calls++;
+    s_end_kind = kind;
+    s_end_node = node;
+}
+
+static void ql_ui_anim_end_cb_reset(void)
+{
+    s_end_calls = 0;
+    s_end_node = NULL;
+}
+
 static uint32_t s_now;
 
 static uint32_t fake_now(void)
@@ -45,6 +65,16 @@ static uint32_t bg_of(QLUIRoot *ui, uint16_t index)
     return (s != NULL) ? s->bg_color : 0;
 }
 
+static uint32_t text_of(QLUIRoot *ui, uint16_t index)
+{
+    return ql_ui_node_style(&ui->nodes[index])->text_color;
+}
+
+static uint32_t border_of(QLUIRoot *ui, uint16_t index)
+{
+    return ql_ui_node_style(&ui->nodes[index])->border_color;
+}
+
 /* 取 r 通道，方便看插值进度 */
 static int red_of(uint32_t c)
 {
@@ -64,7 +94,7 @@ QL_TEST_BEGIN("test_transition")
     }
 
     /* .btn 是带过渡的那个节点（node 1） */
-    QL_CHECK_EQ(ui->node_count, 2);
+    QL_CHECK_EQ(ui->node_count, 5);
     QL_CHECK(ui->trans != NULL);          /* 有 transition → 过渡池已分配 */
 
     const uint32_t base_bg = bg_of(ui, 1);
@@ -146,9 +176,160 @@ QL_TEST_BEGIN("test_transition")
         QL_CHECK_EQ(bg_of(ui, 1), 0x204060u);
     }
 
+    /* ---------- 3.5 文本色 / 边框色：与背景同一条过渡一起插值 ---------- */
+    {
+        s_now = 2400;
+        /* .btn 的 transition: 200ms linear，props = all（背景+alpha+文本+边框） */
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->bg_alpha, 255);
+
+        QL_CHECK_EQ(ql_ui_pointer_move(ui, 20, 20), 1);
+        QL_CHECK_EQ(tick_at(ui, 2400), 1);
+        /* 起点：三者都还是 base 色 */
+        QL_CHECK_EQ(text_of(ui, 1), 0x102030u);
+        QL_CHECK_EQ(border_of(ui, 1), 0x303030u);
+
+        QL_CHECK_EQ(tick_at(ui, 2500), 1);
+        /* 圆角也在这条过渡里（transition: all 含 border-radius）：4 → 12，一半 = 8 */
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->border_radius, 8);
+        /* 一半：0x10 → 0xff 大约 0x87；0x30 → 0xaa 大约 0x6d */
+        int tr = (int)((text_of(ui, 1) >> 16) & 0xFFu);
+        int br = (int)((border_of(ui, 1) >> 16) & 0xFFu);
+        QL_CHECK(tr > 0x70 && tr < 0x98);
+        QL_CHECK(br > 0x58 && br < 0x80);
+
+        QL_CHECK_EQ(tick_at(ui, 2600), 0);
+        QL_CHECK_EQ(text_of(ui, 1), 0xffeeddu);
+        QL_CHECK_EQ(border_of(ui, 1), 0xaabbccu);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->border_radius, 12);
+
+        /* .lnk 只过渡 color：400ms，中途背景色不该被碰 */
+        s_now = 2700;
+        QLRect lr = ql_ui_node_rect(&ui->nodes[2]);
+        QL_CHECK_EQ(ql_ui_pointer_move(ui, lr.x + 3, lr.y + 3), 1);
+        /* 同时离开 .btn（200ms 回去）+ 进入 .lnk（400ms）→ 两段过渡 */
+        QL_CHECK_EQ(tick_at(ui, 2700), 2);
+        QL_CHECK_EQ(text_of(ui, 2), 0x112233u);
+        QL_CHECK_EQ(tick_at(ui, 2900), 1);        /* .btn 那段已经结束 */
+        int lr16 = (int)((text_of(ui, 2) >> 16) & 0xFFu);
+        QL_CHECK(lr16 > 0x70 && lr16 < 0xA0);     /* 一半：0x11 → 0xff ≈ 0x88 */
+        QL_CHECK_EQ(tick_at(ui, 3100), 0);
+        QL_CHECK_EQ(text_of(ui, 2), 0xFFFFFFu);
+
+        /* 收尾：移开，等过渡跑完 */
+        s_now = 3200;
+        ql_ui_pointer_move(ui, 2, 2);
+        (void)tick_at(ui, 4000);
+    }
+
+    /* ---------- 3.55 transform / clip-path 也能过渡 ---------- */
+    {
+        QLRect areas[4];
+        const QLUIStyle *z = ql_ui_node_style(&ui->nodes[3]);
+        QL_CHECK_EQ(z->sc_x, 1000);
+        QL_CHECK_EQ(z->sc_y, 1000);
+        QL_CHECK_EQ(z->tf_x, 0);
+        /* transition-property: transform → 位 0x20（不含背景/圆角） */
+        QL_CHECK_EQ(ui->nodes[3].style->trans_props, 32);
+
+        /* paint_box 必须按"放大后的范围"撑开——它只看静态样式的话脏区会漏画 */
+        {
+            QLRect pb = ui->nodes[3].paint_box;
+            QLRect b = ui->nodes[3].border_box;
+            QL_CHECK(pb.x <= b.x + b.w / 2 - (b.w * 1500 / 1000) / 2);
+            QL_CHECK(ql_rect_right(pb) >= b.x + b.w / 2 + (b.w * 1500 / 1000) / 2);
+        }
+
+        s_now = 3400;
+        QL_CHECK_EQ(ql_ui_pointer_move(ui, 92, 25), 1);   /* 落在 .zoom 上 */
+        QL_CHECK_EQ(tick_at(ui, 3400), 1);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->sc_x, 1000);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->tf_x, 0);
+
+        QL_CHECK_EQ(tick_at(ui, 3500), 1);                /* 一半 */
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->sc_x, 1250);   /* 1000 → 1500 */
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->tf_x, 2);      /* 0 → 4 */
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->tf_y, 1);      /* 0 → 2 */
+
+        QL_CHECK_EQ(tick_at(ui, 3600), 0);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->sc_x, 1500);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->tf_x, 4);
+
+        /* 放大后视觉范围变大，脏区必须跟着变大（重绘漏一点就留残影） */
+        (void)ql_ui_consume_dirty(ui, areas, 4);
+        s_now = 3700;
+        QL_CHECK_EQ(ql_ui_pointer_move(ui, 2, 2), 1);      /* 移出 → 缩回去 */
+        QL_CHECK_EQ(tick_at(ui, 3700), 1);
+        QL_CHECK_EQ(tick_at(ui, 3800), 1);
+        int na = ql_ui_consume_dirty(ui, areas, 4);
+        QL_CHECK(na >= 1);
+        if (na >= 1) {
+            QLRect b = ui->nodes[3].border_box;
+            ql_coord_t vis_w = (ql_coord_t)((int64_t)b.w * 1500 / 1000);
+            ql_coord_t vx = b.x + b.w / 2 - vis_w / 2;
+            QL_CHECK(areas[0].x <= vx);
+            QL_CHECK(ql_rect_right(areas[0]) >= vx + vis_w);
+        }
+        QL_CHECK_EQ(tick_at(ui, 3900), 0);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[3])->sc_x, 1000);
+
+        /* clip-path：半径在 20% → 100% 之间插值 */
+        const QLUIStyle *m = ql_ui_node_style(&ui->nodes[4]);
+        QL_CHECK_EQ(m->clip_kind, 1);
+        QL_CHECK_EQ(m->clip_r, 200);
+
+        s_now = 4000;
+        QL_CHECK_EQ(ql_ui_pointer_move(ui, 92, 45), 1);    /* 落在 .mask 上 */
+        QL_CHECK_EQ(tick_at(ui, 4000), 1);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[4])->clip_r, 200);
+
+        QL_CHECK_EQ(tick_at(ui, 4100), 1);                 /* 一半 → 600 */
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[4])->clip_r, 600);
+        QL_CHECK_EQ(tick_at(ui, 4200), 0);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[4])->clip_r, 1000);
+
+        s_now = 4300;
+        ql_ui_pointer_move(ui, 2, 2);
+        (void)tick_at(ui, 4500);
+    }
+
+    /* ---------- 3.6 animationend：过渡走到终点时回调一次 ---------- */
+    {
+        s_now = 5000;
+        ql_ui_anim_end_cb_reset();
+        ql_ui_set_anim_end_cb(ui, on_anim_end, NULL);
+
+        QL_CHECK_EQ(ql_ui_pointer_move(ui, 20, 20), 1);   /* 起过渡 */
+        QL_CHECK_EQ(tick_at(ui, 5000), 1);
+        QL_CHECK_EQ(s_end_calls, 0);                      /* 还没结束 */
+        QL_CHECK_EQ(tick_at(ui, 5200), 0);                /* 200ms 走完 */
+        QL_CHECK_EQ(s_end_calls, 1);
+        QL_CHECK_EQ(s_end_kind, QL_UI_ANIM_END_TRANSITION);
+        QL_CHECK(s_end_node == &ui->nodes[1]);
+
+        /* 再走一帧不会重复触发 */
+        QL_CHECK_EQ(tick_at(ui, 5300), 0);
+        QL_CHECK_EQ(s_end_calls, 1);
+
+        /* 状态被撤掉（目标样式没有过渡）时不触发 */
+        ql_ui_anim_end_cb_reset();
+        ql_ui_pointer_move(ui, 2, 2);
+        QL_CHECK_EQ(tick_at(ui, 5400), 1);
+        ql_ui_pointer_move(ui, 20, 20);                   /* 半路又移回 */
+        QL_CHECK_EQ(tick_at(ui, 5500), 1);
+        QL_CHECK_EQ(s_end_calls, 0);                      /* 被打断的不是"结束" */
+        (void)tick_at(ui, 5800);
+        QL_CHECK_EQ(s_end_calls, 1);                      /* 新的这一段走完才触发 */
+
+        ql_ui_set_anim_end_cb(ui, NULL, NULL);
+    }
+
     /* ---------- 4. 销毁时不能把过期动画留在全局池里 ---------- */
     {
-        s_now = 2000;
+        s_now = 6000;
+        ql_ui_pointer_move(ui, 2, 2);            /* 先移开 */
+        (void)tick_at(ui, 7000);                 /* 让回去的过渡跑完 */
+        QL_CHECK_EQ(ql_anim_active(), 0);
+
         ql_ui_pointer_move(ui, 20, 20);
         QL_CHECK_EQ(ql_anim_active(), 1);
         ql_ui_free(ui);                       /* 动画还在跑就销毁 */

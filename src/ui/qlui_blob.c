@@ -67,6 +67,8 @@ typedef struct {
     size_t text_pool;
     size_t text_offsets;
     size_t font_sizes;
+    size_t anims;
+    size_t keyframes;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -77,6 +79,7 @@ typedef struct {
  */
 static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t text_count, uint16_t font_size_count,
+                           uint16_t anim_count, uint16_t keyframe_count,
                            size_t pool_size, size_t name_len,
                            QLUIBlobLayout *out)
 {
@@ -98,6 +101,12 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     out->font_sizes = off;
     off = QL_UI_ALIGN8(off + (size_t)font_size_count * sizeof(uint16_t));
 
+    out->anims = off;
+    off = QL_UI_ALIGN8(off + (size_t)anim_count * sizeof(QLUIAnimation));
+
+    out->keyframes = off;
+    off = QL_UI_ALIGN8(off + (size_t)keyframe_count * sizeof(QLUIKeyframe));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -115,12 +124,18 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (doc->style_count > 0 && doc->styles == NULL)
         return 0;
 
+    if (doc->anim_count > 0 && doc->anims == NULL)
+        return 0;
+    if (doc->keyframe_count > 0 && doc->keyframes == NULL)
+        return 0;
+
     size_t pool_size = ql_ui_doc_text_pool_size(doc);
     size_t name_len = (doc->name != NULL) ? strlen(doc->name) : 0u;
 
     QLUIBlobLayout lay;
     compute_layout(doc->node_count, doc->style_count, doc->text_count,
-                   doc->font_size_count, pool_size, name_len, &lay);
+                   doc->font_size_count, doc->anim_count, doc->keyframe_count,
+                   pool_size, name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
         return lay.total;
@@ -137,15 +152,21 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.style_count = doc->style_count;
     head.text_count = doc->text_count;
     head.font_size_count = doc->font_size_count;
+    head.anim_count = doc->anim_count;
+    head.keyframe_count = doc->keyframe_count;
     head.name_len = (uint16_t)name_len;
     head.node_struct_size = (uint16_t)sizeof(QLUINode);
     head.style_struct_size = (uint16_t)sizeof(QLUIStyle);
+    head.anim_struct_size = (uint16_t)sizeof(QLUIAnimation);
+    head.keyframe_struct_size = (uint16_t)sizeof(QLUIKeyframe);
     head.total_size = (uint32_t)lay.total;
     head.off_nodes = (uint32_t)lay.nodes;
     head.off_styles = (uint32_t)lay.styles;
     head.off_text_pool = (uint32_t)lay.text_pool;
     head.off_text_offsets = (uint32_t)lay.text_offsets;
     head.off_font_sizes = (uint32_t)lay.font_sizes;
+    head.off_anims = (uint32_t)lay.anims;
+    head.off_keyframes = (uint32_t)lay.keyframes;
     head.off_name = (uint32_t)lay.name;
 
     if (doc->node_count > 0)
@@ -162,6 +183,12 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (doc->font_size_count > 0)
         memcpy(base + lay.font_sizes, doc->font_sizes,
                (size_t)doc->font_size_count * sizeof(uint16_t));
+    if (doc->anim_count > 0)
+        memcpy(base + lay.anims, doc->anims,
+               (size_t)doc->anim_count * sizeof(QLUIAnimation));
+    if (doc->keyframe_count > 0)
+        memcpy(base + lay.keyframes, doc->keyframes,
+               (size_t)doc->keyframe_count * sizeof(QLUIKeyframe));
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -256,6 +283,14 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         set_error_str("QLUIStyle layout mismatch (blob built on another ABI)");
         return NULL;
     }
+    if (head.anim_struct_size != sizeof(QLUIAnimation)) {
+        set_error_str("QLUIAnimation layout mismatch (blob built on another ABI)");
+        return NULL;
+    }
+    if (head.keyframe_struct_size != sizeof(QLUIKeyframe)) {
+        set_error_str("QLUIKeyframe layout mismatch (blob built on another ABI)");
+        return NULL;
+    }
     if (head.total_size != size) {
         set_error_str("size mismatch (file truncated or corrupted)");
         return NULL;
@@ -285,6 +320,14 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         set_error_str("too many font sizes (see QL_CFG_UI_MAX_FONT_SIZES)");
         return NULL;
     }
+    if (head.anim_count > QL_CFG_UI_MAX_ANIMS) {
+        set_error_str("too many @keyframes blocks (see QL_CFG_UI_MAX_ANIMS)");
+        return NULL;
+    }
+    if (head.keyframe_count > QL_CFG_UI_MAX_KEYFRAMES) {
+        set_error_str("too many keyframes (see QL_CFG_UI_MAX_KEYFRAMES)");
+        return NULL;
+    }
 
     /* 段偏移必须与"由各段计数推出的布局"完全一致——挡住手工构造的越界 blob */
     size_t pool_size = 0;
@@ -298,13 +341,16 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
 
     QLUIBlobLayout lay;
     compute_layout(head.node_count, head.style_count, head.text_count,
-                   head.font_size_count, pool_size, head.name_len, &lay);
+                   head.font_size_count, head.anim_count, head.keyframe_count,
+                   pool_size, head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
         head.off_text_pool != lay.text_pool ||
         head.off_text_offsets != lay.text_offsets ||
-        head.off_font_sizes != lay.font_sizes || head.off_name != lay.name) {
+        head.off_font_sizes != lay.font_sizes ||
+        head.off_anims != lay.anims || head.off_keyframes != lay.keyframes ||
+        head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
     }
@@ -329,6 +375,8 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
     doc->style_count = head.style_count;
     doc->text_count = head.text_count;
     doc->font_size_count = head.font_size_count;
+    doc->anim_count = head.anim_count;
+    doc->keyframe_count = head.keyframe_count;
     doc->nodes = (head.node_count > 0) ? (const QLUINode *)(p + lay.nodes) : NULL;
     doc->styles = (head.style_count > 0) ? (const QLUIStyle *)(p + lay.styles) : NULL;
     doc->text_pool = (pool_size > 0) ? (const char *)(p + lay.text_pool) : NULL;
@@ -338,6 +386,12 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
     doc->font_sizes = (head.font_size_count > 0)
                           ? (const uint16_t *)(p + lay.font_sizes)
                           : NULL;
+    doc->anims = (head.anim_count > 0)
+                     ? (const QLUIAnimation *)(p + lay.anims)
+                     : NULL;
+    doc->keyframes = (head.keyframe_count > 0)
+                         ? (const QLUIKeyframe *)(p + lay.keyframes)
+                         : NULL;
     doc->name = (head.name_len > 0) ? (const char *)(p + lay.name) : "";
     doc->arena = arena;
 

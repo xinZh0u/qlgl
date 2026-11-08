@@ -1,0 +1,30 @@
+#root { width: 320px; height: 320px; background-color: #0C1018; padding: 10px; }
+.r { width: 100%; height: 140px; display: flex; }
+.card {
+  width: 52px; height: 120px;
+  margin-right: 8px;
+  border-radius: 10px;
+  background-color: #203040;
+  animation: pulse10 1200ms linear infinite alternate;
+}
+.a { animation-name: pulse10; }
+.b { animation-name: pulse10b; }
+.c { animation-name: pulse10c; }
+.d { animation-name: pulse10d; }
+.e { animation-name: pulse10e; }
+.f { animation-name: pulse10f; }
+.g { animation-name: pulse10g; }
+.h { animation-name: pulse10h; }
+.i { animation-name: pulse10i; }
+.j { animation-name: pulse10j; }
+
+@keyframes pulse10  { from { background-color: #203040 } to { background-color: #E65050 } }
+@keyframes pulse10b { from { background-color: #203040 } to { background-color: #E69050 } }
+@keyframes pulse10c { from { background-color: #203040 } to { background-color: #E6D050 } }
+@keyframes pulse10d { from { background-color: #203040 } to { background-color: #90E650 } }
+@keyframes pulse10e { from { background-color: #203040 } to { background-color: #50E690 } }
+@keyframes pulse10f { from { background-color: #203040 } to { background-color: #50D0E6 } }
+@keyframes pulse10g { from { background-color: #203040 } to { background-color: #5090E6 } }
+@keyframes pulse10h { from { background-color: #203040 } to { background-color: #9050E6 } }
+@keyframes pulse10i { from { background-color: #203040 } to { background-color: #D050E6 } }
+@keyframes pulse10j { from { background-color: #203040 } to { background-color: #E65090 } }

@@ -17,6 +17,11 @@
 - **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
 - **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
   （垂直走行填充快路径，GPU 走顶点颜色插值、零额外 draw call）；
+- **动效（M5.5）已完成 ①②③④⑥⑦⑧⑨ 与 translate/scale/分轴翻转/圆角揭示/圆形遮罩/毛玻璃** —— 帧时钟 + `transition` + `@keyframes`
+  全部构建期编译成静态数据，运行期零解析、零分配；动画只改绘制期属性（颜色 / alpha / 平移），
+  **零重排**，走脏区局部重绘；静态界面下 `ql_ui_anim_tick()` 返回 0，主循环整帧跳过。
+  实测 5 段动画同时跑 **0.0052 ms/帧**。
+  `./build/example_anim_window` 可直接看效果；
 - **绘制期亚像素（M5.3）已完成** —— `translate(0.5px)` 真的落在半像素上（12px 位移有 64 个台阶，
   而不是 1 个）；边缘用面积覆盖率抗锯齿，对齐时与整数路径**逐像素相同**；
   只影响绘制不影响布局（与 CSS `transform` 语义一致），GPU 侧零成本；
@@ -49,6 +54,7 @@ ctest --test-dir build --output-on-failure
 ./build/example_text /tmp/text.ppm        # 文本样张：字号/对齐/多行/缺字
 ./build/example_gl_window                 # GPU 窗口：HTML/CSS 编译出的界面 + 动画
 ./build/example_gl_window --dpr 2         # 同上，2x 设备像素比
+./build/example_anim_window               # 动效演示：@keyframes + transform（空格重播，只重绘脏区）
 ./build/example_widget --frames 120       # 控件示例，默认打开窗口
 ./build/example_text --frames 120         # 文本示例，默认打开窗口
 ./build/test_web_ui                       # HTML+CSS 编译成 C 后的布局/绘制断言
@@ -57,7 +63,15 @@ ctest --test-dir build --output-on-failure
 ./build/test_subpx                        # 亚像素填充的覆盖率与"对齐时逐字节不变"
 ./build/test_effects                      # 渐变/软阴影的像素断言 + 九宫格分解等价性
 ./build/example_bench_ui                  # QLUI 节点级基准（布局/全量/局部/命中）
-./build/test_gl_vs_cpu                    # GPU 与 CPU 后端的像素一致性
+./build/test_gl_vs_cpu                    # GPU 与 CPU 后端的像素一致性（含字形几何）
+./build/test_gl_dirty                     # 保留式脏区：局部重绘 == 整屏重画
+./build/test_anim_stress                  # 10 元素同时动画的每帧开销（60fps 预算）
+./build/test_clip                         # clip-path: circle() 子树圆形遮罩（CPU vs GPU）
+./build/test_scale                        # transform: scale() 绘制期缩放（布局不受影响）
+./build/test_flip                         # scaleX()/scaleY() 分轴缩放 + animation-delay（假 3D 翻转）
+./build/test_blur                         # backdrop-filter: blur() 毛玻璃（CPU 与 GPU 各断言一遍性质）
+./build/example_flip_window               # 假翻转演示：水平翻/垂直翻/圆形硬币，错开相位
+./build/example_showcase_window           # M5.5 效果总览（每帧整屏重绘，60fps）：过渡/滑入/圆角揭示/圆形遮罩/径向渐变/假翻转/毛玻璃
 ./build/example_window                    # 打开真实窗口（自动选 Wayland 或 X11）
 ./build/example_window --backend=x11      # 强制 X11；--backend=wayland 强制 Wayland
 ./build/example_window --frames 120       # 跑 120 帧后自动退出

@@ -16,7 +16,13 @@
  *   3. `flex-direction: column` + `height: auto` 时容器高度由内容决定，
  *      **没有剩余空间可分**，此时 flex-grow 无效（与浏览器一致）。
  */
+#include <math.h>
+#include <string.h>
+
 #include <qlgl/qlgl.h>
+
+/* 起播关键帧动画（定义在过渡那一段，构建时要先用） */
+static void anim_boot(QLUIRoot *ui);
 
 static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "div", "section", "p", "span", "b", "i", "button", "h1", "h2", "h3",
@@ -91,6 +97,13 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
         }
     }
 
+    /* 关键帧动画同理：没有 @keyframes 就一字节都不占 */
+    if (doc->anim_count > 0 && doc->anims != NULL) {
+        ui->runs = (QLUIAnimRun *)ql_mem_calloc(QL_CFG_UI_RUN_ANIM_MAX,
+                                                sizeof(QLUIAnimRun));
+    }
+    anim_boot(ui);
+
     return ui;
 }
 
@@ -131,6 +144,7 @@ void ql_ui_free(QLUIRoot *ui)
         }
         ql_mem_free(ui->trans);
     }
+    ql_mem_free(ui->runs);
     ql_mem_free(ui->nodes);
     if (ui->owns_doc)
         ql_ui_doc_free((QLUIDoc *)(uintptr_t)ui->doc);
@@ -1017,6 +1031,190 @@ static QLRect shadow_extent(QLRect box, const QLUIStyle *s)
                         box.w + 2 * pad, box.h + 2 * pad);
 }
 
+/*
+ * 本节点 transform 的取值区间（相对基础静态值）。
+ * 三个来源都要算进去，否则 p paint_box 会算小、脏区漏画：
+ *   1. 状态变体（:hover 里平移）；
+ *   2. @keyframes 里插值的 translate；
+ *   3. 0（动画结束回落静态值）。
+ */
+static void move_extent(const QLUINodeRT *node, ql_coord_t *lo_x, ql_coord_t *lo_y,
+                        ql_coord_t *hi_x, ql_coord_t *hi_y)
+{
+    *lo_x = 0;
+    *lo_y = 0;
+    *hi_x = 0;
+    *hi_y = 0;
+
+    const QLUIStyle *styles[4];
+    const int n = collect_node_styles(node, styles);
+    if (n <= 0 || styles[0] == NULL)
+        return;
+    const QLUIStyle *base = styles[0];
+
+    for (int i = 1; i < n; i++) {
+        ql_coord_t dx = (ql_coord_t)styles[i]->tf_x - (ql_coord_t)base->tf_x;
+        ql_coord_t dy = (ql_coord_t)styles[i]->tf_y - (ql_coord_t)base->tf_y;
+        if (dx < *lo_x)
+            *lo_x = dx;
+        if (dx > *hi_x)
+            *hi_x = dx;
+        if (dy < *lo_y)
+            *lo_y = dy;
+        if (dy > *hi_y)
+            *hi_y = dy;
+    }
+
+    const QLUIDoc *doc = (node->owner != NULL) ? node->owner->doc : NULL;
+    if (doc == NULL || base->anim == 0xFFFF || base->anim >= doc->anim_count)
+        return;
+
+    const QLUIAnimation *def = &doc->anims[base->anim];
+    const uint32_t first = def->first_frame;
+    const uint32_t count = def->frame_count;
+    if (count == 0 || first + count > doc->keyframe_count)
+        return;
+
+    for (uint32_t k = 0; k < count; k++) {
+        const QLUIKeyframe *f = &doc->keyframes[first + k];
+        if ((f->props & QL_UI_KF_MOVE) == 0)
+            continue;
+        if ((ql_coord_t)f->tf_x < *lo_x)
+            *lo_x = f->tf_x;
+        if ((ql_coord_t)f->tf_x > *hi_x)
+            *hi_x = f->tf_x;
+        if ((ql_coord_t)f->tf_y < *lo_y)
+            *lo_y = f->tf_y;
+        if ((ql_coord_t)f->tf_y > *hi_y)
+            *hi_y = f->tf_y;
+    }
+}
+
+/*
+ * 自上而下累加 transform：静态值（含祖先）存进 tf_abs_*，
+ * 动画/变体带来的额外位移（同样含祖先）存进 tf_dev_*。
+ * 绘制时不用它——绘制按生效样式逐层加偏移；这里只为 paint_box 服务。
+ */
+static void resolve_transform(QLUINodeRT *node, ql_coord_t ax, ql_coord_t ay,
+                              ql_coord_t lo_x, ql_coord_t lo_y,
+                              ql_coord_t hi_x, ql_coord_t hi_y)
+{
+    /*
+     * 入参 ax/ay 是**祖先**的平移，lo/hi 是祖先的动画位移区间。
+     * 本节点自己也要算进去：自己的 transform 同样平移自己（渲染时先设偏移再画自己）。
+     */
+    const QLUIStyle *s = node->style;
+    const ql_coord_t sdx = (s != NULL) ? s->tf_x : 0;
+    const ql_coord_t sdy = (s != NULL) ? s->tf_y : 0;
+
+    ql_coord_t nx = 0, ny = 0, px = 0, py = 0;
+    move_extent(node, &nx, &ny, &px, &py);
+
+    const ql_coord_t self_x = ax + sdx;
+    const ql_coord_t self_y = ay + sdy;
+    const ql_coord_t self_lo_x = lo_x + nx;
+    const ql_coord_t self_lo_y = lo_y + ny;
+    const ql_coord_t self_hi_x = hi_x + px;
+    const ql_coord_t self_hi_y = hi_y + py;
+
+    node->tf_abs_x = (int16_t)self_x;
+    node->tf_abs_y = (int16_t)self_y;
+    node->tf_dev_lo_x = (int16_t)self_lo_x;
+    node->tf_dev_lo_y = (int16_t)self_lo_y;
+    node->tf_dev_hi_x = (int16_t)self_hi_x;
+    node->tf_dev_hi_y = (int16_t)self_hi_y;
+
+    for (QLUINodeRT *child = node->first_child; child != NULL;
+         child = child->next_sibling)
+        resolve_transform(child, self_x, self_y, self_lo_x, self_lo_y, self_hi_x,
+                          self_hi_y);
+}
+
+/*
+ * transform 是绘制期属性，paint_box 必须按"实际画到的位置"给上界：
+ *   - 静态部分：祖先 + 自己的 translate 之和（tf_abs_*，布局末尾自上而下算好）
+ *   - 动画部分：整段动画里 translate 的取值区间（tf_dev_*），取 Minkowski 包围盒
+ * 只膨胀不收缩，所以脏区永远偏大一点，不会漏画。
+ */
+/*
+ * 本节点 scale 可能取到的最大值（千分比），下界 1000。
+ * 三个来源与 move_extent 一致：基础样式、状态变体、@keyframes。
+ * 漏掉任何一个都会让放大的元素把脏区撑破——缩小回去时留下残影。
+ */
+static void scale_max(const QLUINodeRT *node, int32_t *mx, int32_t *my)
+{
+    *mx = 1000;
+    *my = 1000;
+
+    const QLUIStyle *styles[4];
+    const int n = collect_node_styles(node, styles);
+    for (int i = 0; i < n; i++) {
+        if (styles[i] == NULL)
+            continue;
+        if (styles[i]->sc_x > *mx)
+            *mx = styles[i]->sc_x;
+        if (styles[i]->sc_y > *my)
+            *my = styles[i]->sc_y;
+    }
+
+    const QLUIDoc *doc = (node->owner != NULL) ? node->owner->doc : NULL;
+    if (doc == NULL || n <= 0 || styles[0] == NULL || styles[0]->anim == 0xFFFF ||
+        styles[0]->anim >= doc->anim_count)
+        return;
+
+    const QLUIAnimation *def = &doc->anims[styles[0]->anim];
+    const uint32_t first = def->first_frame;
+    const uint32_t count = def->frame_count;
+    if (count == 0 || first + count > doc->keyframe_count)
+        return;
+
+    for (uint32_t k = 0; k < count; k++) {
+        const QLUIKeyframe *f = &doc->keyframes[first + k];
+        if ((f->props & QL_UI_KF_MOVE) == 0)
+            continue;
+        if (f->sc_x > *mx)
+            *mx = f->sc_x;
+        if (f->sc_y > *my)
+            *my = f->sc_y;
+    }
+}
+
+/* transform: scale() 之后，元素自身 paint 的范围（绕中心放大） */
+static QLRect scale_extent(const QLUINodeRT *node, QLRect box)
+{
+    if (ql_rect_is_empty(box))
+        return box;
+
+    int32_t mx = 1000, my = 1000;
+    scale_max(node, &mx, &my);
+    if (mx <= 1000 && my <= 1000)
+        return box;
+
+    ql_coord_t cx = box.x + box.w / 2;
+    ql_coord_t cy = box.y + box.h / 2;
+    /* 放大时向外撑，缩小时保持原范围（宁可多画，不能漏画） */
+    ql_coord_t hw = box.w / 2;
+    ql_coord_t hh = box.h / 2;
+    if (mx > 1000)
+        hw = (ql_coord_t)((int64_t)box.w * mx / 2000);
+    if (my > 1000)
+        hh = (ql_coord_t)((int64_t)box.h * my / 2000);
+    return ql_rect_make(cx - hw, cy - hh, hw * 2, hh * 2);
+}
+
+static QLRect paint_box_own(const QLUINodeRT *node, QLRect box)
+{
+    box = scale_extent(node, box);
+    if (ql_rect_is_empty(box))
+        return box;
+
+    ql_coord_t dx = (ql_coord_t)node->tf_abs_x + (ql_coord_t)node->tf_dev_lo_x;
+    ql_coord_t dy = (ql_coord_t)node->tf_abs_y + (ql_coord_t)node->tf_dev_lo_y;
+    ql_coord_t dw = (ql_coord_t)node->tf_dev_hi_x - (ql_coord_t)node->tf_dev_lo_x;
+    ql_coord_t dh = (ql_coord_t)node->tf_dev_hi_y - (ql_coord_t)node->tf_dev_lo_y;
+    return ql_rect_make(box.x + dx, box.y + dy, box.w + dw, box.h + dh);
+}
+
 static QLRect compute_paint_box(QLUINodeRT *node)
 {
     const QLUIStyle *styles[4];
@@ -1035,9 +1233,9 @@ static QLRect compute_paint_box(QLUINodeRT *node)
     QLRect acc = ql_rect_make(0, 0, 0, 0);
 
     if (any_visible && !ql_rect_is_empty(box)) {
-        acc = box;
+        acc = paint_box_own(node, box);
         for (int i = 0; i < nstyle; i++)
-            acc = ql_rect_union(acc, shadow_extent(box, styles[i]));
+            acc = ql_rect_union(acc, paint_box_own(node, shadow_extent(box, styles[i])));
     }
 
     /* 子节点始终递归（见上面第 3 条），是否并进本节点取决于 overflow */
@@ -1049,7 +1247,8 @@ static QLRect compute_paint_box(QLUINodeRT *node)
         if (!any_unclipped) {
             if (ql_rect_is_empty(box))
                 continue;
-            cb = ql_rect_intersect(cb, box);
+            /* 裁剪区在子树的绘制空间里：子节点已经带着祖先偏移，这里也要带 */
+            cb = ql_rect_intersect(cb, paint_box_own(node, box));
         }
         acc = ql_rect_union(acc, cb);
     }
@@ -1093,14 +1292,25 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
     /* z-index 排序放在最后：之后绘制与命中测试都自动遵循 z 序 */
     sort_tree_by_z(root);
 
-    /* 绘制包围盒：必须在布局之后（尺寸定稿） */
+    /* transform 的绝对偏移必须自上而下算，再算绘制包围盒（尺寸 + 位移都定稿） */
+    resolve_transform(root, 0, 0, 0, 0, 0, 0);
     compute_paint_box(root);
+}
+
+/* 矩形中心到最远角的距离（圆形揭示的 100% 半径） */
+static ql_coord_t ql_len_far_corner(ql_coord_t w, ql_coord_t h)
+{
+    float hw = (float)w * 0.5f;
+    float hh = (float)h * 0.5f;
+    return (ql_coord_t)(sqrtf(hw * hw + hh * hh) + 0.5f);
 }
 
 /* ------------------------------ 绘制 ------------------------------ */
 
 /* 状态过渡槽查找（实现放在交互那一段，绘制要先用） */
 static QLUITrans *trans_find(QLUIRoot *ui, const QLUINodeRT *node);
+/* 关键帧动画槽查找（同上） */
+static const QLUIAnimRun *anim_find(const QLUIRoot *ui, const QLUINodeRT *node);
 
 static const QLFont *font_of(const QLUINodeRT *node)
 {
@@ -1142,6 +1352,16 @@ const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node)
     if (node == NULL)
         return NULL;
 
+    /*
+     * 关键帧动画优先：它播的是"元素的进场/循环效果"，状态过渡不该跟它抢同一个通道。
+     * （生成期不改，运行期一个节点同时有两者时动画赢；trans_retarget 里会跳过。）
+     */
+    if (node->owner != NULL && node->owner->runs != NULL) {
+        const QLUIAnimRun *run = anim_find(node->owner, node);
+        if (run != NULL)
+            return &run->style;
+    }
+
     /* 正在过渡：返回插值中的那一份（其它属性已经是目标样式） */
     if (node->owner != NULL && node->owner->trans != NULL) {
         QLUITrans *t = trans_find(node->owner, node);
@@ -1176,7 +1396,57 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
     if (!ql_rect_overlaps(node->paint_box, clip))
         return;
 
+    /*
+     * transform：加到绘制偏移上（不进布局，所以移动元素零重排）。
+     * 子树跟着一起移，与 CSS 的"transform 建立包含块"语义一致；
+     * clip 是设备空间的不变矩形，所以平移后的内容照样会被父级 overflow 裁掉。
+     */
+    const ql_coord_t saved_ox = d2d->offset_x_fx;
+    const ql_coord_t saved_oy = d2d->offset_y_fx;
+    if (s->tf_x != 0 || s->tf_y != 0) {
+        /* 用乘法不用左移：tf 可能是负数，负数左移是 UB（UBSan 会报） */
+        ql_draw2d_set_offset(d2d,
+                             saved_ox + (ql_coord_t)s->tf_x * (ql_coord_t)QL_FX_ONE,
+                             saved_oy + (ql_coord_t)s->tf_y * (ql_coord_t)QL_FX_ONE);
+    }
+
     QLRect box = node->border_box;
+
+    /*
+     * clip-path: circle()：圆遮罩是**子树级**的（等价 CSS 会裁掉越界的子元素）。
+     * 半径是"最远角距离"的千分比，所以在元素尺寸变化时也自动合适。
+     */
+    /*
+     * transform: scale()：绘制期缩放（绕元素中心），不影响布局。
+     * 因为是"绕元素中心"，子元素也跟着放大——与 CSS 的 transform 语义一致。
+     */
+    const ql_coord_t saved_efx = d2d->elem_x_fx;
+    const ql_coord_t saved_efy = d2d->elem_y_fx;
+    const ql_coord_t elem_cx = box.x + box.w / 2;
+    const ql_coord_t elem_cy = box.y + box.h / 2;
+    if (s->sc_x != 1000 || s->sc_y != 1000)
+        ql_draw2d_set_elem_scale_xy(
+            d2d, (ql_coord_t)((int64_t)s->sc_x * QL_SCALE_ONE / 1000),
+            (ql_coord_t)((int64_t)s->sc_y * QL_SCALE_ONE / 1000), elem_cx, elem_cy);
+
+    const ql_coord_t saved_mx = d2d->mask_cx, saved_my = d2d->mask_cy;
+    const ql_coord_t saved_mr = d2d->mask_r;
+    if (s->clip_kind == 1 && d2d->set_mask != NULL) {
+        ql_coord_t dmax = ql_len_far_corner(box.w, box.h);
+        ql_coord_t r = (ql_coord_t)(((int32_t)dmax * (int32_t)s->clip_r) / 1000);
+        if (saved_mr >= 0)
+            QL_LOGW("ui: nested clip-path is not supported (node #%u), keeping the "
+                    "outer circle", (unsigned)(node - node->owner->nodes));
+        else
+            ql_draw2d_set_mask(d2d, box.x + box.w / 2, box.y + box.h / 2, r);
+    }
+
+    /*
+     * 毛玻璃：必须在**画自己的背景之前**做，否则会连自己一起糊掉。
+     * 模糊的是"这一层背后已经画好的内容"，所以它天然跟随 z 序。
+     */
+    if (s->backdrop_blur > 0 && !ql_rect_is_empty(box) && d2d->backdrop_blur != NULL)
+        (void)ql_draw2d_backdrop_blur(d2d, box, (int)s->backdrop_blur);
 
     /* 阴影先画（在背景之下）；阴影轮廓取边框盒，与 CSS box-shadow 一致 */
     if (s->shadow_alpha > 0 && d2d->fill_shadow != NULL && !ql_rect_is_empty(box))
@@ -1214,6 +1484,11 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
         }
         d2d->set_clip(d2d, saved);
         node->owner->clip = saved;
+        ql_draw2d_set_offset(d2d, saved_ox, saved_oy);
+        if (d2d->set_mask != NULL)
+            ql_draw2d_set_mask(d2d, saved_mx, saved_my, saved_mr);
+        if (saved_efx != d2d->elem_x_fx || saved_efy != d2d->elem_y_fx)
+            ql_draw2d_set_elem_scale_xy(d2d, saved_efx, saved_efy, 0, 0);
         return;
     }
 
@@ -1221,6 +1496,11 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
          child = child->next_sibling) {
         render_node(child, d2d);
     }
+    ql_draw2d_set_offset(d2d, saved_ox, saved_oy);
+    if (d2d->set_mask != NULL)
+        ql_draw2d_set_mask(d2d, saved_mx, saved_my, saved_mr);
+    if (saved_efx != d2d->elem_x_fx || saved_efy != d2d->elem_y_fx)
+        ql_draw2d_set_elem_scale_xy(d2d, saved_efx, saved_efy, 0, 0);
 }
 
 void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
@@ -1295,26 +1575,90 @@ QLUINodeRT *ql_ui_find_by_tag(QLUIRoot *ui, QLUITag tag, uint16_t nth)
 }
 
 /* 递归命中：子节点优先（子节点画在父之上），后出现的子节点优先（z 序已排好） */
-static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y, QLRect clip)
+static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
+                               QLRect clip, ql_coord_t ox, ql_coord_t oy,
+                               ql_coord_t sfx_fx, ql_coord_t sfy_fx,
+                               ql_coord_t sfx_cx, ql_coord_t sfx_cy)
 {
-    if (node == NULL || node->style->display == QL_UI_DISPLAY_NONE)
+    if (node == NULL)
         return NULL;
 
+    /* 用**生效**样式：动画/过渡中的 transform 也要跟着变，否则点不中移动后的元素 */
+    const QLUIStyle *s = ql_ui_node_style(node);
+    if (s == NULL || s->display == QL_UI_DISPLAY_NONE)
+        return NULL;
+
+    /*
+     * 把屏幕坐标映射回节点的布局空间：先撤销祖先累积的缩放，再撤销平移。
+     * 绘制时是"先缩放（绕元素中心）再平移"，所以逆变换顺序相反。
+     */
+    if (sfx_fx == 0 || sfy_fx == 0)
+        return NULL;    /* 被压成零面积，点不中 */
+    if (sfx_fx != QL_SCALE_ONE)
+        x = sfx_cx + (ql_coord_t)(((int64_t)(x - sfx_cx) * QL_SCALE_ONE) / sfx_fx);
+    if (sfy_fx != QL_SCALE_ONE)
+        y = sfx_cy + (ql_coord_t)(((int64_t)(y - sfx_cy) * QL_SCALE_ONE) / sfy_fx);
+
+    /*
+     * (ox, oy) 是祖先累积的平移，本节点自己还要再加一层自己的 transform——
+     * 绘制时正是这么画的（render_node 先设偏移再画自己）。
+     */
     QLRect box = node->border_box;
+    box.x += ox + s->tf_x;
+    box.y += oy + s->tf_y;
     if (ql_rect_is_empty(box))
         return NULL;
 
+    /*
+     * 自己的 scale 是绕中心的：把点逆缩放回布局空间再和 box 比。
+     * 放大时点能落在 box 外（仍然命中），压扁时 box 边缘的点会被映射出去（不命中）。
+     * 压到 0（假翻转的中间帧）面积为零，任何点都点不中。
+     */
+    ql_coord_t hx = x, hy = y;
+    if (s->sc_x != 1000 || s->sc_y != 1000) {
+        if (s->sc_x <= 0 || s->sc_y <= 0)
+            return NULL;
+        ql_coord_t cx0 = box.x + box.w / 2;
+        ql_coord_t cy0 = box.y + box.h / 2;
+        hx = cx0 + (ql_coord_t)(((int64_t)(x - cx0) * 1000) / s->sc_x);
+        hy = cy0 + (ql_coord_t)(((int64_t)(y - cy0) * 1000) / s->sc_y);
+    }
+
+    /* 视觉范围：放大时比布局盒大，overflow 的裁剪区得跟着它走（绘制侧也是按缩放后的矩形裁） */
+    QLRect vis = box;
+    if (s->sc_x > 1000 || s->sc_y > 1000) {
+        ql_coord_t cx0 = box.x + box.w / 2;
+        ql_coord_t cy0 = box.y + box.h / 2;
+        ql_coord_t hw = (s->sc_x > 1000)
+                            ? (ql_coord_t)((int64_t)box.w * s->sc_x / 2000)
+                            : box.w / 2;
+        ql_coord_t hh = (s->sc_y > 1000)
+                            ? (ql_coord_t)((int64_t)box.h * s->sc_y / 2000)
+                            : box.h / 2;
+        vis = ql_rect_make(cx0 - hw, cy0 - hh, hw * 2, hh * 2);
+    }
+
     /* overflow 容器把子树裁到自己的边框盒 */
     QLRect child_clip = clip;
-    if (node->style->overflow != QL_UI_OVERFLOW_VISIBLE)
-        child_clip = ql_rect_intersect(clip, box);
+    if (s->overflow != QL_UI_OVERFLOW_VISIBLE)
+        child_clip = ql_rect_intersect(clip, vis);
     if (ql_rect_is_empty(child_clip))
         return NULL;
 
     /* 正向遍历 + 覆盖：链表顺序即绘制顺序，最后一个命中的就是最上层的 */
+    /* 自己的 scale 传给子树（绕自己的中心） */
+    ql_coord_t nfx = sfx_fx, nfy = sfy_fx, ncx = sfx_cx, ncy = sfx_cy;
+    if ((s->sc_x != 1000 || s->sc_y != 1000) && sfx_fx == QL_SCALE_ONE) {
+        nfx = (ql_coord_t)((int64_t)s->sc_x * QL_SCALE_ONE / 1000);
+        nfy = (ql_coord_t)((int64_t)s->sc_y * QL_SCALE_ONE / 1000);
+        ncx = box.x + box.w / 2;      /* box 已经加了平移，与绘制一致 */
+        ncy = box.y + box.h / 2;
+    }
+
     QLUINodeRT *hit = NULL;
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
-        QLUINodeRT *found = hit_walk_ui(c, x, y, child_clip);
+        QLUINodeRT *found = hit_walk_ui(c, x, y, child_clip, ox + s->tf_x,
+                                        oy + s->tf_y, nfx, nfy, ncx, ncy);
         if (found != NULL)
             hit = found;
     }
@@ -1324,7 +1668,8 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y, QLR
     /* 自己：必须在裁剪区内（被 overflow 裁掉的部分不可命中） */
     if (x < clip.x || x >= ql_rect_right(clip) || y < clip.y || y >= ql_rect_bottom(clip))
         return NULL;
-    if (x >= box.x && x < ql_rect_right(box) && y >= box.y && y < ql_rect_bottom(box))
+    if (hx >= box.x && hx < ql_rect_right(box) && hy >= box.y &&
+        hy < ql_rect_bottom(box))
         return node;
     return NULL;
 }
@@ -1334,7 +1679,8 @@ QLUINodeRT *ql_ui_hit_test(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     if (ui == NULL || ui->node_count == 0)
         return NULL;
     QLRect screen = ql_rect_make(0, 0, ui->width, ui->height);
-    return hit_walk_ui(&ui->nodes[0], x, y, screen);
+    return hit_walk_ui(&ui->nodes[0], x, y, screen, 0, 0, QL_SCALE_ONE,
+                       QL_SCALE_ONE, 0, 0);
 }
 
 void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
@@ -1371,26 +1717,110 @@ static QLUITrans *trans_find(QLUIRoot *ui, const QLUINodeRT *node)
     return NULL;
 }
 
-/* 动画每一帧写回插值结果 */
+/* float → int16，四舍五入后饱和（transform 用） */
+static int32_t kf_i16(float v)
+{
+    if (v <= -32768.0f)
+        return -32768;
+    if (v >= 32767.0f)
+        return 32767;
+    return (int32_t)((v < 0.0f) ? (v - 0.5f) : (v + 0.5f));
+}
+
+/* float 0..255 → uint8，四舍五入（截断会让渐隐永远差一档） */
+static uint8_t kf_u8(float v)
+{
+    if (v <= 0.0f)
+        return 0;
+    if (v >= 255.0f)
+        return 255;
+    return (uint8_t)(v + 0.5f);
+}
+
+/* 颜色按步骤线性混合。ql_color_t 是 0xRRGGBB，alpha 单独处理 */
+static ql_color_t lerp_color(ql_color_t a, ql_color_t b, float p)
+{
+    float ar = (float)QL_COLOR_GET_R(a), ag = (float)QL_COLOR_GET_G(a);
+    float ab = (float)QL_COLOR_GET_B(a);
+    float br = (float)QL_COLOR_GET_R(b), bg = (float)QL_COLOR_GET_G(b);
+    float bb = (float)QL_COLOR_GET_B(b);
+    return QL_COLOR_RGB(kf_u8(ar + (br - ar) * p), kf_u8(ag + (bg - ag) * p),
+                        kf_u8(ab + (bb - ab) * p));
+}
+
+static float clamp01(float v)
+{
+    if (v <= 0.0f)
+        return 0.0f;
+    if (v >= 1.0f)
+        return 1.0f;
+    return v;
+}
+
+/* 动画每一帧写回插值结果：进度在 v[0]，其余通道按 props 位图自己算 */
 static void trans_apply(void *user, const QLAnimValue *v)
 {
     QLUITrans *t = (QLUITrans *)user;
     if (t == NULL || t->node == NULL)
         return;
 
+    const float p = clamp01(v->v[0]);
+
     if ((t->props & QL_UI_TRANS_BG) != 0) {
-        uint8_t r = (uint8_t)(v->v[0] + 0.5f);
-        uint8_t g = (uint8_t)(v->v[1] + 0.5f);
-        uint8_t b = (uint8_t)(v->v[2] + 0.5f);
-        t->style.bg_color = QL_COLOR_RGB(r, g, b);
+        t->style.bg_color = lerp_color(t->from.bg_color, t->to.bg_color, p);
+        /* 渐变元素的终止色一起动，否则过渡期间渐变会"半新半旧" */
+        t->style.bg_color2 = lerp_color(t->from.bg_color2, t->to.bg_color2, p);
+    }
+    if ((t->props & QL_UI_TRANS_TEXT) != 0)
+        t->style.text_color = lerp_color(t->from.text_color, t->to.text_color, p);
+    if ((t->props & QL_UI_TRANS_BORDER) != 0)
+        t->style.border_color = lerp_color(t->from.border_color, t->to.border_color, p);
+    if ((t->props & QL_UI_TRANS_RADIUS) != 0) {
+        float r = (float)t->from.border_radius +
+                  ((float)t->to.border_radius - (float)t->from.border_radius) * p;
+        t->style.border_radius = (int16_t)kf_i16(r);
     }
     if ((t->props & QL_UI_TRANS_ALPHA) != 0) {
-        float a = v->v[3];
-        t->style.bg_alpha = (uint8_t)((a < 0.0f) ? 0.0f : (a > 255.0f ? 255.0f : a + 0.5f));
+        float a = (float)t->from.bg_alpha +
+                  ((float)t->to.bg_alpha - (float)t->from.bg_alpha) * p;
+        t->style.bg_alpha = kf_u8(a);
+    }
+    /* transform 四个分量一起插值：只改 translate 不改 scale 会出现"边缩边移"的错位 */
+    if ((t->props & QL_UI_TRANS_XFORM) != 0) {
+        t->style.tf_x = (int16_t)kf_i16((float)t->from.tf_x +
+                                        ((float)t->to.tf_x - (float)t->from.tf_x) * p);
+        t->style.tf_y = (int16_t)kf_i16((float)t->from.tf_y +
+                                        ((float)t->to.tf_y - (float)t->from.tf_y) * p);
+        t->style.sc_x = (int16_t)kf_i16((float)t->from.sc_x +
+                                        ((float)t->to.sc_x - (float)t->from.sc_x) * p);
+        t->style.sc_y = (int16_t)kf_i16((float)t->from.sc_y +
+                                        ((float)t->to.sc_y - (float)t->from.sc_y) * p);
+    }
+    if ((t->props & QL_UI_TRANS_CLIP) != 0) {
+        float r = (float)t->from.clip_r +
+                  ((float)t->to.clip_r - (float)t->from.clip_r) * p;
+        t->style.clip_r = (uint16_t)kf_i16(r);
     }
 
     /* 只把这一块标脏：主循环用 ql_ui_consume_dirty 拿到区域后局部重绘 */
     t->node->flags |= QL_UI_RT_DIRTY;
+}
+
+/* 记一条"动画结束"事件（有界队列，tick 末尾统一派发） */
+static void anim_event_push(QLUIRoot *ui, QLUINodeRT *node, uint8_t kind)
+{
+    if (ui == NULL || node == NULL)
+        return;
+    if (ui->anim_ev_count >= (uint8_t)QL_CFG_UI_ANIM_EVENT_MAX) {
+        if (!ui->anim_ev_dropped)
+            QL_LOGW("ui: animation-end queue full (%d), events dropped",
+                    QL_CFG_UI_ANIM_EVENT_MAX);
+        ui->anim_ev_dropped = 1;
+        return;
+    }
+    ui->anim_ev[ui->anim_ev_count].node = node;
+    ui->anim_ev[ui->anim_ev_count].kind = kind;
+    ui->anim_ev_count++;
 }
 
 /* 过渡结束：释放槽位，样式回落到状态变体（此时两者数值已经相同，无跳变） */
@@ -1399,8 +1829,11 @@ static void trans_done(void *user)
     QLUITrans *t = (QLUITrans *)user;
     if (t == NULL)
         return;
-    if (t->node != NULL)
+    if (t->node != NULL) {
+        t->style = t->to;      /* 精确落到终点，避免 lerp 的舍入残差 */
         t->node->flags |= QL_UI_RT_DIRTY;
+        anim_event_push(t->node->owner, t->node, QL_UI_ANIM_END_TRANSITION);
+    }
     t->active = 0;
     t->node = NULL;
 }
@@ -1409,18 +1842,22 @@ static void trans_done(void *user)
  * 状态位变化后给节点起/改道过渡。
  *
  * 目标样式 = 变化**之后**该节点生效的状态变体样式。
- * 起点 = 当前正在渲染的值（`key.cur`）——这正是"打断时从当前插值重基"，
- * 所以 hover 上又移开也不会跳变。
+ * 起点 = 变化**之前**屏幕上显示的样式（`before`），所以"打断时从当前插值重基"，
+ * hover 上又移开也不会跳变。
  */
 static void trans_retarget(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *before)
 {
     if (ui->trans == NULL || node == NULL)
         return;
 
+    /* 该节点正在播 @keyframes：状态过渡让位（动画的 style 已经覆盖颜色通道） */
+    if (anim_find(ui, node) != NULL)
+        return;
+
     /* 目标 = 状态变体样式（不能走 ql_ui_node_style，那会拿到过渡中的中间值） */
     const QLUIStyle *target = style_for_state(node);
 
-    /* 目标没有过渡：把还在跑的撤掉，样式立刻生效 */
+    /* 目标没有过渡：把还在跑的撤掉，样式立刻生效（不触发 animationend） */
     if (target == NULL || target->trans_ms == 0 || target->trans_props == 0) {
         QLUITrans *old = trans_find(ui, node);
         if (old != NULL) {
@@ -1446,41 +1883,440 @@ static void trans_retarget(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *befo
         }
         t->node = node;
         t->active = 1;
-        t->style = *target;
-        /* 起点 = 状态变化**之前**实际显示的样式（不是 target，也不是 node->style） */
-        const QLUIStyle *now = (before != NULL) ? before : node->style;
-        t->key.cur.v[0] = (float)QL_COLOR_GET_R(now->bg_color);
-        t->key.cur.v[1] = (float)QL_COLOR_GET_G(now->bg_color);
-        t->key.cur.v[2] = (float)QL_COLOR_GET_B(now->bg_color);
-        t->key.cur.v[3] = (float)now->bg_alpha;
+        /* 起点 = 状态变化前实际显示的样式（不是 target，也不是 node->style） */
+        t->from = (before != NULL) ? *before : *node->style;
     } else {
-        /* 已经在跑：沿用插值中的值，只换目标与时长（自动重基） */
-        t->style = *target;
+        /* 已经在跑：从当前插值结果接着走（自动重基，不回跳） */
+        t->from = t->style;
     }
 
+    t->to = *target;
+    t->style = t->from;        /* 本帧先按起点画，下一帧才开始推进 */
     t->props = target->trans_props;
 
     QLAnimValue to;
-    to.v[0] = (float)QL_COLOR_GET_R(target->bg_color);
-    to.v[1] = (float)QL_COLOR_GET_G(target->bg_color);
-    to.v[2] = (float)QL_COLOR_GET_B(target->bg_color);
-    to.v[3] = (float)target->bg_alpha;
+    memset(&to, 0, sizeof(to));
+    to.v[0] = 1.0f;            /* 唯一的语义：进度 0 → 1 */
 
+    t->key.cur.v[0] = 0.0f;    /* 进度从 0 开始 */
     if (ql_anim_start(&t->key, &to, target->trans_ms, target->trans_ease, 0, trans_apply,
                       trans_done, t) != QL_OK) {
-        /* 时长 0 / 槽位满：样式已经由 trans_apply 落到终值，这里收尾 */
+        /* 时长 0 / 池满：直接落到终点，不触发 animationend（没有真的播过） */
         if (t->active) {
+            t->style = t->to;
+            t->node->flags |= QL_UI_RT_DIRTY;
             t->node = NULL;
             t->active = 0;
         }
     }
 }
 
+void ql_ui_set_anim_end_cb(QLUIRoot *ui, ql_ui_anim_end_cb cb, void *user_data)
+{
+    if (ui == NULL)
+        return;
+    ui->anim_end_cb = cb;
+    ui->anim_end_user = user_data;
+}
+
+/* 派发本帧攒下的结束事件。回调里可以安全地再起动画 / 改文本 */
+static void anim_event_flush(QLUIRoot *ui)
+{
+    if (ui == NULL || ui->anim_ev_count == 0)
+        return;
+
+    const uint8_t n = ui->anim_ev_count;
+    ui->anim_ev_count = 0;
+
+    if (ui->anim_end_cb == NULL)
+        return;
+
+    for (uint8_t i = 0; i < n; i++) {
+        QLUINodeRT *node = ui->anim_ev[i].node;
+        /* 回调可能已经把树改掉（比如 ql_ui_set_text），但节点数组不搬，
+           指针仍然有效；只是动画槽可能已经被重新占用，所以先取 kind */
+        const QLUIAnimEndKind kind = (QLUIAnimEndKind)ui->anim_ev[i].kind;
+        ui->anim_end_cb(ui, node, kind, ui->anim_end_user);
+    }
+}
+
+/* ------------------------- 关键帧动画（@keyframes） ------------------------- */
+
+/* 关键帧里用到的通道值。全部是 float，插值完再舍入一次 */
+typedef struct {
+    float r, g, b;      /* bg_color */
+    float r2, g2, b2;   /* bg_color2（渐变终止色） */
+    float a;            /* bg_alpha */
+    float tr, tg, tb;   /* text_color */
+    float br, bg, bb;   /* border_color */
+    float tx, ty;       /* transform: translate */
+    float sc_x, sc_y;   /* transform: scale（千分比） */
+    float rad;          /* border_radius */
+    float clip;         /* clip-path 千分比 */
+} QLUIKfValue;
+
+static const QLUIAnimRun *anim_find(const QLUIRoot *ui, const QLUINodeRT *node)
+{
+    if (ui == NULL || ui->runs == NULL || node == NULL)
+        return NULL;
+    for (int i = 0; i < QL_CFG_UI_RUN_ANIM_MAX; i++) {
+        if (ui->runs[i].active && ui->runs[i].node == node)
+            return &ui->runs[i];
+    }
+    return NULL;
+}
+
+static QLUIAnimRun *anim_find_mut(QLUIRoot *ui, const QLUINodeRT *node)
+{
+    return (QLUIAnimRun *)(uintptr_t)anim_find(ui, node);
+}
+
+/*
+ * 读一帧的值。没写某个属性的帧回落到底样式——这正是 CSS "隐式关键帧"的语义：
+ *     @keyframes x { 50% { opacity: 0 } }
+ * 等价于 0%/100% 取元素自己的基础值。生成器把这种帧标成 QL_UI_KF_BASE。
+ */
+static void kf_read(const QLUIAnimRun *run, const QLUIKeyframe *f, QLUIKfValue *out)
+{
+    const QLUIStyle *base = run->node->style;
+    /*
+     * QL_UI_KF_BASE = 这一帧不存值，全部取元素自己的基础样式
+     * （CSS 的"隐式关键帧"：@keyframes 只写 50% 时首末帧就是这个语义）。
+     */
+    const int all_base = (f->props & QL_UI_KF_BASE) != 0;
+    const int has_bg = !all_base && (f->props & QL_UI_KF_BG) != 0;
+    const int has_a = !all_base && (f->props & QL_UI_KF_ALPHA) != 0;
+    const int has_text = !all_base && (f->props & QL_UI_KF_TEXT) != 0;
+    const int has_border = !all_base && (f->props & QL_UI_KF_BORDER) != 0;
+
+    const ql_color_t bg = has_bg ? f->bg_color : base->bg_color;
+    out->r = (float)QL_COLOR_GET_R(bg);
+    out->g = (float)QL_COLOR_GET_G(bg);
+    out->b = (float)QL_COLOR_GET_B(bg);
+
+    const ql_color_t bg2 = has_bg ? f->bg_color2 : base->bg_color2;
+    out->r2 = (float)QL_COLOR_GET_R(bg2);
+    out->g2 = (float)QL_COLOR_GET_G(bg2);
+    out->b2 = (float)QL_COLOR_GET_B(bg2);
+
+    const ql_color_t tx = has_text ? f->text_color : base->text_color;
+    out->tr = (float)QL_COLOR_GET_R(tx);
+    out->tg = (float)QL_COLOR_GET_G(tx);
+    out->tb = (float)QL_COLOR_GET_B(tx);
+
+    const ql_color_t bd = has_border ? f->border_color : base->border_color;
+    out->br = (float)QL_COLOR_GET_R(bd);
+    out->bg = (float)QL_COLOR_GET_G(bd);
+    out->bb = (float)QL_COLOR_GET_B(bd);
+
+    /*
+     * alpha 跟着"背景色"走：CSS 里 background-color 本来就带 alpha，
+     * 所以只动 background-color 的动画也要把 alpha 一起带过来
+     * （否则透明元素永远动不出一块底色）。显式写了 opacity 时由它说了算。
+     */
+    out->a = (float)((has_a || has_bg) ? f->bg_alpha : base->bg_alpha);
+
+    if (!all_base && (f->props & QL_UI_KF_RADIUS) != 0)
+        out->rad = (float)f->radius;
+    else
+        out->rad = (float)base->border_radius;
+
+    if (!all_base && (f->props & QL_UI_KF_CLIP) != 0)
+        out->clip = (float)f->clip_r;
+    else
+        out->clip = (float)base->clip_r;
+
+    if (!all_base && (f->props & QL_UI_KF_MOVE) != 0) {
+        out->tx = (float)f->tf_x;
+        out->ty = (float)f->tf_y;
+        out->sc_x = (float)((f->sc_x < 0) ? base->sc_x : f->sc_x);
+        out->sc_y = (float)((f->sc_y < 0) ? base->sc_y : f->sc_y);
+    } else {
+        out->tx = (float)base->tf_x;
+        out->ty = (float)base->tf_y;
+        out->sc_x = (float)base->sc_x;
+        out->sc_y = (float)base->sc_y;
+    }
+}
+
+/*
+ * 找到 u（0..1）落在哪一段关键帧，返回段起点下标与段内进度。
+ * 帧表按 offset 升序、首帧 0、末帧 1000（生成器保证）。
+ */
+static uint16_t kf_segment(const QLUIAnimation *def, const QLUIKeyframe *kf,
+                           float u, float *out_local)
+{
+    int32_t pos = (int32_t)(u * 1000.0f + 0.5f);
+    if (pos < 0)
+        pos = 0;
+    if (pos > 1000)
+        pos = 1000;
+
+    uint16_t k = 0;
+    while ((uint16_t)(k + 1) < def->frame_count && (int32_t)kf[k + 1].offset <= pos)
+        k++;
+
+    if ((uint16_t)(k + 1) >= def->frame_count) {
+        *out_local = 1.0f;
+        return (uint16_t)(def->frame_count - 1);
+    }
+    int32_t a = (int32_t)kf[k].offset;
+    int32_t b = (int32_t)kf[k + 1].offset;
+    *out_local = (b > a) ? (float)(pos - a) / (float)(b - a) : 1.0f;
+    return k;
+}
+
+/* elapsed → 归一化进度（已含 direction）。返回 0 表示这一轮播放已经结束 */
+static int anim_progress(const QLUIAnimation *def, uint32_t elapsed, float *out_u)
+{
+    if (def->dur_ms == 0)
+        return 0;
+
+    uint32_t iter = elapsed / (uint32_t)def->dur_ms;
+    uint32_t rem = elapsed % (uint32_t)def->dur_ms;
+    if (def->iterations != 0 && iter >= (uint32_t)def->iterations)
+        return 0;
+
+    float local = (float)rem / (float)def->dur_ms;
+    int flip = 0;
+    switch (def->direction) {
+    case QL_UI_ANIM_REVERSE:
+        flip = 1;
+        break;
+    case QL_UI_ANIM_ALTERNATE:
+        flip = (int)(iter & 1u);
+        break;
+    case QL_UI_ANIM_ALTERNATE_REVERSE:
+        flip = (int)((iter & 1u) ^ 1u);
+        break;
+    default:
+        break;
+    }
+    *out_u = flip ? (1.0f - local) : local;
+    return 1;
+}
+
+/* 把 u 处的值写进 run->style。只改绘制期通道，其它字段永远是基础样式的值 */
+static void anim_apply(QLUIAnimRun *run, float u)
+{
+    const QLUIAnimation *def = run->def;
+    const QLUIKeyframe *kf = &run->node->owner->doc->keyframes[def->first_frame];
+
+    float local = 0.0f;
+    uint16_t k = kf_segment(def, kf, u, &local);
+    const QLUIKeyframe *f0 = &kf[k];
+    const QLUIKeyframe *f1 = ((uint16_t)(k + 1) < def->frame_count) ? &kf[k + 1] : f0;
+
+    /* 帧上没写 timing-function 时用动画的默认缓动 */
+    uint8_t ease = (f0->ease == QL_UI_KF_EASE_INHERIT) ? def->ease : f0->ease;
+    float t = ql_ease_apply(ease, 0, local);
+
+    QLUIKfValue a, b;
+    kf_read(run, f0, &a);
+    kf_read(run, f1, &b);
+    if (f0 == f1)
+        b = a;
+
+    run->style.bg_color = QL_COLOR_RGB(kf_u8(a.r + (b.r - a.r) * t),
+                                       kf_u8(a.g + (b.g - a.g) * t),
+                                       kf_u8(a.b + (b.b - a.b) * t));
+    run->style.bg_color2 = QL_COLOR_RGB(kf_u8(a.r2 + (b.r2 - a.r2) * t),
+                                        kf_u8(a.g2 + (b.g2 - a.g2) * t),
+                                        kf_u8(a.b2 + (b.b2 - a.b2) * t));
+    run->style.bg_alpha = kf_u8(a.a + (b.a - a.a) * t);
+
+    const uint8_t props = (uint8_t)(f0->props & (uint8_t)~QL_UI_KF_BASE);
+    if ((props & QL_UI_KF_TEXT) != 0)
+        run->style.text_color = QL_COLOR_RGB(kf_u8(a.tr + (b.tr - a.tr) * t),
+                                             kf_u8(a.tg + (b.tg - a.tg) * t),
+                                             kf_u8(a.tb + (b.tb - a.tb) * t));
+    if ((props & QL_UI_KF_BORDER) != 0)
+        run->style.border_color = QL_COLOR_RGB(kf_u8(a.br + (b.br - a.br) * t),
+                                               kf_u8(a.bg + (b.bg - a.bg) * t),
+                                               kf_u8(a.bb + (b.bb - a.bb) * t));
+    if ((props & QL_UI_KF_RADIUS) != 0)
+        run->style.border_radius = (int16_t)kf_i16(a.rad + (b.rad - a.rad) * t);
+    if ((props & QL_UI_KF_CLIP) != 0)
+        run->style.clip_r = (uint16_t)kf_i16(a.clip + (b.clip - a.clip) * t);
+    if ((props & QL_UI_KF_MOVE) != 0) {
+        run->style.tf_x = (int16_t)kf_i16(a.tx + (b.tx - a.tx) * t);
+        run->style.tf_y = (int16_t)kf_i16(a.ty + (b.ty - a.ty) * t);
+        run->style.sc_x = (int16_t)kf_i16(a.sc_x + (b.sc_x - a.sc_x) * t);
+        run->style.sc_y = (int16_t)kf_i16(a.sc_y + (b.sc_y - a.sc_y) * t);
+    }
+}
+
+/* 给节点开一个动画槽。slot 由调用方给；起点从 u=0 开始 */
+static void anim_run_begin(QLUIRoot *ui, QLUIAnimRun *run, QLUINodeRT *node,
+                           const QLUIAnimation *def)
+{
+    (void)ui;
+    run->node = node;
+    run->def = def;
+    run->style = (node->style != NULL) ? *node->style : (QLUIStyle){ 0 };
+    run->active = 1;
+    run->started = 0;
+    run->held = 0;
+    run->phase = 0;
+    anim_apply(run, 0.0f);   /* 先落到 0% 帧，第一次绘制就正确 */
+}
+
+/*
+ * 起播：把 doc 里所有带 anim 的节点挂上动画槽。
+ * 起始时刻留到第一次 ql_ui_anim_tick —— 这样测试可以用假时钟完全控制，
+ * 主循环也不需要额外传时间进来。
+ */
+static void anim_boot(QLUIRoot *ui)
+{
+    if (ui == NULL || ui->runs == NULL || ui->doc == NULL)
+        return;
+
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        QLUINodeRT *node = &ui->nodes[i];
+        if (node->style == NULL || node->style->anim == 0xFFFF)
+            continue;
+
+        QLUIAnimRun *slot = NULL;
+        for (int s = 0; s < QL_CFG_UI_RUN_ANIM_MAX; s++) {
+            if (!ui->runs[s].active) {
+                slot = &ui->runs[s];
+                break;
+            }
+        }
+        if (slot == NULL) {
+            QL_LOGW("ui: animation slots full (%d), node %u runs without animation",
+                    QL_CFG_UI_RUN_ANIM_MAX, (unsigned)i);
+            break;
+        }
+        anim_run_begin(ui, slot, node, &ui->doc->anims[node->style->anim]);
+    }
+}
+
+ql_err_t ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node)
+{
+    if (ui == NULL || node == NULL || ui->runs == NULL || ui->doc == NULL)
+        return QL_ERR_INVAL;
+
+    /* 优先复用已有槽：重播时样式从基础值重新开始，风格与首次播放一致 */
+    QLUIAnimRun *run = anim_find_mut(ui, node);
+    const QLUIAnimation *def = NULL;
+    if (run != NULL) {
+        def = run->def;
+    } else {
+        if (node->style == NULL || node->style->anim == 0xFFFF)
+            return QL_ERR_INVAL;
+        for (int s = 0; s < QL_CFG_UI_RUN_ANIM_MAX; s++) {
+            if (!ui->runs[s].active) {
+                run = &ui->runs[s];
+                break;
+            }
+        }
+        if (run == NULL)
+            return QL_ERR_NOMEM;
+        def = &ui->doc->anims[node->style->anim];
+    }
+
+    anim_run_begin(ui, run, node, def);
+    node->flags |= QL_UI_RT_DIRTY;
+    return QL_OK;
+}
+
+uint32_t ql_ui_anim_running(const QLUIRoot *ui)
+{
+    if (ui == NULL)
+        return 0;
+
+    uint32_t n = 0;
+    if (ui->runs != NULL) {
+        for (int i = 0; i < QL_CFG_UI_RUN_ANIM_MAX; i++) {
+            if (ui->runs[i].active && !ui->runs[i].held)
+                n++;
+        }
+    }
+    if (ui->trans != NULL) {
+        for (int i = 0; i < QL_CFG_UI_TRANS_MAX; i++) {
+            if (ui->trans[i].active)
+                n++;
+        }
+    }
+    return n;
+}
+
+/* 推进所有关键帧动画，返回仍在动的节点数 */
+static uint32_t anim_tick_runs(QLUIRoot *ui, uint32_t now_ms)
+{
+    if (ui->runs == NULL)
+        return 0;
+
+    uint32_t moving = 0;
+    for (int i = 0; i < QL_CFG_UI_RUN_ANIM_MAX; i++) {
+        QLUIAnimRun *run = &ui->runs[i];
+        if (!run->active || run->node == NULL || run->def == NULL || run->held)
+            continue;
+
+        if (!run->started) {
+            run->start_ms = now_ms;
+            run->started = 1;
+        }
+
+        uint32_t elapsed = now_ms - run->start_ms;   /* uint32 回绕天然安全 */
+
+        /* animation-delay：还没开始。fill-mode 带 backwards 时先亮出首帧，否则用基础样式 */
+        if (elapsed < (uint32_t)run->def->delay_ms) {
+            if (run->phase != 1) {
+                if (run->def->fill == QL_UI_ANIM_FILL_BACKWARDS ||
+                    run->def->fill == QL_UI_ANIM_FILL_BOTH)
+                    anim_apply(run, 0.0f);
+                else
+                    run->style = *run->node->style;
+                run->node->flags |= QL_UI_RT_DIRTY;
+                run->phase = 1;
+            }
+            continue;
+        }
+        if (run->phase == 1) {
+            run->phase = 2;
+            run->node->flags |= QL_UI_RT_DIRTY;   /* 延迟刚结束：切回关键帧 */
+        }
+        elapsed -= (uint32_t)run->def->delay_ms;
+
+        float u = 0.0f;
+        if (anim_progress(run->def, elapsed, &u)) {
+            anim_apply(run, u);
+            run->node->flags |= QL_UI_RT_DIRTY;
+            moving++;
+            continue;
+        }
+
+        /* 播完一次（iteration 用尽）：animationend */
+        anim_event_push(ui, run->node, QL_UI_ANIM_END_KEYFRAMES);
+
+        /* fill-forwards 停在末帧，否则回落到基础样式 */
+        if (run->def->fill == QL_UI_ANIM_FILL_FORWARDS ||
+            run->def->fill == QL_UI_ANIM_FILL_BOTH) {
+            anim_apply(run, 1.0f);
+            run->held = 1;
+            run->node->flags |= QL_UI_RT_DIRTY;
+        } else {
+            run->node->flags |= QL_UI_RT_DIRTY;   /* 让基础样式重画一遍 */
+            run->active = 0;
+            run->node = NULL;
+        }
+    }
+    return moving;
+}
+
 uint32_t ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms)
 {
     if (ui == NULL)
         return 0;
-    return ql_anim_tick(now_ms);
+
+    uint32_t moving = anim_tick_runs(ui, now_ms);
+    moving += ql_anim_tick(now_ms);            /* 状态过渡，池在 qlanim 里 */
+
+    /* 事件统一在本帧末尾派发：回调里再起动画 / 改文本都是安全的 */
+    anim_event_flush(ui);
+    return moving;
 }
 
 int ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max)
