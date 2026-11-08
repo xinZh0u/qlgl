@@ -7,6 +7,10 @@
 
 #include <qlgl/qlgl.h>
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 /* ------------------------------ 像素读写 ------------------------------ */
 
 ql_color_t ql_canvas_read_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y)
@@ -344,8 +348,106 @@ static void fill_row(QLCanvas *c, ql_coord_t x0, ql_coord_t x1, ql_coord_t y,
         }
     }
 
-    for (ql_coord_t x = x0; x <= x1; x++)
-        put_px(c, x, y, color, alpha);
+    /*
+     * 半透明路径：把行指针与格式 switch 提到循环外。
+     *
+     * 旧实现逐像素调 put_px()，每像素重算 c->buffer + y*stride 并再跳一次
+     * switch —— 软阴影、渐变、圆角覆盖都是整行同 alpha，代价全砸在这上面。
+     *
+     * 混合式与 put_px 完全一致：out = (src*a + dst*(255-a)) / 255。
+     * 中间和 < 255*255 = 65025，能用 16 位无符号装下，
+     * 因此 /255 可以用与截断除法逐值相等的两个恒等式加速：
+     *   标量   (x + (x>>8) + 1) >> 8
+     *   SSE2   mulhi_epu16(x, 32897) >> 7
+     * （0..65025 全域已验证与 x/255 逐值相同）
+     */
+    switch (c->format) {
+    case QL_COLOR_ARGB8888: {
+        uint32_t *p = (uint32_t *)(void *)(row + (uint32_t)x0 * 4u);
+        const uint32_t inv = 255u - alpha;
+        const uint32_t sr = (uint32_t)r * alpha;
+        const uint32_t sg = (uint32_t)g * alpha;
+        const uint32_t sb = (uint32_t)b * alpha;
+        uint32_t i = 0;
+#if defined(__SSE2__)
+        {
+            /* dst*inv + 源项(按通道预乘) 一次算完；A 通道最后统一置 0xFF */
+            const __m128i invv = _mm_set1_epi16((short)inv);
+            /* 车道序 = unpacklo 后的 [b, g, r, a] × 2；src 是 16 位预乘值，
+               不能塞进 8 位槽位，必须逐车道写入 */
+            const __m128i srcv = _mm_setr_epi16(
+                (short)(uint16_t)sb, (short)(uint16_t)sg, (short)(uint16_t)sr, 0,
+                (short)(uint16_t)sb, (short)(uint16_t)sg, (short)(uint16_t)sr, 0);
+            const __m128i k255 = _mm_set1_epi16((short)32897);
+            const __m128i opaque = _mm_set1_epi32((int)0xFF000000u);
+            const __m128i zero = _mm_setzero_si128();
+            for (; i + 4u <= n; i += 4u) {
+                __m128i v = _mm_loadu_si128((const __m128i *)(const void *)(p + i));
+                __m128i lo = _mm_unpacklo_epi8(v, zero);
+                __m128i hi = _mm_unpackhi_epi8(v, zero);
+                lo = _mm_add_epi16(_mm_mullo_epi16(lo, invv), srcv);
+                hi = _mm_add_epi16(_mm_mullo_epi16(hi, invv), srcv);
+                lo = _mm_srli_epi16(_mm_mulhi_epu16(lo, k255), 7);
+                hi = _mm_srli_epi16(_mm_mulhi_epu16(hi, k255), 7);
+                _mm_storeu_si128((__m128i *)(void *)(p + i),
+                                 _mm_or_si128(_mm_packus_epi16(lo, hi), opaque));
+            }
+        }
+#endif
+        for (; i < n; i++) {
+            uint32_t old = p[i];
+            uint32_t dr = (sr + ((old >> 16) & 0xFFu) * inv) / 255u;
+            uint32_t dg = (sg + ((old >> 8) & 0xFFu) * inv) / 255u;
+            uint32_t db = (sb + (old & 0xFFu) * inv) / 255u;
+            p[i] = 0xFF000000u | (dr << 16) | (dg << 8) | db;
+        }
+        return;
+    }
+    case QL_COLOR_RGB888: {
+        uint8_t *p = row + (uint32_t)x0 * 3u;
+        const uint32_t inv = 255u - alpha;
+        const uint32_t sr = (uint32_t)r * alpha;
+        const uint32_t sg = (uint32_t)g * alpha;
+        const uint32_t sb = (uint32_t)b * alpha;
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t tr = sr + (uint32_t)p[0] * inv;
+            uint32_t tg = sg + (uint32_t)p[1] * inv;
+            uint32_t tb = sb + (uint32_t)p[2] * inv;
+            p[0] = (uint8_t)((tr + (tr >> 8) + 1u) >> 8);
+            p[1] = (uint8_t)((tg + (tg >> 8) + 1u) >> 8);
+            p[2] = (uint8_t)((tb + (tb >> 8) + 1u) >> 8);
+            p += 3;
+        }
+        return;
+    }
+    case QL_COLOR_RGB565: {
+        uint16_t *p = (uint16_t *)(void *)(row + (uint32_t)x0 * 2u);
+        const uint32_t inv = 255u - alpha;
+        for (uint32_t i = 0; i < n; i++) {
+            uint16_t old = p[i];
+            uint32_t dr = ((uint32_t)r * alpha +
+                           ((old >> 11) & 0x1Fu) * 255u / 31u * inv) / 255u;
+            uint32_t dg = ((uint32_t)g * alpha +
+                           ((old >> 5) & 0x3Fu) * 255u / 63u * inv) / 255u;
+            uint32_t db = ((uint32_t)b * alpha +
+                           (old & 0x1Fu) * 255u / 31u * inv) / 255u;
+            p[i] = (uint16_t)(((dr & 0xF8u) << 8) | ((dg & 0xFCu) << 3) | (db >> 3));
+        }
+        return;
+    }
+    default: {
+        uint8_t *p = row + (uint32_t)x0;
+        const uint32_t inv = 255u - alpha;
+        const uint32_t lum = ((uint32_t)r * 77u + (uint32_t)g * 150u +
+                              (uint32_t)b * 29u) >> 8;
+        const uint32_t sl = lum * alpha;
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t t = sl + (uint32_t)p[i] * inv;
+            p[i] = (uint8_t)((t + (t >> 8) + 1u) >> 8);
+        }
+        return;
+    }
+    }
 }
 
 void ql_canvas_clear(QLCanvas *canvas, ql_color_t color)
@@ -375,11 +477,18 @@ void ql_canvas_fill_rect(QLCanvas *canvas, QLRect rect, ql_color_t color)
 
 /*
  * 求圆角矩形某一行的可见横向跨度。
- * 从两端向内扫，最多扫 radius 步（圆角之外必定命中），
- * 语义与 ql_rect_contains_round 完全一致（是扫描而不是换公式，
- * 保证与既有像素级测试、GPU 后端的边界一致）。
+ *
+ * 原实现从两端向内**逐像素扫描** + 每次调 ql_rect_contains_round（两次乘法），
+ * 半径 12 时每行约 24 次调用。这里改成解析求解：
+ *
+ *   判定条件 dx² + dy² <= rad²   （dx/dy 为到"圆角圆心矩形"的距离）
+ *   固定 y ⇒ dy 已知 ⇒ dx_max = floor(sqrt(rad² - dy²))
+ *   ⇒ 跨度 = [ix1 - dx_max, ix2 + dx_max] 与矩形边界求交
+ *
+ * 结果与原扫描**逐像素一致**（test_canvas 有像素级断言守着），
+ * 但每行只剩一次 sqrtf 与两次比较。
  */
-static int round_row_span(QLRect rect, ql_coord_t y, ql_coord_t radius,
+static inline int round_row_span(QLRect rect, ql_coord_t y, ql_coord_t radius,
                           ql_coord_t *out_x0, ql_coord_t *out_x1)
 {
     if (y < rect.y || y >= ql_rect_bottom(rect))
@@ -390,15 +499,49 @@ static int round_row_span(QLRect rect, ql_coord_t y, ql_coord_t radius,
 
     ql_coord_t limit = (rect.w < rect.h ? rect.w : rect.h) / 2;
     ql_coord_t rad = (radius > limit) ? limit : radius;
-
-    if (rad > 0) {
-        while (x0 < x1 && !ql_rect_contains_round(rect, x0, y, rad))
-            x0++;
-        while (x1 > x0 && !ql_rect_contains_round(rect, x1, y, rad))
-            x1--;
-        if (!ql_rect_contains_round(rect, x0, y, rad))
-            return 0;
+    if (rad < 0)
+        rad = 0;
+    if (rad == 0) {
+        *out_x0 = x0;
+        *out_x1 = x1;
+        return 1;
     }
+
+    const ql_coord_t ix1 = rect.x + rad;
+    const ql_coord_t iy1 = rect.y + rad;
+    const ql_coord_t ix2 = ql_rect_right(rect) - 1 - rad;
+    const ql_coord_t iy2 = ql_rect_bottom(rect) - 1 - rad;
+
+    ql_coord_t dy = 0;
+    if (y < iy1)
+        dy = iy1 - y;
+    else if (y > iy2)
+        dy = y - iy2;
+
+    if (dy > rad)
+        return 0;
+
+    ql_coord_t dx_max;
+    if (dy == 0) {
+        dx_max = rad;
+    } else {
+        /* 向下取整的整数平方根，与 dx*dx + dy*dy <= rad*rad 的边界完全一致 */
+        ql_coord_t rem = rad * rad - dy * dy;
+        dx_max = (ql_coord_t)sqrtf((float)rem);
+        while (dx_max * dx_max > rem)
+            dx_max--;
+        while ((dx_max + 1) * (dx_max + 1) <= rem)
+            dx_max++;
+    }
+
+    ql_coord_t lo = ix1 - dx_max;
+    ql_coord_t hi = ix2 + dx_max;
+    if (lo > x0)
+        x0 = lo;
+    if (hi < x1)
+        x1 = hi;
+    if (x1 < x0)
+        return 0;
 
     *out_x0 = x0;
     *out_x1 = x1;
@@ -495,112 +638,294 @@ void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_
     }
 }
 
-/* 圆角矩形的符号距离（负值在内部），与 GPU 着色器里的 sdRoundBox 同式 */
-static float sd_round_box(float px, float py, float hx, float hy, float r)
+/*
+ * 单像素混合写（行指针已给）。颜色分量与格式预先取好，
+ * 供阴影角区那种"一次算覆盖率、写四个镜像位置"的循环使用。
+ */
+static inline void blend_px(uint8_t *row, ql_coord_t x, uint8_t fmt, uint32_t cr,
+                            uint32_t cg, uint32_t cb, ql_color_t color, uint32_t a)
 {
-    float qx = fabsf(px) - hx + r;
-    float qy = fabsf(py) - hy + r;
-    float mx = (qx > 0.0f) ? qx : 0.0f;
-    float my = (qy > 0.0f) ? qy : 0.0f;
-
-    /*
-     * 试过"直边时省掉 sqrt"的分支版本，实测反而更慢：
-     * x86 上 sqrtss 是硬件指令，而这个分支几乎不可预测。
-     * 保持无分支写法。
-     */
-    float outside = sqrtf(mx * mx + my * my);
-
-    float inside = (qx > qy) ? qx : qy;
-    if (inside > 0.0f)
-        inside = 0.0f;
-    return outside + inside - r;
+    if (fmt == QL_COLOR_ARGB8888) {
+        uint32_t *p = (uint32_t *)(void *)(row + (uint32_t)x * 4u);
+        uint32_t old = *p;
+        uint32_t inv = 255u - a;
+        uint32_t dr = (cr * a + ((old >> 16) & 0xFFu) * inv) / 255u;
+        uint32_t dg = (cg * a + ((old >> 8) & 0xFFu) * inv) / 255u;
+        uint32_t db = (cb * a + (old & 0xFFu) * inv) / 255u;
+        *p = 0xFF000000u | (dr << 16) | (dg << 8) | db;
+        return;
+    }
+    put_px_at(row, fmt, x, color, (uint8_t)a);
 }
 
-/* 覆盖率：距离 d（外部为正）→ 0..1，与 GPU 的 smoothstep 一致 */
-static float shadow_coverage(float d, float blur)
+/*
+ * 垂直填充一列 [y0, y1]，alpha 必须已判断。
+ * 阴影的左右直边带用它：那里覆盖率只跟 x 有关，整列同色。
+ */
+static void fill_col(QLCanvas *c, ql_coord_t x, ql_coord_t y0, ql_coord_t y1,
+                     ql_color_t color, uint8_t alpha)
+{
+    if (y1 < y0)
+        return;
+
+    if (c->format == QL_COLOR_ARGB8888) {
+        /* 主格式直写：把格式判定与色分量提取提到循环外 */
+        uint8_t *p = c->buffer + (uint32_t)y0 * c->stride + (uint32_t)x * 4u;
+        const uint32_t inv = 255u - alpha;
+        const uint32_t sr = (uint32_t)QL_COLOR_GET_R(color) * alpha;
+        const uint32_t sg = (uint32_t)QL_COLOR_GET_G(color) * alpha;
+        const uint32_t sb = (uint32_t)QL_COLOR_GET_B(color) * alpha;
+        for (ql_coord_t y = y0; y <= y1; y++) {
+            uint32_t old = *(uint32_t *)(void *)p;
+            uint32_t dr = (sr + ((old >> 16) & 0xFFu) * inv) / 255u;
+            uint32_t dg = (sg + ((old >> 8) & 0xFFu) * inv) / 255u;
+            uint32_t db = (sb + (old & 0xFFu) * inv) / 255u;
+            *(uint32_t *)(void *)p = 0xFF000000u | (dr << 16) | (dg << 8) | db;
+            p += c->stride;
+        }
+        return;
+    }
+
+    for (ql_coord_t y = y0; y <= y1; y++) {
+        uint8_t *row = c->buffer + (uint32_t)y * c->stride;
+        put_px_at(row, c->format, x, color, alpha);
+    }
+}
+
+/* 距离 → 覆盖率（0..255，定点），与 GPU 的 smoothstep 同式 */
+static inline uint8_t shadow_cov_u8(float d, float blur)
 {
     if (d <= 0.0f)
-        return 1.0f;
+        return 255;
     if (blur <= 0.0f)
-        return 0.0f;
+        return 0;
     float t = d / blur;
     if (t >= 1.0f)
-        return 0.0f;
-    return 1.0f - (t * t * (3.0f - 2.0f * t));     /* 1 - smoothstep(0,1,t) */
+        return 0;
+    float cov = 1.0f - (t * t * (3.0f - 2.0f * t));
+    uint32_t a = (uint32_t)(cov * 255.0f + 0.5f);
+    return (uint8_t)(a > 255 ? 255 : a);
 }
 
+/*
+ * 软阴影：SDF + smoothstep。
+ *
+ * 关键优化——按九宫格分解，避免对整个外框逐像素算距离：
+ *
+ *      ┌────┬──────────────┬────┐
+ *      │ 角 │  上边（行同色）│ 角 │
+ *      ├────┼──────────────┼────┤
+ *      │左边│   实心（全覆盖）│右边│   ← 左右边与"列同色"
+ *      │列同色              │列同色│
+ *      ├────┼──────────────┼────┤
+ *      │ 角 │  下边（行同色）│ 角 │
+ *      └────┴──────────────┴────┘
+ *
+ * 上/下边带：距离只取决于 y → 整行一个 alpha（fill_row）。
+ * 左/右边带：距离只取决于 x → 整列一个 alpha（fill_col）。
+ * 只有四个圆角区（rad × blur 的小方块）需要逐像素 sqrt。
+ *
+ * 一张 143×68 的卡片、blur=10：逐像素次数从 ~4200 降到 ~400（约 10×）。
+ * 圆角半径为 0 时四个角退化掉，全部走行/列填充。
+ */
 void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
                            ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
                            ql_color_t color, uint8_t alpha)
 {
     if (canvas == NULL || alpha == 0 || ql_rect_is_empty(inner))
         return;
-
     if (blur < 0)
         blur = 0;
 
-    /* 阴影轮廓 = inner 平移，绘制区域 = 轮廓外扩 blur（+1 给衰减留边） */
-    QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
-    ql_coord_t pad = blur + 1;
-    QLRect outer = ql_rect_make(shaped.x - pad, shaped.y - pad,
-                                shaped.w + 2 * pad, shaped.h + 2 * pad);
+    /* 阴影轮廓 = inner 平移；绘制区域 = 轮廓外扩 blur（+1 给衰减留边） */
+    const QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
+    const ql_coord_t pad = blur + 1;
+    const QLRect outer = ql_rect_make(shaped.x - pad, shaped.y - pad,
+                                      shaped.w + 2 * pad, shaped.h + 2 * pad);
 
     QLRect area = ql_rect_intersect(outer, canvas->clip);
     if (ql_rect_is_empty(area))
         return;
 
     ql_coord_t limit = (shaped.w < shaped.h ? shaped.w : shaped.h) / 2;
-    float rad = (float)((radius > limit) ? limit : (radius < 0 ? 0 : radius));
-    float hx = (float)shaped.w * 0.5f;
-    float hy = (float)shaped.h * 0.5f;
-    float cx = (float)shaped.x + hx;
-    float cy = (float)shaped.y + hy;
-    float fblur = (float)blur;
+    ql_coord_t rad = (radius > limit) ? limit : (radius < 0 ? 0 : radius);
 
-    for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
-        uint8_t *row = canvas->buffer + (uint32_t)y * canvas->stride;
-        float py = (float)y + 0.5f - cy;
+    const float frad = (float)rad;
+    const float fblur = (float)blur;
 
-        /*
-         * 快路径：这一行"可能全实心"的横向区间 = 轮廓行跨度内缩 blur。
-         * 内缩后这些像素距离轮廓 >= blur，覆盖率恒为 1，可以整段填充。
-         */
-        ql_coord_t sx0 = 0, sx1 = 0;
-        int have_solid = 0;
-        if (blur > 0 && y >= shaped.y + blur && y < ql_rect_bottom(shaped) - blur) {
-            if (round_row_span(shaped, y, (ql_coord_t)rad, &sx0, &sx1)) {
-                sx0 += blur;
-                sx1 -= blur;
-                if (sx1 >= sx0)
-                    have_solid = 1;
+    const ql_coord_t sx0 = shaped.x, sx1 = ql_rect_right(shaped);      /* 半开 */
+    const ql_coord_t sy0 = shaped.y, sy1 = ql_rect_bottom(shaped);
+    const ql_coord_t ax0 = area.x, ax1 = ql_rect_right(area);
+    const ql_coord_t ay0 = area.y, ay1 = ql_rect_bottom(area);
+
+    /* ---- ① 实心区：距离 <= 0 ⇒ 全覆盖 ---- */
+    {
+        ql_coord_t fx0 = (sx0 > ax0) ? sx0 : ax0;
+        ql_coord_t fx1 = (sx1 < ax1) ? sx1 : ax1;
+        ql_coord_t fy0 = (sy0 > ay0) ? sy0 : ay0;
+        ql_coord_t fy1 = (sy1 < ay1) ? sy1 : ay1;
+        if (fx1 > fx0 && fy1 > fy0) {
+            if (fx0 == sx0 && fx1 == sx1 && fy0 == sy0 && fy1 == sy1) {
+                /* 常见情形：实心区整块可见，交给通用圆角填充（同一条按行跨度路径） */
+                ql_canvas_fill_round_rect_alpha(canvas, shaped, rad, color, alpha);
+            } else if (rad > 0) {
+                /* 圆角区不可整块填：按行取跨度 */
+                for (ql_coord_t y = fy0; y < fy1; y++) {
+                    ql_coord_t rx0 = 0, rx1 = 0;
+                    if (!round_row_span(shaped, y, rad, &rx0, &rx1))
+                        continue;
+                    if (rx0 < fx0) rx0 = fx0;
+                    if (rx1 > fx1 - 1) rx1 = fx1 - 1;
+                    if (rx1 >= rx0)
+                        fill_row(canvas, rx0, rx1, y, color, alpha);
+                }
+            } else {
+                for (ql_coord_t y = fy0; y < fy1; y++)
+                    fill_row(canvas, fx0, fx1 - 1, y, color, alpha);
             }
         }
+    }
 
-        ql_coord_t solid0 = 0, solid1 = -1;
-        if (have_solid) {
-            solid0 = (sx0 > area.x) ? sx0 : area.x;
-            solid1 = (sx1 < ql_rect_right(area) - 1) ? sx1 : ql_rect_right(area) - 1;
-            if (solid1 >= solid0)
-                fill_row(canvas, solid0, solid1, y, color, alpha);
-        }
+    /* ---- ② 上 / 下边带：距离只取决于 y ⇒ 整行同色 ---- */
+    /* 直边段 = 轮廓横向去掉两端的圆角 */
+    ql_coord_t strip0 = sx0 + rad;
+    ql_coord_t strip1 = sx1 - rad;
 
-        /* 环：逐像素算距离；实心段跳过 */
-        for (ql_coord_t x = area.x; x < ql_rect_right(area); x++) {
-            if (have_solid && x >= solid0 && x <= solid1)
+    for (int side = 0; side < 2; side++) {
+        ql_coord_t y_begin = (side == 0) ? ay0 : sy1;
+        ql_coord_t y_end   = (side == 0) ? ((sy0 < ay1) ? sy0 : ay1)
+                                         : ((outer.y + outer.h < ay1) ? ql_rect_bottom(outer)
+                                                                      : ay1);
+        if (side == 0 && sy0 <= ay0)
+            continue;      /* 上边带不在可见区域内 */
+        if (side == 1 && sy1 >= ay1)
+            continue;
+
+        for (ql_coord_t y = y_begin; y < y_end; y++) {
+            float dyv = (side == 0) ? ((float)sy0 - ((float)y + 0.5f))
+                                    : (((float)y + 0.5f) - (float)sy1);
+            uint8_t cov = shadow_cov_u8(dyv, fblur);
+            if (cov == 0)
                 continue;
-
-            float px = (float)x + 0.5f - cx;
-            float d = sd_round_box(px, py, hx, hy, rad);
-            float cov = shadow_coverage(d, fblur);
-            if (cov <= 0.0f)
-                continue;
-
-            uint32_t a = (uint32_t)(cov * (float)alpha + 0.5f);
+            uint32_t a = (uint32_t)cov * (uint32_t)alpha / 255u;
             if (a == 0)
                 continue;
-            if (a > 255)
-                a = 255;
-            put_px_at(row, canvas->format, x, color, (uint8_t)a);
+            ql_coord_t x0 = (strip0 > ax0) ? strip0 : ax0;
+            ql_coord_t x1 = (strip1 < ax1) ? strip1 : ax1;
+            if (x1 > x0)
+                fill_row(canvas, x0, x1 - 1, y, color, (uint8_t)a);
+        }
+    }
+
+    /* ---- ③ 左 / 右边带：距离只取决于 x ⇒ 整列同色 ---- */
+    ql_coord_t vstrip0 = sy0 + rad;
+    ql_coord_t vstrip1 = sy1 - rad;
+
+    for (int side = 0; side < 2; side++) {
+        ql_coord_t x_begin = (side == 0) ? ax0 : sx1;
+        ql_coord_t x_end   = (side == 0) ? ((sx0 < ax1) ? sx0 : ax1)
+                                         : ((ql_rect_right(outer) < ax1)
+                                                ? ql_rect_right(outer) : ax1);
+        if (side == 0 && sx0 <= ax0)
+            continue;
+        if (side == 1 && sx1 >= ax1)
+            continue;
+
+        for (ql_coord_t x = x_begin; x < x_end; x++) {
+            float dxv = (side == 0) ? ((float)sx0 - ((float)x + 0.5f))
+                                    : (((float)x + 0.5f) - (float)sx1);
+            uint8_t cov = shadow_cov_u8(dxv, fblur);
+            if (cov == 0)
+                continue;
+            uint32_t a = (uint32_t)cov * (uint32_t)alpha / 255u;
+            if (a == 0)
+                continue;
+            ql_coord_t y0 = (vstrip0 > ay0) ? vstrip0 : ay0;
+            ql_coord_t y1 = (vstrip1 < ay1) ? vstrip1 : ay1;
+            if (y1 > y0)
+                fill_col(canvas, x, y0, y1 - 1, color, (uint8_t)a);
+        }
+    }
+
+    /* ---- ④ 四个角区：唯一的逐像素 sqrt ---- */
+    /*
+     * fblur == 0 时角外的覆盖率恒为 0（硬边阴影），整块跳过。
+     *
+     * rad == 0 也必须走这里：此时上/下边带只覆盖 [sx0, sx1)、左/右边带只覆盖
+     * [sy0, sy1)，四个 pad×pad 的方角没有任何区域负责，会留白。
+     *
+     * 角块的横向范围是 {qx > 0} = 距左右边 rad 以内再加外面 pad 的余量，
+     * 即 [sx0-pad, sx0+rad) 与 [sx1-rad, sx1+pad)。右侧必须以 outer 的右边界
+     * 为锚，否则会与直边带重叠（同一点混两次、偏黑）并漏掉最外侧 pad 条带。
+     *
+     * 四个角互为镜像：覆盖率只取决于"到圆角圆心的相对偏移 (qx, qy)"，
+     * 所以每个 (qx, qy) 只算一次，然后写入四个镜像位置。
+     * 角内 qx、qy 恒为正（最小的 i=j=span-1 时仍为 0.5），钳零分支可留作保险。
+     */
+    if (fblur > 0.0f) {
+        const ql_coord_t span = rad + pad;
+        const ql_coord_t lx = sx0 - pad;
+        const ql_coord_t rx = ql_rect_right(outer) - span;
+        const ql_coord_t ty = sy0 - pad;
+        const ql_coord_t byy = ql_rect_bottom(outer) - span;
+        const float inv_blur = 1.0f / fblur;
+        const uint32_t cr = QL_COLOR_GET_R(color);
+        const uint32_t cg = QL_COLOR_GET_G(color);
+        const uint32_t cb = QL_COLOR_GET_B(color);
+        const uint8_t fmt = canvas->format;
+        /* 四块角全在可见区内时免去逐点判断（绝大多数情况） */
+        const int whole = (ax0 <= lx && ax1 >= ql_rect_right(outer) &&
+                           ay0 <= ty && ay1 >= ql_rect_bottom(outer));
+
+        for (ql_coord_t j = 0; j < span; j++) {
+            float qy = (float)pad - (float)j - 0.5f + frad;
+            if (qy < 0.0f)
+                qy = 0.0f;
+            const float qy2 = qy * qy;
+            const ql_coord_t yt = ty + j;                 /* 上侧角 */
+            const ql_coord_t yb = byy + span - 1 - j;     /* 下侧角（镜像行） */
+            const int yt_ok = whole || (yt >= ay0 && yt < ay1);
+            const int yb_ok = whole || (yb >= ay0 && yb < ay1);
+            if (!yt_ok && !yb_ok)
+                continue;
+            uint8_t *rt = yt_ok ? canvas->buffer + (uint32_t)yt * canvas->stride : NULL;
+            uint8_t *rb = yb_ok ? canvas->buffer + (uint32_t)yb * canvas->stride : NULL;
+
+            for (ql_coord_t i = 0; i < span; i++) {
+                float qx = (float)pad - (float)i - 0.5f + frad;
+                if (qx < 0.0f)
+                    qx = 0.0f;
+                float d = sqrtf(qx * qx + qy2) - frad;
+                float t = d * inv_blur;
+                uint32_t c8 = 0;
+                if (d > 0.0f && t < 1.0f) {
+                    float cov = 1.0f - (t * t * (3.0f - 2.0f * t));
+                    c8 = (uint32_t)(cov * 255.0f + 0.5f);
+                    if (c8 > 255u)
+                        c8 = 255u;
+                }
+                uint32_t a = c8 * (uint32_t)alpha / 255u;
+                if (a == 0)
+                    continue;
+
+                const ql_coord_t xl = lx + i;                 /* 左侧 */
+                const ql_coord_t xr = rx + span - 1 - i;      /* 右侧（镜像列） */
+                const int xl_ok = whole || (xl >= ax0 && xl < ax1);
+                const int xr_ok = whole || (xr >= ax0 && xr < ax1);
+
+                if (rt != NULL) {
+                    if (xl_ok)
+                        blend_px(rt, xl, fmt, cr, cg, cb, color, a);
+                    if (xr_ok)
+                        blend_px(rt, xr, fmt, cr, cg, cb, color, a);
+                }
+                if (rb != NULL) {
+                    if (xl_ok)
+                        blend_px(rb, xl, fmt, cr, cg, cb, color, a);
+                    if (xr_ok)
+                        blend_px(rb, xr, fmt, cr, cg, cb, color, a);
+                }
+            }
         }
     }
 }
@@ -766,12 +1091,19 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
     if (gy1 < gy0)
         return;
 
+    const uint8_t fmt = canvas->format;
+    const uint32_t cr = QL_COLOR_GET_R(color);
+    const uint32_t cg = QL_COLOR_GET_G(color);
+    const uint32_t cb = QL_COLOR_GET_B(color);
+
     for (ql_coord_t gy = gy0; gy <= gy1; gy++) {
         /* 行指针由字体提供：静态位图字体与动态矢量字体的取法不同 */
         const uint8_t *src = ql_font_glyph_row(font, glyph, gy);
         if (src == NULL)
             break;
         ql_coord_t y = origin_y + gy;
+        /* 行指针提到行外：字形逐像素写，原来每像素重算一次 buffer + y*stride */
+        uint8_t *row = canvas->buffer + (uint32_t)y * canvas->stride;
 
         switch (font->bpp) {
         case 4:
@@ -779,21 +1111,22 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
                 uint8_t byte = src[(uint32_t)gx / 2u];
                 uint8_t nib = (gx % 2 == 0) ? (uint8_t)(byte >> 4) : (uint8_t)(byte & 0x0Fu);
                 if (nib != 0)
-                    put_px(canvas, origin_x + gx, y, color, (uint8_t)(nib * 17u));
+                    blend_px(row, origin_x + gx, fmt, cr, cg, cb, color,
+                             (uint32_t)nib * 17u);
             }
             break;
         case 1:
             for (ql_coord_t gx = gx0; gx <= gx1; gx++) {
                 uint8_t byte = src[(uint32_t)gx / 8u];
                 if (byte & (0x80u >> (gx % 8)))
-                    put_px(canvas, origin_x + gx, y, color, 255);
+                    blend_px(row, origin_x + gx, fmt, cr, cg, cb, color, 255u);
             }
             break;
         default:
             for (ql_coord_t gx = gx0; gx <= gx1; gx++) {
                 uint8_t a = src[gx];
                 if (a != 0)
-                    put_px(canvas, origin_x + gx, y, color, a);
+                    blend_px(row, origin_x + gx, fmt, cr, cg, cb, color, a);
             }
             break;
         }

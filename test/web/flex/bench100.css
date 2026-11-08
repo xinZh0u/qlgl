@@ -1,0 +1,12 @@
+#root { width: 100%; padding: 4px; background-color: #10141c; }
+.row { display: flex; flex-direction: row; gap: 4px; margin: 0 0 4px 0; }
+.cell {
+  flex: 1 1 0px;
+  height: 20px;
+  background-color: #1e2533;
+  border-width: 1px;
+  border-color: #3a4860;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.t { font-size: 12px; color: #8fd0ff; }
