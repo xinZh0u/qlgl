@@ -208,12 +208,12 @@ main img.shot { max-width: 100%; }
 <hr />
 <h2 id="1">1. 工作流</h2>
 <div class="highlight"><pre><span></span><code>index.html ┐
-index.css  ├─ python3 tools/qlui/qlui.py ─▶ ui_index.c + ui_index.h ─▶ 编译进固件
-tools/qlui/qlui.py ┘
+index.css  ├─ qltext cc ─▶ ui_index.c + ui_index.h ─▶ 编译进固件
+tools/qltext/qltext.c ┘
 </code></pre></div>
 
 <h3 id="11">1.1 命令行</h3>
-<div class="highlight"><pre><span></span><code>python3<span class="w"> </span>tools/qlui/qlui.py<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>qltext<span class="w"> </span>cc<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--html<span class="w"> </span>test/web/ui_demo.html<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--css<span class="w">  </span>test/web/ui_demo.css<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--out<span class="w">  </span>build/ui
@@ -254,9 +254,9 @@ tools/qlui/qlui.py ┘
 <span class="nb">add_custom_command</span><span class="p">(</span>
 <span class="w">    </span><span class="s">OUTPUT</span><span class="w">  </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="s">/ui_index.c</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="s">/ui_index.h</span>
 <span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_COMMAND</span><span class="o">}</span><span class="w"> </span><span class="s">-E</span><span class="w"> </span><span class="s">make_directory</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span>
-<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="o">${</span><span class="nv">Python3_EXECUTABLE</span><span class="o">}</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_SOURCE_DIR</span><span class="o">}</span><span class="s">/tools/qlui/qlui.py</span>
+<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="s">qltext</span><span class="w"> </span><span class="s">cc</span>
 <span class="w">            </span><span class="s">--html</span><span class="w"> </span><span class="s">ui/index.html</span><span class="w"> </span><span class="s">--css</span><span class="w"> </span><span class="s">ui/index.css</span><span class="w"> </span><span class="s">--out</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span>
-<span class="w">    </span><span class="s">DEPENDS</span><span class="w"> </span><span class="s">ui/index.html</span><span class="w"> </span><span class="s">ui/index.css</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_SOURCE_DIR</span><span class="o">}</span><span class="s">/tools/qlui/qlui.py</span>
+<span class="w">    </span><span class="s">DEPENDS</span><span class="w"> </span><span class="s">ui/index.html</span><span class="w"> </span><span class="s">ui/index.css</span><span class="w"> </span><span class="s">qltext</span>
 <span class="w">    </span><span class="s">COMMENT</span><span class="w"> </span><span class="s2">&quot;编译 HTML+CSS 为 C&quot;</span><span class="p">)</span>
 
 <span class="nb">add_executable</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">main.c</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="s">/ui_index.c</span><span class="p">)</span>

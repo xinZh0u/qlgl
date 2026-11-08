@@ -217,8 +217,13 @@ main img.shot { max-width: 100%; }
 </thead>
 <tbody>
 <tr>
-<td><code>tools/qlui/qlui.py</code></td>
-<td>HTML 解析 + CSS 解析 + 选择器匹配 + 级联 + 生成 C</td>
+<td><code>src/ui/qlui_parse.c</code></td>
+<td>HTML 解析 + CSS 解析 + 选择器匹配 + 级联（构建期与运行期共用）</td>
+<td>①</td>
+</tr>
+<tr>
+<td><code>tools/qltext/qltext.c</code></td>
+<td>把上一行算出的 doc 落盘成 C 表 / <code>.qlui</code></td>
 <td>①</td>
 </tr>
 <tr>
@@ -266,7 +271,7 @@ main img.shot { max-width: 100%; }
 <p>生成链路：</p>
 <div class="highlight"><pre><span></span><code>test/web/ui_demo.html ┐
 test/web/ui_demo.css  ├─ cmake --build ─▶ build/ui/ui_demo.c + ui_demo.h ─▶ 编译进测试程序
-tools/qlui/qlui.py    ┘                                     │
+tools/qltext/qltext.c  ┘                                     │
                                                             └─ qlblob ─▶ ui_demo.qlui
 </code></pre></div>
 
@@ -401,26 +406,37 @@ blob 省掉的只是"解析文本"，<strong>不提升帧率</strong>——它�
 <li><strong>颜色/长度在生成期全部换算成整数</strong>，运行期不做字符串处理。</li>
 </ol>
 <hr />
-<h2 id="4-toolsqluiqluipy">4. 生成器（<code>tools/qlui/qlui.py</code>）</h2>
+<h2 id="4-srcuiqlui_parsec-toolsqltextqltextc">4. 生成器（<code>src/ui/qlui_parse.c</code> + <code>tools/qltext/qltext.c</code>）</h2>
 <h3 id="41">4.1 处理流程</h3>
-<div class="highlight"><pre><span></span><code>HTML ──HTMLParser──▶ Node 树 ─┐
-                              ├─▶ 逐节点计算样式 ─▶ 去重 ─▶ 生成 C
-CSS  ──parse_css──▶ Rule 列表 ─┘
+<div class="highlight"><pre><span></span><code>HTML ──⑤ HTML 词法──▶ 节点树 ─┐
+                              ├─▶ ⑥ 级联（UA 默认 → 规则 → 内联 → 继承）
+CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
+                                        ▼
+                              ⑦ 编译成 QLUIStyle ─▶ 去重 ─▶ ⑧ 建表进 arena
+                                                                  │
+                                        ┌─────────────────────────┴──────────┐
+                                        ▼                                    ▼
+                            qltext 把 doc 写成 C 表            运行期直接布局/绘制
 </code></pre></div>
 
+<p><strong>注意这张图的上半部分是唯一的一份</strong>：<code>src/ui/qlui_parse.c</code> 算出来的 <code>QLUIDoc</code>，
+构建期（<code>qltext</code>）拿它落盘成 C 源，运行期（<code>ql_ui_load_text</code>）拿它直接画。
+两条路不存在两份代码，所以不可能漂移——这是 M3.5 第 4 步的全部意义。</p>
 <h3 id="42-css">4.2 CSS 解析</h3>
 <ul>
-<li>先 <code>strip_comments</code> 去掉 <code>/* */</code>；</li>
-<li>逐条 <code>选择器 { 声明; }</code>；</li>
-<li><strong><code>@media</code> / <code>@supports</code> 等 at-rule 直接报错</strong>；</li>
-<li>属性白名单 <code>SUPPORTED_PROPS</code>，不在表里就报错并给出 <code>文件:行号</code>。</li>
+<li>先去掉 <code>/* */</code> 注释，再按 <code>选择器 { 声明; }</code> 切块；</li>
+<li><strong><code>@media</code> / <code>@supports</code> 等 at-rule 直接报错</strong>（只认 <code>@keyframes</code>）；</li>
+<li>属性白名单是一张 <code>(名字, 处理器)</code> 表，不在表里就报错并给出 <code>文件:行号</code>；</li>
+<li>简写（<code>margin</code> / <code>padding</code> / <code>flex</code> / <code>gap</code> / <code>background</code> / <code>border</code> /
+  <code>transition</code> / <code>animation</code>）<strong>在单条规则内</strong>就展开成长写，不能等级联合并后再展开。</li>
 </ul>
 <h3 id="43">4.3 选择器与优先级</h3>
 <p>支持：<code>tag</code>、<code>.class</code>、<code>#id</code>、后代（空格）、子代（<code>&gt;</code>）。
 <strong>不支持 <code>+</code> / <code>~</code> 兄弟选择器</strong>（会报错）。</p>
 <p>优先级用规范的三元组 <code>(id 数, class 数, tag 数)</code>，排序后再按出现顺序覆盖 ——
 这是"同一份 CSS 在两个引擎上渲染一致"的前提，不是可选项。</p>
-<div class="highlight"><pre><span></span><code><span class="n">matched</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">specificity</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">order</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 先按 (id 数, class 数, tag 数) 排，再按出现顺序 —— 稳定排序 */</span>
+<span class="n">qsort</span><span class="p">(</span><span class="n">matched</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">matched</span><span class="p">),</span><span class="w"> </span><span class="n">cmp_specificity</span><span class="p">);</span>
 </code></pre></div>
 
 <h3 id="44">4.4 级联与继承</h3>
@@ -433,50 +449,85 @@ CSS  ──parse_css──▶ Rule 列表 ─┘
 
 <p>继承的实现很直接：父节点先算完样式，子节点从父的样式里挑 <code>INHERITED</code> 三个属性作为初始值。</p>
 <h3 id="45">4.5 明确报错的场景（不静默降级）</h3>
+<p>红线是"明确失败优于半个正确"：本实现做不到的写法一律在构建期/加载时爆掉，
+而不是运行时什么都不发生。当前的拒绝集合（<code>test_text_reject</code> 每条都在钉它）：</p>
 <table>
 <thead>
 <tr>
-<th>场景</th>
-<th>报错信息</th>
+<th>类别</th>
+<th>例子</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>不支持的标签（<code>&lt;table&gt;</code>/<code>&lt;img&gt;</code>）</td>
-<td><code>不支持标签 &lt;table&gt;</code></td>
+<td>不支持的标签</td>
+<td><code>&lt;table&gt;</code> / <code>&lt;img&gt;</code>（只认 10 个标签，见 §6）</td>
 </tr>
 <tr>
-<td>不支持的属性（<code>position</code>/<code>flex</code>/<code>box-shadow</code>）</td>
-<td><code>不支持的属性 'position'</code></td>
+<td>HTML 结构错</td>
+<td>结束标签不匹配、标签未闭合、根元素不是恰好 1 个</td>
 </tr>
 <tr>
-<td>不支持的长度单位（<code>em</code>/<code>rem</code>/<code>vh</code>）</td>
-<td><code>不支持的长度 '1.5em'（只支持 px 与 %）</code></td>
+<td>属性名不认识</td>
+<td><code>inset</code> / <code>opacity</code> / 任意拼错的属性</td>
 </tr>
 <tr>
-<td>不支持的 at-rule</td>
-<td><code>不支持 at-rule '@media'</code></td>
+<td>属性值不认识</td>
+<td><code>position: sticky</code>、<code>display: grid</code>、<code>border: 2px dashed</code></td>
 </tr>
 <tr>
-<td>兄弟选择器</td>
-<td><code>不支持相邻/兄弟选择器 '+'</code></td>
+<td>单位</td>
+<td><code>1.5em</code> / <code>rem</code> / <code>vh</code>（只支持 <code>px</code> 与 <code>%</code>）</td>
 </tr>
 <tr>
-<td><strong>混合内容</strong>（<code>&lt;p&gt;文字&lt;b&gt;粗&lt;/b&gt;&lt;/p&gt;</code>）</td>
-<td><code>同时包含文本和子元素（混合内容）——请把文本放进独立的 &lt;span&gt;/&lt;p&gt;</code></td>
+<td>颜色</td>
+<td><code>#12345</code>、拼错的命名色</td>
 </tr>
 <tr>
-<td>文档有 0 或 2+ 个根元素</td>
-<td><code>文档必须有且只有一个根元素</code></td>
+<td>at-rule</td>
+<td><code>@media</code> / <code>@supports</code>（只认 <code>@keyframes</code>）</td>
+</tr>
+<tr>
+<td>选择器</td>
+<td><code>+</code> / <code>~</code> 兄弟选择器、<code>::before</code> 伪元素</td>
+</tr>
+<tr>
+<td>简写值个数</td>
+<td><code>margin: 1px 2px 3px</code>（只接受 1/2/4 个）</td>
+</tr>
+<tr>
+<td>transform</td>
+<td><code>rotate()</code> / <code>matrix()</code>；<code>scale</code> 超出 <code>0~32.767</code></td>
+</tr>
+<tr>
+<td>关键帧</td>
+<td>百分比重复/越界、各帧属性不一致、帧里写了不支持的属性</td>
+</tr>
+<tr>
+<td>animation</td>
+<td>没写 <code>duration</code>、<code>duration: 0</code>、<code>steps()</code>/<code>cubic-bezier()</code>、<code>paused</code>、三处时长</td>
+</tr>
+<tr>
+<td>transition</td>
+<td>写了两段时间（延迟）</td>
+</tr>
+<tr>
+<td>状态规则</td>
+<td><code>:hover</code> 里写 <code>animation</code>（动画只按基础样式起播，写了会静默失效）</td>
+</tr>
+<tr>
+<td>backdrop-filter / clip-path</td>
+<td><code>blur</code> 半径不在 <code>1~64px</code>、<code>clip-path</code> 不是 <code>circle()</code></td>
 </tr>
 </tbody>
 </table>
-<p>最后一条很容易被忽略：v0 的文本是"元素的一段文本"，不支持一个元素里
-既有文字又有子元素。所以演示页面里写的是：</p>
-<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;line&quot;</span><span class="p">&gt;&lt;</span><span class="nt">span</span><span class="p">&gt;</span>inline<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;&lt;</span><span class="nt">span</span><span class="p">&gt;</span>bold<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>   <span class="cm">&lt;!-- ✅ --&gt;</span>
-<span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;line&quot;</span><span class="p">&gt;</span>inline <span class="p">&lt;</span><span class="nt">b</span><span class="p">&gt;</span>bold<span class="p">&lt;/</span><span class="nt">b</span><span class="p">&gt;&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>                      <span class="cm">&lt;!-- ❌ 报错 --&gt;</span>
-</code></pre></div>
-
+<blockquote>
+<p><strong>已经不再是错误的东西</strong>（M3/M5.5 之后）：<code>position</code> / <code>flex-*</code> / <code>box-shadow</code> /
+<code>linear-gradient</code> / <code>transform</code> / <code>clip-path</code> / 混合内容（<code>&lt;p&gt;文字&lt;b&gt;粗&lt;/b&gt;&lt;/p&gt;</code>）
+全都支持了。本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。</p>
+</blockquote>
+<p><strong>唯一一个"结构上"的限制</strong>：元素级 doc 不能混用（跨 doc 的 <code>uint16</code> 下标无法引用），
+混用单位锁死在<strong>面板</strong>（一个 <code>QLUIRoot</code> ↔ 一份 doc）。</p>
 <hr />
 <h2 id="5">5. 运行期三件事</h2>
 <h3 id="51-ql_ui_build">5.1 物化 <code>ql_ui_build</code></h3>
@@ -597,7 +648,7 @@ CSS  ──parse_css──▶ Rule 列表 ─┘
 <p>插值的是<strong>整份样式</strong>：过渡槽存 <code>from</code> / <code>to</code> / <code>style</code> 三份 <code>QLUIStyle</code>，
 <code>QLAnimKey.v[0]</code> 只当 0..1 的进度用。这样通道数不受 <code>QLAnimValue</code> 的 4 个 float 限制，
 加新通道只是多一个 <code>trans_props</code> 位 + 一次 <code>lerp_color()</code>。</p>
-<p><strong>shorthand 必须在单条规则内展开</strong>（<code>tools/qlui/qlui.py</code> 的 <code>expand_shorthands</code>）：
+<p><strong>shorthand 必须在单条规则内展开</strong>（<code>qlui_parse.c</code> 的简写展开段）：
 级联合并之后再展开，会把后出现的长写覆盖回 shorthand 的值 ——
 <code>.card{animation: x 1s} .a{animation-name: y}</code> 会让 <code>.a</code> 也跑 <code>x</code>
 （踩过：10 张卡片退化成同一段关键帧）。<code>transition</code> / <code>flex</code> / <code>gap</code> /
@@ -621,7 +672,7 @@ CSS  ──parse_css──▶ Rule 列表 ─┘
 @keyframes:  按时间定位到帧段 + 段内插值（qlui 自己算，无状态可打断）
 </code></pre></div>
 
-<p><strong>构建期</strong>（<code>qlui.py</code>）：<code>@keyframes</code> 编译成两张静态表</p>
+<p><strong>构建期</strong>（<code>qlui_parse.c</code>）：<code>@keyframes</code> 编译成两张静态表</p>
 <div class="highlight"><pre><span></span><code>QLUIKeyframe[]  每帧：offset(千分比) + 缓动 + 通道位图 + bg_color/bg_color2/alpha  （16 B）
 QLUIAnimation[] 每段：first_frame + frame_count + dur_ms + iterations + direction + fill
 QLUIStyle.anim  该节点播第几段（0xFFFF = 没有）
@@ -834,9 +885,9 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 所以 <code>test_blur</code> 不比逐像素，而是断言性质（玻璃内出现长串中间色、玻璃外一个都没有）。</p>
 <hr />
 <h3 id="55-qlui-blob">5.5 <code>.qlui</code> blob：换界面不用重编译</h3>
-<div class="highlight"><pre><span></span><code>qlui.py ──▶ ui_demo.c ──┐
-                        ├─ 编译进程序（零加载成本）
-        └──▶ qlblob ────┴─▶ ui_demo.qlui ──▶ ql_ui_load_file()（运行时加载）
+<div class="highlight"><pre><span></span><code>                    ┌──▶ ui_demo.c ──▶ 编译器 ──▶ .rodata ──▶ ql_ui_build()
+index.html + index.css ──qltext cc──┤
+                    └──▶ ui_demo.qlui ──▶ ql_ui_load_file()（换界面不重编译）
 </code></pre></div>
 
 <h4 id="_3">为什么加载这么便宜</h4>
@@ -969,7 +1020,7 @@ total_size、FNV-1a 32 校验和、6 个段偏移。</p>
 "看不见但能点到"。</p>
 <h4 id="_9">混合内容：在生成期消解</h4>
 <div class="highlight"><pre><span></span><code>&lt;p&gt;Hello &lt;b&gt;bold&lt;/b&gt;!&lt;/p&gt;
-   ↓ qlui.py 的 _flatten()
+   ↓ qlui_parse.c 的扁平化
 &lt;p&gt;&lt;span&gt;Hello &lt;/span&gt;&lt;b&gt;bold&lt;/b&gt;&lt;span&gt;!&lt;/span&gt;&lt;/p&gt;
 </code></pre></div>
 
@@ -1138,7 +1189,7 @@ total_size、FNV-1a 32 校验和、6 个段偏移。</p>
 ./build/example_ui_blob<span class="w"> </span>--watch
 
 <span class="c1"># 终端 2：改 test/web/ui_demo.css 后</span>
-python3<span class="w"> </span>tools/qlui/qlui.py<span class="w"> </span>--html<span class="w"> </span>test/web/ui_demo.html<span class="w"> </span><span class="se">\</span>
+qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> </span>test/web/ui_demo.html<span class="w"> </span><span class="se">\</span>
 <span class="w">                          </span>--css<span class="w">  </span>test/web/ui_demo.css<span class="w"> </span>--out<span class="w"> </span>build/ui
 ./build/qlblob<span class="w"> </span>build/ui/ui_demo.qlui
 <span class="c1"># 窗口自动更新，应用二进制没有重新编译</span>
@@ -1157,7 +1208,7 @@ python3<span class="w"> </span>tools/qlui/qlui.py<span class="w"> </span>--html<
 <li><code>ctest --test-dir build -R test_web_ui --output-on-failure</code> 全绿；</li>
 <li>打开 <code>build/ui/ui_demo.c</code>，对照 HTML 看节点表与样式表 —— 这是最快的理解方式；</li>
 <li>读 <code>test/web/test_web_ui.c</code>：每个断言对应一条布局规则；</li>
-<li>读 <code>tools/qlui/qlui.py</code> 的 <code>parse_css</code> → <code>build_style</code> → <code>emit</code> 三个函数；</li>
+<li>读 <code>src/ui/qlui_parse.c</code> 的 ④ CSS 词法 → ⑥ 级联 → ⑦ 编译 <code>QLUIStyle</code> 三段；</li>
 <li>读 <code>src/ui/qlui.c</code> 的 <code>layout_node</code>。</li>
 </ol>
 <div class='pager'>

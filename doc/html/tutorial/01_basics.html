@@ -224,7 +224,7 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><strong>构建期</strong></td>
-<td><code>tools/qlui/qlui.py</code> 生成一个 <code>.c</code> 文件，编进程序</td>
+<td>宿主工具 <code>qltext</code> 生成一个 <code>.c</code> 文件，编进程序</td>
 <td>正式产品（界面不变、零加载成本）</td>
 </tr>
 <tr>
@@ -335,7 +335,7 @@ free 路径不可能发生。</p>
 <p>正式产品一般用构建期编译。CMake 里加一条：</p>
 <div class="highlight"><pre><span></span><code><span class="nb">add_custom_command</span><span class="p">(</span>
 <span class="w">    </span><span class="s">OUTPUT</span><span class="w"> </span><span class="o">${</span><span class="nv">OUT</span><span class="o">}</span><span class="s">/ui_app.c</span><span class="w"> </span><span class="o">${</span><span class="nv">OUT</span><span class="o">}</span><span class="s">/ui_app.h</span>
-<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="o">${</span><span class="nv">Python3_EXECUTABLE</span><span class="o">}</span><span class="w"> </span><span class="s">tools/qlui/qlui.py</span>
+<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="s">qltext</span><span class="w"> </span><span class="s">cc</span>
 <span class="w">            </span><span class="s">--html</span><span class="w"> </span><span class="s">ui/app.html</span><span class="w"> </span><span class="s">--css</span><span class="w"> </span><span class="s">ui/app.css</span><span class="w"> </span><span class="s">--name</span><span class="w"> </span><span class="s">app</span><span class="w"> </span><span class="s">--out</span><span class="w"> </span><span class="o">${</span><span class="nv">OUT</span><span class="o">}</span>
 <span class="w">    </span><span class="s">DEPENDS</span><span class="w"> </span><span class="s">ui/app.html</span><span class="w"> </span><span class="s">ui/app.css</span><span class="p">)</span>
 </code></pre></div>

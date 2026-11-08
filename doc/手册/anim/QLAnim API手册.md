@@ -175,7 +175,7 @@ float ql_ease_apply(uint8_t ease, uint8_t steps, float t);
 
 ## 4. 与 CSS `transition` 的关系
 
-CSS 侧只需写标准语法，构建期由 `tools/qlui/qlui.py` 展开成 `QLUIStyle` 的
+CSS 侧只需写标准语法，构建期由 `qlui_parse.c` 展开成 `QLUIStyle` 的
 `trans_ms` / `trans_ease` / `trans_props`，运行期自动创建过渡槽：
 
 ```css

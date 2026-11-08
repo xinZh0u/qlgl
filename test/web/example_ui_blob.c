@@ -15,7 +15,7 @@
  *   # 终端 1
  *   ./build/example_ui_blob --watch
  *   # 终端 2：改完 css 后
- *   python3 tools/qlui/qlui.py --html test/web/ui_demo.html \
+ *   qltext cc --html test/web/ui_demo.html \
  *                              --css test/web/ui_demo.css --out build/ui
  *   cmake --build build --target qlblob && ./build/qlblob build/ui/ui_demo.qlui
  *   # 窗口自动更新

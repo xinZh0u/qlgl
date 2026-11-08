@@ -64,7 +64,7 @@ void apply_theme(const char *css_path)
 明确不支持，因为那需要运行期求值，与"编译期定死"的设计冲突。
 
 替代方案很直接：**在构建期展开**。用你喜欢的预处理器（或者一个 20 行的 Python
-脚本）把 `var(--accent)` 替换成具体颜色，再交给 `qlui.py`。
+脚本）把 `var(--accent)` 替换成具体颜色，再交给 `qltext`。
 
 ## 用外部 CSS 文件
 
@@ -104,7 +104,7 @@ QLUIDoc *doc = ql_ui_load_file("theme-dark.qlui");
 | 可选皮肤（CSS） | 运行期编译 + `.qlui` 缓存 |
 | 开发调试 | 运行期编译，改完重启就看 |
 
-因为 `ql_ui_load_text` 与 `qlui.py` 产出的数据**逐字节相同**，两条路径可以随便混。
+因为 `ql_ui_load_text` 与构建期 `qltext` 走的是**同一段代码**，两条路径产出的数据**逐字节相同**，可以随便混。
 
 ---
 

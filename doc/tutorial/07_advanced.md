@@ -37,7 +37,7 @@ test_golden         27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
 
 ```
   HTML/CSS 文本
-       │  ql_ui_load_text()  ← 或构建期 qlui.py
+       │  ql_ui_load_text()  ← 构建期由 qltext 走同一段代码
        ▼
    QLUIDoc          扁平数组 + uint16 下标（nodes/styles/text/fonts/keyframes/anims）
        │  ql_ui_build()

@@ -21,7 +21,7 @@ QLGL 是一个**用 C11 写桌面界面**的库。它的想法很朴素：
 
 | 时机 | 做法 | 用在哪 |
 |---|---|---|
-| **构建期** | `tools/qlui/qlui.py` 生成一个 `.c` 文件，编进程序 | 正式产品（界面不变、零加载成本） |
+| **构建期** | 宿主工具 `qltext` 生成一个 `.c` 文件，编进程序 | 正式产品（界面不变、零加载成本） |
 | **运行期** | `ql_ui_load_text(html, css)` 在启动时算一次 | 换皮肤、插件界面、例程 |
 
 两种路径产出的数据**逐字节相同**，所以本教程全部用运行期那条 —— 一个 `.c`
@@ -152,7 +152,7 @@ free 路径不可能发生。
 ```cmake
 add_custom_command(
     OUTPUT ${OUT}/ui_app.c ${OUT}/ui_app.h
-    COMMAND ${Python3_EXECUTABLE} tools/qlui/qlui.py
+    COMMAND qltext cc
             --html ui/app.html --css ui/app.css --name app --out ${OUT}
     DEPENDS ui/app.html ui/app.css)
 ```

@@ -140,7 +140,7 @@ ql_ui_doc_save(doc, "app.qlui");   /* 存成 blob，之后加载不用再解析 
 
 ## 7. 保证
 
-1. **同一份源文本，与 `tools/qlui/qlui.py` 产出的 blob 逐字节相同**
+1. **同一份源文本，与构建期 `qltext` 产出的 blob 逐字节相同**（同一段代码）
    （`test_text_parse`：27 个页面的完整用例集）。
 2. **接受/拒绝集合一致**（`test_text_reject`：32 个正负用例）。
 3. 没有静态可变状态（除了 `ql_ui_text_set_name` 的名字与错误缓冲），

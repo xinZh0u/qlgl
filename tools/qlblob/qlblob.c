@@ -9,7 +9,7 @@
  * 用法：
  *     qlblob <out.qlui>
  *
- * 需要在链接时提供 qlui_blob_doc()（由 tools/qlui/qlui.py 生成的
+ * 需要在链接时提供 qlui_blob_doc()（由 tools/qltext/qltext.c 生成的
  * ui_<name>_blob.c 提供，返回 &ui_<name>_doc）。
  */
 #include <stdio.h>

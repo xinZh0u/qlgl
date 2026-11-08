@@ -13,14 +13,14 @@
 
 ```
 index.html ┐
-index.css  ├─ python3 tools/qlui/qlui.py ─▶ ui_index.c + ui_index.h ─▶ 编译进固件
-tools/qlui/qlui.py ┘
+index.css  ├─ qltext cc ─▶ ui_index.c + ui_index.h ─▶ 编译进固件
+tools/qltext/qltext.c ┘
 ```
 
 ### 1.1 命令行
 
 ```bash
-python3 tools/qlui/qlui.py \
+qltext cc \
     --html test/web/ui_demo.html \
     --css  test/web/ui_demo.css \
     --out  build/ui
@@ -45,9 +45,9 @@ set(UI_OUT ${CMAKE_CURRENT_BINARY_DIR}/ui)
 add_custom_command(
     OUTPUT  ${UI_OUT}/ui_index.c ${UI_OUT}/ui_index.h
     COMMAND ${CMAKE_COMMAND} -E make_directory ${UI_OUT}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/qlui/qlui.py
+    COMMAND qltext cc
             --html ui/index.html --css ui/index.css --out ${UI_OUT}
-    DEPENDS ui/index.html ui/index.css ${CMAKE_SOURCE_DIR}/tools/qlui/qlui.py
+    DEPENDS ui/index.html ui/index.css qltext
     COMMENT "编译 HTML+CSS 为 C")
 
 add_executable(app main.c ${UI_OUT}/ui_index.c)

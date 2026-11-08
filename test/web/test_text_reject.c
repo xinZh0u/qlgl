@@ -6,7 +6,7 @@
  * 但"接不接"是语义，两边必须完全一致——否则同一份 UI 在构建期能过、
  * 运行期不能过（或反过来），是最难查的一类问题。
  *
- * 期望值由 tools/qlui/qlui.py 的完整流水线（HTML 解析 → CSS 解析 → emit）生成。
+ * 期望值最初由 qlui.py 生成，现在是 qlui_parse.c 自己的接受/拒绝集合（唯一一份）。
  */
 #define _POSIX_C_SOURCE 200809L
 
@@ -87,6 +87,37 @@ static const RejectCase k_cases[] = {
       "#a { inset: 0 }", "t:1: 不支持的属性 'inset'" },
     { 0, "<div id='a'></div>",
       "#a::before { color: red }", "不支持的简单选择器：'#a::before'" },
+    /* 以下这批是从原 test_qlui_errors.py 搬过来的：qlui.py 退化成宿主工具的壳
+     * 之后，动画/关键帧的"必须报错"清单就只剩这一份。 */
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { 0% { opacity: 1 } 0% { opacity: 0 } }",
+      "pulse: 有重复的百分比" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { 120% { opacity: 1 } }", "关键帧百分比必须在 0%~100%" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
+      " #a { animation: pulse 0ms }", "animation-duration 不能为 0" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
+      " #a { animation: pulse 1s paused }", "animation-play-state: 暂不支持 paused" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
+      " #a { animation: pulse 1s steps(3) }", "暂不支持 steps()" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
+      " #a { animation-name: pulse }", "有 animation-name 但没写 animation-duration" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
+      " #a { animation: nope 1s }", "animation-name 'nope' 没有对应的 @keyframes" },
+    { 0, "<div id='a'></div>",
+      "@keyframes pulse { 0% { box-shadow: 0 0 } 100% { box-shadow: 0 0 } }",
+      "关键帧里不支持的属性" },
+    { 0, "<div id='a'></div>",
+      "#a { transform: matrix(1,0,0,1,0,0) }",
+      "transform 只支持 translate()/scale()/scaleX()/scaleY()" },
+    { 1, "<div id='a'></div>",
+      "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
+      " #a { animation: pulse 1s 300ms }", "" },
 };
 
 #define CASE_COUNT ((int)(sizeof(k_cases) / sizeof(k_cases[0])))

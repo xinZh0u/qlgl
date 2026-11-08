@@ -1,0 +1,683 @@
+/**
+ * @file    qltext.c
+ * @brief   构建期宿主工具：HTML + CSS → 静态 C 表 / .qlui blob（M3.5 第 4 步）。
+ *
+ * 关键设计：**HTML/CSS 的语义只在 C 侧实现一次**（`src/ui/qlui_parse.c`）。
+ * 这个工具就是"把 `ql_ui_load_text()` 的产物落盘"，所以不存在
+ * Python 与 C 两份解析器互相漂移的可能 —— 这也是第 4 步的全部内容。
+ *
+ * 用法：
+ *     qltext cc   --html a.html --css b.css --name foo --out DIR
+ *                  → DIR/ui_foo.c/.h/_blob.c（可直接进目标机构建）
+ *     qltext blob --html a.html --css b.css --out out.qlui [--name foo]
+ *                  → 直接产出 blob（不需要编译器参与）
+ *     qltext check --html a.html --css b.css [--name foo]
+ *                  → 只解析并打印规模（CI 里当语法检查用）
+ *
+ * 产出的 doc 与旧 `qlui.py` **逐字节相同**（`test_golden` 用提交在
+ * `test/golden` 里的基准守着）。
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#if defined(_WIN32)
+#  include <direct.h>
+#  define ql_mkdir(p) _mkdir(p)
+#else
+#  include <sys/stat.h>
+#  include <sys/types.h>
+#  define ql_mkdir(p) mkdir((p), 0777)
+#endif
+
+#include <qlgl/qlgl.h>
+#include <qlgl/qluitext.h>
+
+/* ------------------------------------------------------------------ */
+/* 小工具                                                              */
+/* ------------------------------------------------------------------ */
+
+static void *xmalloc(size_t n)
+{
+    void *p = malloc(n ? n : 1u);
+    if (p == NULL) {
+        fprintf(stderr, "qltext: 内存不足（%zu 字节）\n", n);
+        exit(1);
+    }
+    return p;
+}
+
+static char *read_file(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        fprintf(stderr, "qltext: 打不开 \"%s\"\n", path);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long sz = ftell(f);
+    if (sz < 0) {
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+    char *buf = (char *)xmalloc((size_t)sz + 1u);
+    size_t got = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    if (got != (size_t)sz) {
+        fprintf(stderr, "qltext: 读 \"%s\" 时短读\n", path);
+        free(buf);
+        return NULL;
+    }
+    /* 去掉 BOM：构建期工具不该因为编辑器加了 BOM 就报"第一个字符不认识" */
+    size_t skip = 0;
+    if (got >= 3u && (unsigned char)buf[0] == 0xEFu &&
+        (unsigned char)buf[1] == 0xBBu && (unsigned char)buf[2] == 0xBFu)
+        skip = 3u;
+    if (skip > 0) memmove(buf, buf + skip, got - skip + 1u);
+    buf[got - skip] = '\0';
+    return buf;
+}
+
+/* 与 qlui.py 的 `re.sub(r"[^\w]", "_", name)` 对齐 */
+static void sanitize_ident(const char *in, char *out, size_t cap)
+{
+    size_t i = 0;
+    for (; in[i] != '\0' && i + 1u < cap; i++) {
+        unsigned char c = (unsigned char)in[i];
+        int ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+                 (c >= 'a' && c <= 'z') || c == '_';
+        out[i] = ok ? (char)c : '_';
+    }
+    out[i] = '\0';
+}
+
+static const char *base_name(const char *path)
+{
+    const char *s = strrchr(path, '/');
+    return (s != NULL) ? s + 1 : path;
+}
+
+/* ------------------------------------------------------------------ */
+/* 枚举 → 名字（让生成出来的 C 可读，而不是一堆魔数）                  */
+/* ------------------------------------------------------------------ */
+
+static const char *const TAG_NAMES[] = {
+    "QL_UI_TAG_DIV", "QL_UI_TAG_SECTION", "QL_UI_TAG_P", "QL_UI_TAG_SPAN",
+    "QL_UI_TAG_B", "QL_UI_TAG_I", "QL_UI_TAG_BUTTON", "QL_UI_TAG_H1",
+    "QL_UI_TAG_H2", "QL_UI_TAG_H3",
+};
+
+static const char *const DISPLAY_NAMES[] = {
+    "QL_UI_DISPLAY_BLOCK", "QL_UI_DISPLAY_INLINE",
+    "QL_UI_DISPLAY_INLINE_BLOCK", "QL_UI_DISPLAY_NONE",
+    "QL_UI_DISPLAY_FLEX", "QL_UI_DISPLAY_INLINE_FLEX",
+};
+
+static const char *const FLEX_DIR_NAMES[] = {
+    "QL_UI_FLEX_ROW", "QL_UI_FLEX_ROW_REVERSE",
+    "QL_UI_FLEX_COLUMN", "QL_UI_FLEX_COLUMN_REVERSE",
+};
+
+static const char *const JUSTIFY_NAMES[] = {
+    "QL_UI_JUSTIFY_START", "QL_UI_JUSTIFY_CENTER", "QL_UI_JUSTIFY_END",
+    "QL_UI_JUSTIFY_SPACE_BETWEEN", "QL_UI_JUSTIFY_SPACE_AROUND",
+    "QL_UI_JUSTIFY_SPACE_EVENLY",
+};
+
+static const char *const ALIGN_NAMES[] = {
+    "QL_UI_ALIGN_STRETCH", "QL_UI_ALIGN_START",
+    "QL_UI_ALIGN_CENTER", "QL_UI_ALIGN_END",
+};
+
+static const char *const POSITION_NAMES[] = {
+    "QL_UI_POSITION_STATIC", "QL_UI_POSITION_RELATIVE",
+    "QL_UI_POSITION_ABSOLUTE", "QL_UI_POSITION_FIXED",
+};
+
+static const char *const OVERFLOW_NAMES[] = {
+    "QL_UI_OVERFLOW_VISIBLE", "QL_UI_OVERFLOW_HIDDEN", "QL_UI_OVERFLOW_AUTO",
+};
+
+static const char *const UNIT_NAMES[] = {
+    "QL_UI_UNIT_AUTO", "QL_UI_UNIT_PX", "QL_UI_UNIT_PERCENT",
+};
+
+static const char *const EASE_NAMES[] = {
+    "QL_EASE_LINEAR", "QL_EASE_IN", "QL_EASE_OUT", "QL_EASE_IN_OUT",
+    "QL_EASE_CSS", "QL_EASE_STEPS",
+};
+
+static const char *const TEXT_ALIGN_NAMES[] = {
+    "QL_TEXT_ALIGN_LEFT", "QL_TEXT_ALIGN_CENTER", "QL_TEXT_ALIGN_RIGHT",
+};
+
+static const char *const ANIM_DIR_NAMES[] = {
+    "QL_UI_ANIM_NORMAL", "QL_UI_ANIM_REVERSE",
+    "QL_UI_ANIM_ALTERNATE", "QL_UI_ANIM_ALTERNATE_REVERSE",
+};
+
+static const char *const ANIM_FILL_NAMES[] = {
+    "QL_UI_ANIM_FILL_NONE", "QL_UI_ANIM_FILL_FORWARDS",
+    "QL_UI_ANIM_FILL_BACKWARDS", "QL_UI_ANIM_FILL_BOTH",
+};
+
+#define COUNT_OF(a) (sizeof(a) / sizeof((a)[0]))
+
+/*
+ * 越界只可能来自"生成器和头文件里的枚举不一致"，属于真 bug；
+ * 但生成工具没必要为此中断构建——数字写法语义完全相同，只是不好看。
+ * 所以退化成数字并**明确告警**。
+ */
+static const char *enum_name(const char *const *tab, size_t n, unsigned v,
+                             const char *what)
+{
+    static char buf[48];
+    if (v < n) return tab[v];
+    fprintf(stderr, "qltext: 警告：%s 的值 %u 超出已知范围（0..%zu），按数字写出\n",
+            what, v, n - 1u);
+    snprintf(buf, sizeof(buf), "(%s)%u", what, v);
+    return buf;
+}
+
+static const char *ease_name(unsigned v)
+{
+    return enum_name(EASE_NAMES, COUNT_OF(EASE_NAMES), v, "QLEasing");
+}
+
+/* ------------------------------------------------------------------ */
+/* 生成 ui_xxx.c                                                       */
+/* ------------------------------------------------------------------ */
+
+/* 非 ASCII 字节一律三位八进制转义：定长，不会吃掉后面字符，也不触发 -Wconversion */
+static void fput_c_escaped(FILE *f, const char *data, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        unsigned char b = (unsigned char)data[i];
+        if (b == '"')       fputs("\\\"", f);
+        else if (b == '\\') fputs("\\\\", f);
+        else if (b >= 0x20u && b < 0x7Fu) fputc((int)b, f);
+        else fprintf(f, "\\%03o", (unsigned)b);
+    }
+}
+
+/*
+ * 下标：0xFFFF 是"没有"，写成 0xFFFF 比写成 65535 好认（这是整个格式的哨兵值）。
+ * first 为真时是行首，逗号位置随之变化。
+ */
+static void idx_ofs(FILE *f, uint16_t v, int first)
+{
+    const char *sep = first ? "" : ", ";
+    if (v == 0xFFFFu) fprintf(f, "%s0xFFFF", sep);
+    else fprintf(f, "%s%5u", sep, (unsigned)v);
+}
+
+static void fput_edges(FILE *f, QLUIEdges e)
+{
+    fprintf(f, "{ %d, %d, %d, %d }", (int)e.top, (int)e.right, (int)e.bottom,
+            (int)e.left);
+}
+
+static void fput_length(FILE *f, QLUILength l)
+{
+    fprintf(f, "{ %d, %s }", (int)l.value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), l.unit, "QLUIUnit"));
+}
+
+static void fput_style(FILE *f, const QLUIStyle *s)
+{
+    fprintf(f,
+            "    { .bg_color = 0x%06X, .text_color = 0x%06X,"
+            " .border_color = 0x%06X,\n"
+            "      .bg_color2 = 0x%06X, .shadow_color = 0x%06X,\n"
+            "      .width = ",
+            (unsigned)(s->bg_color & 0xFFFFFFu),
+            (unsigned)(s->text_color & 0xFFFFFFu),
+            (unsigned)(s->border_color & 0xFFFFFFu),
+            (unsigned)(s->bg_color2 & 0xFFFFFFu),
+            (unsigned)(s->shadow_color & 0xFFFFFFu));
+    fput_length(f, s->width);
+    fputs(", .height = ", f);
+    fput_length(f, s->height);
+    fputs(",\n      .margin = ", f);
+    fput_edges(f, s->margin);
+    fputs(", .padding = ", f);
+    fput_edges(f, s->padding);
+    fprintf(f,
+            ",\n"
+            "      .display = %s, .bg_alpha = %u, .border_width = %u,\n"
+            "      .shadow_dx = %d, .shadow_dy = %d,\n"
+            "      .border_radius = %d, .text_align = %s, .font_id = %u,"
+            " .box_sizing = %u,\n"
+            "      .bg_grad_dir = %u, .shadow_blur = %u, .shadow_alpha = %u,\n"
+            "      .flex_direction = %s, .justify_content = %s,\n"
+            "      .align_items = %s, .flex_wrap = %u, .gap_row = %d,"
+            " .gap_col = %d,\n"
+            "      .flex_grow = %u, .flex_shrink = %u, .flex_basis = %d,"
+            " .flex_basis_pct = %u,\n"
+            "      .position = %s, .overflow = %s, .z_index = %d,\n"
+            "      .trans_ms = %u, .trans_ease = %s, .trans_props = 0x%02X,\n"
+            "      .backdrop_blur = %u,\n"
+            "      .clip_kind = %u, .clip_r = %u,\n"
+            "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
+            "      .anim = ",
+            enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
+                      "QLUIDisplay"),
+            (unsigned)s->bg_alpha, (unsigned)s->border_width,
+            (int)s->shadow_dx, (int)s->shadow_dy,
+            (int)s->border_radius,
+            enum_name(TEXT_ALIGN_NAMES, COUNT_OF(TEXT_ALIGN_NAMES), s->text_align,
+                      "QLTextAlign"),
+            (unsigned)s->font_id, (unsigned)s->box_sizing,
+            (unsigned)s->bg_grad_dir, (unsigned)s->shadow_blur,
+            (unsigned)s->shadow_alpha,
+            enum_name(FLEX_DIR_NAMES, COUNT_OF(FLEX_DIR_NAMES), s->flex_direction,
+                      "QLUIDirection"),
+            enum_name(JUSTIFY_NAMES, COUNT_OF(JUSTIFY_NAMES), s->justify_content,
+                      "QLUIJustify"),
+            enum_name(ALIGN_NAMES, COUNT_OF(ALIGN_NAMES), s->align_items,
+                      "QLUIAlign"),
+            (unsigned)s->flex_wrap, (int)s->gap_row, (int)s->gap_col,
+            (unsigned)s->flex_grow, (unsigned)s->flex_shrink, (int)s->flex_basis,
+            (unsigned)s->flex_basis_pct,
+            enum_name(POSITION_NAMES, COUNT_OF(POSITION_NAMES), s->position,
+                      "QLUIPosition"),
+            enum_name(OVERFLOW_NAMES, COUNT_OF(OVERFLOW_NAMES), s->overflow,
+                      "QLUIOverflow"),
+            (int)s->z_index,
+            (unsigned)s->trans_ms, ease_name(s->trans_ease),
+            (unsigned)s->trans_props,
+            (unsigned)s->backdrop_blur,
+            (unsigned)s->clip_kind, (unsigned)s->clip_r,
+            (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y);
+    if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
+    else fprintf(f, "0x%04X", (unsigned)s->anim);
+    fputs(",\n      .inset = { ", f);
+    fput_length(f, s->inset[0]);
+    fputs(", ", f);
+    fput_length(f, s->inset[1]);
+    fputs(", ", f);
+    fput_length(f, s->inset[2]);
+    fputs(", ", f);
+    fput_length(f, s->inset[3]);
+    fputs(" } },\n", f);
+}
+
+/* 一次性建出 out_dir（老 qlui.py 用 os.makedirs，这里对齐它的行为） */
+static void ensure_dir(const char *dir)
+{
+    char buf[1024];
+    size_t n = strlen(dir);
+    if (n == 0 || n >= sizeof(buf)) return;
+    memcpy(buf, dir, n + 1u);
+    for (size_t i = 1; i <= n; i++) {
+        if (buf[i] == '/' || buf[i] == '\0') {
+            char save = buf[i];
+            buf[i] = '\0';
+            if (ql_mkdir(buf) != 0) { /* 已存在也走这条路，不必区分 */ }
+            buf[i] = save;
+        }
+    }
+}
+
+static FILE *open_out(const char *out_dir, const char *ident, const char *ext)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s%s", out_dir, ident, ext);
+    FILE *f = fopen(path, "w");
+    if (f == NULL) {
+        fprintf(stderr, "qltext: 写不了 \"%s\"\n", path);
+        exit(1);
+    }
+    return f;
+}
+
+static void write_source(const QLUIDoc *doc, const char *ident,
+                         const char *out_dir)
+{
+    FILE *f = open_out(out_dir, ident, ".c");
+    size_t pool_len = ql_ui_doc_text_pool_size(doc);
+
+    fprintf(f,
+            "/* 本文件由 tools/qltext/qltext.c 生成，请勿手工修改。 */\n"
+            "/* 源：%s */\n"
+            "\n"
+            "#include \"%s.h\"\n"
+            "\n",
+            doc->name != NULL ? doc->name : "", ident);
+
+    /* ---- 节点 ---- */
+    /* 注：doc 里不存 class/id，所以注释只给数组下标含义（旧 qlui.py 能写 <div#root>） */
+    fprintf(f,
+            "static const QLUINode %s_nodes[] = {\n"
+            "    /* tag                     parent first  next   style  text   hover"
+            "  active focus */\n",
+            ident);
+    for (uint16_t i = 0; i < doc->node_count; i++) {
+        const QLUINode *n = &doc->nodes[i];
+        fprintf(f, "    { %-22s, ",
+                enum_name(TAG_NAMES, COUNT_OF(TAG_NAMES), n->tag, "QLUITag"));
+        idx_ofs(f, n->parent, 1);
+        idx_ofs(f, n->first_child, 0);
+        idx_ofs(f, n->next_sibling, 0);
+        idx_ofs(f, n->style, 0);
+        idx_ofs(f, n->text, 0);
+        idx_ofs(f, n->style_hover, 0);
+        idx_ofs(f, n->style_active, 0);
+        idx_ofs(f, n->style_focus, 0);
+        fputs(" },\n", f);
+    }
+    fputs("};\n\n", f);
+
+    /* ---- 字号表 ---- */
+    fprintf(f, "static const uint16_t %s_font_sizes[] = {", ident);
+    for (uint16_t i = 0; i < doc->font_size_count; i++)
+        fprintf(f, "%s%u", (i == 0) ? " " : ", ", (unsigned)doc->font_sizes[i]);
+    fputs(doc->font_size_count > 0 ? " };\n\n" : " 0 };\n\n", f);
+
+    /* ---- 样式表 ---- */
+    fprintf(f, "static const QLUIStyle %s_styles[] = {\n", ident);
+    for (uint16_t i = 0; i < doc->style_count; i++)
+        fput_style(f, &doc->styles[i]);
+    fputs("};\n\n", f);
+
+    /* ---- 文本池 ---- */
+    if (doc->text_count > 0 && doc->text_offsets != NULL) {
+        fprintf(f, "static const char %s_text[] = \"", ident);
+        fput_c_escaped(f, doc->text_pool, pool_len);
+        fputs("\";\n", f);
+        fprintf(f, "static const uint16_t %s_text_ofs[] = {", ident);
+        for (uint16_t i = 0; i < doc->text_count; i++)
+            fprintf(f, "%s%u", (i == 0) ? " " : ", ",
+                    (unsigned)doc->text_offsets[i]);
+        fputs(" };\n\n", f);
+    } else {
+        fprintf(f,
+                "static const char %s_text[] = \"\";\n"
+                "static const uint16_t %s_text_ofs[] = { 0 };\n\n",
+                ident, ident);
+    }
+
+    /* ---- 关键帧 ---- */
+    if (doc->keyframe_count > 0) {
+        fprintf(f,
+                "static const QLUIKeyframe %s_keyframes[] = {\n"
+                "    /* offset  ease                  props bg_color bg_color2 text_c"
+                " border_c  tf_x tf_y   scx  scy radius  clip alpha */\n",
+                ident);
+        for (uint16_t i = 0; i < doc->keyframe_count; i++) {
+            const QLUIKeyframe *k = &doc->keyframes[i];
+            const char *ease = (k->ease == QL_UI_KF_EASE_INHERIT)
+                                   ? "QL_UI_KF_EASE_INHERIT"
+                                   : ease_name(k->ease);
+            fprintf(f,
+                    "    { %4d, %-21s, 0x%02X, 0x%06X, 0x%06X, 0x%06X, 0x%06X,"
+                    " %4d, %4d, %5d, %5d, %5d, %5d, %3d, 0 },\n",
+                    (int)k->offset, ease, (unsigned)k->props,
+                    (unsigned)(k->bg_color & 0xFFFFFFu),
+                    (unsigned)(k->bg_color2 & 0xFFFFFFu),
+                    (unsigned)(k->text_color & 0xFFFFFFu),
+                    (unsigned)(k->border_color & 0xFFFFFFu),
+                    (int)k->tf_x, (int)k->tf_y, (int)k->sc_x, (int)k->sc_y,
+                    (int)k->radius, (int)k->clip_r, (int)k->bg_alpha);
+        }
+        fputs("};\n\n", f);
+    } else {
+        fprintf(f,
+                "static const QLUIKeyframe %s_keyframes[1] = {"
+                " { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0 } };\n\n",
+                ident);
+    }
+
+    /* ---- 动画 ---- */
+    if (doc->anim_count > 0) {
+        fprintf(f,
+                "static const QLUIAnimation %s_anims[] = {\n"
+                "    /* first count dur_ms ease        iterations direction"
+                "                    fill                     delay */\n",
+                ident);
+        for (uint16_t i = 0; i < doc->anim_count; i++) {
+            const QLUIAnimation *a = &doc->anims[i];
+            fprintf(f,
+                    "    { %5u, %5u, %6u, %-11s, %10u, %-26s, %-22s, %5u },\n",
+                    (unsigned)a->first_frame, (unsigned)a->frame_count,
+                    (unsigned)a->dur_ms, ease_name(a->ease),
+                    (unsigned)a->iterations,
+                    enum_name(ANIM_DIR_NAMES, COUNT_OF(ANIM_DIR_NAMES),
+                              a->direction, "QLUIAnimDirection"),
+                    enum_name(ANIM_FILL_NAMES, COUNT_OF(ANIM_FILL_NAMES), a->fill,
+                              "QLUIAnimFill"),
+                    (unsigned)a->delay_ms);
+        }
+        fputs("};\n\n", f);
+    } else {
+        fprintf(f,
+                "static const QLUIAnimation %s_anims[1] = {"
+                " { 0, 0, 0, 0, 0, 0, 0, 0 } };\n\n",
+                ident);
+    }
+
+    /* ---- doc ---- */
+    fprintf(f,
+            "const QLUIDoc %s_doc = {\n"
+            "    .name         = \"%s\",\n"
+            "    .node_count   = (uint16_t)(sizeof(%s_nodes) / sizeof(%s_nodes[0])),\n"
+            "    .style_count  = (uint16_t)(sizeof(%s_styles) / sizeof(%s_styles[0])),\n"
+            "    .text_count   = (uint16_t)(sizeof(%s_text_ofs) / sizeof(%s_text_ofs[0])),\n"
+            "    .font_size_count = (uint16_t)(sizeof(%s_font_sizes) / sizeof(%s_font_sizes[0])),\n"
+            "    .anim_count   = %u,\n"
+            "    .keyframe_count = %u,\n"
+            "    .font_sizes   = %s_font_sizes,\n"
+            "    .anims        = %s_anims,\n"
+            "    .keyframes    = %s_keyframes,\n"
+            "    .nodes        = %s_nodes,\n"
+            "    .styles       = %s_styles,\n"
+            "    .text_pool    = %s_text,\n"
+            "    .text_offsets = %s_text_ofs,\n"
+            "};\n",
+            ident, doc->name != NULL ? doc->name : "",
+            ident, ident,   /* .node_count  : sizeof(%s_nodes) x2 */
+            ident, ident,   /* .style_count : sizeof(%s_styles) x2 */
+            ident, ident,   /* .text_count  : sizeof(%s_text_ofs) x2 */
+            ident, ident,   /* font_size_cnt: sizeof(%s_font_sizes) x2 */
+            (unsigned)doc->anim_count, (unsigned)doc->keyframe_count,
+            ident, ident, ident, ident, ident, ident, ident);
+    fclose(f);
+}
+
+static void write_header(const char *ident, const char *out_dir)
+{
+    FILE *f = open_out(out_dir, ident, ".h");
+
+    char guard[256];
+    size_t gi = 0;
+    for (const char *p = ident; *p != '\0' && gi + 16u < sizeof(guard); p++)
+        guard[gi++] = (char)((*p >= 'a' && *p <= 'z') ? *p - 'a' + 'A' : *p);
+    guard[gi] = '\0';
+
+    fprintf(f,
+            "/* 本文件由 tools/qltext/qltext.c 生成，请勿手工修改。 */\n"
+            "#ifndef QLUI_%s_H\n"
+            "#define QLUI_%s_H\n"
+            "\n"
+            "#include <qlgl/qlgl.h>\n"
+            "\n"
+            "extern const QLUIDoc %s_doc;\n"
+            "\n"
+            "#endif /* QLUI_%s_H */\n",
+            guard, guard, ident, guard);
+    fclose(f);
+}
+
+/*
+ * 给宿主工具 qlblob 用的访问器。
+ * blob 的序列化格式只在 C 侧实现一次（src/ui/qlui_blob.c），这里只负责
+ * "把生成的 doc 交给工具"，不重复实现二进制布局。
+ */
+static void write_blob_helper(const char *ident, const char *out_dir)
+{
+    FILE *f = open_out(out_dir, ident, "_blob.c");
+    fprintf(f,
+            "/* 本文件由 tools/qltext/qltext.c 生成，请勿手工修改。 */\n"
+            "/* 仅供宿主工具 tools/qlblob 使用，不参与目标机构建。 */\n"
+            "#include \"%s.h\"\n"
+            "\n"
+            "const QLUIDoc *qlui_blob_doc(void);\n"
+            "\n"
+            "const QLUIDoc *qlui_blob_doc(void)\n"
+            "{\n"
+            "    return &%s_doc;\n"
+            "}\n",
+            ident, ident);
+    fclose(f);
+}
+
+/* ------------------------------------------------------------------ */
+/* 命令行                                                              */
+/* ------------------------------------------------------------------ */
+
+static void usage(void)
+{
+    fprintf(stderr,
+            "用法：\n"
+            "  qltext cc    --html A.html --css B.css --name foo --out DIR\n"
+            "  qltext blob  --html A.html --css B.css --out out.qlui [--name foo]\n"
+            "  qltext check --html A.html --css B.css [--name foo]\n");
+}
+
+typedef struct {
+    const char *html;
+    const char *css;
+    const char *name;
+    const char *out;
+} Args;
+
+static int parse_args(int argc, char **argv, Args *a)
+{
+    memset(a, 0, sizeof(*a));
+    for (int i = 2; i < argc; i++) {
+        const char *k = argv[i];
+        const char *v = (i + 1 < argc) ? argv[i + 1] : NULL;
+        if (v == NULL) {
+            fprintf(stderr, "qltext: %s 缺少参数\n", k);
+            return 0;
+        }
+        if (strcmp(k, "--html") == 0)      { a->html = v; i++; }
+        else if (strcmp(k, "--css") == 0)  { a->css = v; i++; }
+        else if (strcmp(k, "--name") == 0) { a->name = v; i++; }
+        else if (strcmp(k, "--out") == 0)  { a->out = v; i++; }
+        else {
+            fprintf(stderr, "qltext: 未知参数 %s\n", k);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+        usage();
+        return 2;
+    }
+    const char *mode = argv[1];
+    if (strcmp(mode, "-h") == 0 || strcmp(mode, "--help") == 0 ||
+        strcmp(mode, "help") == 0) {
+        usage();
+        return 0;
+    }
+    int is_cc = (strcmp(mode, "cc") == 0);
+    int is_blob = (strcmp(mode, "blob") == 0);
+    int is_check = (strcmp(mode, "check") == 0);
+    if (!is_cc && !is_blob && !is_check) {
+        fprintf(stderr, "qltext: 未知子命令 \"%s\"\n", mode);
+        usage();
+        return 2;
+    }
+
+    Args a;
+    if (!parse_args(argc, argv, &a)) return 2;
+    if (a.html == NULL || a.css == NULL) {
+        fprintf(stderr, "qltext: 必须同时给 --html 与 --css\n");
+        return 2;
+    }
+    if ((is_cc || is_blob) && a.out == NULL) {
+        fprintf(stderr, "qltext: %s 需要 --out\n", mode);
+        return 2;
+    }
+
+    char *html = read_file(a.html);
+    char *css = read_file(a.css);
+    if (html == NULL || css == NULL) {
+        free(html);
+        free(css);
+        return 1;
+    }
+
+    /* 默认名字取 html 的文件名（不含扩展名），与旧 qlui.py 一致 */
+    char name_buf[256];
+    const char *raw_name = a.name;
+    if (raw_name == NULL) {
+        const char *b = base_name(a.html);
+        size_t n = 0;
+        while (b[n] != '\0' && b[n] != '.' && n + 1u < sizeof(name_buf)) {
+            name_buf[n] = b[n];
+            n++;
+        }
+        name_buf[n] = '\0';
+        raw_name = name_buf;
+    }
+
+    /* doc->name 用"净化后、不带 ui_ 前缀"的名字（blob 逐字节比对要求） */
+    char sname[200];
+    char ident[256];
+    sanitize_ident(raw_name, sname, sizeof(sname));
+    if (strncmp(sname, "ui_", 3) == 0) {
+        memcpy(ident, sname, strlen(sname) + 1u);
+    } else {
+        snprintf(ident, sizeof(ident), "ui_%s", sname);
+    }
+    ql_ui_text_set_name(sname);
+
+    QLUIDoc *doc = ql_ui_load_text(html, css);
+    free(html);
+    free(css);
+    if (doc == NULL) {
+        fprintf(stderr, "qltext: %s + %s 解析失败：%s\n", a.html, a.css,
+                ql_ui_text_last_error());
+        ql_ui_text_set_name(NULL);
+        return 1;
+    }
+
+    int rc = 0;
+    size_t pool = ql_ui_doc_text_pool_size(doc);
+
+    if (is_check) {
+        printf("qltext: %s 可以编译（%u 节点，%u 样式，%zu 字节文本）\n", sname,
+               (unsigned)doc->node_count, (unsigned)doc->style_count, pool);
+    } else if (is_blob) {
+        if (ql_ui_doc_save(doc, a.out) != QL_OK) {
+            fprintf(stderr, "qltext: 写不了 \"%s\"\n", a.out);
+            rc = 1;
+        } else {
+            printf("qltext: %s -> %s（%u 节点，%u 样式，%zu 字节文本）\n", sname,
+                   a.out, (unsigned)doc->node_count, (unsigned)doc->style_count,
+                   pool);
+        }
+    } else {
+        ensure_dir(a.out);
+        write_source(doc, ident, a.out);
+        write_header(ident, a.out);
+        write_blob_helper(ident, a.out);
+        printf("qltext: %s -> %s/%s.c（%u 节点，%u 样式，%zu 字节文本）\n", sname,
+               a.out, ident, (unsigned)doc->node_count,
+               (unsigned)doc->style_count, pool);
+    }
+
+    ql_ui_doc_free(doc);
+    ql_ui_text_set_name(NULL);
+    return rc;
+}

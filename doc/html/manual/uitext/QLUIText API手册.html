@@ -373,7 +373,7 @@ css:3: @keyframes &#39;pulse&#39; 没有任何关键帧
 <hr />
 <h2 id="7">7. 保证</h2>
 <ol>
-<li><strong>同一份源文本，与 <code>tools/qlui/qlui.py</code> 产出的 blob 逐字节相同</strong>
+<li><strong>同一份源文本，与构建期 <code>qltext</code> 产出的 blob 逐字节相同</strong>（同一段代码）
    （<code>test_text_parse</code>：27 个页面的完整用例集）。</li>
 <li><strong>接受/拒绝集合一致</strong>（<code>test_text_reject</code>：32 个正负用例）。</li>
 <li>没有静态可变状态（除了 <code>ql_ui_text_set_name</code> 的名字与错误缓冲），

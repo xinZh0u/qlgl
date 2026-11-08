@@ -24,7 +24,7 @@
 
 #define QL_UI_ALIGN8(x)   (((x) + 7u) & ~(size_t)7u)
 
-/* FNV-1a 32：C 与 Python 侧必须逐位一致（见 tools/qlui/qlui.py） */
+/* FNV-1a 32：blob 的校验和，编解码两侧必须逐位一致 */
 static uint32_t fnv1a(const uint8_t *data, size_t size)
 {
     uint32_t hash = 2166136261u;

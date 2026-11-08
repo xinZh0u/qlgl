@@ -408,7 +408,7 @@ MCU 上换成 tick 计数器即可（<code>HAL_GetTick()</code> 之类），只�
 <p><code>t ∈ [0,1] → [0,1]</code>，端点硬截断。测试与自定义插值复用，也方便画曲线。</p>
 <hr />
 <h2 id="4-css-transition">4. 与 CSS <code>transition</code> 的关系</h2>
-<p>CSS 侧只需写标准语法，构建期由 <code>tools/qlui/qlui.py</code> 展开成 <code>QLUIStyle</code> 的
+<p>CSS 侧只需写标准语法，构建期由 <code>qlui_parse.c</code> 展开成 <code>QLUIStyle</code> 的
 <code>trans_ms</code> / <code>trans_ease</code> / <code>trans_props</code>，运行期自动创建过渡槽：</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">         </span><span class="c">/* 全部可过渡属性 */</span>
 <span class="p">.</span><span class="nc">btn</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#204060</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>

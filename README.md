@@ -14,7 +14,7 @@
 - **布局表达力（M3）已完成** —— flexbox（row/column × nowrap/wrap、grow/shrink/basis、gap、
   justify-content、align-items）、`position: relative/absolute/fixed`、`z-index`、`overflow` 裁剪、
   文本与行内元素混排（生成期消解成匿名节点）；
-- **HTML+CSS → C 编译已完成（v0.1）** —— `tools/qlui` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
+- **HTML+CSS → C 编译已完成（v0.1）** —— `qltext` 把 HTML/CSS 编译成静态 C 数据，运行时零解析；
 - **运行期 HTML/CSS 解析（M3.5 第 3 步）已完成** —— `ql_ui_load_text(html, css)` 在加载时算一次，
   产物与构建期工具**逐字节相同**（27 页用例守着）；可 `-DQLGL_BUILD_TEXT_PARSER=OFF` 整块摘掉；
 - **现代 UI 效果（先行项）** —— `box-shadow` 软阴影（SDF，单趟）与 `linear-gradient`
@@ -98,6 +98,7 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 ./build/test_blur                         # backdrop-filter: blur() 毛玻璃（CPU 与 GPU 各断言一遍性质）
 ./build/test_text_parse                   # 运行期解析器 vs 构建期工具：27 页 blob 逐字节相同
 ./build/test_flex_auto                    # flex 项的 width:auto = max-content（回归：固定宽兄弟不被压扁）
+./build/test_qltext_blob                  # qltext blob 直接产出的 .qlui 与提交基准逐字节相同
 ./build/test_text_reject                  # 拒绝集合一致：32 个正负用例
 ./build/example_load_text --dump a.ppm    # 运行期编译 HTML+CSS 并渲染（不用重新编译程序）
 ./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
@@ -127,7 +128,7 @@ QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 | 平台 | 界面写法 | 说明 |
 |---|---|---|
 | MCU | 纯 C（`QLWidget`/`QLLabel`） | 不追求 Web 兼容，追求小体积 |
-| MPU / 嵌入式 Linux | HTML+CSS，构建期编译成 C（`tools/qlui`） | Web 子集，未支持特性构建期报错 |
+| MPU / 嵌入式 Linux | HTML+CSS，构建期编译成 C（`qltext`） | Web 子集，未支持特性构建期报错 |
 | PC / 移动 | HTML+CSS+JS，配系统 WebView | 高兼容；详见 [Web 兼容设计](doc/Web兼容设计.md) |
 
 ## 目录
@@ -167,7 +168,8 @@ src/port/          平台后端（X11 / Wayland 窗口）
 src/generated/     自动生成的类注册表（勿手改）
 tools/qlgen/       扫描源码生成类型 id 表
 tools/qlfontgen/   从 TTF 生成内置位图字体
-tools/qlui/        把 HTML+CSS 编译成 C（相当于 Qt 的 uic）
+tools/qltext/      把 HTML+CSS 编译成 C / .qlui（相当于 Qt 的 uic，链库自己的解析器）
+tools/qlui/        兼容壳：只剩"找 qltext + 转发参数"（语义在 src/ui/qlui_parse.c）
 tools/qlblob/      把生成的 doc 导出成 .qlui blob（宿主工具）
 test/object/       对象系统示例与测试
 test/widget/       绘制系统示例与测试

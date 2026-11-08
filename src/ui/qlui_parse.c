@@ -2,14 +2,15 @@
  * @file    qlui_parse.c
  * @brief   HTML + CSS 文本 → QLUIDoc（M3.5 第 3 步）。
  *
- * 这是 `tools/qlui/qlui.py` 的 C 版**同一套语义**：同一份源文本，两边产出的 doc
- * 编码成 blob 之后逐字节相同（`test_golden` 的 27 个用例守着这条）。
+ * **HTML/CSS 的语义只有这一份**：构建期工具（`tools/qltext`）与运行期
+ * （`ql_ui_load_text()`）走的是同一个函数。所以这个文件既决定"程序里长什么样"，
+ * 也决定"构建产物长什么样"，两边不可能漂移。
  *
- * 所以本文件的写法刻意"笨"：不发明更聪明的解析策略，只忠实复刻 Python 侧的规则，
- * 连它拒绝哪些输入、按什么顺序建表都要一致。任何"这里可以优化一下"的念头都会
- * 让 blob 对不上。
+ * 唯一的护栏是"别改变已有输入的结果"：`test_golden` 拿提交在 `test/golden/`
+ * 的 27 个基准守着 blob 逐字节相同，`test_text_reject` 守着接受/拒绝集合。
+ * 任何"这里可以优化一下"的念头都有可能让基准对不上——先跑测试再动手。
  *
- * 分层（从下往上，与 Python 的章节一一对应）：
+ * 分层：
  *   ① 错误与内存        ② 值解析（颜色/长度/渐变/阴影/transform/clip-path/…）
  *   ③ 声明集合 + 简写展开 ④ CSS 词法与选择器     ⑤ HTML 词法
  *   ⑥ 级联 + 继承        ⑦ 编译成 QLUIStyle     ⑧ 建表（节点/样式/文本/字号/关键帧/动画）
@@ -221,7 +222,7 @@ static int match_number(const char *s, const char **end, double *out)
     return 1;
 }
 
-/* 命名色（与 qlui.py 的 NAMED_COLORS 一一对应；transparent 用 sentinel 表示） */
+/* 命名色表（transparent 用 sentinel 表示） */
 typedef struct {
     const char *name;
     int         transparent;
@@ -4829,8 +4830,11 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             decls_free(&inherited);
             goto done;
         }
+        /* 错误定位：元素在扁平表里的下标 + 标签名。
+         * 拿不到 CSS 行号——级联之后"这条声明来自哪条规则"已经不存在了。 */
         char where[96];
-        snprintf(where, sizeof(where), "%s", "<节点>");
+        snprintf(where, sizeof(where), "<%s #%d>",
+                 n->tag != NULL ? n->tag : "?", i);
         if (!finalize_style(&base, n, &inherited, &e->final_decls)) {
             decls_free(&base);
             decls_free(&inherited);

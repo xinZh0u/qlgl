@@ -13,7 +13,8 @@
 
 | 文件 | 职责 | 阅读顺序 |
 |---|---|---|
-| `tools/qlui/qlui.py` | HTML 解析 + CSS 解析 + 选择器匹配 + 级联 + 生成 C | ① |
+| `src/ui/qlui_parse.c` | HTML 解析 + CSS 解析 + 选择器匹配 + 级联（构建期与运行期共用） | ① |
+| `tools/qltext/qltext.c` | 把上一行算出的 doc 落盘成 C 表 / `.qlui` | ① |
 | `include/qlgl/qlui.h` | 生成数据格式（`QLUIDoc`/`QLUINode`/`QLUIStyle`）与运行期 API | ② |
 | `src/ui/qlui.c` | 物化、布局、绘制、命中测试 | ③ |
 | `src/ui/qlui_blob.c` | `.qlui` 二进制编解码（**独立编译单元，可摘**） | ④ |
@@ -28,7 +29,7 @@
 ```
 test/web/ui_demo.html ┐
 test/web/ui_demo.css  ├─ cmake --build ─▶ build/ui/ui_demo.c + ui_demo.h ─▶ 编译进测试程序
-tools/qlui/qlui.py    ┘                                     │
+tools/qltext/qltext.c  ┘                                     │
                                                             └─ qlblob ─▶ ui_demo.qlui
 ```
 
@@ -105,22 +106,33 @@ typedef struct {
 
 ---
 
-## 4. 生成器（`tools/qlui/qlui.py`）
+## 4. 生成器（`src/ui/qlui_parse.c` + `tools/qltext/qltext.c`）
 
 ### 4.1 处理流程
 
 ```
-HTML ──HTMLParser──▶ Node 树 ─┐
-                              ├─▶ 逐节点计算样式 ─▶ 去重 ─▶ 生成 C
-CSS  ──parse_css──▶ Rule 列表 ─┘
+HTML ──⑤ HTML 词法──▶ 节点树 ─┐
+                              ├─▶ ⑥ 级联（UA 默认 → 规则 → 内联 → 继承）
+CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
+                                        ▼
+                              ⑦ 编译成 QLUIStyle ─▶ 去重 ─▶ ⑧ 建表进 arena
+                                                                  │
+                                        ┌─────────────────────────┴──────────┐
+                                        ▼                                    ▼
+                            qltext 把 doc 写成 C 表            运行期直接布局/绘制
 ```
+
+**注意这张图的上半部分是唯一的一份**：`src/ui/qlui_parse.c` 算出来的 `QLUIDoc`，
+构建期（`qltext`）拿它落盘成 C 源，运行期（`ql_ui_load_text`）拿它直接画。
+两条路不存在两份代码，所以不可能漂移——这是 M3.5 第 4 步的全部意义。
 
 ### 4.2 CSS 解析
 
-- 先 `strip_comments` 去掉 `/* */`；
-- 逐条 `选择器 { 声明; }`；
-- **`@media` / `@supports` 等 at-rule 直接报错**；
-- 属性白名单 `SUPPORTED_PROPS`，不在表里就报错并给出 `文件:行号`。
+- 先去掉 `/* */` 注释，再按 `选择器 { 声明; }` 切块；
+- **`@media` / `@supports` 等 at-rule 直接报错**（只认 `@keyframes`）；
+- 属性白名单是一张 `(名字, 处理器)` 表，不在表里就报错并给出 `文件:行号`；
+- 简写（`margin` / `padding` / `flex` / `gap` / `background` / `border` /
+  `transition` / `animation`）**在单条规则内**就展开成长写，不能等级联合并后再展开。
 
 ### 4.3 选择器与优先级
 
@@ -130,8 +142,9 @@ CSS  ──parse_css──▶ Rule 列表 ─┘
 优先级用规范的三元组 `(id 数, class 数, tag 数)`，排序后再按出现顺序覆盖 ——
 这是"同一份 CSS 在两个引擎上渲染一致"的前提，不是可选项。
 
-```python
-matched.sort(key=lambda r: (r.specificity, r.order))
+```c
+/* 先按 (id 数, class 数, tag 数) 排，再按出现顺序 —— 稳定排序 */
+qsort(matched, n, sizeof(*matched), cmp_specificity);
 ```
 
 ### 4.4 级联与继承
@@ -148,23 +161,33 @@ UA 默认样式（UA_DEFAULTS）
 
 ### 4.5 明确报错的场景（不静默降级）
 
-| 场景 | 报错信息 |
+红线是"明确失败优于半个正确"：本实现做不到的写法一律在构建期/加载时爆掉，
+而不是运行时什么都不发生。当前的拒绝集合（`test_text_reject` 每条都在钉它）：
+
+| 类别 | 例子 |
 |---|---|
-| 不支持的标签（`<table>`/`<img>`） | `不支持标签 <table>` |
-| 不支持的属性（`position`/`flex`/`box-shadow`） | `不支持的属性 'position'` |
-| 不支持的长度单位（`em`/`rem`/`vh`） | `不支持的长度 '1.5em'（只支持 px 与 %）` |
-| 不支持的 at-rule | `不支持 at-rule '@media'` |
-| 兄弟选择器 | `不支持相邻/兄弟选择器 '+'` |
-| **混合内容**（`<p>文字<b>粗</b></p>`） | `同时包含文本和子元素（混合内容）——请把文本放进独立的 <span>/<p>` |
-| 文档有 0 或 2+ 个根元素 | `文档必须有且只有一个根元素` |
+| 不支持的标签 | `<table>` / `<img>`（只认 10 个标签，见 §6） |
+| HTML 结构错 | 结束标签不匹配、标签未闭合、根元素不是恰好 1 个 |
+| 属性名不认识 | `inset` / `opacity` / 任意拼错的属性 |
+| 属性值不认识 | `position: sticky`、`display: grid`、`border: 2px dashed` |
+| 单位 | `1.5em` / `rem` / `vh`（只支持 `px` 与 `%`） |
+| 颜色 | `#12345`、拼错的命名色 |
+| at-rule | `@media` / `@supports`（只认 `@keyframes`） |
+| 选择器 | `+` / `~` 兄弟选择器、`::before` 伪元素 |
+| 简写值个数 | `margin: 1px 2px 3px`（只接受 1/2/4 个） |
+| transform | `rotate()` / `matrix()`；`scale` 超出 `0~32.767` |
+| 关键帧 | 百分比重复/越界、各帧属性不一致、帧里写了不支持的属性 |
+| animation | 没写 `duration`、`duration: 0`、`steps()`/`cubic-bezier()`、`paused`、三处时长 |
+| transition | 写了两段时间（延迟） |
+| 状态规则 | `:hover` 里写 `animation`（动画只按基础样式起播，写了会静默失效） |
+| backdrop-filter / clip-path | `blur` 半径不在 `1~64px`、`clip-path` 不是 `circle()` |
 
-最后一条很容易被忽略：v0 的文本是"元素的一段文本"，不支持一个元素里
-既有文字又有子元素。所以演示页面里写的是：
+> **已经不再是错误的东西**（M3/M5.5 之后）：`position` / `flex-*` / `box-shadow` /
+> `linear-gradient` / `transform` / `clip-path` / 混合内容（`<p>文字<b>粗</b></p>`）
+> 全都支持了。本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。
 
-```html
-<p class="line"><span>inline</span><span>bold</span></p>   <!-- ✅ -->
-<p class="line">inline <b>bold</b></p>                      <!-- ❌ 报错 -->
-```
+**唯一一个"结构上"的限制**：元素级 doc 不能混用（跨 doc 的 `uint16` 下标无法引用），
+混用单位锁死在**面板**（一个 `QLUIRoot` ↔ 一份 doc）。
 
 ---
 
@@ -311,7 +334,7 @@ CSS 里写了 `transition` 的节点，在状态切换（`:hover` 进入/离开�
 `QLAnimKey.v[0]` 只当 0..1 的进度用。这样通道数不受 `QLAnimValue` 的 4 个 float 限制，
 加新通道只是多一个 `trans_props` 位 + 一次 `lerp_color()`。
 
-**shorthand 必须在单条规则内展开**（`tools/qlui/qlui.py` 的 `expand_shorthands`）：
+**shorthand 必须在单条规则内展开**（`qlui_parse.c` 的简写展开段）：
 级联合并之后再展开，会把后出现的长写覆盖回 shorthand 的值 ——
 `.card{animation: x 1s} .a{animation-name: y}` 会让 `.a` 也跑 `x`
 （踩过：10 张卡片退化成同一段关键帧）。`transition` / `flex` / `gap` /
@@ -343,7 +366,7 @@ transition:  一次线性插值（qlanim 管，重基从当前值开始）
 @keyframes:  按时间定位到帧段 + 段内插值（qlui 自己算，无状态可打断）
 ```
 
-**构建期**（`qlui.py`）：`@keyframes` 编译成两张静态表
+**构建期**（`qlui_parse.c`）：`@keyframes` 编译成两张静态表
 
 ```
 QLUIKeyframe[]  每帧：offset(千分比) + 缓动 + 通道位图 + bg_color/bg_color2/alpha  （16 B）
@@ -525,9 +548,9 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 ### 5.5 `.qlui` blob：换界面不用重编译
 
 ```
-qlui.py ──▶ ui_demo.c ──┐
-                        ├─ 编译进程序（零加载成本）
-        └──▶ qlblob ────┴─▶ ui_demo.qlui ──▶ ql_ui_load_file()（运行时加载）
+                    ┌──▶ ui_demo.c ──▶ 编译器 ──▶ .rodata ──▶ ql_ui_build()
+index.html + index.css ──qltext cc──┤
+                    └──▶ ui_demo.qlui ──▶ ql_ui_load_file()（换界面不重编译）
 ```
 
 #### 为什么加载这么便宜
@@ -660,7 +683,7 @@ layout_flex_children(容器):
 
 ```
 <p>Hello <b>bold</b>!</p>
-   ↓ qlui.py 的 _flatten()
+   ↓ qlui_parse.c 的扁平化
 <p><span>Hello </span><b>bold</b><span>!</span></p>
 ```
 
@@ -721,7 +744,7 @@ layout_flex_children(容器):
 ./build/example_ui_blob --watch
 
 # 终端 2：改 test/web/ui_demo.css 后
-python3 tools/qlui/qlui.py --html test/web/ui_demo.html \
+qltext cc --html test/web/ui_demo.html \
                           --css  test/web/ui_demo.css --out build/ui
 ./build/qlblob build/ui/ui_demo.qlui
 # 窗口自动更新，应用二进制没有重新编译
@@ -741,5 +764,5 @@ python3 tools/qlui/qlui.py --html test/web/ui_demo.html \
 1. `ctest --test-dir build -R test_web_ui --output-on-failure` 全绿；
 2. 打开 `build/ui/ui_demo.c`，对照 HTML 看节点表与样式表 —— 这是最快的理解方式；
 3. 读 `test/web/test_web_ui.c`：每个断言对应一条布局规则；
-4. 读 `tools/qlui/qlui.py` 的 `parse_css` → `build_style` → `emit` 三个函数；
+4. 读 `src/ui/qlui_parse.c` 的 ④ CSS 词法 → ⑥ 级联 → ⑦ 编译 `QLUIStyle` 三段；
 5. 读 `src/ui/qlui.c` 的 `layout_node`。

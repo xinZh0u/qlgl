@@ -446,7 +446,7 @@ QLGL 完全照搬这个模型：
 
 ```
 ui/index.html  ┐
-ui/index.css   ├─→ tools/qlui/qlui.py ─→ build/ui_index.c  ─→ 编译器 ─→ .rodata
+ui/index.css   ├─→ qltext (tools/qltext) ─→ build/ui_index.c ─→ 编译器 ─→ .rodata
 ui/index.js    ┘        （构建期）          build/ui_index.h
 ```
 
@@ -517,18 +517,20 @@ ql_ui_render(ui, canvas);                        /* 3. 绘制：背景/边框/�
 ### 12.4 构建集成
 
 ```cmake
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
 set(UI_SRC  ${CMAKE_CURRENT_SOURCE_DIR}/ui/index.html
             ${CMAKE_CURRENT_SOURCE_DIR}/ui/index.css)
 set(UI_GEN  ${CMAKE_CURRENT_BINARY_DIR}/ui_index.c
             ${CMAKE_CURRENT_BINARY_DIR}/ui_index.h)
 
+# qltext 是宿主工具（链库自己的解析器），所以不需要 Python
+add_executable(qltext tools/qltext/qltext.c)
+target_link_libraries(qltext qlgl)
+
 add_custom_command(
     OUTPUT  ${UI_GEN}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
-            --html ui/index.html --css ui/index.css --out ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${UI_SRC} tools/qlui/qlui.py
+    COMMAND qltext cc --html ui/index.html --css ui/index.css
+            --out ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${UI_SRC} qltext
     COMMENT "编译 HTML+CSS 为 C 文件")
 
 add_executable(app main.c ${UI_GEN})

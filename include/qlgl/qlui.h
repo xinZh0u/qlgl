@@ -5,7 +5,7 @@
  * 三形态，产出的都是同一个 QLUIDoc，区别只在"字节放在哪、什么时候解析"：
  *
  *   ① 静态 C 数据（零加载成本，进 .rodata）：
- *        index.html + index.css ──tools/qlui/qlui.py──▶ ui_index.c/.h ──编译器──▶ .rodata
+ *        index.html + index.css ──qltext (tools/qltext)──▶ ui_index.c/.h ──编译器──▶ .rodata
  *        QLUIRoot *ui = ql_ui_build(&ui_index_doc);
  *
  *   ② 二进制 blob（改 UI 不用重编译；加载只是校验 + 设基址）：

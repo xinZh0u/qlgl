@@ -273,7 +273,7 @@ main img.shot { max-width: 100%; }
 或者干脆每个主题一个 <code>.css</code> 文件。库本身不提供变量机制 —— CSS 变量（<code>var()</code>）
 明确不支持，因为那需要运行期求值，与"编译期定死"的设计冲突。</p>
 <p>替代方案很直接：<strong>在构建期展开</strong>。用你喜欢的预处理器（或者一个 20 行的 Python
-脚本）把 <code>var(--accent)</code> 替换成具体颜色，再交给 <code>qlui.py</code>。</p>
+脚本）把 <code>var(--accent)</code> 替换成具体颜色，再交给 <code>qltext</code>。</p>
 <h2 id="css">用外部 CSS 文件</h2>
 <p>例程支持直接吃一份 CSS：</p>
 <div class="highlight"><pre><span></span><code>./build/example/example_06_theme<span class="w"> </span>my.css
@@ -319,7 +319,7 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p>因为 <code>ql_ui_load_text</code> 与 <code>qlui.py</code> 产出的数据<strong>逐字节相同</strong>，两条路径可以随便混。</p>
+<p>因为 <code>ql_ui_load_text</code> 与构建期 <code>qltext</code> 走的是<strong>同一段代码</strong>，两条路径产出的数据<strong>逐字节相同</strong>，可以随便混。</p>
 <hr />
 <p>上一章：<a href="05_animation.html">动画</a> ｜ 下一章：<a href="07_advanced.html">进阶</a></p>
 <div class='pager'>

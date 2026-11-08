@@ -46,7 +46,17 @@ endif()
 
 # ---- HTML+CSS → C（相当于 Qt 的 uic）：把 test/web 下的页面编译成静态数据 ----
 find_package(Python3 COMPONENTS Interpreter QUIET)
-if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
+
+# 宿主工具 qltext：HTML/CSS → 静态 C 表 / .qlui。
+# 它链的是库自己的解析器（src/ui/qlui_parse.c），所以 **语义只有一份**：
+# 构建期、运行期、blob 三条路走的是同一段代码，不存在两份实现漂移。
+if(QLGL_BUILD_TEXT_PARSER AND TARGET qlgl)
+    add_executable(qltext ${CMAKE_CURRENT_SOURCE_DIR}/tools/qltext/qltext.c)
+    target_link_libraries(qltext PRIVATE qlgl)
+    message(STATUS "QLGL: 宿主工具 qltext 已启用（构建期 HTML/CSS 编译）")
+endif()
+
+if(QLGL_BUILD_TESTS AND TARGET qltext)
     set(QL_UI_IN  ${CMAKE_CURRENT_SOURCE_DIR}/test/web)
     set(QL_UI_OUT ${CMAKE_CURRENT_BINARY_DIR}/ui)
     set(QL_UI_GEN ${QL_UI_OUT}/ui_demo.c ${QL_UI_OUT}/ui_demo.h
@@ -54,12 +64,11 @@ if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_custom_command(
         OUTPUT ${QL_UI_GEN}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_UI_OUT}
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+        COMMAND qltext cc
                 --html ${QL_UI_IN}/ui_demo.html
                 --css  ${QL_UI_IN}/ui_demo.css
                 --out  ${QL_UI_OUT}
-        DEPENDS ${QL_UI_IN}/ui_demo.html ${QL_UI_IN}/ui_demo.css
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+        DEPENDS ${QL_UI_IN}/ui_demo.html ${QL_UI_IN}/ui_demo.css qltext
         COMMENT "编译 HTML+CSS 为 C")
     add_custom_target(qlui ALL DEPENDS ${QL_UI_GEN})
 
@@ -74,10 +83,10 @@ if(QLGL_BUILD_TESTS AND Python3_Interpreter_FOUND)
             OUTPUT ${_g} ${QL_UI_OUT}/ui_flex_${c}.h
                    ${QL_UI_OUT}/ui_flex_${c}_blob.c
             COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_UI_OUT}
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+            COMMAND qltext cc
                     --html ${_c}.html --css ${_c}.css
                     --name flex_${c} --out ${QL_UI_OUT}
-            DEPENDS ${_c}.html ${_c}.css ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlui/qlui.py
+            DEPENDS ${_c}.html ${_c}.css qltext
             COMMENT "编译 flex 用例 ${c}")
         list(APPEND QL_FLEX_GEN ${_g} ${QL_UI_OUT}/ui_flex_${c}.h
                                  ${QL_UI_OUT}/ui_flex_${c}_blob.c)
@@ -182,7 +191,7 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
@@ -240,12 +249,23 @@ if(QLGL_BUILD_TESTS)
         endif()
     endforeach()
 
-    # 生成器的错误路径（"明确失败"红线）用 Python 直接跑：它不需要编译
-    if(Python3_Interpreter_FOUND)
-        add_test(NAME test_qlui_errors
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/test/web/test_qlui_errors.py)
-    endif()
+    # 生成器的错误路径（"明确失败"红线）现在由 test_text_reject 覆盖：
+    # qlui.py 退化成宿主工具的壳之后，接受/拒绝集合只剩 C 侧那一份。
+
+    # qltext blob（不经过编译器直接出 .qlui）必须与提交的基准逐字节相同。
+    # 这条顺带证明"宿主工具 + 运行期"用的是同一段解析代码。
+    set(QL_DIRECT_BLOB ${QL_UI_OUT}/direct_row.qlui)
+    add_custom_command(
+        OUTPUT ${QL_DIRECT_BLOB}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${QL_UI_OUT}
+        COMMAND qltext blob --html ${QL_UI_IN}/flex/row.html
+                --css ${QL_UI_IN}/flex/row.css --name flex_row --out ${QL_DIRECT_BLOB}
+        DEPENDS qltext ${QL_UI_IN}/flex/row.html ${QL_UI_IN}/flex/row.css
+        COMMENT "qltext blob 直接产出 .qlui")
+    add_custom_target(qltext_blob ALL DEPENDS ${QL_DIRECT_BLOB})
+    add_test(NAME test_qltext_blob
+             COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
 endif()
 
 # 重新生成类型 id 表：cmake --build build --target qlgen

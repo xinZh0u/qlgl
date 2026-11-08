@@ -199,11 +199,11 @@ main img.shot { max-width: 100%; }
 <main>
 <h1 id="qluitext">QLUIText 阅读指南</h1>
 <p><code>ql_ui_load_text(html, css)</code> 把一份 HTML + CSS 文本编译成 <code>QLUIDoc</code>。</p>
-<p>它是 <code>tools/qlui/qlui.py</code> 的 <strong>C 版同一套语义</strong>：同一份源文本，两边产出的 doc
+<p>它<strong>就是</strong>构建期工具的那段代码：同一份源文本，构建期与运行期产出的 doc
 编码成 <code>.qlui</code> blob 之后<strong>逐字节相同</strong>。</p>
 <hr />
 <h2 id="1">1. 它解决什么问题</h2>
-<p>构建期编译（<code>qlui.py</code>）的产物是 C 源，改一次界面就要重新编译一次程序。
+<p>构建期编译（<code>qltext</code>）的产物是 C 源，改一次界面就要重新编译一次程序。
 <code>ql_ui_load_text</code> 让<strong>运行期</strong>也能吃文本，于是：</p>
 <table>
 <thead>
@@ -223,7 +223,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>嵌入式/无 Python 工具链的目标</td>
-<td>不需要 <code>qlui.py</code> 也能出界面</td>
+<td>不需要宿主工具也能出界面</td>
 </tr>
 <tr>
 <td>单元测试写界面</td>
@@ -329,8 +329,9 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p>所以 <code>test_golden</code> + <code>test_text_parse</code> 都用<strong>编码后的 blob 逐字节比对</strong>。
-实现上这意味着要复刻 Python 侧的每一个细节：</p>
+<p>所以 <code>test_golden</code> + <code>test_text_parse</code> 都用<strong>编码后的 blob 逐字节比对</strong>，
+基准是提交在 <code>test/golden/*.qlui</code> 里的 27 个文件。
+这意味着下面这些"看不见"的细节不能变：</p>
 <ul>
 <li>样式表的身份 = <strong>排序后的 <code>(属性, 值)</code> 字符串集合</strong>（不是编译后的结构体）。
   两个节点的声明集合只要字符串不同就是两条样式——哪怕编出来的 <code>QLUIStyle</code> 一样。</li>
@@ -346,49 +347,40 @@ main img.shot { max-width: 100%; }
 <tr>
 <th>段</th>
 <th>内容</th>
-<th>对应 Python</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>①</td>
 <td>错误与内存（<code>set_error</code> / <code>SB</code> 增长缓冲）</td>
-<td>—</td>
 </tr>
 <tr>
 <td>②</td>
 <td>值解析：颜色 / 长度 / 数值 / 边距 / 渐变 / 阴影 / transform / clip-path / 时长 / flex / gap</td>
-<td><code>parse_*</code></td>
 </tr>
 <tr>
 <td>③</td>
 <td>声明集合 + <strong>规则级简写展开</strong></td>
-<td><code>parse_decls</code> / <code>expand_shorthands</code></td>
 </tr>
 <tr>
 <td>④</td>
 <td>CSS 词法：规则、选择器、<code>@keyframes</code></td>
-<td><code>parse_css</code></td>
 </tr>
 <tr>
 <td>⑤</td>
 <td>HTML 词法 + 混合内容消解</td>
-<td><code>TreeBuilder</code> / <code>_flatten</code></td>
 </tr>
 <tr>
 <td>⑥</td>
 <td>级联：UA 默认 → 匹配 → 按 (specificity, order) 覆盖 → 继承 → 行内</td>
-<td><code>collect_decls</code> / <code>finalize_style</code></td>
 </tr>
 <tr>
 <td>⑦</td>
 <td>编译成 <code>QLUIStyle</code> / <code>QLUIKeyframe</code> / <code>QLUIAnimation</code></td>
-<td><code>emit()</code> 的样式段</td>
 </tr>
 <tr>
 <td>⑧</td>
 <td>建表：DFS 扁平化、样式去重、文本池、字号表、一次分配 arena</td>
-<td><code>emit()</code> 的建表段</td>
 </tr>
 </tbody>
 </table>
@@ -421,39 +413,39 @@ U+00A0 / U+1680 / U+2000–200A / U+2028 / U+2029 / U+202F / U+205F / U+3000。
 <p><code>doc-&gt;arena</code> 指向第一块，<code>ql_ui_doc_free(doc)</code> 两次释放就干净了——
 与 <code>ql_ui_doc_load_mem()</code> 的所有权约定完全一致（判据只有 <code>arena == NULL</code>）。</p>
 <hr />
-<h2 id="5">5. 已知与构建期工具的差异</h2>
+<h2 id="5-4">5. 与构建期工具的关系（第 4 步之后就只剩一份）</h2>
+<p>M3.5 第 3 步时这里是"已知差异"表——因为构建期是 Python、运行期是 C，两份实现需要对账。
+<strong>第 4 步把构建期改成调本文件之后，这张表就没有意义了</strong>：构建期工具
+<code>tools/qltext/qltext.c</code> 直接 <code>#include &lt;qlgl/qluitext.h&gt;</code> 调 <code>ql_ui_load_text()</code>，
+产出的 doc 再由它写成 C 表。两条路是同一个函数。</p>
+<p>于是"一致性"不再靠对账，而靠<strong>基准文件</strong>：</p>
 <table>
 <thead>
 <tr>
-<th>项</th>
-<th>差异</th>
-<th>影响</th>
+<th>护栏</th>
+<th>守什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>命名 HTML 实体</td>
-<td>只支持 <code>&amp;amp; &amp;lt; &amp;gt; &amp;quot; &amp;apos; &amp;nbsp;</code> + 数字引用；其它<strong>报错</strong></td>
-<td>Python 支持完整 HTML5 实体表。当前用例集不涉及</td>
+<td><code>test/web/test_golden.c</code></td>
+<td>27 页 × (blob 逐字节 + 基准图容差)；基准在 <code>test/golden/</code></td>
 </tr>
 <tr>
-<td>错误信息措辞</td>
-<td>语义一致、措辞不同（<code>&lt;节点&gt;</code> 代替 <code>t:style[3]</code>）</td>
-<td>只影响排查体验</td>
+<td><code>test/web/test_text_parse.c</code></td>
+<td>运行期解析出来的 doc 与构建期落盘的静态 doc，blob 逐字节相同（352 项）</td>
 </tr>
 <tr>
-<td>CSS 里的 Unicode 空白</td>
-<td>按 ASCII 空白处理</td>
-<td>CSS 值里出现全角空格属于异常写法</td>
-</tr>
-<tr>
-<td>属性名大小写</td>
-<td>与 HTML 一致（小写化）</td>
-<td>无差异</td>
+<td><code>test/web/test_text_reject.c</code></td>
+<td>42 个正负用例钉住"哪些写法必须报错"</td>
 </tr>
 </tbody>
 </table>
-<p><code>test_text_reject</code> 用 32 个用例守着"接受/拒绝集合一致"这条线。</p>
+<p>改动解析器时要按这个顺序想：<strong>先跑这三个测试</strong>，红了就说明语义变了，
+而不是"看起来一样就行"。</p>
+<h3 id="51-html">5.1 一个仍然存在的取舍：命名 HTML 实体</h3>
+<p>只支持 <code>&amp;amp; &amp;lt; &amp;gt; &amp;quot; &amp;apos; &amp;nbsp;</code> + 数字引用，其它<strong>报错</strong>
+（完整 HTML5 实体表有 2000 多条，进 MCU 不划算）。这是产品决策，不是缺陷。</p>
 <hr />
 <h2 id="6">6. 可摘性</h2>
 <p><code>src/ui/qlui_parse.c</code> 是独立编译单元，core 里没有任何静态引用指向它。</p>
