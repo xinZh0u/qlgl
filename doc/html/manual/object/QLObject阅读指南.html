@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLObject 阅读指南 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item active' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlobject">QLObject 阅读指南</h1>
+<blockquote>
+<p>对象系统（object）是整个 QLGL 的地基：类型、对象、属性、事件、内存全在这里。
+目标读者：要读懂或修改 <code>src/core/</code> 的人。
+只想知道怎么用，请看 <a href="./QLObject%20API手册.md">QLObject API手册</a>。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 先看文件地图</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+<th>建议阅读顺序</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include/qlgl/qlconfig.h</code></td>
+<td>所有容量/裁剪开关</td>
+<td>①</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlgl.h</code></td>
+<td>总入口、错误码、日志宏</td>
+<td>②</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlvalue.h</code></td>
+<td>通用值容器 <code>QLValue</code>、Q16.16 定点</td>
+<td>③</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlclass.h</code></td>
+<td>类描述 <code>QLObjectClass</code>、注册 API、<strong>定义类的宏</strong></td>
+<td>④</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlobject.h</code></td>
+<td>根类 <code>QLObject</code>、生命周期、对象树</td>
+<td>⑤</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlprop.h</code></td>
+<td>属性 id 区间与派发</td>
+<td>⑥</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlevent.h</code></td>
+<td>事件参数、传播、发射宏</td>
+<td>⑦</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlmem.h</code></td>
+<td>分配钩子与统计</td>
+<td>⑧</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qltype_gen.h</code></td>
+<td><strong>自动生成</strong>的类型 id 枚举，勿手改</td>
+<td>⑨</td>
+</tr>
+<tr>
+<td><code>src/core/qlmem.c</code></td>
+<td>分配器包装 + 越界自检</td>
+<td>④</td>
+</tr>
+<tr>
+<td><code>src/core/qlvalue.c</code></td>
+<td>值构造与安全读取</td>
+<td>③</td>
+</tr>
+<tr>
+<td><code>src/core/qlclass.c</code></td>
+<td>类表、注册、私有区布局计算</td>
+<td>⑤</td>
+</tr>
+<tr>
+<td><code>src/core/qlobject.c</code></td>
+<td>创建/引用计数/析构/对象树</td>
+<td>⑥</td>
+</tr>
+<tr>
+<td><code>src/core/qlprop.c</code></td>
+<td>属性派发（沿继承链找归属类）</td>
+<td>⑦</td>
+</tr>
+<tr>
+<td><code>src/core/qlevent.c</code></td>
+<td>连接池、捕获/冒泡、连接回收</td>
+<td>⑧</td>
+</tr>
+<tr>
+<td><code>src/core/qlgl.c</code></td>
+<td>初始化：按生成表注册内置类</td>
+<td>⑨</td>
+</tr>
+<tr>
+<td><code>src/generated/qlclass_gen.c</code></td>
+<td><strong>自动生成</strong>的内置类注册表</td>
+<td>⑩</td>
+</tr>
+<tr>
+<td><code>tools/qlgen/qlgen.py</code></td>
+<td>生成上面两个文件</td>
+<td>⑪</td>
+</tr>
+</tbody>
+</table>
+<p>带"自动生成"的文件由 <code>tools/qlgen/qlgen.py</code> 产出，CI 里用 <code>qlgen.py --check</code> 校验是否与源码同步。</p>
+<hr />
+<h2 id="2">2. 一次看懂内存布局</h2>
+<p>对象<strong>只分配一次</strong>：私有区在块首，实例在块尾。</p>
+<div class="highlight"><pre><span></span><code>   malloc 返回的块首 mem
+   +------------------------------+  mem
+   | QLObject 私有区（0 字节）     |  priv_offset = 0
+   +------------------------------+
+   | 父类私有区                    |  priv_offset = 上一层的 offset + 上一层 own_size
+   +------------------------------+
+   | 本类私有区                    |  priv_offset = ...
+   +------------------------------+  mem + priv_total
+   | QLObject 实例（结构体本体）    |  ← self = (QLObject *)(mem + priv_total)
+   +------------------------------+
+</code></pre></div>
+
+<p>两个关键字段在注册时算好，之后只读：</p>
+<ul>
+<li><code>klass-&gt;own_private_size</code>：本类<strong>自己</strong>的私有区大小；</li>
+<li><code>klass-&gt;priv_offset</code>：本类私有区相对 <code>mem</code> 的偏移；</li>
+<li><code>klass-&gt;priv_total</code>：整条继承链的私有区总和，也就是 <code>self - mem</code>。</li>
+</ul>
+<p>因此取私有区是 O(1)：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_priv</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">self</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">klass</span><span class="o">-&gt;</span><span class="n">priv_total</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">klass</span><span class="o">-&gt;</span><span class="n">priv_offset</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>ql_widget_get_private(self)</code> 由宏自动生成，内部就是这一行。</p>
+<p><strong>为什么不用"私有区大小累加"的老做法？</strong> 老做法把每层的 <code>private_size()</code>（本身已含父类）再求和，
+5 层继承时分配量是需求的 3 倍；现在的做法是每层只算自己那一份，零浪费。</p>
+<p><strong>析构时必须释放块首</strong>：<code>ql_mem_free((char *)self - self-&gt;klass-&gt;priv_total)</code>。
+直接 <code>free(self)</code> 会释放块内指针，是堆破坏（ASan 会立刻报错）。</p>
+<hr />
+<h2 id="3">3. 创建与销毁的时序</h2>
+<h3 id="ql_object_newtype">创建 <code>ql_object_new(type)</code></h3>
+<ol>
+<li><code>ql_class_get(type)</code>：从类表取类描述，未注册直接返回 <code>NULL</code>；</li>
+<li>沿 <code>klass-&gt;parent</code> 收集继承链到栈上数组（顺便检查深度 ≤ <code>QL_CFG_MAX_INHERIT_DEPTH</code>）；</li>
+<li><code>ql_mem_calloc(instance_size + priv_total)</code>：一次分配，失败返回 <code>NULL</code>；</li>
+<li><code>self = mem + priv_total</code>，填 <code>klass / ref_count = 1 / conn_head = 空 / state = ALIVE</code>；</li>
+<li>按 <strong>父 → 子</strong> 依次调用每层 <code>init(self)</code>。</li>
+</ol>
+<h3 id="ql_object_unrefself">销毁 <code>ql_object_unref(self)</code>（计数归零时）</h3>
+<ol>
+<li><strong>子对象</strong>：先摘链（<code>first_child</code>、<code>parent</code>、<code>next_sibling</code> 全部清空）再 <code>unref</code>，避免边遍历边改链表；</li>
+<li><strong>事件</strong>：<code>ql_disconnect_all</code> 把所有连接归还静态池；</li>
+<li><strong>deinit</strong>：按 <strong>子 → 父</strong> 调用；</li>
+<li><strong>与父解绑</strong>：从父的 <code>first_child</code> 链表摘除（不改引用计数，父对子的引用已在第 1 步归还）；</li>
+<li><code>ql_mem_free(块首)</code>，并把 <code>state</code> 置为 <code>DEAD</code>。</li>
+</ol>
+<p><code>state</code> 的作用：析构期间再被 <code>unref</code> 会打错误日志而不是重复释放；
+<code>ql_object_ref</code> 遇到 <code>DEAD</code> 也会拒绝。</p>
+<hr />
+<h2 id="4-id">4. 类注册与类型 id</h2>
+<h3 id="41-__attribute__constructor">4.1 为什么不用 <code>__attribute__((constructor))</code></h3>
+<p>构造函数按<strong>链接顺序</strong>执行，每次改文件、改链接顺序，类型 id 就会变，
+二进制资源、语言绑定、序列化全部跟着失效；裸机上还未必有 <code>.init_array</code>。</p>
+<p>现在的做法：<code>tools/qlgen</code> 扫描源码生成固定顺序的 id 枚举与注册表，
+<code>qlgl_init()</code> 按表顺序注册，并<strong>校验运行期 id 与枚举一致</strong>，不一致直接返回 <code>QL_ERR_INVAL</code>。</p>
+<h3 id="42">4.2 注册时必须满足</h3>
+<table>
+<thead>
+<tr>
+<th>约束</th>
+<th>违反时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>父类先于子类注册</td>
+<td>返回 <code>QL_TYPE_NONE</code>，打 <code>parent type not registered</code></td>
+</tr>
+<tr>
+<td>继承深度 ≤ <code>QL_CFG_MAX_INHERIT_DEPTH</code>（默认 8）</td>
+<td>返回 <code>QL_TYPE_NONE</code></td>
+</tr>
+<tr>
+<td>私有区总和 ≤ 64KB</td>
+<td>返回 <code>QL_TYPE_NONE</code></td>
+</tr>
+<tr>
+<td>类表容量 ≤ <code>QL_CFG_MAX_CLASS</code>（默认 64）</td>
+<td>返回 <code>QL_TYPE_NONE</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="43-5">4.3 新增一个类的 5 步</h3>
+<ol>
+<li>写属性/事件枚举（没有就写 <code>QL_PROPERTY_ENUM_EMPTY</code> / <code>QL_EVENT_ENUM_EMPTY</code>）；</li>
+<li>头文件里 <code>QL_DECLARE(QLFoo, ql_foo)</code>，并定义 <code>struct QLFoo / struct QLFooClass</code>；</li>
+<li><code>.c</code> 里定义 <code>struct QLFooPrivate</code>，然后 <code>QL_DEFINE_WITH_PRIVATE(QL_FOO, QLFoo, ql_foo, ql_parent)</code>；</li>
+<li>实现三个 <code>static</code> 钩子：<code>ql_foo_class_init</code> / <code>ql_foo_init</code> / <code>ql_foo_deinit</code>；</li>
+<li>运行 <code>python3 tools/qlgen/qlgen.py</code>，重新生成 id 表。</li>
+</ol>
+<blockquote>
+<p><code>QL_DEFINE_WITH_PRIVATE</code> 的第 4 个参数是父类的<strong>函数前缀</strong>，qlgen 靠它推导继承关系。</p>
+</blockquote>
+<hr />
+<h2 id="5">5. 属性派发</h2>
+<p>每个类向父类要一段 id 区间（默认 100 个），区间是<strong>闭区间</strong>：</p>
+<div class="highlight"><pre><span></span><code>QLObject : 1        .. 100      （START=1，END=100，都是哨兵）
+QLWidget : 101      .. 200
+QLLabel  : 201      .. 300
+</code></pre></div>
+
+<ul>
+<li><code>*_PROPERTY_START</code> 和 <code>*_PROPERTY_END</code> 是<strong>区间哨兵</strong>，不绑定具体属性；
+  用户写的第一个属性自动是 <code>START + 1</code>；</li>
+<li>派发：从对象自己的类开始向上找，谁包含这个 id 就由谁的 <code>set_property/get_property</code> 处理；</li>
+<li>找不到（或该类的函数为空）返回 <code>QL_ERR_INVAL</code> / <code>QL_VALUE_NULL</code>。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="n">ql_object_set_property</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">QL_LABEL_PROPERTY_TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">ql_value_string</span><span class="p">(</span><span class="s">&quot;hi&quot;</span><span class="p">));</span>
+</code></pre></div>
+
+<p>即使 <code>obj</code> 是最派生的类，也会沿着链找到 <code>QLLabel</code> 的 setter。</p>
+<hr />
+<h2 id="6">6. 事件系统</h2>
+<h3 id="61">6.1 连接池</h3>
+<p>事件连接<strong>不分配堆内存</strong>，全部来自静态池：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLEventConn</span><span class="w"> </span><span class="n">s_pool</span><span class="p">[</span><span class="n">QL_CFG_EVENT_CONN_POOL</span><span class="p">];</span><span class="w">   </span><span class="c1">// 默认 256 个槽位</span>
+</code></pre></div>
+
+<ul>
+<li>对象头只存 <code>conn_head</code>（16 位池下标）；</li>
+<li>同一对象的连接用 <code>next</code> 串成单链表，新连接插在表头；</li>
+<li><code>ql_connect</code> 返回<strong>单调递增的 32 位 id</strong>（永不复用，避免 ABA 误断）；</li>
+<li><code>ql_disconnect</code> 只标记 <code>removed</code>；若当前不在派发中，立刻回收；
+  派发过程中标记的，在 <code>ql_emit</code> 结束、<code>emit_depth</code> 归零时统一回收。</li>
+</ul>
+<h3 id="62-emit">6.2 一次 emit 的流程</h3>
+<div class="highlight"><pre><span></span><code>     目标 obj
+        │  路径：obj → parent → ... → root（最多 QL_CFG_EVENT_PATH_MAX 层）
+        ▼
+[1] 取事件描述（沿类链找 events 表）→ 得到传播标志
+[2] CAPTURE 标志：root …… 目标的父  依次派发
+[3] 目标自身派发
+[4] BUBBLE 标志：目标的父 …… root 依次派发
+[5] emit_depth 归零 → 回收所有 removed 连接
+</code></pre></div>
+
+<p>每个节点的派发顺序是：<strong>该节点上的全部回调 → 默认处理</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_event_stop_propagation</code></td>
+<td>立刻停止当前节点剩余回调，且不再向上传播</td>
+</tr>
+<tr>
+<td><code>ql_event_prevent_default</code></td>
+<td>跳过默认处理；默认处理只在<strong>目标节点</strong>、且事件带 <code>DEFAULT</code> 标志时调用</td>
+</tr>
+<tr>
+<td>未登记描述表的事件</td>
+<td>默认按"可冒泡 + 可停止 + 无默认处理"处理</td>
+</tr>
+<tr>
+<td>emit 期间 unref 目标</td>
+<td>安全：emit 前后自带一次 <code>ref/unref</code> 守卫</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63">6.3 事件参数</h3>
+<p>参数是<strong>定长数组的值拷贝</strong>，不是栈指针：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLEventArgs</span><span class="w"> </span><span class="n">args</span><span class="p">;</span><span class="w">                 </span><span class="c1">// count / type[4] / arg[4]</span>
+<span class="n">ql_args_reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">args</span><span class="p">);</span>
+<span class="n">ql_args_int</span><span class="p">(</span><span class="o">&amp;</span><span class="n">args</span><span class="p">,</span><span class="w"> </span><span class="mi">42</span><span class="p">);</span>
+<span class="n">ql_args_string</span><span class="p">(</span><span class="o">&amp;</span><span class="n">args</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;hi&quot;</span><span class="p">);</span>
+<span class="n">ql_emit</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">QL_EVT_EVENT_PING</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">args</span><span class="p">);</span><span class="w">      </span><span class="c1">// 或 QL_EMIT_2(...)</span>
+</code></pre></div>
+
+<p>回调里按索引取，类型不符时返回 fallback，不会崩。</p>
+<hr />
+<h2 id="7">7. 对象树与引用计数</h2>
+<p>规则只有一条：<strong>父对象对子对象持有一份引用，子对象不引用父对象。</strong></p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>引用计数变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_object_new</code></td>
+<td>1（调用方持有）</td>
+</tr>
+<tr>
+<td><code>ql_object_set_parent(child, parent)</code></td>
+<td>父 +1；如果原来有父，旧父 -1</td>
+</tr>
+<tr>
+<td><code>ql_object_add_child(parent, child)</code></td>
+<td>等价于 <code>set_parent</code> 后再把调用方那份 -1（常用）</td>
+</tr>
+<tr>
+<td><code>set_parent(child, NULL)</code></td>
+<td>旧父 -1，可能因此销毁 child</td>
+</tr>
+<tr>
+<td><code>ql_object_unref(parent)</code></td>
+<td>递归销毁所有子对象</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>用 <code>add_child</code> 之后不要再 <code>unref(child)</code>，否则会把父对象持有的那份也放掉。</p>
+</blockquote>
+<p>成环会被拒绝：<code>set_parent</code> 会检查 <code>parent</code> 是不是自己或自己的后代，返回 <code>QL_ERR_INVAL</code>。</p>
+<hr />
+<h2 id="8">8. 常见坑（都是真实踩过的）</h2>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>宏参数 <code>name</code> 会替换字段 <code>.name</code></td>
+<td>编译报 <code>.ql_foo</code> 不是成员</td>
+<td>宏内部用 <code>QL_CLASS_FIELD_NAME</code> 间接展开，<strong>改宏时注意</strong></td>
+</tr>
+<tr>
+<td>属性枚举最后一个值后面加了逗号</td>
+<td><code>expected expression</code></td>
+<td>最后一项不写逗号（<code>QL_PROPERTY_ENUM_END</code> 自带前导逗号）</td>
+</tr>
+<tr>
+<td>调用宏加了分号</td>
+<td><code>empty declaration</code> 警告</td>
+<td><code>QL_DECLARE</code> / <code>QL_DEFINE_WITH_PRIVATE</code> <strong>自带分号</strong>，调用处不要加</td>
+</tr>
+<tr>
+<td><code>struct QLFooPrivate</code> 没定义就写宏</td>
+<td><code>incomplete type</code></td>
+<td>私有结构体必须在宏之前定义</td>
+</tr>
+<tr>
+<td>三个 static 钩子没实现</td>
+<td>链接/编译报未定义</td>
+<td>必须实现 <code>class_init / init / deinit</code>，空实现也要写</td>
+</tr>
+<tr>
+<td>把 <code>*_PROPERTY_START</code> 当成第一个属性</td>
+<td>set 返回 <code>QL_ERR_INVAL</code></td>
+<td>第一个属性是 <code>START + 1</code></td>
+</tr>
+<tr>
+<td><code>unref</code> 用 <code>free(self)</code></td>
+<td>ASan 报堆破坏</td>
+<td>只释放 <code>mem = self - priv_total</code></td>
+</tr>
+<tr>
+<td>类注册在 <code>qlgl_init</code> 之前</td>
+<td><code>ql_object_new</code> 返回 NULL</td>
+<td>先 <code>qlgl_init()</code>，再 <code>ql_class_register()</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9">9. 调试手段</h2>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>看注册结果</td>
+<td><code>QL_CFG_LOG_LEVEL=4</code>，注册时会打印 type / instance / private / total</td>
+</tr>
+<tr>
+<td>排查泄漏</td>
+<td><code>ql_mem_stats(&amp;s)</code>，看 <code>bytes_live</code> 与 <code>alloc_count/free_count</code></td>
+</tr>
+<tr>
+<td>排查连接泄漏</td>
+<td><code>ql_event_pool_usage()</code> 对比 <code>ql_event_pool_capacity()</code></td>
+</tr>
+<tr>
+<td>确认某属性归谁</td>
+<td><code>ql_object_property_owner(obj, id, &amp;type)</code></td>
+</tr>
+<tr>
+<td>对象身份</td>
+<td><code>ql_object_type_name(obj)</code>、<code>ql_object_is(obj, QL_TYPE_X)</code></td>
+</tr>
+</tbody>
+</table>
+<p>日志一律输出英文（便于 grep 与跨环境显示），注释与文档用中文。</p>
+<hr />
+<h2 id="10">10. 建议的阅读/验证顺序</h2>
+<ol>
+<li>跑 <code>ctest --test-dir build --output-on-failure</code>，6 个用例（5 个单元测试 + 1 个示例程序）全绿再读代码；</li>
+<li>按 §1 的文件表读头文件（不用急着看 <code>.c</code>）；</li>
+<li>读 <code>test/object/test_object_inherit.c</code>——它把私有区公式、初始化顺序、属性派发都验证了一遍；</li>
+<li>读 <code>test/object/test_object_event.c</code>——传播规则的可执行说明；</li>
+<li>最后读 <code>src/core/qlobject.c</code> 与 <code>src/core/qlevent.c</code>。</li>
+</ol>
+<div class='pager'>
+<a href='../../manual/object/QLObject API手册.html'><span class='dir'>上一页</span>QLObject API 手册（对象系统 v0.1）</a>
+<a class='next' href='../../manual/widget/QLWidget API手册.html'><span class='dir'>下一页</span>QLWidget / 绘制 API 手册（v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLInput / 交互 API 手册（v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlinput-api-v01">QLInput / 交互 API 手册（v0.1）</h1>
+<p>配套阅读：<a href="./QLInput阅读指南.md">QLInput 阅读指南</a> · 对象/事件：<a href="../object/QLObject%20API手册.md">QLObject API手册</a> · 绘制：<a href="../widget/QLWidget%20API手册.md">QLWidget API手册</a></p>
+<ul>
+<li>头文件：<code>#include &lt;qlgl/qlgl.h&gt;</code>（已包含 <code>qlinput.h</code>）</li>
+<li>链接：<code>target_link_libraries(xxx PRIVATE qlgl)</code></li>
+<li>C11；队列静态分配，<strong>运行期零 malloc</strong></li>
+</ul>
+<hr />
+<h2 id="1">1. 最小可运行示例（窗口 + 可点按钮）</h2>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;clicked!</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">qlgl_init</span><span class="p">();</span>
+<span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">disp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_x11_create</span><span class="p">(</span><span class="s">&quot;Demo&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_FORMAT_AUTO</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">disp</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span>
+<span class="w">        </span><span class="n">disp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB888</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_ex</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_render_set_root</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 输入根默认回落到渲染根 */</span>
+
+<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">btn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_child</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w"> </span><span class="mi">40</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">btn</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x2A</span><span class="p">,</span><span class="w"> </span><span class="mh">0x34</span><span class="p">,</span><span class="w"> </span><span class="mh">0x44</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_state_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">btn</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET_STATE_HOVER</span><span class="p">,</span>
+<span class="w">                           </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x3A</span><span class="p">,</span><span class="w"> </span><span class="mh">0x50</span><span class="p">,</span><span class="w"> </span><span class="mh">0x6C</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_state_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">btn</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET_STATE_ACTIVE</span><span class="p">,</span>
+<span class="w">                           </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x3C</span><span class="p">,</span><span class="w"> </span><span class="mh">0xC0</span><span class="p">,</span><span class="w"> </span><span class="mh">0x7A</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_connect</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">btn</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET_EVENT_CLICK</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_disp_x11_poll</span><span class="p">(</span><span class="n">disp</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_input_dispatch</span><span class="p">();</span><span class="w">      </span><span class="cm">/* ① 处理输入 */</span>
+<span class="w">        </span><span class="n">ql_render</span><span class="p">();</span><span class="w">              </span><span class="cm">/* ② 绘制脏区 */</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">ql_disp_x11_destroy</span><span class="p">(</span><span class="n">disp</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_object_unref</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
+<span class="w">    </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>主循环只有两步：<strong>先派发输入，再重绘</strong>。输入层已经把"哪个控件变了状态"打成脏区。</p>
+<hr />
+<h2 id="2">2. 数据结构和常量</h2>
+<h3 id="21-qlinputevent">2.1 <code>QLInputEvent</code></h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int32_t</span><span class="w">  </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 指针逻辑坐标（窗口左上角为原点） */</span>
+<span class="w">    </span><span class="kt">int32_t</span><span class="w">  </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="n">dy</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 滚轮增量；MOVE 时是相对位移 */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">key</span><span class="p">;</span><span class="w">         </span><span class="cm">/* QLKey（键盘事件） */</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">time_ms</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 时间戳，0 = 未知（双击判定用，M1 未用） */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">type</span><span class="p">;</span><span class="w">        </span><span class="cm">/* QLInputType */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">button</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 本事件的按钮 QL_BUTTON_* */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">buttons</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 当前按住的按钮位图 QL_BUTTON_BIT_* */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">mods</span><span class="p">;</span><span class="w">        </span><span class="cm">/* QL_MOD_* */</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">     </span><span class="n">text</span><span class="p">[</span><span class="mi">8</span><span class="p">];</span><span class="w">     </span><span class="cm">/* UTF-8 字符，type == QL_INPUT_TEXT 时有效 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="p">;</span>
+</code></pre></div>
+
+<p>定长、可值传递、不含指针，因此可以直接放进环形队列、可以直接 memcpy。</p>
+<h3 id="22-qlinputtype">2.2 <code>QLInputType</code></h3>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_INPUT_POINTER_MOVE</code></td>
+<td>指针移动</td>
+</tr>
+<tr>
+<td><code>QL_INPUT_POINTER_DOWN</code></td>
+<td>按钮按下</td>
+</tr>
+<tr>
+<td><code>QL_INPUT_POINTER_UP</code></td>
+<td>按钮抬起</td>
+</tr>
+<tr>
+<td><code>QL_INPUT_POINTER_LEAVE</code></td>
+<td>指针离开窗口表面</td>
+</tr>
+<tr>
+<td><code>QL_INPUT_WHEEL</code></td>
+<td>滚轮 / 触控板滚动</td>
+</tr>
+<tr>
+<td><code>QL_INPUT_KEY_DOWN</code> / <code>QL_INPUT_KEY_UP</code></td>
+<td>键盘</td>
+</tr>
+<tr>
+<td><code>QL_INPUT_TEXT</code></td>
+<td>已翻译好的 UTF-8 字符</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23-qlkey">2.3 <code>QLKey</code></h3>
+<p>可打印字符<strong>直接用 ASCII</strong>，特殊键从 <code>0x100</code> 起：</p>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>键</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>8 / 9 / 13 / 27 / 32 / 127</code></td>
+<td>Backspace / Tab / Enter / Escape / Space / Delete</td>
+</tr>
+<tr>
+<td><code>'a'..'z'</code>、<code>'0'..'9'</code>、标点</td>
+<td>同 ASCII</td>
+</tr>
+<tr>
+<td><code>0x100..0x103</code></td>
+<td>Left / Up / Right / Down</td>
+</tr>
+<tr>
+<td><code>0x104..0x109</code></td>
+<td>Home / End / PageUp / PageDown / Insert</td>
+</tr>
+<tr>
+<td><code>0x10A..0x115</code></td>
+<td>F1..F12</td>
+</tr>
+</tbody>
+</table>
+<p>判断可打印：<code>key &lt; 0x80</code>。</p>
+<h3 id="24">2.4 修饰键与按钮</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QL_MOD_SHIFT</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_MOD_CTRL</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_MOD_ALT</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_MOD_META</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_MOD_CAPS</span><span class="w">   </span><span class="cm">/* 位图 */</span>
+<span class="n">QL_BUTTON_LEFT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">QL_BUTTON_MIDDLE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">QL_BUTTON_RIGHT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="w">          </span><span class="cm">/* 索引 */</span>
+<span class="n">QL_BUTTON_BIT_LEFT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">QL_BUTTON_BIT_MIDDLE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_BUTTON_BIT_RIGHT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span><span class="w">  </span><span class="cm">/* 位图 */</span>
+</code></pre></div>
+
+<h3 id="25">2.5 控件状态位</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QL_WIDGET_STATE_HOVER</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_WIDGET_STATE_ACTIVE</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_WIDGET_STATE_FOCUS</span>
+</code></pre></div>
+
+<p>三者可同时成立，由输入层沿<strong>父链</strong>设置（等价 CSS 的 <code>:hover</code> 对祖先生效）。</p>
+<hr />
+<h2 id="3">3. 队列与派发</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">      </span><span class="nf">ql_input_reset</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_input_push</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_input_pending</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_input_dispatch</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_input_handle</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 立即派发单条 */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_input_reset</code></td>
+<td>清空队列 + 复位 hover/pressed/focus + 清 sink。<code>qlgl_init/shutdown</code> 会调用</td>
+</tr>
+<tr>
+<td><code>ql_input_push</code></td>
+<td>入队。队列满（<code>QL_CFG_INPUT_QUEUE</code>，默认 64）时<strong>丢最旧的</strong>并返回 <code>QL_ERR_FULL</code></td>
+</tr>
+<tr>
+<td><code>ql_input_dispatch</code></td>
+<td>排空队列，返回处理条数。会调用户回调，回调里可继续 push</td>
+</tr>
+<tr>
+<td><code>ql_input_handle</code></td>
+<td>绕过队列立即派发，用于"已经在事件回调里、只想立刻生效"的场景</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">构造 + 入队的便捷函数（后端与测试都用）</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_move</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">buttons</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_button</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">button</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">down</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_leave</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_wheel</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">dy</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_key</span><span class="p">(</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">down</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">mods</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">utf8</span><span class="p">);</span>
+</code></pre></div>
+
+<blockquote>
+<p>这些函数<strong>只入队不派发</strong>。要在测试里立刻看到效果，记得跟一句 <code>ql_input_dispatch()</code>。</p>
+</blockquote>
+<hr />
+<h2 id="4">4. 根、状态查询、命中测试</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">      </span><span class="nf">ql_input_set_root</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_input_root</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_input_hover</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_input_pressed</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_input_focus</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_input_set_focus</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">   </span><span class="cm">/* NULL = 清除焦点 */</span>
+<span class="kt">uint8_t</span><span class="w">   </span><span class="nf">ql_input_buttons</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">uint8_t</span><span class="w">   </span><span class="nf">ql_input_mods</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_input_x</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_input_y</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_input_hit_test</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li><code>ql_input_root()</code> 未显式设置时<strong>回落到 <code>ql_render_root()</code></strong>，所以大多数程序不用调 <code>set_root</code>；</li>
+<li><code>ql_input_hit_test(NULL, x, y)</code> 等价于从输入根开始测；</li>
+<li><code>ql_input_set_focus</code> 会发 <code>FOCUS_OUT</code> / <code>FOCUS_IN</code> 并同步状态位；传非控件对象返回 <code>QL_ERR_INVAL</code>。</li>
+</ul>
+<hr />
+<h2 id="5">5. 控件事件</h2>
+<p>事件 id 在 <code>QL_WIDGET_EVENT_*</code>（<code>qlwidget.h</code>），<strong>参数顺序是契约</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>事件</th>
+<th>参数</th>
+<th>触发时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_WIDGET_EVENT_POINTER_ENTER</code></td>
+<td><code>(x, y)</code></td>
+<td>指针进入该控件（换成它成为悬停目标时）</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_POINTER_LEAVE</code></td>
+<td><code>(x, y)</code></td>
+<td>不再是悬停目标</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_POINTER_MOVE</code></td>
+<td><code>(x, y, buttons)</code></td>
+<td>指针移动（按住拖动时仍发给按下目标）</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_POINTER_DOWN</code></td>
+<td><code>(x, y, button)</code></td>
+<td>按钮按下</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_POINTER_UP</code></td>
+<td><code>(x, y, button)</code></td>
+<td>按钮抬起</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_CLICK</code></td>
+<td><code>(x, y, button)</code></td>
+<td>同目标按下并抬起，位移 ≤ 4px</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_WHEEL</code></td>
+<td><code>(x, y, dy)</code></td>
+<td>滚轮；<code>dy</code> 正 = 向下</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_KEY_DOWN</code></td>
+<td><code>(key, mods)</code></td>
+<td>键盘按下（目标是焦点控件）</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_KEY_UP</code></td>
+<td><code>(key, mods)</code></td>
+<td>键盘抬起</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_TEXT</code></td>
+<td><code>(utf8)</code></td>
+<td>字符输入（目标是焦点控件）</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_EVENT_FOCUS_IN</code> / <code>FOCUS_OUT</code></td>
+<td>无</td>
+<td>焦点切换</td>
+</tr>
+</tbody>
+</table>
+<p>读参数：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_down</span><span class="p">(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_event_arg_int</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">y</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_event_arg_int</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">button</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_event_arg_int</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_BUTTON_LEFT</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_event_stop_propagation</span><span class="p">(</span><span class="n">ev</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 不想让父控件继续处理 */</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><strong>全部事件默认可冒泡、可 <code>stop_propagation</code>。</strong> 冒泡时 <code>ev-&gt;target</code> 仍是原始目标，
+<code>ev-&gt;current_target</code> 是当前处理者 —— 可以用它做"子控件没处理，容器兜底"：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">target</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">current_target</span><span class="p">)</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span><span class="w">                                 </span><span class="cm">/* 子控件自己已经处理过了 */</span>
+</code></pre></div>
+
+<hr />
+<h2 id="6-api">6. 控件状态 API</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">uint8_t</span><span class="w"> </span><span class="nf">ql_widget_state</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_widget_has_state</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">mask</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_widget_set_state</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">mask</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">on</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 返回 1 = 确实变了 */</span>
+
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_widget_pointer_events</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">    </span><span class="nf">ql_widget_set_pointer_events</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">enabled</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_widget_is_focusable</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">    </span><span class="nf">ql_widget_set_focusable</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">focusable</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w">    </span><span class="nf">ql_widget_set_state_bg</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>ql_widget_set_state_bg</code> 是<strong>最小可用的状态样式</strong>：某个状态成立时用这套颜色替代
+<code>bg_color/bg_alpha</code>。优先级 <strong>ACTIVE &gt; FOCUS &gt; HOVER</strong>；<code>alpha == 0</code> 表示该状态不改变外观。
+<code>draw_default</code> 里生效，自定义绘制函数想用就自己查 <code>ql_widget_state()</code>。</p>
+<blockquote>
+<p>完整的状态样式（边框、圆角、文字色）走 HTML/CSS 路线，见 §8。</p>
+</blockquote>
+<hr />
+<h2 id="7-sink">7. 事件汇（sink）：把输入交给别的模型</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_input_sink</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_input_set_sink</span><span class="p">(</span><span class="n">ql_input_sink</span><span class="w"> </span><span class="n">sink</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+</code></pre></div>
+
+<p>默认 <code>ql_input_dispatch()</code> 把事件派发给 <code>QLWidget</code> 树。
+如果界面是 <code>QLUIRoot</code>（HTML/CSS 编译出来的），装一个 sink 就能共用同一条主循环：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_attach_input</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">running</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">running</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_x11_poll</span><span class="p">(</span><span class="n">disp</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_input_dispatch</span><span class="p">();</span><span class="w">      </span><span class="cm">/* 指针事件 → QLUI 的 :hover/:active + click_cb */</span>
+<span class="w">    </span><span class="n">ql_ui_render_canvas</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">canvas</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>需要自己再处理按键（Esc 退出等）时，装自己的 sink：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">sink</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_INPUT_KEY_DOWN</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">key</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_KEY_ESCAPE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_disp_x11_close</span><span class="p">(</span><span class="n">disp</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">ql_ui_input_event</span><span class="p">((</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">,</span><span class="w"> </span><span class="n">ev</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">ql_input_set_sink</span><span class="p">(</span><span class="n">sink</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<hr />
+<h2 id="8-html-css-hover-active-focus">8. HTML + CSS 里的 <code>:hover / :active / :focus</code></h2>
+<p>这三个伪类在<strong>构建期</strong>被编译成独立样式表（运行期只切一个下标）：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#4ad08a</span><span class="p">;</span><span class="w"> </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#e0ffe0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">active</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2a9a5c</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">focus</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#ffd060</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>运行期接口：</p>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">         </span><span class="nf">ql_ui_pointer_down</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">         </span><span class="nf">ql_ui_pointer_up</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">         </span><span class="nf">ql_ui_pointer_move</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">        </span><span class="nf">ql_ui_set_focus_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_focus_node</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_node_style</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 生效样式 */</span>
+</code></pre></div>
+
+<p>要点：</p>
+<ul>
+<li><code>ql_ui_pointer_move</code> 返回 1 表示<strong>悬停目标变了</strong>（该重绘），返回 0 表示没变；</li>
+<li>状态位沿祖先链生效（悬停子元素时父容器也算 <code>:hover</code>）；</li>
+<li>状态样式<strong>只影响绘制，不影响布局</strong>：布局永远按基础样式算，
+  所以 <code>:hover</code> 里改 <code>padding</code> 不会导致重排（M1 的限制，已文档化）；</li>
+<li>只支持单个伪类；<code>:hover:active</code> 这种组合会<strong>构建期报错</strong>，不会被静默忽略。</li>
+</ul>
+<hr />
+<h2 id="9">9. 后端接口（给写后端的人）</h2>
+<h3 id="x11">X11</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_disp_x11_close</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 从按键回调里请求关闭窗口 */</span>
+</code></pre></div>
+
+<p>事件掩码必须包含 <code>ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
+EnterWindowMask | LeaveWindowMask | KeyPressMask | KeyReleaseMask</code>。
+翻译逻辑复用 <code>src/port/qlinput_x11.h</code>（内部头文件）。</p>
+<h3 id="wayland">Wayland</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_disp_wayland_close</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="glx11">GL（X11 窗口）</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_gfx_gl_close</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="_2">后端约定（三条）</h3>
+<ol>
+<li><strong>只 push，不派发</strong>；</li>
+<li>坐标用<strong>逻辑坐标</strong>（窗口左上角原点）；</li>
+<li>滚轮统一成 <code>dy &gt; 0 = 向下</code>，X11 的 <code>Button4</code>（向上）要变成 <code>dy = -1</code>。</li>
+</ol>
+<hr />
+<h2 id="10">10. 容量与调参</h2>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_INPUT_QUEUE</code></td>
+<td>64</td>
+<td>输入事件环形队列深度（静态，<code>sizeof(QLInputEvent)*N</code> ≈ 36N 字节）</td>
+</tr>
+<tr>
+<td><code>QL_CLICK_SLOP</code></td>
+<td>4 px</td>
+<td>内部常量，按下→抬起允许的位移</td>
+</tr>
+</tbody>
+</table>
+<p>队列在 64 深度下占约 2.3 KB 静态内存，MCU 上可以调到 8~16。</p>
+<hr />
+<h2 id="11">11. 常见问题</h2>
+<p><strong>Q：点了按钮没反应</strong>
+1. 主循环里有没有 <code>ql_input_dispatch()</code>？
+2. 后端 <code>XSelectInput</code> / <code>wl_seat</code> 有没有拿到 pointer？
+3. 按钮上面是不是压了一个标签且没设 <code>pointer-events: 0</code>？
+   （标签默认吃命中，用 <code>ql_widget_set_pointer_events(label, 0)</code> 穿透）
+4. 控件是不是 <code>visible = 0</code> 或父控件 <code>clip_children</code> 把它裁掉了？</p>
+<p><strong>Q：<code>CLICK</code> 不触发但 <code>POINTER_DOWN</code> 触发了</strong>
+按下到抬起之间位移超过 4px，或抬起时目标变了（比如手指拖出去了）。</p>
+<p><strong>Q：<code>POINTER_UP</code> 收不到</strong>
+按住时事件会发给按下目标（隐式捕获），所以目标不会变；如果完全收不到，
+检查 <code>POINTER_LEAVE</code> 是否把 <code>pressed</code> 清了（这是有意为之）。</p>
+<p><strong>Q：键盘事件没人收到</strong>
+没有焦点。先 <code>ql_input_set_focus(obj)</code>；<code>KEY_*</code> 目标是焦点控件，没有焦点则发给输入根。</p>
+<p><strong>Q：Wayland 上按字母没反应</strong>
+M1 用 evdev → US 布局静态表，非 US 布局或其他输入法要等 M2 接 xkbcommon。</p>
+<div class='pager'>
+<a href='../../manual/anim/QLAnim阅读指南.html'><span class='dir'>上一页</span>QLAnim / 帧时钟与补间动画 阅读指南</a>
+<a class='next' href='../../manual/input/QLInput阅读指南.html'><span class='dir'>下一页</span>QLInput / 交互系统 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

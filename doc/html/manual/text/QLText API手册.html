@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLText / 字体 API 手册（v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qltext-api-v01">QLText / 字体 API 手册（v0.1）</h1>
+<p>配套阅读：<a href="./QLText阅读指南.md">QLText 阅读指南</a> · 前置：<a href="../widget/QLWidget%20API手册.md">QLWidget API手册</a></p>
+<ul>
+<li>头文件：<code>#include &lt;qlgl/qlgl.h&gt;</code>（已包含 <code>qlfont.h</code> / <code>qlstr.h</code> / <code>qllabel.h</code>）</li>
+<li>C11，无 POSIX 依赖</li>
+</ul>
+<hr />
+<h2 id="1">1. 最小示例</h2>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">qlgl_init</span><span class="p">();</span>
+<span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB888</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_disp_set_bg_color</span><span class="p">(</span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x10</span><span class="p">,</span><span class="w"> </span><span class="mh">0x14</span><span class="p">,</span><span class="w"> </span><span class="mh">0x1C</span><span class="p">));</span>
+
+<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_ex</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x10</span><span class="p">,</span><span class="w"> </span><span class="mh">0x14</span><span class="p">,</span><span class="w"> </span><span class="mh">0x1C</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_render_set_root</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="n">label</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_label_new_child</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Hello, QLGL!&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_label_set_font</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_font_mono_16</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_label_set_text_color</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_WHITE</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">ql_render</span><span class="p">();</span>
+<span class="w">    </span><span class="n">ql_disp_mem_save_ppm</span><span class="p">(</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp/hello.ppm&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">...</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="2">2. 内置字体</h2>
+<div class="highlight"><pre><span></span><code><span class="k">extern</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="n">ql_font_mono_12</span><span class="p">;</span><span class="w">   </span><span class="cm">/* DejaVu Sans Mono, 12px, 4bpp */</span>
+<span class="k">extern</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="n">ql_font_mono_16</span><span class="p">;</span><span class="w">   </span><span class="cm">/* DejaVu Sans Mono, 16px, 4bpp */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>"DejaVuSansMono-16"</code></td>
+</tr>
+<tr>
+<td><code>bpp</code></td>
+<td><code>4</code>（抗锯齿灰度）</td>
+</tr>
+<tr>
+<td><code>line_height</code> / <code>ascent</code> / <code>descent</code></td>
+<td>行高与基线位置，<code>ascent + descent == line_height</code></td>
+</tr>
+<tr>
+<td><code>fallback</code></td>
+<td><code>'?'</code>，缺字时用它</td>
+</tr>
+<tr>
+<td><code>glyph_count</code></td>
+<td>95（ASCII 32..126）</td>
+</tr>
+<tr>
+<td><code>glyphs</code> / <code>bitmap</code></td>
+<td>字形表与位图数据</td>
+</tr>
+</tbody>
+</table>
+<p>覆盖范围：<strong>仅 ASCII 32..126</strong>。中文/日文/emoji 会显示为 <code>?</code>。
+字形数据由 <code>tools/qlfontgen/gen_bitmap_font.py</code> 从 TTF 生成。</p>
+<blockquote>
+<p>需要中文/任意字号就用下面的 FreeType 动态字体（§2.2），内置位图字体是
+MCU 的保底方案，两者接口完全一样。</p>
+</blockquote>
+<div class="highlight"><pre><span></span><code>python3<span class="w"> </span>tools/qlfontgen/gen_bitmap_font.py<span class="w">           </span><span class="c1"># 重新生成</span>
+python3<span class="w"> </span>tools/qlfontgen/gen_bitmap_font.py<span class="w"> </span>--check<span class="w">   </span><span class="c1"># CI 校验</span>
+</code></pre></div>
+
+<hr />
+<h2 id="22-freetype-m2">2.2 FreeType 动态字体（M2）</h2>
+<p>头文件 <code>&lt;qlgl/qlfont_ft.h&gt;</code>，需要 <code>QLGL_ENABLE_FREETYPE</code>（CMake 选项
+<code>QLGL_BUILD_FREETYPE=ON</code>，自动探测 <code>freetype2</code>）。</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_font_ft_load</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">face_index</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">pixel_size</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>.ttf</code> / <code>.otf</code> / <code>.ttc</code></td>
+</tr>
+<tr>
+<td><code>face_index</code></td>
+<td>TTC 里的字面下标；<strong><code>-1</code> 自动挑</strong>（优先 family 名带 <code>SC</code> 的简体中文字面）</td>
+</tr>
+<tr>
+<td><code>pixel_size</code></td>
+<td>字号（像素，不是 pt）</td>
+</tr>
+</tbody>
+</table>
+<p>返回的 <code>QLFont*</code> 由调用方 <strong><code>ql_font_destroy()</code></strong> 释放。失败返回 <code>NULL</code>（打错误日志）。</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_font_ft_available</span><span class="p">()</span><span class="w">                 </span><span class="cm">/* 后端是否可用（编译进来就是 1） */</span>
+<span class="n">ql_font_ft_set_cache_limit</span><span class="p">(</span><span class="kt">uint32_t</span><span class="p">)</span><span class="w">   </span><span class="cm">/* 每字体字形缓存上限，默认 2048，全局生效 */</span>
+</code></pre></div>
+
+<h3 id="_1">默认字体：按字号取</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">         </span><span class="nf">ql_font_set_default_file</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">face_index</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 1 = 成功 */</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_font_default_file</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_font_default</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">pixel_size</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 带缓存，返回值不要释放 */</span>
+</code></pre></div>
+
+<ul>
+<li>设了默认文件 → <code>ql_font_default(N)</code> 返回该字号的动态字体（同字号复用）；</li>
+<li>没设或加载失败 → <strong>回落到最接近的内置位图字体</strong>（<code>&gt;=14</code> 用 mono_16，否则 mono_12）。</li>
+</ul>
+<blockquote>
+<p>生命周期：默认字体表由 <code>qlgl_shutdown()</code> 释放（<code>ql_font_reset_defaults()</code>），
+所以控件必须在 shutdown 之前销毁，否则会留下悬垂字体指针。
+表容量固定 8 个字号，超出后不再缓存（每次新建，调用方别依赖指针相等）。
+单线程使用；与其它 GL/绘制状态一样不做加锁。</p>
+</blockquote>
+<p><code>qllabel</code> 与 <code>qlui</code> 都走它：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_label_set_font_size</span><span class="p">(</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="mi">18</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 返回实际使用的字体 */</span>
+</code></pre></div>
+
+<p><code>qlui</code> 里写 <code>font-size: 18px;</code> 就会自动用上 18px 的动态字体。</p>
+<h3 id="_2">动态字体的行为约定</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>光栅化</td>
+<td>缺字才做（<code>FT_LOAD_DEFAULT</code> + <code>FT_RENDER_MODE_NORMAL</code>），8bpp 灰度</td>
+</tr>
+<tr>
+<td>缓存</td>
+<td>有序数组 + 每字形独立位图；插入时 <code>memmove</code> 保持按 codepoint 升序</td>
+</tr>
+<tr>
+<td>上限</td>
+<td>达到 <code>cache_limit</code> 后<strong>拒绝新字形</strong>并告警一次（不做 LRU 淘汰）</td>
+</tr>
+<tr>
+<td>缺字</td>
+<td><code>FT_Get_Char_Index == 0</code> → 返回 <code>NULL</code> → 走 <code>font-&gt;fallback</code></td>
+</tr>
+<tr>
+<td>空字形</td>
+<td>空格这类 <code>box_w == 0</code> 的字形也会缓存，避免每次重新走一遍 FreeType</td>
+</tr>
+<tr>
+<td>指针有效期</td>
+<td><code>ql_font_find_glyph</code> 的返回值在<strong>下一次查找前</strong>有效</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_3">平台无关的读取接口</h3>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_font_glyph_row</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w"> </span><span class="o">*</span><span class="n">glyph</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">uint8_t</span><span class="w">        </span><span class="nf">ql_font_glyph_alpha</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w"> </span><span class="o">*</span><span class="n">glyph</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">            </span><span class="nf">ql_font_is_dynamic</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">           </span><span class="nf">ql_font_destroy</span><span class="p">(</span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 静态字体上是空操作 */</span>
+</code></pre></div>
+
+<p>写自己的绘制后端时<strong>只用这两个访问器</strong>取像素，就能同时支持两种字体。</p>
+<hr />
+<h2 id="3">3. 字体结构（自定义字体用）</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">codepoint</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">  </span><span class="n">adv_w</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 前进宽度 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">box_w</span><span class="p">,</span><span class="w"> </span><span class="n">box_h</span><span class="p">;</span><span class="w"> </span><span class="cm">/* 墨迹尺寸 */</span>
+<span class="w">    </span><span class="kt">int8_t</span><span class="w">   </span><span class="n">ofs_x</span><span class="p">,</span><span class="w"> </span><span class="n">ofs_y</span><span class="p">;</span><span class="w"> </span><span class="cm">/* 墨迹左上角相对笔位/基线（ofs_y 通常为负） */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">data_offset</span><span class="p">;</span><span class="w">  </span><span class="cm">/* 相对 QLFont.bitmap 的字节偏移 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLGlyph</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLFont</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">     </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">         </span><span class="n">bpp</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 1 / 4 / 8 */</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">         </span><span class="n">line_height</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">         </span><span class="n">ascent</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">         </span><span class="n">descent</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w">        </span><span class="n">fallback</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 缺字 codepoint，0 = 不画只前进 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">        </span><span class="n">glyph_count</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w">  </span><span class="o">*</span><span class="n">glyphs</span><span class="p">;</span><span class="w">       </span><span class="cm">/* 按 codepoint 升序 */</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w">  </span><span class="o">*</span><span class="n">bitmap</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLFont</span><span class="p">;</span>
+</code></pre></div>
+
+<p>位图行字节数：</p>
+<table>
+<thead>
+<tr>
+<th>bpp</th>
+<th>每行字节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>(box_w + 7) / 8</code>，高位在左</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>(box_w + 1) / 2</code>，高半字节在左</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>box_w</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>自定义字体的硬性要求</strong>：<code>glyphs</code> 必须按 <code>codepoint</code> 升序（查找用二分）。</p>
+<hr />
+<h2 id="4">4. 字形与度量</h2>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_font_find_glyph</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">codepoint</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">       </span><span class="nf">ql_font_glyph_stride</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w"> </span><span class="o">*</span><span class="n">glyph</span><span class="p">);</span>
+<span class="kt">uint8_t</span><span class="w">        </span><span class="nf">ql_font_glyph_alpha</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w"> </span><span class="o">*</span><span class="n">glyph</span><span class="p">,</span>
+<span class="w">                                   </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>find_glyph</code></td>
+<td>二分查找；找不到则返回 <code>fallback</code> 字形，再找不到返回 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>glyph_stride</code></td>
+<td>该字形的位图行字节数；空字形（如空格）返回 0</td>
+</tr>
+<tr>
+<td><code>glyph_alpha</code></td>
+<td>覆盖率 0..255；越界或 <code>NULL</code> 返回 0；4bpp 下一定是 17 的倍数</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_font_measure_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span>
+<span class="w">                          </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_h</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_font_line_width</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">   </span><span class="nf">ql_font_line_count</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>len &lt; 0</code></td>
+<td>以 <code>'\0'</code> 结尾</td>
+</tr>
+<tr>
+<td>宽度</td>
+<td>最宽的一行</td>
+</tr>
+<tr>
+<td>高度</td>
+<td>行数 × <code>line_height</code></td>
+</tr>
+<tr>
+<td>换行</td>
+<td>只认 <code>'\n'</code></td>
+</tr>
+<tr>
+<td><code>out_w</code> / <code>out_h</code></td>
+<td>可为 <code>NULL</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-utf-8">5. UTF-8</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">int32_t</span><span class="w"> </span><span class="nf">ql_utf8_decode</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="o">*</span><span class="n">codepoint</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 返回消费字节数 */</span>
+<span class="kt">int32_t</span><span class="w"> </span><span class="nf">ql_utf8_encode</span><span class="p">(</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">codepoint</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">);</span><span class="w">           </span><span class="cm">/* 返回写入字节数 */</span>
+</code></pre></div>
+
+<ul>
+<li>合法序列返回 1..4；</li>
+<li>非法/截断序列返回 <strong>1</strong> 且 <code>*codepoint = 0xFFFD</code>（保证调用方一定前进，不会死循环）；</li>
+<li><code>encode</code> 的 <code>buf</code> 至少 4 字节。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">s</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;A你😀&quot;</span><span class="p">;</span>
+<span class="kt">int32_t</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="kt">uint32_t</span><span class="w"> </span><span class="n">cp</span><span class="p">;</span>
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="sc">&#39;\0&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">i</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">ql_utf8_decode</span><span class="p">(</span><span class="n">s</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cp</span><span class="p">);</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;U+%04X</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">cp</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="6-qlstr">6. 字符串 QLStr</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_STR_COMPACT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">QL_STR_AMORTIZED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLStrPolicy</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">;</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">capacity</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">own</span><span class="p">,</span><span class="w"> </span><span class="n">policy</span><span class="p">;</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLStr</span><span class="p">;</span>
+
+<span class="cp">#define QL_STR_INIT { NULL, 0, 0, 0, QL_STR_COMPACT, 0 }</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_str_init(&amp;s)</code></td>
+<td>初始化（可用 <code>QL_STR_INIT</code> 静态初始化）</td>
+</tr>
+<tr>
+<td><code>ql_str_free(&amp;s)</code></td>
+<td>释放并复位</td>
+</tr>
+<tr>
+<td><code>ql_str_set(&amp;s, text)</code></td>
+<td>复制内容；<code>text == NULL</code> 等价于清空</td>
+</tr>
+<tr>
+<td><code>ql_str_set_n(&amp;s, text, len)</code></td>
+<td>复制前 len 字节，允许内容不含 <code>'\0'</code> 结尾</td>
+</tr>
+<tr>
+<td><code>ql_str_set_static(&amp;s, text)</code></td>
+<td><strong>不复制</strong>，引用外部只读串</td>
+</tr>
+<tr>
+<td><code>ql_str_append(&amp;s, text)</code></td>
+<td>追加</td>
+</tr>
+<tr>
+<td><code>ql_str_clear(&amp;s)</code></td>
+<td>清空（amortized 策略保留容量）</td>
+</tr>
+<tr>
+<td><code>ql_str_data(&amp;s)</code></td>
+<td>内容指针，空串返回 <code>""</code> 而不是 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>ql_str_len(&amp;s)</code></td>
+<td>字节长度</td>
+</tr>
+<tr>
+<td><code>ql_str_equals(&amp;s, text)</code></td>
+<td>内容比较</td>
+</tr>
+<tr>
+<td><code>ql_str_set_policy</code> / <code>ql_str_policy</code></td>
+<td>切换/查询策略</td>
+</tr>
+</tbody>
+</table>
+<p>两种策略的实际行为：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>COMPACT</th>
+<th>AMORTIZED</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设为 5 字符</td>
+<td>容量 6</td>
+<td>容量 16</td>
+</tr>
+<tr>
+<td>缩短为 2 字符</td>
+<td>容量 3</td>
+<td>容量不变</td>
+</tr>
+<tr>
+<td>追加到 1000 字符</td>
+<td>每次重新分配到精确大小</td>
+<td>按 2 倍增长，重分配次数 ≈ log₂</td>
+</tr>
+<tr>
+<td><code>clear</code></td>
+<td>释放内存</td>
+<td>保留容量，只置空</td>
+</tr>
+</tbody>
+</table>
+<p>只读串（<code>set_static</code>）在需要写入时会自动<strong>转成自有内存副本</strong>（<code>own</code> 变 1），
+不会去修改原来的只读内存。</p>
+<hr />
+<h2 id="7">7. 画布文本原语</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_TEXT_ALIGN_LEFT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_TEXT_ALIGN_CENTER</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_TEXT_ALIGN_RIGHT</span><span class="p">,</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLTextAlign</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_draw_text</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span>
+<span class="w">                         </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_draw_glyph</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLGlyph</span><span class="w"> </span><span class="o">*</span><span class="n">glyph</span><span class="p">,</span>
+<span class="w">                          </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">pen_x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">baseline_y</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>draw_text</code> 的定位规则：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>水平</td>
+<td>在 <code>box</code> 宽度内按 <code>align</code> 对齐</td>
+</tr>
+<tr>
+<td>垂直</td>
+<td>首行基线 = <code>box.y + font-&gt;ascent</code>，向下每行 <code>+line_height</code></td>
+</tr>
+<tr>
+<td>裁剪</td>
+<td>自动裁剪到 <code>box ∩ canvas-&gt;clip</code>，不会溢出控件</td>
+</tr>
+<tr>
+<td>换行</td>
+<td>只处理 <code>'\n'</code>，不自动折行</td>
+</tr>
+<tr>
+<td>抗锯齿</td>
+<td>像素级 alpha 混合（覆盖率即 alpha）</td>
+</tr>
+</tbody>
+</table>
+<p><code>draw_glyph</code> 是单字形版本，坐标是<strong>基线笔位</strong>，一般不用直接调用。</p>
+<hr />
+<h2 id="8-qllabel">8. 文本控件 QLLabel</h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_label_new</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">);</span>
+<span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_label_new_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="_4">属性</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>类型</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_LABEL_PROPERTY_TEXT</code></td>
+<td>STRING</td>
+<td><code>""</code></td>
+<td><strong>复制</strong>，调用方缓冲区可立即释放</td>
+</tr>
+<tr>
+<td><code>QL_LABEL_PROPERTY_FONT</code></td>
+<td>POINTER</td>
+<td><code>&amp;ql_font_mono_12</code></td>
+<td>传 <code>NULL</code> 退回默认字体</td>
+</tr>
+<tr>
+<td><code>QL_LABEL_PROPERTY_TEXT_COLOR</code></td>
+<td>COLOR</td>
+<td>白</td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_LABEL_PROPERTY_ALIGN</code></td>
+<td>INT</td>
+<td><code>QL_TEXT_ALIGN_LEFT</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_LABEL_PROPERTY_AUTO_SIZE</code></td>
+<td>BOOL</td>
+<td>1</td>
+<td>文本/字体变化时自动改宽高</td>
+</tr>
+</tbody>
+</table>
+<p><code>TEXT</code> 只接受 <code>QL_VALUE_STRING</code>（或 <code>NONE</code> 表示清空），其他类型返回 <code>QL_ERR_INVAL</code>。</p>
+<h3 id="_5">便捷函数</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_text</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">     </span><span class="o">*</span><span class="nf">ql_label_text</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_font</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w">   </span><span class="o">*</span><span class="nf">ql_label_font</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_text_color</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_align</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_refit</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 按当前文本重算宽高 */</span>
+</code></pre></div>
+
+<p><code>ql_label_text</code> 返回的是<strong>标签内部缓冲区</strong>的指针，随时可能因为下一次 <code>set_text</code> 失效；
+需要长期保存请自己拷贝。</p>
+<h3 id="_6">自动尺寸</h3>
+<p><code>AUTO_SIZE=1</code> 时，<code>TEXT</code> / <code>FONT</code> 变化会自动把 <code>WIDTH</code> / <code>HEIGHT</code> 设成
+<code>ql_font_measure_text</code> 的结果。</p>
+<p>想自己控制尺寸时<strong>先关掉自动尺寸</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_object_set_property</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">QL_LABEL_PROPERTY_AUTO_SIZE</span><span class="p">,</span>
+<span class="w">                       </span><span class="n">ql_value_bool</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+<span class="n">ql_object_set_property</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET_PROPERTY_WIDTH</span><span class="p">,</span><span class="w"> </span><span class="n">ql_value_int</span><span class="p">(</span><span class="mi">120</span><span class="p">));</span>
+</code></pre></div>
+
+<h3 id="qlwidget">继承自 QLWidget 的属性</h3>
+<p><code>X</code> / <code>Y</code> / <code>WIDTH</code> / <code>HEIGHT</code> / <code>BG_COLOR</code> / <code>BG_ALPHA</code> / <code>BORDER_*</code> /
+<code>CLIP_CHILDREN</code> / <code>VISIBLE</code> 全部可用；标签默认 <code>BG_ALPHA = 0</code>（透明）。</p>
+<hr />
+<h2 id="9-cmake">9. CMake 选项</h2>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QLGL_BUILD_X11</code></td>
+<td>ON</td>
+<td>Linux X11 窗口后端</td>
+</tr>
+<tr>
+<td><code>QLGL_BUILD_WAYLAND</code></td>
+<td>ON</td>
+<td>Linux Wayland 窗口后端（需要 wayland-client + wayland-scanner）</td>
+</tr>
+<tr>
+<td><code>QLGL_BUILD_TESTS</code></td>
+<td>ON</td>
+<td>构建 <code>test/</code> 下示例与测试</td>
+</tr>
+<tr>
+<td><code>QLGL_BUILD_FREETYPE</code></td>
+<td>ON</td>
+<td>FreeType 动态字体后端（中文 + 任意字号）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10">10. 限制</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>v0.1 状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>字符集</td>
+<td>内置位图字体只有 ASCII；<strong>启用 FreeType 后支持任意 Unicode</strong></td>
+</tr>
+<tr>
+<td>字号</td>
+<td>内置只有 12/16px；动态字体任意字号</td>
+</tr>
+<tr>
+<td>自动折行</td>
+<td>不支持，只有手动 <code>'\n'</code></td>
+</tr>
+<tr>
+<td>垂直对齐</td>
+<td>只支持顶端对齐</td>
+</tr>
+<tr>
+<td>字体样式</td>
+<td>无粗体/斜体/描边/阴影（可以横向偏移多次绘制来模拟）</td>
+</tr>
+<tr>
+<td>排版</td>
+<td>无字距调整（kerning）、无连字</td>
+</tr>
+<tr>
+<td>矢量字体</td>
+<td>✅ M2 已支持（FreeType，按需光栅化 + 缓存）</td>
+</tr>
+<tr>
+<td>字重/斜体</td>
+<td>需要不同字体文件（<code>FT_Face</code>），无合成加粗</td>
+</tr>
+<tr>
+<td>字形淘汰</td>
+<td>无 LRU，达到上限后拒绝新字形</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11">11. 示例与测试</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test/text/example_text.c</code></td>
+<td>文本样张：两种字号、三种对齐、多行、缺字兜底，输出 PPM</td>
+</tr>
+<tr>
+<td><code>test/text/test_font.c</code></td>
+<td>字形查找/缺字/灰度/UTF-8/度量（191 项断言）</td>
+</tr>
+<tr>
+<td><code>test/text/test_str.c</code></td>
+<td>两种容量策略与所有权（150 项断言）</td>
+</tr>
+<tr>
+<td><code>test/text/test_label.c</code></td>
+<td>所有权、自动尺寸、对齐的像素级断言</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>./build/example_text<span class="w"> </span>/tmp/text.ppm
+./build/example_window<span class="w">            </span><span class="c1"># 窗口里能看到标题/按钮/状态文字</span>
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build<span class="w"> </span>--output-on-failure
+</code></pre></div>
+<div class='pager'>
+<a href='../../manual/widget/QLWidget阅读指南.html'><span class='dir'>上一页</span>QLWidget / 绘制系统 阅读指南</a>
+<a class='next' href='../../manual/text/QLText阅读指南.html'><span class='dir'>下一页</span>QLText / 字体系统 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

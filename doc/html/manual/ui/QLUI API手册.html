@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLUI / HTML+CSS 编译 API 手册（v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlui-htmlcss-api-v01">QLUI / HTML+CSS 编译 API 手册（v0.1）</h1>
+<p>配套阅读：<a href="./QLUI阅读指南.md">QLUI 阅读指南</a> · 定位：<a href="../../Web兼容设计.md">Web 兼容设计</a> §7</p>
+<blockquote>
+<p><strong>先明确适用场景</strong>
+- <strong>MCU</strong>：不要用本模块，直接用 <code>QLWidget</code>/<code>QLLabel</code> 的 C API（见 <a href="../widget/QLWidget%20API手册.md">QLWidget API手册</a>）。
+- <strong>MPU / 嵌入式 Linux</strong>：用本模块，把 HTML+CSS 编译成 C。
+- <strong>PC 要高兼容</strong>：用系统 WebView（WebView2 / WKWebView / WebKitGTK），不用本模块。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 工作流</h2>
+<div class="highlight"><pre><span></span><code>index.html ┐
+index.css  ├─ python3 tools/qlui/qlui.py ─▶ ui_index.c + ui_index.h ─▶ 编译进固件
+tools/qlui/qlui.py ┘
+</code></pre></div>
+
+<h3 id="11">1.1 命令行</h3>
+<div class="highlight"><pre><span></span><code>python3<span class="w"> </span>tools/qlui/qlui.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--html<span class="w"> </span>test/web/ui_demo.html<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--css<span class="w">  </span>test/web/ui_demo.css<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--out<span class="w">  </span>build/ui
+<span class="c1"># 输出：build/ui/ui_demo.c  build/ui/ui_demo.h</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--html</code></td>
+<td>输入 HTML（必填）</td>
+</tr>
+<tr>
+<td><code>--css</code></td>
+<td>输入 CSS（必填）</td>
+</tr>
+<tr>
+<td><code>--out</code></td>
+<td>输出目录（必填，不存在会创建）</td>
+</tr>
+<tr>
+<td><code>--name</code></td>
+<td>输出标识（默认取 HTML 文件名）</td>
+</tr>
+</tbody>
+</table>
+<p>退出码：<code>0</code> 成功；<code>1</code> 有错误（错误信息带 <code>文件:行号</code>）。</p>
+<h3 id="12-cmake">1.2 CMake 集成</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">find_package</span><span class="p">(</span><span class="s">Python3</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">Interpreter</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
+
+<span class="nb">set</span><span class="p">(</span><span class="s">UI_OUT</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_BINARY_DIR</span><span class="o">}</span><span class="s">/ui</span><span class="p">)</span>
+<span class="nb">add_custom_command</span><span class="p">(</span>
+<span class="w">    </span><span class="s">OUTPUT</span><span class="w">  </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="s">/ui_index.c</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="s">/ui_index.h</span>
+<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_COMMAND</span><span class="o">}</span><span class="w"> </span><span class="s">-E</span><span class="w"> </span><span class="s">make_directory</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span>
+<span class="w">    </span><span class="s">COMMAND</span><span class="w"> </span><span class="o">${</span><span class="nv">Python3_EXECUTABLE</span><span class="o">}</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_SOURCE_DIR</span><span class="o">}</span><span class="s">/tools/qlui/qlui.py</span>
+<span class="w">            </span><span class="s">--html</span><span class="w"> </span><span class="s">ui/index.html</span><span class="w"> </span><span class="s">--css</span><span class="w"> </span><span class="s">ui/index.css</span><span class="w"> </span><span class="s">--out</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span>
+<span class="w">    </span><span class="s">DEPENDS</span><span class="w"> </span><span class="s">ui/index.html</span><span class="w"> </span><span class="s">ui/index.css</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_SOURCE_DIR</span><span class="o">}</span><span class="s">/tools/qlui/qlui.py</span>
+<span class="w">    </span><span class="s">COMMENT</span><span class="w"> </span><span class="s2">&quot;编译 HTML+CSS 为 C&quot;</span><span class="p">)</span>
+
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">main.c</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="s">/ui_index.c</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">qlgl</span><span class="p">)</span>
+<span class="nb">target_include_directories</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">UI_OUT</span><span class="o">}</span><span class="p">)</span>
+</code></pre></div>
+
+<p>改 HTML/CSS 后 <code>cmake --build</code> 会自动重新生成并重编译。</p>
+<hr />
+<h2 id="2-html">2. 支持的 HTML</h2>
+<table>
+<thead>
+<tr>
+<th>标签</th>
+<th>UA 默认样式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>div</code> / <code>section</code></td>
+<td><code>display:block</code></td>
+</tr>
+<tr>
+<td><code>p</code></td>
+<td><code>display:block</code>，<code>margin: 8px 0</code></td>
+</tr>
+<tr>
+<td><code>span</code> / <code>b</code> / <code>i</code></td>
+<td><code>display:inline</code></td>
+</tr>
+<tr>
+<td><code>button</code></td>
+<td><code>display:inline-block</code>，带内边距/边框/背景</td>
+</tr>
+<tr>
+<td><code>h1</code> / <code>h2</code></td>
+<td><code>display:block</code>，<code>font-size:16px</code></td>
+</tr>
+<tr>
+<td><code>h3</code></td>
+<td><code>display:block</code>，<code>font-size:12px</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>限制</strong>：
+- 文档必须<strong>有且只有一个根元素</strong>；
+- 元素不能同时包含文本和子元素（混合内容）→ 报错，请把文本包进 <code>&lt;span&gt;</code>；
+- 其他标签（<code>img</code>/<code>table</code>/<code>input</code>/<code>ul</code>…）→ 报错。</p>
+<hr />
+<h2 id="3-css">3. 支持的 CSS</h2>
+<h3 id="31">3.1 选择器</h3>
+<table>
+<thead>
+<tr>
+<th>选择器</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tag</code> / <code>.class</code> / <code>#id</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>A B</code>（后代）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>A &gt; B</code>（子代）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>A + B</code> / <code>A ~ B</code>（兄弟）</td>
+<td>❌ 报错</td>
+</tr>
+<tr>
+<td><code>[attr]</code> / <code>::before</code></td>
+<td>❌ 报错</td>
+</tr>
+<tr>
+<td><code>:hover</code> / <code>:active</code> / <code>:focus</code></td>
+<td>✅ 只允许单个，编译成状态变体</td>
+</tr>
+</tbody>
+</table>
+<p>优先级按规范三元组 <code>(id, class, tag)</code> 计算，同级按出现顺序。</p>
+<h3 id="32">3.2 属性</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>display</code></td>
+<td><code>block</code> <code>inline</code> <code>inline-block</code> <code>none</code> <code>flex</code> <code>inline-flex</code></td>
+<td><code>flex</code> 见 §3.8</td>
+</tr>
+<tr>
+<td><code>width</code> / <code>height</code></td>
+<td><code>auto</code> <code>Npx</code> <code>N%</code></td>
+<td><code>%</code> 相对父<strong>内容宽度</strong>；<code>height</code> 的 <code>%</code> 不支持</td>
+</tr>
+<tr>
+<td><code>margin</code> / <code>padding</code></td>
+<td><code>Npx</code>（1/2/4 值）</td>
+<td>也支持 <code>margin-top</code> 等长写</td>
+</tr>
+<tr>
+<td><code>border-width</code></td>
+<td><code>Npx</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>border-color</code></td>
+<td>颜色</td>
+<td></td>
+</tr>
+<tr>
+<td><code>border</code></td>
+<td><code>1px solid #333</code></td>
+<td>只支持 <code>solid</code></td>
+</tr>
+<tr>
+<td><code>border-radius</code></td>
+<td><code>Npx</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>background</code> / <code>background-color</code></td>
+<td>颜色，或 <code>linear-gradient(...)</code>（见 §3.5）</td>
+<td></td>
+</tr>
+<tr>
+<td><code>box-shadow</code></td>
+<td><code>&lt;dx&gt; &lt;dy&gt; [blur] &lt;color&gt;</code></td>
+<td>软阴影，SDF 实现，单趟。<code>none</code> 关闭</td>
+</tr>
+<tr>
+<td><code>color</code></td>
+<td>颜色</td>
+<td></td>
+</tr>
+<tr>
+<td><code>font-size</code></td>
+<td><code>Npx</code></td>
+<td>任意整数；生成期汇总成 <code>font_sizes</code> 表，运行期按字号取 <code>ql_font_default(N)</code>（配置了矢量字体就是该字号的动态字体，支持中文；否则回落到内置 12/16 位图字体）</td>
+</tr>
+<tr>
+<td><code>text-align</code></td>
+<td><code>left</code> <code>center</code> <code>right</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>box-sizing</code></td>
+<td><code>content-box</code> <code>border-box</code></td>
+<td>默认 <code>content-box</code>（与浏览器一致）</td>
+</tr>
+<tr>
+<td><code>flex</code> / <code>flex-grow</code> / <code>flex-shrink</code> / <code>flex-basis</code></td>
+<td><code>1</code> / <code>1 0 auto</code> / <code>0 0 100px</code></td>
+<td>见 §3.8</td>
+</tr>
+<tr>
+<td><code>flex-direction</code></td>
+<td><code>row</code> <code>row-reverse</code> <code>column</code> <code>column-reverse</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>flex-wrap</code></td>
+<td><code>nowrap</code> <code>wrap</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>justify-content</code></td>
+<td><code>flex-start</code> <code>center</code> <code>flex-end</code> <code>space-between</code> <code>space-around</code> <code>space-evenly</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>align-items</code></td>
+<td><code>stretch</code> <code>flex-start</code> <code>center</code> <code>flex-end</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gap</code> / <code>row-gap</code> / <code>column-gap</code></td>
+<td><code>Npx</code>（1~2 值）</td>
+<td>不支持百分比</td>
+</tr>
+<tr>
+<td><code>position</code></td>
+<td><code>static</code> <code>relative</code> <code>absolute</code> <code>fixed</code></td>
+<td>见 §3.8</td>
+</tr>
+<tr>
+<td><code>top</code> / <code>right</code> / <code>bottom</code> / <code>left</code></td>
+<td><code>Npx</code> <code>N%</code> <code>auto</code></td>
+<td>仅非 static 时生效</td>
+</tr>
+<tr>
+<td><code>z-index</code></td>
+<td>整数（int16）</td>
+<td>同级兄弟间排序</td>
+</tr>
+<tr>
+<td><code>overflow</code></td>
+<td><code>visible</code> <code>hidden</code> <code>auto</code>（<code>scroll</code> 视同 <code>auto</code>）</td>
+<td><code>hidden</code>/<code>auto</code> 都裁掉溢出</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33">3.3 颜色写法</h3>
+<p><code>#rgb</code>、<code>#rrggbb</code>、<code>rgb(r,g,b)</code>、<code>rgba(r,g,b,a)</code>、命名色（<code>black</code>/<code>white</code>/<code>red</code>/<code>green</code>/<code>lime</code>/<code>blue</code>/<code>gray</code>/<code>silver</code>/<code>yellow</code>/<code>orange</code>/<code>purple</code>/<code>navy</code>/<code>teal</code>/<code>transparent</code>）。</p>
+<h3 id="34">3.4 混合内容</h3>
+<p>支持 <code>&lt;p&gt;</code>/<code>&lt;div&gt;</code> 里文本与行内元素混排：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;m&quot;</span><span class="p">&gt;</span>Hello <span class="p">&lt;</span><span class="nt">b</span><span class="p">&gt;</span>bold<span class="p">&lt;/</span><span class="nt">b</span><span class="p">&gt;</span> and <span class="p">&lt;</span><span class="nt">i</span><span class="p">&gt;</span>it<span class="p">&lt;/</span><span class="nt">i</span><span class="p">&gt;</span>!<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<p><strong>在生成期消解</strong>：每个文本段被包成一个匿名 <code>&lt;span&gt;</code> 子节点，
+运行期只认识"元素树"，因此布局与绘制代码完全不需要额外分支。</p>
+<ul>
+<li>文本段的空白按 HTML 规则折叠（连续空白变单个空格）；</li>
+<li>元素之间的<strong>纯空白</strong>不产生盒子（否则每个换行缩进都会变成一个 4px 宽的 span）；</li>
+<li>匿名 span 继承父元素的 <code>color</code> / <code>font-size</code> / <code>text-align</code>；</li>
+<li>相邻文本段不会自动合并，写 CSS 时按"每个文本段是一个 inline 盒子"来理解。</li>
+</ul>
+<h3 id="35">3.5 渐变</h3>
+<div class="highlight"><pre><span></span><code><span class="nt">background</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">to</span><span class="w"> </span><span class="nt">right</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">3399ff</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">1a4f8a</span><span class="o">);</span>
+<span class="nt">background</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">to</span><span class="w"> </span><span class="nt">bottom</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">4ad08a</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">2a9a5c</span><span class="o">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>方向</td>
+<td><code>to bottom</code> / <code>to top</code> / <code>180deg</code>、<code>to right</code> / <code>to left</code> / <code>90deg</code></td>
+</tr>
+<tr>
+<td>颜色停靠点</td>
+<td>只支持 <strong>2 个</strong>（起始 + 终止）</td>
+</tr>
+<tr>
+<td>多停靠点 / 角度其他值 / <code>radial-gradient</code></td>
+<td>❌ 构建期报错</td>
+</tr>
+</tbody>
+</table>
+<p>实现：垂直渐变走<strong>行填充快路径</strong>（整行同色，成本≈纯色填充）；水平渐变逐像素插值，慢一个量级。
+GPU 侧用<strong>顶点颜色插值</strong>实现，不增加顶点、不增加 draw call。</p>
+<blockquote>
+<p>⚠️ <strong>状态样式与渐变</strong>：<code>:hover</code> / <code>:active</code> 等变体样式是"整套重算"的，
+如果变体规则只写了 <code>background-color</code>（没有 <code>background</code>），渐变会<strong>退回纯色</strong>。
+想让渐变按钮在 hover/active 下保持渐变，要显式写：</p>
+<p><code>css
+.btn:hover { background: linear-gradient(to bottom, #58e09a, #35a869); }</code></p>
+<p><strong>径向渐变</strong>：<code>background: radial-gradient(circle, &lt;起色&gt;, &lt;止色&gt;)</code>。
+圆心固定为元素中心，按到<strong>最远角</strong>的距离归一化（等价 CSS <code>farthest-corner</code>）。
+只支持 <code>circle</code> / <code>circle at center</code> / <code>ellipse</code>；写 <code>at 偏移</code>、自定义半径、
+color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
+</blockquote>
+<h3 id="36">3.6 阴影</h3>
+<div class="highlight"><pre><span></span><code><span class="nt">box-shadow</span><span class="o">:</span><span class="w"> </span><span class="nt">0</span><span class="w"> </span><span class="nt">4px</span><span class="w"> </span><span class="nt">12px</span><span class="w"> </span><span class="nt">rgba</span><span class="o">(</span><span class="nt">0</span><span class="o">,</span><span class="w"> </span><span class="nt">0</span><span class="o">,</span><span class="w"> </span><span class="nt">0</span><span class="o">,</span><span class="w"> </span><span class="nt">0</span><span class="p">.</span><span class="nc">55</span><span class="o">);</span>
+<span class="nt">box-shadow</span><span class="o">:</span><span class="w"> </span><span class="nt">0</span><span class="w"> </span><span class="nt">1px</span><span class="w"> </span><span class="nt">0</span><span class="w"> </span><span class="p">#</span><span class="nn">000</span><span class="o">;</span><span class="w">          </span><span class="c">/* 硬阴影（无模糊） */</span>
+<span class="nt">box-shadow</span><span class="o">:</span><span class="w"> </span><span class="nt">none</span><span class="o">;</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dx dy</code></td>
+<td>必须（<code>px</code>）</td>
+</tr>
+<tr>
+<td><code>blur</code></td>
+<td>可选，<code>0</code> = 硬边</td>
+</tr>
+<tr>
+<td>颜色</td>
+<td>必须（不支持浏览器默认色）</td>
+</tr>
+<tr>
+<td><code>spread</code>（第 4 个长度）、<code>inset</code>、多重阴影</td>
+<td>❌ 构建期报错</td>
+</tr>
+</tbody>
+</table>
+<p>实现是 <strong>SDF + smoothstep 衰减</strong>，与 GPU 着色器同一公式，因此两条后端视觉一致。
+只有"距轮廓 blur 以内"的环需要逐像素算距离，内部实心区走行填充——
+所以在 PC 上几乎无感，在 MCU 上也可用（见开发规划 M5.5 的能力矩阵）。</p>
+<h3 id="37-flexbox">3.7 Flexbox</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">row</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span><span class="w"> </span><span class="k">flex-direction</span><span class="p">:</span><span class="w"> </span><span class="kc">row</span><span class="p">;</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">align-items</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* 等分 */</span>
+<span class="p">.</span><span class="nc">btn</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">            </span><span class="c">/* 按内容比例分 */</span>
+</code></pre></div>
+
+<p><strong>支持的语义</strong></p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主轴方向</td>
+<td>row / row-reverse / column / column-reverse</td>
+</tr>
+<tr>
+<td>换行</td>
+<td>nowrap / wrap（按主轴尺寸断行）</td>
+</tr>
+<tr>
+<td>剩余空间</td>
+<td>正：按 <code>flex-grow</code> 比例分配；负：按 <code>flex-shrink × basis</code> 加权收缩</td>
+</tr>
+<tr>
+<td>主轴对齐</td>
+<td>justify-content 六种（<code>grow</code> 生效时 justify 不再参与分配）</td>
+</tr>
+<tr>
+<td>交叉轴对齐</td>
+<td><code>stretch</code>（默认，子项无显式交叉尺寸时拉满）或 start/center/end</td>
+</tr>
+<tr>
+<td>gap</td>
+<td><code>gap</code> / <code>row-gap</code> / <code>column-gap</code>，px</td>
+</tr>
+<tr>
+<td>子项上限</td>
+<td>单个 flex 容器 ≤ <code>QL_CFG_UI_FLEX_MAX_ITEMS</code>（默认 256），超了降级为 block 流并告警</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点（影响你写 CSS 时的预期）</strong></p>
+<ol>
+<li><strong><code>flex-direction: column</code> + <code>height: auto</code> 时没有剩余空间可分</strong>，
+   <code>flex-grow</code> 不生效 —— 与浏览器一致（grow 需要确定的容器尺寸）；</li>
+<li>布局是"<strong>先测量、再分配、最后定位</strong>"：容器先让每个子项按自然尺寸排一遍，
+   再根据 grow/shrink 改写尺寸重排。所以<strong>子项的自然尺寸必须能算出来</strong>
+   （<code>width: auto</code> 的块级子项会按容器宽度算，这是 CSS 的行为）；</li>
+<li><code>flex-basis</code> 支持 px 与 <code>%</code>（相对容器主轴尺寸）；</li>
+<li>百分比 <code>width</code> 在 flex 子项上是相对<strong>容器内容宽</strong>，不是 flex-basis。</li>
+</ol>
+<p><strong>不支持的</strong>：<code>align-self</code>、<code>align-content</code>、<code>order</code>、<code>flex-flow</code> 简写、
+<code>flex-basis: auto</code> 的完整语义（等同"用 width"）、多行 <code>align-content</code> 对齐。</p>
+<h3 id="38-z-index">3.8 定位与 z-index</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">relative</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                    </span><span class="c">/* 成为绝对子项的包含块 */</span>
+<span class="p">.</span><span class="nc">badge</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">top</span><span class="p">:</span><span class="w"> </span><span class="mi">-6</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">right</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">toast</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">fixed</span><span class="p">;</span><span class="w"> </span><span class="k">bottom</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">left</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th><code>position</code></th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>static</code></td>
+<td>常规流</td>
+</tr>
+<tr>
+<td><code>relative</code></td>
+<td>常规流占位不变，<strong>绘制位置</strong>按 <code>top/left</code>（或 <code>right/bottom</code> 取负）偏移，不影响兄弟</td>
+</tr>
+<tr>
+<td><code>absolute</code></td>
+<td>脱离文档流；相对<strong>最近的非 static 祖先的 padding box</strong> 定位；没有则相对根</td>
+</tr>
+<tr>
+<td><code>fixed</code></td>
+<td>脱离文档流；相对<strong>视口</strong>定位</td>
+</tr>
+</tbody>
+</table>
+<p><strong>绝对定位的尺寸规则</strong></p>
+<table>
+<thead>
+<tr>
+<th>给了什么</th>
+<th>宽度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>显式 <code>width</code></td>
+<td>用它</td>
+</tr>
+<tr>
+<td><code>left</code> + <code>right</code>（无 width）</td>
+<td>拉伸填满</td>
+</tr>
+<tr>
+<td>只有 <code>right</code>（无 width）</td>
+<td>从右边界往左放</td>
+</tr>
+<tr>
+<td>都没有</td>
+<td><strong>shrink-to-fit</strong>：只支持"内容是本节点自己的文本"（badge/标签场景）；有块级子项时撑满包含块</td>
+</tr>
+</tbody>
+</table>
+<p>高度同理（<code>top</code> + <code>bottom</code> 拉伸，<code>bottom</code> 反推 y）。</p>
+<blockquote>
+<p>⚠ 已知简化：<code>position: absolute</code> 在 CSS 里还有 "static position"（没给 inset 时
+停在原来该在的位置）与 shrink-to-fit 的完整算法。这里都没实现，
+没给 inset 时贴包含块左上角。涉及这些的布局请显式写 inset。</p>
+</blockquote>
+<p><strong>z-index</strong>：布局结束后对所有兄弟按 <code>z-index</code> <strong>稳定排序</strong>子链表，
+之后<strong>绘制顺序与命中测试顺序自动一致</strong>（链表顺序即绘制顺序）。
+z-index 相同则保持文档顺序（稳定）。</p>
+<p><strong>overflow</strong></p>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>visible</code>（默认）</td>
+<td>子项可以画到父盒子外</td>
+</tr>
+<tr>
+<td><code>hidden</code> / <code>auto</code> / <code>scroll</code></td>
+<td>子树被裁到本节点边框盒；<strong>被裁掉的部分不可命中</strong>（命中测试同样裁剪）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><code>auto</code>/<code>scroll</code> 目前<strong>不产生滚动条，也不能滚动</strong> —— 只是裁剪。
+滚动容器排在 M3 之后的滚动里程碑。</p>
+</blockquote>
+<h3 id="39-transition">3.9 过渡（<code>transition</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                 </span><span class="c">/* 简写：全部可过渡属性 */</span>
+<span class="p">.</span><span class="nc">btn</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#204060</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#ff8000</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* 180ms 内渐变过去 */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">background-color</span><span class="w"> </span><span class="mi">300</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="p">,</span><span class="w"> </span><span class="k">opacity</span><span class="w"> </span><span class="mi">120</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>部分</th>
+<th>允许值</th>
+<th>默认</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>transition-property</code></td>
+<td><code>background-color</code> / <code>opacity</code> / <code>color</code> / <code>border-color</code> / <code>border-radius</code> / <code>transform</code> / <code>clip-path</code> / <code>all</code></td>
+<td><code>all</code></td>
+</tr>
+<tr>
+<td><code>transition-duration</code></td>
+<td><code>Nms</code> 或 <code>Ns</code></td>
+<td><code>0s</code>（等于不写）</td>
+</tr>
+<tr>
+<td><code>transition-timing-function</code></td>
+<td><code>linear</code> <code>ease</code> <code>ease-in</code> <code>ease-out</code> <code>ease-in-out</code> <code>steps(n)</code> <code>cubic-bezier(a,b,c,d)</code></td>
+<td><code>ease</code></td>
+</tr>
+<tr>
+<td><code>transition-delay</code></td>
+<td>❌ 报错</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>行为与浏览器一致的三条：</p>
+<ol>
+<li><strong>打断从当前插值重基</strong>，不回跳、不从头开始。</li>
+<li>过渡只改<strong>绘制期属性</strong>，不进布局 → 过渡期间<strong>零重排</strong>。</li>
+<li>只有写进 CSS 的规则才产生动画；<code>transition</code> 可以写在 base 规则上（对所有状态生效）。</li>
+</ol>
+<p><strong>支持</strong>：<code>background-color</code>（渐变时连同终止色）、<code>opacity</code>、<code>color</code>、<code>border-color</code>、
+<code>border-radius</code>、<code>transform</code>、<code>clip-path</code>。<code>transition: all</code> 七个一起开。</p>
+<p><code>transform</code> 的四个分量（<code>tf_x</code> / <code>tf_y</code> / <code>sc_x</code> / <code>sc_y</code>）<strong>永远一起插值</strong>——
+只动 translate 不动 scale 会出现"边缩边移"的错位。所以放大 + 位移写一条就够了：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">transform</span><span class="w"> </span><span class="mi">200</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="p">:</span><span class="nd">hover</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">4</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">scale</span><span class="p">(</span><span class="mf">1.5</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">mask</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">20</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="kc">clip</span><span class="o">-</span><span class="n">path</span><span class="w"> </span><span class="mi">300</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">mask</span><span class="p">:</span><span class="nd">hover</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">100</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p><strong>不支持</strong>：<code>transition-delay</code>、<code>box-shadow</code>（构建期报错，不静默降级）。</p>
+<blockquote>
+<p><strong><code>opacity</code> 的真实含义</strong>：本实现没有 CSS 的"组不透明度"（那需要离屏合成），
+<code>transition: opacity</code> 插值的是<strong>背景 alpha</strong>（来自 <code>background-color: rgba(...)</code> 的 a 通道）。
+所以 <code>opacity: 0</code> 在这里等价于"背景变全透明"，子元素不受影响——与 Web 不同，
+写过渡时请用 <code>background-color: rgba(...)</code> 表达淡入淡出。</p>
+</blockquote>
+<p>运行期推进（主循环里）：</p>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="n">dirty_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_anim_tick</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_now_ms</span><span class="p">());</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">dirty_count</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLRect</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="mi">8</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_consume_dirty</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span>
+<span class="w">        </span><span class="n">ql_ui_render_rect</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dw</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span><span class="w">   </span><span class="cm">/* 只重绘变化区域 */</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p><code>ql_ui_node_style()</code> 返回的是<strong>过渡中的样式</strong>（可能是中间色）。
+需要"最终值"时请等动画结束，或读 CSS 源。</p>
+</blockquote>
+<hr />
+<h3 id="391-clip-path-circle">3.9.1 圆形揭示（<code>clip-path: circle()</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">reveal</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">iris</span><span class="w"> </span><span class="mi">400</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="kc">forwards</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">iris</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">0</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">100</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>circle(&lt;百分比&gt;)</code></td>
+<td>✅ 0%~100%</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>circle(&lt;N&gt;px)</code> / <code>inset()</code> / <code>polygon()</code> / <code>path()</code> / <code>url()</code></td>
+<td>❌ 构建期报错</td>
+</tr>
+</tbody>
+</table>
+<p>语义：</p>
+<ul>
+<li>圆心固定在<strong>元素中心</strong>（与 <code>radial-gradient</code> 同一个决定）。</li>
+<li>百分比是<strong>最远角距离</strong>的千分比：<code>0%</code> 什么都不显示，<code>100%</code> 完全覆盖。
+  用百分比而不是 px，是因为揭示动画要"全程都在动"——100px 的半径在 200px 的盒子上
+  会在动画前半段就把元素盖满。</li>
+<li>它裁的是<strong>整棵子树</strong>（等价 CSS 的语义）：伸出父盒子的子元素也会被切掉。
+  这跟 <code>border-radius</code> 动画的区别就在这里——后者只切父元素自己的背景/边框。</li>
+<li><strong>只支持一层</strong>。嵌套 <code>clip-path</code> 的 CSS 语义是取交集，而两个圆盘的交集不是圆盘，
+  所以运行期保留外层并打一条警告。</li>
+</ul>
+<h3 id="310-transform">3.10 变换（<code>transform</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">slide-in</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">-40</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 静态平移 */</span>
+<span class="p">.</span><span class="nc">icon</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translateX</span><span class="p">(</span><span class="mi">6</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>translate(Xpx, Ypx)</code> / <code>translate(Xpx)</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>translateX(Xpx)</code> / <code>translateY(Ypx)</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>scale(&lt;倍数&gt;)</code></td>
+<td>✅ 绕元素中心</td>
+</tr>
+<tr>
+<td><code>scale(sx)</code> / <code>scale(sx, sy)</code></td>
+<td>✅ 轴对齐的非等比（见下）</td>
+</tr>
+<tr>
+<td><code>scaleX(s)</code> / <code>scaleY(s)</code></td>
+<td>✅ <strong>假 3D 翻转</strong>就靠这个</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>rotate()</code> / <code>skew()</code> / <code>matrix()</code> / 3d</td>
+<td>❌ <strong>构建期报错</strong></td>
+</tr>
+</tbody>
+</table>
+<p>可以组合：<code>transform: translate(4px, 6px) scale(2)</code>。</p>
+<p><strong><code>scale()</code> 的三条行为</strong>：</p>
+<ol>
+<li><strong>不进布局</strong>：<code>flex</code> / <code>border_box</code> 看不到它，邻居不会被挤开（与 CSS 一致）。</li>
+<li><strong>文字一起放大</strong>：内部按"CSS 字号 × scale × DPR"重新取字号，所以是清晰的放大，
+   不是把小图拉大。</li>
+<li><strong>命中测试跟着走</strong>：视觉上占多大就能点多大（压扁时被压掉的部分点不中）。</li>
+</ol>
+<p><strong>非等比缩放（<code>scaleX</code>/<code>scaleY</code>）的近似</strong>：圆角、描边、阴影、字号都按
+<code>min(sx, sy)</code> 缩放，<strong>字形不做横向挤压</strong>。所以 <code>scaleX(0.7)</code> 的文字高度也会变成 0.7。
+<code>0</code> 是合法值（<code>scaleX(0)</code> = 零宽），此时一个字都不画、也点不中。做翻转就用它：</p>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">flip-x</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">0</span><span class="o">%</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">50</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">100</span><span class="o">%</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="p">.</span><span class="nc">coin</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">flip</span><span class="o">-</span><span class="n">x</span><span class="w"> </span><span class="mi">900</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p><code>backface-visibility</code> <strong>报错</strong>：假翻转没有背面，没有"背面朝后就不画"这回事。
+要翻面换成另一张脸，用两个元素错开 <code>animation-delay</code>。</p>
+<p>三条语义（与 CSS 一致）：</p>
+<ol>
+<li><strong>不影响布局</strong>：<code>transform</code> 是绘制期属性，<code>flex</code> 计算里看不到它，所以它是
+   "移动元素但不触发重排"的唯一手段。</li>
+<li><strong>作用于整个子树</strong>：父元素平移，子元素跟着走。</li>
+<li><strong>命中测试跟着变</strong>：视觉位置就是可点位置，动画过程中也点得中。</li>
+</ol>
+<p><code>transform</code> 也可以在 <code>@keyframes</code> 里插值（见 §3.11），这是做"滑入"最省事的办法：</p>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">slidein</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">-70</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w">     </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">slidein</span><span class="w"> </span><span class="mi">400</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="kc">forwards</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>代价（诚实说明）</strong>：因为不进布局，被平移的元素需要把它"可能出现的所有位置"算进
+脏区上界——动画的位移区间越大，脏区就越大（最多大出整个位移量）。
+这是"零重排"换来的，正常入场动效（几十像素）完全无感。</p>
+</blockquote>
+<hr />
+<h3 id="311-keyframes-animation">3.11 关键帧动画（<code>@keyframes</code> + <code>animation</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">pulse</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">pulse</span><span class="w"> </span><span class="mi">1</span><span class="kt">s</span><span class="w"> </span><span class="kc">linear</span><span class="w"> </span><span class="kc">infinite</span><span class="w"> </span><span class="kc">alternate</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">animation-name</span><span class="p">:</span><span class="w"> </span><span class="n">fade</span><span class="p">;</span><span class="w"> </span><span class="k">animation-duration</span><span class="p">:</span><span class="w"> </span><span class="mi">400</span><span class="kt">ms</span><span class="p">;</span>
+<span class="w">         </span><span class="k">animation-fill-mode</span><span class="p">:</span><span class="w"> </span><span class="kc">forwards</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">pulse</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#204060</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#ff8000</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">fade</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>@keyframes</code> 在<strong>构建期</strong>编译成静态帧表（<code>QLUIKeyframe</code>）+ 段表（<code>QLUIAnimation</code>），
+运行期零解析。所以 <code>animation-name</code> 必须是同一份 CSS 里定义过的名字。</p>
+<table>
+<thead>
+<tr>
+<th>部分</th>
+<th>允许值</th>
+<th>默认</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>animation-name</code></td>
+<td>本文件里定义过的 <code>@keyframes</code> 名 / <code>none</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td><code>animation-duration</code></td>
+<td><code>Nms</code> / <code>Ns</code>，<strong>必须 &gt; 0</strong></td>
+<td>必填</td>
+</tr>
+<tr>
+<td><code>animation-timing-function</code></td>
+<td><code>linear</code> <code>ease</code> <code>ease-in</code> <code>ease-out</code> <code>ease-in-out</code></td>
+<td><code>ease</code></td>
+</tr>
+<tr>
+<td><code>animation-iteration-count</code></td>
+<td>整数 1~255 / <code>infinite</code></td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>animation-direction</code></td>
+<td><code>normal</code> <code>reverse</code> <code>alternate</code> <code>alternate-reverse</code></td>
+<td><code>normal</code></td>
+</tr>
+<tr>
+<td><code>animation-fill-mode</code></td>
+<td><code>none</code> <code>forwards</code> <code>backwards</code> <code>both</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td><code>animation-delay</code></td>
+<td><code>Nms</code> / <code>Ns</code>（0~65535）</td>
+<td><code>0ms</code></td>
+</tr>
+<tr>
+<td><code>animation-play-state: paused</code></td>
+<td>❌ 报错</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键帧里能写什么</strong>（只允许能插值的绘制期属性）：</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>background-color</code> / <code>background</code></td>
+<td>背景色（含 <code>rgba()</code> 的 alpha）</td>
+</tr>
+<tr>
+<td><code>background-image: gradient(...)</code></td>
+<td>渐变的首末色，两个颜色一起插值</td>
+</tr>
+<tr>
+<td><code>opacity</code></td>
+<td><strong>背景 alpha</strong>（与 <code>transition</code> 同义，见 §3.9 的说明）</td>
+</tr>
+<tr>
+<td><code>transform: translate(...)</code></td>
+<td>平移（见 §3.10），和颜色一起插值</td>
+</tr>
+<tr>
+<td><code>color</code></td>
+<td>文本颜色</td>
+</tr>
+<tr>
+<td><code>border-color</code></td>
+<td>边框颜色</td>
+</tr>
+<tr>
+<td><code>border-radius</code></td>
+<td>圆角半径（只切元素自身，做圆角/圆形揭示）</td>
+</tr>
+<tr>
+<td><code>clip-path: circle(&lt;pct&gt;%)</code></td>
+<td>圆形遮罩，<strong>裁整棵子树</strong>（见 §3.9.1）</td>
+</tr>
+<tr>
+<td><code>animation-timing-function</code></td>
+<td>这一帧到下一帧的缓动</td>
+</tr>
+</tbody>
+</table>
+<p>其它属性（<code>box-shadow</code> / <code>font-size</code> / <code>filter</code> …）在构建期<strong>报错</strong>。</p>
+<p>三条必须知道的行为：</p>
+<ol>
+<li><strong>各帧的属性集合必须一致</strong>。<code>0% {background-color} 50% {opacity}</code> 会被拒绝——
+   否则运行期要额外记录"隐式值"，容易做出半正确的效果。</li>
+<li><strong>只写一半的关键帧是合法的</strong>：<code>@keyframes x { 50% { opacity: 0 } }</code> 的首末帧
+   自动取<strong>元素自己的基础样式</strong>（与 CSS 的隐式关键帧一致），所以同一个 <code>@keyframes</code>
+   可以被不同底色的元素复用。</li>
+<li><strong><code>animation-delay</code> 期间</strong>：<code>fill-mode</code> 带 <code>backwards</code>/<code>both</code> 时显示 0% 帧，
+   否则显示元素的基础样式（即"还没开始动"）。<code>animation</code> 简写里的第二个时长就是
+   delay（<code>animation: pulse 1s 300ms</code>），写第三个时长报错。</li>
+</ol>
+<p><strong>动画与 <code>transition</code> 同时存在时，动画赢</strong>：动画已经占用了颜色通道，
+状态过渡在这个节点上直接跳过（不会互相打架）。</p>
+<p><strong><code>animation</code> 只能写在基础规则上</strong>：动画在 <code>ql_ui_build</code> 时按基础样式起播，
+写在 <code>:hover</code> 之类里永远不会触发，所以构建期直接报错（不静默失效）。</p>
+<p>运行期接口：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 从头重播（点击反馈、出错抖动）；节点没有动画时返回 QL_ERR_INVAL */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_anim_restart</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+
+<span class="cm">/* 正在跑的动画数（过渡 + 未播完的关键帧动画） */</span>
+<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_ui_anim_running</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="animationend-transitionend"><code>animationend</code> / <code>transitionend</code></h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_UI_ANIM_END_KEYFRAMES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">   </span><span class="cm">/* @keyframes 播完 */</span>
+<span class="w">    </span><span class="n">QL_UI_ANIM_END_TRANSITION</span><span class="p">,</span><span class="w">      </span><span class="cm">/* transition 走到终点 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIAnimEndKind</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_ui_anim_end_cb</span><span class="p">)(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span>
+<span class="w">                                  </span><span class="n">QLUIAnimEndKind</span><span class="w"> </span><span class="n">kind</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_set_anim_end_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_anim_end_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+</code></pre></div>
+
+<p>典型用法——淡出后删节点：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_anim_end</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">QLUIAnimEndKind</span><span class="w"> </span><span class="n">kind</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">kind</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_UI_ANIM_END_TRANSITION</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">node</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="p">(</span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="cm">/* 这里已经安全：事件是 tick 末尾派发的，槽位早就释放了 */</span>
+<span class="w">        </span><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>会触发</th>
+<th>不会触发</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@keyframes</code> 播完（非 infinite）</td>
+<td><code>animation-iteration-count: infinite</code> 的每一轮之间</td>
+</tr>
+<tr>
+<td><code>transition</code> 走到终点</td>
+<td>被 <code>ql_ui_anim_restart()</code> 打断（那是新的开始）</td>
+</tr>
+<tr>
+<td></td>
+<td>状态变化后目标样式没有过渡而直接撤销</td>
+</tr>
+<tr>
+<td></td>
+<td>过渡槽满 / 时长为 0 导致"瞬间到位"（没真的播过）</td>
+</tr>
+</tbody>
+</table>
+<p>事件队列有界（<code>QL_CFG_UI_ANIM_EVENT_MAX</code>，默认 16）。一帧内超过这个数会丢事件并
+告警一次——<strong>不做无界排队</strong>（那会在慢机器上滚雪球）。</p>
+<p>推进与重绘仍然只用 <code>ql_ui_anim_tick</code> / <code>ql_ui_consume_dirty</code>（见 §3.9）。
+<code>animation-iteration-count: infinite</code> 的动画永远让 <code>ql_ui_anim_tick</code> 返回非 0，
+所以<strong>别用"tick 返回 0"来判断能不能退出</strong>，那不是它的语义。</p>
+<hr />
+<h3 id="3111-backdrop-filter-blur">3.11.1 毛玻璃（<code>backdrop-filter: blur()</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">glass</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.10</span><span class="p">);</span><span class="w">   </span><span class="c">/* 想看见效果就得带 alpha */</span>
+<span class="w">  </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">12</span><span class="kt">px</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>允许值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blur(Npx)</code>，N = 1~64</td>
+<td>高斯标准差（CSS 语义）；N 越大越糊</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>关闭</td>
+</tr>
+</tbody>
+</table>
+<p>它模糊的是<strong>这层元素背后已经画好的内容</strong>，所以：</p>
+<ol>
+<li><strong>必须写在"上面那一层"</strong>：靠 z 序/文档顺序决定谁是"背后"；</li>
+<li><strong>自己的 <code>background-color</code> 要带 alpha</strong>，否则糊完又被不透明底色盖住，看不出效果；</li>
+<li><strong>只影响自己的矩形</strong>（含 <code>border-radius</code> 的圆角），不会把外面的颜色吸进来；</li>
+<li>它跟着 <code>transform</code> 一起走——毛玻璃卡片滑动时，糊的是它当前盖住的那块内容；</li>
+<li>每帧多一次 draw call；CPU 后端代价约等于"半次整屏重绘"（见 <code>bench.md</code>）。</li>
+</ol>
+<p><strong>构建期报错</strong>：<code>blur()</code> 以外的函数（<code>blur</code> 以外的 <code>backdrop-filter</code> 值）、半径 0 或 &gt; 64。</p>
+<hr />
+<h3 id="312">3.12 不支持的写法一律报错</h3>
+<div class="highlight"><pre><span></span><code>float / grid / align-self / align-content / order / flex-flow
+rotate / skew / matrix / 3d transform（只支持 translate 与轴对齐 scale）
+filter / clip-path / var()
+min-width / max-width / min-height / max-height
+@media / em / rem / vh / vw / calc()
+transition-delay
+animation-play-state: paused
+backface-visibility（假翻转没有背面）
+backdrop-filter 的 blur() 以外的函数
+</code></pre></div>
+
+<p>报错示例：</p>
+<div class="highlight"><pre><span></span><code>qlui: 错误：index.css:27: 不支持的属性 &#39;position&#39;
+qlui: 错误：index.css:12: 不支持的长度 &#39;1.5em&#39;（只支持 px 与 %）
+qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合内容）——v0 不支持，请把文本放进独立的 &lt;span&gt;/&lt;p&gt;
+</code></pre></div>
+
+<hr />
+<h2 id="4">4. 生成的数据结构</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_UI_TAG_DIV</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_SECTION</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_P</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_SPAN</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_UI_TAG_B</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_I</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_BUTTON</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_UI_TAG_H1</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_H2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_H3</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_COUNT</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUITag</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_INLINE</span><span class="p">,</span>
+<span class="w">               </span><span class="n">QL_UI_DISPLAY_INLINE_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_NONE</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIDisplay</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_UNIT_AUTO</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_PX</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_PERCENT</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIUnit</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">top</span><span class="p">,</span><span class="w"> </span><span class="n">right</span><span class="p">,</span><span class="w"> </span><span class="n">bottom</span><span class="p">,</span><span class="w"> </span><span class="n">left</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIEdges</span><span class="p">;</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">value</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">unit</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUILength</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">bg_color</span><span class="p">,</span><span class="w"> </span><span class="n">text_color</span><span class="p">,</span><span class="w"> </span><span class="n">border_color</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLUILength</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLUIEdges</span><span class="w"> </span><span class="n">margin</span><span class="p">,</span><span class="w"> </span><span class="n">padding</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">display</span><span class="p">,</span><span class="w"> </span><span class="n">bg_alpha</span><span class="p">,</span><span class="w"> </span><span class="n">border_width</span><span class="p">,</span><span class="w"> </span><span class="n">border_radius</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">text_align</span><span class="p">,</span><span class="w"> </span><span class="n">font_id</span><span class="p">,</span><span class="w"> </span><span class="n">box_sizing</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span>
+<span class="w">    </span><span class="cm">/* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h</span>
+<span class="cm">       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比） */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 116 */</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">,</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">node_count</span><span class="p">,</span><span class="w"> </span><span class="n">style_count</span><span class="p">,</span><span class="w"> </span><span class="n">text_count</span><span class="p">,</span><span class="w"> </span><span class="n">font_size_count</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINode</span><span class="w">   </span><span class="o">*</span><span class="n">nodes</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="w">  </span><span class="o">*</span><span class="n">styles</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">       </span><span class="o">*</span><span class="n">text_pool</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 以 &#39;\0&#39; 分隔的 UTF-8 池 */</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w">   </span><span class="o">*</span><span class="n">text_offsets</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w">   </span><span class="o">*</span><span class="n">font_sizes</span><span class="p">;</span><span class="w">     </span><span class="cm">/* font_id 索引它，值是像素字号 */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w">             </span><span class="o">*</span><span class="n">arena</span><span class="p">;</span><span class="w">          </span><span class="cm">/* NULL = 静态数据，不归 doc 管 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="p">;</span>
+</code></pre></div>
+
+<p><code>0xFFFF</code> 表示"无"（无父/无子/无兄弟/无文本）。</p>
+<p><code>arena</code> 是<strong>唯一的所有权判据</strong>：</p>
+<ul>
+<li><code>arena == NULL</code> → 静态 doc（<code>.rodata</code> 或调用方自己管内存），<code>ql_ui_doc_free</code> 是空操作；</li>
+<li><code>arena != NULL</code> → <code>ql_ui_doc_load*</code> 分配，<code>ql_ui_doc_free</code> 释放。</li>
+</ul>
+<p>因为这条判据，静态 doc 误进 free 路径不可能发生，<code>ql_ui_doc_free</code> 可以无脑调用。</p>
+<blockquote>
+<p>所有内部引用都是 <code>uint16</code> <strong>下标</strong>而不是指针 —— 这既让 blob 的加载变成
+"设 6 个基址指针"（零重定位），也让 doc 之间可以各自独立（不能跨 doc 引用）。</p>
+</blockquote>
+<hr />
+<h2 id="5-api">5. 运行期 API</h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_build</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_ui_free</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_ui_layout</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">height</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_ui_render</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">);</span><span class="w">          </span><span class="cm">/* CPU 或 GPU */</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_ui_render_canvas</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">);</span><span class="w"> </span><span class="cm">/* 便捷：包一层 CPU */</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_ui_render_rect</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">dirty</span><span class="p">);</span>
+<span class="n">QLRect</span><span class="w">    </span><span class="nf">ql_ui_paint_bounds</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_ui_build</code></td>
+<td>把静态表物化成节点树；一次分配，失败返回 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>ql_ui_free</code></td>
+<td>释放（不负责显示驱动）</td>
+</tr>
+<tr>
+<td><code>ql_ui_layout</code></td>
+<td>按视口尺寸做完整布局 + 算 <code>paint_box</code></td>
+</tr>
+<tr>
+<td><code>ql_ui_render</code></td>
+<td>按树顺序绘制：阴影 → 背景 → 边框 → 文本 → 子节点</td>
+</tr>
+<tr>
+<td><code>ql_ui_render_rect</code></td>
+<td>只重绘 <code>dirty</code>：裁剪设成 <code>dirty∩视口</code>，靠 <code>paint_box</code> 剪掉不相交的子树。<strong>dirty 内的结果与全量重绘逐像素相同</strong></td>
+</tr>
+<tr>
+<td><code>ql_ui_paint_bounds</code></td>
+<td>整棵树的绘制范围（= 根节点的 <code>paint_box</code>，可能超出视口，例如带阴影的贴边元素）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">查询</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_root_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_find_by_tag</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUITag</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">nth</span><span class="p">);</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_hit_test</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_node_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_node_font</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="n">QLRect</span><span class="w">      </span><span class="nf">ql_ui_node_rect</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_tag_name</span><span class="p">(</span><span class="n">QLUITag</span><span class="w"> </span><span class="n">tag</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>ql_ui_hit_test</code> 从树末尾向前找第一个包含该点的节点（后面的节点视觉上更靠上）。</p>
+<h3 id="_2">运行期改内容</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_set_text</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">);</span>
+</code></pre></div>
+
+<p>只允许改"没有子节点的元素"的文本。改完需要重新 <code>ql_ui_layout</code> + <code>ql_ui_render</code>。</p>
+<blockquote>
+<p><strong>不支持</strong>运行期改样式类、增删节点。页面结构在构建期固定。</p>
+</blockquote>
+<h3 id="_3">交互</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_ui_click_cb</span><span class="p">)(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_click_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">  </span><span class="nf">ql_ui_pointer_down</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">  </span><span class="nf">ql_ui_pointer_up</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">  </span><span class="nf">ql_ui_pointer_move</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>返回</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pointer_down</code></td>
+<td>1 = 命中</td>
+<td>给命中节点置 <code>QL_UI_RT_ACTIVE</code></td>
+</tr>
+<tr>
+<td><code>pointer_up</code></td>
+<td>1 = 触发点击</td>
+<td>清 <code>ACTIVE</code>；若按下时命中同一节点则调 <code>click_cb</code></td>
+</tr>
+<tr>
+<td><code>pointer_move</code></td>
+<td>1 = 悬停状态有变化</td>
+<td>更新 <code>QL_UI_RT_HOVER</code></td>
+</tr>
+</tbody>
+</table>
+<p>节点状态位：<code>QL_UI_RT_HOVER</code> / <code>QL_UI_RT_ACTIVE</code> / <code>QL_UI_RT_DIRTY</code>。</p>
+<blockquote>
+<p>注意：状态位<strong>会影响绘制</strong>（<code>:hover</code>/<code>:active</code>/<code>:focus</code> 有独立样式），但<strong>不影响布局</strong>（M1 限制），
+需要高亮请在 <code>click</code> 回调或渲染后自行处理。</p>
+</blockquote>
+<hr />
+<h2 id="6">6. 完整示例</h2>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;ui_index.h&quot;</span><span class="c1">          /* extern const QLUIDoc ui_index_doc; */</span>
+
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;clicked: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_node_text</span><span class="p">(</span><span class="n">node</span><span class="p">));</span>
+<span class="p">}</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">qlgl_init</span><span class="p">();</span>
+<span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_x11_create</span><span class="p">(</span><span class="s">&quot;QLGL&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_FORMAT_AUTO</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ui_index_doc</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QLCanvas</span><span class="w"> </span><span class="n">canvas</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_canvas_from_disp</span><span class="p">(</span><span class="o">&amp;</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="n">d</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">running</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">running</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_ui_pointer_move</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 你的输入层把坐标传进来 */</span>
+<span class="w">        </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">canvas</span><span class="p">);</span>
+<span class="w">        </span><span class="n">disp_flush_all</span><span class="p">();</span><span class="w">                  </span><span class="cm">/* 或接渲染器的脏矩形 */</span>
+<span class="w">        </span><span class="n">running</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui_poll_events</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_disp_x11_destroy</span><span class="p">(</span><span class="n">d</span><span class="p">);</span>
+<span class="w">    </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="65-qlui-blob-api">6.5 <code>.qlui</code> blob API（换界面不用重编译）</h2>
+<p>头文件 <code>&lt;qlgl/qlui.h&gt;</code>。想省字节量的目标机可以不编译 <code>src/ui/qlui_blob.c</code>，
+下面的函数就不存在（声明不会产生引用，链接器不会拖入）。</p>
+<h3 id="651">6.5.1 最常用：一行加载</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_file</span><span class="p">(</span><span class="s">&quot;ui/index.qlui&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ui</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;load failed: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_doc_last_error</span><span class="p">());</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">);</span>
+<span class="cm">/* ... 渲染 / 交互 ... */</span>
+<span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w">          </span><span class="cm">/* doc 由 root 持有，会一起释放 */</span>
+</code></pre></div>
+
+<p><code>ql_ui_load_file</code> = <code>ql_ui_doc_load()</code> + <code>ql_ui_build()</code>，并让 root <strong>持有</strong> doc。</p>
+<h3 id="652-doc">6.5.2 想自己管 doc</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_doc_load</span><span class="p">(</span><span class="s">&quot;ui/index.qlui&quot;</span><span class="p">);</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+<span class="p">...</span>
+<span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 不释放 doc（root 不持有它） */</span>
+<span class="n">ql_ui_doc_free</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="653-api">6.5.3 API 一览</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 构建期（宿主工具用） */</span>
+<span class="kt">size_t</span><span class="w">   </span><span class="nf">ql_ui_doc_encode</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">cap</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_doc_save</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">);</span>
+
+<span class="cm">/* 运行期 */</span>
+<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_doc_load_mem</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_doc_load</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_ui_doc_free</span><span class="p">(</span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="p">);</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_load_file</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">);</span>
+
+<span class="cm">/* 辅助 */</span>
+<span class="kt">int</span><span class="w">         </span><span class="nf">ql_ui_doc_is_owned</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="p">);</span><span class="w">   </span><span class="cm">/* arena != NULL */</span>
+<span class="kt">size_t</span><span class="w">      </span><span class="nf">ql_ui_doc_text_pool_size</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_doc_last_error</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_ui_doc_encode(doc, NULL, 0)</code></td>
+<td>只算需要多少字节（返回 0 = doc 非法）</td>
+</tr>
+<tr>
+<td><code>ql_ui_doc_encode(doc, buf, cap)</code></td>
+<td>写入；<code>cap</code> 不足时不写、只返回需求</td>
+</tr>
+<tr>
+<td><code>ql_ui_doc_load_mem</code></td>
+<td><strong>拷贝</strong>一份数据进来，调用方可以立刻释放自己的缓冲</td>
+</tr>
+<tr>
+<td><code>ql_ui_doc_free</code></td>
+<td>对<strong>静态 doc（<code>arena == NULL</code>）是空操作</strong>，可以无脑调用</td>
+</tr>
+<tr>
+<td><code>ql_ui_load_file</code></td>
+<td>失败返回 NULL 并打错误日志，原因也可用 <code>ql_ui_doc_last_error()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="654">6.5.4 失败原因</h3>
+<p>加载失败<strong>一律返回 NULL</strong>，绝不"跳过坏数据继续画"。原因用
+<code>ql_ui_doc_last_error()</code> 取（静态缓冲，非线程安全）：</p>
+<table>
+<thead>
+<tr>
+<th>信息</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bad magic (not a .qlui blob)</code></td>
+<td>不是 blob 文件</td>
+</tr>
+<tr>
+<td><code>version mismatch: blob built by a different qlgl</code></td>
+<td>库版本变了，重新生成</td>
+</tr>
+<tr>
+<td><code>QLUINode layout mismatch (blob built on another ABI)</code></td>
+<td>结构体布局变了（换编译器/架构/改了结构体）</td>
+</tr>
+<tr>
+<td><code>size mismatch (file truncated or corrupted)</code></td>
+<td>文件被截断</td>
+</tr>
+<tr>
+<td><code>checksum mismatch (file corrupted)</code></td>
+<td>内容被改过</td>
+</tr>
+<tr>
+<td><code>section offsets inconsistent with counts</code></td>
+<td>头部被手工篡改</td>
+</tr>
+<tr>
+<td><code>too many nodes</code> / <code>text pool too large</code></td>
+<td>超过 <code>QL_CFG_UI_MAX_*</code> 上限</td>
+</tr>
+</tbody>
+</table>
+<h3 id="655">6.5.5 容量上限</h3>
+<div class="highlight"><pre><span></span><code><span class="cp">#define QL_CFG_UI_MAX_NODES         4096</span>
+<span class="cp">#define QL_CFG_UI_MAX_STYLES        4096</span>
+<span class="cp">#define QL_CFG_UI_MAX_TEXT_BYTES    (64u * 1024u)</span>
+<span class="cp">#define QL_CFG_UI_MAX_FONT_SIZES    256</span>
+</code></pre></div>
+
+<p>只作用于 blob（外来数据）。静态编译的 doc 是编译器保证的常量，不受限制。
+MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
+<blockquote>
+<p>⚠ <code>text_offsets</code> 是 <code>uint16</code>，所以<strong>单个 doc 的文本池天然上限 64KB</strong>
+（中文约 2 万字）。超了会加载失败，不会静默截断。</p>
+</blockquote>
+<h3 id="656-c">6.5.6 与静态 C 数据混用</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 主壳：构建期固化，零加载成本 */</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">shell</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ui_shell_doc</span><span class="p">);</span>
+
+<span class="cm">/* 侧栏/插件：运行时加载，可换皮 */</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">panel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_file</span><span class="p">(</span><span class="s">&quot;themes/dark/sidebar.qlui&quot;</span><span class="p">);</span>
+
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">shell</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">480</span><span class="p">);</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">panel</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w"> </span><span class="mi">480</span><span class="p">);</span>
+<span class="cm">/* 各自 render 到自己的区域 */</span>
+</code></pre></div>
+
+<p>混用单位是<strong>面板</strong>。<code>parent/first_child/next_sibling</code> 是同一数组内的 <code>uint16</code> 下标，
+<strong>doc 之间不能互相引用合成一棵树</strong>；跨面板的 CSS 继承也不存在（每个面板独立闭合）。
+需要"某块热改"就重建那个 <code>QLUIRoot</code>（几十微秒），不要尝试做元素级混合。</p>
+<hr />
+<h2 id="7">7. 限制一览</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局</td>
+<td>block / inline / inline-block；<strong>无 flex / grid / position</strong></td>
+</tr>
+<tr>
+<td>高度</td>
+<td>不支持 <code>%</code>，不支持 <code>min/max-height</code></td>
+</tr>
+<tr>
+<td>文本</td>
+<td>不支持混合内容、不自动换行、无字距/行距调整</td>
+</tr>
+<tr>
+<td>伪类</td>
+<td><code>:hover</code>/<code>:active</code>/<code>:focus</code> 编译成变体样式；布局仍按基础样式</td>
+</tr>
+<tr>
+<td>运行期</td>
+<td>只能改文本，不能改结构/样式类（要改结构就换一份 doc）</td>
+</tr>
+<tr>
+<td>换 UI</td>
+<td>支持 <code>.qlui</code> blob，<strong>不用重编译</strong>；但不支持目标机上解析 HTML/CSS 文本（M3.5）</td>
+</tr>
+<tr>
+<td>JS</td>
+<td>不支持（交互用 C 回调）</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>一次 <code>layout</code> 遍历整棵树；节点数 ≤ 数百时足够</td>
+</tr>
+</tbody>
+</table>
+<p>需要更高兼容度 → 用 PC + WebView（<a href="../../Web兼容设计.md">设计文档 §7.3</a>）。</p>
+<div class='pager'>
+<a href='../../manual/text/QLText阅读指南.html'><span class='dir'>上一页</span>QLText / 字体系统 阅读指南</a>
+<a class='next' href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>下一页</span>QLUI / HTML+CSS 编译 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

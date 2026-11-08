@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>交互 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html' class='active'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">交互</h1>
+<p><img src="../img/04-interaction.png" alt="交互" width="260"></p>
+<p>完整程序：<code>example/04_interaction.c</code></p>
+<p>这一章做三件事：鼠标移上去变样、按下去下沉、点击改文本。</p>
+<h2 id="hover-active-focus">状态样式：<code>:hover</code> / <code>:active</code> / <code>:focus</code></h2>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#22415F</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#C8D2DE</span><span class="p">;</span>
+<span class="w">       </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="mi">160</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2E6BE6</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">;</span>
+<span class="w">              </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">0</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">-2</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">active</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#1B4CA8</span><span class="p">;</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">0</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>就这么多。<strong>没有 C 代码</strong>。</p>
+<p>这里有个关键设计：<code>:hover</code> 之类的状态样式在<strong>编译期</strong>就被算成了"状态变体样式"，
+存在 <code>nodes[i].style_hover</code> / <code>style_active</code> / <code>style_focus</code> 这三个下标里。</p>
+<p>所以运行期切状态的开销是：</p>
+<div class="highlight"><pre><span></span><code>换一个样式指针，标脏                ← 没有选择器匹配，没有重新编译
+</code></pre></div>
+
+<p>三个状态同时成立时的优先级：</p>
+<div class="highlight"><pre><span></span><code>:active &gt; :focus &gt; :hover &gt; 基础样式
+</code></pre></div>
+
+<h2 id="_2">事件怎么进来</h2>
+<p>主循环里只要<strong>两行</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">gfx</span><span class="p">))</span><span class="w"> </span><span class="p">{</span><span class="w">      </span><span class="cm">/* 收窗口事件 */</span>
+<span class="w">    </span><span class="n">ql_input_dispatch</span><span class="p">();</span><span class="w">           </span><span class="cm">/* 派发：指针 → hover/active/click */</span>
+<span class="w">    </span><span class="p">...</span><span class="n">绘制</span><span class="p">...</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>ql_ui_attach_input(ui)</code> 把 <code>QLUIRoot</code> 接到输入系统上（同一时刻只有一个
+<code>QLUIRoot</code>，与"单一窗口"一致）。之后 <code>ql_input_dispatch()</code> 就会：</p>
+<ol>
+<li>拿到指针位置 → 做命中测试（<strong>逆变换</strong>，所以动画中的元素也点得中）；</li>
+<li>改状态位 → 触发 <code>transition</code>；</li>
+<li>在 <code>pointer_up</code> 落在同一个节点上时 → 调点击回调。</li>
+</ol>
+<p>想自己处理按键（<code>Esc</code> 关闭窗口之类），装一个 sink：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">sink</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_INPUT_KEY_DOWN</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">key</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_KEY_ESCAPE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_gfx_gl_close</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">ql_ui_input_event</span><span class="p">((</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">,</span><span class="w"> </span><span class="n">ev</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 其余交给界面 */</span>
+<span class="p">}</span>
+<span class="n">ql_input_set_sink</span><span class="p">(</span><span class="n">sink</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<h2 id="_3">点击回调</h2>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="o">-&gt;</span><span class="n">tag</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_UI_TAG_DIV</span><span class="p">)</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span><span class="w">                     </span><span class="cm">/* 只看自己关心的节点 */</span>
+<span class="w">    </span><span class="n">s_clicks</span><span class="o">++</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="n">buf</span><span class="p">[</span><span class="mi">64</span><span class="p">];</span>
+<span class="w">    </span><span class="n">snprintf</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;点击次数：%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">s_clicks</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">s_log</span><span class="p">,</span><span class="w"> </span><span class="n">buf</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+</code></pre></div>
+
+<p>一条回调管全树，靠 <code>node</code> 区分是哪个。为什么不给每个节点单独注册？
+因为结构是编译期固定的 —— 用一个 <code>switch (node - ui-&gt;nodes)</code> 或者查
+<code>node-&gt;src-&gt;id</code> 就够了，不用为每个节点分配回调槽。</p>
+<p>节点顺序就是<strong>文档顺序</strong>（深度优先、父在前），所以 <code>&amp;ui-&gt;nodes[2]</code> 就是
+HTML 里第 3 个元素。也可以用 <code>ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 1)</code>
+按标签找。</p>
+<h2 id="_4">没有窗口时怎么办</h2>
+<p>交互链路可以用合成事件走一遍，写测试时非常有用：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_pointer_move</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">84</span><span class="p">,</span><span class="w"> </span><span class="mi">48</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 移进去 → :hover */</span>
+<span class="n">ql_ui_pointer_down</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">84</span><span class="p">,</span><span class="w"> </span><span class="mi">48</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 按下去 → :active */</span>
+<span class="n">ql_ui_pointer_up</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">84</span><span class="p">,</span><span class="w"> </span><span class="mi">48</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 松开  → click 回调 */</span>
+</code></pre></div>
+
+<p>这个例程在没有参数的运行时会自己合成一次点击，输出：</p>
+<div class="highlight"><pre><span></span><code>合成一次点击（窗口模式请用鼠标点按钮）
+点击次数：1
+</code></pre></div>
+
+<h2 id="transition">transition 是"状态变了就渐变过去"</h2>
+<p>注意上面 CSS 里的 <code>transition: 160ms ease-out</code>。它的作用是：状态变化时，
+颜色/位移在 160ms 内<strong>插值</strong>过去，而不是瞬间跳。</p>
+<p>三条行为：</p>
+<ul>
+<li><strong>不进布局</strong> —— 过渡只改绘制期属性（颜色、alpha、位移、缩放、圆角、遮罩），
+  所以过渡期间<strong>零重排</strong>；</li>
+<li><strong>打断从当前值重基</strong> —— 快速移入移出不会跳变；</li>
+<li><strong>只重绘脏区</strong> —— 每帧只重画受影响的那几块。</li>
+</ul>
+<p>下一章专讲动画。</p>
+<h2 id="_5">焦点与键盘</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_set_focus_node</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 驱动 :focus 样式 */</span>
+<span class="n">ql_ui_focus_node</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w">              </span><span class="cm">/* 查当前焦点 */</span>
+</code></pre></div>
+
+<p>Tab 键的焦点链<strong>没有内建</strong> —— 键盘导航是产品的决定，不是库的决定。
+需要时在 sink 里自己管（换焦点就是一次 <code>ql_ui_set_focus_node</code>）。</p>
+<hr />
+<p>上一章：<a href="03_layout.html">布局</a> ｜ 下一章：<a href="05_animation.html">动画</a></p>
+<div class='pager'>
+<a href='../tutorial/03_layout.html'><span class='dir'>上一页</span>布局</a>
+<a class='next' href='../tutorial/05_animation.html'><span class='dir'>下一页</span>动画</a>
+</div>
+</main>
+</div>
+</body>
+</html>

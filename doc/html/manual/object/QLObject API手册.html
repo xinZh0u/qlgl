@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLObject API 手册（对象系统 v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlobject-api-v01">QLObject API 手册（对象系统 v0.1）</h1>
+<p>配套阅读：<a href="./QLObject阅读指南.md">QLObject阅读指南</a> · 设计依据：<a href="../../底层实现设计.md">底层实现设计</a></p>
+<ul>
+<li>头文件：<code>#include &lt;qlgl/qlgl.h&gt;</code></li>
+<li>链接：<code>target_link_libraries(xxx PRIVATE qlgl)</code></li>
+<li>语言标准：C11（编译选项为 <code>-std=c11</code>，不依赖任何 POSIX/编译器扩展）</li>
+</ul>
+<hr />
+<h2 id="1">1. 初始化</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">qlgl_init</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">qlgl_shutdown</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">qlgl_version</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qlgl_init</code></td>
+<td>复位统计、清空事件池、按生成表注册内置类，并校验 id 与枚举一致。重复调用返回 <code>QL_OK</code></td>
+</tr>
+<tr>
+<td><code>qlgl_shutdown</code></td>
+<td>复位统计/类表/事件池。<strong>不会</strong>替你释放仍在使用的对象</td>
+</tr>
+<tr>
+<td><code>qlgl_version</code></td>
+<td>返回 <code>"0.1.0"</code> 这类字符串</td>
+</tr>
+</tbody>
+</table>
+<p>必须在创建任何对象之前调用。初始化失败的可能原因：生成表为空、id 与枚举不一致（需重跑 <code>tools/qlgen</code>）。</p>
+<hr />
+<h2 id="2-qlconfigh">2. 配置项（<code>qlconfig.h</code>）</h2>
+<p>全部可以用 <code>-DQL_CFG_xxx=...</code> 在编译期覆盖。</p>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_MAX_CLASS</code></td>
+<td>64</td>
+<td>类表容量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MAX_INHERIT_DEPTH</code></td>
+<td>8</td>
+<td>继承链深度上限</td>
+</tr>
+<tr>
+<td><code>QL_CFG_PROPERTY_CAPACITY</code></td>
+<td>100</td>
+<td>每类属性 id 数量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_EVENT_CAPACITY</code></td>
+<td>100</td>
+<td>每类事件 id 数量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_EVENT_ARG_MAX</code></td>
+<td>4</td>
+<td>单次事件参数上限</td>
+</tr>
+<tr>
+<td><code>QL_CFG_EVENT_CONN_POOL</code></td>
+<td>256</td>
+<td>全局事件连接池容量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_EVENT_PATH_MAX</code></td>
+<td>8</td>
+<td>传播路径深度上限</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MEM_TRACK</code></td>
+<td>1</td>
+<td>内存统计与头部校验（关掉可省 16 字节/次分配）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_LOG_LEVEL</code></td>
+<td>2</td>
+<td>0 关闭 / 1 错误 / 2 警告 / 3 信息 / 4 调试</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3">3. 内存</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">alloc</span><span class="p">)(</span><span class="kt">size_t</span><span class="p">);</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">realloc</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="p">);</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">free</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLAllocator</span><span class="p">;</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">alloc_count</span><span class="p">,</span><span class="w"> </span><span class="n">free_count</span><span class="p">,</span><span class="w"> </span><span class="n">bytes_live</span><span class="p">,</span><span class="w"> </span><span class="n">bytes_peak</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLMemStats</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_mem_set_allocator</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLAllocator</span><span class="w"> </span><span class="o">*</span><span class="n">alloc</span><span class="p">);</span><span class="w">   </span><span class="cm">/* NULL = 恢复 malloc 族 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_mem_alloc</span><span class="p">(</span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_mem_calloc</span><span class="p">(</span><span class="kt">size_t</span><span class="w"> </span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_mem_realloc</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ptr</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_mem_free</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ptr</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_mem_stats</span><span class="p">(</span><span class="n">QLMemStats</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_mem_reset_stats</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li><code>ql_mem_set_allocator</code> 应在 <code>qlgl_init</code> <strong>之前</strong>调用；</li>
+<li>三个回调可部分为 <code>NULL</code>，缺省部分自动回落到 <code>malloc/realloc/free</code>；</li>
+<li><code>QL_CFG_MEM_TRACK=1</code> 时每次分配带 16 字节头部：记录大小 + magic，重复释放/越界写会打错误日志而不是静默崩溃；</li>
+<li><code>ql_mem_stats</code> 的 <code>bytes_live</code> 是<strong>当前存活的 payload 字节数</strong>（不含头部），测试里用它做泄漏断言。</li>
+</ul>
+<hr />
+<h2 id="4-qlvalue">4. 值 <code>QLValue</code></h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_VALUE_NONE</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_INT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_UINT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_FIXED</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_BOOL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_VALUE_STRING</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_POINTER</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_VALUE_COLOR</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLValueType</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">flags</span><span class="p">;</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">aux</span><span class="p">;</span>
+<span class="w">    </span><span class="k">union</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">i</span><span class="p">;</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">u</span><span class="p">;</span><span class="w"> </span><span class="n">ql_fixed_t</span><span class="w"> </span><span class="n">f</span><span class="p">;</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">            </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">s</span><span class="p">;</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">p</span><span class="p">;</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">o</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">v</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLValue</span><span class="p">;</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>构造</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_value_none()</code></td>
+<td>空值；宏 <code>QL_VALUE_NULL</code> 等价</td>
+</tr>
+<tr>
+<td><code>ql_value_int(int32_t)</code></td>
+<td>有符号整数</td>
+</tr>
+<tr>
+<td><code>ql_value_uint(uint32_t)</code></td>
+<td>无符号整数</td>
+</tr>
+<tr>
+<td><code>ql_value_fixed(ql_fixed_t)</code></td>
+<td>Q16.16 定点</td>
+</tr>
+<tr>
+<td><code>ql_value_bool(int)</code></td>
+<td>0/1</td>
+</tr>
+<tr>
+<td><code>ql_value_string(const char *)</code></td>
+<td><strong>弱引用</strong>，不复制、不接管所有权</td>
+</tr>
+<tr>
+<td><code>ql_value_ptr(void *)</code></td>
+<td>弱引用</td>
+</tr>
+<tr>
+<td><code>ql_value_object(QLObject *)</code></td>
+<td>弱引用，不改变引用计数</td>
+</tr>
+<tr>
+<td><code>ql_value_color(uint32_t)</code></td>
+<td>颜色值</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>读取（类型不符返回 fallback）</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_value_get_int(v, fb)</code></td>
+<td>int/uint/bool/fixed/color 都接受</td>
+</tr>
+<tr>
+<td><code>ql_value_get_uint(v, fb)</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>ql_value_get_fixed(v, fb)</code></td>
+<td>int/uint 会自动换算成定点</td>
+</tr>
+<tr>
+<td><code>ql_value_get_string(v, fb)</code></td>
+<td>仅 STRING</td>
+</tr>
+<tr>
+<td><code>ql_value_get_ptr(v, fb)</code></td>
+<td>POINTER / OBJECT</td>
+</tr>
+<tr>
+<td><code>ql_value_get_object(v, fb)</code></td>
+<td>仅 OBJECT</td>
+</tr>
+<tr>
+<td><code>ql_value_type_name(type)</code></td>
+<td><code>"int"</code> / <code>"fixed"</code> …</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">定点运算</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">ql_fixed_t</span><span class="p">;</span><span class="w">      </span><span class="cm">/* Q16.16 */</span>
+<span class="cp">#define QL_FIXED_ONE 65536</span>
+
+<span class="n">ql_fixed_t</span><span class="w"> </span><span class="nf">ql_fixed_from_int</span><span class="p">(</span><span class="kt">int32_t</span><span class="p">);</span>
+<span class="n">ql_fixed_t</span><span class="w"> </span><span class="nf">ql_fixed_mul</span><span class="p">(</span><span class="n">ql_fixed_t</span><span class="p">,</span><span class="w"> </span><span class="n">ql_fixed_t</span><span class="p">);</span>
+<span class="n">ql_fixed_t</span><span class="w"> </span><span class="nf">ql_fixed_div</span><span class="p">(</span><span class="n">ql_fixed_t</span><span class="p">,</span><span class="w"> </span><span class="n">ql_fixed_t</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 除零返回 0 */</span>
+<span class="kt">int32_t</span><span class="w">    </span><span class="nf">ql_fixed_to_int</span><span class="p">(</span><span class="n">ql_fixed_t</span><span class="p">);</span><span class="w">            </span><span class="cm">/* 四舍五入 */</span>
+</code></pre></div>
+
+<p><strong>规范要求</strong>：属性与事件里禁止直接存 <code>float/double</code>，统一用 <code>Q16.16</code>（32/64 位等长）。</p>
+<hr />
+<h2 id="5">5. 类与类型</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">QLType</span><span class="p">;</span>
+<span class="cp">#define QL_TYPE_NONE 0xFFFFFFFFu</span>
+
+<span class="n">QLType</span><span class="w">         </span><span class="nf">ql_class_register</span><span class="p">(</span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">,</span><span class="w"> </span><span class="n">QLType</span><span class="w"> </span><span class="n">parent_type</span><span class="p">);</span>
+<span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_class_get</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span>
+<span class="kt">uint16_t</span><span class="w">       </span><span class="nf">ql_class_count</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">    </span><span class="o">*</span><span class="nf">ql_class_name</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li>注册返回运行期 id；父类未注册、超深、私有区超 64KB、类表满都返回 <code>QL_TYPE_NONE</code>；</li>
+<li>内置类由 <code>qlgl_init</code> 自动注册；测试/插件可以自己注册（id 从 <code>QL_TYPE_COUNT</code> 起继续分配）。</li>
+</ul>
+<h3 id="51-qlobjectclass">5.1 <code>QLObjectClass</code> 关键字段</h3>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> / <code>name</code></td>
+<td>类型 id / 类型名</td>
+</tr>
+<tr>
+<td><code>instance_size</code></td>
+<td>本类结构体大小（含父类字段）</td>
+</tr>
+<tr>
+<td><code>own_private_size</code></td>
+<td>本类<strong>自己</strong>的私有区大小</td>
+</tr>
+<tr>
+<td><code>priv_offset</code> / <code>priv_total</code></td>
+<td>私有区相对块首偏移 / 整链私有区总量，注册时算好</td>
+</tr>
+<tr>
+<td><code>property_start</code> / <code>property_end</code></td>
+<td>属性 id 闭区间（含哨兵）</td>
+</tr>
+<tr>
+<td><code>props</code> / <code>prop_count</code></td>
+<td>可选属性描述表</td>
+</tr>
+<tr>
+<td><code>events</code> / <code>event_count</code></td>
+<td>事件描述表</td>
+</tr>
+<tr>
+<td><code>parent</code></td>
+<td>父类</td>
+</tr>
+<tr>
+<td><code>init</code> / <code>deinit</code></td>
+<td>实例构造/析构钩子（父→子 / 子→父）</td>
+</tr>
+<tr>
+<td><code>class_init</code></td>
+<td>注册时调用一次，用来挂 <code>set_property</code> 等虚函数</td>
+</tr>
+<tr>
+<td><code>set_property</code> / <code>get_property</code></td>
+<td>属性读写（返回 <code>ql_err_t</code> / <code>QLValue</code>）</td>
+</tr>
+<tr>
+<td><code>event</code></td>
+<td>默认事件处理，只在目标节点、事件带 <code>DEFAULT</code> 标志时调用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52">5.2 定义一个新类</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* ① 属性 / 事件 id */</span>
+<span class="n">QL_PROPERTY_ENUM_START</span><span class="p">(</span><span class="n">QL_FOO</span><span class="p">,</span><span class="w"> </span><span class="n">QLFoo</span><span class="p">,</span><span class="w"> </span><span class="n">QL_OBJECT</span><span class="p">)</span>
+<span class="w">    </span><span class="n">QL_FOO_PROPERTY_VALUE</span><span class="w">          </span><span class="cm">/* 最后一项不写逗号 */</span>
+<span class="n">QL_PROPERTY_ENUM_END</span><span class="p">(</span><span class="n">QL_FOO</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span>
+
+<span class="n">QL_EVENT_ENUM_START</span><span class="p">(</span><span class="n">QL_FOO</span><span class="p">,</span><span class="w"> </span><span class="n">QLFoo</span><span class="p">,</span><span class="w"> </span><span class="n">QL_OBJECT</span><span class="p">)</span>
+<span class="w">    </span><span class="n">QL_FOO_EVENT_CHANGED</span>
+<span class="n">QL_EVENT_ENUM_END</span><span class="p">(</span><span class="n">QL_FOO</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span>
+
+<span class="cm">/* ② 头/源文件通用的声明 */</span>
+<span class="n">QL_DECLARE</span><span class="p">(</span><span class="n">QLFoo</span><span class="p">,</span><span class="w"> </span><span class="n">ql_foo</span><span class="p">)</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLFoo</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="n">parent</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLFooClass</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="n">parent</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLFooPrivate</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">value</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+
+<span class="cm">/* ③ 生成 get_type / private_size / get_private 与类描述 */</span>
+<span class="n">QL_DEFINE_WITH_PRIVATE</span><span class="p">(</span><span class="n">QL_FOO</span><span class="p">,</span><span class="w"> </span><span class="n">QLFoo</span><span class="p">,</span><span class="w"> </span><span class="n">ql_foo</span><span class="p">,</span><span class="w"> </span><span class="n">ql_object</span><span class="p">)</span>
+
+<span class="cm">/* ④ 三个钩子必须实现（可以是空实现） */</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_foo_class_init</span><span class="p">(</span><span class="n">QLFooClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UNUSED</span><span class="p">(</span><span class="n">klass</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_foo_init</span><span class="p">(</span><span class="n">QLFoo</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">)</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UNUSED</span><span class="p">(</span><span class="n">self</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_foo_deinit</span><span class="p">(</span><span class="n">QLFoo</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UNUSED</span><span class="p">(</span><span class="n">self</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_DECLARE(Name, name)</code></td>
+<td>声明 <code>Name</code>/<code>NameClass</code>/<code>NamePrivate</code>、<code>name##_get_type</code>/<code>_private_size</code>/<code>_get_private</code>、<code>name##_class</code>。<strong>自带分号，调用处不要再加</strong></td>
+</tr>
+<tr>
+<td><code>QL_DEFINE_WITH_PRIVATE(NAME, Name, name, Inherit)</code></td>
+<td>第 4 个参数是父类函数前缀（qlgen 靠它排序）；要求之前已定义 <code>struct Name##Private</code>；<strong>自带分号</strong></td>
+</tr>
+<tr>
+<td><code>QL_PROPERTY_ENUM_START/END</code></td>
+<td>属性 id 枚举；END 自带前导逗号，所以最后一项不能写逗号</td>
+</tr>
+<tr>
+<td><code>QL_PROPERTY_ENUM_EMPTY(NAME, Name, INHERIT, cap)</code></td>
+<td>暂时没有属性的类</td>
+</tr>
+<tr>
+<td><code>QL_EVENT_ENUM_START/END</code></td>
+<td>事件 id 枚举，规则同上</td>
+</tr>
+<tr>
+<td><code>QL_EVENT_ENUM_EMPTY(NAME, Name, INHERIT, cap)</code></td>
+<td>暂时没有事件的类</td>
+</tr>
+<tr>
+<td><code>QL_PRIV(Name, name, self)</code></td>
+<td>取私有区（<code>struct Name##Private *</code>）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="53">5.3 加完类之后</h3>
+<div class="highlight"><pre><span></span><code>python3<span class="w"> </span>tools/qlgen/qlgen.py<span class="w">            </span><span class="c1"># 重新生成 include/qlgl/qltype_gen.h 与 src/generated/qlclass_gen.c</span>
+python3<span class="w"> </span>tools/qlgen/qlgen.py<span class="w"> </span>--check<span class="w">    </span><span class="c1"># CI 校验用，不同步返回 1</span>
+</code></pre></div>
+
+<h3 id="54">5.4 根类</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLType</span><span class="w"> </span><span class="nf">ql_object_get_type</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 恒为 QL_TYPE_OBJECT */</span>
+<span class="k">extern</span><span class="w"> </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="n">ql_object_class</span><span class="p">;</span>
+</code></pre></div>
+
+<hr />
+<h2 id="6">6. 对象</h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_new</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_ref</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_object_unref</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_object_new</code></td>
+<td>一次分配 <code>instance_size + priv_total</code>；失败返回 <code>NULL</code>；未注册类型返回 <code>NULL</code> 并打错误日志</td>
+</tr>
+<tr>
+<td><code>ql_object_ref</code></td>
+<td>计数 +1；对 <code>DEAD</code> 对象返回 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>ql_object_unref</code></td>
+<td>计数 -1，归零则析构；<code>NULL</code> 安全</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">查询</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_get_class</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="n">QLType</span><span class="w">         </span><span class="nf">ql_object_type</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">    </span><span class="o">*</span><span class="nf">ql_object_type_name</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="kt">int32_t</span><span class="w">        </span><span class="nf">ql_object_ref_count</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">            </span><span class="nf">ql_object_is</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 含父类判断 */</span>
+</code></pre></div>
+
+<p><code>NULL</code> 输入一律安全：<code>ql_object_type(NULL)</code> 返回 <code>QL_TYPE_NONE</code>，<code>type_name</code> 返回 <code>""</code>。</p>
+<h3 id="_3">对象树</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_object_set_parent</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_object_add_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">child</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_parent</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_first_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_next_sibling</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_object_child_count</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>引用归属</td>
+<td>父对子持有<strong>一份</strong>引用；子不引用父</td>
+</tr>
+<tr>
+<td><code>set_parent(child, p)</code></td>
+<td>旧父 -1、新父 +1；<code>p == NULL</code> 表示摘除，可能直接销毁 child</td>
+</tr>
+<tr>
+<td><code>add_child(p, child)</code></td>
+<td><code>set_parent</code> 之后归还调用方那份引用，<strong>最常用</strong></td>
+</tr>
+<tr>
+<td>成环</td>
+<td><code>parent</code> 是自己或自己的后代 → 返回 <code>QL_ERR_INVAL</code></td>
+</tr>
+<tr>
+<td>级联销毁</td>
+<td><code>unref(父)</code> 会先摘链再逐个 <code>unref</code> 子对象</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_4">私有区</h3>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_priv</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">);</span>
+<span class="cp">#define QL_PRIV(Name, name, self) name##_get_private((Name *)(self))</span>
+</code></pre></div>
+
+<p>O(1)：<code>(char *)self - self-&gt;klass-&gt;priv_total + klass-&gt;priv_offset</code>。</p>
+<hr />
+<h2 id="7">7. 属性</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_object_set_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">value</span><span class="p">);</span>
+<span class="n">QLValue</span><span class="w">  </span><span class="nf">ql_object_get_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">      </span><span class="nf">ql_object_property_owner</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">,</span><span class="w"> </span><span class="n">QLType</span><span class="w"> </span><span class="o">*</span><span class="n">owner_type</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_OK</code></td>
+<td>赋值成功</td>
+</tr>
+<tr>
+<td><code>QL_ERR_INVAL</code></td>
+<td>id 越界、所属类没有 setter、或 setter 自己拒绝（例如类型不符）</td>
+</tr>
+<tr>
+<td><code>QL_VALUE_NULL</code></td>
+<td>get 找不到对应属性</td>
+</tr>
+</tbody>
+</table>
+<p>区间规则：每类默认 100 个 id，<code>START</code> / <code>END</code> 是<strong>哨兵</strong>，第一个自定义属性是 <code>START + 1</code>。
+根类占 <code>1..100</code>，子类从 <code>父 SPACE_END + 1</code> 起。</p>
+<h3 id="_5">属性描述表（可选）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">id</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">flags</span><span class="p">;</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLPropertyDesc</span><span class="p">;</span>
+<span class="cm">/* 位标志：READ=1&lt;&lt;0, WRITE=1&lt;&lt;1, REDRAW=1&lt;&lt;2, RELAYOUT=1&lt;&lt;3, INHERIT=1&lt;&lt;4 */</span>
+<span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_PROPERTY_FLAG_READ</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1u</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="cm">/* ... */</span><span class="w"> </span><span class="p">};</span>
+</code></pre></div>
+
+<p>仅供工具/绑定使用，不参与派发。在 <code>class_init</code> 里挂到 <code>klass-&gt;props</code> / <code>klass-&gt;prop_count</code>。</p>
+<hr />
+<h2 id="8">8. 事件</h2>
+<h3 id="81">8.1 连接</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_event_cb_t</span><span class="p">)(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">event</span><span class="p">);</span>
+
+<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_connect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_cb_t</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_disconnect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">conn_id</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">      </span><span class="nf">ql_disconnect_all</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_event_conn_count</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回值</td>
+<td>非零连接 id；池满或参数非法返回 <code>QL_CONN_ID_NONE</code>(0)</td>
+</tr>
+<tr>
+<td>存储</td>
+<td>静态池，<strong>运行期零 malloc</strong>；对象删除时自动归还</td>
+</tr>
+<tr>
+<td><code>ql_disconnect</code></td>
+<td>按 id 断开；重复断开返回 <code>QL_ERR_INVAL</code>；派发中只标记，emit 结束后回收</td>
+</tr>
+<tr>
+<td><code>ql_disconnect_all</code></td>
+<td>断开该对象全部连接，返回断开数量</td>
+</tr>
+</tbody>
+</table>
+<h3 id="82">8.2 发射</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w"> </span><span class="nf">ql_emit</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="n">args</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 返回回调次数 */</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">QL_EMIT_0</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">);</span><span class="w">                                        </span><span class="cm">/* 无参 */</span>
+<span class="n">QL_EMIT_1</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">ql_args_int</span><span class="p">,</span><span class="w"> </span><span class="mi">42</span><span class="p">);</span><span class="w">                       </span><span class="cm">/* 一个参数 */</span>
+<span class="n">QL_EMIT_2</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">ql_args_int</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">ql_args_string</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;hi&quot;</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 两个参数 */</span>
+<span class="n">QL_EMIT_3</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_EMIT_4</span><span class="w">                                         </span><span class="cm">/* 三 / 四个参数 */</span>
+<span class="n">QL_EMIT_INT</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">value</span><span class="p">);</span><span class="w">                               </span><span class="cm">/* 最常用的一元整型 */</span>
+</code></pre></div>
+
+<p>参数构造器：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_args_reset</span><span class="p">(</span><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="n">args</span><span class="p">);</span>
+<span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="n">ql_args_int</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">ql_args_uint</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">ql_args_fixed</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">ql_args_bool</span>
+<span class="w">            </span><span class="o">/</span><span class="w"> </span><span class="n">ql_args_string</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">ql_args_ptr</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">ql_args_object</span><span class="w"> </span><span class="p">(</span><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">值</span><span class="p">);</span>
+</code></pre></div>
+
+<p>参数上限 <code>QL_CFG_EVENT_ARG_MAX</code>（默认 4），超出静默丢弃。</p>
+<h3 id="83">8.3 回调里可用</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLEvent</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">event</span><span class="p">;</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">target</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="n">current_target</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">QLEventArgs</span><span class="w"> </span><span class="o">*</span><span class="n">args</span><span class="p">;</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">;</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">conn_id</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">stop_propagation</span><span class="p">,</span><span class="w"> </span><span class="n">prevent_default</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLEvent</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_event_stop_propagation</span><span class="p">(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">e</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 停止当前节点剩余回调 + 不再传播 */</span>
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_event_prevent_default</span><span class="p">(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">e</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 跳过默认处理 */</span>
+<span class="kt">uint8_t</span><span class="w"> </span><span class="nf">ql_event_arg_count</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">e</span><span class="p">);</span>
+<span class="kt">int32_t</span><span class="w">     </span><span class="nf">ql_event_arg_int</span><span class="p">(</span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="n">index</span><span class="p">,</span><span class="w"> </span><span class="n">fallback</span><span class="p">);</span>
+<span class="n">ql_fixed_t</span><span class="w">  </span><span class="nf">ql_event_arg_fixed</span><span class="p">(</span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="n">index</span><span class="p">,</span><span class="w"> </span><span class="n">fallback</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_event_arg_string</span><span class="p">(</span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="n">index</span><span class="p">,</span><span class="w"> </span><span class="n">fallback</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">       </span><span class="o">*</span><span class="nf">ql_event_arg_ptr</span><span class="p">(</span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="n">index</span><span class="p">,</span><span class="w"> </span><span class="n">fallback</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="84">8.4 事件描述表</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">id</span><span class="p">;</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">flags</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLEventDesc</span><span class="p">;</span>
+
+<span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_EVENT_FLAG_BUBBLE</span><span class="p">,</span><span class="w">     </span><span class="cm">/* 向父对象冒泡 */</span>
+<span class="w">    </span><span class="n">QL_EVENT_FLAG_CAPTURE</span><span class="p">,</span><span class="w">    </span><span class="cm">/* 先从根向目标捕获 */</span>
+<span class="w">    </span><span class="n">QL_EVENT_FLAG_STOPPABLE</span><span class="p">,</span><span class="w">  </span><span class="cm">/* 允许 stop_propagation */</span>
+<span class="w">    </span><span class="n">QL_EVENT_FLAG_DEFAULT</span><span class="p">,</span><span class="w">    </span><span class="cm">/* 有默认处理可调用 */</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<p>在 <code>class_init</code> 里挂到 <code>klass-&gt;events</code> / <code>klass-&gt;event_count</code>；没登记的事件按"可冒泡 + 可停止、无默认处理"处理。</p>
+<h3 id="85">8.5 传播规则速查</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标有 2 个回调、父有 1 个，事件带 <code>BUBBLE</code></td>
+<td>目标 2 次（按连接倒序）→ 父 1 次</td>
+</tr>
+<tr>
+<td>某回调调用 <code>stop_propagation</code></td>
+<td>该节点剩余回调不执行，父节点也不执行</td>
+</tr>
+<tr>
+<td>事件带 <code>DEFAULT</code> 且未 <code>prevent_default</code></td>
+<td>目标节点的类默认处理执行 1 次</td>
+</tr>
+<tr>
+<td>目标在回调里被 <code>unref</code></td>
+<td>安全，emit 自带守卫引用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="86">8.6 池状态（测试/调试）</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_event_pool_usage</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_event_pool_capacity</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_event_pool_init</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<hr />
+<h2 id="9">9. 错误码</h2>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>名称</th>
+<th>常见来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>QL_OK</code></td>
+<td>成功</td>
+</tr>
+<tr>
+<td>-1</td>
+<td><code>QL_ERR_NOMEM</code></td>
+<td>分配失败</td>
+</tr>
+<tr>
+<td>-2</td>
+<td><code>QL_ERR_INVAL</code></td>
+<td>参数非法、id 越界、类型不符、成环</td>
+</tr>
+<tr>
+<td>-3</td>
+<td><code>QL_ERR_NOT_INIT</code></td>
+<td>未初始化、生成表为空</td>
+</tr>
+<tr>
+<td>-4</td>
+<td><code>QL_ERR_OVERFLOW</code></td>
+<td>私有区/继承深度超限</td>
+</tr>
+<tr>
+<td>-5</td>
+<td><code>QL_ERR_EXISTS</code></td>
+<td>重复注册（预留）</td>
+</tr>
+<tr>
+<td>-6</td>
+<td><code>QL_ERR_VER</code></td>
+<td>版本不兼容（预留）</td>
+</tr>
+<tr>
+<td>-7</td>
+<td><code>QL_ERR_FULL</code></td>
+<td>池满（预留）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10">10. 日志</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_log</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">level</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">fmt</span><span class="p">,</span><span class="w"> </span><span class="p">...);</span>
+<span class="cp">#define QL_LOGE / QL_LOGW / QL_LOGI / QL_LOGD</span>
+</code></pre></div>
+
+<p>输出到 <code>stderr</code>，格式 <code>[QLGL][LEVEL] message</code>，<strong>消息文本一律英文</strong>（便于 grep），
+级别高于 <code>QL_CFG_LOG_LEVEL</code> 的直接丢弃。</p>
+<hr />
+<h2 id="11">11. 约束与承诺</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>承诺</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>线程</td>
+<td>当前版本<strong>非线程安全</strong>；所有 API 需在同一线程调用</td>
+</tr>
+<tr>
+<td>运行期分配</td>
+<td>对象创建之外（事件、属性、派发）<strong>不分配堆内存</strong></td>
+</tr>
+<tr>
+<td>失败处理</td>
+<td>可能失败的 API 均返回 <code>ql_err_t</code> 或 <code>NULL</code>/<code>QL_TYPE_NONE</code>，不抛异常、不 abort</td>
+</tr>
+<tr>
+<td>ABI</td>
+<td><code>QLObjectClass</code> 等公开结构体只允许在末尾追加字段；属性/事件 id 由 qlgen 保证稳定</td>
+</tr>
+<tr>
+<td>位宽</td>
+<td><code>QLType</code>/<code>ql_property_t</code>/<code>ql_event_t</code> 固定 32 位，<code>ql_fixed_t</code> 固定 <code>int32_t</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12">12. 完整示例</h2>
+<p>见 <code>test/object/example_object.c</code>（可运行）：</p>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./build/example_object
+</code></pre></div>
+
+<p>其他示例：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>演示内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test/object/test_object_lifecycle.c</code></td>
+<td>创建 / 引用计数 / 泄漏断言</td>
+</tr>
+<tr>
+<td><code>test/object/test_object_inherit.c</code></td>
+<td>三层继承、私有区布局、属性向父类派发</td>
+</tr>
+<tr>
+<td><code>test/object/test_object_property.c</code></td>
+<td>属性区间、哨兵、类型校验、定点运算</td>
+</tr>
+<tr>
+<td><code>test/object/test_object_event.c</code></td>
+<td>连接、参数、冒泡、停止传播、连接池</td>
+</tr>
+<tr>
+<td><code>test/object/test_object_tree.c</code></td>
+<td>父子关系、成环检查、级联销毁</td>
+</tr>
+</tbody>
+</table>
+<div class='pager'>
+<a href='../../tutorial/07_advanced.html'><span class='dir'>上一页</span>进阶</a>
+<a class='next' href='../../manual/object/QLObject阅读指南.html'><span class='dir'>下一页</span>QLObject 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

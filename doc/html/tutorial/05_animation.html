@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>动画 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html' class='active'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">动画</h1>
+<p><img src="../img/05-animation.png" alt="动画" width="300"></p>
+<p>完整程序：<code>example/05_animation.c</code></p>
+<p>三类动效，全部只写 CSS：</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>触发</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>transition</code></td>
+<td>状态变化（<code>:hover</code> 之类）</td>
+<td>按钮变色、卡片抬起</td>
+</tr>
+<tr>
+<td><code>@keyframes</code></td>
+<td>自己一直播 / 播 N 次</td>
+<td>滑入、脉冲、翻转</td>
+</tr>
+<tr>
+<td>手动 <code>ql_ui_anim_tick</code></td>
+<td>你的代码决定</td>
+<td>进度条、滚动</td>
+</tr>
+</tbody>
+</table>
+<h2 id="keyframes"><code>@keyframes</code> 长什么样</h2>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">slide</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">slide-in</span><span class="w"> </span><span class="mi">1400</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">pulse</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">pulse</span><span class="w">    </span><span class="mi">1400</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">flip</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">flip</span><span class="o">-</span><span class="n">x</span><span class="w">   </span><span class="mi">1400</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">slide-in</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">-24</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">0</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">pulse</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">0</span><span class="o">%</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2FB8A6</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">50</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#E6C34A</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">100</span><span class="o">%</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2FB8A6</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">flip-x</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">0</span><span class="o">%</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">50</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">100</span><span class="o">%</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>animation</code> 的完整写法：</p>
+<div class="highlight"><pre><span></span><code>animation: &lt;name&gt; &lt;duration&gt; [ease] [delay] [iteration] [direction] [fill-mode]
+</code></pre></div>
+
+<h2 id="_2">关键帧在编译期就摊平了</h2>
+<p><code>@keyframes</code> <strong>不</strong>在运行期解析。编译器把它变成两张静态表：</p>
+<div class="highlight"><pre><span></span><code>QLUIKeyframe[]   每一帧：时间点(千分比) + 缓动 + 通道位 + 各通道的值
+QLUIAnimation[]  每一段：帧区间 + 时长 + 迭代次数 + 方向 + fill + 延迟
+</code></pre></div>
+
+<p>运行期求值就是一个纯函数：</p>
+<div class="highlight"><pre><span></span><code><span class="n">u</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">f</span><span class="p">(</span><span class="n">now</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start_ms</span><span class="p">)</span><span class="w">        </span><span class="cm">/* 0..1，不累加 dt */</span>
+</code></pre></div>
+
+<p><strong>不累加 <code>dt</code></strong> 这点很重要：掉帧、窗口最小化、补帧都不会造成漂移，
+<code>uint32</code> 回绕天然安全。</p>
+<h2 id="_3">主循环只要一行</h2>
+<div class="highlight"><pre><span></span><code><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">running</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_input_dispatch</span><span class="p">();</span>
+<span class="w">    </span><span class="n">ql_ui_anim_tick</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_now_ms</span><span class="p">());</span><span class="w">     </span><span class="cm">/* ← 就这一行 */</span>
+
+<span class="w">    </span><span class="n">QLRect</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="mi">16</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_consume_dirty</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">bg</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span>
+<span class="w">            </span><span class="n">ql_ui_render_rect</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+<span class="w">        </span><span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>ql_ui_anim_tick</code> 的返回值是<strong>这一帧还在动的动画数</strong>（不是"还剩几帧"）：</p>
+<ul>
+<li>返回 0 → 界面完全静止，<strong>可以整帧跳过</strong>（省电，也是 MCU 上能跑的前提）；</li>
+<li>返回非 0 → 至少有一个节点被标脏。</li>
+</ul>
+<p>不要用"返回值变成 0"来判断某个动画播完了 —— <code>infinite</code> 的动画永远非 0。
+要那类事件用回调：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_set_anim_end_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_anim_end</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+<span class="cm">/* kind 是 QL_UI_ANIM_END_KEYFRAMES 或 QL_UI_ANIM_END_TRANSITION */</span>
+</code></pre></div>
+
+<h2 id="_4">脏区：动画只在需要的地方重绘</h2>
+<p>这个例程里 3 个元素在动，运行起来打印：</p>
+<div class="highlight"><pre><span></span><code>t=  0ms  在动 3 个  脏区 3 块
+t=100ms  在动 3 个  脏区 3 块
+...
+</code></pre></div>
+
+<p>3 块脏区而不是整屏。<code>ql_ui_consume_dirty</code> 会把重叠的脏区合并
+（上限 <code>QL_CFG_DIRTY_RECT_MAX</code>，默认 16，满了就合并成一块）。</p>
+<p>想验证"局部重绘 == 整幅重画"，看 <code>test/web/test_render.c</code> 与 <code>test_scale.c</code>
+里的逐像素对照。</p>
+<h2 id="_5">能动画的属性</h2>
+<p>只有<strong>绘制期属性</strong>能进关键帧，因为它们不需要重排：</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>background-color</code> / <code>background</code>（渐变）</td>
+<td>渐变的首末色一起插值</td>
+</tr>
+<tr>
+<td><code>opacity</code></td>
+<td>实际语义是<strong>背景 alpha</strong>，见下面的说明</td>
+</tr>
+<tr>
+<td><code>color</code> / <code>border-color</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>border-radius</code></td>
+<td>半径撑到短边一半就是正圆 → 圆角揭示动画</td>
+</tr>
+<tr>
+<td><code>clip-path: circle(&lt;pct&gt;%)</code></td>
+<td>圆形遮罩，裁<strong>整棵子树</strong></td>
+</tr>
+<tr>
+<td><code>transform: translate() / scale() / scaleX() / scaleY()</code></td>
+<td>平移与轴对齐缩放</td>
+</tr>
+</tbody>
+</table>
+<p>写别的（<code>width</code>、<code>box-shadow</code>、<code>font-size</code>）会在编译期报错 —— 因为那需要逐帧重排，
+和"动画零重排"这条设计前提冲突。</p>
+<blockquote>
+<p><strong><code>opacity</code> 的诚实说明</strong>：本实现没有 CSS 的"组不透明度"（那需要离屏合成），
+它插值的是<strong>背景 alpha</strong>。所以 <code>opacity: 0</code> 等于"背景变全透明"，子元素不受影响。
+做淡入淡出请用 <code>background-color: rgba(...)</code> 表达。</p>
+</blockquote>
+<h2 id="_6">三个现成的动效套路</h2>
+<h3 id="_7">滑入</h3>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">slide-in</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">-24</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">0</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">);</span><span class="w">    </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="_8">圆角揭示（展开成圆形）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">reveal</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">0</span><span class="o">%</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">20</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">70</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">55</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">100</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">100</span><span class="o">%</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">20</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="3d">假 3D 翻转</h3>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">flip-x</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">0</span><span class="o">%</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">50</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 压到零宽 = 看不见 */</span>
+<span class="w">  </span><span class="nt">100</span><span class="o">%</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>这是真的"翻面"观感，但完全没有 3D 变换。想做"正面翻到背面"（换一张脸），
+用两个元素错开 <code>animation-delay</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">front</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">flip</span><span class="o">-</span><span class="n">x</span><span class="w"> </span><span class="mi">900</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">back</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">flip</span><span class="o">-</span><span class="n">x</span><span class="w"> </span><span class="mi">900</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="k">animation-delay</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<h2 id="_9">性能基线</h2>
+<p>本机（AMD Renoir / Mesa / x86-64，Release）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5 段动画同时跑（tick + 4 块脏区重绘）</td>
+<td><strong>0.0052 ms/帧</strong></td>
+</tr>
+<tr>
+<td>10 元素同时动画（tick + 全部重绘）</td>
+<td><strong>0.0259 ms/帧</strong></td>
+</tr>
+<tr>
+<td>60fps 的预算</td>
+<td>16.7 ms</td>
+</tr>
+</tbody>
+</table>
+<p>也就是说动画本身的开销在噪声里。真正的成本是<strong>面积</strong>（重绘多少像素），
+所以"只重绘脏区"这条比"动画算得快"更重要。</p>
+<hr />
+<p>上一章：<a href="04_interaction.html">交互</a> ｜ 下一章：<a href="06_theme.html">换皮肤</a></p>
+<div class='pager'>
+<a href='../tutorial/04_interaction.html'><span class='dir'>上一页</span>交互</a>
+<a class='next' href='../tutorial/06_theme.html'><span class='dir'>下一页</span>换皮肤</a>
+</div>
+</main>
+</div>
+</body>
+</html>

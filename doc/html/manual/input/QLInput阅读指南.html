@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLInput / 交互系统 阅读指南 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item active' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlinput">QLInput / 交互系统 阅读指南</h1>
+<blockquote>
+<p>目标读者：要读懂或修改 <code>src/core/qlinput.c</code>、给新后端接输入、或调试"点了没反应"的人。
+只想用 API，请看 <a href="./QLInput%20API手册.md">QLInput API手册</a>。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 文件地图</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+<th>顺序</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include/qlgl/qlinput.h</code></td>
+<td><code>QLInputEvent</code>、<code>QLKey</code>、队列与派发接口</td>
+<td>①</td>
+</tr>
+<tr>
+<td><code>src/core/qlinput.c</code></td>
+<td>队列、命中测试、hover/pressed/focus 状态机、点击合成</td>
+<td>②</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlwidget.h</code></td>
+<td>控件事件 id（<code>QL_WIDGET_EVENT_*</code>）、状态位（<code>QL_WIDGET_STATE_*</code>）</td>
+<td>③</td>
+</tr>
+<tr>
+<td><code>src/widget/qlwidget.c</code></td>
+<td>状态位实现、状态背景色、<code>draw_default</code> 里的状态选色</td>
+<td>④</td>
+</tr>
+<tr>
+<td><code>src/port/qlinput_x11.h</code></td>
+<td>X11 事件 → <code>QLInputEvent</code>（X11 与 GL 后端共用）</td>
+<td>⑤</td>
+</tr>
+<tr>
+<td><code>src/port/qlinput_evdev.h</code></td>
+<td>evdev 扫描码 → <code>QLKey</code>（Wayland 用，US 布局）</td>
+<td>⑥</td>
+</tr>
+<tr>
+<td><code>src/port/qldisp_x11.c</code></td>
+<td><code>XSelectInput</code> + 事件轮询里调用 <code>ql_x11_push_input</code></td>
+<td>⑦</td>
+</tr>
+<tr>
+<td><code>src/port/qldisp_wayland.c</code></td>
+<td><code>wl_pointer</code> / <code>wl_keyboard</code> 监听器</td>
+<td>⑧</td>
+</tr>
+<tr>
+<td><code>src/port/qlgfx_gl.c</code></td>
+<td>GL 窗口的 X11 事件同样走 <code>ql_x11_push_input</code></td>
+<td>⑨</td>
+</tr>
+<tr>
+<td><code>src/ui/qlui.c</code></td>
+<td><code>ql_ui_input_event</code>：把输入事件映射到 <code>QLUIRoot</code> 的 <code>:hover/:active</code></td>
+<td>⑩</td>
+</tr>
+<tr>
+<td><code>test/input/test_input.c</code></td>
+<td>130 项断言，覆盖下面所有规则</td>
+<td>⑪</td>
+</tr>
+<tr>
+<td><code>test/input/example_input.c</code></td>
+<td>可交互窗口示例</td>
+<td>⑫</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 为什么要有独立一层</h2>
+<p>后端只认识"坐标 + 按钮 + 键码"，<strong>不认识控件树</strong>。
+输入层负责把原始事件变成有语义的控件事件，因此：</p>
+<div class="highlight"><pre><span></span><code>X11/Wayland 事件 ──┐
+测试注入的事件   ──┼─→ QLInputEvent 队列 ─→ ql_input_dispatch() ─→ 命中测试 ─→ ql_emit()
+自动化脚本       ──┘                                                          │
+                                                            捕获 / 目标 / 冒泡（复用对象系统）
+</code></pre></div>
+
+<p>这样带来三个直接好处：</p>
+<ol>
+<li><strong>无窗口也能测</strong>：<code>test_input.c</code> 不开窗口，直接 push 事件，断言派发结果；</li>
+<li><strong>后端极薄</strong>：新增后端只写一个"翻译函数"，不碰交互逻辑；</li>
+<li><strong>交互逻辑只有一份</strong>：X11、Wayland、离屏、测试走同一条路。</li>
+</ol>
+<hr />
+<h2 id="3">3. 事件队列</h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLInputEvent</span><span class="w"> </span><span class="n">s_queue</span><span class="p">[</span><span class="n">QL_CFG_INPUT_QUEUE</span><span class="p">];</span><span class="w">   </span><span class="cm">/* 默认 64，静态分配 */</span>
+<span class="kt">uint16_t</span><span class="w"> </span><span class="n">s_head</span><span class="p">,</span><span class="w"> </span><span class="n">s_tail</span><span class="p">,</span><span class="w"> </span><span class="n">s_count</span><span class="p">;</span><span class="w">           </span><span class="cm">/* 环形队列 */</span>
+</code></pre></div>
+
+<ul>
+<li>后端在 <code>poll()</code> 里 <strong>只 push</strong>，不派发；主循环每帧调一次 <code>ql_input_dispatch()</code>；</li>
+<li>队列满时<strong>丢最旧的</strong>并返回 <code>QL_ERR_FULL</code>：交互事件宁可丢历史，也不能卡住输入；</li>
+<li>回调里继续 push 是安全的：<code>ql_input_dispatch</code> 是"取一条、派发一条"的循环。</li>
+</ul>
+<p><strong>为什么不在 poll 里直接派发？</strong>
+派发会调用户回调，用户回调里可能改控件、甚至销毁控件。放在主循环的固定位置，
+时序可预测，也让"一帧内的所有输入"能按顺序处理完再重绘。</p>
+<hr />
+<h2 id="4">4. 命中测试</h2>
+<p><code>ql_input_hit_test(root, x, y)</code> 的关键规则，全部有测试覆盖：</p>
+<ol>
+<li><strong>后挂的子控件在上层</strong>
+   子链表顺序 == 绘制顺序（<code>ql_object_set_parent</code> 追加到链尾，见 §8），
+   所以命中测试递归时"最后一个命中的"就是视觉上最上层的。</li>
+<li><strong>父控件先于子控件？</strong> 不是。先递归子节点，子节点命中就返回子节点；
+   子节点都没命中才考虑父节点自己。</li>
+<li><strong><code>pointer-events: none</code></strong>（<code>ql_widget_set_pointer_events(obj, 0)</code>）：
+   该控件自己不吃命中，事件穿透到下层。标签放在按钮里时必须设成 0。</li>
+<li><strong>不可见控件</strong>（<code>visible = 0</code> 或 <code>QL_OBJ_FLAG_HIDDEN</code>）整棵子树跳过。</li>
+<li><strong><code>clip_children</code></strong>：父控件裁剪子控件时，超出父盒子的部分不参与命中
+   （和绘制表现一致）。</li>
+<li>点在最外层的空白处 → 命中最外层根控件；点在根之外 → <code>NULL</code>。</li>
+</ol>
+<p>递归实现（简化）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">hit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">child</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">first_child</span><span class="p">;</span><span class="w"> </span><span class="n">child</span><span class="p">;</span><span class="w"> </span><span class="n">child</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">hit_walk</span><span class="p">(</span><span class="n">child</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">box</span><span class="p">);</span><span class="w">   </span><span class="cm">/* box = 本节点矩形 */</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">found</span><span class="p">)</span><span class="w"> </span><span class="n">hit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">found</span><span class="p">;</span><span class="w">                        </span><span class="cm">/* 后者覆盖前者 = 后者在上 */</span>
+<span class="p">}</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">hit</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">hit</span><span class="p">;</span><span class="w">                               </span><span class="cm">/* 子节点优先 */</span>
+<span class="k">return</span><span class="w"> </span><span class="n">本节点包含该点</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">本节点</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+</code></pre></div>
+
+<hr />
+<h2 id="5-hover-pressed-focus">5. 状态机：hover / pressed / focus</h2>
+<p>三个全局状态（<code>s_hover</code> / <code>s_pressed</code> / <code>s_focus</code>）驱动控件上的三个状态位
+（<code>QL_WIDGET_STATE_HOVER / ACTIVE / FOCUS</code>）。</p>
+<p><strong>状态位沿父链设置</strong>（<code>set_state_chain</code>），因为 CSS 的 <code>:hover</code> 对祖先同样成立：
+鼠标停在按钮上时，<code>root</code>、<code>card</code>、<code>btn</code> 都带 <code>HOVER</code>。</p>
+<h3 id="hover">hover</h3>
+<div class="highlight"><pre><span></span><code>MOVE(40,80) ──→ 命中 btn ──→ 与 s_hover 不同 ──→ 清旧链 HOVER / 设新链 HOVER
+                                            └─→ 对旧目标发 POINTER_LEAVE
+                                            └─→ 对新目标发 POINTER_ENTER
+</code></pre></div>
+
+<p>同一目标重复移动不重复发 ENTER（<code>s_hover == target</code> 直接返回），避免每帧刷事件。</p>
+<h3 id="pressed">pressed（按下）</h3>
+<ul>
+<li><code>POINTER_DOWN</code> 记录 <code>s_pressed</code>、<code>s_press_x/y</code>，给目标链设 <code>ACTIVE</code>；</li>
+<li><strong>按住时移动</strong>：事件仍然送给 <code>s_pressed</code>（等价 DOM 的隐式指针捕获），
+  否则"按下按钮 → 拖出按钮 → 松手"会永远收不到 UP；</li>
+<li><code>POINTER_UP</code> 清 <code>ACTIVE</code>、清 <code>s_pressed</code>；</li>
+<li><code>POINTER_LEAVE</code>（指针离开窗口表面）也会清 <code>ACTIVE</code> + <code>s_pressed</code>，防止卡住。</li>
+</ul>
+<h3 id="click">click 合成</h3>
+<p><code>UP</code> 时若同时满足：</p>
+<ul>
+<li>抬起目标 == 按下目标（<code>pressed == target</code>）</li>
+<li>位移 ≤ <code>QL_CLICK_SLOP</code>（4 px）</li>
+</ul>
+<p>才发 <code>CLICK</code>。所以"按下后拖到别处松手"不算点击。</p>
+<h3 id="focus">focus</h3>
+<p><code>ql_input_set_focus(obj)</code> 负责发出 <code>FOCUS_OUT</code> / <code>FOCUS_IN</code> 并同步状态位。
+键盘事件和文本输入的目标是焦点控件（没有焦点则回落到输入根），
+因此<strong>按键会沿控件树冒泡</strong>，容器可以统一处理按键。</p>
+<p>启动时<strong>没有</strong>默认焦点，也没有 Tab 遍历（M1 未做，见 §9）。</p>
+<hr />
+<h2 id="6">6. 事件参数约定</h2>
+<p><code>QL_EMIT_*</code> 的参数是定长数组，所以每个事件的参数个数与顺序必须写死。
+下表就是契约（<code>qlwidget.h</code> 里也有注释）：</p>
+<table>
+<thead>
+<tr>
+<th>事件</th>
+<th>参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POINTER_ENTER</code> / <code>POINTER_LEAVE</code></td>
+<td><code>(int x, int y)</code></td>
+</tr>
+<tr>
+<td><code>POINTER_MOVE</code></td>
+<td><code>(int x, int y, int buttons)</code></td>
+</tr>
+<tr>
+<td><code>POINTER_DOWN</code> / <code>POINTER_UP</code> / <code>CLICK</code></td>
+<td><code>(int x, int y, int button)</code></td>
+</tr>
+<tr>
+<td><code>WHEEL</code></td>
+<td><code>(int x, int y, int dy)</code></td>
+</tr>
+<tr>
+<td><code>KEY_DOWN</code> / <code>KEY_UP</code></td>
+<td><code>(uint key, int mods)</code></td>
+</tr>
+<tr>
+<td><code>TEXT</code></td>
+<td><code>(const char *utf8)</code></td>
+</tr>
+<tr>
+<td><code>FOCUS_IN</code> / <code>FOCUS_OUT</code></td>
+<td>无</td>
+</tr>
+</tbody>
+</table>
+<p>坐标是<strong>绝对逻辑坐标</strong>（窗口左上角为原点），不是相对目标控件的坐标。</p>
+<blockquote>
+<p>事件默认带 <code>BUBBLE | STOPPABLE | DEFAULT</code> 标志（没在类的事件描述表里登记），
+所以 <code>ql_event_stop_propagation()</code> 有效，事件会冒泡到根。</p>
+</blockquote>
+<hr />
+<h2 id="7">7. 后端怎么接</h2>
+<p>后端只需要两件事：<strong>选对事件掩码</strong>、<strong>把事件翻译成 <code>QLInputEvent</code></strong>。</p>
+<h3 id="x11qselectinput">X11（<code>QSelectInput</code> 必须包含）</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ExposureMask</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">StructureNotifyMask</span><span class="w"> </span><span class="o">|</span>
+<span class="n">KeyPressMask</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">KeyReleaseMask</span><span class="w"> </span><span class="o">|</span>
+<span class="n">ButtonPressMask</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">ButtonReleaseMask</span><span class="w"> </span><span class="o">|</span>
+<span class="n">PointerMotionMask</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">EnterWindowMask</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">LeaveWindowMask</span>
+</code></pre></div>
+
+<p>翻译逻辑集中在 <code>src/port/qlinput_x11.h</code>（<code>ql_x11_push_input</code>），
+X11 显示后端和 GL 后端共用，键码表只有一份。</p>
+<p>要点：</p>
+<ul>
+<li>滚轮是 <code>Button4</code>/<code>Button5</code>：<strong>不是</strong>按钮按下，要转成 <code>WHEEL</code> 且 <code>dy</code> 上下取反；</li>
+<li><code>MotionNotify</code> 里用 <code>state &amp; Button1Mask</code> 反推当前按住的按钮，写回 <code>buttons</code>；</li>
+<li><code>EnterNotify</code> 当一次 MOVE 处理（否则从窗口外移入不会触发 hover）。</li>
+</ul>
+<h3 id="wayland">Wayland</h3>
+<p><code>wl_seat</code> 能力查询里分别取 <code>wl_keyboard</code> 与 <code>wl_pointer</code>（两者可以只有其一）：</p>
+<ul>
+<li><code>pointer.enter/motion</code> → <code>ql_input_push_move</code>（坐标是 surface-local，直接可用）</li>
+<li><code>pointer.button</code> → evdev 的 <code>BTN_LEFT/BTN_MIDDLE/BTN_RIGHT</code> 映射成 <code>QL_BUTTON_*</code></li>
+<li><code>pointer.axis</code> → <code>wl_fixed</code> 滚动量 × 20 折成"行"</li>
+<li><code>pointer.leave</code> → <code>ql_input_push_leave</code></li>
+<li><code>keyboard.key</code> → evdev 码经 <code>qlinput_evdev.h</code> 转 <code>QLKey</code>；
+  可打印字符<strong>顺带合成 <code>TEXT</code></strong>（没有 xkbcommon 时按 US 布局近似）</li>
+<li><code>keyboard.modifiers</code> → <code>dep</code> 位掩码 1/4/8/64 映射成 SHIFT/CTRL/ALT/META</li>
+</ul>
+<blockquote>
+<p>坑：<code>wl_seat</code> 按 <strong>version 1</strong> 绑定，所以 pointer/keyboard/seat 都是 v1 对象。
+清理时必须用 <code>wl_pointer_destroy</code> / <code>wl_keyboard_destroy</code> / <code>wl_seat_destroy</code>；
+<code>*_release</code> 是 v3+ 才有的请求，在 v1 上发出去就是"不存在的方法"。</p>
+</blockquote>
+<h3 id="_1">关闭窗口</h3>
+<p><strong>后端不再把 Esc/q 当关闭键</strong>（否则应用自己收不到 Esc）。
+需要"按 Esc 退出"就在应用里连一个 <code>KEY_DOWN</code> 处理器，再调
+<code>ql_disp_x11_close()</code> / <code>ql_disp_wayland_close()</code> / <code>ql_gfx_gl_close()</code>。
+<code>test/window_helper.h</code> 的 <code>ql_win_bind_esc()</code> 就是这么做的。</p>
+<hr />
+<h2 id="8-bug">8. 顺带修掉的一个真 bug：子链表顺序</h2>
+<p>原来 <code>ql_object_set_parent</code> 是<strong>头插</strong>（<code>child-&gt;next_sibling = parent-&gt;first_child</code>），
+而 <code>qlrender</code> 从 <code>first_child</code> 正序遍历绘制 —— 于是<strong>最后挂上的控件画在最下面</strong>，
+和 <code>qlwidget.h</code> 里"后挂的子控件覆盖先挂的"的承诺相反。</p>
+<p>命中测试一写就把这个矛盾暴露了（重叠区域总是命中最老的控件）。
+处理方式：改成<strong>追加到链尾</strong>，让"链表顺序 == 绘制顺序"，
+每对象省一个 <code>last_child</code> 指针（挂接只在构建期发生，O(n) 尾查找可接受）。</p>
+<hr />
+<h2 id="9-m1">9. M1 的已知边界</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>现状</th>
+<th>计划</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tab 键遍历焦点</td>
+<td>未实现，焦点由程序设</td>
+<td>M1.5</td>
+</tr>
+<tr>
+<td>双击 / 长按 / 拖拽手势</td>
+<td>未合成（<code>time_ms</code> 字段已留）</td>
+<td>M2</td>
+</tr>
+<tr>
+<td>触摸 / 多点</td>
+<td>未定义</td>
+<td>M5</td>
+</tr>
+<tr>
+<td>祖先链的 ENTER/LEAVE</td>
+<td>只在目标上发，状态位已覆盖祖先</td>
+<td>按需补</td>
+</tr>
+<tr>
+<td>Wayland 键位</td>
+<td>US 布局静态表</td>
+<td>M2 接 xkbcommon</td>
+</tr>
+<tr>
+<td>IME / 组合输入</td>
+<td>无</td>
+<td>M2</td>
+</tr>
+<tr>
+<td>逻辑坐标 vs DPR</td>
+<td>目前 1:1，后端坐标即逻辑坐标</td>
+<td>M5</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10">10. 建议阅读顺序</h2>
+<ol>
+<li><code>include/qlgl/qlinput.h</code>（先看 <code>QLInputEvent</code> 和 <code>QLKey</code>）</li>
+<li><code>src/core/qlinput.c</code> 的 <code>hit_walk</code>（命中测试的全部规则）</li>
+<li><code>handle_move</code> / <code>handle_button</code>（状态机 + 点击合成）</li>
+<li><code>ql_input_dispatch</code>（队列与 sink 的关系）</li>
+<li><code>src/widget/qlwidget.c</code> 的 <code>ql_widget_set_state</code> 与 <code>ql_widget_draw_default</code></li>
+<li><code>src/port/qlinput_x11.h</code>（一个后端怎么翻译事件）</li>
+<li><code>test/input/test_input.c</code>（所有规则的可执行说明）</li>
+</ol>
+<div class='pager'>
+<a href='../../manual/input/QLInput API手册.html'><span class='dir'>上一页</span>QLInput / 交互 API 手册（v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

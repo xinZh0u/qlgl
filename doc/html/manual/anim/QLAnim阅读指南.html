@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLAnim / 帧时钟与补间动画 阅读指南 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item active' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlanim">QLAnim / 帧时钟与补间动画 阅读指南</h1>
+<blockquote>
+<p>本模块只管"时间怎么推进、值怎么插值"，<strong>不管被插值的值是什么</strong>。
+颜色、透明度、绘制偏移都只是 4 个 float。
+目标读者：要加新缓动、新动画、或把动画接到新后端的人。只想用，请看 <a href="./QLAnim%20API手册.md">QLAnim API手册</a>。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 文件地图</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include/qlgl/qlanim.h</code></td>
+<td><code>QLAnimKey</code> / <code>QLAnimValue</code> / <code>QLEasing</code> / 全部函数声明</td>
+</tr>
+<tr>
+<td><code>src/core/qlanim.c</code></td>
+<td>帧时钟 + 缓动求值 + 动画池 + tick</td>
+</tr>
+<tr>
+<td><code>src/ui/qlui.c</code> 的"过渡段"</td>
+<td>消费本模块：把 <code>transition</code> 变成 <code>QLAnimKey</code>，插值结果写进 <code>QLUITrans.style</code></td>
+</tr>
+<tr>
+<td><code>test/draw/test_anim.c</code></td>
+<td>64 项断言：推进、重基、缓动端点/单调、steps、取消、池满、时钟回绕</td>
+</tr>
+<tr>
+<td><code>test/web/test_transition.c</code></td>
+<td>41 项断言：CSS <code>transition</code> 端到端</td>
+</tr>
+</tbody>
+</table>
+<p>依赖方向：<code>qlanim</code> 不依赖 <code>qlui</code>、不依赖任何绘制后端，只依赖 <code>qlgl.h</code> 的 <code>ql_err_t</code>。
+<strong>反向依赖是单向的</strong>：<code>qlui</code> → <code>qlanim</code>。</p>
+<hr />
+<h2 id="2">2. 三条设计约束</h2>
+<p>规划 §M5.5 定了三条，逐条对应实现：</p>
+<h3 id="21">2.1 没有动画时整帧跳过</h3>
+<p><code>ql_anim_tick()</code> 返回"仍在进行中的动画数"。返回值是 0 时，主循环可以不重绘、不提交：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_anim_tick</span><span class="p">(</span><span class="n">ql_anim_now_ms</span><span class="p">())</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+<span class="w">    </span><span class="n">ql_ui_draw</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">dw</span><span class="p">);</span>
+</code></pre></div>
+
+<p>这一条对 MCU 是硬要求（没动画就不能烧 CPU），对 PC 是省电（笔记本风扇）。
+<strong>注意返回语义是"仍在进行"</strong>，不是"这一帧有变化"：最后一个动画结束的那一 tick 会返回 0，
+但它已经 apply 过终值并置了脏区，所以主循环<strong>还要再画一帧</strong>才进入静止。这条靠
+"脏区标记"而不是靠返回值保证正确性，返回值只用来省"没有必要的那一帧"。</p>
+<h3 id="22">2.2 重基从当前值开始</h3>
+<p><code>QLAnimKey.cur</code> 既是当前值，也是新动画的起点。<code>ql_anim_start()</code> 不从旧目标、也不从旧起点开始，
+而是从 <code>key-&gt;cur</code> 开始：</p>
+<div class="highlight"><pre><span></span><code>A ──────▶ (到 40%) ── 目标改成 C
+             │
+             └─ cur 在这里，新动画从这个值接着走 → 无跳变
+</code></pre></div>
+
+<p>这是 CSS transition 被"打断"时的正确行为（浏览器也是这么做的）。
+<strong>同一个 key 重复 start 不需要先 cancel</strong>，<code>start</code> 自己会找到已有槽位并重基。</p>
+<h3 id="23">2.3 只改绘制期属性</h3>
+<p>动画不进布局。想动画化 <code>width</code> 会触发每帧重排，性能模型直接崩。所以本模块的时间单位是"帧"，
+但<strong>进度不参与布局输入</strong>——调用方（<code>qlui</code> 的 <code>trans_apply</code>）只写颜色字段与 alpha 字段。</p>
+<hr />
+<h2 id="3">3. 帧时钟</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_anim_now_ms</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_anim_set_time_source</span><span class="p">(</span><span class="n">ql_anim_time_fn</span><span class="w"> </span><span class="n">fn</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li>默认 <code>clock_gettime(CLOCK_MONOTONIC)</code>，精度毫秒，<code>uint32_t</code> 装（约 49.7 天回绕）。</li>
+<li>测试用假时钟：<code>ql_anim_set_time_source(fake_now)</code>，把"当前时间"变成全局变量。
+  <strong>踩过的坑</strong>：交互前必须把假时钟设成当前时刻，否则 <code>ql_anim_start</code> 记下的 t0 与
+  测试随后 tick 的时间不同步，过渡会立刻被判定为"已结束"。</li>
+<li>回绕用无符号减法：<code>now - t0</code> 在 <code>uint32_t</code> 上天然正确，<strong>禁止</strong>写 <code>if (now &lt; t0) ...</code>。</li>
+</ul>
+<hr />
+<h2 id="4">4. 缓动</h2>
+<table>
+<thead>
+<tr>
+<th>名字</th>
+<th>对应 CSS</th>
+<th>曲线</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_EASE_LINEAR</code></td>
+<td><code>linear</code></td>
+<td>t → t</td>
+</tr>
+<tr>
+<td><code>QL_EASE_IN</code></td>
+<td><code>ease-in</code></td>
+<td>cubic-bezier(0.42, 0, 1, 1)</td>
+</tr>
+<tr>
+<td><code>QL_EASE_OUT</code></td>
+<td><code>ease-out</code></td>
+<td>cubic-bezier(0, 0, 0.58, 1)</td>
+</tr>
+<tr>
+<td><code>QL_EASE_IN_OUT</code></td>
+<td><code>ease-in-out</code></td>
+<td>cubic-bezier(0.42, 0, 0.58, 1)</td>
+</tr>
+<tr>
+<td><code>QL_EASE_CSS</code></td>
+<td><code>ease</code></td>
+<td>cubic-bezier(0.25, 0.1, 0.25, 1)</td>
+</tr>
+<tr>
+<td><code>QL_EASE_STEPS</code></td>
+<td><code>steps(n)</code></td>
+<td>阶跃，<code>n</code> 从 <code>QLAnimKey.steps</code> 来</td>
+</tr>
+</tbody>
+</table>
+<p><code>bezier_solve()</code> 的解算：先牛顿迭代 8 次，导数接近 0 时退出，<strong>迭代次数固定</strong>
+（不按误差循环），这样同一输入永远得到同一输出——可测试、可复现、时长可预测。
+两个端点做硬截断（<code>t&lt;=0 → 0</code>、<code>t&gt;=1 → 1</code>），避免浮点误差让终值差一点点。</p>
+<p><code>steps()</code> 用的是 <code>steps(n, end)</code> 语义：在 <code>k/n</code> 处<strong>跳变到</strong> <code>(k+1)/n</code>，
+即 <code>t=0</code> 时为 0、<code>t=1</code> 时为 1。</p>
+<hr />
+<h2 id="5">5. 动画池</h2>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="n">QLAnimSlot</span><span class="w"> </span><span class="n">s_slots</span><span class="p">[</span><span class="n">QL_CFG_ANIM_MAX</span><span class="p">];</span><span class="w">   </span><span class="cm">/* 默认 64 */</span>
+</code></pre></div>
+
+<ul>
+<li><strong>静态数组，不 malloc</strong>。这是 MCU 与"启动后零分配"的要求。</li>
+<li>槽位满（<code>QL_ERR_NOMEM</code>）时<strong>调用方应当直接落到终值</strong>，不排队。
+  排队会让动画延迟累积，视觉上比"跳一下"更糟。<code>qlui</code> 里就是这个策略。</li>
+<li>槽位归 <code>QLAnimKey*</code> 所有：<code>ql_anim_cancel()</code> 释放；<code>qlgl_shutdown()</code> 走 <code>ql_anim_reset()</code>。</li>
+<li><code>QLAnimKey</code> 由调用方持有并零初始化，<code>used</code> 字段是内部状态，调用方不要碰。</li>
+</ul>
+<hr />
+<h2 id="6-qlui">6. 与 <code>qlui</code> 过渡的接法</h2>
+<p><code>qlui</code> 里一次 <code>transition</code> 会占用：</p>
+<div class="highlight"><pre><span></span><code>QLUITrans { QLUINodeRT *node; QLUIStyle style; QLAnimValue from, to; ... }
+             └─ 目标节点      └─ 过渡中的样式（绘制时用它）  └─ 本模块只认这 4 个 float
+</code></pre></div>
+
+<ul>
+<li>过渡样式存在<strong>独立池</strong> <code>QLUIRoot.trans[]</code>，不占用 <code>QLUIStyle</code> 的 <code>style_copy</code>，
+  避免与 flex 强制尺寸互相踩。</li>
+<li>起点值从<strong>当前绘制样式</strong>取（不是从 base 样式取），这样打断链不会跳变——正好对上 §2.2。</li>
+<li>每帧 <code>ql_ui_anim_tick(ui, now)</code> 推进，返回变化节点的脏区并集，供 <code>ql_ui_consume_dirty()</code> 取用。</li>
+</ul>
+<hr />
+<h2 id="7">7. 常见坑</h2>
+<ol>
+<li><strong>别把 <code>ql_anim_tick</code> 的返回值当成"要不要重绘"的唯一依据</strong>（见 §2.1）。</li>
+<li><code>-Wconversion</code> 下 <code>float</code> ↔ <code>uint8_t</code> 必须显式转换。颜色插值用 <code>float</code> 存 0..255，
+   写回 <code>QLUIStyle</code> 时 <code>(uint8_t)(v + 0.5f)</code> —— 必须四舍五入，截断会让渐隐永远淡不到 0。</li>
+<li><code>QLAnimKey</code> 是<strong>调用方持有的栈/静态变量</strong>，池里只存指针。对象析构前必须 <code>ql_anim_cancel</code>
+   （<code>qlui</code> 在 <code>ql_ui_free</code> 里做了）。</li>
+<li><code>steps</code> 为 0 时按 1 处理，不要除零。</li>
+<li>缓动的可复现性依赖"固定迭代次数"，别为了精度改成 while 循环。</li>
+</ol>
+<hr />
+<h2 id="8">8. 建议的阅读 / 验证顺序</h2>
+<ol>
+<li><code>include/qlgl/qlanim.h</code> 头注释（设计三条约束的原文）</li>
+<li><code>src/core/qlanim.c</code> 的帧时钟 → 缓动 → 池与 tick</li>
+<li><code>test/draw/test_anim.c</code>：看"重基不跳变"和"时钟回绕"两个用例怎么写的</li>
+<li><code>src/ui/qlui.c</code> 过渡段：看本模块被怎么消费</li>
+<li><code>test/web/test_transition.c</code>：看 CSS 到动画的端到端</li>
+</ol>
+<div class="highlight"><pre><span></span><code>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build-rel<span class="w"> </span>-R<span class="w"> </span>test_anim
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build-rel<span class="w"> </span>-R<span class="w"> </span>test_transition
+</code></pre></div>
+
+<hr />
+<h2 id="9-keyframes-m55-3">9. 与 <code>@keyframes</code> 的分工（M5.5 ③）</h2>
+<p>本模块<strong>不负责</strong> CSS 关键帧动画。分工如下：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>transition</code>（状态过渡）</th>
+<th><code>@keyframes</code>（关键帧动画）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁驱动</td>
+<td>状态位变化（<code>:hover</code>/<code>:active</code>/<code>:focus</code>）</td>
+<td>构建期就决定，自己一直播</td>
+</tr>
+<tr>
+<td>时间基准</td>
+<td><code>qlanim</code> 的动画槽（可打断、可重基）</td>
+<td><code>start_ms</code> + <code>elapsed</code>，<strong>无状态可打断</strong></td>
+</tr>
+<tr>
+<td>求值</td>
+<td>一次线性插值</td>
+<td>定位帧段 + 段内插值</td>
+</tr>
+<tr>
+<td>实现位置</td>
+<td><code>qlanim</code> 提供插值，<code>qlui</code> 负责起停</td>
+<td><code>qlui.c</code> 的 <code>anim_*</code> 一组函数</td>
+</tr>
+<tr>
+<td>池</td>
+<td><code>QLAnimSlot[QL_CFG_ANIM_MAX]</code>（qlanim）</td>
+<td><code>QLUIAnimRun[QL_CFG_UI_RUN_ANIM_MAX]</code>（qlui）</td>
+</tr>
+</tbody>
+</table>
+<p>两者共用的东西：<code>ql_ease_apply()</code>（缓动求值）、"只改绘制期属性"的约束、
+以及同一条"标脏 → <code>ql_ui_consume_dirty</code> → 局部重绘"的出口。</p>
+<p><strong>为什么关键帧不用 <code>qlanim</code> 的池</strong>：关键帧的进度是时间的<strong>纯函数</strong>
+（<code>u = f(now - start)</code>），不需要"当前值"状态，也就不需要重基。
+硬塞进 <code>qlanim</code> 反而要每段 <code>start</code> 一次、把 <code>iterations</code>/<code>direction</code> 拆成多次调用，
+既慢又难测。现在的写法是：一段动画 = 一次减法 + 一次除法 + 一次帧表扫描。</p>
+<p><strong>同一个节点两者都有时，动画赢</strong>：<code>trans_retarget()</code> 发现该节点在播关键帧就直接返回。
+理由是两者都在改同一个颜色通道，让过渡再去改只会互相打架，而"哪个该赢"没有
+非任意的答案——动画是元素自身的持续效果，状态过渡是交互反馈，选择前者更好解释。</p>
+<div class='pager'>
+<a href='../../manual/anim/QLAnim API手册.html'><span class='dir'>上一页</span>QLAnim / 帧时钟与补间动画 API手册（v0.1）</a>
+<a class='next' href='../../manual/input/QLInput API手册.html'><span class='dir'>下一页</span>QLInput / 交互 API 手册（v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

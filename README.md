@@ -40,12 +40,36 @@
 - **Linux 窗口后端已完成** —— X11（XImage 直绘零拷贝）与 Wayland（xdg-shell + wl_shm 双缓冲），
   无桌面环境自动降级到内存显示。
 
+## 快速开始
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+
+# 跑第一个例程（没有显示器也能跑：--dump 会离屏渲染成图片）
+./build/example/example_01_window --frames 3 --dump /tmp/01.ppm
+```
+
+**想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，7 章，每章配一个
+可编译运行的完整程序）。也可以直接看 [`example/`](example/)：六个自包含的 `.c`。
+
+| 例程 | 讲什么 |
+|---|---|
+| `01_window` | 最小闭环：编译 → 建树 → 布局 → 显示 |
+| `02_text` | 字号 / 颜色 / 对齐 / 文本规则 |
+| `03_layout` | flex / 百分比 / 绝对定位 |
+| `04_interaction` | 状态样式 / 事件派发 / 点击回调 |
+| `05_animation` | `@keyframes` / 脏区 / 动画属性白名单 |
+| `06_theme` | 同一份 HTML 三份 CSS / `.qlui` 缓存 |
+
 ## 构建与测试
 
 ```bash
 cmake -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
+
+cmake --build build --target doc_html      # 重新生成 doc/html/（需要 python3-markdown）
 ```
 
 示例程序：
@@ -73,6 +97,7 @@ ctest --test-dir build --output-on-failure
 ./build/test_flip                         # scaleX()/scaleY() 分轴缩放 + animation-delay（假 3D 翻转）
 ./build/test_blur                         # backdrop-filter: blur() 毛玻璃（CPU 与 GPU 各断言一遍性质）
 ./build/test_text_parse                   # 运行期解析器 vs 构建期工具：27 页 blob 逐字节相同
+./build/test_flex_auto                    # flex 项的 width:auto = max-content（回归：固定宽兄弟不被压扁）
 ./build/test_text_reject                  # 拒绝集合一致：32 个正负用例
 ./build/example_load_text --dump a.ppm    # 运行期编译 HTML+CSS 并渲染（不用重新编译程序）
 ./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
@@ -149,6 +174,12 @@ test/widget/       绘制系统示例与测试
 test/text/         字体/文本示例与测试
 test/web/          HTML+CSS 编译示例与测试
 test/input/        交互（命中/悬停/点击/焦点）示例与测试
+test/uitext/       运行期 HTML/CSS 解析的示例
+example/           基本例程（每个 .c 都完整可运行，教程配套）
+tools/doc/         文档生成：Markdown → doc/html/（静态站点）
+doc/tutorial/      入门教程（Markdown 源，配 example/）
+doc/img/           教程配图（由 example/ 渲染出来的真实截图）
+doc/html/          生成的 HTML 文档站（可以整目录拷走/发布）
 doc/
   代码规范.txt
   底层实现设计.md
@@ -164,12 +195,23 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 
 ## 文档
 
+**读**：[HTML 文档站](doc/html/index.html)（`cmake --build build --target doc_html` 生成，
+布局参照 GTK 文档；`doc/tutorial/` 与 `doc/手册/` 是它的 Markdown 源）。
+
+先读教程：[基础知识](doc/tutorial/01_basics.md) → [文本](doc/tutorial/02_text.md) →
+[布局](doc/tutorial/03_layout.md) → [交互](doc/tutorial/04_interaction.md) →
+[动画](doc/tutorial/05_animation.md) → [换皮肤](doc/tutorial/06_theme.md) →
+[进阶](doc/tutorial/07_advanced.md)。
+
+模块手册：
+
 - 对象系统：[QLObject 阅读指南](doc/手册/object/QLObject阅读指南.md) / [QLObject API 手册](doc/手册/object/QLObject%20API手册.md)
 - 绘制与控件：[QLWidget 阅读指南](doc/手册/widget/QLWidget阅读指南.md) / [QLWidget API 手册](doc/手册/widget/QLWidget%20API手册.md)
 - 交互与输入：[QLInput 阅读指南](doc/手册/input/QLInput阅读指南.md) / [QLInput API 手册](doc/手册/input/QLInput%20API手册.md)
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
 - 动效：[QLAnim 阅读指南](doc/手册/anim/QLAnim阅读指南.md) / [QLAnim API 手册](doc/手册/anim/QLAnim%20API手册.md)
+- 运行期解析：[QLUIText 阅读指南](doc/手册/uitext/QLUIText阅读指南.md) / [QLUIText API 手册](doc/手册/uitext/QLUIText%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - Web 兼容策略：[Web 兼容设计](doc/Web兼容设计.md)
 - 开发规划（里程碑与验收）：[开发规划](doc/开发规划.md)

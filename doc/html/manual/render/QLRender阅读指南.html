@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLRender / GPU 后端 阅读指南 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item active' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlrender-gpu">QLRender / GPU 后端 阅读指南</h1>
+<blockquote>
+<p>本部分回答一个问题：<strong>同一份界面，怎么既能用 CPU 画（MCU），又能用 GPU 画（PC/移动）？</strong>
+答案是一层极薄的绘制接口 <code>QLDraw2D</code> + 两个后端实现。
+目标读者：要加后端（Metal/D3D11/Vulkan）或改渲染性能的人。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 分层</h2>
+<div class="highlight"><pre><span></span><code>qlui / 控件          ← 只认识 QLDraw2D
+      │
+   QLDraw2D          ← 6 个函数：set_clip / fill_rect / fill_round_rect
+      │                        / stroke_round_rect / draw_text / flush
+      ├── qldraw2d.c   → CPU 后端（包一层 QLCanvas，逐像素光栅）
+      └── qlgfx_gl.c   → GPU 后端（EGL + GLES3，SDF + 字形图集）
+</code></pre></div>
+
+<p><strong>唯一分界点就是 <code>QLDraw2D</code>。</strong> 上层（布局、控件）一行都不需要知道用的是 CPU 还是 GPU。</p>
+<hr />
+<h2 id="2-gles3-egl-vulkan">2. 为什么选 GLES3 + EGL（而不是 Vulkan）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UI 负载特征</td>
+<td>一帧几百~几千个 quad，瓶颈在<strong>批处理与上传</strong>，不在 API 开销</td>
+</tr>
+<tr>
+<td>Vulkan 代价</td>
+<td>画第一个矩形要 ~2500 行样板（设备/队列/交换链/管线/同步）</td>
+</tr>
+<tr>
+<td>GLES3 优势</td>
+<td>跨 Linux/Android 全覆盖，代码量 1/10，Mesa 质量好</td>
+</tr>
+<tr>
+<td>Vulkan 何时再考虑</td>
+<td>需要 bindless 纹理、多线程命令录制、大量纹理图集时</td>
+</tr>
+</tbody>
+</table>
+<p><strong>所以：v0 只做 GLES3，但抽象层已经预留</strong>——加 Vulkan 是新增一个 <code>qlgfx_vk.c</code>，不动上层。</p>
+<hr />
+<h2 id="3-gpu">3. GPU 后端的三条核心设计</h2>
+<h3 id="31-draw-call">3.1 单管线、单 draw call</h3>
+<p>一个 shader 同时处理两类图元，用顶点属性 <code>use_tex</code> 分支：</p>
+<table>
+<thead>
+<tr>
+<th>use_tex</th>
+<th>图形</th>
+<th>覆盖率来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>圆角矩形 / 边框 / 实心矩形</td>
+<td><strong>SDF 解析计算</strong></td>
+</tr>
+<tr>
+<td>1</td>
+<td>字形</td>
+<td>采样字形图集（R8）</td>
+</tr>
+</tbody>
+</table>
+<p>好处：整帧只在最后 <code>glDrawArrays</code> 一次（实测 <strong>1 个 draw call</strong>），
+状态切换为零，不需要"先画完所有矩形再画所有文字"这种破坏 z 序的排序。</p>
+<blockquote>
+<p>代价：顶点较大（15 个 float）。后续可压缩到 8 个 float（用 half/uint 打包）。</p>
+</blockquote>
+<h3 id="32-sdf">3.2 SDF 圆角矩形</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">float</span><span class="w"> </span><span class="n">sdRoundBox</span><span class="p">(</span><span class="kt">vec2</span><span class="w"> </span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="kt">vec2</span><span class="w"> </span><span class="n">b</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">r</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">vec2</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">abs</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">r</span><span class="p">;</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">min</span><span class="p">(</span><span class="n">max</span><span class="p">(</span><span class="n">q</span><span class="p">.</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">q</span><span class="p">.</span><span class="n">y</span><span class="p">),</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">length</span><span class="p">(</span><span class="n">max</span><span class="p">(</span><span class="n">q</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0</span><span class="p">))</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">r</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<ul>
+<li><code>p</code> 是相对矩形中心的局部坐标，<code>b</code> 是半宽高，<code>r</code> 是圆角半径；</li>
+<li><strong>填充</strong>：<code>cov = 1 - smoothstep(-0.5, 0.5, d)</code></li>
+<li><strong>描边</strong>：<code>cov = (1-smoothstep(-0.5,0.5,d)) - (1-smoothstep(-0.5,0.5,d+w))</code></li>
+<li>抗锯齿是免费的吗？不是"免费"，而是<strong>解析的</strong>：不需要 MSAA，也不需要 4x 超采样。</li>
+</ul>
+<p>这就是为什么圆角/边框在 GPU 上比 CPU 光栅更快：CPU 要逐像素判断"是否在圆角内"，
+GPU 每个像素只算一次距离场。</p>
+<h3 id="33">3.3 字形图集</h3>
+<ul>
+<li>启动时把所有内置字体的字形从 4bpp 展开成 8bpp，shelf packing 排进一张 512×512 的 R8 纹理；</li>
+<li>每个字形记录 UV 矩形（<code>QLGLUV</code>），绘制时按 <code>(font, glyph index)</code> 查；</li>
+<li>采样用 <code>GL_LINEAR</code>，将来支持 DPR 缩放时放大也不糊。</li>
+</ul>
+<blockquote>
+<p>注意：v0 只支持两个内置位图字体。接入 FreeType 后需要<strong>动态图集</strong>（LRU 淘汰 + 纹理扩容），
+那是 P4 的工作。</p>
+</blockquote>
+<hr />
+<h2 id="4-gpu">4. 一次 GPU 帧的完整流程</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ql_gfx_gl_begin</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">clear_color</span><span class="p">);</span><span class="w">       </span><span class="c1">// glClear + 重置顶点计数</span>
+<span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_gfx_gl_draw</span><span class="p">(</span><span class="n">gfx</span><span class="p">));</span><span class="w">   </span><span class="c1">// 只往顶点数组里加 quad，不碰 GL</span>
+<span class="n">d2d</span><span class="o">-&gt;</span><span class="n">fill_round_rect</span><span class="p">(...);</span><span class="w">               </span><span class="c1">// 也可以直接画</span>
+<span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span><span class="w">                      </span><span class="c1">// 上传顶点 + 一次 draw + eglSwapBuffers</span>
+</code></pre></div>
+
+<p>关键点：<strong>绘制阶段完全不调用 GL 函数</strong>，只往 CPU 侧顶点数组里追加。
+这样：
+- 一次 <code>glBufferData</code> 上传，避免每图元一次 API 调用；
+- 顶点数组预分配（<code>QL_GL_MAX_VERTS = 65536</code>），稳态零 malloc；
+- 顶点数超限时<strong>丢弃</strong>而不是崩溃（宁可少画一帧）。</p>
+<hr />
+<h2 id="5">5. 踩过的坑（都是真实发生的）</h2>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>根因</th>
+<th>修复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>EGL 平台自动选择</strong></td>
+<td>段错误，栈在 <code>wl_proxy_create_wrapper</code></td>
+<td>Wayland 会话里 <code>eglGetDisplay()</code> 自动选 Wayland 平台，把 X11 的 <code>Display*</code> 当 <code>wl_display*</code></td>
+<td>显式 <code>eglGetPlatformDisplayEXT(EGL_PLATFORM_X11_KHR, dpy, NULL)</code></td>
+</tr>
+<tr>
+<td><strong>顶点字段顺序</strong></td>
+<td>部分文字变成黑色实心方块</td>
+<td><code>u,v</code> 夹在 <code>border</code> 与 <code>use_tex</code> 之间，<code>a_params</code>（vec4）读到的是 <code>(radius,border,u,v)</code>，导致 <code>use_tex = u</code></td>
+<td>把 <code>radius/border/use_tex/pad</code> 排在一起，<code>u,v</code> 单独一段</td>
+</tr>
+<tr>
+<td><code>clock_gettime</code> 未声明</td>
+<td><code>-std=c11</code> 下编译失败</td>
+<td>需要 <code>_POSIX_C_SOURCE</code></td>
+<td>文件顶部定义（只在 port 层）</td>
+</tr>
+<tr>
+<td>竖坐标</td>
+<td>画面上下颠倒</td>
+<td>GL 原点在左下</td>
+<td>顶点着色器里 <code>ndc.y = -ndc.y</code>；<code>glReadPixels</code> 后按行翻转</td>
+</tr>
+</tbody>
+</table>
+<p><strong>教训</strong>：GPU 后端最容易错的是"数据布局"和"坐标/平台约定"，而不是图形学本身。
+所以每一个都要有测试（见 §6）。</p>
+<hr />
+<h2 id="6-cpu-gpu">6. 怎么保证 CPU 与 GPU 画得一样</h2>
+<p><code>test/web/test_gl_vs_cpu.c</code>：</p>
+<div class="highlight"><pre><span></span><code>同一份 HTML/CSS
+  ├─ CPU  → ql_disp_mem_create(RGB888) + ql_ui_render_canvas  → 参考图
+  └─ GPU  → ql_gfx_gl_create(OFFSCREEN) + ql_ui_render        → glReadPixels
+        ↓
+   逐像素比较，单通道差 ≤ 40，异常像素占比 ≤ 6%
+</code></pre></div>
+
+<p>当前实测：<strong>3.66% 像素不同，最大单通道差 239</strong>（差异集中在文字与圆角边缘的抗锯齿上）。
+这个测试是"多后端不漂移"的唯一保障——加 Metal/D3D 后同样要跑。</p>
+<p><strong>离屏模式</strong>（<code>QL_GFX_GL_OFFSCREEN</code>）用 pbuffer，不弹窗，所以能进 CI。</p>
+<hr />
+<h2 id="7-pc">7. 性能现状（PC，本机实测）</h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>320×240 界面帧时间（含 swap）</td>
+<td><strong>~220 µs</strong></td>
+</tr>
+<tr>
+<td>顶点数</td>
+<td>~430</td>
+</tr>
+<tr>
+<td>draw call</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>首次建上下文</td>
+<td>~1000 µs（一次性）</td>
+</tr>
+</tbody>
+</table>
+<p>对比思路：一帧 220 µs ≈ 4500 fps 的 CPU 侧提交能力，
+实际帧率被 <code>eglSwapBuffers</code> 的 vsync 限到 60。也就是说<strong>目前完全不是 GPU 瓶颈</strong>。</p>
+<hr />
+<h2 id="8">8. 加一个新后端要做什么</h2>
+<ol>
+<li>实现 <code>QLDraw2D</code> 的 5 个绘制函数（<code>flush</code> 可选）；</li>
+<li>把 quad → 图形 API 的顶点/命令；</li>
+<li>保证 <code>stroke_round_rect</code> 的描边<strong>向内</strong>、圆角半径裁到短边一半（与 CPU 一致）；</li>
+<li>跑 <code>test_gl_vs_cpu</code>（把它参数化成"后端 vs CPU"）。</li>
+</ol>
+<p>预期工作量：Metal/D3D11 各 ~600 行（如果复用"单管线 + SDF"的设计）。</p>
+<hr />
+<h2 id="9">9. 建议阅读顺序</h2>
+<ol>
+<li><code>include/qlgl/qldraw2d.h</code>（30 行，先看接口）</li>
+<li><code>src/draw/qldraw2d.c</code> 的 <code>ql_draw2d_text_layout</code>（CPU/GPU 共用的排版逻辑）</li>
+<li><code>src/port/qlgfx_gl.c</code> 的 <code>VS_SRC</code> / <code>FS_SRC</code>（着色器就是全部图形学）</li>
+<li><code>emit_quad</code>（顶点怎么发）</li>
+<li><code>test/web/test_gl_vs_cpu.c</code>（怎么验收）</li>
+</ol>
+<hr />
+<h2 id="10-cpu-m4-g1">10. CPU 光栅快路径（M4-G1）</h2>
+<p>早期 <code>qlcanvas.c</code> 是最朴素的写法：<code>for y</code> → <code>for x</code> → <code>put_pixel()</code>。
+每次写像素都要走一遍"边界检查 + 格式 switch + alpha 混合"，1080p 全屏填充要 44 ms。</p>
+<p>现在拆成三个层次，把不变量提到循环外：</p>
+<h3 id="101">10.1 一次算裁剪</h3>
+<p><code>fill_rect_alpha</code> 先把目标矩形与 <code>canvas-&gt;clip</code> 求交，得到 <code>x0/x1/y0/y1</code>。
+循环内部不再做任何裁剪判断——这是最大的一笔收益，因为裁剪比较和分支预测
+在逐像素粒度上非常昂贵。</p>
+<h3 id="102-fill_row">10.2 按格式特化（<code>fill_row</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">fill_row</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+</code></pre></div>
+
+<p>按 <code>c-&gt;format</code> 分派<strong>一次</strong>，然后用该格式的最优指令序列填满一整行：</p>
+<table>
+<thead>
+<tr>
+<th>格式</th>
+<th>不透明（<code>alpha == 255</code>）</th>
+<th>半透明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RGB888</td>
+<td>4 像素 = 3 次 32 位写（构造 12 字节模式串，尾部再补）</td>
+<td>逐像素 3 通道混合</td>
+</tr>
+<tr>
+<td>ARGB8888</td>
+<td>每像素 1 次 32 位写</td>
+<td><strong>SSE2 4 像素/批</strong></td>
+</tr>
+<tr>
+<td>RGB565</td>
+<td>每像素 1 次 16 位写，颜色预打包</td>
+<td>逐像素（先扩成 888 再压回）</td>
+</tr>
+<tr>
+<td>LUM8</td>
+<td><code>memset</code></td>
+<td>逐像素</td>
+</tr>
+</tbody>
+</table>
+<p><strong>半透明路径曾经是最大的漏点</strong>：旧实现落到逐像素 <code>put_px()</code>，每像素重算一次
+<code>buffer + y*stride</code> 并再跳一次格式 switch。而软阴影、渐变、圆角覆盖全是
+"整行同 alpha"，代价全砸在这上面。现在行指针与格式 switch 都在循环外。</p>
+<p>SSE2 版本（ARGB8888）每批 4 像素：</p>
+<div class="highlight"><pre><span></span><code>unpacklo/hi_epi8(v, 0)      → 8+8 个 16 位车道 [b,g,r,a]×2
+mullo_epi16(·, 255-a) + 源预乘常量
+mulhi_epu16(·, 32897) &gt;&gt; 7  → 精确的 /255
+packus_epi16 → 4 像素
+or 0xFF000000               → A 通道统一置不透明
+</code></pre></div>
+
+<p>两个<strong>逐值恒等</strong>的 <code>/255</code>（<code>0..65025</code> 全域验证过与 <code>x/255</code> 相同，
+这是能上 SIMD 的前提——中间和 <code>src*a + dst*(255-a)</code> 恒定 ≤ 65025，正好装进 16 位）：</p>
+<table>
+<thead>
+<tr>
+<th>形态</th>
+<th>式子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>标量</td>
+<td><code>(x + (x&gt;&gt;8) + 1) &gt;&gt; 8</code></td>
+</tr>
+<tr>
+<td>SSE2</td>
+<td><code>mulhi_epu16(x, 32897) &gt;&gt; 7</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>写这个常量时有两个坑，都踩过：<strong>源项是 16 位预乘值，不能塞进 8 位字槽</strong>
+（<code>(sb&lt;&lt;16)|(sg&lt;&lt;8)|sr</code> 会串道），必须用 <code>setr_epi16</code> 逐车道写；
+<strong>A 通道也不要用 <code>255*alpha</code> 塞进高字节</strong>（超 8 位会被截断），
+最后 <code>or 0xFF000000</code> 更简单也更对。</p>
+</blockquote>
+<h3 id="103">10.3 行跨度扫描（圆角 / 描边）</h3>
+<p>圆角矩形逐行只有<strong>两段</strong>连续区间：<code>[x0, xl)</code> 和 <code>[xr, x1)</code>。
+<code>round_row_span</code> 用圆心 + 半径一次解出该行的 <code>xl/xr</code>（含 1px 抗锯齿覆盖率），
+再把两段交给 <code>fill_row</code>。描边环同理：一行是"左环段 + 右环段"。</p>
+<div class="highlight"><pre><span></span><code>       ┌─────────────────┐
+y=top  │  █████████████  │   中间行： [x0, xl) + [xr, x1)
+       │ ██           ██ │   上下行： 单段
+       │ ██           ██ │
+       └─────────────────┘
+</code></pre></div>
+
+<h3 id="104">10.4 字形</h3>
+<p><code>draw_glyph</code> 按行处理：先算本行可见的像素范围（裁剪），把<strong>行指针提到行外</strong>
+（原来每像素重算一次 <code>buffer + y*stride</code>），行内只做无检查写。</p>
+<h3 id="105-m4-release-780">10.5 结果（M4 第一批之后，Release，示例页 780 顶点）</h3>
+<table>
+<thead>
+<tr>
+<th>分辨率</th>
+<th>最初</th>
+<th>行循环+格式特化</th>
+<th>半透明 SIMD + 阴影 9-slice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>320×240</td>
+<td>3.68 ms</td>
+<td>0.696 ms</td>
+<td><strong>0.296 ms</strong></td>
+</tr>
+<tr>
+<td>800×480</td>
+<td>11.7 ms</td>
+<td>1.854 ms</td>
+<td><strong>0.697 ms</strong></td>
+</tr>
+<tr>
+<td>1280×720</td>
+<td>23.1 ms</td>
+<td>3.169 ms</td>
+<td><strong>1.370 ms</strong></td>
+</tr>
+<tr>
+<td>1920×1080</td>
+<td>44.4 ms</td>
+<td>4.929 ms</td>
+<td><strong>2.191 ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>1080p CPU 光栅 2.19 ms ≈ 456 fps。剩下的大头是阴影（54%）与文本；
+继续优化的方向见 <code>doc/bench.md</code> 的"进一步优化的方向"。</p>
+<h3 id="106">10.6 阅读顺序补充</h3>
+<ol start="6">
+<li><code>qlcanvas.c</code> 的 <code>put_px</code> / <code>fill_row</code> / <code>round_row_span</code>（三个基础件）</li>
+<li><code>ql_canvas_fill_round_rect_alpha</code>（怎么用它们拼出圆角）</li>
+<li><code>test/widget/test_canvas.c</code>（像素级断言，改这些函数后必须全绿）</li>
+</ol>
+<hr />
+<h2 id="107-dpidpr">10.7 高 DPI（DPR）：缩放只在后端入口发生</h2>
+<p>三层单位，各管一段：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>单位</th>
+<th>谁负责换算</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局 / qlui / 控件 / 自定义绘制</td>
+<td><strong>CSS px</strong></td>
+<td>不换算</td>
+</tr>
+<tr>
+<td><code>QLDraw2D</code> 后端入口（CPU 与 GL）</td>
+<td>设备像素</td>
+<td><strong>唯一</strong>的换算点</td>
+</tr>
+<tr>
+<td>驱动 <code>flush(area)</code> / 清屏</td>
+<td>设备像素</td>
+<td>调用方各自换一次</td>
+</tr>
+</tbody>
+</table>
+<p>缩放系数是 26.6 定点（<code>QL_SCALE_ONE</code> = 1.0，96 = 1.5），挂在"表面"上逐层继承：</p>
+<div class="highlight"><pre><span></span><code>QLDispDriver.scale_fx ──▶ QLCanvas.scale_fx ──▶ QLDraw2D.scale_fx ──▶ 后端入口
+QLGfxGL.scale_fx     ────────────────────────▶ QLDraw2D.scale_fx
+</code></pre></div>
+
+<p>所以换 DPR 时<strong>上层一行都不用改</strong>。后端入口只有一个判断：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="nf">sx</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">self</span><span class="o">-&gt;</span><span class="n">scale_fx</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_SCALE_ONE</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">ql_scale_rect</span><span class="p">(</span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">self</span><span class="o">-&gt;</span><span class="n">scale_fx</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="_1">两个必须知道的坑</h3>
+<ol>
+<li><strong>矩形要按"边"缩放</strong>，不能 <code>x*scale + w*scale</code>：</li>
+</ol>
+<p><code>c
+   x1 = ql_scale_len(r.x);                  /* 同一条边界 */
+   x2 = ql_scale_len(ql_rect_right(r));
+   w  = x2 - x1;</code></p>
+<p>否则相邻矩形各自算宽度，会在 1.5× 这种非整数倍下裂开或重叠 1px。
+   （和 flex 的"累计分配"是同一个道理。）</p>
+<ol start="2">
+<li><strong>文本要按设备字号重新取字体</strong>（<code>ql_draw2d_device_font</code>）：DPR&gt;1 时用
+   <code>ql_font_default(css_px * scale)</code> 重新光栅化，否则字形被拉伸变糊。
+   只有动态字体（有 <code>backend</code>）能重取；位图字体在 MCU 上不缩放——那是固有限制。</li>
+</ol>
+<h3 id="gpu">GPU 侧：单批次的裁剪是"几何裁剪"</h3>
+<p>本后端整帧只有一次 <code>glDrawArrays</code>，<strong>不能用 scissor 逐图元裁剪</strong>，
+只能在发顶点时把四边形范围与 <code>g-&gt;clip</code> 求交：</p>
+<div class="highlight"><pre><span></span><code><span class="n">quad</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">intersect</span><span class="p">(</span><span class="n">形状外扩</span><span class="w"> </span><span class="mi">1</span><span class="n">px</span><span class="w"> </span><span class="n">的范围</span><span class="p">,</span><span class="w"> </span><span class="n">g</span><span class="o">-&gt;</span><span class="n">clip</span><span class="p">);</span>
+</code></pre></div>
+
+<p>关键：<strong>形状参数（<code>hx/hy</code>、<code>radius</code>、<code>border</code>、渐变跨度）必须继续用未裁剪的矩形</strong>，
+否则片元里的 SDF 会算错。被裁掉的只是光栅化范围。</p>
+<blockquote>
+<p>这里原来有个真 bug：<code>emit_quad</code> 从来没做这个求交，<code>g-&gt;clip</code> 只存不用，
+导致 <strong><code>overflow:hidden</code> 在 GPU 上完全没生效</strong>（DPR 测试里 CPU vs GL 差 28%）。
+修好后仍是单 draw call，差异降到 0.4%。纹理四边形（字形）裁剪后按顶点位置
+线性插值重算 UV——图集 UV 是轴对齐的，插值精确。</p>
+</blockquote>
+<hr />
+<h2 id="108-m53">10.8 绘制期亚像素与边缘覆盖率（M5.3）</h2>
+<p>整像素矩形只能对齐到整格：<code>translate(0.5px)</code> 会变成 1px 一跳，60fps×300ms 的动画
+只有 18 个台阶，肉眼可辨。这一步给光栅化加了"边落在小数上也能画"的能力。</p>
+<h3 id="_2">三样东西</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLRectFx</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 设备像素 26.6，低 6 位是亚像素 */</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_rect_fx</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRectFx</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_round_rect_fx</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRectFx</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius_fx</span><span class="p">,</span>
+<span class="w">                                  </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_stroke_rect_fx</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRectFx</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius_fx</span><span class="p">,</span>
+<span class="w">                              </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness_fx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+
+<span class="cm">/* 动画的落点：CSS px 26.6，translate(0.5px) 就是 32 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw2d_set_offset</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x_fx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y_fx</span><span class="p">);</span>
+</code></pre></div>
+
+<p>CPU 后端把矩形转成 <code>QLRectFx</code> 走覆盖率填充；GPU 后端<strong>直接加进顶点浮点</strong>
+（本来就免费，而且精确）。<code>offset</code> <strong>不影响布局</strong>，与 CSS <code>transform</code> 语义一致，
+所以滑动/缩放动画零重排。</p>
+<h3 id="_3">覆盖率怎么算</h3>
+<p>一个像素的 alpha = alpha × (横向重叠比例) × (纵向重叠比例)，都是 64 分制整数：</p>
+<div class="highlight"><pre><span></span><code>像素 [x, x+1) 与形状 [fx0, fx1) 的重叠长度 / 64
+</code></pre></div>
+
+<p>性能上只多两笔：<strong>每行只在两端各多一次 <code>put_px</code></strong>，中间整像素仍走 <code>fill_row</code>
+的 SIMD 快路径。所以亚像素不是"全部逐像素"的代价。</p>
+<h3 id="_4">三个刻意的实现选择（都是为了不引入跳变）</h3>
+<ol>
+<li><strong>圆角跨度复用整数版 <code>round_row_span</code></strong>，再把整像素跨度平移亚像素余量。
+   一开始用中心采样（直接算 SDF），圆角比整数版<strong>大将近 2px</strong>——
+   动画跨过 0 时拐角会"突然胀一圈"。改用整数跨度后，对齐时逐字节相同。</li>
+<li><strong>整数矩形 = 低 6 位全 0 的 fx 矩形</strong>，覆盖率恰好全满 →
+   与 <code>ql_canvas_fill_rect_alpha</code> <strong>逐像素相同</strong>。这是安全阀：
+   <code>test_subpx</code> 用 5 种矩形 × 4 种半径 × 3 种 alpha 对照，任何偏差都会被抓住。</li>
+<li><strong>文本与阴影只吃偏移的整数部分</strong>：亚像素平移会让字形发糊；阴影本来就软，
+   为了省事没必要走 fx 路径。</li>
+</ol>
+<h3 id="_5">效果</h3>
+<table>
+<thead>
+<tr>
+<th>实现</th>
+<th>12px 矩形从 0 挪到 1px，边缘能看到几个不同灰度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整像素</td>
+<td><strong>1</strong>（直接跳过去）</td>
+</tr>
+<tr>
+<td>26.6 亚像素</td>
+<td><strong>64</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>test_subpx</code> 抽查 6 个偏移，得到 6 个不同的边缘灰度值；
+亚像素偏移下 CPU vs GPU 差 <strong>1.62%</strong>（全在圆角 AA 上）。</p>
+<hr />
+<h2 id="11-m55">11. 渐变与软阴影（M5.5 先行项）</h2>
+<p>两个效果都<strong>不需要离屏缓冲、不需要多趟渲染</strong>，因此不打破"单批次 1 draw call"。</p>
+<h3 id="111-cpu-gpu">11.1 渐变：CPU 走行填充，GPU 走顶点颜色插值</h3>
+<table>
+<thead>
+<tr>
+<th>后端</th>
+<th>做法</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 垂直</td>
+<td>每行算一个颜色，交给 <code>fill_row</code></td>
+<td><strong>≈ 纯色填充</strong></td>
+</tr>
+<tr>
+<td>CPU 水平</td>
+<td>每像素 <code>lerp_color</code>，逐像素写</td>
+<td>慢一个量级</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>上下（或左右）顶点给不同颜色，让插值器算</td>
+<td><strong>零额外顶点、零额外 draw call</strong></td>
+</tr>
+</tbody>
+</table>
+<p>关键点：GPU 侧<strong>没有改着色器</strong>。<code>v_color</code> 本来就是 varying，插值器自动完成线性渐变；
+只有 <code>cov</code>（SDF 覆盖率）参与 alpha 相乘，所以圆角抗锯齿依然正确。</p>
+<p>顶点颜色按<strong>顶点自身位置</strong>求值（而不是按矩形边），这样扩出去做 AA 的 1px 也和
+CPU 的逐行 lerp 对齐。</p>
+<h3 id="112-sdf-smoothstep">11.2 软阴影：SDF + smoothstep，两端同一公式</h3>
+<div class="highlight"><pre><span></span><code>d   = sdRoundBox(p - 中心, 半径半尺寸, radius)      // 负值在内部
+cov = 1 - smoothstep(0, blur, d)
+</code></pre></div>
+
+<p>GPU 直接在片元里算；CPU 用等价的展开式（<code>qx = |px| - hx + rad</code>，<code>d = sqrt(max(qx,0)² + max(qy,0)²) + min(max(qx,qy),0) - rad</code>），
+<strong>公式逐字相同</strong>，所以 <code>test_gl_vs_cpu</code> 的差异仍在 4% 量级（只差边缘 AA）。</p>
+<h3 id="1121-cpu">11.2.1 CPU 侧：九宫格分解（性能的关键）</h3>
+<p>把"轮廓外扩 blur"的外框按 <code>{qx&gt;0}</code> / <code>{qy&gt;0}</code> 两个判据切成 9 块：</p>
+<table>
+<thead>
+<tr>
+<th>区域</th>
+<th>判据</th>
+<th>距离依赖</th>
+<th>填充方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内实心</td>
+<td><code>qx≤0, qy≤0</code></td>
+<td>恒 <code>d&lt;0</code></td>
+<td><code>round_row_span</code> + 整行</td>
+</tr>
+<tr>
+<td>上 / 下边带</td>
+<td><code>qx≤0, qy&gt;0</code></td>
+<td><strong>只取决于 y</strong></td>
+<td>整行同 alpha（<code>fill_row</code>）</td>
+</tr>
+<tr>
+<td>左 / 右边带</td>
+<td><code>qx&gt;0, qy≤0</code></td>
+<td><strong>只取决于 x</strong></td>
+<td>整列同 alpha（<code>fill_col</code>）</td>
+</tr>
+<tr>
+<td>四个角块</td>
+<td><code>qx&gt;0, qy&gt;0</code></td>
+<td>取决于两者</td>
+<td>逐像素 <code>sqrtf</code></td>
+</tr>
+</tbody>
+</table>
+<p>各块的边界（<strong>容易写错，改这里前先看 <code>ref_shadow()</code> 的对照测试</strong>）：</p>
+<ul>
+<li>上/下边带的 x 范围 = <code>[sx0+rad, sx1-rad)</code>；</li>
+<li>左/右边带的 y 范围 = <code>[sy0+rad, sy1-rad)</code>；</li>
+<li>角块横向范围 = <code>[sx0-pad, sx0+rad)</code> 与 <strong><code>[outer右-pad-rad, outer右)</code></strong>，
+  右侧必须以 <strong>outer 的右边界</strong>为锚——写成 <code>sx1-(rad+pad)</code> 会往内偏 <code>pad</code>，
+  既与直边带重叠（同一点混两次、偏黑）又漏掉最外侧 <code>pad</code> 条带；</li>
+<li><code>rad == 0</code> 时角块退化成 <code>pad×pad</code> 的方角，<strong>不能跳过</strong>，否则那片留白。</li>
+</ul>
+<p>四个角互为镜像（覆盖率只取决于相对偏移 <code>(qx,qy)</code>），所以每对 <code>(qx,qy)</code> 只算一次
+<code>s=sqrt(qx²+qy²)</code>，然后写入四个镜像位置——角区工作量降到 1/4。</p>
+<p>角内 <code>qx,qy</code> 恒为正，<code>sd_round_box</code> 的 <code>inside</code> 项在那里恒为 0；三个 <code>continue</code>
+（<code>d≤0</code> / <code>t≥1</code> / <code>cov==0</code>）合成一次 <code>a != 0</code> 判定，避免角带边界处的分支误预测。</p>
+<p>一条 143×68、blur=10 的卡片：逐像素开方次数从 ~4200 降到 ~400。</p>
+<h3 id="113">11.3 顶点复用的技巧</h3>
+<p>阴影的 quad 覆盖"轮廓外扩 blur"，但 <code>lx/ly</code> 相对<strong>轮廓中心</strong>、<code>hx/hy</code> 是<strong>轮廓半尺寸</strong>——
+于是片元里的 <code>sdRoundBox</code> 算出来的就是到轮廓的距离。
+<strong>不需要新增任何顶点属性</strong>，顶点结构仍是 64 字节。</p>
+<p><code>v_params.z</code> 从 <code>use_tex</code> 布尔升级成 <code>mode</code>：</p>
+<table>
+<thead>
+<tr>
+<th>mode</th>
+<th>含义</th>
+<th><code>v_params.y</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>形状（填充/描边）</td>
+<td>描边宽度（&lt;0 表示填充）</td>
+</tr>
+<tr>
+<td>1</td>
+<td>字形（采样图集）</td>
+<td>未用</td>
+</tr>
+<tr>
+<td>2</td>
+<td>软阴影</td>
+<td>blur 半径</td>
+</tr>
+</tbody>
+</table>
+<h3 id="114">11.4 测试</h3>
+<ul>
+<li><code>test/widget/test_effects.c</code>：28 项检查。除了渐变端点/中点/同色行、alpha=0、
+  阴影衰减方向、blur=0 硬边这些<strong>特征断言</strong>，还有一份
+  <strong>朴素参考实现 <code>ref_shadow()</code></strong>——对整块外框逐像素求圆角 SDF、不做任何分解——
+  用 3 种外框 × 4 种半径 × 4 种模糊 × 3 种偏移 × 3 种 alpha = <strong>432 组</strong>逐像素对照。
+  9-slice / 快路径 / 角区镜像都是结构改写，必须逐像素等价，这份对照是唯一的证据。
+  它上线时立刻抓到 3 个真 bug（见 11.2.1 的三条"容易写错"）。</li>
+<li><code>test_gl_vs_cpu</code>：示例页含渐变、阴影、文本；像素差异 <strong>0.73%</strong>（阈值 2%）。</li>
+</ul>
+<blockquote>
+<p>唯一不参与逐像素对照的是<strong>内实心区</strong>（<code>d≤0</code>）：它由 <code>round_row_span</code> 的离散判定
+负责，与连续 SDF 的边界最多差 1px；那块被元素自身背景盖住，属于既定行为。</p>
+</blockquote>
+<hr />
+<h2 id="12-gpu-m55">12. GPU 字形路径：三个曾经踩过的坑（M5.5）</h2>
+<p>窗口里的字曾经<strong>又糊又乱</strong>（笔画连成一片、字距被吃掉、被 transform 平移的节点上
+直接显示成不相干的字）。根因都在 <code>emit_quad()</code> 这一个函数里，值得单独记一节。</p>
+<h3 id="121-quad-1px">12.1 字形 quad 绝对不能外扩 1px</h3>
+<p>形状（填充/描边）会外扩 1px 给 SDF 抗锯齿留余量，字形<strong>不能</strong>跟着外扩：</p>
+<div class="highlight"><pre><span></span><code>外扩后的 quad 宽 = w + 2，而 uv 仍然从 u0 走到 u1（= 图集里 w 宽的那块）
+→ 字形被横向拉宽 (w+2)/w。8px 的字就是 +25%。
+</code></pre></div>
+
+<p>后果不是"稍微糊"，而是<strong>字距被吃掉、笔画相连</strong>（<code>gradient pulse</code> 看起来像
+<code>gradientpulse</code>），而且图集里字形只隔 1px，外扩还会采到邻字的像素。</p>
+<p>正确做法：<code>pad = (use_tex == 1) ? 0.0f : 1.0f</code>。字形位图本身已经带抗锯齿
+（覆盖率烘在 alpha 里），不需要第二层。</p>
+<h3 id="122-uv">12.2 uv 的插值基准必须含绘制期平移</h3>
+<p><code>emit_quad()</code> 里 uv 是按"顶点在形状矩形里的相对位置"线性插值算的，
+这样被裁剪后 uv 仍然对得上图集：</p>
+<div class="highlight"><pre><span></span><code><span class="n">v</span><span class="p">.</span><span class="n">u</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">u0</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="n">xs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">ux0</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="p">(</span><span class="n">ux1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">ux0</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">(</span><span class="n">u1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">u0</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>xs[]</code> 已经加上了 <code>ox</code>（绘制期平移，来自 <code>transform: translate</code>），
+而 <code>bx0/bx1</code> 是<strong>平移前</strong>的值。少加这一层，<code>ox</code> 越大 uv 偏得越多——
+<code>translate(-70px)</code> 时直接采到完全不相干的字形。所以要先 <code>ux0 = bx0 + ox</code>。</p>
+<h3 id="123-highp">12.3 片段着色器要 highp</h3>
+<p>图集是 1024 宽，uv 分辨率需求是 1/1024 ≈ 2⁻¹⁰；<code>precision mediump float</code> 的尾数
+刚好也是 10 位，纹素会落到两个纹素之间 → 整片文字发虚。
+改成 <code>GL_FRAGMENT_PRECISION_HIGH</code> 时用 <code>highp</code>（不支持再回落 mediump）。</p>
+<h3 id="124">12.4 怎么守住</h3>
+<p><code>test_gl_vs_cpu</code> 加了两道闸：</p>
+<table>
+<thead>
+<tr>
+<th>断言</th>
+<th>修好前</th>
+<th>修好后</th>
+<th>阈值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>示例页 CPU vs GPU 像素差异</td>
+<td>5.72%</td>
+<td><strong>0.73%</strong></td>
+<td>≤ 2%</td>
+</tr>
+<tr>
+<td><code>.hint</code> 一行字的墨迹宽度（CPU 104 px）</td>
+<td>GPU 106 px</td>
+<td><strong>GPU 105 px</strong></td>
+<td>差 ≤ 1 px</td>
+</tr>
+<tr>
+<td>墨迹左边界</td>
+<td>差 2 px</td>
+<td>差 1 px</td>
+<td>差 ≤ 1 px</td>
+</tr>
+</tbody>
+</table>
+<p>墨迹宽度那条是<strong>直接针对 12.1</strong> 的：外扩会让左右各长 1px，一行十几个字就整体宽 2px。</p>
+<hr />
+<h2 id="13-fbo">13. 保留式脏区：窗口里"局部重绘"为什么需要一块 FBO</h2>
+<p><code>ql_ui_render_rect()</code> 在 CPU 上直接画进同一块 framebuffer，天然"保留"。
+<strong>窗口 + 双缓冲</strong>不是这样：<code>eglSwapBuffers</code> 之后后缓冲内容没有任何保证，
+只重画脏区就等于把其余部分清成底色。</p>
+<p>现象很好认：动画一停（<code>fill: forwards</code> 停在末帧，不再产生脏区），
+卡片、标题、提示文字<strong>全都不见了</strong>，只剩还在动的那一块。</p>
+<p><code>ql_gfx_gl_set_retained(gfx, 1)</code> 的解法：</p>
+<div class="highlight"><pre><span></span><code>每帧：bind FBO → 只 scissor-clear 脏区 → 只画脏区 → blit FBO → 窗口 → swap
+</code></pre></div>
+
+<p>三个实现要点：</p>
+<ol>
+<li><strong>FBO 刚建（或窗口改尺寸）那一帧必须整屏重画</strong>——新 FBO 内容是未定义的。
+   靠 <code>fbo_fresh</code> 标记，<code>ql_gfx_gl_begin_rects()</code> 在这一帧<strong>返回 1</strong>，
+   调用方据此改成 <code>ql_ui_render()</code> 整屏画。</li>
+<li><strong>清屏也用 scissor</strong>，而且 rect 要乘 <code>scale_fx</code>（与 <code>gl_set_clip</code> 同一套换算）。</li>
+<li><strong>绘制时关 scissor</strong>：顶点已经按 <code>g-&gt;clip</code> 做过几何裁剪，这里再 scissor 一遍
+   会把 SDF 的 1px 抗锯齿余量切掉。</li>
+</ol>
+<p><code>test_gl_dirty</code>（75 项）守这条：FBO 刚建必须要求整屏；之后连续 12 帧"只画脏区"
+与"整屏重画"<strong>逐像素相同</strong>；跨过动画终点后仍相同。</p>
+<hr />
+<h2 id="14">14. 圆遮罩：为什么改"像素汇点"而不是每个图元</h2>
+<p>圆形揭示需要<strong>非矩形裁剪</strong>。<code>clip</code> 是矩形，表达不了圆盘，于是有两条路：</p>
+<ol>
+<li>每个图元（填充 / 圆角 / 渐变 / 阴影 / 字形）各加一个圆判断 → 8 处，容易漏；</li>
+<li><strong>在像素汇点上做</strong> → CPU 只要改 <code>fill_row</code> + <code>put_px</code>（+ 阴影/字形的两个逐像素循环），
+   GPU 只要改 <code>emit_vertex</code>（所有 <code>emit_*</code> 的唯一出口）。</li>
+</ol>
+<p>选 2。具体：</p>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fill_row</code></td>
+<td>每行与圆的水平范围求交（<strong>每行一次 <code>sqrtf</code></strong>），内层仍走 SIMD 快路径，两端各留 1 个像素给覆盖率</td>
+</tr>
+<tr>
+<td><code>put_px</code></td>
+<td>alpha 乘上该像素的圆覆盖率（<code>1 - smoothstep(-0.5, 0.5, d)</code>，与 GPU 同一公式）</td>
+</tr>
+<tr>
+<td>阴影角区 / 字形</td>
+<td>这两处为了性能自己拿行指针逐像素写，所以额外用 <code>blend_px_masked()</code></td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>顶点属性 <code>a_mask = (cx, cy, r, -)</code>，<code>emit_vertex</code> 统一填；片元里乘一次覆盖率</td>
+</tr>
+</tbody>
+</table>
+<p><strong>"关闭"的哨兵必须是 -1，不能是 0</strong>：<code>0</code> 的语义是"遮罩存在但半径 0 = 全裁"，
+那是揭示动画的第一帧。这个约定在三天内踩了三次（<code>memset</code> 默认 0、GPU 只重置了半边状态、
+顶点属性忘绑 <code>glVertexAttribPointer</code>），每次都表现为<strong>整屏全黑或只剩第一个节点</strong>。</p>
+<h3 id="141">14.1 片元着色器里"唯一出口"必须真的是唯一的</h3>
+<p>"在像素汇点上做"这条设计在 <strong>顶点</strong> 侧落实得很好（<code>emit_vertex</code> 是唯一出口），
+但在 <strong>片元</strong> 侧曾经破了个洞：着色器按 <code>mode</code> 分派形状，径向渐变那一档是</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">mode</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">2.5</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">...</span>
+<span class="w">    </span><span class="n">frag</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kt">vec4</span><span class="p">(</span><span class="n">mix</span><span class="p">(...),</span><span class="w"> </span><span class="n">v_color</span><span class="p">.</span><span class="n">a</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">cov</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span><span class="w">            </span><span class="cm">/* ← 提前返回，后面的遮罩块根本没跑到 */</span>
+<span class="p">}</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">v_mask</span><span class="p">.</span><span class="n">z</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">cov</span><span class="w"> </span><span class="o">*=</span><span class="w"> </span><span class="p">...;</span><span class="w"> </span><span class="p">}</span>
+<span class="n">frag</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kt">vec4</span><span class="p">(</span><span class="n">v_color</span><span class="p">.</span><span class="n">rgb</span><span class="p">,</span><span class="w"> </span><span class="n">v_color</span><span class="p">.</span><span class="n">a</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">cov</span><span class="p">);</span>
+</code></pre></div>
+
+<p>后果：<code>clip-path</code> + <code>radial-gradient</code> 在 <strong>GPU 上静默丢掉遮罩</strong>（CPU 是对的）。
+这正是"半个正确"，而且<strong>比例断言抓不住</strong>——整块丢掉遮罩只让 CPU/GPU 差异从
+1.47% 变成 3.00%，刚好卡在 3% 阈值上通过。</p>
+<p>修法：把遮罩算成 <code>float m</code> <strong>挪到分派之前</strong>，所有出口都乘 <code>m</code>
+（<code>frag = vec4(rgb, alpha * cov * m)</code>），径向那一档也不例外。</p>
+<p>守住它的两条断言（<code>test_gl_vs_cpu</code>）：</p>
+<ol>
+<li>比例阈值从 3% <strong>收紧到 2%</strong>（原 bug 是 3.00%，会被抓）；</li>
+<li>更重要的<strong>结构性断言</strong>：遮罩半径 75% 盖不到 <code>.rad2</code> 的角落，
+   所以 GPU 读回的角落像素必须是底色；同时中心必须真的画出了渐变
+   （防止"为了过断言整块不画"）。</li>
+</ol>
+<blockquote>
+<p>教训：<strong>"覆盖率类"效果宁可让每条出口都乘一遍，也不要放在某个分支之后</strong>。
+比例断言只能发现"少了一点"，发现不了"整类图元都没效果"。</p>
+</blockquote>
+<h2 id="15">15. 毛玻璃：为什么必须"中途提交一次"</h2>
+<p><code>backdrop-filter: blur(Npx)</code> 模糊的是<strong>元素背后已经画好的内容</strong>，这在本架构里
+是唯一一处"必须回头读自己画过的东西"的效果。</p>
+<h3 id="151">15.1 单批次是性能核心，但这里必须破例</h3>
+<p>前面（§13）说过：整个后端是<strong>单批次</strong>——整帧只在 <code>ql_gfx_gl_end()</code> 里发一次
+<code>glDrawArrays</code>。毛玻璃不能用"整帧结束后再处理"，因为它要读的颜色还没落盘。</p>
+<p>所以把提交动作抽成 <code>flush_batch(g)</code>：正常帧只被 <code>end()</code> 调一次（行为与原来完全相同），
+毛玻璃在需要时<strong>自己先 flush 一次</strong>，之后继续往顶点缓冲里摞。代价是：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>draw call</th>
+<th>顶点数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>没有毛玻璃</td>
+<td>1</td>
+<td>不变</td>
+</tr>
+<tr>
+<td>有 1 个毛玻璃</td>
+<td><strong>2</strong></td>
+<td>不变（多 6 个顶点画回贴图）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="152">15.2 半分辨率两趟模糊</h3>
+<div class="highlight"><pre><span></span><code>目标帧缓冲 ──blit(GL_LINEAR)──▶ tex[0]（半分辨率）
+                                  │  H 趟（9 抽头）
+                                  ▼
+                                tex[1]
+                                  │  V 趟（9 抽头）
+                                  ▼
+                                tex[0] ──▶ mode 4 的四边形画回元素矩形
+</code></pre></div>
+
+<ul>
+<li><strong>半分辨率</strong>：模糊本来就要丢高频，降采样顺带把 4 个像素的工作变成 1 个；</li>
+<li><strong>两趟可分离</strong>：二维卷积拆成一维两次，代价从 O(r²) 降到 O(2r)；</li>
+<li><strong>9 抽头固定权重</strong>（<code>0.227, 0.195, 0.122, 0.054, 0.016</code>）：
+  抽头间距按半径缩放（<code>半径/4</code> 个纹素），所以小半径和大半径共用一个着色器；</li>
+<li><code>glBlitFramebuffer</code> 的 <code>GL_LINEAR</code> 同时也是<strong>降采样滤波器</strong>，省掉一趟全屏 pass。</li>
+</ul>
+<h3 id="153">15.3 三个必须注意的地方</h3>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>后果</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>u_bg</code> 采样器没绑东西</td>
+<td>采样结果是<strong>未定义值</strong>（实测整块变白或变黑）</td>
+<td>初始化时建一张 1×1 占位纹理，<code>flush_batch</code> 里始终绑上</td>
+</tr>
+<tr>
+<td>忘了把视口/FBO 还原</td>
+<td>后续所有顶点都画进了半分辨率的 blur FBO</td>
+<td>模糊结束显式 <code>glBindFramebuffer(target)</code> + <code>glViewport(全屏)</code></td>
+</tr>
+<tr>
+<td>纹理上下颠倒</td>
+<td>玻璃里出现"倒影"</td>
+<td>blit 的源 y 用 <code>height - bottom</code>，最终四边形的 <code>v</code> 用 <code>1 - (y-y0)/h</code> 翻回来</td>
+</tr>
+</tbody>
+</table>
+<h3 id="154-cpu">15.4 CPU 侧的对应实现</h3>
+<p>CPU 没有"读回"问题——画布本身就是已经画好的东西，所以直接在内存里就地模糊
+（<code>ql_canvas_backdrop_blur</code>）：取出区域 → 两趟滑动窗口盒式卷积（每像素 O(1)）→ 写回。</p>
+<p>和 GPU 的差异是<strong>故意的</strong>：CPU 走全分辨率 + 盒式，GPU 走半分辨率 + 9 抽头高斯近似。
+所以 <code>test_blur</code> <strong>不做逐像素比较</strong>，而是断言同一组性质：</p>
+<ul>
+<li>玻璃矩形内出现一长串"中间色"像素（硬边被摊开）；</li>
+<li>玻璃矩形外<strong>一个中间色都没有</strong>（模糊不外溢）；</li>
+<li>半透明的玻璃自己叠在模糊结果之上。</li>
+</ul>
+<p>实测（120×80 的用例页）：CPU 有 13 个中间色像素，GPU 7 个（半分辨率 → 斜坡更窄）。</p>
+<div class='pager'>
+<a href='../../manual/render/QLRender API手册.html'><span class='dir'>上一页</span>QLRender / GPU 后端 API 手册（v0.1）</a>
+<a class='next' href='../../manual/anim/QLAnim API手册.html'><span class='dir'>下一页</span>QLAnim / 帧时钟与补间动画 API手册（v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

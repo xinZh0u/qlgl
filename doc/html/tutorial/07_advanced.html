@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>进阶 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html' class='active'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">进阶</h1>
+<p>前六章走完了"能写界面"。这一章讲清剩下的三件事：绘制后端怎么选、
+数据是怎么流到屏幕上的、以及接下来该读什么。</p>
+<h2 id="_2">两个绘制后端</h2>
+<p>同一份界面数据可以喂给两个后端，产物应当<strong>逐像素接近</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>后端</th>
+<th>入口</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td><code>ql_ui_render_canvas(ui, &amp;canvas)</code></td>
+<td>无 GPU 环境、MCU、离屏截图、单元测试</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td><code>ql_ui_render(ui, ql_gfx_gl_draw(gfx))</code></td>
+<td>桌面/移动的正常路径</td>
+</tr>
+</tbody>
+</table>
+<p>CPU 后端是<strong>行跨度扫描</strong>（每行算一个区间，内层 SIMD），
+GPU 后端是<strong>单批次</strong>（整帧一次 <code>glDrawArrays</code>，所有矩形变成带 SDF 参数的四边形）。</p>
+<p>一致性由测试守着：</p>
+<div class="highlight"><pre><span></span><code>test_gl_vs_cpu      GPU vs CPU 逐像素（含字形几何），27 个页面 ≤ 2%
+test_gl_dirty       保留式脏区：局部重绘 == 整屏重画
+test_golden         27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
+</code></pre></div>
+
+<p>性能基线（1080p，Release）：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 光栅全屏</td>
+<td>2.19 ms</td>
+</tr>
+<tr>
+<td>320×240 全屏</td>
+<td>0.30 ms</td>
+</tr>
+<tr>
+<td>211 节点布局</td>
+<td>0.037 ms</td>
+</tr>
+<tr>
+<td>211 节点全量绘制</td>
+<td>0.348 ms</td>
+</tr>
+<tr>
+<td>80×60 局部重绘</td>
+<td>0.014 ms</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_3">一帧的数据流</h2>
+<div class="highlight"><pre><span></span><code>  HTML/CSS 文本
+       │  ql_ui_load_text()  ← 或构建期 qlui.py
+       ▼
+   QLUIDoc          扁平数组 + uint16 下标（nodes/styles/text/fonts/keyframes/anims）
+       │  ql_ui_build()
+       ▼
+   QLUIRoot         运行期节点树（带 border_box / paint_box / 状态样式指针）
+       │  ql_ui_layout(w, h)
+       ▼
+   QLDraw2D         后端无关的绘制接口（fill_rect / draw_text / backdrop_blur ...）
+       │
+       ├─ CPU → QLCanvas → 帧缓冲内存
+       └─ GPU → QLGfxGL  → 顶点缓冲 → 一次 draw call
+</code></pre></div>
+
+<p>每一层都能单独用：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 只要绘制，不要界面？直接用画布 */</span>
+<span class="n">QLCanvas</span><span class="w"> </span><span class="n">c</span><span class="p">;</span>
+<span class="n">ql_canvas_from_disp</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">disp</span><span class="p">);</span>
+<span class="n">ql_canvas_fill_round_rect</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_rect_make</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">80</span><span class="p">,</span><span class="w"> </span><span class="mi">40</span><span class="p">),</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mh">0x2E6BE6</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+
+<span class="cm">/* 只要界面树，自己画到任意目标？用 QLDraw2D */</span>
+<span class="n">QLDraw2D</span><span class="w"> </span><span class="n">d2d</span><span class="p">;</span>
+<span class="n">ql_draw2d_canvas_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">c</span><span class="p">);</span>
+<span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">d2d</span><span class="p">);</span>
+</code></pre></div>
+
+<h2 id="_4">脏区与保留模式</h2>
+<p>窗口是双缓冲的，<code>eglSwapBuffers</code> 之后<strong>后缓冲内容没有保证</strong>。所以"只重绘脏区"
+必须先把上一帧存在自己的 FBO 里：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_gfx_gl_set_retained</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span><span class="w">              </span><span class="cm">/* 打开 */</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="n">full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">bg</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">full</span><span class="p">)</span><span class="w"> </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span><span class="w">             </span><span class="cm">/* 首帧 / 改尺寸 → 整屏 */</span>
+<span class="k">else</span><span class="w">      </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span>
+<span class="w">              </span><span class="n">ql_ui_render_rect</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+<span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span><span class="w">                          </span><span class="cm">/* 帧末 blit 到窗口 */</span>
+</code></pre></div>
+
+<p><code>begin_rects</code> 返回 1 表示"这一帧必须整屏重画"（首帧、FBO 刚建、被要求清屏）。
+这条如果搞错，症状是"动画一停所有元素消失"—— 很值得记一下。</p>
+<h2 id="_5">组件分层</h2>
+<p>QLGL 不是"只有一套 API"，而是四层，看你需要多底层：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>头文件</th>
+<th>是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对象系统</td>
+<td><code>qlobject.h</code> / <code>qlprop.h</code> / <code>qlclass.h</code></td>
+<td>C 里的类、属性、信号（GTK 那套思路）</td>
+</tr>
+<tr>
+<td>控件</td>
+<td><code>qlwidget.h</code> / <code>qllabel.h</code></td>
+<td>用 C 拼界面的传统路子</td>
+</tr>
+<tr>
+<td>界面（推荐）</td>
+<td><code>qlui.h</code> / <code>qluitext.h</code></td>
+<td>HTML+CSS → 静态数据</td>
+</tr>
+<tr>
+<td>绘制</td>
+<td><code>qldraw2d.h</code> / <code>qlcanvas.h</code> / <code>qlgfx_gl.h</code></td>
+<td>直接画</td>
+</tr>
+<tr>
+<td>文本</td>
+<td><code>qlfont.h</code> / <code>qlfont_ft.h</code></td>
+<td>字体与字形</td>
+</tr>
+</tbody>
+</table>
+<p>日常写界面用第三层。第一、二层在需要"用 C 组装"或者做自定义控件时用。
+第四、五层在写自定义绘制时用。</p>
+<h2 id="_6">明确不做的事</h2>
+<p>这些不是"还没做"，是<strong>已经决定不做</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>不做</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>保留式场景图 / render tree</td>
+<td>会变成 GTK4 的 GSK，每帧重建节点，性能优势全丢</td>
+</tr>
+<tr>
+<td>运行期 CSS 匹配</td>
+<td>样式在编译期消解，这是性能与体积的根基</td>
+</tr>
+<tr>
+<td>DOM API / JS 引擎</td>
+<td>需要高兼容就嵌系统 WebView，不在本项目范围</td>
+</tr>
+<tr>
+<td>可访问性 / IME / 多媒体</td>
+<td>只做 UI</td>
+</tr>
+<tr>
+<td>静默降级</td>
+<td>不支持的 CSS/HTML 一律报错</td>
+</tr>
+<tr>
+<td>热路径 malloc</td>
+<td>所有热路径预分配</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_7">接下来读什么</h2>
+<table>
+<thead>
+<tr>
+<th>你想做的事</th>
+<th>读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>弄清 CSS 到底支持哪些写法</td>
+<td><a href="../manual/ui/QLUI%20API手册.html">QLUI API 手册</a></td>
+</tr>
+<tr>
+<td>搞清楚"为什么这么设计、坑在哪"</td>
+<td><a href="../manual/ui/QLUI阅读指南.html">QLUI 阅读指南</a></td>
+</tr>
+<tr>
+<td>运行期解析的边界与上限</td>
+<td><a href="../manual/uitext/QLUIText%20API手册.html">QLUIText API 手册</a></td>
+</tr>
+<tr>
+<td>渲染管线、字形、脏区细节</td>
+<td><a href="../manual/render/QLRender阅读指南.html">QLRender 阅读指南</a></td>
+</tr>
+<tr>
+<td>动效的求值模型</td>
+<td><a href="../manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a></td>
+</tr>
+<tr>
+<td>自己写控件</td>
+<td><a href="../manual/widget/QLWidget阅读指南.html">QLWidget 阅读指南</a></td>
+</tr>
+<tr>
+<td>用 C 拼界面（不用 CSS）</td>
+<td><a href="../manual/object/QLObject阅读指南.html">QLObject 阅读指南</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="_8">例程一览</h2>
+<p>所有例程在 <code>example/</code>，每个都是独立的 <code>.c</code>：</p>
+<table>
+<thead>
+<tr>
+<th>程序</th>
+<th>讲什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>01_window</code></td>
+<td>最小闭环：编译 → 建树 → 布局 → 显示</td>
+</tr>
+<tr>
+<td><code>02_text</code></td>
+<td>字号 / 颜色 / 对齐 / 文本规则</td>
+</tr>
+<tr>
+<td><code>03_layout</code></td>
+<td>flex / 百分比 / 绝对定位 / 读布局结果</td>
+</tr>
+<tr>
+<td><code>04_interaction</code></td>
+<td>状态样式 / 事件派发 / 点击回调 / 合成事件</td>
+</tr>
+<tr>
+<td><code>05_animation</code></td>
+<td><code>@keyframes</code> / 脏区 / 动画属性白名单</td>
+</tr>
+<tr>
+<td><code>06_theme</code></td>
+<td>同一份 HTML 三份 CSS / <code>.qlui</code> 缓存</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release
+cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>-j
+<span class="k">for</span><span class="w"> </span>e<span class="w"> </span><span class="k">in</span><span class="w"> </span>01_window<span class="w"> </span>02_text<span class="w"> </span>03_layout<span class="w"> </span>04_interaction<span class="w"> </span>05_animation<span class="w"> </span>06_theme<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span>./build/example/example_<span class="nv">$e</span><span class="w"> </span>--frames<span class="w"> </span><span class="m">3</span><span class="w"> </span>--dump<span class="w"> </span>/tmp/<span class="nv">$e</span>.ppm
+<span class="k">done</span>
+</code></pre></div>
+
+<p><code>--frames N</code> 跑 N 帧后退出，<code>--dump path.ppm</code> 存最后一帧。
+没有窗口时会自动退回离屏渲染，所以 CI 里也能跑。</p>
+<hr />
+<p>上一章：<a href="06_theme.html">换皮肤</a></p>
+<div class='pager'>
+<a href='../tutorial/06_theme.html'><span class='dir'>上一页</span>换皮肤</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

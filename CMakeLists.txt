@@ -21,6 +21,7 @@ target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
+option(QLGL_BUILD_EXAMPLES "构建 example/ 下的基本例程" ON)
 # 运行期 HTML/CSS 解析器（M3.5 第 3 步）。MCU 侧关掉它即零字节成本
 option(QLGL_BUILD_TEXT_PARSER "构建 ql_ui_load_text()（运行期 HTML/CSS 解析）" ON)
 option(QLGL_BUILD_FREETYPE "构建 FreeType 矢量字体后端（中文/任意字号）" ON)
@@ -181,7 +182,7 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$" AND Python3_Interpreter_FOUND)
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
@@ -256,4 +257,18 @@ if(Python3_Interpreter_FOUND)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "扫描 src/**/*.c 重新生成类型 id 表"
     )
+endif()
+
+# ---- example/：基本例程（每个 .c 都是一个完整可运行的程序） ----
+if(QLGL_BUILD_EXAMPLES)
+    add_subdirectory(example)
+endif()
+
+# ---- 文档站：doc/**/*.md → doc/html/*.html（需要 python3-markdown） ----
+if(Python3_Interpreter_FOUND)
+    add_custom_target(doc_html
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/doc/gen_html.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "生成 HTML 文档到 doc/html/"
+        VERBATIM)
 endif()

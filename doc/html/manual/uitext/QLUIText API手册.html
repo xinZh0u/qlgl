@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLUIText API 手册 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qluitext-api">QLUIText API 手册</h1>
+<p>运行期把 HTML + CSS 编译成 <code>QLUIDoc</code>。头文件：<code>qlgl/qluitext.h</code>（已被 <code>qlgl/qlgl.h</code> 包含）。</p>
+<hr />
+<h2 id="1">1. 编译开关</h2>
+<div class="highlight"><pre><span></span><code><span class="err">-DQLGL_BUILD_TEXT_PARSER=OFF</span><span class="w">     </span><span class="c"># 默认 ON</span>
+</code></pre></div>
+
+<p>关掉它不会破坏任何其它接口，只是 <code>ql_ui_load_text</code> 不再存在（链接期缺失）。
+MCU 侧应当关掉：界面走构建期生成的静态表，运行期没有任何文本解析代码。</p>
+<hr />
+<h2 id="2-ql_ui_load_text">2. <code>ql_ui_load_text</code></h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_load_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">html</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>html</code></td>
+<td>NUL 结尾的 UTF-8 文本，可以为 <code>""</code>（但没有元素就会报错）；至少要有<strong>一个</strong>根元素</td>
+</tr>
+<tr>
+<td><code>css</code></td>
+<td>NUL 结尾的 UTF-8 文本，可以为 <code>""</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>返回</strong></p>
+<ul>
+<li>成功：<code>QLUIDoc *</code>，由 arena 持有。用完调 <code>ql_ui_doc_free(doc)</code>；
+  也可以直接交给 <code>ql_ui_build(&amp;doc)</code>——<code>ql_ui_build</code> 返回的 <code>QLUIRoot</code>
+  不会接管 doc 的所有权（<code>ql_ui_free(ui)</code> 之后仍要 <code>ql_ui_doc_free(doc)</code>），
+  除非用 <code>ql_ui_load_file()</code>（那条路径会接管）。</li>
+<li>失败：<code>NULL</code>。原因用 <code>ql_ui_text_last_error()</code> 取。</li>
+</ul>
+<p>传进来的两个缓冲<strong>不会被引用</strong>，返回后调用方可以立刻释放。</p>
+<p><strong>典型用法</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">html</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">read_file</span><span class="p">(</span><span class="s">&quot;ui/app.html&quot;</span><span class="p">);</span>
+<span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">read_file</span><span class="p">(</span><span class="s">&quot;ui/app.css&quot;</span><span class="p">);</span>
+
+<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">html</span><span class="p">,</span><span class="w"> </span><span class="n">css</span><span class="p">);</span>
+<span class="n">free</span><span class="p">(</span><span class="n">html</span><span class="p">);</span>
+<span class="n">free</span><span class="p">(</span><span class="n">css</span><span class="p">);</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">doc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;界面编译失败：%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_text_last_error</span><span class="p">());</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">800</span><span class="p">,</span><span class="w"> </span><span class="mi">600</span><span class="p">);</span>
+<span class="cm">/* ... 主循环 ... */</span>
+<span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
+<span class="n">ql_ui_doc_free</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+</code></pre></div>
+
+<p><strong>支持的 HTML</strong>：<code>div</code> <code>section</code> <code>p</code> <code>span</code> <code>b</code> <code>i</code> <code>button</code> <code>h1</code> <code>h2</code> <code>h3</code>；
+属性只看 <code>class</code> / <code>id</code> / <code>style</code>；注释与 <code>&lt;!DOCTYPE&gt;</code> 跳过。
+混合内容（<code>&lt;p&gt;a&lt;b&gt;b&lt;/b&gt;&lt;/p&gt;</code>）在编译期消解成匿名 <code>span</code>。</p>
+<p><strong>支持的 CSS</strong>：与构建期工具完全一致（同一套属性白名单、同一个选择器子集）。
+详见 <a href="../ui/QLUI%20API手册.md">QLUI API手册 §3</a>。</p>
+<hr />
+<h2 id="3-ql_ui_text_last_error">3. <code>ql_ui_text_last_error</code></h2>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_text_last_error</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<p>返回<strong>上一次</strong> <code>ql_ui_load_text</code> 失败的原因，形如：</p>
+<div class="highlight"><pre><span></span><code>css:12: 不支持的属性 &#39;position&#39;
+css:3: @keyframes &#39;pulse&#39; 没有任何关键帧
+&lt;节点&gt;: 不支持的 display &#39;grid&#39;
+文档必须有且只有一个根元素，当前 2 个
+</code></pre></div>
+
+<p>成功时不改动（所以"上一次的错误"可以被后面的成功调用掩盖——只在失败分支里读它）。
+永不返回 <code>NULL</code>；没有错误时返回 <code>"no error"</code>。</p>
+<blockquote>
+<p>行号是<strong>去掉注释之后</strong>的文本行号（与构建期工具一致）。</p>
+</blockquote>
+<hr />
+<h2 id="4-ql_ui_text_set_name">4. <code>ql_ui_text_set_name</code></h2>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_text_set_name</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">);</span>
+</code></pre></div>
+
+<p>设置下一次编译写进 <code>QLUIDoc.name</code> 的名字（默认 <code>"text"</code>）。传 <code>NULL</code> 复位。</p>
+<p>名字会影响编码后的 blob（<code>name_len</code> + 名字段），所以：</p>
+<ul>
+<li>想与构建期产物<strong>逐字节比对</strong>，必须用同样的名字
+  （CMake 传的是 <code>--name flex_&lt;case&gt;</code>）；</li>
+<li>否则名字只是日志/热重载匹配用的标签。</li>
+</ul>
+<hr />
+<h2 id="5-blob">5. 与 blob 的关系</h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">html</span><span class="p">,</span><span class="w"> </span><span class="n">css</span><span class="p">);</span>
+<span class="n">ql_ui_doc_save</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;app.qlui&quot;</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 存成 blob，之后加载不用再解析 */</span>
+</code></pre></div>
+
+<p><code>ql_ui_doc_encode()</code> / <code>ql_ui_doc_save()</code> 对 <code>ql_ui_load_text()</code> 的产物同样可用：
+它的内部结构与构建期生成的 doc 完全一致（扁平数组 + <code>uint16</code> 下标），
+所以"运行期解析一次 → 缓存成 blob"是很自然的用法。</p>
+<hr />
+<h2 id="6-qlconfigh">6. 上限（<code>qlconfig.h</code>）</h2>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_UI_MAX_DEPTH</code></td>
+<td>32</td>
+<td>元素嵌套深度</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_NODES</code></td>
+<td>4096</td>
+<td>节点数</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_STYLES</code></td>
+<td>4096</td>
+<td>去重后的样式条数</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_TEXT_NODES</code></td>
+<td>4096</td>
+<td>去重后的文本条数</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_TEXT_BYTES</code></td>
+<td>64 KB</td>
+<td>文本池字节数（偏移是 <code>uint16</code>）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_FONT_SIZES</code></td>
+<td>256</td>
+<td>不同字号的数量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_CSS_RULES</code></td>
+<td>2048</td>
+<td>规则数（逗号分隔的选择器各算一条）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_DECLS</code></td>
+<td>128</td>
+<td>单条规则 / 单个元素的声明数</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_SEL_PARTS</code></td>
+<td>16</td>
+<td>复合选择器的段数</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_ANIMS</code></td>
+<td>256</td>
+<td><code>@keyframes</code> 段数</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_MAX_KEYFRAMES</code></td>
+<td>4096</td>
+<td>所有段的关键帧总数</td>
+</tr>
+</tbody>
+</table>
+<p>超过任何一条都返回 <code>NULL</code> 并报错（不会截断）。</p>
+<hr />
+<h2 id="7">7. 保证</h2>
+<ol>
+<li><strong>同一份源文本，与 <code>tools/qlui/qlui.py</code> 产出的 blob 逐字节相同</strong>
+   （<code>test_text_parse</code>：27 个页面的完整用例集）。</li>
+<li><strong>接受/拒绝集合一致</strong>（<code>test_text_reject</code>：32 个正负用例）。</li>
+<li>没有静态可变状态（除了 <code>ql_ui_text_set_name</code> 的名字与错误缓冲），
+   同一进程里可以反复编译不同页面；返回的 doc 互相独立。</li>
+</ol>
+<div class='pager'>
+<a href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>上一页</span>QLUI / HTML+CSS 编译 阅读指南</a>
+<a class='next' href='../../manual/uitext/QLUIText阅读指南.html'><span class='dir'>下一页</span>QLUIText 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

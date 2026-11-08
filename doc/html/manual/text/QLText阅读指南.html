@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLText / 字体系统 阅读指南 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item active' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qltext">QLText / 字体系统 阅读指南</h1>
+<blockquote>
+<p>本部分包含四层：<strong>字体</strong>（qlfont，静态位图 / FreeType 动态）→ <strong>字符串</strong>（qlstr）→
+<strong>画布文本原语</strong> → <strong>文本控件</strong>（qllabel）。
+目标读者：要读懂或修改 <code>src/text/</code>、<code>src/core/qlstr.c</code>、文本绘制相关代码的人。
+只想用 API，请看 <a href="./QLText%20API手册.md">QLText API手册</a>。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 文件地图</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+<th>阅读顺序</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tools/qlfontgen/gen_bitmap_font.py</code></td>
+<td>从 TTF 生成内置位图字体</td>
+<td>①</td>
+</tr>
+<tr>
+<td><code>src/text/qlfont_ascii.c</code></td>
+<td><strong>自动生成</strong>的字形数据（勿手改）</td>
+<td>②</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlfont.h</code></td>
+<td><code>QLFont</code> / <code>QLGlyph</code> / <code>QLFontBackend</code> 结构与查找、度量接口</td>
+<td>③</td>
+</tr>
+<tr>
+<td><code>src/text/qlfont.c</code></td>
+<td>二分查找、位图行访问、UTF-8 编解码、文本度量、默认字体表</td>
+<td>④</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlfont_ft.h</code></td>
+<td>FreeType 后端接口（加载字体、设默认字体、缓存上限）</td>
+<td>⑤</td>
+</tr>
+<tr>
+<td><code>src/text/qlfont_ft.c</code></td>
+<td>按需光栅化 + 有序字形缓存 + TTC 字面选择</td>
+<td>⑥</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qlstr.h</code></td>
+<td>自管理字符串与两种容量策略</td>
+<td>⑤</td>
+</tr>
+<tr>
+<td><code>src/core/qlstr.c</code></td>
+<td>容量增长、只读字面量转自有内存</td>
+<td>⑥</td>
+</tr>
+<tr>
+<td><code>src/draw/qlcanvas.c</code></td>
+<td><code>ql_canvas_draw_text</code> / <code>draw_glyph</code>（在文件末尾）</td>
+<td>⑦</td>
+</tr>
+<tr>
+<td><code>include/qlgl/qllabel.h</code></td>
+<td>文本控件</td>
+<td>⑧</td>
+</tr>
+<tr>
+<td><code>src/widget/qllabel.c</code></td>
+<td>属性、自动尺寸、绘制</td>
+<td>⑨</td>
+</tr>
+<tr>
+<td><code>test/text/*.c</code></td>
+<td>可执行的说明</td>
+<td>⑩</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 字体数据模型</h2>
+<div class="highlight"><pre><span></span><code>QLFont
+ ├── bpp           1 / 4 / 8，决定每个像素的覆盖率精度
+ ├── line_height   ascent + descent
+ ├── ascent        基线到行顶
+ ├── fallback      缺字时改用的 codepoint（内置字体是 &#39;?&#39;）
+ ├── glyphs[]      按 codepoint 升序的定长表，二分查找
+ └── bitmap[]      所有字形位图首尾相连
+      └── QLGlyph.data_offset 指向自己那段
+</code></pre></div>
+
+<p>一个字形怎么定位：</p>
+<div class="highlight"><pre><span></span><code>pen_x, baseline_y  ──┐
+                     ├─→ 墨迹左上角 = (pen_x + ofs_x, baseline_y + ofs_y)
+                     │
+          ┌──────────┴──────────┐
+          │   box_w × box_h      │  ← bitmap[data_offset] 开始，每行 stride 字节
+          └──────────────────────┘
+          └─ 画完后 pen_x += adv_w
+</code></pre></div>
+
+<p><code>ofs_y</code> 是<strong>负值</strong>（墨迹在基线之上），这正是"基线对齐"的由来：不同字形的
+<code>box_h</code> 与 <code>ofs_y</code> 不同，但它们的基线一致，所以同一行文字看起来是齐的。</p>
+<h3 id="_1">为什么用二分查找</h3>
+<p>字形表按 codepoint 升序排列，查找是 O(log n)：95 个字符只要 7 次比较，
+比线性扫描快，也不需要哈希表（MCU 上没有额外内存开销）。</p>
+<h3 id="_2">缺字兜底</h3>
+<div class="highlight"><pre><span></span><code>ql_font_find_glyph(font, cp)
+    ├─ 二分找到 → 返回
+    ├─ 没找到且 font-&gt;fallback != 0 → 递归查 fallback
+    └─ 还是没找到（fallback 也缺）→ NULL
+</code></pre></div>
+
+<p>内置字体只覆盖 ASCII 32..126，所以 <code>"你好"</code> 会渲染成两个 <code>?</code>。
+这不是 bug，而是<strong>明确的降级行为</strong> —— 文档里要写清楚，用户才不会以为是编码问题。</p>
+<hr />
+<h2 id="3-4bpp">3. 位图格式（4bpp）</h2>
+<p>每个像素 4 位，表示覆盖率 0..15，写入时乘 17 扩成 0..255 参与 alpha 混合。</p>
+<div class="highlight"><pre><span></span><code>一行 = ceil(box_w / 2) 字节
+字节内：高半字节 = 左像素，低半字节 = 右像素
+</code></pre></div>
+
+<p>取灰度的实现（<code>ql_font_glyph_alpha</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">case</span><span class="w"> </span><span class="mi">4</span><span class="p">:</span>
+<span class="w">    </span><span class="n">byte</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="n">row</span><span class="p">[</span><span class="n">x</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">2</span><span class="p">];</span>
+<span class="w">    </span><span class="n">nibble</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">x</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">byte</span><span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="p">(</span><span class="n">byte</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="mh">0x0F</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">nibble</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">17</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 0..15 -&gt; 0..255 */</span>
+</code></pre></div>
+
+<p>因此<strong>4bpp 字体的覆盖率一定是 17 的倍数</strong>，测试里就用这条做断言。</p>
+<p>1bpp 与 8bpp 也实现了（<code>bpp</code> 字段切换），只是内置字体没有用：
+- 1bpp：MCU 省空间，但边缘有锯齿；
+- 8bpp：质量最好，体积是 4bpp 的两倍。</p>
+<hr />
+<h2 id="4">4. 文本度量</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_font_measure_text</span><span class="p">(</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">h</span><span class="p">);</span>
+</code></pre></div>
+
+<p>规则：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>len</code></td>
+<td><code>&lt; 0</code> 表示以 <code>'\0'</code> 结尾；否则只处理前 len 字节</td>
+</tr>
+<tr>
+<td>宽度</td>
+<td>取<strong>最宽的一行</strong></td>
+</tr>
+<tr>
+<td>高度</td>
+<td>行数 × <code>line_height</code></td>
+</tr>
+<tr>
+<td>换行</td>
+<td>只认 <code>'\n'</code>，不自动折行</td>
+</tr>
+<tr>
+<td>缺字</td>
+<td>按 fallback 字形的 <code>adv_w</code> 前进，不会卡死</td>
+</tr>
+</tbody>
+</table>
+<p><strong>踩过的坑</strong>：最初的循环条件写成 <code>while (i &lt;= len || text[i] != '\0')</code>，
+导致遇到结尾 <code>'\0'</code> 时直接退出循环、永远不结算最后一行，宽度恒为 0。
+现在改成"循环内部判断是否到达结尾"，见 <code>src/text/qlfont.c</code>。</p>
+<hr />
+<h2 id="5-utf-8">5. UTF-8 处理</h2>
+<p><code>ql_utf8_decode</code> 返回<strong>消费的字节数</strong>（1..4），非法序列返回 1 并把 codepoint
+设为 <code>0xFFFD</code>（替换字符）。这条"非法也消费 1 字节"的规则很关键 ——
+否则遇到坏字节就会原地死循环。</p>
+<div class="highlight"><pre><span></span><code><span class="kt">int32_t</span><span class="w"> </span><span class="n">used</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_utf8_decode</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cp</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">used</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="k">break</span><span class="p">;</span>
+<span class="p">...</span>
+<span class="n">i</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">used</span><span class="p">;</span>
+</code></pre></div>
+
+<p><code>ql_utf8_encode</code> 是对应方向的编码，用于把 codepoint 写回缓冲区（测试里做往返验证）。</p>
+<hr />
+<h2 id="6">6. 字符串与两种容量策略</h2>
+<p><code>QLStr</code> 自己管理一块内存，<code>own</code> 标记这块内存是不是它分配的：</p>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>行为</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_STR_COMPACT</code></td>
+<td>容量 = 长度 + 1，每次精确分配；删除即缩容</td>
+<td>MCU 高频刷新，内存紧张</td>
+</tr>
+<tr>
+<td><code>QL_STR_AMORTIZED</code></td>
+<td>容量按 2 倍增长，缩短内容不缩容</td>
+<td>MPU/PC，减少分配次数</td>
+</tr>
+</tbody>
+</table>
+<p>策略是<strong>每个字符串独立的</strong>（<code>ql_str_set_policy</code>），不是编译期开关 ——
+这样同一份固件里，频繁刷新的状态栏可以用 compact，日志面板可以用 amortized。</p>
+<h3 id="_3">只读字面量</h3>
+<p><code>ql_str_set_static</code> 直接引用外部字符串（<code>own = 0</code>），适合常量。
+一旦需要写入（<code>append</code> / <code>set</code>），<code>ensure_capacity</code> 会<strong>新分配一块内存并把内容拷过去</strong>，
+不会去写只读内存。</p>
+<blockquote>
+<p><strong>踩过的坑</strong>：最初的 <code>ensure_capacity</code> 在"只读串需要扩容"时调用 <code>ql_str_set_n</code>，
+而 <code>ql_str_set_n</code> 又调 <code>ensure_capacity</code> —— 无限递归直接爆栈（ASan 报 stack-overflow）。
+现在改为在两处各自处理：<code>ensure_capacity</code> 内部完成"分配 + 拷贝"，不再回调。</p>
+</blockquote>
+<hr />
+<h2 id="7">7. 画布文本原语</h2>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_draw_text</span><span class="p">(</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="n">align</span><span class="p">);</span>
+</code></pre></div>
+
+<p>流程：</p>
+<div class="highlight"><pre><span></span><code>1. 裁剪 = canvas-&gt;clip ∩ box                 ← 文字不会画到控件外面
+2. baseline = box.y + font-&gt;ascent            ← 首行基线
+3. 逐字节扫描：
+     遇到 &#39;\n&#39; 或结尾 → 结算这一行
+         line_w = 该行宽度
+         pen_x  = box.x / 居中 / 右对齐
+         逐个字形 draw_glyph(pen_x, baseline)
+         baseline += line_height
+4. 恢复裁剪
+</code></pre></div>
+
+<p><code>draw_glyph</code> 对每个像素调 <code>ql_canvas_write_pixel(color, alpha)</code>，
+alpha 就是字形的覆盖率，因此<strong>抗锯齿是天然支持的</strong>，不需要额外的混合代码路径。</p>
+<p>绘制顺序要点：标签先画背景/边框（<code>ql_widget_draw_default</code>），再画文字，所以文字在背景之上。</p>
+<hr />
+<h2 id="8-qllabel">8. 文本控件 QLLabel</h2>
+<div class="highlight"><pre><span></span><code>QLWidget（几何、背景、边框）
+  └── QLLabel（文本、字体、颜色、对齐、自动尺寸）
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TEXT</code></td>
+<td>会被 <code>QLStr</code> <strong>复制</strong>，调用方的缓冲区用完即可释放</td>
+</tr>
+<tr>
+<td><code>FONT</code></td>
+<td><code>const QLFont *</code>，null 时退回 <code>ql_font_mono_12</code></td>
+</tr>
+<tr>
+<td><code>TEXT_COLOR</code></td>
+<td>文字颜色</td>
+</tr>
+<tr>
+<td><code>ALIGN</code></td>
+<td>左 / 中 / 右</td>
+</tr>
+<tr>
+<td><code>AUTO_SIZE</code></td>
+<td>为 1 时，文本或字体变化会重算宽高</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_4">自动尺寸与手动尺寸的交互</h3>
+<p><code>AUTO_SIZE=1</code> 时，任何文本/字体变化都会调 <code>ql_object_set_property(WIDTH/HEIGHT)</code>。
+如果用户想自己控制尺寸，先 <code>AUTO_SIZE=0</code> 再设宽高 —— <strong>顺序很重要</strong>，
+否则设完宽高又改文本会被覆盖回去。</p>
+<h3 id="_5">文本在矩形内的位置</h3>
+<ul>
+<li>水平：按 <code>ALIGN</code> 在标签宽度内对齐；</li>
+<li>垂直：<strong>永远从矩形顶部开始</strong>，不垂直居中（v0.1 简化）。</li>
+</ul>
+<hr />
+<h2 id="9">9. 常见坑</h2>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中文显示成 <code>?</code></td>
+<td>字形缺失</td>
+<td>内置字体只有 ASCII；需要自带 CJK 字体</td>
+</tr>
+<tr>
+<td>文字画到控件外</td>
+<td>看到文字溢出</td>
+<td>不会：已裁剪到控件矩形；看不到说明控件太小</td>
+</tr>
+<tr>
+<td>改了源字符串内容</td>
+<td>标签文本也变了？</td>
+<td>不会：<code>TEXT</code> 是复制语义；显示旧值说明没重新 set</td>
+</tr>
+<tr>
+<td>设置宽高无效</td>
+<td>尺寸被覆盖</td>
+<td><code>AUTO_SIZE</code> 还开着，先关掉</td>
+</tr>
+<tr>
+<td>文字垂直不居中</td>
+<td>文字偏上</td>
+<td>v0.1 只支持顶端对齐，需要自己算 <code>y</code> 偏移</td>
+</tr>
+<tr>
+<td>长文本不换行</td>
+<td>超出部分被裁</td>
+<td>只支持 <code>'\n'</code>，不自动折行</td>
+</tr>
+<tr>
+<td>自定义字体不显示</td>
+<td>全是空白</td>
+<td>检查 <code>bpp</code> 是否为 1/4/8，<code>glyphs</code> 是否按 codepoint 升序</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10">10. 如何添加自定义字体</h2>
+<h3 id="101-mcu">10.1 静态位图字体（MCU 路线）</h3>
+<ol>
+<li>用 <code>tools/qlfontgen/gen_bitmap_font.py</code> 的方式生成（或自己写生成脚本），
+   产物是一组 <code>QLGlyph</code> + 一块 <code>uint8_t bitmap[]</code> + 一个 <code>const QLFont</code>；</li>
+<li>要求：
+   - <code>glyphs</code> 按 <code>codepoint</code> <strong>升序</strong>；
+   - 每个 <code>QLGlyph.data_offset</code> 指向 <code>bitmap</code> 内自己那段；
+   - <code>bpp</code> ∈ {1,4,8}，行字节数符合 <code>(box_w+7)/8</code> / <code>(box_w+1)/2</code> / <code>box_w</code>；</li>
+<li>使用时 <code>ql_label_set_font(label, &amp;my_font)</code>。</li>
+</ol>
+<h3 id="102-pcmpu">10.2 动态矢量字体（PC/MPU 路线）</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_font_ft_load</span><span class="p">(</span><span class="s">&quot;/path/to/NotoSansCJK-Regular.ttc&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">);</span>
+<span class="n">ql_label_set_font</span><span class="p">(</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 用完 ql_font_destroy(f) */</span>
+</code></pre></div>
+
+<p>或者设成"默认字体"，之后按字号到处用：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_font_set_default_file</span><span class="p">(</span><span class="s">&quot;/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">);</span>
+<span class="n">ql_label_set_font_size</span><span class="p">(</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="mi">18</span><span class="p">);</span><span class="w">          </span><span class="cm">/* == ql_font_default(18) */</span>
+</code></pre></div>
+
+<p><code>qlui</code> 的 <code>font-size: Npx</code> 会自动走 <code>ql_font_default(N)</code>，无需额外代码。</p>
+<h3 id="1021-transform-scale">10.2.1 字号缓存：<code>transform: scale()</code> 会把它撑爆（踩过的坑）</h3>
+<p><code>ql_font_default(size)</code> 背后是一张"字号 → <code>QLFont*</code>"的小表。<strong>槽位原来是 8 个</strong>，
+而 <code>transform: scale()</code> 期间"设备字号 = CSS 字号 × scale"每帧都在变：</p>
+<div class="highlight"><pre><span></span><code>scaleX 1.0 → 0：15px 的字会依次要 15,14,13,…,1 —— 15 个不同字号
+</code></pre></div>
+
+<p>第 9 个字号开始槽位就满了，而旧实现在"满了"时的做法是<strong>造一个新字体但不缓存</strong>：
+于是<strong>每一帧都要重新加载一次 TTF 字面、重新光栅化所有字形</strong>，而且从不释放。</p>
+<p>实测（<code>example_showcase_window</code>，520×400，一页 6 段动画，其中两段带缩放）：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>每帧耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时刻不动（字号不变）</td>
+<td>0.567 ms</td>
+</tr>
+<tr>
+<td>每帧推进 16ms（字号连续变）</td>
+<td><strong>8.077 ms</strong></td>
+</tr>
+<tr>
+<td>修好之后</td>
+<td><strong>0.570 ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>两处改动：</p>
+<ol>
+<li>槽位 8 → <strong>32</strong>（覆盖一整段 1.0→1.5 缩放），可 <code>-DQL_FONT_DEFAULT_SLOTS=</code> 覆盖；</li>
+<li>满了以后<strong>轮转淘汰最老的一个</strong>并 <code>ql_font_destroy</code>，不再泄漏。</li>
+</ol>
+<blockquote>
+<p>教训：<strong>"缓存满了就绕过去"等于把性能问题和内存泄漏一起藏起来</strong>。
+凡是"按尺寸/按参数取缓存对象"的接口，都必须有一个明确的"满了怎么办"。</p>
+</blockquote>
+<hr />
+<h2 id="105-m2">10.5 动态字体是怎么工作的（M2）</h2>
+<h3 id="_6">数据布局</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLFont</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">glyphs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w">         </span><span class="n">按</span><span class="w"> </span><span class="n">codepoint</span><span class="w"> </span><span class="n">升序</span><span class="err">（</span><span class="n">插入时</span><span class="w"> </span><span class="n">memmove</span><span class="w"> </span><span class="n">保持有序</span><span class="err">）</span>
+<span class="w">    </span><span class="n">glyph_bitmaps</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w">  </span><span class="n">第</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="n">个字形的</span><span class="w"> </span><span class="mi">8</span><span class="n">bpp</span><span class="w"> </span><span class="n">位图</span><span class="err">（</span><span class="n">每行</span><span class="w"> </span><span class="n">box_w</span><span class="w"> </span><span class="n">字节</span><span class="err">，</span><span class="n">独立</span><span class="w"> </span><span class="n">malloc</span><span class="err">）</span>
+<span class="w">    </span><span class="n">backend</span><span class="w">           </span><span class="o">&amp;</span><span class="n">s_ft_backend</span>
+<span class="w">    </span><span class="n">impl</span><span class="w">              </span><span class="n">QLFTFont</span><span class="p">{</span><span class="w"> </span><span class="n">FT_Library</span><span class="p">,</span><span class="w"> </span><span class="n">FT_Face</span><span class="p">,</span><span class="w"> </span><span class="n">文件内存</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>关键点：<strong>静态字体与动态字体共用同一套读取接口</strong>。
+<code>ql_font_glyph_row()</code> 内部判断 <code>glyph_bitmaps != NULL</code> 决定从哪取行指针，
+所以画布、<code>QLDraw2D</code>、GPU 图集三条绘制路径完全不需要区分字体类型。</p>
+<h3 id="_7">查找流程</h3>
+<div class="highlight"><pre><span></span><code>ql_font_find_glyph(font, cp)
+  ├─ backend == NULL → 纯二分（静态字体，永不分配）
+  └─ backend != NULL → 先二分，未命中再 backend-&gt;ensure_glyph()
+                         ├─ FT_Get_Char_Index  为 0 → 字体没这个字，返回 NULL
+                         ├─ FT_Load_Glyph + FT_Render_Glyph（8bpp 灰度）
+                         ├─ memcpy 出位图（FreeType 的 buffer 下次渲染就失效）
+                         └─ insert_glyph()：扩容 + 二分插入点 + memmove 保持有序
+</code></pre></div>
+
+<p><code>find_glyph</code> 返回的指针在下一次查找前有效（插入可能 realloc）。
+绘制路径都是"取一个、画一个"，天然满足。</p>
+<h3 id="_8">字形缓存上限</h3>
+<p><code>ql_font_ft_set_cache_limit(N)</code>（全局，默认 2048）。满了之后<strong>拒绝新字形</strong>并
+告警一次，而不是做 LRU 淘汰——交互场景里淘汰会导致同一屏内的字形反复
+光栅化，卡顿比"少画一个生僻字"更糟。要更高上限就调大或按页准备子集。</p>
+<h3 id="gpu-m2">GPU 图集（M2 起是动态的）</h3>
+<ul>
+<li>图集 1024×1024 R8（1 MB），货架（shelf）分配；</li>
+<li><strong>启动时</strong>把两个内置位图字体的字形一次性拼进 CPU 镜像、一次 <code>glTexImage2D</code> 上传
+  （比逐字形上传快一个数量级）；</li>
+<li>之后动态字体新出现的字形走 <code>glTexSubImage2D</code> 增量上传，小字形先拼进
+  64×64 临时缓冲，一次调用传完；</li>
+<li>UV 缓存是开放寻址哈希，键是 <strong><code>(字体指针, codepoint)</code></strong>。</li>
+</ul>
+<blockquote>
+<p>⚠️ 踩过的坑：UV 缓存最初用"字形在数组里的下标"做键。动态字体的缓存表是
+<strong>插入后仍保持按 codepoint 有序</strong>的，新字形插到中间会把后面所有字形挪位，
+下标不是稳定标识 —— 表现为"部分文字被画成别的字"。
+任何按下标索引动态字形的缓存都必须改按键值（codepoint）。</p>
+</blockquote>
+<h3 id="4bpp">4bpp 行打包的坑</h3>
+<p>静态字体可能是 4bpp/1bpp（每行 <code>(box_w+1)/2</code> 或 <code>(box_w+7)/8</code> 字节）。
+往 8bpp 图集搬像素时<strong>不能</strong> <code>memcpy(box_w)</code>：奇数宽度时 stride &lt; box_w，直接越界
+（ASan 抓到的就是这个）。统一走 <code>fetch_glyph_row()</code>：bpp==8 走 memcpy，
+其他 bpp 逐像素用 <code>ql_font_glyph_alpha()</code> 展开。</p>
+<hr />
+<h2 id="11">11. 建议的阅读 / 验证顺序</h2>
+<ol>
+<li><code>ctest --test-dir build --output-on-failure</code> 全绿；</li>
+<li><code>./build/example_text</code>，打开输出的 PPM，先看结果；</li>
+<li>读 <code>test/text/test_font.c</code> —— 字形查找、缺字、UTF-8、度量的可执行说明；</li>
+<li>读 <code>test/text/test_str.c</code> —— 两种策略的容量行为；</li>
+<li>读 <code>test/text/test_label.c</code> —— 所有权、自动尺寸、对齐的像素级断言；</li>
+<li>读 <code>src/text/qlfont.c</code> 与 <code>src/draw/qlcanvas.c</code> 末尾的文本部分。</li>
+</ol>
+<div class='pager'>
+<a href='../../manual/text/QLText API手册.html'><span class='dir'>上一页</span>QLText / 字体 API 手册（v0.1）</a>
+<a class='next' href='../../manual/ui/QLUI API手册.html'><span class='dir'>下一页</span>QLUI / HTML+CSS 编译 API 手册（v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -674,11 +674,146 @@ static int count_flex_items(QLUINodeRT *node)
 }
 
 /* 测量阶段：在哑位置跑一遍 layout_node，把自然尺寸写进各子节点的 border_box */
+/*
+ * flex 项在**主轴**上的 max-content 尺寸（含 padding/border/margin）。
+ *
+ * 为什么需要它：flex 项的 `width: auto` 语义是 `flex-basis: content`，
+ * 也就是"内容需要多大就多大"。而 block 布局里 `width: auto` 是"撑满包含块"。
+ * 早先的直接后果是：一个空的 `flex-grow: 1` 占位块会把自己的基准尺寸算成
+ * 整个容器的宽度 —— 于是 `sum_base` 超过容器、白算出一份"负剩余空间"，
+ * 触发 shrink，把旁边**固定宽度**的兄弟一起压扁
+ * （实测：`40px` 变 29px、`56px` 变 40px，而浏览器里这两个值不该动）。
+ *
+ * 递归有界：树深度已经被 QL_CFG_UI_MAX_DEPTH 限住，这里再加一个深度参数
+ * 兜底，避免将来某个环状结构把它拖死。
+ */
+static ql_coord_t max_content_main(const QLUINodeRT *node, int row, int depth)
+{
+    if (node == NULL || depth > (int)QL_CFG_UI_MAX_DEPTH)
+        return 0;
+    const QLUIStyle *s = node->style;
+    if (s->display == QL_UI_DISPLAY_NONE)
+        return 0;
+
+    const ql_coord_t pad_border =
+        row ? (ql_coord_t)(s->padding.left + s->padding.right +
+                           2 * (ql_coord_t)s->border_width)
+            : (ql_coord_t)(s->padding.top + s->padding.bottom +
+                           2 * (ql_coord_t)s->border_width);
+    const ql_coord_t margin =
+        row ? (ql_coord_t)(s->margin.left + s->margin.right)
+            : (ql_coord_t)(s->margin.top + s->margin.bottom);
+
+    const QLUILength *len = row ? &s->width : &s->height;
+    ql_coord_t own = 0;
+
+    if (len->unit == QL_UI_UNIT_PX) {
+        own = (ql_coord_t)len->value;
+        if (s->box_sizing == 0)
+            own += pad_border;
+    } else if (len->unit == QL_UI_UNIT_AUTO) {
+        if (node->text != NULL && node->first_child == NULL) {
+            const QLFont *font = font_of_style(node, s);
+            own = (font != NULL) ? ql_font_line_width(font, node->text, -1) : 0;
+            own += pad_border;
+        } else if (node->first_child == NULL) {
+            own = pad_border;              /* 空盒子：内容 0 */
+        } else if (is_flex_container(s) && flex_is_row(s) == row) {
+            /* 同方向的 flex 容器：主轴上是"子项之和 + 间距" */
+            ql_coord_t sum = 0;
+            int n = 0;
+            const ql_coord_t gap = row ? (ql_coord_t)s->gap_col : (ql_coord_t)s->gap_row;
+            for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+                if (c->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                sum += max_content_main(c, row, depth + 1);
+                n++;
+            }
+            if (n > 1)
+                sum += gap * (n - 1);
+            own = sum + pad_border;
+        } else {
+            /* 纵向堆叠（block / column flex）：主轴上是"子项的最大值" */
+            ql_coord_t mx = 0;
+            for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+                if (c->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                ql_coord_t v = max_content_main(c, row, depth + 1);
+                if (v > mx)
+                    mx = v;
+            }
+            own = mx + pad_border;
+        }
+    } else {
+        /* 百分比：要先知道包含块，测量阶段拿不到 → 按 0 处理（与浏览器"缩到最小"一致） */
+        own = pad_border;
+    }
+
+    return own + margin;
+}
+
+/*
+ * 测量 flex 项：把"自动宽度"的项先按 **max-content** 落成显式尺寸，再跑布局。
+ *
+ * 不这么做的话 `border_width_of()` 会把 `width: auto` 当成"撑满包含块"
+ * （那是 block 布局的语义），于是每个 auto 宽度的 flex 项都声称要整个容器宽度。
+ */
 static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
 {
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
         if (c->style->display == QL_UI_DISPLAY_NONE)
             continue;
+
+        /*
+         * 只有"没有显式主轴尺寸"的项才需要这一步。它自己还有子节点时，
+         * 先按 max-content 定下主轴尺寸，之后 `layout_node` 会按这个尺寸
+         * 把内部排完（子节点的换行/撑满都以它为包含块）。
+         */
+        const QLUILength *len = flex_is_row(node->style) ? &c->style->width
+                                                        : &c->style->height;
+        if (len->unit == QL_UI_UNIT_AUTO) {
+            const ql_coord_t mc = max_content_main(c, flex_is_row(node->style), 0);
+            const ql_coord_t mb = flex_is_row(node->style)
+                                      ? (ql_coord_t)(c->style->margin.left +
+                                                     c->style->margin.right)
+                                      : (ql_coord_t)(c->style->margin.top +
+                                                     c->style->margin.bottom);
+            ql_coord_t box = mc - mb;          /* 去掉 margin 后的 border-box 尺寸 */
+            if (box < 0)
+                box = 0;
+
+            /*
+             * `width` 的解释取决于 box-sizing：
+             *   border-box → 直接写 border-box 尺寸；
+             *   content-box → 要退掉 padding 与 border（否则布局时再加一遍，
+             *                 带边框的项会胖 2 个 border_width）。
+             * 只能改这一个字段，**不能顺手把 box_sizing 改成 1** ——
+             * 那会把同一项的交叉轴尺寸也一起改掉（踩过：带 1px 边框的
+             * 20px 高格子被算成 20 而不是 22）。
+             */
+            const int row_axis = flex_is_row(node->style);
+            const ql_coord_t pad_border =
+                row_axis ? (ql_coord_t)(c->style->padding.left + c->style->padding.right +
+                                        2 * (ql_coord_t)c->style->border_width)
+                         : (ql_coord_t)(c->style->padding.top + c->style->padding.bottom +
+                                        2 * (ql_coord_t)c->style->border_width);
+            const ql_coord_t len_value =
+                (c->style->box_sizing == 1) ? box : (box - pad_border);
+
+            if (!c->used_copy) {
+                c->style_copy = *c->style;
+                c->style = &c->style_copy;
+                c->used_copy = 1;
+            }
+            if (row_axis) {
+                c->style_copy.width.value = (int16_t)((len_value < 0) ? 0 : len_value);
+                c->style_copy.width.unit = QL_UI_UNIT_PX;
+            } else {
+                c->style_copy.height.value = (int16_t)((len_value < 0) ? 0 : len_value);
+                c->style_copy.height.unit = QL_UI_UNIT_PX;
+            }
+        }
+
         (void)layout_node(c, 0, 0, content_w);   /* 位置无关紧要，只取尺寸 */
     }
 }

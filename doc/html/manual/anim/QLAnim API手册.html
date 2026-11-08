@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLAnim / 帧时钟与补间动画 API手册（v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlanim-apiv01">QLAnim / 帧时钟与补间动画 API手册（v0.1）</h1>
+<p>配套阅读：<a href="./QLAnim阅读指南.md">QLAnim 阅读指南</a></p>
+<blockquote>
+<p><strong>适用场景</strong>
+- 需要"值随时间平滑变化"的地方：颜色渐变、透明度、绘制偏移、自定义控件的状态动画。
+- <strong>不适用</strong>：动画化布局属性（<code>width</code>/<code>height</code>/<code>flex-*</code>）。那会每帧重排，本模块不支持，
+  也不会支持——要变形请改尺寸后再重排一次，别逐帧插值。
+- <strong>不适用</strong>：关键帧序列（<code>@keyframes</code>）。用同一个 key 链式 <code>start</code>，或在 <code>on_done</code> 里起下一段。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 最小可用例子</h2>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="n">QLAnimKey</span><span class="w"> </span><span class="n">s_alpha_key</span><span class="p">;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_apply</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="o">*</span><span class="n">v</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">w</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_label_set_alpha</span><span class="p">(</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">uint8_t</span><span class="p">)(</span><span class="n">v</span><span class="o">-&gt;</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">));</span>
+<span class="p">}</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">fade_in</span><span class="p">(</span><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="n">w</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">.</span><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mf">255.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">};</span>
+<span class="w">    </span><span class="n">s_alpha_key</span><span class="p">.</span><span class="n">cur</span><span class="p">.</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">;</span><span class="w">             </span><span class="cm">/* 起点 = 当前值 */</span>
+<span class="w">    </span><span class="n">ql_anim_start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s_alpha_key</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="n">QL_EASE_OUT</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">on_apply</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="cm">/* 主循环 */</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(;;)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">now</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_anim_now_ms</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_anim_tick</span><span class="p">(</span><span class="n">now</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">needs_redraw</span><span class="p">)</span>
+<span class="w">        </span><span class="n">render_once</span><span class="p">();</span>
+<span class="w">    </span><span class="k">else</span>
+<span class="w">        </span><span class="n">wait_for_event</span><span class="p">();</span><span class="w">                    </span><span class="cm">/* 静止：不烧 CPU */</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="2">2. 类型</h2>
+<h3 id="21-qlanimvalue">2.1 <code>QLAnimValue</code></h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">v</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLAnimValue</span><span class="p">;</span>
+</code></pre></div>
+
+<p>4 个 float。颜色约定为 <strong>0..255 的浮点</strong>（本模块只做线性插值，不理解语义）。
+只用一个标量时只填 <code>v[0]</code>。</p>
+<h3 id="22-qlanimkey">2.2 <code>QLAnimKey</code></h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="n">cur</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 当前值 = 下一个动画的起点 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">     </span><span class="n">used</span><span class="p">;</span><span class="w">    </span><span class="cm">/* 内部 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">     </span><span class="n">steps</span><span class="p">;</span><span class="w">   </span><span class="cm">/* QL_EASE_STEPS 用 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">    </span><span class="n">reserved</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLAnimKey</span><span class="p">;</span>
+</code></pre></div>
+
+<p><strong>由调用方持有（栈/静态/结构体成员），必须零初始化。</strong> 池里只存指向它的指针，
+所以 key 的生命周期必须覆盖整个动画；提前销毁前请 <code>ql_anim_cancel()</code>。</p>
+<p>想在动画之外改值：直接写 <code>key-&gt;cur</code>，下次 <code>ql_anim_start</code> 会从那里接着动。</p>
+<h3 id="23-qleasing">2.3 <code>QLEasing</code></h3>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>CSS 对应</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_EASE_LINEAR</code></td>
+<td><code>linear</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_EASE_IN</code></td>
+<td><code>ease-in</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_EASE_OUT</code></td>
+<td><code>ease-out</code></td>
+<td>界面过渡的默认选择，响应感最好</td>
+</tr>
+<tr>
+<td><code>QL_EASE_IN_OUT</code></td>
+<td><code>ease-in-out</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_EASE_CSS</code></td>
+<td><code>ease</code></td>
+<td>浏览器默认值</td>
+</tr>
+<tr>
+<td><code>QL_EASE_STEPS</code></td>
+<td><code>steps(n)</code></td>
+<td>台阶数来自 <code>QLAnimKey.steps</code>，<code>steps(n, end)</code> 语义</td>
+</tr>
+<tr>
+<td><code>QL_EASE_COUNT</code></td>
+<td>—</td>
+<td>计数用</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3">3. 函数</h2>
+<h3 id="31">3.1 时钟</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_anim_now_ms</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_anim_set_time_source</span><span class="p">(</span><span class="kt">uint32_t</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fn</span><span class="p">)(</span><span class="kt">void</span><span class="p">));</span>
+</code></pre></div>
+
+<p>单调毫秒。默认 <code>CLOCK_MONOTONIC</code>；传 <code>NULL</code> 恢复默认。
+MCU 上换成 tick 计数器即可（<code>HAL_GetTick()</code> 之类），只需保证<strong>单调递增、回绕用无符号减法</strong>。</p>
+<p>测试里换假时钟：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">s_now</span><span class="p">;</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">fake_now</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">s_now</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="n">ql_anim_set_time_source</span><span class="p">(</span><span class="n">fake_now</span><span class="p">);</span>
+<span class="n">s_now</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span><span class="p">;</span><span class="w">                       </span><span class="cm">/* 交互前先同步，否则 t0 与 tick 不一致 */</span>
+<span class="n">ql_anim_start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="n">QL_EASE_LINEAR</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">apply</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+<span class="n">s_now</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1100</span><span class="p">;</span>
+<span class="n">ql_anim_tick</span><span class="p">(</span><span class="n">s_now</span><span class="p">);</span><span class="w">                </span><span class="cm">/* 走到 50% */</span>
+<span class="n">ql_anim_set_time_source</span><span class="p">(</span><span class="nb">NULL</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="32">3.2 启动 / 重基</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_anim_start</span><span class="p">(</span><span class="n">QLAnimKey</span><span class="w"> </span><span class="o">*</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="o">*</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">dur_ms</span><span class="p">,</span>
+<span class="w">                       </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">ease</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">steps</span><span class="p">,</span>
+<span class="w">                       </span><span class="n">ql_anim_apply_fn</span><span class="w"> </span><span class="n">apply</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_done_fn</span><span class="w"> </span><span class="n">done</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>key</code></td>
+<td>调用方持有、零初始化过</td>
+</tr>
+<tr>
+<td><code>to</code></td>
+<td>目标值</td>
+</tr>
+<tr>
+<td><code>dur_ms</code></td>
+<td>时长；<strong>0 表示立即落到终值</strong>（仍会走一次 apply + done）</td>
+</tr>
+<tr>
+<td><code>ease</code></td>
+<td><code>QLEasing</code></td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>仅 <code>QL_EASE_STEPS</code> 用；0 按 1 处理</td>
+</tr>
+<tr>
+<td><code>apply</code></td>
+<td>每帧把插值结果写到目标；可为 <code>NULL</code></td>
+</tr>
+<tr>
+<td><code>done</code></td>
+<td>结束时调一次；可为 <code>NULL</code>（<code>dur_ms == 0</code> 时同帧调用）</td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td>透传给两个回调</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>起始值取 <code>key-&gt;cur</code>。<strong>同一个 key 重复调用 = 重基</strong>，中途改目标不会跳变。</li>
+<li>返回 <code>QL_OK</code> / <code>QL_ERR_INVAL</code>（参数非法）/ <code>QL_ERR_NOMEM</code>（池满）。
+  <strong>池满时请调用方自己落到终值</strong>，不要排队：</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_anim_start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="mi">180</span><span class="p">,</span><span class="w"> </span><span class="n">QL_EASE_OUT</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">apply</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_OK</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">apply</span><span class="p">(</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">to</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">done</span><span class="p">)</span><span class="w"> </span><span class="n">done</span><span class="p">(</span><span class="n">w</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="33">3.3 推进</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_anim_tick</span><span class="p">(</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">now_ms</span><span class="p">);</span>
+</code></pre></div>
+
+<p>对每个活跃动画算插值 → <code>apply</code>；到时间就 apply 终值 → <code>done</code> → 释放槽位。
+返回<strong>仍在进行中</strong>的动画数。</p>
+<ul>
+<li>返回 0 = 这一帧之后没有运动了。<strong>但"最后一个动画刚结束"的那一 tick 已经置了脏区</strong>，
+  所以主循环要么这一帧先画、下一帧再静止，要么用脏区标记兜底。</li>
+<li>可以一帧调多次（比如补帧），也可以多帧不调（窗口最小化）——时间是从 <code>now_ms</code> 算的，
+  不会"丢帧累积"。</li>
+</ul>
+<h3 id="34">3.4 取消与查询</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">     </span><span class="nf">ql_anim_cancel</span><span class="p">(</span><span class="n">QLAnimKey</span><span class="w"> </span><span class="o">*</span><span class="n">key</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 不再 apply，也不触发 done；key 可立刻复用 */</span>
+<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_anim_active</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">             </span><span class="cm">/* 当前活跃数 */</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_anim_reset</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">              </span><span class="cm">/* 清空全部（qlgl_shutdown 调用） */</span>
+</code></pre></div>
+
+<p><code>ql_anim_cancel(NULL)</code> 与对未启动的 key cancel 都是安全的空操作。</p>
+<h3 id="35">3.5 缓动求值</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">float</span><span class="w"> </span><span class="nf">ql_ease_apply</span><span class="p">(</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">ease</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">steps</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">t</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>t ∈ [0,1] → [0,1]</code>，端点硬截断。测试与自定义插值复用，也方便画曲线。</p>
+<hr />
+<h2 id="4-css-transition">4. 与 CSS <code>transition</code> 的关系</h2>
+<p>CSS 侧只需写标准语法，构建期由 <code>tools/qlui/qlui.py</code> 展开成 <code>QLUIStyle</code> 的
+<code>trans_ms</code> / <code>trans_ease</code> / <code>trans_props</code>，运行期自动创建过渡槽：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">         </span><span class="c">/* 全部可过渡属性 */</span>
+<span class="p">.</span><span class="nc">btn</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#204060</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2a9a5c</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">background-color</span><span class="w"> </span><span class="mi">300</span><span class="kt">ms</span><span class="w"> </span><span class="kc">linear</span><span class="p">,</span><span class="w"> </span><span class="k">opacity</span><span class="w"> </span><span class="mi">120</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>目前可过渡的属性：<code>background-color</code>（<code>QL_UI_TRANS_BG</code>）、<code>opacity</code>（<code>QL_UI_TRANS_ALPHA</code>，
+插值的是<strong>背景 alpha</strong>，不是 CSS 的组不透明度）、<code>all</code>（两者）。
+<code>color</code> / <code>border-color</code> / <code>transform</code> / <code>delay</code> 生成器会<strong>明确报错</strong>，不静默降级。</p>
+<p>运行期接口：</p>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_ui_anim_tick</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">now_ms</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 推进 + 返回脏区并集 */</span>
+<span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_consume_dirty</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 取走脏区并清空 */</span>
+</code></pre></div>
+
+<p><strong>注意</strong>：<code>ql_ui_node_style()</code> 返回的是"过渡中的样式"。要取某状态的<strong>目标值</strong>
+（比如给布局用），用内部 <code>style_for_state()</code>——布局相关字段不受过渡影响，
+但从公开 API 读到的颜色可能是中间值。</p>
+<hr />
+<h2 id="5">5. 状态与限制</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同时活跃动画上限</td>
+<td><code>QL_CFG_ANIM_MAX</code>（默认 64），编译期可改</td>
+</tr>
+<tr>
+<td>时间分辨率</td>
+<td>1 ms，<code>uint32_t</code> 约 49.7 天回绕</td>
+</tr>
+<tr>
+<td>每个动画的内存</td>
+<td>槽位约 64 B（静态池，无分配）</td>
+</tr>
+<tr>
+<td>支持的值维度</td>
+<td>4 个 float（颜色 RGBA 或 1 个标量）</td>
+</tr>
+<tr>
+<td>不支持</td>
+<td>布局属性动画、关键帧序列、贝塞尔以外的自定义曲线、负时长（按 0 处理）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6">6. 常见问题</h2>
+<p><strong>Q：为什么动画结束了画面还是旧值？</strong>
+<code>done</code> 在最后一帧被调用，如果 <code>apply</code> 只在 <code>tick</code> 里写目标，请确认 <code>done</code> 里也落了终值，
+或让主循环在 <code>tick</code> 返回 0 后仍重绘一帧（靠脏区判断）。</p>
+<p><strong>Q：<code>QL_ERR_NOMEM</code> 一直出现？</strong>
+key 用完后没 <code>cancel</code>，或者在一帧里给同一个节点起了多个互不取消的动画。
+检查是否每次都 <code>start</code> 了新 key。</p>
+<p><strong>Q：动画卡在中间不动？</strong>
+假时钟没同步（见 §3.1），或者 <code>ql_anim_tick</code> 被调用时传的时间没前进。</p>
+<p><strong>Q：想要"先淡出再淡入"？</strong>
+在 <code>done</code> 回调里 <code>start</code> 下一段。同一个 key 重基从当前值开始，正好自然衔接。</p>
+<p><strong>Q：能不能一帧插值两个值？</strong>
+一个 key 有 4 个 float，够放 RGBA。超过 4 个就开第二个 key。</p>
+<hr />
+<h2 id="7-keyframes">7. 关键帧动画（<code>@keyframes</code>）</h2>
+<p><strong>不在本模块</strong>。<code>@keyframes</code> 由 <code>qlui</code> 在构建期编译成静态帧表，运行期自己按时间求值，
+只用本模块的 <code>ql_ease_apply()</code> 做缓动。</p>
+<p>用 CSS 就够了，不需要写 C：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">pulse</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">pulse</span><span class="w"> </span><span class="mi">1</span><span class="kt">s</span><span class="w"> </span><span class="kc">linear</span><span class="w"> </span><span class="kc">infinite</span><span class="w"> </span><span class="kc">alternate</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">pulse</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#204060</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="nt">to</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#ff8000</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+
+<span class="c">/* 关键帧里也能插值平移 → 最省事的&quot;滑入&quot; */</span>
+<span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">slidein</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">from</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">-70</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">to</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w">     </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="n">slidein</span><span class="w"> </span><span class="mi">400</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="kc">forwards</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>想看效果：<code>./build/example_anim_window</code>（空格重播，Esc 退出）。</p>
+<p>运行期重播某个节点的动画：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_anim_restart</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 节点没有动画 → QL_ERR_INVAL */</span>
+</code></pre></div>
+
+<p>详见 <a href="../ui/QLUI%20API手册.md">QLUI API手册</a> §3.10 与
+<a href="./QLAnim阅读指南.md">QLAnim 阅读指南</a> §9。</p>
+<div class='pager'>
+<a href='../../manual/render/QLRender阅读指南.html'><span class='dir'>上一页</span>QLRender / GPU 后端 阅读指南</a>
+<a class='next' href='../../manual/anim/QLAnim阅读指南.html'><span class='dir'>下一页</span>QLAnim / 帧时钟与补间动画 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

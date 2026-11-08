@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>首页 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='index.html'>首页</a><a href='tutorial/01_basics.html'>教程</a><a href='manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='index.html' class='active'>首页</a>
+<h4>入门教程</h4>
+<a href='tutorial/01_basics.html'>基础知识</a>
+<a href='tutorial/02_text.html'>文本</a>
+<a href='tutorial/03_layout.html'>布局</a>
+<a href='tutorial/04_interaction.html'>交互</a>
+<a href='tutorial/05_animation.html'>动画</a>
+<a href='tutorial/06_theme.html'>换皮肤</a>
+<a href='tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+
+<h1>QLGL 文档</h1>
+<p class='subtitle'>C11 写界面：HTML/CSS 描述结构，构建期或运行期编译成静态数据，CPU/GPU 双后端绘制。</p>
+
+<h2>从教程开始</h2>
+<p>第一次用？照教程顺序读，每章都有可以立刻编译运行的完整程序
+（源码在 <code>example/</code>）。</p>
+<div class='cards'><a href='tutorial/01_basics.html'><b>基础知识</b><span>QLGL 是一个用 C11 写桌面界面的库。它的想法很朴素：</span></a><a href='tutorial/02_text.html'><b>文本</b><span>界面里最多的东西大概就是文字。这一章讲清 QLGL 文本的四条规则， 以及为什么它和浏览器不太一样。</span></a><a href='tutorial/03_layout.html'><b>布局</b><span>&lt;img src=&quot;../img/03-layout.png&quot; alt=&quot;布局&quot; width=&quot;300&quot;</span></a><a href='tutorial/04_interaction.html'><b>交互</b><span>&lt;img src=&quot;../img/04-interaction.png&quot; alt=&quot;交互&quot; width=&quot;260&quot;</span></a><a href='tutorial/05_animation.html'><b>动画</b><span>&lt;img src=&quot;../img/05-animation.png&quot; alt=&quot;动画&quot; width=&quot;300&quot;</span></a><a href='tutorial/06_theme.html'><b>换皮肤</b><span>&lt;img src=&quot;../img/06-theme-dark.png&quot; alt=&quot;深色&quot; width=&quot;260&quot; &lt;img src=&quot;../img/06-theme-light.png&quot; alt=&quot;浅色&quot; width=&quot;</span></a><a href='tutorial/07_advanced.html'><b>进阶</b><span>前六章走完了&quot;能写界面&quot;。这一章讲清剩下的三件事：绘制后端怎么选、 数据是怎么流到屏幕上的、以及接下来该读什么。</span></a></div>
+
+<h2>模块手册</h2>
+<p>每个模块两份：<b>阅读指南</b>讲“为什么这么设计、坑在哪”，
+<b>API 手册</b>讲“有哪些函数、参数什么含义”。</p>
+<div class='cards'><a href='manual/object/QLObject阅读指南.html'><b>QLObject</b><span>对象系统：类、属性、信号</span></a><a href='manual/widget/QLWidget阅读指南.html'><b>QLWidget</b><span>控件：标签、按钮、布局</span></a><a href='manual/text/QLText阅读指南.html'><b>QLText</b><span>文本：字体、字形、UTF-8</span></a><a href='manual/ui/QLUI阅读指南.html'><b>QLUI</b><span>界面：HTML/CSS → 静态数据</span></a><a href='manual/uitext/QLUIText阅读指南.html'><b>QLUIText</b><span>运行期 HTML/CSS 解析</span></a><a href='manual/render/QLRender阅读指南.html'><b>QLRender</b><span>渲染：画布、GPU 后端、脏区</span></a><a href='manual/anim/QLAnim阅读指南.html'><b>QLAnim</b><span>动效：帧时钟、缓动、补间</span></a><a href='manual/input/QLInput阅读指南.html'><b>QLInput</b><span>输入：事件队列、指针、键盘</span></a></div>
+
+<h2>参考</h2>
+<ul>
+  <li><a href='manual/ui/QLUI API手册.html'>支持的 CSS 属性与取值</a></li>
+  <li><a href='manual/uitext/QLUIText API手册.html'>运行期解析：边界与上限</a></li>
+  <li><a href='manual/render/QLRender阅读指南.html'>渲染管线与脏区重绘</a></li>
+</ul>
+
+
+</main>
+</div>
+</body>
+</html>

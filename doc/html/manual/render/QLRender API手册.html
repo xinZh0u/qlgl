@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLRender / GPU 后端 API 手册（v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlrender-gpu-api-v01">QLRender / GPU 后端 API 手册（v0.1）</h1>
+<p>配套：<a href="./QLRender阅读指南.md">QLRender 阅读指南</a> · 定位：<a href="../../Web兼容设计.md">Web 兼容设计</a> §7</p>
+<hr />
+<h2 id="1-qldraw2d">1. 绘制接口 <code>QLDraw2D</code></h2>
+<p>头文件 <code>&lt;qlgl/qldraw2d.h&gt;</code>。上层只依赖它，因此 CPU / GPU 可互换。</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLDraw2D</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_clip</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">clip</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fill_rect</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">rect</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fill_round_rect</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">rect</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">stroke_round_rect</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">rect</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
+<span class="w">                              </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fill_round_rect_gradient</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">rect</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
+<span class="w">                                     </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">from</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">dir</span><span class="p">,</span>
+<span class="w">                                     </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fill_shadow</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">inner</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">blur</span><span class="p">,</span>
+<span class="w">                        </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dy</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">draw_text</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span>
+<span class="w">                      </span><span class="n">QLRect</span><span class="w"> </span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">flush</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 可选，GPU 批次提交 */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLDraw2D</span><span class="p">;</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>约定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_clip</code></td>
+<td>绝对坐标；与表面边界求交；后续绘制都被裁到它里面</td>
+</tr>
+<tr>
+<td><code>fill_rect</code> / <code>fill_round_rect</code></td>
+<td><code>alpha</code> 0=跳过，255=不透明；圆角半径自动裁到短边一半</td>
+</tr>
+<tr>
+<td><code>stroke_round_rect</code></td>
+<td><strong>向内描边</strong>；<code>thickness</code> ≤ 0 时无操作</td>
+</tr>
+<tr>
+<td><code>fill_round_rect_gradient</code></td>
+<td><code>dir</code> 取 <code>QLGradientDir</code>；只有 2 个停靠点</td>
+</tr>
+<tr>
+<td><code>fill_shadow</code></td>
+<td>以 <code>inner</code> 为轮廓向外扩散 <code>blur</code> 并偏移 <code>(dx,dy)</code>；<strong>必须先画阴影再画本体</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="5x-dpidpr">5.x 高 DPI（DPR）</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 缩放（26.6 定点）：QL_SCALE_ONE = 1.0，96 = 1.5 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw2d_set_scale</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_set_scale</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_disp_set_scale</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_gfx_gl_set_scale</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+
+<span class="cm">/* CSS px 下的表面尺寸（布局用这个，别用 width/height） */</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_canvas_css_width</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_canvas_css_height</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_disp_css_width</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_disp_css_height</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">);</span>
+
+<span class="cm">/* 绘制期平移（CSS px 26.6）：translate(0.5px) → 32。不影响布局 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw2d_set_offset</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x_fx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y_fx</span><span class="p">);</span>
+
+<span class="cm">/* 亚像素填充：边落在小数上时按面积覆盖率抗锯齿（低 6 位是亚像素） */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLRectFx</span><span class="p">;</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_rect_fx</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRectFx</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_round_rect_fx</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRectFx</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius_fx</span><span class="p">,</span>
+<span class="w">                                  </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_stroke_rect_fx</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRectFx</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius_fx</span><span class="p">,</span>
+<span class="w">                              </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness_fx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+
+<span class="cm">/* 按&quot;边&quot;缩放：相邻矩形不会在接缝处裂开 */</span>
+<span class="n">QLRect</span><span class="w"> </span><span class="nf">ql_scale_rect</span><span class="p">(</span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+<span class="n">QLRect</span><span class="w"> </span><span class="nf">ql_unscale_rect</span><span class="p">(</span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_scale_len</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">);</span>
+</code></pre></div>
+
+<p>| <code>draw_text</code> | <code>len &lt; 0</code> 表示 <code>'\0'</code> 结尾；只处理 <code>'\n'</code>；水平按 <code>align</code> 对齐 |
+| <code>flush</code> | CPU 为 <code>NULL</code>；GPU 用它提交批次 |</p>
+<p>公共排版逻辑：</p>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw2d_text_layout</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span>
+<span class="w">                           </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span>
+<span class="w">                           </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">,</span><span class="w"> </span><span class="n">ql_draw2d_glyph_fn</span><span class="w"> </span><span class="n">emit_glyph</span><span class="p">);</span>
+</code></pre></div>
+
+<p>后端只需实现"怎么把单个字形变成一次绘制"，排版由它统一处理。</p>
+<hr />
+<h2 id="2-cpu">2. CPU 后端</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_draw2d_canvas_init</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span><span class="w"> </span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">);</span>
+</code></pre></div>
+
+<p>把既有 <code>QLCanvas</code> 包成 <code>QLDraw2D</code>。用于 MCU、无 GPU 环境、离屏导出。</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLCanvas</span><span class="w"> </span><span class="n">canvas</span><span class="p">;</span>
+<span class="n">ql_canvas_from_disp</span><span class="p">(</span><span class="o">&amp;</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="n">disp</span><span class="p">);</span>
+<span class="n">QLDraw2D</span><span class="w"> </span><span class="n">d2d</span><span class="p">;</span>
+<span class="n">ql_draw2d_canvas_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">canvas</span><span class="p">);</span>
+<span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">d2d</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 或 ql_ui_render_canvas(ui, &amp;canvas) */</span>
+</code></pre></div>
+
+<hr />
+<h2 id="3-gpu-gles-30-egl">3. GPU 后端（GLES 3.0 / EGL）</h2>
+<p>头文件 <code>&lt;qlgl/qlgfx_gl.h&gt;</code>，编译开关 <code>QLGL_ENABLE_GL</code>（CMake：<code>QLGL_BUILD_GL</code>）。</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLGfxGL</span><span class="w"> </span><span class="n">QLGfxGL</span><span class="p">;</span>
+
+<span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_GFX_GL_WINDOW</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">        </span><span class="cm">/* 开窗口，直接看到界面 */</span>
+<span class="w">    </span><span class="n">QL_GFX_GL_OFFSCREEN</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1u</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">  </span><span class="cm">/* pbuffer 离屏，测试/导出用 */</span>
+<span class="p">};</span>
+
+<span class="n">QLGfxGL</span><span class="w">  </span><span class="o">*</span><span class="nf">ql_gfx_gl_create</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">flags</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_gfx_gl_destroy</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_gfx_gl_begin</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">clear_color</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_gfx_gl_end</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+<span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_gfx_gl_draw</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+
+<span class="cm">/* 保留式脏区（窗口动画局部重绘）——见 §3.4 */</span>
+<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_set_retained</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">on</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">clear_color</span><span class="p">,</span>
+<span class="w">                                </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">rects</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">);</span>
+
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 窗口：1 继续 / 0 关闭 */</span>
+
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_frame_count</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_draw_calls</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_vertex_count</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_frame_us</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 上一帧 begin→end 的 CPU 侧耗时 */</span>
+<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_read_pixels</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">rgba</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride_bytes</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="31">3.1 标准用法</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_create</span><span class="p">(</span><span class="s">&quot;QLGL&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_GFX_GL_WINDOW</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">gfx</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* 无 EGL/GLES3 → 落回 CPU 后端 */</span><span class="w"> </span><span class="p">}</span>
+
+<span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_draw</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">gfx</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_gfx_gl_begin</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x08</span><span class="p">,</span><span class="w"> </span><span class="mh">0x0A</span><span class="p">,</span><span class="w"> </span><span class="mh">0x10</span><span class="p">));</span>
+<span class="w">    </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span><span class="w">                </span><span class="cm">/* 界面 */</span>
+<span class="w">    </span><span class="n">d2d</span><span class="o">-&gt;</span><span class="n">fill_round_rect</span><span class="p">(</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">bar</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0xF0</span><span class="p">,</span><span class="mh">0xB0</span><span class="p">,</span><span class="mh">0x30</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span><span class="w">                   </span><span class="cm">/* 上传 + 1 次 draw + swap */</span>
+<span class="p">}</span>
+<span class="n">ql_gfx_gl_destroy</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="32">3.2 约束</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平台</td>
+<td>Linux（EGL + X11 窗口 / pbuffer）；Wayland 窗口待补</td>
+</tr>
+<tr>
+<td>GL 版本</td>
+<td>OpenGL <strong>ES 3.0</strong>（<code>#version 300 es</code>）</td>
+</tr>
+<tr>
+<td>纹理</td>
+<td>一张 1024×1024 R8 字形图集（内置位图字体预烘，动态字体按需增量上传）</td>
+</tr>
+<tr>
+<td>字体</td>
+<td>内置位图字体 + FreeType 动态字体（<code>ql_font_set_default_file</code>）都支持</td>
+</tr>
+<tr>
+<td>批次</td>
+<td>一帧 <strong>1 个 draw call</strong>；顶点上限 65536，超出丢弃</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>顶点数组预分配（~3.9 MB @65536 顶点），稳态零 malloc</td>
+</tr>
+<tr>
+<td>失败处理</td>
+<td>创建失败返回 <code>NULL</code> 并打印原因；调用方应回落 CPU 后端</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>顶点数组 65536 × 60 B ≈ 3.9 MB 是当前最占内存的一块，后续可降到 ~1 MB（顶点压缩）。</p>
+</blockquote>
+<h3 id="33">3.3 调试</h3>
+<table>
+<thead>
+<tr>
+<th>环境变量</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QLGL_GL_DUMP_ATLAS=1</code></td>
+<td>把字形图集导出到 <code>/tmp/qlgl_atlas.pgm</code></td>
+</tr>
+</tbody>
+</table>
+<p>日志会打印 <code>GL_RENDERER</code> / <code>GL_VERSION</code> / <code>GLSL</code> 版本，便于区分是 llvmpipe 还是真 GPU。</p>
+<hr />
+<h3 id="34-ql_gfx_gl_begin_rects">3.4 保留式脏区（<code>ql_gfx_gl_begin_rects</code>）</h3>
+<p><strong>问题</strong>：窗口是双缓冲，<code>eglSwapBuffers</code> 之后后缓冲内容没有任何保证。
+只重画脏区 ≈ 把其余部分清成底色（动画一停，没在动的元素全部消失）。</p>
+<p><strong>做法</strong>：<code>ql_gfx_gl_set_retained(gfx, 1)</code> 之后，后端把画布放在自己的 FBO 里，
+每帧只清 + 只画脏区，帧末整块 <code>glBlitFramebuffer</code> 到窗口：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_gfx_gl_set_retained</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span><span class="w">                     </span><span class="cm">/* 建窗口后调一次 */</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(;;)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_input_dispatch</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">moving</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_anim_tick</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_now_ms</span><span class="p">());</span>
+
+<span class="w">    </span><span class="n">QLRect</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="mi">16</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_consume_dirty</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">!</span><span class="n">first_frame</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">moving</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="cm">/* 静止：不提交这一帧 */</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">int</span><span class="w"> </span><span class="n">full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">BG</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">full</span><span class="p">)</span>
+<span class="w">            </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span><span class="w">                  </span><span class="cm">/* 整屏（首帧/改尺寸/不可用） */</span>
+<span class="w">        </span><span class="k">else</span>
+<span class="w">            </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span>
+<span class="w">                </span><span class="n">ql_ui_render_rect</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+<span class="w">        </span><span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>返回值 / 参数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>begin_rects(...) == 1</code></td>
+<td><strong>这一帧必须整屏重画</strong>：FBO 刚建、窗口改尺寸、或保留模式不可用。此时忽略 <code>areas</code></td>
+</tr>
+<tr>
+<td><code>begin_rects(...) == 0</code></td>
+<td>已经只清了 <code>areas</code> 覆盖的区域，按 <code>areas</code> 逐个 <code>ql_ui_render_rect</code> 即可</td>
+</tr>
+<tr>
+<td><code>count == 0</code> 且返回 0</td>
+<td>不会发生（无脏区时按整屏处理）</td>
+</tr>
+<tr>
+<td><code>set_retained(gfx, 0)</code></td>
+<td>立刻释放 FBO，退回"每帧整屏清"</td>
+</tr>
+</tbody>
+</table>
+<p>约束与代价：</p>
+<ul>
+<li><code>rects</code> 与 <code>ql_ui_consume_dirty()</code> 的输出同单位（CSS px），后端会乘 <code>scale_fx</code>。</li>
+<li>多占一块 <code>w×h×4</code> 的纹理（360×260 ≈ 366 KB，1080p ≈ 8 MB）。MCU 上不要开。</li>
+<li>局部重绘的正确性由 <code>test_gl_dirty</code> 守：连续多帧"只画脏区"与"整屏重画"逐像素相同。</li>
+<li>这块 FBO 也是将来<strong>毛玻璃/离屏合成</strong>（M5.5 ⑨）的基础设施。</li>
+</ul>
+<h2 id="4">4. 后端一致性验收</h2>
+<div class="highlight"><pre><span></span><code>./build/test_gl_vs_cpu
+<span class="c1">#  像素差异：2809/76800 = 3.66%（最大单通道差 239）</span>
+<span class="c1">#  11 项检查，0 项失败</span>
+</code></pre></div>
+
+<p>阈值：单通道差 ≤ 40、异常像素占比 ≤ 6%。差异集中在文字/圆角的抗锯齿边缘。</p>
+<p>加新后端时，把这个测试扩展成"后端 vs CPU"即可复用。</p>
+<hr />
+<h2 id="5">5. 与其它模块的关系</h2>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>是否依赖 QLDraw2D</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qlui</code>（HTML/CSS 编译结果）</td>
+<td>✅ <code>ql_ui_render(ui, d2d)</code></td>
+</tr>
+<tr>
+<td>控件（<code>QLWidget</code>/<code>QLLabel</code>）</td>
+<td>❌ 仍走 <code>QLCanvas</code>（CPU），后续迁移</td>
+</tr>
+<tr>
+<td>显示后端（X11/Wayland）</td>
+<td>❌ 它们提供帧缓冲给 CPU 用</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>也就是说：<strong>目前 GPU 路径服务于 qlui 界面</strong>，控件路径仍是 CPU。
+下一步可以把 <code>ql_widget_draw_func</code> 也改成 <code>QLDraw2D</code>，让控件同样能用 GPU。</p>
+</blockquote>
+<hr />
+<h2 id="cpu">附：CPU 光栅内部基础件（非公开）</h2>
+<p><code>src/draw/qlcanvas.c</code> 内部有三个 <code>static</code> 基础件，<strong>不对外暴露</strong>，
+但改绘制原语时必须按它们的约定写：</p>
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>约定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>put_px(c, x, y, v)</code></td>
+<td><strong>调用方保证</strong> <code>(x,y)</code> 已在裁剪区内；不检查、不混合</td>
+</tr>
+<tr>
+<td><code>fill_row(c, y, x, n, color)</code></td>
+<td>水平填 <code>n</code> 像素；按 <code>c-&gt;format</code> 分派一次，<code>v</code> 已按格式打包</td>
+</tr>
+<tr>
+<td><code>round_row_span(...)</code></td>
+<td>求圆角矩形第 <code>y</code> 行的两段可见区间 <code>[x0,xl)</code> / <code>[xr,x1)</code></td>
+</tr>
+</tbody>
+</table>
+<p>设计要点：</p>
+<ul>
+<li><strong>裁剪只算一次</strong>：进入行循环前就把矩形与 <code>clip</code> 求交，循环内零判断；</li>
+<li><strong>格式分派在行级</strong>：不在像素级 <code>switch</code>；RGB888 走"4 像素 3 次 32 位写"；</li>
+<li><strong>抗锯齿不下沉到像素</strong>：圆角/描边的覆盖率在<strong>行跨度</strong>层面近似，
+  与 GPU 的 SDF 结果对比差异 3.66%（见 <code>test_gl_vs_cpu</code>），可接受。</li>
+</ul>
+<p>新增绘制原语时：先写 <code>for (y)</code> 行循环拿跨度，再调 <code>fill_row</code>。
+<strong>禁止</strong>写 <code>for (y) for (x) put_pixel()</code>——那正是 44 ms 的来源。</p>
+<div class='pager'>
+<a href='../../manual/uitext/QLUIText阅读指南.html'><span class='dir'>上一页</span>QLUIText 阅读指南</a>
+<a class='next' href='../../manual/render/QLRender阅读指南.html'><span class='dir'>下一页</span>QLRender / GPU 后端 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>

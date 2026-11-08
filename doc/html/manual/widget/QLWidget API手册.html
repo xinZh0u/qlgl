@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLWidget / 绘制 API 手册（v0.1） · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLWidget</h4>
+<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlwidget-api-v01">QLWidget / 绘制 API 手册（v0.1）</h1>
+<p>配套阅读：<a href="./QLWidget阅读指南.md">QLWidget 阅读指南</a> · 对象系统：<a href="../object/QLObject%20API手册.md">QLObject API手册</a></p>
+<ul>
+<li>头文件：<code>#include &lt;qlgl/qlgl.h&gt;</code>（已包含 <code>qlgeom.h</code> / <code>qldisp.h</code> / <code>qlcanvas.h</code> / <code>qlwidget.h</code> / <code>qlrender.h</code>）</li>
+<li>链接：<code>target_link_libraries(xxx PRIVATE qlgl)</code></li>
+<li>C11，无 POSIX 依赖</li>
+</ul>
+<hr />
+<h2 id="1">1. 最小可运行示例</h2>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">qlgl_init</span><span class="p">();</span>
+<span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">disp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB565</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_disp_set_bg_color</span><span class="p">(</span><span class="n">QL_COLOR_BLACK</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_ex</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x20</span><span class="p">,</span><span class="w"> </span><span class="mh">0x20</span><span class="p">,</span><span class="w"> </span><span class="mh">0x20</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_render_set_root</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_child</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RED</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_widget_set_border</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_WHITE</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">ql_render</span><span class="p">();</span><span class="w">                                  </span><span class="cm">/* 首帧 */</span>
+<span class="w">    </span><span class="n">ql_disp_mem_save_ppm</span><span class="p">(</span><span class="n">disp</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;out.ppm&quot;</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 看图 */</span>
+
+<span class="w">    </span><span class="n">ql_object_unref</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_disp_mem_destroy</span><span class="p">(</span><span class="n">disp</span><span class="p">);</span>
+<span class="w">    </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><strong>默认背景是透明的</strong>（<code>BG_ALPHA=0</code>），只设 <code>BG_COLOR</code> 不会显示，必须同时设 alpha。</p>
+<hr />
+<h2 id="2-qlgeomh">2. 几何与颜色（<code>qlgeom.h</code>）</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 坐标；可整体改小以省 MCU 内存 */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">ql_color_t</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 0xRRGGBB，与像素格式无关 */</span>
+
+<span class="cp">#define QL_COLOR_RGB(r, g, b)</span>
+<span class="cp">#define QL_COLOR_BLACK / WHITE / RED / GREEN / BLUE / GRAY / SKY</span>
+<span class="cp">#define QL_COLOR_GET_R(c) / GET_G / GET_B</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLRect</span><span class="p">;</span>
+
+<span class="n">QLRect</span><span class="w"> </span><span class="nf">ql_rect_make</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">    </span><span class="nf">ql_rect_is_empty</span><span class="p">(</span><span class="n">r</span><span class="p">);</span><span class="w">            </span><span class="cm">/* w&lt;=0 或 h&lt;=0 */</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_rect_right</span><span class="p">(</span><span class="n">r</span><span class="p">);</span><span class="w">           </span><span class="cm">/* x + w */</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_rect_bottom</span><span class="p">(</span><span class="n">r</span><span class="p">);</span><span class="w">          </span><span class="cm">/* y + h */</span>
+<span class="n">QLRect</span><span class="w"> </span><span class="nf">ql_rect_intersect</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 空交集返回 (0,0,0,0) */</span>
+<span class="n">QLRect</span><span class="w"> </span><span class="nf">ql_rect_union</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">    </span><span class="nf">ql_rect_overlaps</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">    </span><span class="nf">ql_rect_contains_round</span><span class="p">(</span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">px</span><span class="p">,</span><span class="w"> </span><span class="n">py</span><span class="p">,</span><span class="w"> </span><span class="n">radius</span><span class="p">);</span>
+</code></pre></div>
+
+<p>约定：<code>x/y</code> 是左上角，<code>w/h</code> 是尺寸，<strong>右/下边界是不包含的</strong>（<code>x + w</code> 已经是外部）。</p>
+<hr />
+<h2 id="3-qldisph">3. 显示驱动（<code>qldisp.h</code>）</h2>
+<h3 id="31">3.1 格式</h3>
+<table>
+<thead>
+<tr>
+<th>枚举</th>
+<th>每像素</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_COLOR_RGB565</code></td>
+<td>2 B</td>
+<td>MCU 常用</td>
+</tr>
+<tr>
+<td><code>QL_COLOR_RGB888</code></td>
+<td>3 B</td>
+<td>无量化损失</td>
+</tr>
+<tr>
+<td><code>QL_COLOR_ARGB8888</code></td>
+<td>4 B</td>
+<td>渲染器写入 alpha=0xFF</td>
+</tr>
+<tr>
+<td><code>QL_COLOR_L8</code></td>
+<td>1 B</td>
+<td>灰度/单色屏</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w">    </span><span class="nf">ql_disp_format_bytes</span><span class="p">(</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">format</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_disp_format_name</span><span class="p">(</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">format</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">    </span><span class="nf">ql_disp_buffer_size</span><span class="p">(</span><span class="n">QLColorFormat</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="32">3.2 驱动结构</h3>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">QLDispDriver</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">format</span><span class="p">,</span><span class="w"> </span><span class="n">rotation</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">void</span><span class="w">      </span><span class="o">*</span><span class="n">framebuffer</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w">   </span><span class="n">stride</span><span class="p">;</span><span class="w">                              </span><span class="cm">/* 字节/行 */</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">      </span><span class="p">(</span><span class="o">*</span><span class="n">flush</span><span class="p">)(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">area</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w">      </span><span class="o">*</span><span class="n">user_data</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<h3 id="33">3.3 注册与配置</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w">      </span><span class="nf">ql_disp_set</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 设为活动显示 */</span>
+<span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_disp_get</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">          </span><span class="nf">ql_disp_set_bg_color</span><span class="p">(</span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 每帧清屏用 */</span>
+<span class="n">ql_color_t</span><span class="w">    </span><span class="nf">ql_disp_bg_color</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">      </span><span class="nf">ql_disp_init_fb</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">fb</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride</span><span class="p">,</span>
+<span class="w">                              </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="n">QLColorFormat</span><span class="w"> </span><span class="n">fmt</span><span class="p">,</span>
+<span class="w">                              </span><span class="kt">int</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">flush</span><span class="p">)(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="p">));</span>
+</code></pre></div>
+
+<p><code>ql_disp_set</code> 会校验：<code>framebuffer != NULL</code>、宽高 &gt; 0、格式合法。
+<code>ql_disp_init_fb</code> 的 <code>stride == 0</code> 表示"按最紧凑宽度自动计算"。</p>
+<h3 id="34">3.4 对接真实屏的写法</h3>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">s_fb</span><span class="p">[</span><span class="mi">320</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">240</span><span class="p">];</span>
+
+<span class="k">static</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">panel_flush</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">area</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">d</span><span class="p">;</span>
+<span class="w">    </span><span class="n">lcd_set_window</span><span class="p">(</span><span class="n">area</span><span class="p">.</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">w</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">y</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">h</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">    </span><span class="n">lcd_write_pixels</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s_fb</span><span class="p">[</span><span class="n">area</span><span class="p">.</span><span class="n">y</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">320</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">x</span><span class="p">],</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">w</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">area</span><span class="p">.</span><span class="n">h</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w">                       </span><span class="cm">/* 返回非 0 只打警告，不影响正确性 */</span>
+<span class="p">}</span>
+
+<span class="n">QLDispDriver</span><span class="w"> </span><span class="n">drv</span><span class="p">;</span>
+<span class="n">ql_disp_init_fb</span><span class="p">(</span><span class="o">&amp;</span><span class="n">drv</span><span class="p">,</span><span class="w"> </span><span class="n">s_fb</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="kt">uint16_t</span><span class="p">),</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB565</span><span class="p">,</span>
+<span class="w">                </span><span class="n">panel_flush</span><span class="p">);</span>
+<span class="n">ql_disp_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">drv</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="35-pc">3.5 内存驱动（PC / 测试 / 示例）</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_disp_mem_create</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="n">QLColorFormat</span><span class="w"> </span><span class="n">fmt</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">          </span><span class="nf">ql_disp_mem_destroy</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">          </span><span class="nf">ql_disp_mem_clear</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+<span class="n">ql_color_t</span><span class="w">    </span><span class="nf">ql_disp_mem_pixel</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">      </span><span class="nf">ql_disp_mem_save_ppm</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">      </span><span class="nf">ql_disp_mem_flush_count</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li><code>create</code> 会自动 <code>ql_disp_set</code>；</li>
+<li><code>destroy</code> 会释放显存，若它是活动显示则一并注销；</li>
+<li><code>save_ppm</code> 输出 P6 二进制 PPM，可直接用图片查看器打开；</li>
+<li><code>pixel</code> 返回 <code>0xRRGGBB</code>（RGB565 已经还原成 8 位）。</li>
+</ul>
+<hr />
+<h2 id="4-qlcanvash">4. 画布（<code>qlcanvas.h</code>）</h2>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">buffer</span><span class="p">;</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLRect</span><span class="w"> </span><span class="n">clip</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">format</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLCanvas</span><span class="p">;</span>
+
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_canvas_from_disp</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_canvas_from_disp_clip</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">clip</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_canvas_set_clip</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">clip</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 自动与屏幕求交 */</span>
+<span class="n">QLRect</span><span class="w">   </span><span class="nf">ql_canvas_clip</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">);</span>
+</code></pre></div>
+
+<p><strong>坐标是屏幕绝对坐标</strong>，<code>clip</code> 决定可见范围。</p>
+<h3 id="41">4.1 像素</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_color_t</span><span class="w"> </span><span class="nf">ql_canvas_read_pixel</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 越界返回 0 */</span>
+<span class="kt">void</span><span class="w">       </span><span class="nf">ql_canvas_write_pixel</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span>
+<span class="w">                                 </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>alpha</code>：0 完全透明（跳过）、255 完全不透明、其余与已有像素线性混合。</p>
+<h3 id="42">4.2 填充</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_clear</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span><span class="w">                       </span><span class="cm">/* 填满 clip */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_rect</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_rect_alpha</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_round_rect</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_fill_round_rect_alpha</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
+<span class="w">                                     </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+</code></pre></div>
+
+<p>半径会被裁到 <code>min(w,h)/2</code>，超过自动退化，不会越界。</p>
+<h3 id="43">4.3 描边与线条</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_stroke_rect</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
+<span class="w">                           </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 向内描边 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_draw_hline</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x1</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x2</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span>
+<span class="w">                          </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_draw_vline</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y1</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y2</span><span class="p">,</span>
+<span class="w">                          </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_canvas_draw_line</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x1</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y1</span><span class="p">,</span>
+<span class="w">                         </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x2</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y2</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness</span><span class="p">,</span>
+<span class="w">                         </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>stroke_rect</code> 的描边<strong>向内</strong>：控件尺寸不变，内容区被挤小。</p>
+<h3 id="44">4.4 量化</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_color_t</span><span class="w"> </span><span class="nf">ql_canvas_quantize</span><span class="p">(</span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
+</code></pre></div>
+
+<p>返回该格式下<strong>实际会写进去</strong>的颜色（RGB565 会丢低位、L8 转灰度）。
+测试用它做精确断言。</p>
+<hr />
+<h2 id="5-qlwidgeth">5. 控件（<code>qlwidget.h</code>）</h2>
+<h3 id="51">5.1 类型</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QL_DECLARE</span><span class="p">(</span><span class="n">QLWidget</span><span class="p">,</span><span class="w"> </span><span class="n">ql_widget</span><span class="p">)</span>
+<span class="cp">#define QL_WIDGET_TYPE  ql_widget_get_type()</span>
+</code></pre></div>
+
+<h3 id="52">5.2 属性</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>类型</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_X</code></td>
+<td>INT</td>
+<td>0</td>
+<td>相对父控件</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_Y</code></td>
+<td>INT</td>
+<td>0</td>
+<td>相对父控件</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_WIDTH</code></td>
+<td>INT</td>
+<td>0</td>
+<td>负数被拒绝</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_HEIGHT</code></td>
+<td>INT</td>
+<td>0</td>
+<td>负数被拒绝</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_BG_COLOR</code></td>
+<td>COLOR/UINT</td>
+<td>白</td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_BG_ALPHA</code></td>
+<td>INT</td>
+<td><strong>0</strong></td>
+<td>0 = 透明；255 = 不透明</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_BORDER_WIDTH</code></td>
+<td>INT</td>
+<td>0</td>
+<td>0 = 不画边框</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_BORDER_COLOR</code></td>
+<td>COLOR/UINT</td>
+<td>黑</td>
+<td></td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_BORDER_RADIUS</code></td>
+<td>INT</td>
+<td>0</td>
+<td>0 = 直角</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_CLIP_CHILDREN</code></td>
+<td>BOOL/INT</td>
+<td>0</td>
+<td>1 = 子控件被裁到父矩形内</td>
+</tr>
+<tr>
+<td><code>QL_WIDGET_PROPERTY_VISIBLE</code></td>
+<td>BOOL/INT</td>
+<td>1</td>
+<td>0 = 整棵子树不画</td>
+</tr>
+</tbody>
+</table>
+<p>属性变化会自动标记脏区，不需要手动调用任何刷新函数。</p>
+<h3 id="53">5.3 创建</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_widget_new</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_widget_new_ex</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">);</span>
+<span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_widget_new_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span>
+<span class="w">                              </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>ql_widget_new_child</code> 等价于 <code>new_ex</code> + <code>ql_object_add_child</code>，失败返回 <code>NULL</code>。
+用 <code>new_ex</code> 创建的控件调用方持有引用，需要自己 <code>ql_object_unref</code>；
+用 <code>new_child</code> 创建的由父对象接管，<strong>不要</strong>再 <code>unref</code>。</p>
+<h3 id="54">5.4 便捷访问</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">       </span><span class="nf">ql_widget_set_pos</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">       </span><span class="nf">ql_widget_set_bg</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">       </span><span class="nf">ql_widget_set_border</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span>
+<span class="w">                                </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">       </span><span class="nf">ql_widget_set_visible</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">visible</span><span class="p">);</span>
+
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_widget_x</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_widget_y</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_widget_width</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="n">ql_coord_t</span><span class="w"> </span><span class="nf">ql_widget_height</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">        </span><span class="nf">ql_widget_is_visible</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">        </span><span class="nf">ql_widget_clips_children</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="n">QLRect</span><span class="w">     </span><span class="nf">ql_widget_local_rect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 相对父控件 */</span>
+<span class="n">QLRect</span><span class="w">     </span><span class="nf">ql_widget_abs_rect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">     </span><span class="cm">/* 屏幕绝对坐标 */</span>
+<span class="kt">int</span><span class="w">        </span><span class="nf">ql_widget_contains</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">abs_x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">abs_y</span><span class="p">);</span>
+</code></pre></div>
+
+<p>全部对 <code>NULL</code> 与非控件对象安全：返回 0 或空矩形，不崩。</p>
+<h3 id="55">5.5 自定义控件（覆盖绘制）</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* ① id 枚举 */</span>
+<span class="n">QL_PROPERTY_ENUM_EMPTY</span><span class="p">(</span><span class="n">QL_BOX</span><span class="p">,</span><span class="w"> </span><span class="n">QLBox</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span>
+<span class="n">QL_EVENT_ENUM_EMPTY</span><span class="p">(</span><span class="n">QL_BOX</span><span class="p">,</span><span class="w"> </span><span class="n">QLBox</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span>
+
+<span class="cm">/* ② 声明 */</span>
+<span class="n">QL_DECLARE</span><span class="p">(</span><span class="n">QLBox</span><span class="p">,</span><span class="w"> </span><span class="n">ql_box</span><span class="p">)</span>
+<span class="cp">#define QL_BOX_TYPE  ql_box_get_type()</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLBox</span><span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="n">QLWidget</span><span class="w"> </span><span class="n">parent</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLBoxClass</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="n">QLWidgetClass</span><span class="w"> </span><span class="n">parent</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">QLBoxPrivate</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+
+<span class="cm">/* ③ 定义 */</span>
+<span class="n">QL_DEFINE_WITH_PRIVATE</span><span class="p">(</span><span class="n">QL_BOX</span><span class="p">,</span><span class="w"> </span><span class="n">QLBox</span><span class="p">,</span><span class="w"> </span><span class="n">ql_box</span><span class="p">,</span><span class="w"> </span><span class="n">ql_widget</span><span class="p">)</span>
+
+<span class="cm">/* ④ 绘制：先画背景边框，再画自己的内容</span>
+<span class="cm">      签名用 QLDraw2D 而不是 QLCanvas —— 同一份代码 CPU / GPU 都能跑 */</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_box_draw</span><span class="p">(</span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">ql_widget_draw_default</span><span class="p">(</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLBoxPrivate</span><span class="w"> </span><span class="o">*</span><span class="n">priv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_box_get_private</span><span class="p">((</span><span class="n">QLBox</span><span class="w"> </span><span class="o">*</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">self</span><span class="p">);</span>
+<span class="w">    </span><span class="n">QLRect</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_abs_rect</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">self</span><span class="p">);</span>
+<span class="w">    </span><span class="n">d2d</span><span class="o">-&gt;</span><span class="n">draw_line</span><span class="p">(</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">r</span><span class="p">.</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">r</span><span class="p">.</span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">ql_rect_right</span><span class="p">(</span><span class="n">r</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">                   </span><span class="n">ql_rect_bottom</span><span class="p">(</span><span class="n">r</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">priv</span><span class="o">-&gt;</span><span class="n">color</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="cm">/* ⑤ 钩子 */</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_box_class_init</span><span class="p">(</span><span class="n">QLBoxClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">ql_widget_class_set_draw</span><span class="p">(((</span><span class="n">QLObjectClass</span><span class="w"> </span><span class="o">*</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">klass</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">ql_box_draw</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_box_init</span><span class="p">(</span><span class="n">QLBox</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLBoxPrivate</span><span class="w"> </span><span class="o">*</span><span class="n">priv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_box_get_private</span><span class="p">(</span><span class="n">self</span><span class="p">);</span>
+<span class="w">    </span><span class="n">priv</span><span class="o">-&gt;</span><span class="n">color</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_COLOR_RED</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">ql_box_deinit</span><span class="p">(</span><span class="n">QLBox</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UNUSED</span><span class="p">(</span><span class="n">self</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+
+<span class="cm">/* ⑥ 使用 */</span>
+<span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_REGISTER</span><span class="p">(</span><span class="n">ql_box</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET_TYPE</span><span class="p">);</span>
+<span class="n">QLBox</span><span class="w"> </span><span class="o">*</span><span class="n">box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">QLBox</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">ql_object_new</span><span class="p">(</span><span class="n">type</span><span class="p">);</span>
+</code></pre></div>
+
+<p>要点：</p>
+<ul>
+<li>绘制函数签名 <code>void (*)(QLWidget *self, QLDraw2D *d2d)</code>；</li>
+<li>坐标是<strong>屏幕坐标</strong>，用 <code>ql_widget_abs_rect(self)</code> 取自己的位置；</li>
+<li>只画内容，背景/边框调用 <code>ql_widget_draw_default</code>；</li>
+<li><code>QLDraw2D</code> 里可用的原语：<code>fill_rect</code> / <code>fill_round_rect</code> / <code>stroke_round_rect</code> /
+  <code>fill_round_rect_gradient</code> / <code>fill_shadow</code> / <code>draw_line</code> / <code>draw_text</code> / <code>set_clip</code>；</li>
+<li>绘制函数通过 <code>ql_widget_class_set_draw</code> 登记到<strong>本类型的 id</strong> 上，子类再覆盖即可。</li>
+</ul>
+<h3 id="56">5.6 绘制相关接口</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_widget_draw_func</span><span class="p">)(</span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w">                </span><span class="nf">ql_widget_class_set_draw</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">ql_widget_draw_func</span><span class="w"> </span><span class="n">draw</span><span class="p">);</span>
+<span class="n">ql_widget_draw_func</span><span class="w"> </span><span class="nf">ql_widget_class_get_draw</span><span class="p">(</span><span class="n">QLType</span><span class="w"> </span><span class="n">type</span><span class="p">);</span>
+<span class="n">ql_widget_draw_func</span><span class="w"> </span><span class="nf">ql_widget_get_draw</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 沿类链找最近的 */</span>
+<span class="kt">void</span><span class="w">                </span><span class="nf">ql_widget_draw_default</span><span class="p">(</span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">                </span><span class="nf">ql_widget_reset</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">               </span><span class="cm">/* qlgl_init/shutdown 内部用 */</span>
+</code></pre></div>
+
+<h3 id="57-linux-qldisp_x11h">5.7 Linux 窗口后端（<code>qldisp_x11.h</code>）</h3>
+<p>编译期由 CMake 打开：找到 X11 时自动定义 <code>QLGL_ENABLE_X11=1</code>；未启用时本节接口不参与编译。</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_disp_x11_create</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">height</span><span class="p">,</span>
+<span class="w">                                 </span><span class="n">QLColorFormat</span><span class="w"> </span><span class="n">format</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">           </span><span class="nf">ql_disp_x11_poll</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 1 = 继续，0 = 窗口已关闭 */</span>
+<span class="kt">void</span><span class="w">          </span><span class="nf">ql_disp_x11_destroy</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">   </span><span class="o">*</span><span class="nf">ql_disp_x11_title</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">      </span><span class="nf">ql_disp_x11_expose_count</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>format</code></td>
+<td>传 <code>QL_COLOR_FORMAT_AUTO</code> 按 X 服务器视觉自动选（通常是 <code>ARGB8888</code>）</td>
+</tr>
+<tr>
+<td>返回值</td>
+<td>成功时驱动已被 <code>ql_disp_set</code> 设为活动显示；无 <code>DISPLAY</code> 时返回 <code>NULL</code> 并打错误日志</td>
+</tr>
+<tr>
+<td>像素存储</td>
+<td><strong>XImage 的像素内存就是渲染器的帧缓冲</strong>，绘制与上屏之间无额外拷贝</td>
+</tr>
+<tr>
+<td><code>flush</code></td>
+<td>只把脏矩形用 <code>XPutImage</code> 推给窗口</td>
+</tr>
+<tr>
+<td>退出条件</td>
+<td>点窗口关闭按钮、按 <code>Esc</code> / <code>q</code>、收到 <code>DestroyNotify</code></td>
+</tr>
+<tr>
+<td><code>Expose</code> 事件</td>
+<td>自动 <code>ql_render_invalidate_all()</code>，窗口被遮挡后恢复会整屏重画</td>
+</tr>
+</tbody>
+</table>
+<p>支撑的视觉格式：32bpp/24bpp（TrueColor，掩码 RGB），16bpp RGB565。其他视觉会拒绝并打错误日志。</p>
+<h3 id="58-linux-wayland-qldisp_waylandh">5.8 Linux Wayland 后端（<code>qldisp_wayland.h</code>）</h3>
+<p>编译期由 CMake 的 <code>QLGL_BUILD_WAYLAND</code> 控制：找到 <code>wayland-client</code> 与 <code>wayland-scanner</code>
+时自动定义 <code>QLGL_ENABLE_WAYLAND=1</code>。<code>xdg-shell.xml</code> 已随仓库提供
+（<code>src/port/protocols/</code>），构建时用 <code>wayland-scanner</code> 生成协议代码，不依赖系统安装 wayland-protocols。</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_disp_wayland_create</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span>
+<span class="w">                                     </span><span class="n">QLColorFormat</span><span class="w"> </span><span class="n">format</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">           </span><span class="nf">ql_disp_wayland_poll</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 1 = 继续，0 = 已关闭 */</span>
+<span class="kt">void</span><span class="w">          </span><span class="nf">ql_disp_wayland_destroy</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">   </span><span class="o">*</span><span class="nf">ql_disp_wayland_title</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">      </span><span class="nf">ql_disp_wayland_commit_count</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w">      </span><span class="nf">ql_disp_wayland_skip_count</span><span class="p">(</span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>支持的格式</td>
+<td>只有 <code>QL_COLOR_ARGB8888</code>（对应 <code>WL_SHM_FORMAT_XRGB8888</code>）；传 AUTO 也可以</td>
+</tr>
+<tr>
+<td>帧缓冲</td>
+<td>渲染器写一块<strong>持久</strong>缓冲；每次 flush 把脏矩形拷进 shm 缓冲区</td>
+</tr>
+<tr>
+<td>双缓冲</td>
+<td>两个 <code>wl_buffer</code> 轮换；两个都在用时<strong>跳过本帧</strong>（<code>skip_count++</code>），不撕裂</td>
+</tr>
+<tr>
+<td>提交合并</td>
+<td>一帧内的所有脏区在 <code>flush_done</code> 里合并成一次 <code>attach + damage + commit</code></td>
+</tr>
+<tr>
+<td>退出条件</td>
+<td>点窗口关闭按钮、按 <code>Esc</code> / <code>q</code></td>
+</tr>
+<tr>
+<td>环境变量</td>
+<td><code>WAYLAND_DISPLAY</code>、<code>XDG_RUNTIME_DIR</code>（桌面会话里通常已设置）</td>
+</tr>
+<tr>
+<td>键盘</td>
+<td>直接读 evdev 键码（<code>1</code>=Esc，<code>16</code>=q），不依赖 xkbcommon，因此只有这两个键可用</td>
+</tr>
+</tbody>
+</table>
+<p><strong>和 X11 后端的差别</strong>：X11 的 XImage 数据直接就是渲染器的帧缓冲（零拷贝）；
+Wayland 因为要轮流 attach 两个缓冲区，必须多一次脏矩形拷贝。拷贝量只跟脏区面积有关。</p>
+<h3 id="59">5.9 后端选择建议</h3>
+<div class="highlight"><pre><span></span><code><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="cp">#if defined(QLGL_ENABLE_WAYLAND)</span>
+<span class="w">    </span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_wayland_create</span><span class="p">(</span><span class="s">&quot;QLGL Demo&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_FORMAT_AUTO</span><span class="p">);</span>
+<span class="cp">#endif</span>
+<span class="cp">#if defined(QLGL_ENABLE_X11)</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">d</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span>
+<span class="w">        </span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_x11_create</span><span class="p">(</span><span class="s">&quot;QLGL Demo&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_FORMAT_AUTO</span><span class="p">);</span>
+<span class="cp">#endif</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">d</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span>
+<span class="w">    </span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB888</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 无桌面环境 */</span>
+</code></pre></div>
+
+<p><code>test/widget/example_window.c</code> 就是按这个顺序自动降级的，也可以用
+<code>--backend=wayland|x11</code> 强制指定。</p>
+<p>标准用法：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">disp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_x11_create</span><span class="p">(</span><span class="s">&quot;QLGL Demo&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_FORMAT_AUTO</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">disp</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">disp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB888</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 降级 */</span>
+<span class="p">}</span>
+
+<span class="n">ql_render_set_root</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
+
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_disp_x11_poll</span><span class="p">(</span><span class="n">disp</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cm">/* 改属性 -&gt; 自动打脏 */</span>
+<span class="w">    </span><span class="n">ql_render</span><span class="p">();</span>
+<span class="p">}</span>
+<span class="n">ql_disp_x11_destroy</span><span class="p">(</span><span class="n">disp</span><span class="p">);</span>
+</code></pre></div>
+
+<blockquote>
+<p>窗口示例会进入事件循环，因此 <strong>不注册为 ctest 用例</strong>（CMake 里按名字排除）。
+用 <code>--frames N</code> 可以跑固定帧数后自动退出，便于脚本化验证。</p>
+</blockquote>
+<hr />
+<h2 id="6-qlrenderh">6. 渲染器（<code>qlrender.h</code>）</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_render_set_root</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 根可以不是控件 */</span>
+<span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_render_root</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_render_invalidate_all</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 整屏重绘 */</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_render_invalidate_rect</span><span class="p">(</span><span class="n">QLRect</span><span class="w"> </span><span class="n">area</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_render_invalidate</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 按控件绝对矩形 */</span>
+
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_render_dirty_count</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_render_dirty_rect</span><span class="p">(</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">index</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span>
+
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_render</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">                       </span><span class="cm">/* CPU：清背景 + 画 + flush + 清脏区 */</span>
+<span class="cm">/* 任意后端：只画脏区，不清背景、不推屏、不清空脏区队列 */</span>
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_render_draw2d</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">surface_w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">surface_h</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正常绘制 n 个脏区</td>
+<td><code>n</code></td>
+</tr>
+<tr>
+<td>无脏区</td>
+<td><code>0</code>（不做任何工作）</td>
+</tr>
+<tr>
+<td>未设显示或未设根</td>
+<td><code>QL_ERR_NOT_INIT</code>（负数）</td>
+</tr>
+</tbody>
+</table>
+<p><code>ql_render_set_root(NULL)</code> 用于<strong>解绑</strong>——销毁控件树之前必须先调用，否则脏矩形钩子会打到野指针。</p>
+<p>GPU 用法（自己管理窗口与上下文）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_render_set_root</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
+<span class="n">ql_render_invalidate_all</span><span class="p">();</span>
+<span class="n">ql_gfx_gl_begin</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">bg</span><span class="p">);</span><span class="w">                        </span><span class="cm">/* 自己清屏 */</span>
+<span class="n">ql_render_draw2d</span><span class="p">(</span><span class="n">ql_gfx_gl_draw</span><span class="p">(</span><span class="n">gfx</span><span class="p">),</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">);</span><span class="w">     </span><span class="cm">/* 只画脏区 */</span>
+<span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="_1">典型主循环</h3>
+<div class="highlight"><pre><span></span><code><span class="k">for</span><span class="w"> </span><span class="p">(;;)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">handle_input</span><span class="p">();</span>
+<span class="w">    </span><span class="n">ql_render</span><span class="p">();</span><span class="w">          </span><span class="cm">/* 有脏区才真正画 */</span>
+<span class="w">    </span><span class="n">idle</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="_2">脏区行为</h3>
+<ul>
+<li>属性变化、挂接/摘除控件都会自动打脏；</li>
+<li>相交的脏区会合并，最多跟踪 <code>QL_CFG_DIRTY_RECT_MAX</code>（默认 16）块，满了并成一块；</li>
+<li>超出屏幕的部分被裁掉；</li>
+<li>未挂进渲染树的对象不会打脏。</li>
+</ul>
+<hr />
+<h2 id="7-qlconfigh">7. 配置项（<code>qlconfig.h</code>）</h2>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_DIRTY_RECT_MAX</code></td>
+<td>16</td>
+<td>同时跟踪的脏矩形数量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MAX_CLASS</code></td>
+<td>64</td>
+<td>类表容量，也是绘制表的长度</td>
+</tr>
+</tbody>
+</table>
+<p>CMake 选项：</p>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QLGL_BUILD_X11</code></td>
+<td>ON</td>
+<td>在 Linux 上构建 X11 窗口后端（需要 libX11 开发包）</td>
+</tr>
+<tr>
+<td><code>QLGL_BUILD_WAYLAND</code></td>
+<td>ON</td>
+<td>在 Linux 上构建 Wayland 窗口后端（需要 wayland-client 与 wayland-scanner）</td>
+</tr>
+<tr>
+<td><code>QLGL_BUILD_TESTS</code></td>
+<td>ON</td>
+<td>构建 <code>test/</code> 下的示例与单元测试</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8">8. 限制与后续</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>v0.1 状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局</td>
+<td>只支持绝对定位（<code>x/y/w/h</code>），无盒模型 / flex</td>
+</tr>
+<tr>
+<td>文字</td>
+<td>未实现（<code>QLCanvas</code> 尚无字形绘制）</td>
+</tr>
+<tr>
+<td>图片</td>
+<td>未实现</td>
+</tr>
+<tr>
+<td>抗锯齿</td>
+<td>未实现，圆角是硬边</td>
+</tr>
+<tr>
+<td>图层合成</td>
+<td>只有"源 alpha 与已有像素混合"，无独立图层</td>
+</tr>
+<tr>
+<td>缓冲策略</td>
+<td>需要至少一屏显存（直绘）；部分缓冲后端待补</td>
+</tr>
+<tr>
+<td>线程</td>
+<td>非线程安全</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9">9. 示例与测试</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test/widget/example_widget.c</code></td>
+<td>卡片 + 标题条 + 主/次按钮 + 自定义徽标，输出 PPM</td>
+</tr>
+<tr>
+<td><code>test/widget/example_window.c</code></td>
+<td><strong>真实窗口</strong>（Wayland / X11）：动画 + 文字 + 增量重绘</td>
+</tr>
+<tr>
+<td><code>test/widget/test_canvas.c</code></td>
+<td>每个绘制原语的像素级断言（含 RGB565/L8/ARGB8888）</td>
+</tr>
+<tr>
+<td><code>test/widget/test_widget_basic.c</code></td>
+<td>属性、几何换算、命中测试、可见性</td>
+</tr>
+<tr>
+<td><code>test/widget/test_widget_render.c</code></td>
+<td>层叠、圆角、alpha、裁剪、脏矩形合并、子类 draw</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>build
+./build/example_widget<span class="w"> </span>/tmp/out.ppm
+./build/example_window<span class="w">                      </span><span class="c1"># 自动选择后端（优先 Wayland）</span>
+./build/example_window<span class="w"> </span>--backend<span class="o">=</span>x11<span class="w">        </span><span class="c1"># 强制 X11</span>
+./build/example_window<span class="w"> </span>--frames<span class="w"> </span><span class="m">120</span><span class="w">         </span><span class="c1"># 跑 120 帧后自动退出</span>
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build<span class="w"> </span>--output-on-failure
+</code></pre></div>
+<div class='pager'>
+<a href='../../manual/object/QLObject阅读指南.html'><span class='dir'>上一页</span>QLObject 阅读指南</a>
+<a class='next' href='../../manual/widget/QLWidget阅读指南.html'><span class='dir'>下一页</span>QLWidget / 绘制系统 阅读指南</a>
+</div>
+</main>
+</div>
+</body>
+</html>
