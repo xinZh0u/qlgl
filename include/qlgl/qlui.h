@@ -430,6 +430,18 @@ typedef struct QLUINodeRT {
     int16_t          tf_dev_hi_x;
     int16_t          tf_dev_hi_y;
 
+    /*
+     * 滚动（只有 `overflow: auto` 的容器会用）：
+     *   scroll_x/y    当前偏移（>= 0）；布局末尾已经把子树整体平移过，
+     *                 所以绘制/命中测试都不用再管它；
+     *   scroll_max_x/y 可滚动范围（内容尺寸 - 可视尺寸，>= 0）。
+     * 改滚动 = 改这两个数 + 重跑布局（0.04ms 量级，比维护一套绘制偏移便宜）。
+     */
+    ql_coord_t       scroll_x;
+    ql_coord_t       scroll_y;
+    ql_coord_t       scroll_max_x;
+    ql_coord_t       scroll_max_y;
+
     uint16_t         depth;
     uint8_t          flags;      /* QL_UI_RT_* */
     uint8_t          used_copy;  /* style_copy 是否启用 */
@@ -571,6 +583,10 @@ struct QLUIRoot {
     struct QLUIAnimEvent { struct QLUINodeRT *node; uint8_t kind; } anim_ev[QL_CFG_UI_ANIM_EVENT_MAX];
     uint8_t        anim_ev_count;
     uint8_t        anim_ev_dropped;
+    /* 正在拖滚动条：容器 + 按下时的指针位置与当时的偏移 */
+    QLUINodeRT    *scroll_drag;
+    ql_coord_t     scroll_drag_y0;
+    ql_coord_t     scroll_drag_scroll0;
 };
 
 /* ----- 生命周期 ----- */
@@ -615,6 +631,18 @@ ql_err_t    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 
 /* 交互状态：命中测试 + 状态位 + 点击回调 */
 void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
+/*
+ * 滚动（`overflow: auto`）。
+ *
+ * 偏移会被夹到 [0, scroll_max]，返回实际生效的位置。节点不可滚动时是空操作。
+ * `ql_ui_scroll_to` 之后需要重跑一次 `ql_ui_layout`（见 QLUI阅读指南 §5.6），
+ * 或者干脆用 `ql_ui_scroll_by` —— 它内部会重排并返回脏区。
+ */
+ql_err_t    ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y);
+ql_err_t    ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy);
+/* 这个节点能不能滚（overflow: auto 且有超出内容） */
+int         ql_ui_scrollable(const QLUINodeRT *node);
+
 int         ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 int         ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 int         ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);

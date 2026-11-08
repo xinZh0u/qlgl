@@ -20,6 +20,7 @@ set(QL_EXAMPLES
     06_theme
     07_player
     08_tags
+    09_scroll
 )
 
 foreach(e ${QL_EXAMPLES})

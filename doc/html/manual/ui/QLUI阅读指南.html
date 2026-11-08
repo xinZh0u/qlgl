@@ -172,6 +172,8 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/06_theme.html'>换皮肤</a>
 <a href='../../tutorial/07_advanced.html'>进阶</a>
 <a href='../../tutorial/08_tags.html'>标签与语义</a>
+<a href='../../tutorial/09_scroll.html'>滚动</a>
+<a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
@@ -1045,6 +1047,61 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
    否则纹理采样跟着四边形一起歪（字形会变成斜着错位的一团）。</li>
 <li>行高是 CSS px，到了后端要按 <code>font_fx</code> 放大；装饰线画在设备像素里，
    HiDPI 下不能还是 1 个 CSS px 粗。</li>
+</ol>
+<hr />
+<h3 id="56">5.6 滚动：偏移烘进布局</h3>
+<p><code>overflow: auto</code> 与 <code>hidden</code> 都裁，只有 <code>auto</code> 能滚。实现方式和绝大多数框架相反：</p>
+<div class="highlight"><pre><span></span><code>ql_ui_scroll_by() → node-&gt;scroll_y → ql_ui_layout() → 布局末尾 translate_subtree(子节点, -scroll)
+</code></pre></div>
+
+<p><strong>为什么不搞"绘制偏移 + 命中逆变换"</strong>：绘制、命中测试、<code>paint_box</code>、脏区这四件事
+读的都是 <code>node-&gt;border_box</code>。坐标一旦是对的，四件事自动一致；否则要维护
+"绘制加了偏移、命中忘了加"这类四份不同步的正确性。代价是滚动要重排，
+实测 211 节点 0.037 ms，只在滚动时发生。</p>
+<p><strong><code>scroll_to</code> 不重排，<code>scroll_by</code> 重排</strong>：前者是"设置状态"（连续设多次只该排一次），
+后者是"做一次操作"（用户滚一下就该看到）。</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>可滚范围</td>
+<td><code>apply_scroll()</code> 末尾</td>
+<td><code>ext - content</code>，<code>ext</code> 由子节点 <code>border_box</code> 外沿 + margin 求出</td>
+</tr>
+<tr>
+<td>夹紧</td>
+<td>同上</td>
+<td>范围变化（窗口缩放、内容变长）时自动夹回，不会卡在越界位置</td>
+</tr>
+<tr>
+<td>滚动条</td>
+<td><code>draw_scrollbar()</code></td>
+<td>覆盖式 4px 滑块，不占布局；<code>hidden</code> 不画</td>
+</tr>
+<tr>
+<td>滚轮</td>
+<td><code>ql_ui_input_event</code> 的 <code>QL_INPUT_WHEEL</code></td>
+<td>命中 → 往上找最近可滚祖先</td>
+</tr>
+<tr>
+<td>拖滚动条</td>
+<td><code>ql_ui_pointer_down/move/up</code></td>
+<td>右侧 10px 热区；拖动<strong>不算点击</strong>（<code>scroll_drag</code> 非空直接吞掉）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>两个坑</strong></p>
+<ol>
+<li>拖动滚动条时如果先走 <code>set_state_chain(node, ACTIVE, 1)</code>，整个列表会闪一下 <code>:active</code>
+   样式。所以 <code>pointer_down</code> 里必须先判滚动条热区，命中就直接接管。</li>
+<li><code>translate_subtree</code> 会一并平移 <code>abs_cb</code>，所以容器里的绝对定位子元素也跟着滚
+   —— 这是对的（CSS 里绝对定位相对的是 padding box，滚动会让它移动）。</li>
 </ol>
 <hr />
 <h3 id="55-qlui-blob">5.5 <code>.qlui</code> blob：换界面不用重编译</h3>

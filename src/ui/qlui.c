@@ -546,6 +546,65 @@ static void sort_tree_by_z(QLUINodeRT *node)
         sort_tree_by_z(c);
 }
 
+/* ------------------------------ 滚动 ------------------------------ */
+
+/*
+ * 把 `overflow: auto` 容器的子树按当前偏移平移。
+ *
+ * 为什么把偏移**烘进布局**而不是在绘制时加：
+ *   - 绘制、命中测试、paint_box、脏区全都读 node->border_box，只要它是对的，
+ *     上面四件事一行都不用改；
+ *   - 代价是滚动后要重跑一次布局（211 节点 0.037ms，比维护一套并行的
+ *     "绘制偏移 + 逆变换命中"便宜，也不容易漏）。
+ *
+ * 这也是为什么 `ql_ui_scroll_by()` 内部直接重排一次：正确性优先。
+ */
+static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
+                         ql_coord_t cw, ql_coord_t ch)
+{
+    const QLUIStyle *s = node->style;
+
+    if (s->overflow != QL_UI_OVERFLOW_AUTO) {
+        /* visible / hidden：不滚（hidden 只裁不滚，与 CSS 一致） */
+        node->scroll_x = node->scroll_y = 0;
+        node->scroll_max_x = node->scroll_max_y = 0;
+        return;
+    }
+
+    /* 内容外沿（含 margin）：从内容盒左上角量起 */
+    ql_coord_t ext_w = 0, ext_h = 0;
+    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style->display == QL_UI_DISPLAY_NONE)
+            continue;
+        const QLRect b = c->border_box;
+        const ql_coord_t r = ql_rect_right(b) + s->margin.right + c->style->margin.right;
+        const ql_coord_t bo =
+            ql_rect_bottom(b) + s->margin.bottom + c->style->margin.bottom;
+        const ql_coord_t w = r - cx;
+        const ql_coord_t h = bo - cy;
+        if (w > ext_w)
+            ext_w = w;
+        if (h > ext_h)
+            ext_h = h;
+    }
+
+    node->scroll_max_x = (ext_w > cw) ? (ext_w - cw) : 0;
+    node->scroll_max_y = (ext_h > ch) ? (ext_h - ch) : 0;
+
+    if (node->scroll_x < 0)
+        node->scroll_x = 0;
+    if (node->scroll_y < 0)
+        node->scroll_y = 0;
+    if (node->scroll_x > node->scroll_max_x)
+        node->scroll_x = node->scroll_max_x;
+    if (node->scroll_y > node->scroll_max_y)
+        node->scroll_y = node->scroll_max_y;
+
+    if (node->scroll_x != 0 || node->scroll_y != 0)
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling)
+            translate_subtree(c, -node->scroll_x, -node->scroll_y);
+}
+
 /* ------------------------------ 主布局 ------------------------------ */
 
 static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
@@ -705,6 +764,9 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                         : node->abs_cb;
         layout_absolute(child, cb, s_viewport_w);
     }
+
+    /* 滚动：把越界的内容整体平移上去（放在 relative 之后，按最终位置算） */
+    apply_scroll(node, content_x, content_y, content_w, content_h);
 
     /* relative：布局完成后整体平移，不影响兄弟节点 */
     if (s->position == QL_UI_POSITION_RELATIVE) {
@@ -1613,6 +1675,56 @@ const char *ql_ui_node_text(const QLUINodeRT *node)
     return (node != NULL && node->text != NULL) ? node->text : "";
 }
 
+/* ------------------------------ 滚动条 ------------------------------ */
+
+#define SCROLLBAR_W     4      /* 滑块宽度（px） */
+#define SCROLLBAR_INSET 2      /* 距右边/下边的内缩 */
+
+/* 滑块的尺寸与位置：可视高 ch、内容超出 max_y、当前偏移 scroll_y */
+static void scrollbar_thumb(ql_coord_t ch, ql_coord_t max_y, ql_coord_t scroll_y,
+                            ql_coord_t *out_h, ql_coord_t *out_y)
+{
+    const ql_coord_t track = ch - 2 * SCROLLBAR_INSET;
+    if (track <= 0 || max_y <= 0) {
+        *out_h = 0;
+        *out_y = 0;
+        return;
+    }
+    ql_coord_t th = (ql_coord_t)((int64_t)track * ch / (ch + max_y));
+    if (th < 16)
+        th = 16;
+    if (th > track)
+        th = track;
+    const ql_coord_t room = track - th;
+    const ql_coord_t ty =
+        SCROLLBAR_INSET + (ql_coord_t)((int64_t)room * scroll_y / max_y);
+    *out_h = th;
+    *out_y = ty;
+}
+
+/*
+ * 画滚动条（覆盖式，不占布局空间）。
+ *
+ * 只在 `overflow: auto` 且真的滚得动时画；`overflow: hidden` 永远不画 ——
+ * 这正是 hidden 与 auto 的唯一区别（两者都裁，只有 auto 能滚）。
+ * 颜色用中灰 + 半透明，深浅主题都看得见。
+ */
+static void draw_scrollbar(QLUINodeRT *node, QLDraw2D *d2d)
+{
+    if (!ql_ui_scrollable(node) || d2d->fill_round_rect == NULL)
+        return;
+
+    const QLRect box = ql_ui_node_rect(node);
+    ql_coord_t th = 0, ty = 0;
+    scrollbar_thumb(box.h, node->scroll_max_y, node->scroll_y, &th, &ty);
+    if (th <= 0)
+        return;
+
+    QLRect bar = ql_rect_make(ql_rect_right(box) - SCROLLBAR_INSET - SCROLLBAR_W,
+                              box.y + ty, SCROLLBAR_W, th);
+    d2d->fill_round_rect(d2d, bar, SCROLLBAR_W / 2, 0x808080, 0x96);
+}
+
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = ql_ui_node_style(node);
@@ -1727,6 +1839,7 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
              child = child->next_sibling) {
             render_node(child, d2d);
         }
+        draw_scrollbar(node, d2d);
         d2d->set_clip(d2d, saved);
         node->owner->clip = saved;
         ql_draw2d_set_offset(d2d, saved_ox, saved_oy);
@@ -2614,9 +2727,43 @@ static void set_state_chain(QLUINodeRT *node, uint8_t mask, int on)
     }
 }
 
+/* 滚轮/拖动的热区宽度：比画出来的滑块宽一点，好点中 */
+#define SCROLLBAR_GRAB 10
+
+/*
+ * 指针 (x,y) 是否落在 node 的滚动条上（右侧那条竖带）。
+ * 只看横向是否在带内：竖向整个容器都算，拖动时按比例映射。
+ */
+static int on_scrollbar(const QLUINodeRT *node, ql_coord_t x, ql_coord_t y)
+{
+    if (!ql_ui_scrollable(node))
+        return 0;
+    const QLRect box = ql_ui_node_rect(node);
+    if (y < box.y || y >= ql_rect_bottom(box))
+        return 0;
+    return x >= ql_rect_right(box) - SCROLLBAR_GRAB;
+}
+
 int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
-    QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
+    if (ui == NULL)
+        return 0;
+
+    /*
+     * 先看滚动条：命中测试会把点算成"容器自己"，但滚动条要的是拖动语义，
+     * 不能同时把容器标成 :active（那会让整块列表变个色）。
+     */
+    QLUINodeRT *hit = ql_ui_hit_test(ui, x, y);
+    for (QLUINodeRT *n = hit; n != NULL; n = n->parent) {
+        if (!on_scrollbar(n, x, y))
+            continue;
+        ui->scroll_drag = n;
+        ui->scroll_drag_y0 = y;
+        ui->scroll_drag_scroll0 = n->scroll_y;
+        return 1;
+    }
+
+    QLUINodeRT *node = hit;
     if (node == NULL)
         return 0;
     set_state_chain(node, QL_UI_RT_ACTIVE, 1);
@@ -2627,6 +2774,11 @@ int ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
     if (ui == NULL)
         return 0;
+
+    if (ui->scroll_drag != NULL) {
+        ui->scroll_drag = NULL;
+        return 1;              /* 拖滚动条不算点击 */
+    }
 
     QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
     int was_active = 0;
@@ -2652,6 +2804,26 @@ int ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
     if (ui == NULL)
         return 0;
+
+    /* 正在拖滚动条：位移按"可拖动行程 / 可滚动范围"换算 */
+    if (ui->scroll_drag != NULL) {
+        QLUINodeRT *sc = ui->scroll_drag;
+        const QLRect box = ql_ui_node_rect(sc);
+        ql_coord_t th = 0, ty = 0;
+        scrollbar_thumb(box.h, sc->scroll_max_y, sc->scroll_y, &th, &ty);
+        const ql_coord_t room = (box.h - 2 * SCROLLBAR_INSET) - th;
+        if (room > 0) {
+            const ql_coord_t dy = y - ui->scroll_drag_y0;
+            const ql_coord_t want =
+                ui->scroll_drag_scroll0 + (ql_coord_t)((int64_t)dy *
+                                                       sc->scroll_max_y / room);
+            if (ql_ui_scroll_to(ui, sc, sc->scroll_x, want) == QL_OK) {
+                ql_ui_layout(ui, ui->width, ui->height);
+                sc->flags |= QL_UI_RT_DIRTY;
+            }
+        }
+        return 1;
+    }
 
     QLUINodeRT *node = ql_ui_hit_test(ui, x, y);
     if (ui->hover == node)
@@ -2683,6 +2855,72 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui)
     return (ui != NULL) ? ui->focus : NULL;
 }
 
+/* ------------------------------ 滚动 API ------------------------------ */
+
+int ql_ui_scrollable(const QLUINodeRT *node)
+{
+    if (node == NULL || node->style == NULL)
+        return 0;
+    return node->style->overflow == QL_UI_OVERFLOW_AUTO &&
+           (node->scroll_max_x > 0 || node->scroll_max_y > 0);
+}
+
+ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y)
+{
+    if (ui == NULL || node == NULL || node->style == NULL)
+        return QL_ERR_INVAL;
+
+    ql_coord_t nx = x;
+    ql_coord_t ny = y;
+    if (nx < 0)
+        nx = 0;
+    if (ny < 0)
+        ny = 0;
+    if (nx > node->scroll_max_x)
+        nx = node->scroll_max_x;
+    if (ny > node->scroll_max_y)
+        ny = node->scroll_max_y;
+
+    if (nx == node->scroll_x && ny == node->scroll_y)
+        return QL_OK;
+
+    node->scroll_x = nx;
+    node->scroll_y = ny;
+    return QL_OK;
+}
+
+ql_err_t ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy)
+{
+    if (ui == NULL || node == NULL)
+        return QL_ERR_INVAL;
+    if (node->style == NULL || node->style->overflow != QL_UI_OVERFLOW_AUTO)
+        return QL_ERR_INVAL;
+
+    const ql_coord_t before_x = node->scroll_x;
+    const ql_coord_t before_y = node->scroll_y;
+    if (ql_ui_scroll_to(ui, node, before_x + dx, before_y + dy) != QL_OK)
+        return QL_ERR_INVAL;
+    if (node->scroll_x == before_x && node->scroll_y == before_y)
+        return QL_OK;              /* 顶到头了：不需要重排 */
+
+    /*
+     * 偏移是烘进布局的（见 apply_scroll），所以这里必须重排。
+     * 脏区 = 这个容器本身（内容只可能变在它里面）。
+     */
+    ql_ui_layout(ui, ui->width, ui->height);
+    node->flags |= QL_UI_RT_DIRTY;
+    return QL_OK;
+}
+
+/* 从节点往上找最近的可滚动容器 */
+static QLUINodeRT *nearest_scrollable(QLUINodeRT *node)
+{
+    for (QLUINodeRT *n = node; n != NULL; n = n->parent)
+        if (ql_ui_scrollable(n))
+            return n;
+    return NULL;
+}
+
 /* ------------------------------ 接入输入系统 ------------------------------ */
 
 void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
@@ -2703,6 +2941,42 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
     case QL_INPUT_POINTER_LEAVE:
         ql_ui_pointer_move(ui, -1, -1);
         break;
+    case QL_INPUT_WHEEL: {
+        /*
+         * 滚轮：命中测试找到指针下的节点，往上找最近的可滚动容器。
+         * 滚不到就交给父级 —— 与浏览器一致（列表滚到底以后整页继续滚）。
+         */
+        QLUINodeRT *hit = ql_ui_hit_test(ui, ev->x, ev->y);
+        QLUINodeRT *target = nearest_scrollable(hit);
+        if (target != NULL)
+            (void)ql_ui_scroll_by(ui, target, ev->dx, ev->dy);
+        break;
+    }
+    case QL_INPUT_KEY_DOWN: {
+        /* PageUp/PageDown/Home/End 作用于焦点节点所在的可滚动容器 */
+        QLUINodeRT *target = nearest_scrollable(ui->focus);
+        if (target == NULL)
+            break;
+        const ql_coord_t page = (target->content_box.h > 0) ? target->content_box.h : 0;
+        switch (ev->key) {
+        case QL_KEY_PAGE_UP:
+            (void)ql_ui_scroll_by(ui, target, 0, -page);
+            break;
+        case QL_KEY_PAGE_DOWN:
+            (void)ql_ui_scroll_by(ui, target, 0, page);
+            break;
+        case QL_KEY_HOME:
+            (void)ql_ui_scroll_to(ui, target, target->scroll_x, 0);
+            (void)ql_ui_scroll_by(ui, target, 0, 0);
+            break;
+        case QL_KEY_END:
+            (void)ql_ui_scroll_by(ui, target, 0, target->scroll_max_y);
+            break;
+        default:
+            break;
+        }
+        break;
+    }
     default:
         break;
     }

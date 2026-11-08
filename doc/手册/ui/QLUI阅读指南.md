@@ -667,6 +667,39 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 
 ---
 
+### 5.6 滚动：偏移烘进布局
+
+`overflow: auto` 与 `hidden` 都裁，只有 `auto` 能滚。实现方式和绝大多数框架相反：
+
+```
+ql_ui_scroll_by() → node->scroll_y → ql_ui_layout() → 布局末尾 translate_subtree(子节点, -scroll)
+```
+
+**为什么不搞"绘制偏移 + 命中逆变换"**：绘制、命中测试、`paint_box`、脏区这四件事
+读的都是 `node->border_box`。坐标一旦是对的，四件事自动一致；否则要维护
+"绘制加了偏移、命中忘了加"这类四份不同步的正确性。代价是滚动要重排，
+实测 211 节点 0.037 ms，只在滚动时发生。
+
+**`scroll_to` 不重排，`scroll_by` 重排**：前者是"设置状态"（连续设多次只该排一次），
+后者是"做一次操作"（用户滚一下就该看到）。
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| 可滚范围 | `apply_scroll()` 末尾 | `ext - content`，`ext` 由子节点 `border_box` 外沿 + margin 求出 |
+| 夹紧 | 同上 | 范围变化（窗口缩放、内容变长）时自动夹回，不会卡在越界位置 |
+| 滚动条 | `draw_scrollbar()` | 覆盖式 4px 滑块，不占布局；`hidden` 不画 |
+| 滚轮 | `ql_ui_input_event` 的 `QL_INPUT_WHEEL` | 命中 → 往上找最近可滚祖先 |
+| 拖滚动条 | `ql_ui_pointer_down/move/up` | 右侧 10px 热区；拖动**不算点击**（`scroll_drag` 非空直接吞掉） |
+
+**两个坑**
+
+1. 拖动滚动条时如果先走 `set_state_chain(node, ACTIVE, 1)`，整个列表会闪一下 `:active`
+   样式。所以 `pointer_down` 里必须先判滚动条热区，命中就直接接管。
+2. `translate_subtree` 会一并平移 `abs_cb`，所以容器里的绝对定位子元素也跟着滚
+   —— 这是对的（CSS 里绝对定位相对的是 padding box，滚动会让它移动）。
+
+---
+
 ### 5.5 `.qlui` blob：换界面不用重编译
 
 ```
