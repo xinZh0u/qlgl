@@ -608,8 +608,9 @@ typedef struct {
     uint8_t display, bg_alpha, border_width, border_radius;
     uint8_t text_align, font_id, box_sizing, reserved;
     /* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h
-       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比） */
-} QLUIStyle;  /* sizeof == 116 */
+       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）
+       line-height 是 int16_t line_h：0 = normal（字体自身行高），像素值见 CSS */
+} QLUIStyle;  /* sizeof == 120（blob v11） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;

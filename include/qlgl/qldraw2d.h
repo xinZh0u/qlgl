@@ -54,8 +54,14 @@ struct QLDraw2D {
     void (*draw_line)(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_t x2,
                       ql_coord_t y2, ql_coord_t thickness, ql_color_t color);
 
+    /*
+     * 画文本（CSS px）。`line_h` = 行高（px），0 表示 `normal`（用字体自身的
+     * line_height = ascent + descent，半行距为 0，与旧行为一致）。
+     * 单行垂直居中就靠它：`height: 26px; line-height: 26px`。
+     */
     void (*draw_text)(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                      QLRect box, ql_color_t color, QLTextAlign align);
+                      QLRect box, ql_color_t color, QLTextAlign align,
+                      ql_coord_t line_h);
 
     /*
      * 毛玻璃（CSS px）：把 `rect` 区域里**已经画好的内容**就地模糊。
@@ -118,7 +124,7 @@ typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,
                                    ql_coord_t baseline_y, ql_color_t color);
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, ql_color_t color, QLTextAlign align,
-                           ql_draw2d_glyph_fn emit_glyph);
+                           ql_coord_t line_h, ql_draw2d_glyph_fn emit_glyph);
 
 /*
  * 直线的**公共实现**：CPU 与 GPU 后端都应把 draw_line 指向它。

@@ -23,7 +23,7 @@ static const char *k_css =
     "#root { width: 260px; height: 140px; background-color: #0E1116; }"
     ".btn { position: absolute; left: 24px; top: 26px; width: 120px; height: 44px;"
     "       border-radius: 10px; background-color: #22415F; color: #C8D2DE;"
-    "       font-size: 15px; text-align: center;"
+    "       font-size: 15px; text-align: center; line-height: 44px;"
     "       transition: 160ms ease-out; }"
     ".btn:hover { background-color: #2E6BE6; color: #FFFFFF;"
     "             transform: translate(0px, -2px); }"

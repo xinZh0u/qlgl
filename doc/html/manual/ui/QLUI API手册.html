@@ -1181,8 +1181,9 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">display</span><span class="p">,</span><span class="w"> </span><span class="n">bg_alpha</span><span class="p">,</span><span class="w"> </span><span class="n">border_width</span><span class="p">,</span><span class="w"> </span><span class="n">border_radius</span><span class="p">;</span>
 <span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">text_align</span><span class="p">,</span><span class="w"> </span><span class="n">font_id</span><span class="p">,</span><span class="w"> </span><span class="n">box_sizing</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span>
 <span class="w">    </span><span class="cm">/* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h</span>
-<span class="cm">       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比） */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 116 */</span>
+<span class="cm">       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）</span>
+<span class="cm">       line-height 是 int16_t line_h：0 = normal（字体自身行高），像素值见 CSS */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 120（blob v11） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">,</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">;</span>

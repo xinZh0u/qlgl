@@ -99,6 +99,7 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 ./build/test_text_parse                   # 运行期解析器 vs 构建期工具：27 页 blob 逐字节相同
 ./build/test_flex_auto                    # flex 项的 width:auto = max-content（回归：固定宽兄弟不被压扁）
 ./build/test_qltext_blob                  # qltext blob 直接产出的 .qlui 与提交基准逐字节相同
+./build/test_line_height                  # line-height：单行文字垂直居中（按渲染墨迹判断）
 ./build/test_text_reject                  # 拒绝集合一致：32 个正负用例
 ./build/example_load_text --dump a.ppm    # 运行期编译 HTML+CSS 并渲染（不用重新编译程序）
 ./build/test_golden                       # golden 护栏：27 个 CSS 用例 × (blob 逐字节 + 基准图容差)

@@ -256,6 +256,50 @@ main img.shot { max-width: 100%; }
 <h2 id="text-align">规则三：<code>text-align</code> 控制水平对齐</h2>
 <p>只有三个值：<code>left</code> / <code>center</code> / <code>right</code>。对齐是在<strong>元素的内容盒</strong>里做的
 （<code>content_box</code> = 边框盒减掉 <code>padding</code> 与 <code>border</code>）。</p>
+<h2 id="line-height">规则三·补：<code>line-height</code> 控制竖直位置（按钮里"字对不齐"的答案）</h2>
+<p>这是新手最常见的一个坑：写了个按钮，加了 <code>text-align: center</code>，字还是贴在顶上。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">56</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">26</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* ❌ 字贴顶 */</span>
+<span class="p">.</span><span class="nc">btn</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">56</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">26</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span>
+<span class="w">       </span><span class="k">line-height</span><span class="p">:</span><span class="w"> </span><span class="mi">26</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                               </span><span class="c">/* ✅ 正中 */</span>
+</code></pre></div>
+
+<p><strong>这不是 bug，浏览器里也一样</strong>：块布局里文字从内容盒顶部开始排，
+第一行占一个行盒（行盒高 = <code>line-height</code>）。想让单行字垂直居中，
+就把 <code>line-height</code> 设成和 <code>height</code> 一样 —— 多出来的空间上下各分一半。</p>
+<p><code>line-height</code> 接受三种写法：</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>normal</code></td>
+<td>用字体自己的行高（ascent + descent），也就是不给值的行为</td>
+</tr>
+<tr>
+<td><code>24px</code></td>
+<td>固定像素值。<strong>垂直居中就靠它</strong>：和 <code>height</code> 相等</td>
+</tr>
+<tr>
+<td><code>1.5</code></td>
+<td>无单位 = 当前 <code>font-size</code> 的倍数（<code>1.5 × 16px = 24px</code>）</td>
+</tr>
+</tbody>
+</table>
+<p>它和 <code>font-size</code> / <code>color</code> / <code>text-align</code> 一样<strong>会被继承</strong>：
+在容器上写一次，里面的文字都吃这个行高。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">13</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">line-height</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 卡片里所有文字统一行高 */</span>
+</code></pre></div>
+
+<blockquote>
+<p>一件事要清楚：<code>line-height</code> 只影响<strong>文字在行盒里的竖直位置</strong>和行间距，
+不改变行盒的数量。所以多行文本用它调行距，单行文本用它做垂直居中。
+想要"文字在任意高度的盒子里居中而不用算像素"，当前没有 <code>flex</code> 那套
+匿名文本盒，还是得让 <code>line-height</code> 等于盒高。</p>
+</blockquote>
 <h2 id="_3">规则四：不自动折行</h2>
 <p>一段文本就是一行。超长就溢出（被父级 <code>overflow: hidden</code> 裁掉）。</p>
 <p>想做"自动换行的段落"有两种办法：</p>

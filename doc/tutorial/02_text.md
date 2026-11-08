@@ -76,6 +76,40 @@ static const char *k_css =
 只有三个值：`left` / `center` / `right`。对齐是在**元素的内容盒**里做的
 （`content_box` = 边框盒减掉 `padding` 与 `border`）。
 
+## 规则三·补：`line-height` 控制竖直位置（按钮里"字对不齐"的答案）
+
+这是新手最常见的一个坑：写了个按钮，加了 `text-align: center`，字还是贴在顶上。
+
+```css
+.btn { width: 56px; height: 26px; text-align: center; }   /* ❌ 字贴顶 */
+.btn { width: 56px; height: 26px; text-align: center;
+       line-height: 26px; }                               /* ✅ 正中 */
+```
+
+**这不是 bug，浏览器里也一样**：块布局里文字从内容盒顶部开始排，
+第一行占一个行盒（行盒高 = `line-height`）。想让单行字垂直居中，
+就把 `line-height` 设成和 `height` 一样 —— 多出来的空间上下各分一半。
+
+`line-height` 接受三种写法：
+
+| 写法 | 含义 |
+|---|---|
+| `normal` | 用字体自己的行高（ascent + descent），也就是不给值的行为 |
+| `24px` | 固定像素值。**垂直居中就靠它**：和 `height` 相等 |
+| `1.5` | 无单位 = 当前 `font-size` 的倍数（`1.5 × 16px = 24px`） |
+
+它和 `font-size` / `color` / `text-align` 一样**会被继承**：
+在容器上写一次，里面的文字都吃这个行高。
+
+```css
+.card { font-size: 13px; line-height: 20px; }   /* 卡片里所有文字统一行高 */
+```
+
+> 一件事要清楚：`line-height` 只影响**文字在行盒里的竖直位置**和行间距，
+> 不改变行盒的数量。所以多行文本用它调行距，单行文本用它做垂直居中。
+> 想要"文字在任意高度的盒子里居中而不用算像素"，当前没有 `flex` 那套
+> 匿名文本盒，还是得让 `line-height` 等于盒高。
+
 ## 规则四：不自动折行
 
 一段文本就是一行。超长就溢出（被父级 `overflow: hidden` 裁掉）。

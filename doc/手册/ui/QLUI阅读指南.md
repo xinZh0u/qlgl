@@ -153,7 +153,7 @@ qsort(matched, n, sizeof(*matched), cmp_specificity);
 UA 默认样式（UA_DEFAULTS）
   ↓ 被匹配到的规则覆盖（按优先级）
   ↓ 被行内 style 覆盖
-  ↓ 继承（只有 color / font-size / text-align）
+  ↓ 继承（只有 color / font-size / text-align / line-height）
   ↓ font-size 在生成期汇总成 font_sizes 表，运行期按字号取字体
 ```
 
@@ -511,6 +511,31 @@ CSS 的 `backface-visibility: hidden` 靠"这个面朝后（变换行列式为�
 
 `test/web/flex/flipdemo.*` + `example_flip_window` 就是这么演示的（水平翻、垂直翻、
 圆形"硬币"各一张，错开相位）。
+
+---
+
+### 5.4.5 文本的竖直位置：`line-height` 是 `text-align` 的 counterpart
+
+`text-align` 管水平，`line-height` 管竖直。少了后者，"按钮里的字对不齐"
+就**没法表达**——只能靠 `padding-top` 硬凑，`box-sizing` 一改就散。
+
+实现只有一条公式（`ql_draw2d_text_layout`，CPU/GPU 共用）：
+
+```
+行盒高 L  = line_h > 0 ? line_h : 字体自身 line_height
+半行距  h = (L - (ascent + descent)) / 2      ← L == a + d 时为 0
+第一行基线 = box.y + h + ascent
+后续每行   += L
+```
+
+因为 `QLFont.line_height == ascent + descent`，不给 `line-height` 时半行距恒为 0，
+**与旧版本逐像素相同**（这也是为什么加这个属性只需重生成 blob、基准图一张都没动）。
+给了 `line-height: 26px` 而盒高也是 26px 时，字形区上下各得 13 - a/2 的空间，
+墨迹中心正好落在盒中心——这就是"完美居中"的由来。
+
+`line_h` 同时参与两处：绘制时的基线计算，以及**文本节点 auto 高度**的内容高
+（`text_line_h_of()`）。后者保证 `line-height: 30px` 的裸文本行真的占 30px 高，
+而不是字体行高。
 
 ---
 

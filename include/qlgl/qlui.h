@@ -198,6 +198,16 @@ typedef struct {
      * PC/GL 走半分辨率两趟可分离模糊；CPU 后端就地模糊画布（同一条像素路径）。
      */
     uint8_t     backdrop_blur;
+
+    /*
+     * line-height（px）。0 = `normal`，用字体自己的 line_height（= ascent + descent）。
+     *
+     * 这是**单行文字垂直居中**的唯一正解（水平方向 counterpart 是 text-align）：
+     * 半行距 = (line_h - (ascent + descent)) / 2，第一行基线再往下挪这么点。
+     * 所以 `height: 26px; line-height: 26px` 就是完美居中。
+     * 不给值时半行距恒为 0，与旧版本逐像素一致。
+     */
+    int16_t     line_h;
 } QLUIStyle;
 
 /* 能过渡的属性（"transition: all" = 四个都开） */
@@ -589,7 +599,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    10u  /* 10: backdrop-filter: blur() */
+#define QL_UI_BLOB_VERSION    11u  /* 11: line-height（QLUIStyle 116 → 120 字节） */
 
 typedef struct {
     uint32_t magic;

@@ -1648,7 +1648,7 @@ static int expand_shorthands(Decls *ds)
 static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
-    "font-size", "text-align", "box-sizing", "box-shadow",
+    "font-size", "text-align", "line-height", "box-sizing", "box-shadow",
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
@@ -4196,6 +4196,46 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     if (font_id < 0)
         return 0;
 
+    /*
+     * line-height：0 = normal（半行距 0，与旧行为一致）。
+     * 三写法：`normal` / `<N>px` / 无单位倍数（按当前 font-size 折算成 px）。
+     * 单行垂直居中就靠它：`height: 26px; line-height: 26px`。
+     */
+    int line_h = 0;
+    {
+        const char *lh = decls_get(st, "line-height");
+        if (lh != NULL) {
+            char lt[128];
+            trim_lower(lh, lt, sizeof(lt));
+            if (strcmp(lt, "normal") == 0) {
+                line_h = 0;
+            } else {
+                const char *end = NULL;
+                double mult = 0;
+                if (!match_number(lt, &end, &mult)) {
+                    set_error("%s: 不支持的 line-height '%s'（normal / <N>px / 无单位倍数）",
+                              where, lh);
+                    return 0;
+                }
+                double px;
+                if (*end == '\0') {
+                    px = mult * (double)font_px;      /* 无单位 = 字体大小的倍数 */
+                } else if (strcmp(end, "px") == 0) {
+                    px = mult;
+                } else {
+                    set_error("%s: 不支持的 line-height '%s'（normal / <N>px / 无单位倍数）",
+                              where, lh);
+                    return 0;
+                }
+                line_h = (int)py_round(px);
+                if (line_h < 1 || line_h > 32767) {
+                    set_error("%s: line-height 必须在 1~32767px（收到 '%s'）", where, lh);
+                    return 0;
+                }
+            }
+        }
+    }
+
     int bw = 0, radius = 0;
     {
         uint8_t unit;
@@ -4543,6 +4583,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->sc_y = (int16_t)sc_y;
     out->anim = (uint16_t)anim_idx;
     out->backdrop_blur = (uint8_t)backdrop;
+    out->line_h = (int16_t)line_h;
     return 1;
 }
 
@@ -4757,7 +4798,8 @@ static int flatten_tree(const PNode *root, Flat **out, int *out_n)
 }
 
 /* 继承只带走这三个属性（与 Python 的 INHERITED 一致） */
-static const char *const k_inherited[] = { "color", "font-size", "text-align" };
+static const char *const k_inherited[] = { "color", "font-size", "text-align",
+                                           "line-height" };
 
 static int collect_inherited(const Decls *parent, Decls *out)
 {

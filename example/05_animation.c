@@ -26,6 +26,7 @@ static const char *k_css =
     "#root { width: 300px; height: 160px; background-color: #0B0E14; }"
     ".slide, .pulse, .flip { position: absolute; top: 40px; width: 76px;"
     "  height: 56px; border-radius: 8px; font-size: 13px; text-align: center;"
+    "  line-height: 56px;"
     "  color: #10151C; }"
 
     ".slide { left: 16px; background-color: #E8743B;"

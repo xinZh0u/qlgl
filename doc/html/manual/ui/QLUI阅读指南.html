@@ -443,7 +443,7 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 <div class="highlight"><pre><span></span><code>UA 默认样式（UA_DEFAULTS）
   ↓ 被匹配到的规则覆盖（按优先级）
   ↓ 被行内 style 覆盖
-  ↓ 继承（只有 color / font-size / text-align）
+  ↓ 继承（只有 color / font-size / text-align / line-height）
   ↓ font-size 在生成期汇总成 font_sizes 表，运行期按字号取字体
 </code></pre></div>
 
@@ -845,6 +845,24 @@ QLUIStyle.anim  该节点播第几段（0xFFFF = 没有）
 
 <p><code>test/web/flex/flipdemo.*</code> + <code>example_flip_window</code> 就是这么演示的（水平翻、垂直翻、
 圆形"硬币"各一张，错开相位）。</p>
+<hr />
+<h3 id="545-line-height-text-align-counterpart">5.4.5 文本的竖直位置：<code>line-height</code> 是 <code>text-align</code> 的 counterpart</h3>
+<p><code>text-align</code> 管水平，<code>line-height</code> 管竖直。少了后者，"按钮里的字对不齐"
+就<strong>没法表达</strong>——只能靠 <code>padding-top</code> 硬凑，<code>box-sizing</code> 一改就散。</p>
+<p>实现只有一条公式（<code>ql_draw2d_text_layout</code>，CPU/GPU 共用）：</p>
+<div class="highlight"><pre><span></span><code>行盒高 L  = line_h &gt; 0 ? line_h : 字体自身 line_height
+半行距  h = (L - (ascent + descent)) / 2      ← L == a + d 时为 0
+第一行基线 = box.y + h + ascent
+后续每行   += L
+</code></pre></div>
+
+<p>因为 <code>QLFont.line_height == ascent + descent</code>，不给 <code>line-height</code> 时半行距恒为 0，
+<strong>与旧版本逐像素相同</strong>（这也是为什么加这个属性只需重生成 blob、基准图一张都没动）。
+给了 <code>line-height: 26px</code> 而盒高也是 26px 时，字形区上下各得 13 - a/2 的空间，
+墨迹中心正好落在盒中心——这就是"完美居中"的由来。</p>
+<p><code>line_h</code> 同时参与两处：绘制时的基线计算，以及<strong>文本节点 auto 高度</strong>的内容高
+（<code>text_line_h_of()</code>）。后者保证 <code>line-height: 30px</code> 的裸文本行真的占 30px 高，
+而不是字体行高。</p>
 <hr />
 <h3 id="544">5.4.4 毛玻璃：唯一会"回头读自己画过的东西"的效果</h3>
 <p><code>backdrop-filter: blur(Npx)</code> 要模糊<strong>元素背后已经画好的内容</strong>。</p>

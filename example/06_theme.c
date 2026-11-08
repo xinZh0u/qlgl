@@ -27,7 +27,8 @@ static const char *k_dark =
     ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #E6EDF3; }"
     ".row { display: flex; gap: 8px; margin: 0 14px; }"
     ".chip { width: 68px; height: 26px; border-radius: 13px; font-size: 12px;"
-    "        text-align: center; background-color: #1B222C; color: #8B949E; }"
+    "        text-align: center; line-height: 26px;"
+    "        background-color: #1B222C; color: #8B949E; }"
     ".on { background-color: #2E6BE6; color: #FFFFFF; }"
     ".body { margin: 10px 14px; font-size: 12px; color: #7A8794; }";
 
@@ -36,7 +37,8 @@ static const char *k_light =
     ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #1F2328; }"
     ".row { display: flex; gap: 8px; margin: 0 14px; }"
     ".chip { width: 68px; height: 26px; border-radius: 13px; font-size: 12px;"
-    "        text-align: center; background-color: #EAEEF2; color: #57606A; }"
+    "        text-align: center; line-height: 26px;"
+    "        background-color: #EAEEF2; color: #57606A; }"
     ".on { background-color: #0969DA; color: #FFFFFF; }"
     ".body { margin: 10px 14px; font-size: 12px; color: #57606A; }";
 
@@ -46,7 +48,8 @@ static const char *k_warm =
     ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #FFE0B2; }"
     ".row { display: flex; gap: 8px; margin: 0 14px; }"
     ".chip { width: 68px; height: 26px; border-radius: 13px; font-size: 12px;"
-    "        text-align: center; background-color: #3A2A1C; color: #C9A882; }"
+    "        text-align: center; line-height: 26px;"
+    "        background-color: #3A2A1C; color: #C9A882; }"
     ".on { background-color: #E8743B; color: #1A0E06; }"
     ".body { margin: 10px 14px; font-size: 12px; color: #A98A6A; }";
 

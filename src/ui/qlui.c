@@ -203,6 +203,12 @@ static ql_coord_t line_height_of(const QLFont *font)
     return font->line_height;
 }
 
+/* 文本行高：样式写了 line-height 就用它，否则用字体自己的（= normal） */
+static ql_coord_t text_line_h_of(const QLUIStyle *s, const QLFont *font)
+{
+    return (s->line_h > 0) ? s->line_h : line_height_of(font);
+}
+
 /* 计算节点的边框盒宽度（与 layout_node 内部逻辑保持一致） */
 static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
 {
@@ -585,9 +591,9 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
             cursor_y += row_h;
         content_h = cursor_y - content_y;
     } else if (node->text != NULL) {
-        content_h = s->height.unit == QL_UI_UNIT_AUTO ? line_height_of(font)
-                                                      : resolve_length(s->height, 0,
-                                                                       line_height_of(font));
+        const ql_coord_t lh = text_line_h_of(s, font);
+        content_h = s->height.unit == QL_UI_UNIT_AUTO ? lh
+                                                      : resolve_length(s->height, 0, lh);
     } else {
         content_h = 0;
     }
@@ -1603,7 +1609,7 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 
     if (node->text != NULL && node->text[0] != '\0' && !ql_rect_is_empty(node->content_box))
         d2d->draw_text(d2d, font_of(node), node->text, -1, node->content_box,
-                       s->text_color, (QLTextAlign)s->text_align);
+                       s->text_color, (QLTextAlign)s->text_align, s->line_h);
 
     /* overflow != visible 时，子树被裁到本节点的边框盒（含圆角） */
     if (s->overflow != QL_UI_OVERFLOW_VISIBLE && d2d->set_clip != NULL) {

@@ -89,7 +89,8 @@ QL_TEST_BEGIN("test_ui_blob")
     /* ---------- 1. 头结构与 ABI 自检 ---------- */
     QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 72);
     QL_CHECK_EQ(sizeof(QLUINode), 18);
-    QL_CHECK_EQ(sizeof(QLUIStyle), 116);  /* 渐变/阴影 + flex + 定位 + 过渡 + transform(分轴)/anim */
+    /* 渐变/阴影 + flex + 定位 + 过渡 + transform(分轴) + anim + backdrop_blur + line_h */
+    QL_CHECK_EQ(sizeof(QLUIStyle), 120);
 
     /* ---------- 2. 静态 doc 没有 arena，释放是空操作 ---------- */
     QL_CHECK_EQ(ui_demo_doc.arena, NULL);

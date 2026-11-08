@@ -39,14 +39,29 @@ void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_
 
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, ql_color_t color, QLTextAlign align,
-                           ql_draw2d_glyph_fn emit_glyph)
+                           ql_coord_t line_h, ql_draw2d_glyph_fn emit_glyph)
 {
     if (self == NULL || font == NULL || text == NULL || emit_glyph == NULL)
         return;
     if (ql_rect_is_empty(box))
         return;
 
-    ql_coord_t baseline = box.y + font->ascent;
+    /*
+     * 行高与半行距（CSS inline 布局）：行盒高 L，字形区 ascent + descent，
+     * 多出来的部分上下各分一半，于是第一行基线 = box.y + 半行距 + ascent。
+     * L == ascent + descent 时半行距为 0 —— 这就是 `line-height: normal`
+     * 以及旧版本的行为，所以默认路径逐像素不变。
+     */
+    const ql_coord_t lead_total =
+        (ql_coord_t)(font->ascent + font->descent);
+    ql_coord_t line_step = font->line_height;
+    ql_coord_t half_lead = 0;
+    if (line_h > 0) {
+        line_step = line_h;
+        half_lead = (ql_coord_t)(line_h - lead_total) / 2;
+    }
+
+    ql_coord_t baseline = box.y + half_lead + font->ascent;
     int32_t i = 0;
     int32_t line_start = 0;
 
@@ -79,7 +94,7 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
             if (at_end)
                 break;
-            baseline += font->line_height;
+            baseline += line_step;
             line_start = i + 1;
         }
         i++;
@@ -305,7 +320,8 @@ const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx)
 }
 
 static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                          QLRect box, ql_color_t color, QLTextAlign align)
+                          QLRect box, ql_color_t color, QLTextAlign align,
+                          ql_coord_t line_h)
 {
     /*
      * 字形按"元素缩放 × DPR"重取字号：transform: scale() 在浏览器里会让文字
@@ -318,7 +334,7 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
     const QLFont *dev = ql_draw2d_device_font(font, font_fx);
     /* 文本取偏移的整数部分：亚像素平移会让字形糊掉 */
     ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
-                          color, align, cpu_emit_glyph);
+                          color, align, line_h, cpu_emit_glyph);
 }
 
 ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)

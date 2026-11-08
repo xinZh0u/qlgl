@@ -38,9 +38,10 @@ static const char *k_css =
     "       margin: 10px 10px 0 10px; height: 32px; }"
     ".logo { font-size: 15px; color: #7CE0FF; }"
     ".spacer { flex-grow: 1; }"
+    /* text-align 管水平，line-height 管垂直：两者都写上才算"居中" */
     ".btn { width: 56px; height: 26px; border-radius: 13px;"
     "       background-color: #2E6BE6; color: #FFFFFF; font-size: 12px;"
-    "       text-align: center; }"
+    "       text-align: center; line-height: 26px; }"
 
     /* 三张卡：等宽 + 间距 */
     ".cards { display: flex; gap: 8px; margin: 10px; }"
@@ -57,7 +58,7 @@ static const char *k_css =
     ".badge { position: absolute; left: 200px; top: 170px;"
     "         width: 86px; height: 24px; border-radius: 12px;"
     "         background-color: #1E2A3A; color: #C8D2DE; font-size: 11px;"
-    "         text-align: center; }";
+    "         text-align: center; line-height: 24px; }";
 
 int main(int argc, char **argv)
 {

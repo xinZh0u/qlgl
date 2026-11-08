@@ -1239,7 +1239,8 @@ static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gly
 }
 
 static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
-                         QLRect box, ql_color_t color, QLTextAlign align)
+                         QLRect box, ql_color_t color, QLTextAlign align,
+                         ql_coord_t line_h)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (elem_len_fx_gl(g) == 0)
@@ -1248,7 +1249,11 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
         (ql_coord_t)((int64_t)g->scale_fx * elem_len_fx_gl(g) / QL_SCALE_ONE);
     const QLFont *dev = ql_draw2d_device_font(font, font_fx);
     /* 排版在设备像素里进行：字形位图与 quad 是一一对应的，不能再缩放 */
-    ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), color, align, gl_emit_glyph);
+    /* 行高是 CSS px；排版在设备像素里做，所以按同样的比例换算 */
+    const ql_coord_t dev_line_h =
+        (line_h > 0) ? (ql_coord_t)((int64_t)line_h * font_fx / QL_SCALE_ONE) : 0;
+    ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), color, align, dev_line_h,
+                          gl_emit_glyph);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */
