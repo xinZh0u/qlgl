@@ -161,7 +161,7 @@ struct QLGfxGL {
      */
     GLuint           blur_prog;
     GLuint           blur_vbo;
-    GLint            blur_u_tex, blur_u_texel, blur_u_step;
+    GLint            blur_u_tex, blur_u_texel, blur_u_step, blur_u_uvmax;
     GLuint           blur_tex[2];
     GLuint           blur_fbo[2];
     int              blur_w, blur_h;
@@ -1132,15 +1132,22 @@ static const char *BLUR_FS =
     "uniform sampler2D u_tex;\n"
     "uniform vec2 u_texel;\n"      /* 一个纹素 = (1/w, 1/h) */
     "uniform vec2 u_step;\n"       /* 抽头间距（已按方向与半径算好） */
+    /*
+     * 纹理是"只增不减"复用的：一块 270px 宽的玻璃用完后，下一个 94px 宽的
+     * 玻璃会复用同一张更大的纹理，真正有效的内容只占左上角 u_uvmax 那一块。
+     * 不夹紧的话，边缘的抽头会读到上一次残留的像素（画面里出现"别处的颜色"）。
+     */
+    "uniform vec2 u_uvmax;\n"
     "in vec2 v_uv;\n"
     "out vec4 frag;\n"
     "void main(){\n"
     "  const float w[5] = float[5](0.227027, 0.194594, 0.121621, 0.054054, 0.016216);\n"
-    "  vec3 acc = texture(u_tex, v_uv).rgb * w[0];\n"
+    "  vec2 c = clamp(v_uv, vec2(0.0), u_uvmax);\n"
+    "  vec3 acc = texture(u_tex, c).rgb * w[0];\n"
     "  for (int i = 1; i < 5; i++) {\n"
     "    vec2 o = u_step * float(i);\n"
-    "    acc += texture(u_tex, v_uv + o).rgb * w[i];\n"
-    "    acc += texture(u_tex, v_uv - o).rgb * w[i];\n"
+    "    acc += texture(u_tex, clamp(c + o, vec2(0.0), u_uvmax)).rgb * w[i];\n"
+    "    acc += texture(u_tex, clamp(c - o, vec2(0.0), u_uvmax)).rgb * w[i];\n"
     "  }\n"
     "  frag = vec4(acc, 1.0);\n"
     "}\n";
@@ -1218,12 +1225,19 @@ static int blur_ensure(QLGfxGL *g, int w, int h)
     return 1;
 }
 
-/* 一趟模糊：从 tex[src] 画到 fbo[dst]，dx/dy 是方向（纹素为单位的抽头间距） */
-static void blur_pass(QLGfxGL *g, int src, int dst, float dx, float dy)
+/*
+ * 一趟模糊：从 tex[src] 画到 fbo[dst]，dx/dy 是方向（纹素为单位的抽头间距）。
+ * `uw/uh` 是**有效区域**的归一化尺寸（<= 1）：纹理是复用的，只有左上角这块
+ * 是这次要处理的内容，采样必须夹在这里面。
+ */
+static void blur_pass(QLGfxGL *g, int src, int dst, float dx, float dy, float uw,
+                      float uh)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, g->blur_fbo[dst]);
     glViewport(0, 0, g->blur_w, g->blur_h);
-    glDisable(GL_SCISSOR_TEST);
+    /* 只写有效区域：外面那些纹素是上一次的残留，不必碰 */
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, (GLsizei)(uw * (float)g->blur_w), (GLsizei)(uh * (float)g->blur_h));
     glUseProgram(g->blur_prog);
 
     glActiveTexture(GL_TEXTURE0);
@@ -1231,6 +1245,7 @@ static void blur_pass(QLGfxGL *g, int src, int dst, float dx, float dy)
     glUniform1i(g->blur_u_tex, 0);
     glUniform2f(g->blur_u_texel, 1.0f / (GLfloat)g->blur_w, 1.0f / (GLfloat)g->blur_h);
     glUniform2f(g->blur_u_step, dx, dy);
+    glUniform2f(g->blur_u_uvmax, uw, uh);
 
     static const float quad[16] = {
         0.0f, 0.0f, 0.0f, 0.0f,
@@ -1318,8 +1333,11 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
 
     /* 2. 两趟可分离模糊（9 抽头，抽头间距 = 半径/4 个纹素） */
     const float span = (float)rad / 4.0f;
-    blur_pass(g, 0, 1, span / (float)g->blur_w, 0.0f);
-    blur_pass(g, 1, 0, 0.0f, span / (float)g->blur_h);
+    /* 纹理可能比这次需要的更大：有效区域是左上角 bw x bh */
+    const float uw = (float)bw / (float)g->blur_w;
+    const float uh = (float)bh / (float)g->blur_h;
+    blur_pass(g, 0, 1, span / (float)g->blur_w, 0.0f, uw, uh);
+    blur_pass(g, 1, 0, 0.0f, span / (float)g->blur_h, uw, uh);
 
     /* 3. 回到目标帧缓冲，继续往顶点缓冲里摞 */
     glBindFramebuffer(GL_FRAMEBUFFER, target);
@@ -1355,8 +1373,14 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
         v.y = ys[k];
         v.lx = xs[k] - cx;
         v.ly = ys[k] - cy;
-        v.u = (xs[k] - (float)dev.x) / (float)(dev.w > 0 ? dev.w : 1);
-        v.v = 1.0f - (ys[k] - (float)dev.y) / (float)(dev.h > 0 ? dev.h : 1);
+        /*
+         * uv **不能铺满整张纹理**：纹理是复用的，这次的内容只在左上角
+         * bw x bh 那一块（uw/uh 是它相对整张纹理的比例）。
+         * 铺满的话，小玻璃会显示"上一次那块更大的玻璃被压扁"的内容 ——
+         * 现象就是模糊位置和背后的物体对不上。
+         */
+        v.u = (xs[k] - (float)dev.x) / (float)(dev.w > 0 ? dev.w : 1) * uw;
+        v.v = (1.0f - (ys[k] - (float)dev.y) / (float)(dev.h > 0 ? dev.h : 1)) * uh;
         emit_vertex(g, &v);
     }
 }
@@ -1819,6 +1843,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         g->blur_u_tex = glGetUniformLocation(g->blur_prog, "u_tex");
         g->blur_u_texel = glGetUniformLocation(g->blur_prog, "u_texel");
         g->blur_u_step = glGetUniformLocation(g->blur_prog, "u_step");
+        g->blur_u_uvmax = glGetUniformLocation(g->blur_prog, "u_uvmax");
     }
 
     glDisable(GL_DEPTH_TEST);

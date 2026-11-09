@@ -1094,7 +1094,11 @@ cov = 1 - smoothstep(0, blur, d)
 <h3 id="154-cpu">15.4 CPU 侧的对应实现</h3>
 <p>CPU 没有"读回"问题——画布本身就是已经画好的东西，所以直接在内存里就地模糊
 （<code>ql_canvas_backdrop_blur</code>）：取出区域 → 两趟滑动窗口盒式卷积（每像素 O(1)）→ 写回。
-带 <code>border-radius</code> 的元素走 <code>ql_canvas_backdrop_blur_round()</code>：模糊前先存下四个
+GPU 侧走的是"blit 一小块 → 半分辨率两趟模糊 → 画回"，中间纹理<strong>只增不减地复用</strong>：
+一块大玻璃用完后，更小的玻璃复用同一张更大的纹理，有效内容只在左上角一块。
+所以回画的四边形必须按有效区域缩 <code>uv</code>，两趟模糊的抽头也要夹在区域内 ——
+漏了任一处，小玻璃会显示出"上一块大玻璃被压扁"的内容（模糊位置和背后物体对不上）。</p>
+<p>带 <code>border-radius</code> 的元素走 <code>ql_canvas_backdrop_blur_round()</code>：模糊前先存下四个
 <code>corner×corner</code> 角落，糊完按圆角覆盖率混回去，于是圆角缺口里不会渗出方形模糊块。</p>
 <p>和 GPU 的差异是<strong>故意的</strong>：CPU 走全分辨率 + 盒式，GPU 走半分辨率 + 9 抽头高斯近似。
 所以 <code>test_blur</code> <strong>不做逐像素比较</strong>，而是断言同一组性质：</p>

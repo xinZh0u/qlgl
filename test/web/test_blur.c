@@ -9,7 +9,9 @@
  *   4. 元素自己的背景照常叠在模糊结果之上（半透明"玻璃"）；
  *   5. GPU 必须和 CPU 一样真的糊（用同一组性质断言，不做逐像素比较）；
  *   6. **跟随 transform**：玻璃自己平移之后，糊的是它现在盖住的那块内容，
- *      而不是它"没动之前"那块地方（这条曾经是错的，两条后端都错）。
+ *      而不是它"没动之前"那块地方（这条曾经是错的，两条后端都错）；
+ *   7. **大玻璃之后的小玻璃**：GPU 侧的模糊纹理只增不减、被复用，小玻璃必须
+ *      只取自己那一块，不能取"上一块更大的玻璃被压扁"的内容（这条也曾经是错的）。
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +42,29 @@ static int ramp_count_cpu(QLDispDriver *d, int y, int x0, int x1)
         if (is_ramp((int)QL_COLOR_GET_R(ql_disp_mem_pixel(d, x, y))))
             n++;
     return n;
+}
+
+/* 一行上最亮的红色通道（用来判"别处的白色漏进来了"） */
+static int max_r_cpu(QLDispDriver *d, int y, int x0, int x1)
+{
+    int m = 0;
+    for (int x = x0; x < x1; x++) {
+        const int v = (int)QL_COLOR_GET_R(ql_disp_mem_pixel(d, x, y));
+        if (v > m)
+            m = v;
+    }
+    return m;
+}
+
+static int max_r_rgba(const uint8_t *rgba, int stride, int y, int x0, int x1)
+{
+    int m = 0;
+    for (int x = x0; x < x1; x++) {
+        const int v = (int)rgba[(size_t)y * (size_t)stride + (size_t)x * 4u];
+        if (v > m)
+            m = v;
+    }
+    return m;
 }
 
 /* rgba: 每像素 4 字节、行距 stride 字节 */
@@ -244,6 +269,89 @@ QL_TEST_BEGIN("test_blur")
                     ql_disp_mem_destroy(disp);
                 }
                 ql_ui_free(tu);
+            }
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /*
+     * ---------- 5. 复用模糊纹理：小玻璃不能吃到上一块大玻璃的内容 ----------
+     *
+     * GPU 侧的模糊缓冲是"只增不减"复用的：先画一块 100x50 的玻璃（纹理 50x25），
+     * 再画一块 20x15 的（需要 10x8）—— 后者用同一张更大的纹理，有效内容只在
+     * 左上角。回画四边形若把 uv 铺满整张纹理，小玻璃里就会显示"大玻璃那块区域
+     * 被压扁"的内容（画面里出现别处的颜色）。
+     *
+     * 场景：白条只在 x<40；大玻璃盖着白条边缘（必有渐变）；小玻璃在 x 90..110
+     * 的纯深色上 —— 它内部既不该有中间色，也不该出现白色（8% 白叠在 #101010
+     * 上最亮约 35；漏进白色会冲到 200 以上）。
+     */
+    {
+        const char *html = "<div id=r><div id=w></div><div id=big></div>"
+                           "<div id=small></div></div>";
+        const char *css =
+            "#r { width: 120px; height: 80px; background-color: #101010 }"
+            "#w { position: absolute; left: 0px; top: 0px; width: 40px;"
+            "     height: 80px; background-color: #FFFFFF }"
+            "#big { position: absolute; left: 10px; top: 8px; width: 100px;"
+            "       height: 50px; background-color: rgba(255,255,255,0.06);"
+            "       backdrop-filter: blur(6px) }"
+            "#small { position: absolute; left: 90px; top: 58px; width: 20px;"
+            "         height: 16px; background-color: rgba(255,255,255,0.06);"
+            "         backdrop-filter: blur(6px) }";
+        QLUIDoc *doc = ql_ui_load_text(html, css);
+        QL_CHECK(doc != NULL);
+        if (doc != NULL) {
+            QLUIRoot *su = ql_ui_build(doc);
+            QL_CHECK(su != NULL);
+            if (su != NULL) {
+                ql_ui_layout(su, W, H);
+
+                QLDispDriver *disp = ql_disp_mem_create(W, H, QL_COLOR_ARGB8888);
+                QLCanvas canvas;
+                QL_CHECK_EQ(ql_canvas_from_disp(&canvas, disp), QL_OK);
+                ql_disp_mem_clear(disp, ROOT_BG);
+                ql_ui_render_canvas(su, &canvas);
+
+                const int my = 66;      /* 小玻璃纵向中线 */
+                const int cb = ramp_count_cpu(disp, 33, 12, 108);
+                const int cs = ramp_count_cpu(disp, my, 92, 108);
+                const int ms = max_r_cpu(disp, my, 92, 108);
+                printf("  复用纹理 CPU：大玻璃内中间色 %d，小玻璃内中间色 %d 最亮 %d\n",
+                       cb, cs, ms);
+                QL_CHECK(cb >= 6);      /* 大玻璃确实糊了 */
+                QL_CHECK_EQ(cs, 0);     /* 小玻璃下是纯深色，不该有渐变 */
+                QL_CHECK(ms < 70);      /* 也不该漏进白色 */
+
+#if defined(QLGL_ENABLE_GL)
+                QLGfxGL *gfx = ql_gfx_gl_create("blur-reuse", W, H,
+                                                QL_GFX_GL_OFFSCREEN);
+                if (gfx == NULL) {
+                    printf("  [SKIP] GL：无法创建上下文\n");
+                } else {
+                    ql_gfx_gl_begin(gfx, ROOT_BG);
+                    ql_ui_render(su, ql_gfx_gl_draw(gfx));
+                    ql_gfx_gl_end(gfx);
+                    ql_gfx_gl_finish(gfx);
+                    uint8_t *rgba = (uint8_t *)ql_mem_calloc(1, (size_t)W * H * 4u);
+                    QL_CHECK(rgba != NULL);
+                    if (rgba != NULL) {
+                        QL_CHECK_EQ(ql_gfx_gl_read_pixels(gfx, rgba, W * 4), QL_OK);
+                        const int gb = ramp_count_rgba(rgba, W * 4, 33, 12, 108);
+                        const int gs = ramp_count_rgba(rgba, W * 4, my, 92, 108);
+                        const int gm = max_r_rgba(rgba, W * 4, my, 92, 108);
+                        printf("  复用纹理 GPU：大玻璃内中间色 %d，小玻璃内中间色 %d"
+                               " 最亮 %d\n", gb, gs, gm);
+                        QL_CHECK(gb >= 6);
+                        QL_CHECK_EQ(gs, 0);
+                        QL_CHECK(gm < 70);
+                        ql_mem_free(rgba);
+                    }
+                    ql_gfx_gl_destroy(gfx);
+                }
+#endif
+                ql_disp_mem_destroy(disp);
+                ql_ui_free(su);
             }
             ql_ui_doc_free(doc);
         }

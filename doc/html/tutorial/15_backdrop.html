@@ -274,6 +274,11 @@ main img.shot { max-width: 100%; }
 <p>动画白名单只允许绘制属性（<code>background*</code> / <code>opacity</code> / <code>transform</code> / <code>color</code> /
 <code>border-*</code> / <code>border-radius</code> / <code>clip-path</code>）。写 <code>width</code> 会直接构建期报错 ——
 改尺寸意味着每帧重排，与本库"动画零重排"的红线冲突。</p>
+<h3 id="24">2.4 多块大小不同的玻璃叠在一起</h3>
+<p>GPU 侧的模糊用一块"只增不减"复用的中间纹理：先画的那块大玻璃会把它撑大，
+之后的小玻璃直接复用这张更大的纹理。所以小玻璃只取左上角属于自己那一块 ——
+这是实现细节，写 CSS 的人不用管，但它解释了一个曾经出现过的怪现象：
+<strong>小玻璃里显示的是"大玻璃那块区域被压扁"的内容，看上去模糊位置对不上</strong>。</p>
 <h2 id="3">3. 脏区模式下也跟得上</h2>
 <p><code>ql_ui_consume_dirty()</code> 交出来的脏区里，只要有一块与玻璃元素相交，
 玻璃就会重新取"背后的像素"再糊一次。所以不需要为了毛玻璃关掉脏区优化。</p>
