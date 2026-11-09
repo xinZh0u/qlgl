@@ -195,6 +195,7 @@ static ql_color_t ex_clear_color(QLUIRoot *ui)
 #define EX_FRAME_SAMPLES 4096
 static uint32_t s_frame_us[EX_FRAME_SAMPLES];
 static uint32_t s_swap_us[EX_FRAME_SAMPLES];
+static uint32_t s_gap_us[EX_FRAME_SAMPLES];   /* 相邻两帧的墙钟间隔 */
 static int      s_frame_n;
 
 static int cmp_u32(const void *a, const void *b)
@@ -211,9 +212,28 @@ static void ex_print_stats(void)
     const uint32_t p50 = s_frame_us[s_frame_n / 2];
     const uint32_t p95 = s_frame_us[(int)((double)s_frame_n * 0.95)];
     const uint32_t mx = s_frame_us[s_frame_n - 1];
-    printf("帧时间：p50 %.2fms  p95 %.2fms  max %.2fms  （%d 帧，p50 ≈ %.0f fps）\n",
-           p50 / 1000.0, p95 / 1000.0, mx / 1000.0, s_frame_n,
-           p50 > 0 ? 1000000.0 / (double)p50 : 0.0);
+    /*
+     * 两个口径分开打：帧内耗时（begin→end）与相邻帧间隔。
+     * 事件驱动的例程只在有脏区时画，"帧内耗时"看着像上千 fps 很正常 ——
+     * 真正的帧率要看间隔；--spin 时两者才基本相等。
+     */
+    int gap_n = 0;
+    for (int i = 1; i < s_frame_n; i++)   /* 第一帧没有"上一帧"，丢掉 */
+        s_gap_us[gap_n++] = s_gap_us[i];
+    uint32_t gap_p50 = 0;
+    if (gap_n > 0) {
+        qsort(s_gap_us, (size_t)gap_n, sizeof(uint32_t), cmp_u32);
+        gap_p50 = s_gap_us[gap_n / 2];
+    }
+    printf("帧时间：p50 %.2fms  p95 %.2fms  max %.2fms  （%d 帧）\n", p50 / 1000.0,
+           p95 / 1000.0, mx / 1000.0, s_frame_n);
+    if (gap_n > 0) {
+        printf("帧间隔：p50 %.2fms（≈ %.0f fps）  max %.2fms\n", gap_p50 / 1000.0,
+               gap_p50 > 0 ? 1000000.0 / (double)gap_p50 : 0.0,
+               s_gap_us[gap_n - 1] / 1000.0);
+    } else {
+        printf("帧间隔：采样太少\n");
+    }
     /* 等 vsync 的时间单独看：它大而 frame 也大 → 不是我们画得慢 */
     qsort(s_swap_us, (size_t)s_frame_n, sizeof(uint32_t), cmp_u32);
     printf("其中等 swap：p50 %.2fms  max %.2fms\n", s_swap_us[s_frame_n / 2] / 1000.0,
@@ -333,6 +353,15 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
             ql_gfx_gl_end(gfx);
             need_full = 0;
             if (want_stats && s_frame_n < EX_FRAME_SAMPLES) {
+                static struct timespec t_prev;
+                struct timespec t_now;
+                clock_gettime(CLOCK_MONOTONIC, &t_now);
+                s_gap_us[s_frame_n] =
+                    (s_frame_n == 0)
+                        ? 0u
+                        : (uint32_t)((t_now.tv_sec - t_prev.tv_sec) * 1000000 +
+                                     (t_now.tv_nsec - t_prev.tv_nsec) / 1000);
+                t_prev = t_now;
                 s_frame_us[s_frame_n] = ql_gfx_gl_frame_us(gfx);
                 s_swap_us[s_frame_n] = ql_gfx_gl_swap_us(gfx);
                 s_frame_n++;
