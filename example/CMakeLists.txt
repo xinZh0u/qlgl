@@ -26,6 +26,7 @@ set(QL_EXAMPLES
     12_text_block
     13_form
     14_css3
+    15_backdrop
 )
 
 foreach(e ${QL_EXAMPLES})

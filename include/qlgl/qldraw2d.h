@@ -102,6 +102,13 @@ struct QLDraw2D {
      */
     void (*backdrop_blur)(QLDraw2D *self, QLRect rect, int sigma);
 
+    /*
+     * 同上，但把模糊结果裁进圆角矩形（`corner` = 圆角半径，CSS px，0 = 直角）。
+     * 可选：为 NULL 时上层退回 `backdrop_blur`，表现为圆角缺口里渗出方形模糊。
+     */
+    void (*backdrop_blur_round)(QLDraw2D *self, QLRect rect, int sigma,
+                               ql_coord_t corner);
+
     /* 后端可选的批次提交（GPU 用；CPU 为 NULL） */
     /*
      * 位图搬运：把一张 QLImage 画到 dst（设备像素、已含所有变换）。
@@ -244,6 +251,21 @@ static inline int ql_draw2d_backdrop_blur(QLDraw2D *d2d, QLRect rect, int sigma)
         return 0;
     d2d->backdrop_blur(d2d, rect, sigma);
     return 1;
+}
+
+/*
+ * 毛玻璃 + 圆角裁剪。`corner <= 0` 或后端没有圆角版本时退回方形模糊。
+ * 返回 1 表示做了模糊（调用方据此调整自身背景）。
+ */
+static inline int ql_draw2d_backdrop_blur_round(QLDraw2D *d2d, QLRect rect,
+                                                int sigma, ql_coord_t corner)
+{
+    if (corner > 0 && d2d != NULL && d2d->backdrop_blur_round != NULL &&
+        sigma > 0 && !ql_rect_is_empty(rect)) {
+        d2d->backdrop_blur_round(d2d, rect, sigma, corner);
+        return 1;
+    }
+    return ql_draw2d_backdrop_blur(d2d, rect, sigma);
 }
 
 static inline void ql_draw2d_set_mask(QLDraw2D *d2d, ql_coord_t cx, ql_coord_t cy,

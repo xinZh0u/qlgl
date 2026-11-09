@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>毛玻璃叠在动的背景上 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html' class='active'>毛玻璃叠在动的背景上</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">毛玻璃叠在动的背景上</h1>
+<p><img src="../img/15-backdrop.png" alt="半透明玻璃卡叠在移动的色块上，下方内容被实时模糊" width="480"></p>
+<p>完整程序：<code>example/15_backdrop.c</code></p>
+<p>这一章只讲一件事：<strong>一个半透明 + 高斯模糊的层，压在另一个"正在动"的层上，
+下面变了上面的模糊会不会跟着变</strong>。答案是会，而且是每帧跟着变、不用整屏重绘。</p>
+<div class="highlight"><pre><span></span><code><span class="p">#</span><span class="nn">card</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.42</span><span class="p">);</span><span class="w">   </span><span class="c">/* 半透明：这一句不能少 */</span>
+<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">14</span><span class="kt">px</span><span class="p">);</span><span class="w">                    </span><span class="c">/* 模糊&quot;背后已经画好的内容&quot; */</span>
+<span class="w">  </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="1">1. 它为什么天然"实时"</h2>
+<p>本库没有保留式场景图，<code>backdrop-filter</code> 的实现是<strong>就地把这块区域里已经画好的
+像素糊一遍</strong>（CPU）或<strong>把帧缓冲里这块区域 blit 出来糊两趟再贴回去</strong>（GPU）。</p>
+<p>所以"跟随下层变化"不是额外做的工作，而是"重画这一帧"的必然结果：</p>
+<div class="highlight"><pre><span></span><code>第 N 帧：画色块（新位置） → 画玻璃卡 → 取卡下面的像素 → 模糊 → 贴回
+</code></pre></div>
+
+<p>三层玻璃在本例里分别验证三件事：</p>
+<table>
+<thead>
+<tr>
+<th>元素</th>
+<th>验证什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>#card</code>（固定）</td>
+<td>色块从它底下穿过时，模糊内容跟着变 —— <strong>实时跟随</strong></td>
+</tr>
+<tr>
+<td><code>#puck</code>（自己也在动）</td>
+<td>模糊区域跟着玻璃层自己走</td>
+</tr>
+<tr>
+<td><code>#pill</code>（<code>blur(3px)</code>）</td>
+<td>小半径与 <code>blur(14px)</code> 的观感差别</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2">2. 三个必踩的坑</h2>
+<h3 id="21">2.1 玻璃层必须半透明</h3>
+<p>最常见的一句错话是"我写了 <code>backdrop-filter</code> 但没效果"。原因几乎总是：</p>
+<div class="highlight"><pre><span></span><code><span class="p">#</span><span class="nn">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">;</span><span class="w"> </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">14</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* ❌ */</span>
+</code></pre></div>
+
+<p>模糊确实做了，紧接着元素自己那块<strong>不透明</strong>背景把它整个盖住了。写成
+<code>rgba(255,255,255,0.42)</code> 才看得见背后的糊。</p>
+<h3 id="22-border-radius">2.2 <code>border-radius</code> 缺口里会渗出方形模糊块</h3>
+<p>模糊是方框运算，元素却是圆角的。不做处理的话，圆角<strong>缺口</strong>里会渗出颜色 ——
+那是模糊结果，它跑到了元素边框盒之外，CSS 里不该出现。</p>
+<p>本库的做法是把模糊结果裁进圆角：CPU 侧只处理四个 <code>corner×corner</code> 角落
+（先存原像素、糊完按圆角覆盖率混回去），GPU 侧沿用同一个 <code>sdRoundBox</code> SDF
+把片元的 alpha 压到 0，两条后端语义一致。</p>
+<p>对应的 API 是 <code>ql_canvas_backdrop_blur_round()</code> / <code>ql_draw2d_backdrop_blur_round()</code>；
+<code>ql_ui.c</code> 会自动把 <code>border-radius</code> 传下去，所以写 CSS 的人不用管这件事。</p>
+<h3 id="23-keyframes-transform-widthheight">2.3 下层用 <code>@keyframes</code> + <code>transform</code>，不要动 <code>width/height</code></h3>
+<p>动画白名单只允许绘制属性（<code>background*</code> / <code>opacity</code> / <code>transform</code> / <code>color</code> /
+<code>border-*</code> / <code>border-radius</code> / <code>clip-path</code>）。写 <code>width</code> 会直接构建期报错 ——
+改尺寸意味着每帧重排，与本库"动画零重排"的红线冲突。</p>
+<h2 id="3">3. 脏区模式下也跟得上</h2>
+<p><code>ql_ui_consume_dirty()</code> 交出来的脏区里，只要有一块与玻璃元素相交，
+玻璃就会重新取"背后的像素"再糊一次。所以不需要为了毛玻璃关掉脏区优化。</p>
+<p>有一个<strong>已知边界</strong>：如果下层的变化只覆盖玻璃元素的一小块，那么只有那一小块
+被重新模糊 —— 模糊核够不到矩形外的邻居像素，边缘可能出现细接缝。
+需要绝对干净时，把带 <code>backdrop-filter</code> 的元素整体当成脏区。</p>
+<h2 id="4">4. 代价</h2>
+<table>
+<thead>
+<tr>
+<th>后端</th>
+<th>一次 <code>blur(r)</code> 的代价</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>4 趟（H/V × 2）扫描 + 两块临时缓冲，与面积 × r 相关</td>
+<td>只在这块区域上发生</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>半分辨率 blit + 两趟 9 抽头 + 一次合成</td>
+<td>基本可以当免费</td>
+</tr>
+</tbody>
+</table>
+<p><code>r</code> 被限制在 <code>1~64px</code>，写 <code>blur(0)</code> 或 <code>blur(80px)</code> 都是构建期报错
+（明确失败优于半个正确）。</p>
+<h2 id="5">5. 跑起来看</h2>
+<div class="highlight"><pre><span></span><code>./build/example/example_15_backdrop
+./build/example/example_15_backdrop<span class="w"> </span>--size<span class="w"> </span>320x280<span class="w">   </span><span class="c1"># 窄窗口</span>
+./build/example/example_15_backdrop<span class="w"> </span>--frames<span class="w"> </span><span class="m">120</span><span class="w"> </span>--dump<span class="w"> </span>/tmp/15.ppm
+</code></pre></div>
+
+<blockquote>
+<p>顺手记一条布局上的坑：本例把 <code>position: relative</code> 直接放在 <code>#root</code> 上，
+没有额外套一层 <code>#stage { height: 100% }</code>。因为<strong>普通元素的 <code>height: 100%</code>
+目前不会去解析父元素的百分比高度</strong>，多套一层会变成 0 高（<code>overflow: hidden</code>
+一裁，画面全空）。根元素自己相对视口，是确定高度，所以能直接用。</p>
+</blockquote>
+<div class='pager'>
+<a href='../tutorial/14_css3.html'><span class='dir'>上一页</span>CSS3 补全：真实页面天天用的那几件</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -661,6 +661,8 @@ frag = vec4(v_color.rgb, v_color.a * cov);
 
 CPU 没有"读回"问题——画布本身就是已经画好的东西，所以直接在内存里就地模糊
 （`ql_canvas_backdrop_blur`）：取出区域 → 两趟滑动窗口盒式卷积（每像素 O(1)）→ 写回。
+带 `border-radius` 的元素走 `ql_canvas_backdrop_blur_round()`：模糊前先存下四个
+`corner×corner` 角落，糊完按圆角覆盖率混回去，于是圆角缺口里不会渗出方形模糊块。
 
 和 GPU 的差异是**故意的**：CPU 走全分辨率 + 盒式，GPU 走半分辨率 + 9 抽头高斯近似。
 所以 `test_blur` **不做逐像素比较**，而是断言同一组性质：

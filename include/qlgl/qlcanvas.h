@@ -94,6 +94,18 @@ int  ql_canvas_mask_active(const QLCanvas *canvas);
  */
 ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius);
 
+/*
+ * 同上，但把结果裁进**圆角矩形**（`corner` = 圆角半径，设备像素，0 等价于上一个）。
+ *
+ * 为什么需要它：模糊本身是方框运算，而元素常常是圆角的。不裁的话四个圆角缺口里
+ * 会渗出"方的模糊块" —— 颜色跑到元素边框盒之外，CSS 里不该出现。
+ *
+ * 实现上只处理四个 corner×corner 角落（唯一可能落在圆角之外的部分）：模糊前存下
+ * 原像素，模糊后按圆角覆盖率混回去。开销与 corner² 成正比，通常几百个像素。
+ */
+ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
+                                       ql_coord_t corner);
+
 /* ----- 原语 ----- */
 void ql_canvas_clear(QLCanvas *canvas, ql_color_t color);
 

@@ -396,6 +396,24 @@ static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
     (void)ql_canvas_backdrop_blur(ctx->canvas, dev, r);
 }
 
+/* 带圆角裁剪：模糊只写进圆角矩形内，四个缺口保持原样（与 GPU 同一语义） */
+static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
+                                    ql_coord_t corner)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (ctx->canvas == NULL)
+        return;
+
+    QLRect dev = sx(self, elem_rect(self, rect));
+    ql_coord_t fx = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
+    int r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
+    if (r < 1)
+        r = 1;
+    const ql_coord_t cdev =
+        (ql_coord_t)(((int64_t)corner * fx) / QL_SCALE_ONE);
+    (void)ql_canvas_backdrop_blur_round(ctx->canvas, dev, r, cdev);
+}
+
 static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
 
 static void cpu_set_clip(QLDraw2D *self, QLRect clip)
@@ -601,6 +619,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->set_clip = cpu_set_clip;
     out->set_mask = cpu_set_mask;
     out->backdrop_blur = cpu_backdrop_blur;
+    out->backdrop_blur_round = cpu_backdrop_blur_round;
     out->fill_rect = cpu_fill_rect;
     out->fill_round_rect = cpu_fill_round_rect;
     out->fill_round_rect_gradient = cpu_fill_round_rect_gradient;

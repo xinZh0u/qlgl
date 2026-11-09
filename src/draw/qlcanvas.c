@@ -301,18 +301,29 @@ static void box_pass(const uint8_t *src, uint8_t *dst, int w, int h, int r, int 
     }
 }
 
-ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius)
-{
-    if (canvas == NULL || canvas->buffer == NULL)
-        return QL_ERR_INVAL;
-    if (radius <= 0)
-        return QL_OK;
+static inline float ql_smoothstep(float e0, float e1, float x);
 
-    QLRect r = ql_rect_intersect(rect, ql_rect_make(0, 0, canvas->width, canvas->height));
-    if (ql_rect_is_empty(r))
-        return QL_OK;
-    if (radius > r.w + r.h)
-        radius = (int)(r.w + r.h);   /* 大半径没有更多信息，别白扫 */
+/*
+ * 圆角矩形覆盖率（0..1），与 GPU 片元着色器里的 sdRoundBox + smoothstep(-0.5,0.5)
+ * 同一个公式 —— 两条后端在圆角边界上的软硬必须一致，否则 golden 比对会抖。
+ * (px, py) 是像素中心相对矩形中心的偏移，hw/hh 是半宽半高，r 是圆角半径。
+ */
+static float round_box_cov(float px, float py, float hw, float hh, float r)
+{
+    float qx = fabsf(px) - hw + r;
+    float qy = fabsf(py) - hh + r;
+    float mx = qx > 0.0f ? qx : 0.0f;
+    float my = qy > 0.0f ? qy : 0.0f;
+    float d = (qx > qy ? qx : qy);
+    if (d > 0.0f)
+        d = 0.0f;
+    d += sqrtf(mx * mx + my * my) - r;
+    return 1.0f - ql_smoothstep(-0.5f, 0.5f, d);
+}
+
+/* 把 r 区域里的像素就地模糊（不含圆角裁剪） */
+static void blur_rect_in_place(QLCanvas *canvas, QLRect r, int radius)
+{
 
     const int w = (int)r.w, h = (int)r.h;
     const size_t bytes = (size_t)w * (size_t)h * 3u;
@@ -321,7 +332,7 @@ ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius)
     if (a == NULL || b == NULL) {
         ql_mem_free(a);
         ql_mem_free(b);
-        return QL_ERR_NOMEM;
+        return;
     }
 
     /* 取出来（去掉 padding，变成紧凑的 RGB 三元组） */
@@ -343,7 +354,129 @@ ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius)
 
     ql_mem_free(a);
     ql_mem_free(b);
+}
+
+/*
+ * 圆角裁剪：模糊是方框的，而元素是圆角的 —— 不裁剪的话，四个圆角缺口里会
+ * 渗出"方的模糊块"（颜色跑到元素边框盒之外，CSS 里不该出现）。
+ *
+ * 只处理四个角落的 corner×corner 方块：那里是唯一"可能落在圆角之外"的地方。
+ * 做法是**模糊之前先存下这四块的原像素**，模糊完按覆盖率把它们混回去
+ * （cov=1 用模糊结果、cov=0 用原像素、边缘按 cov 混合），等价于 GPU 那边
+ * 用 alpha 混合把模糊结果只写进圆角内。
+ */
+static void apply_round_clip(QLCanvas *canvas, QLRect r, ql_coord_t corner,
+                             uint8_t *const *saved, const QLRect *saved_r)
+{
+    const float hw = (float)r.w * 0.5f;
+    const float hh = (float)r.h * 0.5f;
+    const float cx = (float)r.x + hw;
+    const float cy = (float)r.y + hh;
+
+    for (int k = 0; k < 4; k++) {
+        const QLRect q = saved_r[k];
+        if (ql_rect_is_empty(q))
+            continue;
+        for (int y = 0; y < (int)q.h; y++) {
+            for (int x = 0; x < (int)q.w; x++) {
+                const ql_coord_t px = q.x + x, py = q.y + y;
+                const float cov = round_box_cov((float)px + 0.5f - cx,
+                                                (float)py + 0.5f - cy, hw, hh,
+                                                (float)corner);
+                if (cov >= 0.999f)
+                    continue;
+                const uint8_t *src = saved[k] +
+                                     ((size_t)y * (size_t)q.w + (size_t)x) * 3u;
+                if (cov <= 0.001f) {
+                    raw_px_set(canvas, px, py, src);
+                    continue;
+                }
+                uint8_t cur[4];
+                raw_px_get(canvas, px, py, cur);
+                uint8_t mix[4];
+                for (int c = 0; c < 3; c++) {
+                    const float v = (float)cur[c] * cov + (float)src[c] * (1.0f - cov);
+                    mix[c] = (uint8_t)(v + 0.5f);
+                }
+                raw_px_set(canvas, px, py, mix);
+            }
+        }
+    }
+}
+
+/* 通用入口：先算好裁剪后的区域，再决定要不要做圆角收尾 */
+static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
+                                   ql_coord_t corner)
+{
+    if (canvas == NULL || canvas->buffer == NULL)
+        return QL_ERR_INVAL;
+    if (radius <= 0)
+        return QL_OK;
+
+    QLRect r = ql_rect_intersect(rect, ql_rect_make(0, 0, canvas->width, canvas->height));
+    if (ql_rect_is_empty(r))
+        return QL_OK;
+    if (radius > r.w + r.h)
+        radius = (int)(r.w + r.h);   /* 大半径没有更多信息，别白扫 */
+
+    const ql_coord_t maxc = (r.w < r.h ? r.w : r.h) / 2;
+    if (corner > maxc)
+        corner = maxc;
+
+    /* 圆角：先把四个角落方块的原像素留一份，模糊完再按覆盖率混回去 */
+    uint8_t *saved[4] = { NULL, NULL, NULL, NULL };
+    QLRect saved_r[4];
+    int nsaved = 0;
+    if (corner > 0) {
+        const ql_coord_t cs = corner + 1;   /* 多留 1px 给抗锯齿边界 */
+        const QLRect q[4] = {
+            { r.x, r.y, cs, cs },
+            { ql_rect_right(r) - cs, r.y, cs, cs },
+            { r.x, ql_rect_bottom(r) - cs, cs, cs },
+            { ql_rect_right(r) - cs, ql_rect_bottom(r) - cs, cs, cs },
+        };
+        for (int k = 0; k < 4; k++) {
+            saved_r[k] = ql_rect_intersect(q[k], r);
+            if (ql_rect_is_empty(saved_r[k]))
+                continue;
+            const size_t n = (size_t)saved_r[k].w * (size_t)saved_r[k].h * 3u;
+            saved[k] = (uint8_t *)ql_mem_alloc(n);
+            if (saved[k] == NULL)
+                break;
+            for (int y = 0; y < (int)saved_r[k].h; y++)
+                for (int x = 0; x < (int)saved_r[k].w; x++)
+                    raw_px_get(canvas, saved_r[k].x + x, saved_r[k].y + y,
+                               saved[k] + ((size_t)y * (size_t)saved_r[k].w +
+                                           (size_t)x) * 3u);
+            nsaved++;
+        }
+        if (nsaved != 4) {          /* 内存不够：退回不裁圆角，总比不出画面好 */
+            for (int k = 0; k < 4; k++) {
+                ql_mem_free(saved[k]);
+                saved[k] = NULL;
+            }
+            corner = 0;
+        }
+    }
+
+    blur_rect_in_place(canvas, r, radius);
+
+    if (corner > 0)
+        apply_round_clip(canvas, r, corner, saved, saved_r);
+    for (int k = 0; k < 4; k++)
+        ql_mem_free(saved[k]);
     return QL_OK;
+}
+
+ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius)
+{
+    return backdrop_blur_impl(canvas, rect, radius, 0);
+}
+
+ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
+                                       ql_coord_t corner)
+{
+    return backdrop_blur_impl(canvas, rect, radius, corner);
 }
 
 /* smoothstep，与 GPU 片元着色器同一公式，保证两条后端视觉一致 */

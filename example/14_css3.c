@@ -120,7 +120,7 @@ int main(int argc, char **argv)
     int pseudo = 0;
     for (uint16_t i = 0; i < ui->node_count; i++)
         if (ql_ui_node_text(&ui->nodes[i]) != NULL &&
-            ql_ui_node_text(&ui->nodes[i])[0] == 0xE2)   /* "•" 的首字节 */
+            (unsigned char)ql_ui_node_text(&ui->nodes[i])[0] == 0xE2)  /* "•" 首字节 */
             pseudo++;
     printf("节点 %d 个（其中 %d 个是 ::before 生成的）\n",
            (int)ui->node_count, pseudo);

@@ -52,7 +52,7 @@ cmake --build build -j
 ```
 
 **想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，10 章，每章配一个
-可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十三个自包含的 `.c`。
+可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十五个自包含的 `.c`。
 
 | 例程 | 讲什么 |
 |---|---|
@@ -69,6 +69,8 @@ cmake --build build -j
 | `11_semantic` | 纯语义标签：`dl` / `del` / `ins` / `cite` / `fieldset`，整段真实 HTML 贴进来就能画 |
 | `12_text_block` | `white-space: pre` 系列 / `<pre>` / `<sub>` `<sup>` |
 | `13_form` | `<textarea>` 多行编辑 + 整张表单（Tab 跳、Ctrl+A/C/V、中文输入） |
+| `14_css3` | `::before` / `:nth-child` / `[data-*]` / `:not()` / `min-max` / `!important` / `hsl()` |
+| `15_backdrop` | 毛玻璃叠在动的背景上：半透明上层 + `backdrop-filter`，下层实时变 |
 
 ## 构建与测试
 
@@ -232,7 +234,9 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [动画](doc/tutorial/05_animation.md) → [换皮肤](doc/tutorial/06_theme.md) →
 [进阶](doc/tutorial/07_advanced.md) → [标签](doc/tutorial/08_tags.md) →
 [滚动](doc/tutorial/09_scroll.md) → [与 Web 的差别](doc/tutorial/10_vs_web.md) →
-**[输入控件](doc/tutorial/11_input.md)**。
+[输入控件](doc/tutorial/11_input.md) → [空白与上下标](doc/tutorial/12_text.md) →
+[多行输入与表单](doc/tutorial/13_form.md) → [CSS3 补全](doc/tutorial/14_css3.md) →
+**[毛玻璃叠在动的背景上](doc/tutorial/15_backdrop.md)**。
 
 模块手册：
 

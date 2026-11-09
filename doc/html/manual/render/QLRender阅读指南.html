@@ -178,6 +178,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/12_text.html'>空白与上下标</a>
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1092,7 +1093,9 @@ cov = 1 - smoothstep(0, blur, d)
 </table>
 <h3 id="154-cpu">15.4 CPU 侧的对应实现</h3>
 <p>CPU 没有"读回"问题——画布本身就是已经画好的东西，所以直接在内存里就地模糊
-（<code>ql_canvas_backdrop_blur</code>）：取出区域 → 两趟滑动窗口盒式卷积（每像素 O(1)）→ 写回。</p>
+（<code>ql_canvas_backdrop_blur</code>）：取出区域 → 两趟滑动窗口盒式卷积（每像素 O(1)）→ 写回。
+带 <code>border-radius</code> 的元素走 <code>ql_canvas_backdrop_blur_round()</code>：模糊前先存下四个
+<code>corner×corner</code> 角落，糊完按圆角覆盖率混回去，于是圆角缺口里不会渗出方形模糊块。</p>
 <p>和 GPU 的差异是<strong>故意的</strong>：CPU 走全分辨率 + 盒式，GPU 走半分辨率 + 9 抽头高斯近似。
 所以 <code>test_blur</code> <strong>不做逐像素比较</strong>，而是断言同一组性质：</p>
 <ul>

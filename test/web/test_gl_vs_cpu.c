@@ -217,6 +217,67 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
         }
     }
 
+    /*
+     * ---- 毛玻璃的圆角裁剪：两条后端都不许把模糊漏到圆角缺口 ----
+     *
+     * 模糊是方框运算，元素是圆角的。漏出去的表现是"圆角缺口里渗出方形模糊块"，
+     * 肉眼一看就是错的，但它只在有 `border-radius` 的元素上出现，容易被漏测。
+     * 场景：红色硬边竖条 + 圆角玻璃卡，缺口处必须还是**纯红硬边**。
+     */
+    {
+        const char *html = "<div id=r><div id=s></div><div id=g></div></div>";
+        const char *css =
+            "#r { width: 160px; height: 120px; background-color: #FFFFFF }"
+            "#s { position: absolute; left: 0px; top: 0px; width: 40px; height: 120px;"
+            "     background-color: #FF0000 }"
+            "#g { position: absolute; left: 30px; top: 20px; width: 100px; height: 80px;"
+            "     border-radius: 16px; background-color: rgba(255,255,255,0.15);"
+            "     backdrop-filter: blur(6px) }";
+        QLUIDoc *doc = ql_ui_load_text(html, css);
+        QL_CHECK(doc != NULL);
+        if (doc != NULL) {
+            QLUIRoot *bu = ql_ui_build(doc);
+            QL_CHECK(bu != NULL);
+            if (bu != NULL) {
+                ql_ui_layout(bu, 160, 120);
+
+                QLDispDriver *bd = ql_disp_mem_create(160, 120, QL_COLOR_RGB888);
+                QLCanvas bc;
+                QL_CHECK_EQ(ql_canvas_from_disp(&bc, bd), QL_OK);
+                ql_canvas_clear(&bc, QL_COLOR_RGB(0xFF, 0xFF, 0xFF));
+                ql_ui_render_canvas(bu, &bc);
+
+                QLGfxGL *bg = ql_gfx_gl_create("blur-round", 160, 120,
+                                               QL_GFX_GL_OFFSCREEN);
+                uint8_t *brgba = (uint8_t *)ql_mem_calloc(1, 160u * 120u * 4u);
+                QL_CHECK(bg != NULL && brgba != NULL);
+                if (bg != NULL && brgba != NULL) {
+                    ql_gfx_gl_begin(bg, QL_COLOR_RGB(0xFF, 0xFF, 0xFF));
+                    ql_ui_render(bu, ql_gfx_gl_draw(bg));
+                    ql_gfx_gl_end(bg);
+                    QL_CHECK_EQ(ql_gfx_gl_read_pixels(bg, brgba, 160 * 4), QL_OK);
+
+                    /* (31,21)：左上圆角缺口内、红条之外 —— 必须是纯红（没被糊进去） */
+                    ql_color_t cc = ql_disp_mem_pixel(bd, 31, 21);
+                    const uint8_t *gp = brgba + ((size_t)21 * 160u + 31u) * 4u;
+                    QL_CHECK(QL_COLOR_GET_G(cc) <= 8 && QL_COLOR_GET_B(cc) <= 8);
+                    QL_CHECK(gp[1] <= 8 && gp[2] <= 8);
+                    /* (42,55)：红白硬边在玻璃里 —— 两边都应被糊成粉色 */
+                    ql_color_t cb = ql_disp_mem_pixel(bd, 42, 55);
+                    const uint8_t *gb2 = brgba + ((size_t)55 * 160u + 42u) * 4u;
+                    QL_CHECK(QL_COLOR_GET_G(cb) > 60);
+                    QL_CHECK(gb2[1] > 60);
+                    ql_mem_free(brgba);
+                }
+                if (bg != NULL)
+                    ql_gfx_gl_destroy(bg);
+                ql_disp_mem_destroy(bd);
+                ql_ui_free(bu);
+            }
+            ql_ui_doc_free(doc);
+        }
+    }
+
     /* ---- 关键位置抽查：背景、标题条、面板 ---- */
     QL_CHECK(rgba[((size_t)2 * (size_t)W + 2u) * 4u + 0u] < 40);          /* 左上角深色 */
 

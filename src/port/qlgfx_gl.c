@@ -1259,7 +1259,17 @@ static void blur_pass(QLGfxGL *g, int src, int dst, float dx, float dy)
  *   3. 两趟可分离模糊（H 到 fbo[1]，V 回 fbo[0]）；
  *   4. 恢复帧缓冲/视口，发一个 mode 4 的四边形（片元里采样 u_bg）。
  */
+static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
+                                   ql_coord_t corner);
+
+/* 直角版本 = 圆角半径为 0，保留旧入口（外部可能只认识 backdrop_blur） */
 static void gl_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
+{
+    gl_backdrop_blur_round(self, rect, sigma, 0);
+}
+
+static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
+                                   ql_coord_t corner)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (g == NULL || g->blur_prog == 0)
@@ -1313,6 +1323,11 @@ static void gl_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
     v.hy = (float)dev.h * 0.5f;
     v.use_tex = 4.0f;
     v.border = -1.0f;
+    /*
+     * 圆角半径走的是同一个 SDF：片元里 `cov` 会把方框边缘的 alpha 压到 0，
+     * 于是模糊结果只写进圆角内，四个缺口保留原本已画好的内容 —— 正是 CSS 语义。
+     */
+    v.radius = (corner > 0) ? (float)gsl(g, corner) : 0.0f;
     v.a = 1.0f;
     v.r = 1.0f;
     v.g = 1.0f;
@@ -1807,6 +1822,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.set_clip = gl_set_clip;
     g->draw.set_mask = gl_set_mask;
     g->draw.backdrop_blur = gl_backdrop_blur;
+    g->draw.backdrop_blur_round = gl_backdrop_blur_round;
     g->draw.fill_rect = gl_fill_rect;
     g->draw.fill_round_rect = gl_fill_round_rect;
     g->draw.fill_round_rect_gradient = gl_fill_round_rect_gradient;

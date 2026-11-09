@@ -272,6 +272,67 @@ QL_TEST_BEGIN("test_effects")
         rd = NULL;
     }
 
+    /* ---------- N. 毛玻璃的圆角裁剪 ---------- */
+    /*
+     * 模糊是方框运算，元素却常常是圆角的。不裁剪时，圆角缺口里会渗出方形模糊块
+     * （颜色跑到边框盒之外，CSS 里不该出现）。这里用"竖直硬边穿过左上圆角"的
+     * 场景把它钉住：圆角以外必须**逐像素等于不做模糊的版本**。
+     */
+    {
+        const QLRect bg_box = ql_rect_make(10, 10, 60, 60);
+        const ql_coord_t rad = 20;
+        const ql_color_t white = QL_COLOR_RGB(0xFF, 0xFF, 0xFF);
+        const ql_color_t red = QL_COLOR_RGB(0xFF, 0x00, 0x00);
+
+        /* 参考帧：只画硬边，不做任何模糊 */
+        QLDispDriver *ref = ql_disp_mem_create(W, H, QL_COLOR_ARGB8888);
+        QLCanvas rc;
+        ql_canvas_from_disp(&rc, ref);
+        ql_canvas_clear(&rc, white);
+        ql_canvas_fill_rect(&rc, ql_rect_make(18, 0, 62, 80), red);
+
+        fresh(white);
+        ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
+        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, rad);
+
+        int leaked = 0;
+        for (ql_coord_t y = 0; y < H; y++)
+            for (ql_coord_t x = 0; x < W; x++)
+                if (ref_sd(bg_box, rad, x, y) > 0.5f &&
+                    px(x, y) != ql_disp_mem_pixel(ref, x, y))
+                    leaked++;
+        QL_CHECK_EQ(leaked, 0);                       /* 圆角外一个像素都不许动 */
+
+        /* 圆角内确实被糊了（否则上面那条断言毫无意义） */
+        QL_CHECK(px(24, 24) != ql_disp_mem_pixel(ref, 24, 24));
+
+        /* 灵敏度：同样的场景走直角版本，圆角缺口里一定会渗色 */
+        fresh(white);
+        ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
+        ql_canvas_backdrop_blur(&s_canvas, bg_box, 4);
+        QL_CHECK(px(12, 12) != ql_disp_mem_pixel(ref, 12, 12));
+
+        /* corner == 0 必须与直角版本逐像素一致（不给上层留两条语义） */
+        static ql_color_t plain[W * H];
+        fresh(white);
+        ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
+        ql_canvas_backdrop_blur(&s_canvas, bg_box, 4);
+        for (ql_coord_t y = 0; y < H; y++)
+            for (ql_coord_t x = 0; x < W; x++)
+                plain[y * W + x] = px(x, y);
+
+        fresh(white);
+        ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
+        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, 0);
+        int rect_diff = 0;
+        for (ql_coord_t y = 0; y < H; y++)
+            for (ql_coord_t x = 0; x < W; x++)
+                if (px(x, y) != plain[y * W + x])
+                    rect_diff++;
+        QL_CHECK_EQ(rect_diff, 0);
+        ql_disp_mem_destroy(ref);
+    }
+
     ql_disp_mem_destroy(s_disp);
     s_disp = NULL;
 

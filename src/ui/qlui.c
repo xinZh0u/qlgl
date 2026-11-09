@@ -4066,8 +4066,12 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
      * 毛玻璃：必须在**画自己的背景之前**做，否则会连自己一起糊掉。
      * 模糊的是"这一层背后已经画好的内容"，所以它天然跟随 z 序。
      */
-    if (s->backdrop_blur > 0 && !ql_rect_is_empty(box) && d2d->backdrop_blur != NULL)
-        (void)ql_draw2d_backdrop_blur(d2d, box, (int)s->backdrop_blur);
+    /*
+     * 带上 border-radius：模糊是方框运算，圆角缺口里不该渗出方形的模糊块。
+     */
+    if (s->backdrop_blur > 0 && !ql_rect_is_empty(box))
+        (void)ql_draw2d_backdrop_blur_round(d2d, box, (int)s->backdrop_blur,
+                                            s->border_radius);
 
     /* 阴影先画（在背景之下）；阴影轮廓取边框盒，与 CSS box-shadow 一致 */
     if (s->shadow_alpha > 0 && d2d->fill_shadow != NULL && !ql_rect_is_empty(box))

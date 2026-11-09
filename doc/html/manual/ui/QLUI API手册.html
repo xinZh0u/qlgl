@@ -178,6 +178,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/12_text.html'>空白与上下标</a>
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1228,10 +1229,20 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <ol>
 <li><strong>必须写在"上面那一层"</strong>：靠 z 序/文档顺序决定谁是"背后"；</li>
 <li><strong>自己的 <code>background-color</code> 要带 alpha</strong>，否则糊完又被不透明底色盖住，看不出效果；</li>
-<li><strong>只影响自己的矩形</strong>（含 <code>border-radius</code> 的圆角），不会把外面的颜色吸进来；</li>
+<li><strong>只影响自己的矩形</strong>（含 <code>border-radius</code> 的圆角），不会把外面的颜色吸进来，
+   也不会把模糊漏到圆角缺口外面（见下面的"圆角裁剪"）；</li>
 <li>它跟着 <code>transform</code> 一起走——毛玻璃卡片滑动时，糊的是它当前盖住的那块内容；</li>
+<li><strong>下层在动就跟着动</strong>：模糊的是"这一帧刚画好的像素"，所以 <code>@keyframes</code> 驱动的
+   背景变化会被实时反映，不需要额外机制（例程 <code>15_backdrop</code> 演示这一点）；</li>
 <li>每帧多一次 draw call；CPU 后端代价约等于"半次整屏重绘"（见 <code>bench.md</code>）。</li>
 </ol>
+<p><strong>圆角裁剪</strong>：模糊是方框运算，元素却常常是圆角的。不做处理时圆角缺口里会渗出
+"方的模糊块"（颜色跑到边框盒之外）。上层会自动把 <code>border-radius</code> 传给
+<code>ql_draw2d_backdrop_blur_round()</code>，CPU 侧只重算四个角落像素、GPU 侧复用
+<code>sdRoundBox</code> 的 SDF 压掉片元 alpha，两条后端语义一致。</p>
+<p><strong>脏区的边界</strong>：脏区里只要有一块与玻璃元素相交，玻璃就会重新糊一次。但如果下层
+的变化只覆盖玻璃的一小块，就只有那一小块被重新模糊，模糊核够不到矩形外的邻居，
+边缘可能出现细接缝 —— 需要绝对干净时，把带 <code>backdrop-filter</code> 的元素整体当脏区。</p>
 <p><strong>构建期报错</strong>：<code>blur()</code> 以外的函数（<code>blur</code> 以外的 <code>backdrop-filter</code> 值）、半径 0 或 &gt; 64。</p>
 <hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
