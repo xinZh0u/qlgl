@@ -381,6 +381,19 @@ static QLRect shift_rect_rounded(QLDraw2D *self, QLRect r)
     return r;
 }
 
+/*
+ * CSS px 矩形 → 设备像素整数矩形：`elem_rect` 处理 transform: scale，
+ * `sxf` 处理**绘制期平移**（transform: translate）与 dpr。
+ *
+ * 顺序不能反、也不能重复：`sx()` 里已经含一次 elem_rect，早先写成
+ * `sx(self, elem_rect(self, rect))` 是**缩放算了两遍**，而且两份都没算平移 ——
+ * 表现就是"带 transform 的毛玻璃糊的是它没移动之前那块地方"。
+ */
+static QLRect dev_rect_of(QLDraw2D *self, QLRect r)
+{
+    return ql_rect_from_fx(sxf(self, elem_rect(self, r)));
+}
+
 /* 毛玻璃：把设备像素区域里已有的内容就地模糊（CPU 侧的"背后"就是画布本身） */
 static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
 {
@@ -388,7 +401,7 @@ static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
     if (ctx->canvas == NULL)
         return;
 
-    QLRect dev = sx(self, elem_rect(self, rect));
+    QLRect dev = dev_rect_of(self, rect);
     ql_coord_t fx = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
     int r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
     if (r < 1)
@@ -404,7 +417,7 @@ static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     if (ctx->canvas == NULL)
         return;
 
-    QLRect dev = sx(self, elem_rect(self, rect));
+    QLRect dev = dev_rect_of(self, rect);
     ql_coord_t fx = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
     int r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
     if (r < 1)

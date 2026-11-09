@@ -382,7 +382,7 @@
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `backdrop-filter: blur()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 `border-radius`；下层动画实时跟随 |
+| `backdrop-filter: blur()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
 | `filter: blur()` | ⏳ | O | 要"元素自己离屏后再模糊"，与 `backdrop-filter` 不是一回事 |
 | `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/drop-shadow` | ⏳ | O | 每个都要 CPU + GL 两份实现 |
 | `clip-path: circle()` | ✅ | R | 子树级圆形遮罩；CPU 与 GPU 各一份 |

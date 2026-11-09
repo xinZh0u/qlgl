@@ -1275,7 +1275,16 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     if (g == NULL || g->blur_prog == 0)
         return;
 
-    QLRect dev = gsx(g, elem_rect_gl(g, rect));
+    /*
+     * CSS px → 设备像素：`gsx` 已经含一次 elem scale（transform: scale）和 dpr，
+     * 这里再补上**绘制期平移**（transform: translate）—— 别的绘制入口是在
+     * emit 顶点时加 `off_x_of/off_y_of`，毛玻璃走的是"自己 blit 一小块"，得自己加。
+     * 少了这一步，带 transform 的玻璃糊的是它没移动之前那块地方。
+     */
+    const float ox = off_x_of(g), oy = off_y_of(g);
+    QLRect dev = gsx(g, rect);
+    dev.x += (ql_coord_t)(ox < 0.0f ? ox - 0.5f : ox + 0.5f);
+    dev.y += (ql_coord_t)(oy < 0.0f ? oy - 0.5f : oy + 0.5f);
     dev = ql_rect_intersect(dev, ql_rect_make(0, 0, g->width, g->height));
     if (ql_rect_is_empty(dev))
         return;

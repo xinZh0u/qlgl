@@ -1771,7 +1771,7 @@ main img.shot { max-width: 100%; }
 <td><code>backdrop-filter: blur()</code></td>
 <td>✅</td>
 <td>R</td>
-<td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 <code>border-radius</code>；下层动画实时跟随</td>
+<td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 <code>border-radius</code>；自己带 <code>transform: translate</code> 时采样区跟着走；下层动画实时跟随</td>
 </tr>
 <tr>
 <td><code>filter: blur()</code></td>

@@ -590,7 +590,9 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 2. **自己的 `background-color` 要带 alpha**，否则糊完又被不透明底色盖住，看不出效果；
 3. **只影响自己的矩形**（含 `border-radius` 的圆角），不会把外面的颜色吸进来，
    也不会把模糊漏到圆角缺口外面（见下面的"圆角裁剪"）；
-4. 它跟着 `transform` 一起走——毛玻璃卡片滑动时，糊的是它当前盖住的那块内容；
+4. 它跟着 `transform: translate()` 一起走——毛玻璃卡片滑动时，糊的是它**现在**
+   盖住的那块内容（两条后端都在采样矩形里补了绘制期平移；早先漏了这一步，
+   表现是"移动后的玻璃糊的是它原来那块地方"）；
 5. **下层在动就跟着动**：模糊的是"这一帧刚画好的像素"，所以 `@keyframes` 驱动的
    背景变化会被实时反映，不需要额外机制（例程 `15_backdrop` 演示这一点）；
 6. 每帧多一次 draw call；CPU 后端代价约等于"半次整屏重绘"（见 `bench.md`）。
