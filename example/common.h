@@ -21,6 +21,14 @@
 #define HAS_GL 1
 #endif
 
+/* 关掉 FreeType 时例程照样能编（只是只有内置位图字体，中文显示不出来） */
+#if defined(QLGL_ENABLE_FREETYPE)
+#include <qlgl/qlfont_ft.h>
+#define HAS_FT 1
+#else
+#define HAS_FT 0
+#endif
+
 /*
  * ---- 例程自己的 HTML / CSS ----
  *
@@ -121,6 +129,9 @@ static void ex_setup_locale(void)
 
 static void ex_load_font(void)
 {
+#if !HAS_FT
+    return;                          /* 没有 FreeType 后端：只有内置位图字体 */
+#else
     const char *env = getenv("QLGL_FONT");
     if (env != NULL && ql_font_set_default_file(env, -1))
         return;
@@ -132,6 +143,7 @@ static void ex_load_font(void)
     for (size_t i = 0; i < sizeof(cands) / sizeof(cands[0]); i++)
         if (ql_font_set_default_file(cands[i], -1))
             return;
+#endif
 }
 
 /*

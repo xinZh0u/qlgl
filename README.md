@@ -163,6 +163,9 @@ QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 > 3. 不支持的东西**构建期报错**，绝不静默降级。
 >
 > 详见 [Web 兼容设计](doc/Web兼容设计.md)。
+>
+> **想横向比比看？** [与主流框架对比](doc/对比与取舍.md)：vs Electron / Flutter / GTK4 /
+> Qt / LVGL 的优缺点、实测体积与内存、以及**完整的短板清单**（不含自夸）。
 
 ## 目录
 
@@ -258,6 +261,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - 运行期解析：[QLUIText 阅读指南](doc/手册/uitext/QLUIText阅读指南.md) / [QLUIText API 手册](doc/手册/uitext/QLUIText%20API手册.md)
 - 渲染后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - Web 兼容策略：[Web 兼容设计](doc/Web兼容设计.md)
+- 横向对比（vs Electron / Flutter / GTK4 / Qt / LVGL）：[对比与取舍](doc/对比与取舍.md)
 - 开发规划（里程碑与验收）：[开发规划](doc/开发规划.md)
 - 性能基线：[bench.md](doc/bench.md)
 - 想看整体设计：[底层实现设计](doc/底层实现设计.md)

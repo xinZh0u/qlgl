@@ -19,6 +19,12 @@ file(GLOB_RECURSE QLGL_SRC CONFIGURE_DEPENDS
 add_library(qlgl STATIC ${QLGL_SRC})
 target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
+# libm 是自己用的（缓动曲线、SDF、颜色插值），不借 FreeType 的传递依赖 ——
+# 之前关掉 FreeType 之后例程集体链接失败，就是这个"顺手用别人的 -lm"
+find_library(QL_LIBM m)
+if(QL_LIBM)
+    target_link_libraries(qlgl PUBLIC ${QL_LIBM})
+endif()
 
 # 图像能力预设：full（全开）/ lean（砍 PNG 与平台后端）/ raw-only（只吃构建期 RAW）
 set(QLGL_IMG_PRESET "full" CACHE STRING "图像能力预设：full / lean / raw-only")

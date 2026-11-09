@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>与主流框架对比：qlgl 站在哪一格 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item active' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="qlgl">与主流框架对比：qlgl 站在哪一格</h1>
+<blockquote>
+<p><strong>一句话</strong>：qlgl 不是"又一个 GUI 框架"，而是<strong>把 HTML + CSS 当界面描述语言、在构建期
+编译掉</strong>的一条窄路。它的对手不是 Flutter / Electron（那两家要赢的是"应用开发效率"），
+而是"同一份界面既要跑 PC 又要跑 MCU"时<strong>没有答案</strong>的那一格。</p>
+</blockquote>
+<p>本文的自我要求：<strong>不美化自己</strong>。第 9 节是完整的短板清单，第 10 节写"什么时候你不该用它"。
+凡是能实测的数字都给复现命令（第 11 节）。</p>
+<hr />
+<h2 id="1">1. 比什么：六条硬指标</h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>为什么重要</th>
+<th>怎么量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>体积</strong></td>
+<td>板子上的 flash 与安装包大小</td>
+<td>二进制 <code>size</code> + 依赖库</td>
+</tr>
+<tr>
+<td><strong>内存</strong></td>
+<td>常驻 RSS，以及<strong>是否有界</strong></td>
+<td><code>time -v</code> 峰值 RSS + 有没有动态分配点</td>
+</tr>
+<tr>
+<td><strong>启动 / 最坏帧</strong></td>
+<td>工业 HMI 关心"按下到响应"的确定性</td>
+<td>冷启动时间、p99 帧耗时</td>
+</tr>
+<tr>
+<td><strong>界面语言</strong></td>
+<td>决定"设计稿能不能直接搬"、团队要不要学新东西</td>
+<td>HTML+CSS / QML / Dart / C API</td>
+</tr>
+<tr>
+<td><strong>跨端一致</strong></td>
+<td>同一份界面在 PC 与板子上是不是同一个东西</td>
+<td>是否需要两套代码</td>
+</tr>
+<tr>
+<td><strong>生态</strong></td>
+<td>控件、主题、工具、遇到问题的答案</td>
+<td>有没有设计器 / 第三方库 / 社区</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 一页速览</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>界面语言</th>
+<th>渲染</th>
+<th>典型体积</th>
+<th>能否下到 MCU</th>
+<th>生态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>qlgl</strong></td>
+<td><strong>HTML + CSS（子集，构建期编译）</strong></td>
+<td>自绘，CPU 光栅 + GL 双后端</td>
+<td>PC 全量 <strong>519 KB</strong>；最小构建 <strong>262 KB</strong></td>
+<td>✅ 理论可（<strong>尚无移植样板</strong>）</td>
+<td><strong>≈ 0</strong></td>
+</tr>
+<tr>
+<td><strong>Electron</strong></td>
+<td>完整 Web（HTML/CSS/JS）</td>
+<td>Chromium</td>
+<td>安装包 80~150 MB</td>
+<td>❌</td>
+<td>巨大（npm）</td>
+</tr>
+<tr>
+<td><strong>Flutter</strong></td>
+<td>Dart widget 树</td>
+<td>Skia / Impeller</td>
+<td>桌面 release 20~30 MB 量级</td>
+<td>❌</td>
+<td>大</td>
+</tr>
+<tr>
+<td><strong>GTK 4</strong></td>
+<td>C API + 自己的 CSS 子集</td>
+<td>GSK（GL/Vulkan）</td>
+<td>依赖链十几 MB 量级</td>
+<td>❌</td>
+<td>成熟（GNOME）</td>
+</tr>
+<tr>
+<td><strong>Qt（Widgets / Quick）</strong></td>
+<td>C++/QML（Qt for MCUs 是 QML 子集）</td>
+<td>原生绘制 / 场景图 GPU</td>
+<td>十几~几十 MB</td>
+<td>⚠️ 仅 Qt for MCUs（专有）</td>
+<td>很大</td>
+</tr>
+<tr>
+<td><strong>LVGL</strong></td>
+<td>C 控件 API（+ 类 CSS 样式）</td>
+<td>自绘，小缓冲</td>
+<td>数十 KB~数百 KB flash</td>
+<td>✅ 就是干这个的</td>
+<td>中（工业用量大）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>体积那一列里，只有 <strong>qlgl 与 LVGL 是同一个量级</strong>；其余都是"整数量级"的差距。
+这不是谁好谁坏，是<strong>目标不同</strong>：它们卖的是开发效率与生态，qlgl 卖的是确定性。</p>
+</blockquote>
+<hr />
+<h2 id="3-vs-electron">3. vs Electron：不是一个赛道，但常被拿来问</h2>
+<p><strong>Electron 的真实优势</strong></p>
+<ul>
+<li><strong>完整 Web</strong>：任意 CSS/JS/DOM，Canvas/WebGL、npm 上百万个包；</li>
+<li><strong>调试体验</strong>：DevTools、热更新、几十万篇 StackOverflow 答案；</li>
+<li><strong>三端一致</strong>：Windows / macOS / Linux 一套代码。</li>
+</ul>
+<p><strong>qlgl 的真实优势</strong></p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>qlgl</th>
+<th>Electron</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>二进制</td>
+<td>519 KB（全量）/ 262 KB（最小）</td>
+<td>80~150 MB 安装包</td>
+</tr>
+<tr>
+<td>常驻内存</td>
+<td><strong>3.2 MB</strong>（最小构建实测）；PC 全量 140 MB，其中 19 MB 是 CJK 字体、其余是 Mesa 软件光栅</td>
+<td>150~300 MB 起</td>
+</tr>
+<tr>
+<td>冷启动</td>
+<td>毫秒级</td>
+<td>1~3 秒量级</td>
+</tr>
+<tr>
+<td>确定性</td>
+<td>无 GC、无 JIT、节点数上限编译期固定（<code>QL_CFG_UI_MAX_NODES</code>）</td>
+<td>V8 GC + 合成器线程，最坏帧不可控</td>
+</tr>
+<tr>
+<td>下到 MCU</td>
+<td>✅ 设计目标</td>
+<td>❌ 差三个数量级</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Electron 明显更好的场景</strong>（该用它）</p>
+<ul>
+<li>应用本身就是"网页 + 一点本地能力"；</li>
+<li>需要 npm 生态（图表、编辑器、PDF、地图…）；</li>
+<li>团队是前端，且<strong>不需要</strong>考虑 MCU；</li>
+<li>Windows/macOS 桌面是主战场（qlgl 目前<strong>只有 Linux 后端</strong>，见 §9）。</li>
+</ul>
+<p><strong>换到 qlgl 要付的代价</strong></p>
+<ul>
+<li>CSS 是子集：实测语料<strong>声明级 73.6%</strong>（§11），照抄真实站点会撞"不支持的属性"；</li>
+<li>没有 JS：动态逻辑只能写 C；</li>
+<li>没有 DevTools 那种"点一下看盒子"的调试器（有 <code>--dump</code> 截图 + 单测断言）。</li>
+</ul>
+<hr />
+<h2 id="4-vs-flutter">4. vs Flutter：理念最接近的对手</h2>
+<p>两家都是<strong>自绘、不嵌 WebView</strong>（Flutter 也自带 Impeller/Skia）。差别在语言与运行时。</p>
+<p><strong>Flutter 强在哪</strong></p>
+<ul>
+<li>Dart AOT，<strong>热重载</strong>（改一行看结果，迭代速度是 qlgl 的十倍以上）；</li>
+<li>渲染管线成熟：Impeller 的着色器预编译、抗锯齿、动画性能都是工程化过的；</li>
+<li>控件与生态：Material/Cupertino 一整套，<code>pub.dev</code> 几万个包；</li>
+<li>移动端（Android/iOS）是真战场，且<strong>六端</strong>都能出（含 Web、桌面三端）；</li>
+<li>无障碍、IME、平台通道（原生弹窗、相机）都有现成答案。</li>
+</ul>
+<p><strong>qlgl 强在哪</strong></p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>qlgl</th>
+<th>Flutter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行时</td>
+<td><strong>没有</strong>（纯 C，无 VM、无 GC、无 Dart runtime）</td>
+<td>Dart VM + AOT 快照</td>
+</tr>
+<tr>
+<td>界面语言</td>
+<td>HTML + CSS（<strong>设计稿/网页可搬</strong>，构建期编译成静态数据）</td>
+<td>Dart 代码里写 widget 树</td>
+</tr>
+<tr>
+<td>二进制</td>
+<td>262 KB~519 KB</td>
+<td>桌面 20~30 MB 量级</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>最小构建 3.2 MB；节点/样式/文本全静态</td>
+<td>60~150 MB 量级（GPU 驱动另算）</td>
+</tr>
+<tr>
+<td>可裁到 MCU</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>集成到已有 C 程序</td>
+<td>直接 <code>#include &lt;qlgl/qlgl.h&gt;</code></td>
+<td>要嵌 Flutter Engine（C++ API + 平台壳）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>共同短板</strong>（qlgl 并不能靠换框架解决）</p>
+<ul>
+<li>复杂文字整形（阿拉伯/印度语系）与 RTL：qlgl 明确不做（要 HarfBuzz/SheenBidi）；</li>
+<li>平台原生观感：自绘框架都不像系统控件（GTK/Qt 才是那一档）。</li>
+</ul>
+<p><strong>该选 Flutter 的时候</strong>：做移动端产品、要现成控件与生态、要热重载、团队愿意学 Dart。</p>
+<hr />
+<h2 id="5-vs-gtk-4">5. vs GTK 4：桌面这一侧的正面对手</h2>
+<p><strong>GTK 4 强在哪</strong>（这几点 qlgl 明确不做，也不打算做）</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>GTK</th>
+<th>qlgl</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原生控件集</td>
+<td>一整套（含树、表、文件选择器、颜色选择器）</td>
+<td>无控件类，只有 HTML 元素 + CSS</td>
+</tr>
+<tr>
+<td>无障碍（a11y）</td>
+<td>AT-SPI，能用读屏器</td>
+<td>❌ 明确后置</td>
+</tr>
+<tr>
+<td>输入法</td>
+<td>ibus 完整链路（候选窗、预编辑）</td>
+<td>⚠️ X11 走 XIM；Wayland <strong>没有</strong> <code>text-input-v3</code>（手机/软键盘做不了）</td>
+</tr>
+<tr>
+<td>系统集成</td>
+<td>多窗口、系统菜单、托盘、打印、DnD、设置存储</td>
+<td>❌ 一个进程一个窗口，全都没有</td>
+</tr>
+<tr>
+<td>渲染器</td>
+<td>GSK（GL/Vulkan + 离屏合成）</td>
+<td>CPU 光栅 + GLES3，无离屏合成</td>
+</tr>
+<tr>
+<td>主题</td>
+<td>GTK CSS（<strong>不是网页 CSS</strong>）+ Adwaita</td>
+<td>网页 CSS 子集（<code>hover/focus/active</code>、伪元素、flex…）</td>
+</tr>
+<tr>
+<td>生态</td>
+<td>二十年积累、GNOME 全线</td>
+<td>≈ 0</td>
+</tr>
+</tbody>
+</table>
+<p><strong>qlgl 强在哪</strong></p>
+<ul>
+<li><strong>依赖与体积</strong>：GTK 拖的是 glib/pango/cairo/graphene/harfbuzz/fontconfig… 一条长链；
+  qlgl 全量只有可选的 FreeType / X11 / Wayland / EGL 四个外部接口，最小构建<strong>零外部依赖</strong>；</li>
+<li><strong>界面语言是网页那一套</strong>：会 CSS 就能写界面，不需要学 C API + GTK CSS 的另一套驼峰；</li>
+<li><strong>一份界面能下到 MCU</strong>（GTK 差三个数量级）；</li>
+<li><strong>确定性</strong>：没有保留式场景图（GTK4 的 GSK 每帧要维护 render node 树），
+  静态界面下 <code>ql_ui_anim_tick()</code> 直接返回 0，主循环整帧跳过。</li>
+</ul>
+<p><strong>诚实的结论</strong>：做 Linux 桌面应用，<strong>GTK/Qt 是更合理的选择</strong> —— 你要的那些系统集成
+qlgl 都没有。qlgl 的战场是"这块屏幕上只有我自己画的界面"。</p>
+<hr />
+<h2 id="6-vs-qt-vs">6. vs Qt：广度 vs 确定性的两极</h2>
+<p>Qt 有三条产品线，要分开说：</p>
+<table>
+<thead>
+<tr>
+<th>产品线</th>
+<th>界面语言</th>
+<th>跑在哪</th>
+<th>与 qlgl 的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Widgets</strong></td>
+<td>C++</td>
+<td>桌面</td>
+<td>功能广度完胜；qlgl 不竞争</td>
+</tr>
+<tr>
+<td><strong>Quick / QML</strong></td>
+<td>QML + JS</td>
+<td>桌面 / 移动 / 嵌入式 MPU</td>
+<td>理念不同：声明式 + JS 引擎</td>
+</tr>
+<tr>
+<td><strong>Qt for MCUs</strong></td>
+<td>QML 子集（专有工具链）</td>
+<td>裸机 / RTOS</td>
+<td><strong>这是 qlgl 在 MCU 上的直接对手</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Qt 强在哪</strong></p>
+<ul>
+<li>功能广度：网络、多媒体、数据库、打印、多窗口、DBus、国际化、无障碍；</li>
+<li>工具链：Qt Creator、Designer、<code>qmlscene</code>、性能分析器；</li>
+<li>商用支持与长期维护；嵌入式生态（Boot to Qt）成熟；</li>
+<li>QML 比 HTML/CSS 更适合"数据绑定"（那是它活下来的原因）。</li>
+</ul>
+<p><strong>qlgl 强在哪</strong></p>
+<ul>
+<li><strong>MIT 许可</strong>（Qt 是 LGPLv3/GPL 或商业授权；静态链接闭源要注意合规）；</li>
+<li><strong>没有 moc / 元对象编译器 / C++ ABI 问题</strong>：编译就是编译，接口就是 C 函数；</li>
+<li>体积与内存小一档；无 JS 引擎、无 GC；</li>
+<li>界面语言是 HTML+CSS（<strong>Web 技能直接复用</strong>，Qt 要学 QML）；</li>
+<li>明确失败：不支持的写法<strong>构建期报错</strong>，不是运行时半对半错（对"板子上才发现效果不对"是硬需求）。</li>
+</ul>
+<p><strong>该选 Qt 的时候</strong>：几乎总是——如果你需要"一整套功能"而不是"一个自己画的界面"。</p>
+<hr />
+<h2 id="7-vs-lvglmcu">7. vs LVGL：MCU 这一侧的对手，也是老师</h2>
+<p>LVGL 与 qlgl 最像：<strong>C 语言、自绘、小缓冲、跑 MCU</strong>。差别在"界面怎么写"。</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>LVGL</th>
+<th>qlgl</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>界面语言</td>
+<td>C 控件 API（<code>lv_obj_create</code>、<code>lv_label_set_text</code>…）+ 类 CSS 的样式 API</td>
+<td><strong>HTML + CSS</strong>（构建期编译成静态表）</td>
+</tr>
+<tr>
+<td>控件</td>
+<td><strong>一整套</strong>（按钮/滑条/表/图/键盘/图表/滚轮…）</td>
+<td>无控件类；用 HTML 元素 + CSS 拼（<code>&lt;button&gt;</code>/<code>&lt;input&gt;</code>/<code>&lt;select&gt;</code>/<code>&lt;progress&gt;</code> 有 UA 默认样式）</td>
+</tr>
+<tr>
+<td>布局</td>
+<td>flex（近年）+ grid 子集</td>
+<td><strong>flex + 绝对定位 + 文本折行 + 行内混排</strong></td>
+</tr>
+<tr>
+<td>文本交互</td>
+<td>无输入框编辑（需自己写）</td>
+<td><code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / <code>&lt;textarea&gt;</code>（含光标、选区、Ctrl+A/C/V、Tab 焦点）</td>
+</tr>
+<tr>
+<td>最小体积</td>
+<td><strong>数十 KB~数百 KB flash</strong>（随功能与字体）</td>
+<td><strong>实测 219 KB text、3.2 MB RSS</strong>（无 FreeType/GL/窗口后端，位图字体）</td>
+</tr>
+<tr>
+<td>设计器</td>
+<td>SquareLine Studio（商业+社区版）</td>
+<td>❌ 无</td>
+</tr>
+<tr>
+<td>生态</td>
+<td>工业用量大、移植样板多（STM32/ESP32/NXP…）</td>
+<td>≈ 0；<strong>连 MCU 移植样板都还没有</strong></td>
+</tr>
+<tr>
+<td>PC 上跑</td>
+<td>有 SDL/DRM 驱动，但界面是同一套 C 代码</td>
+<td><strong>同一份 HTML/CSS 既能上 PC 也能上板子</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>qlgl 在 MCU 上的现状（不吹）</strong></p>
+<ul>
+<li>能力包（<code>QL_FEAT_*</code>）目前<strong>只有图像那几个真的在代码里生效</strong>；
+  <code>QL_FEAT_CSS_*</code> / <code>QL_FEAT_UI_*</code> 还只有名字（见 <a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> §21）；</li>
+<li>没有移植样板、没有 RTOS 集成示例、没有 DMA/双缓冲的板级文档；</li>
+<li>219 KB 比 LVGL 的典型配置重 —— 因为这里带着完整 HTML/CSS 编译器产物结构、
+  flex 求解器、文本折行与输入框编辑。</li>
+</ul>
+<p><strong>所以</strong>：如果目标只是"一块 MCU 上有界面"，<strong>LVGL 现在更合适</strong>。
+qlgl 的赌注是"<strong>PC 上的原型和板子上是同一份 HTML/CSS</strong>"这件省钱的事。</p>
+<blockquote>
+<p>顺带一提同类：<strong>Dear ImGui / Nuklear</strong> 是即时模式（每帧重画整棵树，无布局引擎，
+适合工具与调试面板）；<strong>Slint</strong>（Rust，声明式，也能下 MCU）理念上比 LVGL 更接近 qlgl。</p>
+</blockquote>
+<hr />
+<h2 id="8">8. 总表</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>qlgl</th>
+<th>Electron</th>
+<th>Flutter</th>
+<th>GTK4</th>
+<th>Qt</th>
+<th>LVGL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>体积</td>
+<td><strong>262~519 KB</strong></td>
+<td>80~150 MB</td>
+<td>20~30 MB</td>
+<td>十几 MB+</td>
+<td>十几~几十 MB</td>
+<td><strong>数十~数百 KB</strong></td>
+</tr>
+<tr>
+<td>常驻内存</td>
+<td><strong>3.2 MB</strong>（最小）</td>
+<td>150~300 MB</td>
+<td>60~150 MB</td>
+<td>数十 MB</td>
+<td>数十 MB</td>
+<td><strong>几 KB~数十 KB</strong></td>
+</tr>
+<tr>
+<td>启动</td>
+<td>毫秒</td>
+<td>1~3 s</td>
+<td>数百 ms</td>
+<td>数百 ms</td>
+<td>数百 ms</td>
+<td>毫秒</td>
+</tr>
+<tr>
+<td>界面语言</td>
+<td>HTML+CSS 子集</td>
+<td>Web 全量</td>
+<td>Dart</td>
+<td>C + GTK CSS</td>
+<td>C++ / QML</td>
+<td>C API</td>
+</tr>
+<tr>
+<td>布局引擎</td>
+<td>flex + 绝对定位 + 折行</td>
+<td>全量 CSS</td>
+<td>Flex/其它</td>
+<td>自研</td>
+<td>自研</td>
+<td>flex + grid 子集</td>
+</tr>
+<tr>
+<td>Web 兼容</td>
+<td><strong>73.6% 声明级</strong></td>
+<td>100%</td>
+<td>0%</td>
+<td>0%（GTK CSS 不同）</td>
+<td>0%</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>无障碍</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>⚠️ 少量</td>
+</tr>
+<tr>
+<td>输入法</td>
+<td>⚠️ X11 XIM</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>⚠️ 需自己接</td>
+</tr>
+<tr>
+<td>多窗口 / 系统集成</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>下到 MCU</td>
+<td>⚠️ 理论可，<strong>无样板</strong></td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>⚠️ 专有分支</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>PC 与 MCU 同一份界面</td>
+<td>✅ <strong>设计目标</strong></td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>⚠️ 同语言不同写法</td>
+</tr>
+<tr>
+<td>生态</td>
+<td>≈ 0</td>
+<td>巨大</td>
+<td>大</td>
+<td>成熟</td>
+<td>很大</td>
+<td>中</td>
+</tr>
+<tr>
+<td>许可</td>
+<td><strong>MIT</strong></td>
+<td>MIT</td>
+<td>BSD</td>
+<td>LGPL</td>
+<td>LGPL/商业</td>
+<td>MIT</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-qlgl">9. qlgl 的短板清单</h2>
+<h3 id="91">9.1 结构性：<strong>设计决定，不会补</strong></h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>为什么不做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 JS / 无 DOM</td>
+<td>JS 引擎 + DOM 是另一个数量级的体积与不确定性；动态逻辑走 C</td>
+</tr>
+<tr>
+<td>不嵌 WebView（任何平台）</td>
+<td>一旦在 PC 换引擎，两端渲染必然分叉 —— 那正是本库最贵的东西</td>
+</tr>
+<tr>
+<td>不做运行期 CSS 匹配</td>
+<td>样式在构建期消解（运行期解析是"加载时算一次"，不是每帧匹配，且可整块摘掉）</td>
+</tr>
+<tr>
+<td>无保留式场景图</td>
+<td>那是 GTK4 的 GSK 路线，每帧重建节点，体积与确定性全都丢</td>
+</tr>
+<tr>
+<td>不支持的写法<strong>构建期报错</strong></td>
+<td>明确失败优于半个正确（板子上调试成本太高）</td>
+</tr>
+<tr>
+<td>不与 GTK/Qt 比功能广度</td>
+<td>可访问性、多媒体、网络、打印都不做</td>
+</tr>
+</tbody>
+</table>
+<h3 id="92">9.2 现在缺，但路线图上有</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>calc()</code> / <code>min()</code> / <code>max()</code></td>
+<td>要改 <code>QLUILength</code> 表示（+40 字节/样式），未开始</td>
+</tr>
+<tr>
+<td><code>border-radius</code> 四角、<code>border-style: dashed</code></td>
+<td>未开始</td>
+</tr>
+<tr>
+<td><code>transform: rotate()</code> / <code>skew()</code></td>
+<td>要一条旋转光栅路径，单独立项</td>
+</tr>
+<tr>
+<td>真 group <code>opacity</code>（离屏图层）</td>
+<td>现在是逐图元降透明</td>
+</tr>
+<tr>
+<td><code>visibility</code> / <code>cursor</code> / <code>pointer-events</code> / <code>outline</code> / <code>text-shadow</code> / <code>list-style</code> / <code>background-size</code></td>
+<td>未开始（<code>!important</code>、<code>var()</code> 之类同理）</td>
+</tr>
+<tr>
+<td>CSS Grid / <code>float</code></td>
+<td>Grid 未排期；<code>float</code> 明确不做</td>
+</tr>
+<tr>
+<td><code>:checked</code> / <code>:disabled</code> / <code>::placeholder</code></td>
+<td>要先有能表达"禁用/勾选"的控件</td>
+</tr>
+<tr>
+<td>CSS / HTML 能力包真的生效</td>
+<td>现在只有名字（图像那几个是真的）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="93">9.3 平台与工程：<strong>当前最硬的短板</strong></h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>现状</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>桌面后端</td>
+<td><strong>只有 Linux</strong>（X11 + Wayland）+ 内存显示</td>
+<td>Windows / macOS 用户完全用不了</td>
+</tr>
+<tr>
+<td>Wayland 输入法</td>
+<td>没有 <code>zwp_text_input_v3</code></td>
+<td>软键盘弹不出来，中文打不进去（X11 侧走 XIM，可用但受限）</td>
+</tr>
+<tr>
+<td>无障碍</td>
+<td>无 AT-SPI</td>
+<td>无法过无障碍合规</td>
+</tr>
+<tr>
+<td>多窗口 / 系统菜单 / 托盘 / 打印 / DnD</td>
+<td>全无</td>
+<td>做不了"真正意义上的桌面应用"</td>
+</tr>
+<tr>
+<td>复杂文字整形 / RTL</td>
+<td>无 HarfBuzz / bidi</td>
+<td>阿拉伯、印度语系、希伯来语全不行</td>
+</tr>
+<tr>
+<td>MCU 移植样板</td>
+<td>无</td>
+<td>"可裁到 MCU"目前是<strong>架构上成立、工程上未验证</strong></td>
+</tr>
+<tr>
+<td>控件库</td>
+<td>无（只有 HTML 元素 + UA 样式）</td>
+<td>复杂控件（树、表、图表）要自己拼</td>
+</tr>
+<tr>
+<td>设计器 / 可视化编辑</td>
+<td>无</td>
+<td>设计师交付物只能是 HTML/CSS</td>
+</tr>
+</tbody>
+</table>
+<h3 id="94">9.4 项目风险（对一个库的评价必须包含这些）</h3>
+<ul>
+<li><strong>单人项目</strong>：没有第二个人能 review，也没有 LTS 承诺；</li>
+<li><strong>API 未冻结</strong>：<code>QLUIStyle</code> 这一轮已涨到 156 字节、blob 到 v20，"抬版本 + 重生成 golden"是常态；</li>
+<li><strong>文档全中文</strong>：对非中文用户等于没有文档；</li>
+<li><strong>无第三方使用者</strong>：所有用例都是自己写的，真实项目会撞到的坑还没有人替你踩过。</li>
+</ul>
+<hr />
+<h2 id="10">10. 该选它 / 不该选它</h2>
+<p><strong>适合（会明显受益）</strong></p>
+<ol>
+<li>嵌入式 Linux / MPU 上的 <strong>HMI</strong>（工控面板、仪器、车载中控的小屏部分）；</li>
+<li>想"<strong>在 PC 上先用 HTML/CSS 做原型，再把同一份文件编译进板子</strong>"；</li>
+<li>体积、内存、启动、最坏帧都要有<strong>上限</strong>的场合（无 GC、无 JIT、节点数静态）；</li>
+<li>已经有 C 程序，只想嵌一层界面（<code>#include</code> 就走，不需要 C++/脚本运行时）；</li>
+<li>团队会 CSS、不想学 QML/Dart/GTK API。</li>
+</ol>
+<p><strong>不适合（别用，会痛）</strong></p>
+<ol>
+<li>需要 Windows / macOS 桌面；</li>
+<li>需要 npm/pub 生态、图表库、富文本编辑器；</li>
+<li>需要无障碍合规、完整输入法、多窗口、打印、托盘；</li>
+<li>需要复杂文字整形 / RTL / 多语言排版；</li>
+<li>需要现成控件库（树、表、文件对话框…）；</li>
+<li><strong>只有一块 MCU 且要被工业验证</strong> —— 现阶段选 LVGL 更省事；</li>
+<li>需要商业支持与 LTS。</li>
+</ol>
+<hr />
+<h2 id="11">11. 数字怎么来的</h2>
+<h3 id="111-min-size-release">11.1 体积（本机实测，min-size / release）</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 最小构建：关掉 FreeType / GL / X11 / Wayland / 运行期解析 / JPEG</span>
+cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>/tmp/qlmin<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>MinSizeRel<span class="w"> </span><span class="se">\</span>
+<span class="w">      </span>-DQLGL_BUILD_TESTS<span class="o">=</span>OFF<span class="w"> </span>-DQLGL_BUILD_BENCHMARK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">      </span>-DQLGL_BUILD_TEXT_PARSER<span class="o">=</span>OFF<span class="w"> </span>-DQLGL_BUILD_FREETYPE<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">      </span>-DQLGL_BUILD_JPEG<span class="o">=</span>OFF<span class="w"> </span>-DQLGL_BUILD_WAYLAND<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">      </span>-DQLGL_BUILD_GL<span class="o">=</span>OFF<span class="w"> </span>-DQLGL_BUILD_X11<span class="o">=</span>OFF
+cmake<span class="w"> </span>--build<span class="w"> </span>/tmp/qlmin<span class="w"> </span>-j<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>size<span class="w"> </span>/tmp/qlmin/example/example_01_window
+
+<span class="c1"># 全量：FreeType + GL + X11 + Wayland + 运行期解析 + 图像</span>
+cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>/tmp/qlrel<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span>-DQLGL_BUILD_TESTS<span class="o">=</span>OFF
+cmake<span class="w"> </span>--build<span class="w"> </span>/tmp/qlrel<span class="w"> </span>-j<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>size<span class="w"> </span>/tmp/qlrel/example/example_01_window
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>构建</th>
+<th>text</th>
+<th>data</th>
+<th>bss</th>
+<th>磁盘二进制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>最小（位图字体、内存显示）</td>
+<td><strong>217 KB</strong></td>
+<td>4.6 KB</td>
+<td>20 KB</td>
+<td><strong>262 KB</strong></td>
+</tr>
+<tr>
+<td>全量（FreeType 动态库、GL、X11+Wayland、运行期解析）</td>
+<td><strong>475 KB</strong></td>
+<td>5.4 KB</td>
+<td>27 KB</td>
+<td><strong>519 KB</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>FreeType / libjpeg / Mesa 都是<strong>动态库</strong>，不计入上表 —— 这台机器上
+<code>libfreetype.so</code> 一个就 600 KB 级，Mesa 的软件光栅驱动更大。
+这也是 §11.2 里 PC 全量 RSS 达 140 MB 的主因。</p>
+</blockquote>
+<h3 id="112">11.2 常驻内存</h3>
+<div class="highlight"><pre><span></span><code>/usr/bin/time<span class="w"> </span>-v<span class="w"> </span>/tmp/qlmin/example/example_01_window<span class="w"> </span>--frames<span class="w"> </span><span class="m">1</span><span class="w"> </span>--dump<span class="w"> </span>/tmp/x.ppm
+/usr/bin/time<span class="w"> </span>-v<span class="w"> </span>/tmp/qlrel/example/example_01_window<span class="w"> </span>--frames<span class="w"> </span><span class="m">1</span><span class="w"> </span>--dump<span class="w"> </span>/tmp/x.ppm
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>构建</th>
+<th>峰值 RSS</th>
+<th>里面都是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>最小</td>
+<td><strong>3.2 MB</strong></td>
+<td>库 + 内置 4bpp 位图字体 + 一块 640×480 缓冲</td>
+</tr>
+<tr>
+<td>全量</td>
+<td>140 MB</td>
+<td>其中 <strong>19 MB 是 Noto Sans CJK 字体文件</strong>（mmap），其余主要是 Mesa 的软件光栅（llvmpipe）与 EGL 初始化</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>换句话说：<strong>140 MB 不是这个库的体量</strong>，是"矢量中文字体 + 软件 GL 驱动"的体量。
+真要报数，报最小构建那 3.2 MB 更接近事实；但也要老实说 ——
+PC 上想要中文与 GL，就得付这两笔账（Electron 也一样要付，只是它付得更多）。</p>
+</blockquote>
+<h3 id="113-benchmarkreadmemd800480">11.3 渲染性能（<code>benchmark/README.md</code>，800×480 离屏全速）</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>CPU 光栅</th>
+<th>GL</th>
+<th>测什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cards</code></td>
+<td>2.27 ms</td>
+<td>0.25 ms</td>
+<td>填充率：圆角/边框/渐变/阴影 + 文本</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>2.50 ms</td>
+<td>0.68 ms</td>
+<td>折行 + 字形缓存</td>
+</tr>
+<tr>
+<td><code>shapes</code></td>
+<td>2.10 ms</td>
+<td>0.09 ms</td>
+<td>SDF 圆角、阴影、渐变、圆形遮罩</td>
+</tr>
+<tr>
+<td><code>anim</code></td>
+<td>1.19 ms</td>
+<td>0.08 ms</td>
+<td>关键帧求值 + 脏区</td>
+</tr>
+<tr>
+<td><code>scroll</code></td>
+<td>2.21 ms</td>
+<td>1.06 ms</td>
+<td>滚动 = 重排 + 裁剪</td>
+</tr>
+</tbody>
+</table>
+<p>其他实测：1080p CPU 全屏 <strong>2.19 ms</strong>、320×240 <strong>0.30 ms</strong>；局部刷新耗时为全量的 <strong>4.5%</strong>；
+5 段动画同时跑 <strong>0.0052 ms/帧</strong>（动画只改绘制期属性，零重排）。</p>
+<h3 id="114-web">11.4 Web 兼容度</h3>
+<p>口径见 <a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> §19：本机 23 份真实 CSS
+（Bootstrap 5、mkdocs、Mercurial、Font Awesome、jQuery UI 皮肤…）共 <strong>5391 条声明</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>口径</th>
+<th>现在</th>
+<th>B1/B2 + B3 第一批落地后（模拟）</th>
+<th>补完 B4/B5（模拟）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>声明级（推荐）</td>
+<td><strong>73.6%</strong></td>
+<td>~90%</td>
+<td>~94.5%</td>
+</tr>
+<tr>
+<td>能直接照搬（不含 <code>!important</code>/<code>var()</code>/<code>calc()</code>）</td>
+<td>61.3%</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12">12. 相关文档</h2>
+<ul>
+<li><a href="Web兼容设计.md">Web 兼容设计</a> —— 子集的边界与三条红线（不做 JS/DOM、不嵌 WebView、不支持就报错）</li>
+<li><a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> —— 逐模块状态 + 覆盖率 + 能力包 + 五批计划</li>
+<li><a href="手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a> —— 114 个元素逐条状态</li>
+<li><a href="开发规划.md">开发规划</a> —— 分期与验收，以及"不做清单"</li>
+<li><a href="bench.md">bench</a> —— 基准方法与数字</li>
+</ul>
+<div class='pager'>
+<a href='../design/Web兼容设计.html'><span class='dir'>上一页</span>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='next' href='../design/开发规划.html'><span class='dir'>下一页</span>QLGL 开发规划</a>
+</div>
+</main>
+</div>
+</body>
+</html>
