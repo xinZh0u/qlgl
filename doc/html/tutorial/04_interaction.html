@@ -242,7 +242,14 @@ main img.shot { max-width: 100%; }
 </code></pre></div>
 
 <p><code>ql_ui_attach_input(ui)</code> 把 <code>QLUIRoot</code> 接到输入系统上（同一时刻只有一个
-<code>QLUIRoot</code>，与"单一窗口"一致）。之后 <code>ql_input_dispatch()</code> 就会：</p>
+<code>QLUIRoot</code>，与"单一窗口"一致）。</p>
+<blockquote>
+<p>⚠️ <strong>漏了这一句的表现非常迷惑</strong>：窗口能开、滚动条能滚（那是主循环里
+<code>ql_input_dispatch()</code> 之外的机制），但<strong>点不动、hover 不亮、也打不了字</strong> ——
+事件在派发那一步因为没有事件汇被<strong>静默丢掉</strong>。
+早期版本的例程就漏过这一句，<code>test/input/test_ui_attach.c</code> 现在专门守它。</p>
+</blockquote>
+<p>之后 <code>ql_input_dispatch()</code> 就会：</p>
 <ol>
 <li>拿到指针位置 → 做命中测试（<strong>逆变换</strong>，所以动画中的元素也点得中）；</li>
 <li>改状态位 → 触发 <code>transition</code>；</li>

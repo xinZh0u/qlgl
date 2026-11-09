@@ -47,7 +47,14 @@ while (ql_gfx_gl_poll(gfx)) {      /* 收窗口事件 */
 ```
 
 `ql_ui_attach_input(ui)` 把 `QLUIRoot` 接到输入系统上（同一时刻只有一个
-`QLUIRoot`，与"单一窗口"一致）。之后 `ql_input_dispatch()` 就会：
+`QLUIRoot`，与"单一窗口"一致）。
+
+> ⚠️ **漏了这一句的表现非常迷惑**：窗口能开、滚动条能滚（那是主循环里
+> `ql_input_dispatch()` 之外的机制），但**点不动、hover 不亮、也打不了字** ——
+> 事件在派发那一步因为没有事件汇被**静默丢掉**。
+> 早期版本的例程就漏过这一句，`test/input/test_ui_attach.c` 现在专门守它。
+
+之后 `ql_input_dispatch()` 就会：
 
 1. 拿到指针位置 → 做命中测试（**逆变换**，所以动画中的元素也点得中）；
 2. 改状态位 → 触发 `transition`；

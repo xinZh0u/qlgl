@@ -81,6 +81,12 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
     QLGfxGL *gfx = ql_gfx_gl_create(title, w, h, QL_GFX_GL_WINDOW);
     if (gfx != NULL) {
         ql_ui_layout(ui, w, h);
+        /*
+         * **必须接上输入汇**：平台层只负责把 X11 事件塞进队列，
+         * `ql_input_dispatch()` 之后要靠这个 sink 才会送到界面层。
+         * 忘了这一句的表现是"窗口能开、能滚、就是点不动也打不了字"。
+         */
+        ql_ui_attach_input(ui);
         QLDraw2D *d2d = ql_gfx_gl_draw(gfx);
         long frame = 0;
         while (ql_gfx_gl_poll(gfx)) {
@@ -97,6 +103,7 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
             if (ex_dump_ppm(ui, w, h, dump))
                 printf("已写出 %s\n", dump);
         }
+        ql_ui_detach_input();
         ql_gfx_gl_destroy(gfx);
         return 0;
     }
