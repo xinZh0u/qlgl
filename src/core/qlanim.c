@@ -13,14 +13,24 @@
 
 /* ------------------------------ 帧时钟 ------------------------------ */
 
+/*
+ * 时间源：托管环境（PC）默认用 `clock_gettime`；**裸机（-ffreestanding）没有它**，
+ * 这时默认时间源是 NULL —— 宿主必须调 `ql_anim_set_time_source()` 接上
+ * （MCU 上通常是 SysTick 或 DWT 周期计数器换算出来的毫秒）。
+ *
+ * 不静默给 0：那样所有动画都会"停在第一帧"，比编译不过更难查。
+ */
+#if defined(__STDC_HOSTED__) && __STDC_HOSTED__
 static uint32_t mono_now_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)((uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u);
 }
-
 static ql_anim_time_fn s_time_fn = mono_now_ms;
+#else
+static ql_anim_time_fn s_time_fn = NULL;
+#endif
 
 uint32_t ql_anim_now_ms(void)
 {
@@ -29,7 +39,11 @@ uint32_t ql_anim_now_ms(void)
 
 void ql_anim_set_time_source(ql_anim_time_fn fn)
 {
+#if defined(__STDC_HOSTED__) && __STDC_HOSTED__
     s_time_fn = (fn != NULL) ? fn : mono_now_ms;
+#else
+    s_time_fn = fn;      /* 裸机没有默认值可退 */
+#endif
 }
 
 /* ------------------------------ 缓动 ------------------------------ */
