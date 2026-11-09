@@ -1113,7 +1113,8 @@ static void input_scroll_to_caret(struct QLUIInput *in)
     if (font == NULL)
         return;
     const QLRect cb = in->node->content_box;
-    const ql_coord_t lh = line_height_of(font);
+    /* 行距必须和绘制用的是同一个（CSS line-height 优先） */
+    const ql_coord_t lh = text_line_h_of(in->node->style, font);
 
     ql_coord_t cx = 0, cy = 0;
     if (in->multiline) {
@@ -1326,7 +1327,7 @@ static ql_coord_t input_scroll_max(const struct QLUIInput *in)
     if (font == NULL)
         return 0;
     const QLRect cb = in->node->content_box;
-    const ql_coord_t lh = line_height_of(font);
+    const ql_coord_t lh = text_line_h_of(in->node->style, font);
     if (lh <= 0)
         return 0;
 
@@ -1371,7 +1372,7 @@ static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x,
     const ql_coord_t rel = x - cb.x + in->scroll_x;
     if (in->multiline) {
         /* 多行：y 定行、x 定列。行高用绘制时的同一个值 */
-        const ql_coord_t lh = line_height_of(font);
+        const ql_coord_t lh = text_line_h_of(node->style, font);
         const ql_coord_t ry = y - cb.y + in->scroll_y;
         const uint16_t pos = caret_at_xy(font, in, cb.w, lh, rel, ry);
         input_set_caret(ui, in, pos, 0);
@@ -1403,7 +1404,7 @@ static void input_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
      * 之前这里走的是单行公式 —— 拖到第二行时按"整串一行"折算字节偏移，
      * 选区和鼠标就对不上了（单行没这个问题，所以一直没暴露）。
      */
-    const ql_coord_t lh = line_height_of(font);
+    const ql_coord_t lh = text_line_h_of(in->node->style, font);
     const ql_coord_t ry = y - cb.y + in->scroll_y;
     const uint16_t pos = caret_at_xy(font, in, cb.w, lh, rel > 0 ? rel : 0, ry);
     input_set_caret(ui, in, pos, 1);
@@ -1517,7 +1518,7 @@ static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
             return 0;
         const QLFont *font = font_of_style(in->node, in->node->style);
         const ql_coord_t bw = in->node->content_box.w;
-        const ql_coord_t lh = line_height_of(font);
+        const ql_coord_t lh = text_line_h_of(in->node->style, font);
         QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
         int count = input_visual_lines(font, in, bw, lines, QL_CFG_TEXT_MAX_LINES);
         if (count > QL_CFG_TEXT_MAX_LINES)
@@ -3833,8 +3834,16 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
      * 多行（textarea）：选区与光标都得按**视觉行**摆。
      * 单行走下面那条老路径（逐字节量宽度），保持像素级不变。
      */
-    const ql_coord_t lh = line_height_of(font);
+    const ql_coord_t lh = text_line_h_of(node->style, font);
     const ql_coord_t base_y = cb.y - in->scroll_y;
+    /*
+     * 光标要盖在**字形**上：文本绘制有半行距（line-height 大于 ascent+descent
+     * 时上下各分一半，小于时是负的），光标必须跟着挪同样的距离，
+     * 否则行距和字体行高不等时，越往下偏得越多。
+     */
+    const ql_coord_t ink_h = (ql_coord_t)(font->ascent + font->descent);
+    const ql_coord_t half_lead =
+        (node->style->line_h > 0) ? (ql_coord_t)(node->style->line_h - ink_h) / 2 : 0;
 
     uint16_t a = in->sel;
     uint16_t b = in->caret;
@@ -3873,8 +3882,8 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
             if (ui->focus == node) {
                 ql_coord_t cx = 0, cy = 0;
                 caret_px(font, in, lines, count, lh, &cx, &cy);
-                QLRect r = ql_rect_make(base_x + cx, base_y + cy + 2, 1,
-                                        (lh > 4) ? lh - 4 : lh);
+                QLRect r = ql_rect_make(base_x + cx, base_y + cy + half_lead, 1,
+                                        (ink_h > 0) ? ink_h : lh);
                 d2d->fill_rect(d2d, r, node->style->text_color, 255);
             }
 

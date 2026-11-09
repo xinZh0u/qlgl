@@ -818,4 +818,72 @@ QL_TEST_BEGIN("test_textarea")
         }
     }
 
+    /* ---------- 21. 光标必须跟着**用过的行距**走（CSS line-height） ---------- */
+    {
+        /*
+         * 以前光标/命中/滚动都用 font->line_height，文本绘制却用 CSS
+         * `line-height` —— 两者不等时（19 vs 16）每往下一行就多偏 3px，
+         * 表现就是"越是下面的行，光标偏得越厉害"。
+         *
+         * 判据用**空行**：内容全是换行时，内容盒里唯一的墨迹就是光标，
+         * 于是可以精确读出光标的 y 范围。
+         */
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            static const int k_lh[2] = { 16, 24 };   /* 一个小于字体行高，一个大于 */
+            for (int k = 0; k < 2; k++) {
+                char css[192];
+                snprintf(css, sizeof(css),
+                         "#r { width: 200px } textarea { width: 200px; height: 150px;"
+                         " padding: 6px; color: #000000; background-color: #FFFFFF;"
+                         " line-height: %dpx }", k_lh[k]);
+                QLUIRoot *ui = NULL;
+                QLUIDoc *doc = mk("<div id=r><textarea>\n\n\n\n\n</textarea></div>", css, &ui);
+                QL_CHECK(ui != NULL);
+                if (ui != NULL) {
+                    QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+                    const QLRect cb = ta->content_box;
+                    const QLFont *font = ql_ui_node_font(ta);
+                    /* 文本绘制的半行距：line-height 与字体行高不等时上下各分一半 */
+                    const ql_coord_t half =
+                        (ql_coord_t)(k_lh[k] - (font->ascent + font->descent)) / 2;
+                    QLCanvas cv;
+                    QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+
+                    int tops[2] = { -1, -1 }, bots[2] = { -1, -1 };
+                    const int line[2] = { 1, 3 };
+                    for (int i = 0; i < 2; i++) {
+                        const ql_coord_t cy = cb.y + (ql_coord_t)line[i] * k_lh[k] + 8;
+                        ql_ui_pointer_down(ui, cb.x + 1, cy);
+                        ql_ui_pointer_up(ui, cb.x + 1, cy);
+                        ql_canvas_clear(&cv, 0xFFFFFF);
+                        ql_ui_render_canvas(ui, &cv);
+                        for (int y = cb.y; y < cb.y + cb.h; y++)
+                            for (int x = cb.x; x < cb.x + cb.w; x++)
+                                if (px(x, y) != 0xFFFFFF) {
+                                    if (tops[i] < 0)
+                                        tops[i] = y;
+                                    bots[i] = y;
+                                }
+                    }
+                    const int expect_top0 = (int)cb.y + line[0] * k_lh[k] + (int)half;
+                    const int expect_top1 = (int)cb.y + line[1] * k_lh[k] + (int)half;
+                    printf("    line-height %d：光标行1 顶 %d（应 %d），行3 顶 %d（应 %d）\n",
+                           k_lh[k], tops[0], expect_top0, tops[1], expect_top1);
+                    QL_CHECK_EQ(tops[0], expect_top0);
+                    QL_CHECK_EQ(tops[1], expect_top1);
+                    /* 两行之间差的就是 2 × line-height */
+                    QL_CHECK_EQ(tops[1] - tops[0], 2 * k_lh[k]);
+                    /* 光标高度 = 字形的 ascent+descent（不是字体行高） */
+                    QL_CHECK_EQ(bots[0] - tops[0] + 1, (int)(font->ascent + font->descent));
+
+                    ql_ui_free(ui);
+                    ql_ui_doc_free(doc);
+                }
+            }
+            ql_disp_mem_destroy(s_disp);
+        }
+    }
+
 QL_TEST_END()

@@ -323,6 +323,12 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
+<p><strong>行距只有一个来源</strong>：位置换算（点哪落哪、上下键、光标绘制、滚动量）全部走
+<code>text_line_h_of(style, font)</code> —— 有 CSS <code>line-height</code> 就用它，否则用字体行高。
+用错这一个值就会出"越往下的行光标偏得越多"：字体行高 19px、<code>line-height: 16px</code>
+时，每行多偏 3px，第 4 行就差出小半行。光标的高度也取字形的
+<code>ascent + descent</code>，并跟着半行距一起挪（<code>line-height</code> 比字形高时上下各分一半，
+比字形矮时是负的），这样它总是盖在字上。</p>
 <p><strong>sticky 列</strong>这件事值得单独说：从长行移到短行时光标会被夹到行尾，但再移回长行
 应该回到<strong>原来的列</strong>，而不是停在短行的行尾。所以有个 <code>want_x</code>：</p>
 <ul>
