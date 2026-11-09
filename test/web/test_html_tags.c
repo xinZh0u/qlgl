@@ -54,6 +54,9 @@ QL_TEST_BEGIN("test_html_tags")
             "dialog",
             /* --- IMAGE 包 --- */
             "img", "picture", "source", "map", "area",
+            /* --- EMBED 包：只做占位 --- */
+            "iframe", "embed", "object", "audio", "video", "track", "canvas",
+            "script", "noscript", "slot", "template", "svg", "math",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -72,6 +75,8 @@ QL_TEST_BEGIN("test_html_tags")
                                  strcmp(name, "img") == 0 ||
                                  strcmp(name, "source") == 0 ||
                                  strcmp(name, "area") == 0 ||
+                                 strcmp(name, "embed") == 0 ||
+                                 strcmp(name, "track") == 0 ||
                                  strcmp(name, "base") == 0 ||
                                  strcmp(name, "link") == 0 ||
                                  strcmp(name, "meta") == 0);
@@ -222,9 +227,26 @@ QL_TEST_BEGIN("test_html_tags")
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
-        /* 给空元素补结束标签是错的（浏览器容忍，本库明确报错） */
-        QL_CHECK(ql_ui_load_text("<div id=r>a<br></br>b</div>", "") == NULL);
-        QL_CHECK(ql_ui_load_text("<div id=r><hr>a</hr></div>", "") == NULL);
+        /*
+         * 给空元素补结束标签是**解析错误但不是歧义**：浏览器的做法是忽略它，
+         * 这里照做（否则 `<embed></embed>` 这种看着正常的写法会让整页编译不过）。
+         * 断言：能编译、且不会因此多出节点。
+         */
+        QLUIDoc *d1 = ql_ui_load_text("<div id=r>a<br></br>b</div>", "");
+        QL_CHECK(d1 != NULL);
+        if (d1 != NULL) {
+            QLUIRoot *u1 = ql_ui_build(d1);
+            QL_CHECK(u1 != NULL);
+            if (u1 != NULL) {
+                QL_CHECK_EQ((int)u1->node_count, 4);   /* div + span + br + span */
+                ql_ui_free(u1);
+            }
+            ql_ui_doc_free(d1);
+        }
+        QLUIDoc *d2 = ql_ui_load_text("<div id=r><hr>a</hr></div>", "");
+        QL_CHECK(d2 != NULL);
+        if (d2 != NULL)
+            ql_ui_doc_free(d2);
     }
 
     /* ---------- 10. ul / ol：左边距 + 子项缩进 ---------- */
@@ -249,7 +271,7 @@ QL_TEST_BEGIN("test_html_tags")
     {
         struct { const char *html; const char *needle; } bad[] = {
             { "<div id=r><table><tr><td>x</td></tr></table></div>", "用嵌套的 flex" },
-            { "<div id=r><textarea></textarea></div>", "还没有输入控件" },
+            { "<div id=r><textarea></textarea></div>", "还没有多行编辑" },
 
             { "<div id=r><input type=\"date\"></div>", "只支持 text / password" },
         };

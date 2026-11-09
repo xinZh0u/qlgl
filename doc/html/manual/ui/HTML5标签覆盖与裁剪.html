@@ -682,13 +682,13 @@ main img.shot { max-width: 100%; }
 <td>嵌入</td>
 <td><code>&lt;embed&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>嵌入</td>
 <td><code>&lt;iframe&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>嵌入</td>
@@ -706,7 +706,7 @@ main img.shot { max-width: 100%; }
 <td>嵌入</td>
 <td><code>&lt;object&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>嵌入</td>
@@ -724,19 +724,19 @@ main img.shot { max-width: 100%; }
 <td>媒体</td>
 <td><code>&lt;audio&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>媒体</td>
 <td><code>&lt;track&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>媒体</td>
 <td><code>&lt;video&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>表格</td>
@@ -904,49 +904,52 @@ main img.shot { max-width: 100%; }
 <td>脚本</td>
 <td><code>&lt;canvas&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>脚本</td>
 <td><code>&lt;noscript&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>脚本</td>
 <td><code>&lt;script&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>Web Components</td>
 <td><code>&lt;slot&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>Web Components</td>
 <td><code>&lt;template&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>SVG / MathML</td>
 <td><code>&lt;math&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 <tr>
 <td>SVG / MathML</td>
 <td><code>&lt;svg&gt;</code></td>
 <td><code>EMBED</code></td>
-<td>⏳ 计划</td>
+<td>✅ 占位</td>
 </tr>
 </tbody>
 </table>
-<p>统计：<strong>✅ 84 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+<p>统计：<strong>✅ 97 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
 P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<code>dialog</code>、P3a 加 <code>img</code>、
-P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</code>）、<strong>⏳ 30 个</strong>、<strong>❌ 0 个</strong>。</p>
+P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</code>、P7 加 13 个占位标签）、
+<strong>⏳ 17 个</strong>、<strong>❌ 0 个</strong>。</p>
+<p>其中 97 个里 <strong>13 个是占位</strong>（<code>EMBED</code> 包，只画提示盒或不产生盒子），
+真正按 HTML 语义渲染的是 <strong>84 个</strong>。</p>
 <hr />
 <h2 id="2">2. 能力包</h2>
 <p>一个"包"= 一组标签 + 支撑它们的那部分引擎。包是<strong>编译期开关</strong>，也是<strong>构建期报告的单位</strong>。</p>
@@ -1017,12 +1020,12 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <td><strong>需要专用运行期状态或覆盖层</strong>：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；<code>textarea</code> 复用输入框池</td>
 </tr>
 <tr>
-<td><code>EMBED</code></td>
+<td><code>EMBED</code> ✅</td>
 <td><code>QL_FEAT_UI_EMBED</code></td>
 <td>13（<code>iframe embed object audio video track canvas script noscript slot template svg math</code>）</td>
 <td>✅</td>
-<td>❌</td>
-<td><strong>只做占位盒 / 忽略</strong>，见 §5</td>
+<td>✅（<strong>占位是零成本的</strong>，保留也几乎不花 Flash）</td>
+<td><strong>只做占位盒 / 不产生盒子</strong>，见 §5</td>
 </tr>
 </tbody>
 </table>
@@ -1098,46 +1101,99 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 这就是本库"明确失败优于半个正确"的落地方式 —— 降级是<strong>显式声明的</strong>，不是悄悄发生。</p>
 <p><code>lenient</code> 的典型用途：MCU 上贴外部 HTML 片段、只想要"能看就行"。</p>
 <hr />
-<h2 id="5-13-embed">5. 永远只做占位的 13 个（<code>EMBED</code>）</h2>
-<p>它们不是"还没做"，是<strong>按红线不做真渲染</strong>：</p>
+<h2 id="5-13-embed">5. 永远只做占位的 13 个（<code>EMBED</code>）✅</h2>
+<p>它们不是"还没做"，是<strong>按红线不做真渲染</strong>。现在的实现：</p>
 <table>
 <thead>
 <tr>
 <th>标签</th>
 <th>为什么不做</th>
-<th>占位怎么做</th>
+<th>内容怎么处理</th>
+<th>盒子</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>script</code> <code>noscript</code> <code>template</code> <code>slot</code></td>
-<td>与"没有 DOM / 没有 JS"红线冲突</td>
-<td><code>script</code> 的内容<strong>整段跳过</strong>（不解析、不进文本池）；其余按 <code>display:none</code></td>
+<td><code>script</code></td>
+<td>没有 JS</td>
+<td><strong>整段跳过</strong>（按 raw text 扫到 <code>&lt;/script&gt;</code>，内容里的 <code>&lt;</code> <code>&lt;/div&gt;</code> 都是普通字符）</td>
+<td><code>display:none</code></td>
 </tr>
 <tr>
-<td><code>iframe</code> <code>embed</code> <code>object</code></td>
-<td>外来内容无法有界（网络、第三方渲染器）</td>
-<td>一个带边框的空盒子 + 文字 <code>未支持</code></td>
-</tr>
-<tr>
-<td><code>audio</code> <code>video</code> <code>track</code></td>
-<td>要解码器 + 音频输出 + 音视频同步</td>
-<td>空盒子（可以画个播放图标字符）</td>
-</tr>
-<tr>
-<td><code>canvas</code></td>
-<td>要 JS 或"C 代码往上画"的新 API 层</td>
-<td>空盒子占位；真的想画 → 直接用 <code>QLCanvas</code>，别绕 HTML</td>
+<td><code>template</code></td>
+<td>惰性内容，永远不渲染</td>
+<td><strong>整段跳过</strong>（标签配平扫描）</td>
+<td><code>display:none</code></td>
 </tr>
 <tr>
 <td><code>svg</code> <code>math</code></td>
-<td>各自需要独立渲染器（等于写第二个 QLGL）</td>
-<td>空盒子占位</td>
+<td>各自需要独立渲染器</td>
+<td><strong>整段跳过</strong>（内容不是 HTML：<code>&lt;path&gt;</code>/<code>&lt;mi&gt;</code> 真去解析就报错）</td>
+<td>占位盒 <code>120×60</code> inline-block</td>
+</tr>
+<tr>
+<td><code>iframe</code> <code>embed</code> <code>object</code></td>
+<td>外来内容无法有界</td>
+<td>解析但隐藏（都是"兜底内容"）</td>
+<td>占位盒 <code>300×150</code> block</td>
+</tr>
+<tr>
+<td><code>audio</code></td>
+<td>要音频输出</td>
+<td>同上</td>
+<td>占位盒 <code>300×32</code></td>
+</tr>
+<tr>
+<td><code>video</code></td>
+<td>要解码器 + 同步</td>
+<td>同上</td>
+<td>占位盒 <code>300×150</code></td>
+</tr>
+<tr>
+<td><code>canvas</code></td>
+<td>要 JS 或"往 HTML 上画"的新 API</td>
+<td>同上</td>
+<td>占位盒 <code>300×150</code></td>
+</tr>
+<tr>
+<td><code>noscript</code></td>
+<td>没有 JS</td>
+<td>解析但隐藏</td>
+<td><code>display:none</code></td>
+</tr>
+<tr>
+<td><code>slot</code></td>
+<td>没有 shadow DOM</td>
+<td>解析但隐藏</td>
+<td><code>display:none</code></td>
+</tr>
+<tr>
+<td><code>track</code></td>
+<td>字幕轨元数据</td>
+<td>空元素</td>
+<td><code>display:none</code></td>
 </tr>
 </tbody>
 </table>
-<p><strong>这就是"HTML5 全支持"的准确含义</strong>：114 个标签<strong>全能编译通过</strong>，
-其中 84 个现在真画、30 个按包补齐后真画或占位、0 个报"不认识的标签"。</p>
+<p><strong>占位盒长什么样</strong>：1px 实线边框 + 居中的<strong>标签名</strong>（<code>iframe</code> / <code>video</code> / <code>svg</code>…）。
+用标签名而不是"未支持"两个字，是因为内建位图字体只有 ASCII（中文会变成 <code>???</code>），
+而且标签名本身就是排查线索。盒子小于 32×12 时不画字（糊成一团没意义）。
+想彻底去掉提示就写 CSS：<code>iframe { border-width: 0; width: 0; height: 0 }</code>。</p>
+<p><strong>两处与浏览器不同的取舍</strong>（都写在这里，不藏着）：</p>
+<ol>
+<li><strong><code>&lt;noscript&gt;</code> 的内容不显示。</strong> 严格按规范，QLGL 没有 JS ⇒ 脚本"总是不可用" ⇒
+   应该显示 noscript 的内容。但这类内容在网页上通常是"请开启 JavaScript"式的降级
+   提示，在 QLGL 里显示出来只会是噪音。要显示就自己写 <code>noscript { display: block }</code>。</li>
+<li><strong><code>&lt;canvas&gt;</code> / <code>&lt;iframe&gt;</code> / <code>&lt;object&gt;</code> / <code>&lt;video&gt;</code> 的兜底内容不显示。</strong>
+   浏览器在"不支持"时显示它们；这里用占位盒代替，避免一页里出现两套"做不到"的说明。</li>
+</ol>
+<p><strong><code>&lt;svg&gt;</code> 必须跳内容，不能只 <code>display:none</code></strong> —— 这是实现时踩到的坑：
+<code>&lt;svg&gt;</code> 里的 <code>&lt;path&gt;</code> / <code>&lt;circle&gt;</code> 都不是 HTML 标签，真解析会报"不支持的标签"，
+整页编译不过。而"整页 HTML 贴进来能编译"正是这一包存在的全部理由。</p>
+<p><strong>顺带修的一条容错</strong>：空元素（<code>br</code> / <code>img</code> / <code>input</code> / <code>embed</code> / <code>track</code> …）的
+结束标签，浏览器是<strong>忽略</strong>（规范里叫 parse error 而非语法错误），这里也照做 ——
+否则 <code>&lt;embed&gt;&lt;/embed&gt;</code> 这种看着很正常的写法会让整页编译不过，而错在哪用户看不出来。
+非空元素的结束标签不匹配仍然<strong>明确报错</strong>。</p>
 <hr />
 <h2 id="6">6. 构建期就该知道结果</h2>
 <blockquote>
@@ -1258,8 +1314,8 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <td>5–8 天（<strong>风险最高</strong>）</td>
 </tr>
 <tr>
-<td>P7</td>
-<td><code>EMBED</code> 包：13 个占位盒 + <code>script</code> 内容跳过</td>
+<td>P7 ✅ 已完成</td>
+<td><code>EMBED</code> 包：13 个占位盒 + <code>script</code>/<code>svg</code>/<code>math</code>/<code>template</code> 内容跳过</td>
 <td>114</td>
 <td>1–2 天</td>
 </tr>
@@ -1276,7 +1332,7 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <hr />
 <h2 id="8">8. 与文档其它地方的口径</h2>
 <ul>
-<li>现在：<strong>已支持 84 / 114</strong>，未支持 30（见 §1 的统计行）。</li>
+<li>现在：<strong>已支持 97 / 114</strong>（含 13 个占位），未支持 17（见 §1 的统计行）。</li>
 <li>教程的"<a href="10_vs_web.html">与 Web 的差别</a>"列的是<strong>用户会踩到的差异</strong>，不重复这份清单。</li>
 <li>各标签的 UA 默认样式见<a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>；
   属性白名单见 <a href="QLUI API手册.html">API 手册 §3.2</a>。</li>

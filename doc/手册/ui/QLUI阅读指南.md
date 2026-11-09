@@ -608,7 +608,7 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 标签在本架构里**只影响三件事**：UA 默认样式、`tag` 选择器、调试名。
 布局与绘制只看编译出来的 `QLUIStyle`，不看标签——所以加标签几乎零成本（只加枚举）。
 
-共 80 个（HTML5 共 114 个；全量状态见 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)）。
+共 97 个（HTML5 共 114 个；其中 13 个是占位；全量状态见 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)）。
 `QLUITag` / `k_tags[]` / `s_tag_names[]` **三处顺序必须一致**，
 且只能在末尾追加：`node.tag` 是存进 blob 的数字）：
 
@@ -629,6 +629,8 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 浮层 | `dialog` | 居中 + 遮罩；整棵树画完再画一遍（子树每帧多画一次） |
 | 折叠 | `details` / `summary` | block；收起时非 `summary` 子节点指向共享隐藏样式 |
 | 控件 | `progress` / `meter` / `output` / `datalist` | 进度条（池里只存完成度 0..1000）/ 度量条 / 行内文本 / **`display:none`** |
+| 占位（EMBED） | `iframe` `embed` `object` `audio` `video` `canvas` `svg` `math` | 占位盒：1px 实线边框 + 居中的**标签名**（`300×150`；`audio` 矮条；`svg`/`math` 是 `120×60` inline-block）。小盒子不画字 |
+| 占位（无盒子） | `script` `noscript` `slot` `template` `track` | **`display: none`**；`script`/`template` 的内容在解析期整段跳过，`svg`/`math` 的内容同样跳过（非 HTML 子树） |
 | 元数据 | `base` `head` `link` `meta` `style` `title` | **解析期整段跳过**：不进树、不产生盒子；`<style>`/`<title>` 按 raw text 处理（内容里不认标签） |
 | 纯语义 | `html` `body` `a` `abbr` `code` `kbd` `samp` `var` `q` `dfn` `cite` `data` `time` `small` `bdi` `bdo` `del` `ins` `dl` `dt` `dd` `menu` `address` `hgroup` `search` `form` `label` `fieldset` `legend` `wbr` | 只给 `display`，另有几处"真的看得出"：`dd` 缩进 18px、`cite`/`var`/`dfn`/`address` 斜体、`del` 删除线、`ins` 下划线、`fieldset` 边框 |
 
@@ -639,9 +641,11 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 2. **列表不画项目符号**：本库没有生成内容（`::before` / `::marker`），标记请自己写字符。
 3. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。
-4. **`<img>` / `<table>` 明确报错**，错误信息里给出替代做法
-   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。`<input type="date">`
-   这类没实现的 `type` 也报错，并列出支持的两个。
+4. **`<table>` / `<textarea>` 明确报错**，错误信息里给出替代做法
+   （表格用嵌套 flex、多行文本用 `white-space: pre`）。`<input type="date">`
+   这类没实现的 `type` 也报错，并列出支持的那几个。
+5. **空元素的结束标签被忽略**（`<br></br>` / `<embed></embed>`）：浏览器这么做，
+   这里照做 —— 否则看着正常的写法会让整页编译不过。非空标签不匹配仍然报错。
 
 **行内元素之间的空白保留成一个空格**（`<b>a</b> <i>b</i>` 不能变成 `ab`）。
 这一步在解析期做，靠的是标签的**默认** display（级联还没跑），所以如果你把

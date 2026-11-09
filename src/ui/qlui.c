@@ -55,6 +55,9 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     "img",
     /* --- IMAGE 包（P3e）：响应式图片与图像热区 --- */
     "picture", "source", "map", "area",
+    /* --- EMBED 包：只做占位的 13 个 --- */
+    "iframe", "embed", "object", "audio", "video", "track", "canvas",
+    "script", "noscript", "slot", "template", "svg", "math",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -3140,6 +3143,50 @@ static int image_fit_rect(int32_t iw, int32_t ih, QLRect box, uint8_t fit,
 }
 
 /* 绘制：object-fit 五态 + 跟随 border-radius 的圆角裁剪 */
+/*
+ * EMBED 包：这些标签**没有内容可画**，画的是"此处本应有东西"的提示。
+ *
+ * 用它自己的标签名当提示文字（`iframe` / `video` / `svg` …）而不是中文
+ * "未支持"，有两个原因：内建位图字体只有 ASCII（中文会变成 `???`），
+ * 而且标签名本身就是排查线索 —— 看到 `iframe` 三个字就知道该改哪儿。
+ *
+ * 只画在盒子够大的时候：太小的盒子里文字只会糊成一团。
+ */
+static int tag_is_embed_box(uint16_t tag)
+{
+    return tag == QL_UI_TAG_IFRAME || tag == QL_UI_TAG_EMBED ||
+           tag == QL_UI_TAG_OBJECT || tag == QL_UI_TAG_AUDIO ||
+           tag == QL_UI_TAG_VIDEO || tag == QL_UI_TAG_CANVAS ||
+           tag == QL_UI_TAG_SVG || tag == QL_UI_TAG_MATH;
+}
+
+static void draw_embed_placeholder(QLUINodeRT *node, QLDraw2D *d2d)
+{
+    const QLUIStyle *s = ql_ui_node_style(node);
+    const QLRect box = node->content_box;
+    if (ql_rect_is_empty(box) || box.w < 32 || box.h < 12)
+        return;
+
+    const char *name = ql_ui_tag_name(node->src->tag);
+    if (name == NULL)
+        return;
+
+    /* 竖直居中：把盒子收成一行文本的高度再交给 draw_text */
+    const ql_coord_t lh = (s->line_h > 0) ? s->line_h : font_of(node)->line_height;
+    QLRect tb = box;
+    if (lh > 0 && tb.h > lh) {
+        tb.y += (ql_coord_t)((tb.h - lh) / 2);
+        tb.h = lh;
+    }
+
+    QLTextStyle ts;
+    memset(&ts, 0, sizeof(ts));
+    ts.color = s->text_color;
+    ts.line_h = s->line_h;
+    ts.align = s->text_align;
+    d2d->draw_text(d2d, font_of(node), name, -1, tb, &ts);
+}
+
 static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLImage *img = ql_ui_node_image(ui, node);
@@ -3356,6 +3403,10 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
     /* <img>：背景/边框画完之后贴图（P3a：object-fit: fill） */
     if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
         draw_img(node->owner, node, d2d);
+
+    /* EMBED 包：画标签名当占位提示（这些节点自身没有文本） */
+    if (node->src != NULL && tag_is_embed_box(node->src->tag))
+        draw_embed_placeholder(node, d2d);
 
     /* <progress>/<meter>：轨道就是背景（已经画完），这里补填充 */
     if (node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||

@@ -755,6 +755,30 @@ ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
 
 轨道 = `background-color`，填充 = `color`。不确定进度画固定 1/3（不做动画）。
 
+### 占位标签（`<iframe>` / `<svg>` / `<script>` …）
+
+13 个标签**永远只做占位**，不做真渲染。认下来是为了"整页 HTML 贴进来能编译"。
+
+| 标签 | 行为 |
+|---|---|
+| `script` `template` | **内容整段跳过**（解析期就丢，不进文本池）；不产生盒子 |
+| `svg` `math` | **内容整段跳过**（不是 HTML 子树）；产生 `120×60` inline-block 占位盒 |
+| `iframe` `object` `canvas` `video` | 内容解析但隐藏；产生 `300×150` block 占位盒 |
+| `audio` | 同上，盒子 `300×32` |
+| `embed` | 空元素；`300×150` 占位盒 |
+| `noscript` `slot` `track` | `display:none`，零盒子 |
+
+占位盒画 1px 实线边框 + 居中的**标签名**（`iframe`、`svg`…），盒子小于 32×12 时不画字。
+这些都是普通布局盒，所以 CSS 完全能覆盖：
+
+```css
+iframe { width: 100%; height: 240px; border-width: 0; }
+svg    { display: none; }              /* 连盒子都不要 */
+noscript { display: block; }           /* 想显示 noscript 的内容就这样写 */
+```
+
+没有专门的 API —— 它们就是"画不出东西的节点"，不需要运行期状态。
+
 ### 图片（`<img>`）
 
 ```c

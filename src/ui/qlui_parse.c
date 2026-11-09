@@ -2477,6 +2477,9 @@ static const char *const k_tags[] = {
     "img",
     /* --- IMAGE 包（P3e）：响应式图片与图像热区 --- */
     "picture", "source", "map", "area",
+    /* --- EMBED 包：永远只做占位（见 QLUITag 的注释） --- */
+    "iframe", "embed", "object", "audio", "video", "track", "canvas",
+    "script", "noscript", "slot", "template", "svg", "math",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2531,7 +2534,31 @@ static int tag_is_void(const char *tag)
     return strcmp(tag, "hr") == 0 || strcmp(tag, "br") == 0 ||
            strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0 ||
            strcmp(tag, "img") == 0 || strcmp(tag, "source") == 0 ||
-           strcmp(tag, "area") == 0;
+           strcmp(tag, "area") == 0 || strcmp(tag, "embed") == 0 ||
+           strcmp(tag, "track") == 0;
+}
+
+/*
+ * 这几个标签的**内容要整段跳过**，连解析都不做。两种原因，处理方式不同：
+ *
+ *   - `script`：内容是 **raw text**（里面有 `if (a<b)`、`</div>` 这种字符串），
+ *     所以只能按"扫到 `</script>` 为止"处理；
+ *   - `svg` / `math` / `template`：内容不属于 HTML（前两个是另一门标记语言，
+ *     `template` 是惰性内容、永远不渲染）。按标签配平扫过去即可。
+ *
+ * 为什么不"解析进来再 display:none"：`<svg>` 里的 `<path>` / `<circle>` 会被
+ * 当成不认识的标签直接报错，整页都编译不过 —— 那正好是"整页 HTML 贴进来"
+ * 最需要避免的情况。
+ */
+static int tag_skips_content(const char *tag)
+{
+    return strcmp(tag, "script") == 0 || strcmp(tag, "svg") == 0 ||
+           strcmp(tag, "math") == 0 || strcmp(tag, "template") == 0;
+}
+
+static int tag_content_is_raw_text(const char *tag)
+{
+    return strcmp(tag, "script") == 0;
 }
 
 /* ---------------- META 包：文档元数据（解析期整段跳过） ---------------- */
@@ -3436,6 +3463,16 @@ static PNode *parse_html(const char *html)
                 pnode_free(root);
                 return NULL;
             }
+            /*
+             * 空元素（br/img/input/embed/track…）的结束标签是"解析错误"而不是
+             * 语法歧义：浏览器的做法是**忽略**它。这里照做 —— 否则
+             * `<embed></embed>` 这种看着很正常的写法会让整页编译不过，
+             * 而错在哪儿用户根本看不出来。
+             */
+            if (tag_is_void(name)) {
+                p = q + 1;
+                continue;
+            }
             if (cur == root) {
                 set_error("HTML: 多余的结束标签 </%s>", name);
                 pnode_free(root);
@@ -3507,18 +3544,20 @@ static PNode *parse_html(const char *html)
             }
 
             if (!tag_supported(name)) {
-                /* 对几个"一定会有人写"的标签给出比"不支持"更有用的提示 */
-                if (strcmp(name, "img") == 0)
-                    set_error("HTML: 不支持 <img>（本库没有图片解码器）："
-                              "装饰用 div + background-image / 圆角做，"
-                              "图标用字体字符或 SDF 图元做");
-                else if (strcmp(name, "input") == 0 || strcmp(name, "textarea") == 0 ||
-                         strcmp(name, "select") == 0)
-                    set_error("HTML: 不支持 <%s>（还没有输入控件）："
-                              "文本展示用 div，点击用 :active/:hover + 事件", name);
+                /*
+                 * "一定会有人写"的几个标签给出比"不支持的标签"更有用的提示。
+                 * 这里只管**当前还没实现**的那批（table 包 / textarea）；
+                 * img / input / select 都已支持，别再往这里加。
+                 */
+                if (strcmp(name, "textarea") == 0)
+                    set_error("HTML: 不支持 <textarea>（还没有多行编辑）："
+                              "单行用 <input>，纯展示用 div");
                 else if (strcmp(name, "table") == 0 || strcmp(name, "tr") == 0 ||
-                         strcmp(name, "td") == 0)
+                         strcmp(name, "td") == 0 || strcmp(name, "th") == 0)
                     set_error("HTML: 不支持表格 <%s>：用嵌套的 flex 行来做", name);
+                else if (strcmp(name, "pre") == 0 || strcmp(name, "ruby") == 0)
+                    set_error("HTML: 不支持 <%s>（需要 TEXT 能力包）："
+                              "用 white-space: pre 或普通行内文本代替", name);
                 else
                     set_error("HTML: 不支持的标签 <%s>", name);
                 attrs_free(&at);
@@ -3690,9 +3729,22 @@ static PNode *parse_html(const char *html)
                 return NULL;
             }
 
-            /* 自闭合写法 <br/> 与空元素 <br> 等价：都不压栈 */
-            if (self_closing || tag_is_void(name)) {
-                /* 不压栈（等价于 start + end） */
+            /*
+             * 自闭合写法 <br/> 与空元素 <br> 等价：都不压栈。
+             * `tag_skips_content` 的四个（script/svg/math/template）也不压栈 ——
+             * 它们的内容整段跳过，节点本身留在树里（后面按 display:none 或占位盒处理）。
+             */
+            if (self_closing || tag_is_void(name) || tag_skips_content(name)) {
+                if (tag_skips_content(name)) {
+                    const char *next = tag_content_is_raw_text(name)
+                                           ? skip_raw_text(after, name)
+                                           : skip_element(after, name, self_closing);
+                    if (next == NULL) {
+                        pnode_free(root);
+                        return NULL;
+                    }
+                    after = next;
+                }
             } else {
                 cur = n;
                 depth++;
@@ -3902,6 +3954,60 @@ static int ua_defaults(const char *tag, Decls *out)
      */
     if (strcmp(tag, "picture") == 0)
         return decls_set(out, "display", "inline-block");
+
+    /*
+     * ---- EMBED 包：占位盒与"不产生盒子" ----
+     *
+     * 替换型元素（iframe/object/audio/video/canvas）在浏览器里是"一块由别人
+     * 渲染的区域"。本库按红线不渲染外来内容，所以给一个**看得出是占位**的盒子：
+     * 1px 实线边框 + 居中的标签名（绘制期画，见 qlui.c 的 draw_embed_placeholder）。
+     *
+     * 尺寸照浏览器的默认值取（iframe/canvas/video 300×150、audio 矮条），
+     * 这样"忘了写宽高"时用户一眼能看出这里有个被漏掉的东西；想改就写 CSS。
+     */
+    if (strcmp(tag, "iframe") == 0 || strcmp(tag, "object") == 0 ||
+        strcmp(tag, "canvas") == 0 || strcmp(tag, "video") == 0 ||
+        strcmp(tag, "embed") == 0) {
+        return decls_set(out, "display", "block") && decls_set(out, "width", "300px") &&
+               decls_set(out, "height", "150px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-color", "#8A8A8A") &&
+               decls_set(out, "color", "#8A8A8A") &&
+               decls_set(out, "text-align", "center");
+    }
+    if (strcmp(tag, "audio") == 0) {
+        return decls_set(out, "display", "block") && decls_set(out, "width", "300px") &&
+               decls_set(out, "height", "32px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-color", "#8A8A8A") &&
+               decls_set(out, "color", "#8A8A8A") &&
+               decls_set(out, "text-align", "center");
+    }
+    /* <svg> 与 <math> 在浏览器里是行内元素，所以这里也是 inline-block */
+    if (strcmp(tag, "svg") == 0 || strcmp(tag, "math") == 0) {
+        return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "width", "120px") && decls_set(out, "height", "60px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-color", "#8A8A8A") &&
+               decls_set(out, "color", "#8A8A8A") &&
+               decls_set(out, "text-align", "center");
+    }
+    /*
+     * 其余五个**不产生盒子**：
+     *   script    —— 没有 JS；内容已在解析期整段跳过
+     *   template  —— 惰性内容，永远不渲染（内容也跳过了）
+     *   noscript  —— 没有 JS，所以脚本"总是不可用"；但这里仍然隐藏：
+     *                这类内容在网页上通常是"请开启 JavaScript"式的降级提示，
+     *                在 QLGL 里显示出来只会变成噪音。要显示就自己写
+     *                `noscript { display: block }`。
+     *   slot      —— 没有 shadow DOM
+     *   track     —— 字幕轨元数据
+     */
+    if (strcmp(tag, "script") == 0 || strcmp(tag, "template") == 0 ||
+        strcmp(tag, "noscript") == 0 || strcmp(tag, "slot") == 0 ||
+        strcmp(tag, "track") == 0) {
+        return decls_set(out, "display", "none");
+    }
 
     /*
      * <source> 与 <map>/<area>：**不产生盒子**。

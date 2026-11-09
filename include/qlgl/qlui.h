@@ -157,6 +157,34 @@ typedef enum {
     QL_UI_TAG_SOURCE,     /* <picture>/<video> 的候选源：空元素，完全不参与渲染 */
     QL_UI_TAG_MAP,        /* 图像热区表：display:none，只为 <area> 提供名字 */
     QL_UI_TAG_AREA,       /* 热区：空元素，几何存进 doc->areas（见热区 API） */
+
+    /*
+     * --- EMBED 包：**永远只做占位**，不做真渲染 ---
+     *
+     * 它们不是"还没做"，是按红线不做：
+     *   - 没有 DOM / 没有 JS → script / noscript / template / slot
+     *   - 外来内容无法有界（网络、第三方渲染器）→ iframe / embed / object
+     *   - 要解码器 + 音频输出 + 同步 → audio / video / track
+     *   - 要 JS 或"往 HTML 上画"的新 API 层 → canvas
+     *   - 各自需要独立渲染器（等于写第二个 QLGL）→ svg / math
+     *
+     * 认下来是为了"整页 HTML 贴进来能编译"：这些标签不报错，
+     * 替换型元素画一个带标签名的占位盒，元数据型 `display:none`。
+     * 详见 doc/手册/ui/HTML5标签覆盖与裁剪.md §5。
+     */
+    QL_UI_TAG_IFRAME,     /* 占位盒 + 标签名 */
+    QL_UI_TAG_EMBED,      /* 空元素，占位盒 */
+    QL_UI_TAG_OBJECT,     /* 占位盒；子内容是兜底，不渲染 */
+    QL_UI_TAG_AUDIO,      /* 占位盒（矮），子内容不渲染 */
+    QL_UI_TAG_VIDEO,      /* 占位盒，子内容不渲染 */
+    QL_UI_TAG_TRACK,      /* 空元素，display:none（字幕轨元数据） */
+    QL_UI_TAG_CANVAS,     /* 占位盒；子内容是兜底，不渲染 */
+    QL_UI_TAG_SCRIPT,     /* display:none；**内容整段跳过**（raw text） */
+    QL_UI_TAG_NOSCRIPT,   /* display:none */
+    QL_UI_TAG_SLOT,       /* display:none（没有 shadow DOM） */
+    QL_UI_TAG_TEMPLATE,   /* display:none；**内容整段跳过**（惰性内容） */
+    QL_UI_TAG_SVG,        /* 占位盒；**内容整段跳过**（非 HTML 子树） */
+    QL_UI_TAG_MATH,       /* 占位盒；**内容整段跳过**（非 HTML 子树） */
     QL_UI_TAG_COUNT
 } QLUITag;
 

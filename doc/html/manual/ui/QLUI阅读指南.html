@@ -938,7 +938,7 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <h3 id="547-ua">5.4.7 标签与 UA 默认样式</h3>
 <p>标签在本架构里<strong>只影响三件事</strong>：UA 默认样式、<code>tag</code> 选择器、调试名。
 布局与绘制只看编译出来的 <code>QLUIStyle</code>，不看标签——所以加标签几乎零成本（只加枚举）。</p>
-<p>共 80 个（HTML5 共 114 个；全量状态见 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>）。
+<p>共 97 个（HTML5 共 114 个；其中 13 个是占位；全量状态见 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>）。
 <code>QLUITag</code> / <code>k_tags[]</code> / <code>s_tag_names[]</code> <strong>三处顺序必须一致</strong>，
 且只能在末尾追加：<code>node.tag</code> 是存进 blob 的数字）：</p>
 <table>
@@ -1026,6 +1026,16 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <td>进度条（池里只存完成度 0..1000）/ 度量条 / 行内文本 / <strong><code>display:none</code></strong></td>
 </tr>
 <tr>
+<td>占位（EMBED）</td>
+<td><code>iframe</code> <code>embed</code> <code>object</code> <code>audio</code> <code>video</code> <code>canvas</code> <code>svg</code> <code>math</code></td>
+<td>占位盒：1px 实线边框 + 居中的<strong>标签名</strong>（<code>300×150</code>；<code>audio</code> 矮条；<code>svg</code>/<code>math</code> 是 <code>120×60</code> inline-block）。小盒子不画字</td>
+</tr>
+<tr>
+<td>占位（无盒子）</td>
+<td><code>script</code> <code>noscript</code> <code>slot</code> <code>template</code> <code>track</code></td>
+<td><strong><code>display: none</code></strong>；<code>script</code>/<code>template</code> 的内容在解析期整段跳过，<code>svg</code>/<code>math</code> 的内容同样跳过（非 HTML 子树）</td>
+</tr>
+<tr>
 <td>元数据</td>
 <td><code>base</code> <code>head</code> <code>link</code> <code>meta</code> <code>style</code> <code>title</code></td>
 <td><strong>解析期整段跳过</strong>：不进树、不产生盒子；<code>&lt;style&gt;</code>/<code>&lt;title&gt;</code> 按 raw text 处理（内容里不认标签）</td>
@@ -1044,9 +1054,11 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <li><strong>列表不画项目符号</strong>：本库没有生成内容（<code>::before</code> / <code>::marker</code>），标记请自己写字符。</li>
 <li><strong><code>&lt;br&gt;</code> 是一个"高度为 0 的块"</strong>：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。</li>
-<li><strong><code>&lt;img&gt;</code> / <code>&lt;table&gt;</code> 明确报错</strong>，错误信息里给出替代做法
-   （装饰用渐变、图标用字体字符、表格用嵌套 flex）。<code>&lt;input type="date"&gt;</code>
-   这类没实现的 <code>type</code> 也报错，并列出支持的两个。</li>
+<li><strong><code>&lt;table&gt;</code> / <code>&lt;textarea&gt;</code> 明确报错</strong>，错误信息里给出替代做法
+   （表格用嵌套 flex、多行文本用 <code>white-space: pre</code>）。<code>&lt;input type="date"&gt;</code>
+   这类没实现的 <code>type</code> 也报错，并列出支持的那几个。</li>
+<li><strong>空元素的结束标签被忽略</strong>（<code>&lt;br&gt;&lt;/br&gt;</code> / <code>&lt;embed&gt;&lt;/embed&gt;</code>）：浏览器这么做，
+   这里照做 —— 否则看着正常的写法会让整页编译不过。非空标签不匹配仍然报错。</li>
 </ol>
 <p><strong>行内元素之间的空白保留成一个空格</strong>（<code>&lt;b&gt;a&lt;/b&gt; &lt;i&gt;b&lt;/i&gt;</code> 不能变成 <code>ab</code>）。
 这一步在解析期做，靠的是标签的<strong>默认</strong> display（级联还没跑），所以如果你把

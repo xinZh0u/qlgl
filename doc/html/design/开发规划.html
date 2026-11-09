@@ -2055,8 +2055,8 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 <td>5–8 天，<strong>风险最高</strong></td>
 </tr>
 <tr>
-<td>P7</td>
-<td><code>EMBED</code>：13 个占位盒 + <code>script</code> 内容跳过</td>
+<td>P7 ✅</td>
+<td><code>EMBED</code>：13 个占位盒 + <code>script</code>/<code>svg</code>/<code>math</code>/<code>template</code> 内容跳过</td>
 <td>114</td>
 <td>1–2 天</td>
 </tr>
@@ -2073,7 +2073,16 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 <p><strong>裁包后的行为必须二选一并显式声明</strong>：<code>strict</code> 报错并点名缺哪个包；<code>lenient</code> 降级成
 <code>div</code>/<code>span</code> 并计入 <code>doc-&gt;degraded_tags</code>（可查名单）。默认 <code>strict</code> ——
 降级只允许发生在"你明确说要降级"的时候。<code>qltext check --features core,image</code>
-在构建期就把"哪几处会被降级"列出来，不用等跑起来才发现。</p>
+在构建期就把"哪几处会被降级"列出来，不用等跑起来才发现（<strong>该参数尚未实现</strong>，
+目前 <code>check</code> 只报"能否编译"）。</p>
+<p><strong>P7 落地时的两个决定</strong>（与草案不同，已写进覆盖表 §5）：</p>
+<ol>
+<li><strong><code>&lt;svg&gt;</code> / <code>&lt;math&gt;</code> / <code>&lt;template&gt;</code> 的内容也整段跳过</strong>，不只 <code>display:none</code>。
+   原因：<code>&lt;path&gt;</code> / <code>&lt;circle&gt;</code> 不是 HTML 标签，真去解析会报"不支持的标签"，
+   整页编译不过 —— 而"整页 HTML 贴进来能编译"正是这一包存在的全部理由。</li>
+<li><strong>空元素的结束标签改为忽略</strong>（<code>&lt;embed&gt;&lt;/embed&gt;</code> / <code>&lt;br&gt;&lt;/br&gt;</code>），
+   与浏览器一致；非空元素的不匹配仍然明确报错。</li>
+</ol>
 <hr />
 <h5 id="15-c2-2026-11-08">⑮ 单行输入框（C2）—— <strong>已完成（2026-11-08）</strong></h5>
 <p>⑭ 之后界面能滚了，但<strong>一个字都改不了</strong> —— 整套数据模型是编译期算完的静态表。

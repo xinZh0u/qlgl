@@ -99,16 +99,16 @@
 | 编辑标记 | `<del>` | `CORE` | ✅ 已支持 |
 | 编辑标记 | `<ins>` | `CORE` | ✅ 已支持 |
 | 嵌入 | `<area>` | `IMAGE` | ✅ 已支持（P3e：热区，不产生盒子） |
-| 嵌入 | `<embed>` | `EMBED` | ⏳ 计划 |
-| 嵌入 | `<iframe>` | `EMBED` | ⏳ 计划 |
+| 嵌入 | `<embed>` | `EMBED` | ✅ 占位 |
+| 嵌入 | `<iframe>` | `EMBED` | ✅ 占位 |
 | 嵌入 | `<img>` | `IMAGE` | ✅ 已支持（P3a） |
 | 嵌入 | `<map>` | `IMAGE` | ✅ 已支持（P3e：热区表，`display:none`） |
-| 嵌入 | `<object>` | `EMBED` | ⏳ 计划 |
+| 嵌入 | `<object>` | `EMBED` | ✅ 占位 |
 | 嵌入 | `<picture>` | `IMAGE` | ✅ 已支持（P3e：透明容器，`inline-block`） |
 | 嵌入 | `<source>` | `IMAGE` | ✅ 已支持（P3e：空元素，`display:none`；不做候选选择） |
-| 媒体 | `<audio>` | `EMBED` | ⏳ 计划 |
-| 媒体 | `<track>` | `EMBED` | ⏳ 计划 |
-| 媒体 | `<video>` | `EMBED` | ⏳ 计划 |
+| 媒体 | `<audio>` | `EMBED` | ✅ 占位 |
+| 媒体 | `<track>` | `EMBED` | ✅ 占位 |
+| 媒体 | `<video>` | `EMBED` | ✅ 占位 |
 | 表格 | `<caption>` | `TABLE` | ⏳ 计划 |
 | 表格 | `<col>` | `TABLE` | ⏳ 计划 |
 | 表格 | `<colgroup>` | `TABLE` | ⏳ 计划 |
@@ -136,17 +136,21 @@
 | 交互 | `<details>` | `CONTROL` | ✅ 已支持 |
 | 交互 | `<dialog>` | `CONTROL` | ✅ 已支持 |
 | 交互 | `<summary>` | `CONTROL` | ✅ 已支持 |
-| 脚本 | `<canvas>` | `EMBED` | ⏳ 计划 |
-| 脚本 | `<noscript>` | `EMBED` | ⏳ 计划 |
-| 脚本 | `<script>` | `EMBED` | ⏳ 计划 |
-| Web Components | `<slot>` | `EMBED` | ⏳ 计划 |
-| Web Components | `<template>` | `EMBED` | ⏳ 计划 |
-| SVG / MathML | `<math>` | `EMBED` | ⏳ 计划 |
-| SVG / MathML | `<svg>` | `EMBED` | ⏳ 计划 |
+| 脚本 | `<canvas>` | `EMBED` | ✅ 占位 |
+| 脚本 | `<noscript>` | `EMBED` | ✅ 占位 |
+| 脚本 | `<script>` | `EMBED` | ✅ 占位 |
+| Web Components | `<slot>` | `EMBED` | ✅ 占位 |
+| Web Components | `<template>` | `EMBED` | ✅ 占位 |
+| SVG / MathML | `<math>` | `EMBED` | ✅ 占位 |
+| SVG / MathML | `<svg>` | `EMBED` | ✅ 占位 |
 
-统计：**✅ 84 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+统计：**✅ 97 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
 P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`、
-P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
+P3e 加 `picture`/`source`/`map`/`area`、P7 加 13 个占位标签）、
+**⏳ 17 个**、**❌ 0 个**。
+
+其中 97 个里 **13 个是占位**（`EMBED` 包，只画提示盒或不产生盒子），
+真正按 HTML 语义渲染的是 **84 个**。
 
 ---
 
@@ -167,7 +171,7 @@ P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 | `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
 | `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG/GIF`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM` / `QL_FEAT_IMG_LIBJPEG`（JPEG） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `CONTROL` | `QL_FEAT_UI_CONTROL` | 12（`input select option optgroup` + `progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | **需要专用运行期状态或覆盖层**：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；`textarea` 复用输入框池 |
-| `EMBED` | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ❌ | **只做占位盒 / 忽略**，见 §5 |
+| `EMBED` ✅ | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ✅（**占位是零成本的**，保留也几乎不花 Flash） | **只做占位盒 / 不产生盒子**，见 §5 |
 
 `CORE` 里那 62 个是"不需要任何额外运行期机制、只靠样式+布局就能画"的那批
 （含滚动容器）。**判据是"要不要专用机制"，不是"有没有状态"**：
@@ -221,20 +225,44 @@ P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 
 ---
 
-## 5. 永远只做占位的 13 个（`EMBED`）
+## 5. 永远只做占位的 13 个（`EMBED`）✅
 
-它们不是"还没做"，是**按红线不做真渲染**：
+它们不是"还没做"，是**按红线不做真渲染**。现在的实现：
 
-| 标签 | 为什么不做 | 占位怎么做 |
-|---|---|---|
-| `script` `noscript` `template` `slot` | 与"没有 DOM / 没有 JS"红线冲突 | `script` 的内容**整段跳过**（不解析、不进文本池）；其余按 `display:none` |
-| `iframe` `embed` `object` | 外来内容无法有界（网络、第三方渲染器） | 一个带边框的空盒子 + 文字 `未支持` |
-| `audio` `video` `track` | 要解码器 + 音频输出 + 音视频同步 | 空盒子（可以画个播放图标字符） |
-| `canvas` | 要 JS 或"C 代码往上画"的新 API 层 | 空盒子占位；真的想画 → 直接用 `QLCanvas`，别绕 HTML |
-| `svg` `math` | 各自需要独立渲染器（等于写第二个 QLGL） | 空盒子占位 |
+| 标签 | 为什么不做 | 内容怎么处理 | 盒子 |
+|---|---|---|---|
+| `script` | 没有 JS | **整段跳过**（按 raw text 扫到 `</script>`，内容里的 `<` `</div>` 都是普通字符） | `display:none` |
+| `template` | 惰性内容，永远不渲染 | **整段跳过**（标签配平扫描） | `display:none` |
+| `svg` `math` | 各自需要独立渲染器 | **整段跳过**（内容不是 HTML：`<path>`/`<mi>` 真去解析就报错） | 占位盒 `120×60` inline-block |
+| `iframe` `embed` `object` | 外来内容无法有界 | 解析但隐藏（都是"兜底内容"） | 占位盒 `300×150` block |
+| `audio` | 要音频输出 | 同上 | 占位盒 `300×32` |
+| `video` | 要解码器 + 同步 | 同上 | 占位盒 `300×150` |
+| `canvas` | 要 JS 或"往 HTML 上画"的新 API | 同上 | 占位盒 `300×150` |
+| `noscript` | 没有 JS | 解析但隐藏 | `display:none` |
+| `slot` | 没有 shadow DOM | 解析但隐藏 | `display:none` |
+| `track` | 字幕轨元数据 | 空元素 | `display:none` |
 
-**这就是"HTML5 全支持"的准确含义**：114 个标签**全能编译通过**，
-其中 84 个现在真画、30 个按包补齐后真画或占位、0 个报"不认识的标签"。
+**占位盒长什么样**：1px 实线边框 + 居中的**标签名**（`iframe` / `video` / `svg`…）。
+用标签名而不是"未支持"两个字，是因为内建位图字体只有 ASCII（中文会变成 `???`），
+而且标签名本身就是排查线索。盒子小于 32×12 时不画字（糊成一团没意义）。
+想彻底去掉提示就写 CSS：`iframe { border-width: 0; width: 0; height: 0 }`。
+
+**两处与浏览器不同的取舍**（都写在这里，不藏着）：
+
+1. **`<noscript>` 的内容不显示。** 严格按规范，QLGL 没有 JS ⇒ 脚本"总是不可用" ⇒
+   应该显示 noscript 的内容。但这类内容在网页上通常是"请开启 JavaScript"式的降级
+   提示，在 QLGL 里显示出来只会是噪音。要显示就自己写 `noscript { display: block }`。
+2. **`<canvas>` / `<iframe>` / `<object>` / `<video>` 的兜底内容不显示。**
+   浏览器在"不支持"时显示它们；这里用占位盒代替，避免一页里出现两套"做不到"的说明。
+
+**`<svg>` 必须跳内容，不能只 `display:none`** —— 这是实现时踩到的坑：
+`<svg>` 里的 `<path>` / `<circle>` 都不是 HTML 标签，真解析会报"不支持的标签"，
+整页编译不过。而"整页 HTML 贴进来能编译"正是这一包存在的全部理由。
+
+**顺带修的一条容错**：空元素（`br` / `img` / `input` / `embed` / `track` …）的
+结束标签，浏览器是**忽略**（规范里叫 parse error 而非语法错误），这里也照做 ——
+否则 `<embed></embed>` 这种看着很正常的写法会让整页编译不过，而错在哪用户看不出来。
+非空元素的结束标签不匹配仍然**明确报错**。
 
 ---
 
@@ -279,7 +307,7 @@ app.html: 42 个节点，使用标签 9 种
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `CONTROL` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |
-| P7 | `EMBED` 包：13 个占位盒 + `script` 内容跳过 | 114 | 1–2 天 |
+| P7 ✅ 已完成 | `EMBED` 包：13 个占位盒 + `script`/`svg`/`math`/`template` 内容跳过 | 114 | 1–2 天 |
 | P8 | `<input>` 的其余 `type`（`checkbox` `radio` `range` `number` `search`） | — | 3–5 天 |
 
 总计约 **24–34 人日**。P6 单独标风险：它是唯一一处"要从零写一套布局算法"的地方，
@@ -289,7 +317,7 @@ app.html: 42 个节点，使用标签 9 种
 
 ## 8. 与文档其它地方的口径
 
-- 现在：**已支持 84 / 114**，未支持 30（见 §1 的统计行）。
+- 现在：**已支持 97 / 114**（含 13 个占位），未支持 17（见 §1 的统计行）。
 - 教程的"[与 Web 的差别](10_vs_web.html)"列的是**用户会踩到的差异**，不重复这份清单。
 - 各标签的 UA 默认样式见[阅读指南 §5.4.7](QLUI阅读指南.html)；
   属性白名单见 [API 手册 §3.2](QLUI API手册.html)。
