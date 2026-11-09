@@ -999,7 +999,7 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 </tr>
 <tr>
 <td><code>IMAGE</code> ✅</td>
-<td><code>QL_FEAT_UI_IMAGE</code><br>+ <code>QL_FEAT_IMG_BMP/QOI/PNG</code>（各自一个开关）<br>+ <code>QL_FEAT_IMG_PLATFORM</code>（JPEG/GIF）</td>
+<td><code>QL_FEAT_UI_IMAGE</code><br>+ <code>QL_FEAT_IMG_BMP/QOI/PNG/GIF</code>（各自一个开关）<br>+ <code>QL_FEAT_IMG_PLATFORM</code> / <code>QL_FEAT_IMG_LIBJPEG</code>（JPEG）</td>
 <td>5（<code>img picture source map area</code>）</td>
 <td>✅</td>
 <td>✅（用 <code>raw-only</code>：只吃构建期转好的 <code>RAW</code>，零解码器、零图片 RAM）</td>
@@ -1228,8 +1228,8 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <td>3–4 天</td>
 </tr>
 <tr>
-<td>P3g</td>
-<td>平台后端（JPEG/GIF）</td>
+<td>P3g ✅ 已完成</td>
+<td>平台后端接口 + libjpeg-turbo 参考实现（JPEG）+ <strong>GIF 首帧（自有 LZW）</strong></td>
 <td>84</td>
 <td>1 天</td>
 </tr>

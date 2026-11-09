@@ -6,7 +6,7 @@
  * 为什么需要这一层（`test_png` 已经覆盖了容器与位深）：
  *   `test_png` 的输入是"stored（未压缩）deflate"，测的是容器与反过滤；
  *   真实 PNG 的 IDAT 是**动态 Huffman + 回溯拷贝**，那部分只能拿真实
- *   压缩流来验。基准由 `tools/gen_png_assets.py` 用 Pillow 生成并提交。
+ *   压缩流来验。基准由 `tools/gen_image_assets.py` 用 Pillow 生成并提交。
  *
  * 覆盖的颜色类型：0（位深 1/8/16）、2、3（位深 4）、6。
  */

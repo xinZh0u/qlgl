@@ -160,7 +160,7 @@ P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
 | `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | ✅ | ❌ | 文本内 `\n`、`white-space: pre`、等宽字体族、行内注音 |
 | `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
-| `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM`（JPEG/GIF） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
+| `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG/GIF`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM` / `QL_FEAT_IMG_LIBJPEG`（JPEG） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `WIDGET` | `QL_FEAT_UI_WIDGET` | 8（`progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | 复用已有池/覆盖层机制 + `
 `（`textarea`） |
 | `EMBED` | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ❌ | **只做占位盒 / 忽略**，见 §5 |
@@ -262,7 +262,7 @@ app.html: 42 个节点，使用标签 9 种
 | P3d ✅ 已完成 | `object-fit` 五态 + 图片跟随 `border-radius` 裁剪 | 80 | 1 天 |
 | P3e ✅ 已完成 | `map`/`area` 热区（rect/circle/poly/default，构建期绑定 `<img>`）+ `picture`/`source` | 84 | 0.5 天 |
 | P3c ✅ 已完成 | PNG 解码（`qlinflate.c` + 容器：位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6 × filter 0–4）+ 对拍 + fuzz | 84 | 3–4 天 |
-| P3g | 平台后端（JPEG/GIF） | 84 | 1 天 |
+| P3g ✅ 已完成 | 平台后端接口 + libjpeg-turbo 参考实现（JPEG）+ **GIF 首帧（自有 LZW）** | 84 | 1 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
 | P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |

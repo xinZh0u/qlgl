@@ -230,18 +230,22 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td>自己写还是调库</td>
-<td><strong>自有解码器写 BMP / QOI / PNG；JPEG / GIF 一律不自己写</strong>（要就给平台后端）</td>
+<td><strong>自有解码器写 BMP / QOI / PNG / GIF（首帧）；JPEG 一律不自己写</strong>（给平台后端）。GIF 的动画仍不做</td>
 </tr>
 <tr>
 <td>构建期转码</td>
-<td><strong>一等公民</strong>：<code>qltext assets</code> 在开发机上解好，产物直接是<strong>目标像素格式</strong>。PC 想用也可以 —— 编译期多几 KB 换"零解码 + 像素完全确定"</td>
+<td><strong>一等公民</strong>：<code>qltext cc --root</code> 在开发机上解好，产物直接是<strong>目标像素格式</strong>。PC 想用也可以 —— 编译期多几 KB 换"零解码 + 像素完全确定"</td>
 </tr>
 <tr>
 <td>运行时解码器</td>
-<td>BMP / QOI / PNG <strong>各自一个开关</strong>，默认全开；<code>-DQL_FEAT_IMG_PNG=0</code> 就只少 PNG</td>
+<td>BMP / QOI / PNG / GIF <strong>各自一个开关</strong>，默认全开；<code>-DQL_FEAT_IMG_PNG=0</code> 就只少 PNG</td>
 </tr>
 <tr>
-<td>JPEG / GIF</td>
+<td>GIF</td>
+<td><code>QL_FEAT_IMG_GIF</code>：自有 LZW，无外部依赖，任何平台都可用；只取首帧</td>
+</tr>
+<tr>
+<td>JPEG</td>
 <td><code>QL_FEAT_IMG_PLATFORM</code> + 平台后端（libjpeg-turbo / ImageIO / WIC / BitmapFactory）。<strong>想编进来就编，不想就砍</strong> —— 砍掉后遇到 JPEG 明确报 <code>QL_ERR_UNSUPPORTED</code></td>
 </tr>
 <tr>
@@ -339,18 +343,32 @@ main img.shot { max-width: 100%; }
 <td>inflate</td>
 </tr>
 <tr>
-<td>inflate</td>
+<td>GIF 首帧</td>
+<td><code>QL_FEAT_IMG_GIF</code></td>
+<td>1</td>
+<td><code>lean</code> 起为 0</td>
+<td>LZW（无外部依赖）</td>
+</tr>
+<tr>
+<td>平台后端接口</td>
+<td><code>QL_FEAT_IMG_PLATFORM</code></td>
+<td>1</td>
+<td><code>lean</code> 起为 0</td>
+<td>—</td>
+</tr>
+<tr>
+<td>libjpeg 参考实现</td>
+<td><code>QL_FEAT_IMG_LIBJPEG</code></td>
+<td>构建期找到 libjpeg 才 1</td>
+<td>跟随 <code>IMG_PLATFORM</code></td>
+<td>libjpeg-turbo</td>
+</tr>
+<tr>
+<td>inflate（DEFLATE）</td>
 <td><code>QL_FEAT_IMG_INFLATE</code></td>
 <td>= <code>PNG</code></td>
 <td>PNG 自动关掉</td>
 <td>—</td>
-</tr>
-<tr>
-<td>JPEG / GIF / …（平台后端）</td>
-<td><code>QL_FEAT_IMG_PLATFORM</code></td>
-<td>1</td>
-<td>只认自有解码器认识的格式</td>
-<td>平台提供者</td>
 </tr>
 <tr>
 <td>双线性缩放</td>
@@ -392,9 +410,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>lean</code></td>
-<td><code>IMG_PNG=0</code>、<code>IMG_PLATFORM=0</code>；留 BMP + QOI</td>
+<td><code>IMG_PNG=0</code>、<code>IMG_GIF=0</code>、<code>IMG_PLATFORM=0</code>；留 BMP + QOI</td>
 <td>Flash 紧但想要运行期解码</td>
-<td>省掉 inflate + PNG ≈ 1.3K 行</td>
+<td>省掉 inflate + PNG + GIF + libjpeg ≈ 2.9K 行</td>
 </tr>
 <tr>
 <td><code>raw-only</code></td>
@@ -407,8 +425,7 @@ main img.shot { max-width: 100%; }
 <p>用法（CMake 侧只需一行，单品的 <code>-D</code> 永远优先）：</p>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQLGL_IMG_PRESET<span class="o">=</span>raw-only<span class="w">        </span><span class="c1"># 预设</span>
 cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQL_FEAT_IMG_PNG<span class="o">=</span><span class="m">0</span><span class="w">               </span><span class="c1"># 单品覆盖：只砍 PNG，别的照旧</span>
-cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQL_FEAT_IMG_PLATFORM<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<span class="w">               </span>-DQLGL_PLATFORM_DECODER<span class="o">=</span>libjpeg<span class="w">   </span><span class="c1"># 把 JPEG 编进来（哪怕板子很小）</span>
+cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DQL_FEAT_IMG_PLATFORM<span class="o">=</span><span class="m">1</span><span class="w"> </span>-DQLGL_BUILD_JPEG<span class="o">=</span>ON<span class="w">   </span><span class="c1"># 把 JPEG 编进来</span>
 </code></pre></div>
 
 <p><strong>"硬要保留也可以"是要点</strong>：开关之间没有互斥，<code>raw-only</code> 加上
@@ -442,17 +459,24 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </s
 <td>Flash 紧张、图多、同屏少</td>
 </tr>
 <tr>
-<td><code>PNG</code>（原样嵌入）</td>
+<td><code>PNG</code></td>
 <td><code>IMG_PNG</code> + inflate</td>
-<td>最小</td>
-<td><code>w·h·bpp</code> + 32KB 窗口</td>
+<td>小</td>
+<td><code>w·h·bpp</code> + 行缓冲</td>
 <td>需要无损且"改动后不动工具链"</td>
+</tr>
+<tr>
+<td><code>GIF</code></td>
+<td><code>IMG_GIF</code></td>
+<td>小</td>
+<td><code>w·h·bpp</code> + 16KB LZW 表</td>
+<td>只需要首帧的调色板图</td>
 </tr>
 </tbody>
 </table>
 <p><code>RAW</code> 在 <strong>PC 上也是合法选择</strong>，而且很划算：编译期多几 KB，换来<strong>启动零解码</strong>和
 <strong>像素完全确定</strong>（golden 基准不会因为换解码器/换库而漂移）。</p>
-<h3 id="24-jpeg-png">2.4 为什么 JPEG 不自己写，但 PNG 自己写</h3>
+<h3 id="24-jpeg-png-gif">2.4 为什么 JPEG 不自己写，而 PNG / GIF 自己写</h3>
 <ul>
 <li><strong>JPEG</strong>：baseline 1200–1800 行、渐进式再 600 行、4:2:0/4:2:2 上采样、restart marker、
   色域转换。手写的典型失败不是崩溃而是<strong>色偏</strong>与块效应 —— 最难查的那类 bug。
@@ -460,6 +484,9 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </s
 <li><strong>PNG</strong>：难点只有 DEFLATE 一处，而 DEFLATE 是<strong>无状态纯算法</strong>（32KB 固定窗口 +
   输出直接写进目标行缓冲），可以完全有界、可以 fuzz。其余（chunk / 5 种 filter /
   调色板 / 位深 / tRNS）都是纯数据搬运。</li>
+<li><strong>GIF（首帧）</strong>：只有三个部件 —— 调色板查找、LZW 解码（码长 3..12 位）、
+  隔行四趟行序。没有色彩管线，写错的后果是"解不出来"而不是"颜色不对"，
+  所以风险等级和 QOI 一样。<strong>动画不做</strong>（那才是初稿把它推给平台后端的原因）。</li>
 <li><strong>不用 stb_image</strong>：① 7k 行不可裁；② 整幅解码到单一 <code>malloc</code> 缓冲；
   ③ 顺带支持 GIF/PSD/HDR，等于扩大攻击面；④ 部分路径用 <code>float</code> 做颜色转换。
   它能当测试 oracle（离线跑），但不进产线。</li>
@@ -472,7 +499,7 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </s
                      │
                      └── ② 运行期：ql_ui_register_image(ui, &quot;logo.jpg&quot;, bytes, len)
                           bytes ──► 格式探测 ──► ③ 自有解码器：BMP/QOI/PNG（DECODE=1 才有）
-                                            └─► ④ 平台后端：JPEG/GIF…（有系统库就编进来，没有就砍）
+                                            └─► ④ 平台后端：JPEG…（有系统库就编进来，没有就砍）
                                                 │
                                                 ▼
                                     QLImage{ w,h,stride,format,px }
@@ -511,7 +538,7 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </s
 </tr>
 <tr>
 <td>④ 平台后端</td>
-<td>用户内容（照片）、GIF</td>
+<td>用户内容（照片，JPEG）</td>
 <td>有系统库的场合</td>
 <td>系统库</td>
 </tr>
@@ -614,6 +641,11 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </s
 <td>见下</td>
 <td>~1300 行</td>
 </tr>
+<tr>
+<td><strong>GIF</strong>（首帧）</td>
+<td>逻辑屏幕 / 全局+局部调色板 / 图形控制扩展（透明色）/ LZW / 隔行四趟 / 画布偏移。<strong>不解动画</strong>，第二帧起忽略</td>
+<td>~260 行</td>
+</tr>
 </tbody>
 </table>
 <p><strong>PNG 拆成两层</strong>（<code>src/draw/qlinflate.c</code> + <code>src/draw/qlimage.c</code> 的 PNG 段）</p>
@@ -691,57 +723,94 @@ PNG 容器（chunk / 反过滤 / 颜色转换）
 </ul>
 <p>这条路径<strong>必须有一条构建配置的测试</strong>：关掉全部解码器时用一份 <code>RAW</code> 资源跑完整
 布局 + 绘制，并确认 <code>ql_image_decode()</code> 对 PNG 字节返回 <code>QL_ERR_UNSUPPORTED</code>。</p>
-<h3 id="52">5.2 平台后端接口（有系统库的场合）</h3>
-<h3 id="52-pc">5.2 平台后端接口（PC/移动）</h3>
-<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="cm">/* 返回 1 = 认识并解出来；0 = 不认识；-1 = 认识但失败（错误原因写 err） */</span>
-<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">decode</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">err_cap</span><span class="p">);</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">         </span><span class="cm">/* &quot;libjpeg&quot; / &quot;ImageIO&quot; / &quot;WIC&quot;，报错文案用 */</span>
+<h3 id="52-jpeg">5.2 平台后端（JPEG 走这里）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLImageBackend</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cm">/* 1 = 解出来了；0 = 不认识这种数据；-1 = 认识但失败（原因写 err） */</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">decode</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">out_format</span><span class="p">,</span><span class="w"> </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span>
+<span class="w">                  </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">err_cap</span><span class="p">);</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">              </span><span class="cm">/* &quot;libjpeg&quot; / &quot;ImageIO&quot; / &quot;WIC&quot;… */</span>
 <span class="p">}</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="p">;</span>
 
-<span class="cm">/* 产线里由平台层调用；不设 = 只有自有解码器 */</span>
-<span class="kt">void</span><span class="w"> </span><span class="nf">ql_image_set_platform_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="w"> </span><span class="o">*</span><span class="n">be</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_image_set_platform_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="w"> </span><span class="o">*</span><span class="n">be</span><span class="p">);</span><span class="w">   </span><span class="cm">/* NULL = 卸载 */</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_image_platform_backend</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_image_last_error</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">                          </span><span class="cm">/* 失败原因，别让用户猜 */</span>
 </code></pre></div>
 
+<p>调度顺序是<strong>自有解码器优先</strong>：</p>
+<div class="highlight"><pre><span></span><code>格式识别（AUTO 探魔数：PNG / GIF8 / BMP / qoif / FFD8FF）
+   ├─ RAW/BMP/QOI/PNG/GIF → 自有解码器
+   │      └─ 返回 UNSUPPORTED（该格式被裁 / PNG 是隔行 / JPEG）→ 再问后端
+   └─ 后端返回 0 或没装后端 → QL_ERR_UNSUPPORTED
+</code></pre></div>
+
+<p>这样后端<strong>永远抢不走</strong>原生支持的格式，又能补上原生明确不做的分支 ——
+例如隔行扫描的 PNG：自家解码器说"不支持"，装了后端就由后端接手
+（<code>test_image_backend</code> 用这个交叉点钉住了优先级）。</p>
+<p><strong>不信任第三方库</strong>（这是"外来数据进绘制层"的唯一关口）：</p>
+<ol>
+<li>后端的 <code>QLImage</code> 回来先过 <code>ql_image_validate()</code>：<code>stride ≥ w·bpp</code>、
+   <code>len == stride·h</code>、<code>format</code> 在枚举内、<code>w·h ≤ QL_CFG_IMAGE_MAX_PIXELS</code>、
+   <code>owned</code> 只能是 0/1；</li>
+<li>不合格 → 释放并按失败处理，<code>ql_image_last_error()</code> 写明是哪个后端、坏在哪；</li>
+<li>合格但格式与请求不同 → <code>ql_image_convert()</code> 统一收口（转换代码只有一份）。</li>
+</ol>
 <table>
 <thead>
 <tr>
 <th>平台</th>
-<th>建议实现</th>
-<th>备注</th>
+<th>实现</th>
+<th>状态</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Linux / PC</td>
-<td>libjpeg-turbo（<code>jpeg_read_header</code> + 缩放到目标尺寸）</td>
-<td>顺带能解 GIF 首帧（giflib）</td>
+<td><strong>libjpeg-turbo</strong>（<code>src/port/qlimage_jpeg.c</code>，<code>QL_FEAT_IMG_LIBJPEG</code>）</td>
+<td>✅</td>
 </tr>
 <tr>
 <td>macOS / iOS</td>
 <td>ImageIO（<code>CGImageSourceCreateWithData</code>）</td>
-<td>一行出 <code>CGImage</code></td>
+<td>接口就位</td>
 </tr>
 <tr>
 <td>Windows</td>
 <td>WIC（<code>IWICImagingFactory</code>）</td>
-<td></td>
+<td>接口就位</td>
 </tr>
 <tr>
 <td>Android</td>
-<td><code>BitmapFactory.decodeByteArray</code></td>
-<td>走 JNI 由宿主提供</td>
+<td><code>BitmapFactory.decodeByteArray</code>（JNI，宿主提供）</td>
+<td>接口就位</td>
 </tr>
 <tr>
 <td>无系统库的板子</td>
-<td><strong>不提供</strong>（或自己写：接口就在这儿）</td>
-<td>探测到 JPEG 魔数 → <code>QL_ERR_UNSUPPORTED</code> 并给出文案</td>
+<td>不提供 → JPEG 魔数 → <code>QL_ERR_UNSUPPORTED</code>（明确失败）</td>
+<td>默认</td>
 </tr>
 </tbody>
 </table>
-<p>后端返回的 <code>QLImage</code> 必须满足：<code>stride</code> 自洽、<code>len == stride*h</code>、<code>format</code> 在枚举内、
-<code>w/h</code> 在 <code>QL_CFG_IMAGE_MAX_PIXELS</code> 内 —— <strong>不信任第三方库的返回值</strong>，拿回来先做一遍
-校验再进绘制（这是唯一一处"外来数据"进入绘制层的关口）。</p>
+<p>libjpeg 参考实现里有三处<strong>必须</strong>这么写：</p>
+<ul>
+<li><strong><code>error_exit</code> 必须换成 <code>longjmp</code></strong>：libjpeg 默认的 <code>error_exit</code> 是
+  <code>fprintf + exit(1)</code> —— 一张坏图会让整个应用退出。这是接 libjpeg 最容易踩的坑。</li>
+<li><strong>像素缓冲要声明在 <code>setjmp</code> 之前且是 <code>volatile</code></strong>：libjpeg 可能在扫描行中途报错，
+  那时缓冲已经分配；非 volatile 的局部变量在 <code>longjmp</code> 之后的值是未定义的。</li>
+<li><strong>"数据提前结束"按失败处理</strong>：libjpeg 会把缺的行填成灰色并只给警告。
+  那是典型的"半个正确"，本库不接受 —— 监听 <code>JWRN_JPEG_EOF</code>，见过就整张丢弃。</li>
+</ul>
+<p><strong>JPEG 是有损的</strong>，所以对拍不比逐字节，而是 <code>最大色差 ≤ 3 且平均色差 &lt; 1</code>
+（<code>test_jpeg</code>）—— 足以抓出通道错位/色偏，又不会因为不同 SIMD 路径的舍入假报。</p>
+<h3 id="521-gif">5.2.1 GIF 为什么又自己写了</h3>
+<p>设计初稿写的是"JPEG / GIF 一律不自己写"，理由是 <strong>GIF 的动画</strong>（帧时钟、帧缓冲、
+循环策略）。落地时改了：</p>
+<ul>
+<li>静态 GIF 只是"调色板 + LZW + 隔行"，和 QOI 一个难度档，<strong>没有色偏风险</strong>
+  （不像 JPEG 那套色彩管线）；260 行、可 fuzz、可完全有界；</li>
+<li><code>giflib</code> 并不像 libjpeg 那样到处都有（本机就只有运行时 <code>.so</code>、没有头文件）；</li>
+<li>更重要的：自己写之后 GIF 在<strong>任何</strong>平台都能用，不必等某个后端。</li>
+</ul>
+<p><strong>动画仍然不做</strong>，这条限制没变：第二帧起忽略，<code>&lt;img&gt;</code> 拿到的是首帧。</p>
 <h3 id="53">5.3 有界与失败语义</h3>
 <table>
 <thead>
@@ -1120,7 +1189,7 @@ qltext:<span class="w"> </span>app<span class="w"> </span>-&gt;<span class="w"> 
 </tbody>
 </table>
 <p>来源格式：<strong>现在支持 BMP 与 QOI</strong>（库里的解码器，与运行时是同一份代码，不会漂移）。
-PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台后端）。</p>
+PNG 与 GIF 现在可以直接吃；JPEG 需要 libjpeg 后端（<code>QLGL_BUILD_JPEG=ON</code> 默认开）。</p>
 <p>规矩没变：</p>
 <ol>
 <li><strong>构建期允许用任何库</strong>（那是在开发机上跑），运行时只认自有解码器。</li>
@@ -1144,8 +1213,8 @@ PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台�
 </tr>
 <tr>
 <td>解码器</td>
-<td><strong>对拍</strong>：PIL 生成 <code>test/assets/png/*.png</code> + <code>.rgba</code> 基准（<code>tools/gen_png_assets.py</code>）</td>
-<td>逐字节一致（PNG 无损）</td>
+<td><strong>对拍</strong>：PIL 生成 <code>test/assets/{png,img}/</code> + <code>.rgba</code> 基准（<code>tools/gen_image_assets.py</code>）</td>
+<td>PNG/GIF 逐字节一致；JPEG 最大色差 ≤ 3、平均 &lt; 1</td>
 </tr>
 <tr>
 <td>解码器</td>
@@ -1155,7 +1224,17 @@ PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台�
 <tr>
 <td>解码器</td>
 <td><strong>fuzz</strong>：随机字节 + 截断/篡改合法文件</td>
-<td>只允许"返回失败"，不许崩溃/越界/OOM（ASan + UBSan 下跑 10 万次）</td>
+<td>只允许"返回失败"，不许崩溃/越界/OOM（ASan + UBSan）</td>
+</tr>
+<tr>
+<td>平台后端</td>
+<td>假后端（<code>test_image_backend</code>）：返回 0/-1、脏 <code>QLImage</code>、异格式</td>
+<td>契约逐条断言；<strong>后端抢不走原生格式</strong>；原生 UNSUPPORTED 时后端接手</td>
+</tr>
+<tr>
+<td>平台后端</td>
+<td>真 libjpeg（<code>test_jpeg</code>）：截断/篡改</td>
+<td>只失败不退出（<code>error_exit</code> 已被换成 longjmp）</td>
 </tr>
 <tr>
 <td>有界</td>
@@ -1196,6 +1275,11 @@ PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台�
 <td>构建配置</td>
 <td>单品覆盖（<code>-DQL_FEAT_IMG_PNG=0</code> 但别的开）</td>
 <td>只影响 PNG，其余格式照旧</td>
+</tr>
+<tr>
+<td>构建期转码</td>
+<td><code>qltext cc --root</code> 吃 JPEG + GIF（<code>test/assets/img_ui</code>）</td>
+<td>生成的 C 与提交基准逐字节一致</td>
 </tr>
 </tbody>
 </table>
@@ -1296,14 +1380,14 @@ PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台�
 <td>0.5 天</td>
 </tr>
 <tr>
-<td><strong>P3g</strong></td>
-<td>平台后端接口 + 一个参考实现（Linux/libjpeg-turbo）</td>
+<td><strong>P3g</strong> ✅</td>
+<td>平台后端接口 + libjpeg-turbo 参考实现 + <strong>GIF 首帧（自有 LZW）</strong></td>
 <td>1 天</td>
 </tr>
 </tbody>
 </table>
 <p>合计 <strong>≈ 12–15 天</strong>，<code>img</code> <code>picture</code> <code>source</code> <code>map</code> <code>area</code> 五个标签一次到位。</p>
-<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d ✅ → P3e ✅ → P3c ✅ → P3g</strong>。
+<p>建议顺序：<strong>P3a ✅ → P3f ✅ → P3b ✅ → P3d ✅ → P3e ✅ → P3c ✅ → P3g ✅</strong>。
 理由：P3a + P3f 就能端到端跑通"图片文件 → 构建期转码 → 固件里显示"这条
 <strong>零解码路径</strong>（它不依赖任何解码器开关，是唯一"关掉一切也能用"的路）；
 解码器与 PNG 都是在这之上的增量开关。</p>
@@ -1330,6 +1414,10 @@ PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台�
 <td>§5.2 的"回来先校验"关口</td>
 </tr>
 <tr>
+<td>libjpeg 的 <code>error_exit</code> 直接 <code>exit()</code></td>
+<td>参考实现里换成 <code>longjmp</code>；<code>test_jpeg</code> 用截断/篡改输入钉住"只失败不退出"</td>
+</tr>
+<tr>
 <td>每帧重复解码</td>
 <td><code>failed</code> 位 + 解码只在 build/register 时发生；测试钉住"每帧不动解码器"</td>
 </tr>
@@ -1347,8 +1435,11 @@ PNG 现在可以直接吃；JPEG/GIF 仍需先转成 PNG/BMP/QOI（或接平台�
 </tr>
 </tbody>
 </table>
-<p><strong>明确不做</strong>：动画 GIF/APNG、WebP、SVG、EXIF 旋转（自有解码器）、
+<p><strong>明确不做</strong>：动画 GIF/APNG（只取首帧）、WebP、SVG、EXIF 旋转（自有解码器）、
 图像金字塔/mipmap、<code>srcset</code> 选择、<code>&lt;picture&gt;</code> 的 media 查询。</p>
+<p><strong>GIF 的几条具体限制</strong>（都在 <code>test_gif</code> 里钉住）：只解第一帧；<code>disposal</code> 方法忽略
+（没有第二帧要用它）；调色板索引越界 → 该像素留透明，不猜颜色；画布外的像素裁掉；
+背景色不填（未覆盖处透明，与浏览器"逐帧叠加"的观感不同，但单帧看图更正确）。</p>
 <hr />
 <h2 id="14">14. 与现有文档的关系</h2>
 <ul>

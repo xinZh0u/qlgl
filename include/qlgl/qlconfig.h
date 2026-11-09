@@ -154,8 +154,14 @@
 #ifndef QL_FEAT_IMG_INFLATE
 #define QL_FEAT_IMG_INFLATE         QL_FEAT_IMG_PNG
 #endif
+#ifndef QL_FEAT_IMG_GIF
+#define QL_FEAT_IMG_GIF             1   /* GIF **首帧**（自有 LZW，不解动画） */
+#endif
 #ifndef QL_FEAT_IMG_PLATFORM
-#define QL_FEAT_IMG_PLATFORM        1   /* 平台后端（JPEG/GIF…）：有就给，没有就报错 */
+#define QL_FEAT_IMG_PLATFORM        1   /* 平台后端接口（JPEG/GIF…）：有就给，没有就报错 */
+#endif
+#ifndef QL_FEAT_IMG_LIBJPEG
+#define QL_FEAT_IMG_LIBJPEG         QL_FEAT_IMG_PLATFORM   /* libjpeg-turbo 参考实现 */
 #endif
 
 #ifndef QL_CFG_UI_IMAGE_MAX

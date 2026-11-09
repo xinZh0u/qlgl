@@ -1469,8 +1469,18 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 </tr>
 <tr>
 <td><code>QL_IMAGE_SRC_PNG</code></td>
-<td>✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、<code>tRNS</code>；<strong>隔行扫描（Adam7）明确报 <code>QL_ERR_UNSUPPORTED</code></strong></td>
+<td>✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、<code>tRNS</code>；<strong>隔行扫描（Adam7）明确报 <code>QL_ERR_UNSUPPORTED</code></strong>（装了平台后端时会交给后端）</td>
 <td>同上</td>
+</tr>
+<tr>
+<td><code>QL_IMAGE_SRC_GIF</code></td>
+<td>✅ <strong>首帧</strong>：全局/局部调色板、透明色、隔行、画布偏移。<strong>不做动画</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>QL_IMAGE_SRC_JPEG</code></td>
+<td>✅ 需要平台后端（Linux 上默认带 libjpeg-turbo）。没有后端 → <code>QL_ERR_UNSUPPORTED</code></td>
+<td>RGBA8888（再由本库转换）</td>
 </tr>
 </tbody>
 </table>
@@ -1478,6 +1488,68 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <code>src_format = QL_IMAGE_SRC_AUTO</code> 时按魔数探测（PNG/BMP/QOI；RAW 无法探测，必须显式给）。</p>
 <p><strong>构建期</strong>用同一份解码器：<code>qltext cc --root DIR --pixel-format rgb565</code> 会把
 <code>&lt;img src&gt;</code> 指向的文件解成目标格式嵌入 doc，运行时<strong>零解码</strong>。</p>
+<h3 id="jpeg">平台后端（JPEG 等）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLImageBackend</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">decode</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">out_format</span><span class="p">,</span><span class="w"> </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span>
+<span class="w">                  </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">err_cap</span><span class="p">);</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_image_set_platform_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="w"> </span><span class="o">*</span><span class="n">be</span><span class="p">);</span><span class="w">   </span><span class="cm">/* NULL = 卸载 */</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_image_platform_backend</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_image_last_error</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">         </span><span class="nf">ql_image_convert</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="n">src</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">dst_format</span><span class="p">,</span><span class="w"> </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span>
+
+<span class="cp">#if QL_FEAT_IMG_LIBJPEG</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLImageBackend</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_image_backend_libjpeg</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span><span class="w">            </span><span class="cm">/* Linux/PC 参考实现 */</span>
+<span class="cp">#endif</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调度顺序</td>
+<td><strong>自有解码器优先</strong>；返回 <code>QL_ERR_UNSUPPORTED</code> 才问后端</td>
+</tr>
+<tr>
+<td>谁来装</td>
+<td>由应用层（或 <code>qltext</code> 这样的宿主工具）调用 <code>ql_image_set_platform_backend()</code>；不装 = 只有自有解码器</td>
+</tr>
+<tr>
+<td>后端职责</td>
+<td>只负责"解出来"：<code>px</code> 用 <code>ql_mem_alloc</code> 分配、<code>owned = 1</code>。返回 0 = 不认识、-1 = 失败</td>
+</tr>
+<tr>
+<td>返回值会被校验</td>
+<td><code>stride</code>/<code>len</code>/<code>format</code>/像素数上限全部重查，不合规按失败处理（不信任第三方库）</td>
+</tr>
+<tr>
+<td>格式收口</td>
+<td>后端给的格式与请求不同时，本库用 <code>ql_image_convert()</code> 转换</td>
+</tr>
+<tr>
+<td>失败原因</td>
+<td><code>ql_image_last_error()</code> 返回带后端名的文案（如 <code>libjpeg: Premature end of JPEG file</code>）</td>
+</tr>
+<tr>
+<td>取消失败</td>
+<td>一张坏图<strong>不会</strong>让进程退出（libjpeg 默认的 <code>error_exit</code> 会 <code>exit(1)</code>，参考实现换成了 longjmp）</td>
+</tr>
+</tbody>
+</table>
+<p>典型用法：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 应用启动时（PC） */</span>
+<span class="cp">#if QL_FEAT_IMG_LIBJPEG</span>
+<span class="n">ql_image_set_platform_backend</span><span class="p">(</span><span class="n">ql_image_backend_libjpeg</span><span class="p">());</span>
+<span class="cp">#endif</span>
+</code></pre></div>
+
 <p><strong>CPU 与 GPU 都有 <code>blit_image</code></strong>，两者逐像素一致（<code>test_gl_vs_cpu</code> 里有一页专门比对，
 差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 <code>GL_NEAREST</code> 以对齐 CPU 的
 最近邻；想要双线性就把 <code>QL_CFG_IMAGE_BILINEAR</code> 设成 1（两条后端一起变）。</p>

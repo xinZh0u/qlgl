@@ -41,6 +41,8 @@ typedef enum {
     QL_IMAGE_SRC_BMP  = 1,
     QL_IMAGE_SRC_QOI  = 2,
     QL_IMAGE_SRC_PNG  = 3,
+    QL_IMAGE_SRC_GIF  = 4,   /* 只取**首帧**（`QL_FEAT_IMG_GIF`）；动画不做 */
+    QL_IMAGE_SRC_JPEG = 5,   /* 只能靠平台后端（`QL_FEAT_IMG_PLATFORM`） */
     QL_IMAGE_SRC_AUTO = 0xFF /* 运行期探测魔数（RAW 无法探测，必须显式给） */
 } QLImageSrcFormat;
 
@@ -81,5 +83,54 @@ typedef struct {
 
 /* 返回 QL_OK / QL_ERR_INVAL / QL_ERR_NOMEM / QL_ERR_UNSUPPORTED */
 int ql_image_decode(const QLImageDecodeReq *req, QLImage *out);
+
+/*
+ * 把一张已解好的图转到另一个像素格式（新分配，`owned = 1`）。
+ * 目标格式与 `src->format` 相同时**不复制**，直接把 `src` 交出去。
+ * 用途：平台后端只负责"解出来"，格式统一由这里收口（只写一份转换代码）。
+ */
+int ql_image_convert(const QLImage *src, uint8_t dst_format, QLImage *out);
+
+/* ------------------------------ 平台后端 ------------------------------ */
+
+/*
+ * 平台后端：把"有系统库才能解"的格式（JPEG / GIF / WebP / HEIC…）挂到同一条
+ * `ql_image_decode()` 路径上。**自有解码器先跑，返回 `QL_ERR_UNSUPPORTED` 时才问后端**
+ * —— 所以后端永远抢不走 BMP/QOI/PNG，也能补上自有解码器明确不做的分支
+ * （例如隔行扫描的 PNG）。
+ *
+ * 契约（后端作者只需满足这三条）：
+ *   1. `decode()` 返回 1 = 解出来了、0 = 不认识这种数据、-1 = 认识但失败；
+ *   2. `out->px` 必须用 `ql_mem_alloc()` 分配并置 `owned = 1`（失败时不要留半成品）；
+ *   3. `w/h/stride/len/format` 自洽 —— **本库会重新校验**，
+ *      不合规的结果一律按失败处理并释放（不信任第三方库的返回值）。
+ *
+ * `out_format` 是调用方想要的像素格式。后端可以只支持 RGBA8888 ——
+ * 不一致时本库会用 `ql_image_convert()` 转换，转换失败算后端失败。
+ *
+ * `err` 可选：写一句人能看懂的原因（后端名会被自动前置），用于
+ * `ql_image_last_error()` / `qltext` 的构建期报错。
+ */
+typedef struct QLImageBackend {
+    int (*decode)(const uint8_t *data, size_t len, uint8_t out_format, QLImage *out,
+                  char *err, size_t err_cap);
+    const char *name;              /* "libjpeg" / "ImageIO" / "WIC"… */
+} QLImageBackend;
+
+/* 安装/卸载（传 NULL）平台后端。全局唯一；不设 = 只有自有解码器。 */
+void ql_image_set_platform_backend(const QLImageBackend *be);
+const QLImageBackend *ql_image_platform_backend(void);
+
+/* 上一次解码失败的人类可读原因（后端文案、坏块位置都在里面）；没有则返回 NULL */
+const char *ql_image_last_error(void);
+
+/*
+ * Linux/PC 的参考实现：libjpeg-turbo。**只有构建时找到 libjpeg 才有**，
+ * 否则返回 NULL（调用方据此决定要不要装别的后端）。
+ * 用法：`ql_image_set_platform_backend(ql_image_backend_libjpeg());`
+ */
+#if QL_FEAT_IMG_LIBJPEG
+const QLImageBackend *ql_image_backend_libjpeg(void);
+#endif
 
 #endif /* QLIMAGE_H */

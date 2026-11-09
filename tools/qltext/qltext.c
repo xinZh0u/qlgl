@@ -975,6 +975,15 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    /*
+     * 宿主工具跑在开发机上，所以这里**直接装 libjpeg 后端**：构建期能吃 JPEG，
+     * 产物仍是运行时零解码的 RAW。没有 libjpeg 的构建里这行是空操作，
+     * 于是 "qltext: 解不了 …（格式不支持）" 会明确告诉你去转格式。
+     */
+#if QL_FEAT_IMG_LIBJPEG
+    ql_image_set_platform_backend(ql_image_backend_libjpeg());
+#endif
+
     Args a;
     if (!parse_args(argc, argv, &a)) return 2;
     if (a.html == NULL || a.css == NULL) {

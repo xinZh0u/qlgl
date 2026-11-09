@@ -6,6 +6,7 @@
  * 开关，裁掉后一律 `QL_ERR_UNSUPPORTED` —— **明确失败**，不猜、不降级成空白。
  * PNG 复用同一份 DEFLATE（`qlinflate.c`，`QL_FEAT_IMG_INFLATE`）。
  */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -823,6 +824,479 @@ static int decode_png(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
 
 #endif /* QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE */
 
+/* ------------------------------ GIF（首帧） ------------------------------ */
+
+#if QL_FEAT_IMG_GIF
+
+/*
+ * GIF：**只解首帧**。动画（帧时钟 + 帧缓冲 + 循环策略）明确不做，第二帧起忽略。
+ *
+ * 为什么自己写而不是给平台后端：GIF 的静态部分（调色板 + LZW + 隔行）
+ * 是纯无状态算法，和 QOI 一个难度档；而 giflib 也不是到处都有。
+ * 当初"GIF 不自己写"的理由是**动画**，那条限制没变。
+ */
+
+/* 子块读取：GIF 的 LZW 数据被切成 ≤255 字节的块，每块前面一个长度字节 */
+typedef struct {
+    const uint8_t *d;
+    size_t         n;
+    size_t         p;      /* 下一个块的长度字节位置 */
+    size_t         left;   /* 当前块剩余 */
+    size_t         cur;    /* 当前块读取位置 */
+    int            done;
+} GifSub;
+
+static int gif_sub_next(GifSub *s)
+{
+    while (!s->done) {
+        if (s->p >= s->n) {
+            s->done = 1;
+            return 0;
+        }
+        const uint8_t sz = s->d[s->p++];
+        if (sz == 0) {
+            s->done = 1;
+            return 0;
+        }
+        if (s->p + sz > s->n) {
+            s->done = 1;
+            return 0;
+        }
+        s->cur = s->p;
+        s->left = sz;
+        s->p += sz;
+        return 1;
+    }
+    return 0;
+}
+
+static int gif_bit(GifSub *s, int *bits_left, uint32_t *acc, int nbits, uint32_t *out)
+{
+    while (*bits_left < nbits) {
+        if (s->left == 0 && !gif_sub_next(s))
+            return 0;
+        *acc |= (uint32_t)s->d[s->cur++] << *bits_left;
+        s->left--;
+        *bits_left += 8;
+    }
+    *out = *acc & ((1u << nbits) - 1u);
+    *acc >>= nbits;
+    *bits_left -= nbits;
+    return 1;
+}
+
+/* LZW 的表（16 KB）。做成调用方传入的工作区而不是 static：
+ * 静态就不重入，放在栈上又太大 —— 一次性 malloc 更好，用完就还。 */
+typedef struct {
+    uint16_t prefix[4096];
+    uint8_t  suffix[4096];
+    uint8_t  stack[4096];
+} GifLzw;
+
+/* LZW 解码：把索引流写进 idx[]（容量 cap），返回写出的个数，-1 = 数据非法 */
+static int gif_lzw(GifLzw *w, GifSub *s, int min_size, uint8_t *idx, size_t cap,
+                   size_t *out_n)
+{
+    if (min_size < 2 || min_size > 8)
+        return -1;
+    const int clear = 1 << min_size;
+    const int end = clear + 1;
+    uint16_t *const prefix = w->prefix;
+    uint8_t *const suffix = w->suffix;
+    uint8_t *const stack = w->stack;
+
+    int code_size = min_size + 1;
+    int next = end + 1;
+    int old = -1;
+    int first = 0;
+    size_t n = 0;
+    int bits_left = 0;
+    uint32_t acc = 0;
+
+    for (;;) {
+        if (next == (1 << code_size) && code_size < 12)
+            code_size++;
+        uint32_t code32 = 0;
+        if (!gif_bit(s, &bits_left, &acc, code_size, &code32))
+            return -1;                 /* 流在 end 码之前就没了 */
+        int code = (int)code32;
+
+        if (code == clear) {
+            code_size = min_size + 1;
+            next = end + 1;
+            old = -1;
+            continue;
+        }
+        if (code == end)
+            break;
+        if (old < 0) {
+            if (code >= clear)
+                return -1;
+            if (n >= cap)
+                return -1;
+            idx[n++] = (uint8_t)code;
+            first = code;
+            old = code;
+            continue;
+        }
+
+        const int in = code;
+        size_t sp = 0;
+        if (code >= next) {
+            if (code != next)
+                return -1;             /* 超出"下一个待建表项"：非法码 */
+            stack[sp++] = (uint8_t)first;   /* KwKwK：先补首字节 */
+            code = old;
+        }
+        while (code >= clear) {
+            if (sp >= sizeof(w->stack) || code >= 4096)
+                return -1;
+            stack[sp++] = suffix[code];
+            code = prefix[code];
+        }
+        first = code;
+        stack[sp++] = (uint8_t)first;
+        while (sp > 0) {
+            if (n >= cap)
+                return -1;
+            idx[n++] = stack[--sp];
+        }
+        if (next < 4096) {
+            prefix[next] = (uint16_t)old;
+            suffix[next] = (uint8_t)first;
+            next++;
+        }
+        old = in;
+    }
+
+    *out_n = n;
+    return 0;
+}
+
+static int decode_gif(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
+{
+    const uint8_t *d = req->data;
+    const size_t n = req->len;
+
+    if (n < 14u)
+        return QL_ERR_INVAL;
+    if (memcmp(d, "GIF87a", 6) != 0 && memcmp(d, "GIF89a", 6) != 0)
+        return QL_ERR_INVAL;
+
+    const uint32_t sw = rd_u16le(d + 6);
+    const uint32_t sh = rd_u16le(d + 8);
+    if (sw == 0u || sh == 0u || sw > 0xFFFFu || sh > 0xFFFFu)
+        return QL_ERR_INVAL;
+    if (sw > QL_CFG_IMAGE_MAX_PIXELS / sh)
+        return QL_ERR_INVAL;           /* 先除后乘 */
+
+    const uint8_t fl = d[10];
+    size_t p = 13;
+    uint8_t gct[256 * 3];
+    int gct_n = 0;
+    if ((fl & 0x80u) != 0u) {
+        gct_n = 2 << (fl & 7u);
+        if (p + (size_t)gct_n * 3u > n)
+            return QL_ERR_INVAL;
+        memcpy(gct, d + p, (size_t)gct_n * 3u);
+        p += (size_t)gct_n * 3u;
+    }
+
+    /* ---- 走到第一个图像描述符，路上记下透明色（图形控制扩展） ---- */
+    int trans = -1;
+    for (;;) {
+        if (p >= n)
+            return QL_ERR_INVAL;
+        const uint8_t b = d[p++];
+        if (b == 0x3Bu)
+            return QL_ERR_INVAL;       /* 只到 trailer：没有图像 */
+        if (b == 0x21u) {              /* 扩展块 */
+            if (p >= n)
+                return QL_ERR_INVAL;
+            const uint8_t label = d[p++];
+            if (label == 0xF9u) {      /* 图形控制 */
+                if (p >= n)
+                    return QL_ERR_INVAL;
+                const uint8_t bs = d[p++];
+                if (bs < 4u || p + 4u > n)
+                    return QL_ERR_INVAL;
+                const uint8_t gp = d[p];
+                trans = ((gp & 0x01u) != 0u) ? (int)d[p + 3u] : -1;
+                p += 4u;
+                if (p >= n || d[p] != 0u)
+                    return QL_ERR_INVAL;   /* 块终止符 */
+                p++;
+            } else {                   /* 其它扩展：整段跳过 */
+                for (;;) {
+                    if (p >= n)
+                        return QL_ERR_INVAL;
+                    const uint8_t sz = d[p++];
+                    if (sz == 0u)
+                        break;
+                    if (p + sz > n)
+                        return QL_ERR_INVAL;
+                    p += sz;
+                }
+            }
+            continue;
+        }
+        if (b == 0x2Cu)
+            break;                     /* 图像描述符 */
+        return QL_ERR_INVAL;           /* 不认识的块 */
+    }
+
+    if (p + 9u > n)
+        return QL_ERR_INVAL;
+    const uint32_t left = rd_u16le(d + p);
+    const uint32_t top = rd_u16le(d + p + 2u);
+    const uint32_t iw = rd_u16le(d + p + 4u);
+    const uint32_t ih = rd_u16le(d + p + 6u);
+    const uint8_t ip = d[p + 8u];
+    p += 9u;
+    if (iw == 0u || ih == 0u)
+        return QL_ERR_INVAL;
+    if (iw > QL_CFG_IMAGE_MAX_PIXELS / ih)
+        return QL_ERR_INVAL;
+
+    uint8_t lct[256 * 3];
+    int lct_n = 0;
+    if ((ip & 0x80u) != 0u) {
+        lct_n = 2 << (ip & 7u);
+        if (p + (size_t)lct_n * 3u > n)
+            return QL_ERR_INVAL;
+        memcpy(lct, d + p, (size_t)lct_n * 3u);
+        p += (size_t)lct_n * 3u;
+    }
+    const int interlace = (ip & 0x40u) != 0u;
+
+    const uint8_t *pal = (lct_n > 0) ? lct : gct;
+    const int pal_n = (lct_n > 0) ? lct_n : gct_n;
+    if (pal_n == 0)
+        return QL_ERR_INVAL;           /* 没有颜色表：没法上色 */
+
+    if (p >= n)
+        return QL_ERR_INVAL;
+    const int min_size = d[p++];
+
+    /* ---- LZW 解出索引流 ---- */
+    const size_t npix = (size_t)iw * (size_t)ih;
+    uint8_t *idx = (uint8_t *)ql_mem_alloc(npix);
+    if (idx == NULL)
+        return QL_ERR_NOMEM;
+
+    GifLzw *lzw = (GifLzw *)ql_mem_alloc(sizeof(GifLzw));
+    if (lzw == NULL) {
+        ql_mem_free(idx);
+        return QL_ERR_NOMEM;
+    }
+
+    GifSub sub;
+    memset(&sub, 0, sizeof(sub));
+    sub.d = d;
+    sub.n = n;
+    sub.p = p;
+
+    size_t got = 0;
+    const int lrc = gif_lzw(lzw, &sub, min_size, idx, npix, &got);
+    ql_mem_free(lzw);
+    if (lrc != 0 || got != npix) {
+        ql_mem_free(idx);
+        return QL_ERR_INVAL;           /* 像素不够 / 码流非法：不画半个图 */
+    }
+
+    /* ---- 上屏：画布 = 逻辑屏幕，未覆盖处透明 ---- */
+    Dst dst;
+    memset(&dst, 0, sizeof(dst));
+    if (dst_alloc(&dst, (uint16_t)sw, (uint16_t)sh, outf) == NULL) {
+        ql_mem_free(idx);
+        return QL_ERR_INVAL;
+    }
+
+    /* 隔行 GIF 的行序：0,8,16… / 4,12,… / 2,6,… / 1,3,… */
+    static const int k_pass_start[4] = { 0, 4, 2, 1 };
+    static const int k_pass_step[4] = { 8, 8, 4, 2 };
+
+    size_t src_row = 0;
+    for (int pass = 0; pass < (interlace ? 4 : 1); pass++) {
+        const int start = interlace ? k_pass_start[pass] : 0;
+        const int step = interlace ? k_pass_step[pass] : 1;
+        for (uint32_t y = (uint32_t)start; y < ih; y += (uint32_t)step) {
+            const size_t base = src_row * (size_t)iw;
+            src_row++;
+            for (uint32_t x = 0; x < iw; x++) {
+                const uint8_t ci = idx[base + x];
+                /* pal_n 可能是 256 —— 用 uint8_t 比会回绕成 0，整张图全透明 */
+                if ((int)ci >= pal_n)
+                    continue;          /* 越界索引：留透明，也不猜颜色 */
+                if (trans >= 0 && (int)ci == trans)
+                    continue;
+                const uint32_t dx = left + x;
+                const uint32_t dy = top + y;
+                if (dx >= sw || dy >= sh)
+                    continue;          /* 超出画布：裁掉（合法） */
+                dst_put(&dst, (uint16_t)dx, (uint16_t)dy, pal[ci * 3u],
+                        pal[ci * 3u + 1u], pal[ci * 3u + 2u], 255);
+            }
+        }
+    }
+    ql_mem_free(idx);
+
+    memset(out, 0, sizeof(*out));
+    out->px = dst.px;
+    out->len = (uint32_t)dst.stride * dst.h;
+    out->w = dst.w;
+    out->h = dst.h;
+    out->stride = dst.stride;
+    out->format = dst.format;
+    out->owned = 1;
+    return QL_OK;
+}
+
+#endif /* QL_FEAT_IMG_GIF */
+
+/* ------------------------------ 像素格式转换 ------------------------------ */
+
+/* 从任意输出格式读一个像素（非预乘 RGBA） */
+static void src_get(const QLImage *s, uint32_t x, uint32_t y, uint8_t *r, uint8_t *g,
+                    uint8_t *b, uint8_t *a)
+{
+    const uint8_t *p = s->px + (size_t)y * s->stride;
+    switch (s->format) {
+    case QL_IMAGE_RGB565: {
+        const uint32_t v = (uint32_t)p[x * 2u] | ((uint32_t)p[x * 2u + 1u] << 8);
+        *r = (uint8_t)(((v >> 11) & 0x1Fu) * 255u / 31u);
+        *g = (uint8_t)(((v >> 5) & 0x3Fu) * 255u / 63u);
+        *b = (uint8_t)((v & 0x1Fu) * 255u / 31u);
+        *a = 255;
+        break;
+    }
+    case QL_IMAGE_RGB888:
+        *r = p[x * 3u];
+        *g = p[x * 3u + 1u];
+        *b = p[x * 3u + 2u];
+        *a = 255;
+        break;
+    case QL_IMAGE_A8:
+        *r = *g = *b = p[x];
+        *a = 255;
+        break;
+    default:
+        *r = p[x * 4u];
+        *g = p[x * 4u + 1u];
+        *b = p[x * 4u + 2u];
+        *a = p[x * 4u + 3u];
+        break;
+    }
+}
+
+int ql_image_convert(const QLImage *src, uint8_t dst_format, QLImage *out)
+{
+    if (out == NULL)
+        return QL_ERR_INVAL;
+    memset(out, 0, sizeof(*out));
+    if (src == NULL || src->px == NULL || ql_image_format_bpp(dst_format) == 0)
+        return QL_ERR_INVAL;
+    if (!ql_image_validate(src))
+        return QL_ERR_INVAL;
+
+    if (src->format == dst_format) {
+        *out = *src;                   /* 同格式：不复制，指针直接交出去 */
+        return QL_OK;
+    }
+
+    Dst dst;
+    memset(&dst, 0, sizeof(dst));
+    if (dst_alloc(&dst, src->w, src->h, dst_format) == NULL)
+        return QL_ERR_NOMEM;
+
+    for (uint32_t y = 0; y < src->h; y++) {
+        for (uint32_t x = 0; x < src->w; x++) {
+            uint8_t r = 0, g = 0, b = 0, a = 255;
+            src_get(src, x, y, &r, &g, &b, &a);
+            dst_put(&dst, (uint16_t)x, (uint16_t)y, r, g, b, a);
+        }
+    }
+
+    out->px = dst.px;
+    out->len = (uint32_t)dst.stride * dst.h;
+    out->w = dst.w;
+    out->h = dst.h;
+    out->stride = dst.stride;
+    out->format = dst.format;
+    out->owned = 1;
+    return QL_OK;
+}
+
+/* ------------------------------ 平台后端 ------------------------------ */
+
+static const QLImageBackend *s_backend;
+static char s_err[160];
+
+const char *ql_image_last_error(void)
+{
+    return (s_err[0] != '\0') ? s_err : NULL;
+}
+
+void ql_image_set_platform_backend(const QLImageBackend *be)
+{
+    s_backend = be;
+}
+
+const QLImageBackend *ql_image_platform_backend(void)
+{
+    return s_backend;
+}
+
+/*
+ * 问平台后端，然后**把它的返回值当外来数据**：先校验、再按需要转格式。
+ * 这是全库唯一一处"第三方库的结果直接进绘制层"的入口，所以宁可贵一点。
+ */
+static int decode_via_backend(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
+{
+    char buf[128];
+    buf[0] = '\0';
+
+    QLImage tmp;
+    memset(&tmp, 0, sizeof(tmp));
+    const int rc = s_backend->decode(req->data, req->len, outf, &tmp, buf, sizeof(buf));
+    if (rc != 1) {
+        if (rc != 0) {
+            snprintf(s_err, sizeof(s_err), "%s: %s",
+                     (s_backend->name != NULL) ? s_backend->name : "后端",
+                     (buf[0] != '\0') ? buf : "解码失败");
+        }
+        return (rc == 0) ? QL_ERR_UNSUPPORTED : QL_ERR_INVAL;
+    }
+
+    /* 不信任返回值：结构必须自洽、格式必须在枚举内、owned 必须是 0/1 */
+    if (tmp.px == NULL || tmp.owned > 1 || !ql_image_validate(&tmp)) {
+        if (tmp.owned == 1 && tmp.px != NULL)
+            ql_mem_free((void *)tmp.px);
+        snprintf(s_err, sizeof(s_err), "后端 %s 返回了不自洽的图（w=%u h=%u stride=%u）",
+                 (s_backend->name != NULL) ? s_backend->name : "?",
+                 (unsigned)tmp.w, (unsigned)tmp.h, (unsigned)tmp.stride);
+        return QL_ERR_INVAL;
+    }
+
+    /* 后端只保证"解出来了"，格式在这里收口（转换代码只有一份） */
+    QLImage conv;
+    const int crc = ql_image_convert(&tmp, outf, &conv);
+    /* 目标格式与后端给的一致时 ql_image_convert 不复制，所有权直接转移过来
+     * —— 那种情况下**不能**释放 tmp.px（会把 conv 指的那块也释放掉）。 */
+    if (crc == QL_OK && conv.px == tmp.px)
+        tmp.owned = 0;
+    if (tmp.owned == 1)
+        ql_mem_free((void *)tmp.px);
+    if (crc != QL_OK) {
+        snprintf(s_err, sizeof(s_err), "后端 %s 的图无法转成目标像素格式",
+                 (s_backend->name != NULL) ? s_backend->name : "?");
+        return crc;
+    }
+
+    *out = conv;
+    return QL_OK;
+}
+
 /* ------------------------------ 入口 ------------------------------ */
 
 int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
@@ -830,6 +1304,7 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
     if (req == NULL || out == NULL || req->data == NULL)
         return QL_ERR_INVAL;
     memset(out, 0, sizeof(*out));
+    s_err[0] = '\0';
 
     if (req->len == 0 || req->len > QL_CFG_IMAGE_MAX_BYTES)
         return QL_ERR_INVAL;
@@ -838,10 +1313,17 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
     if (fmt == QL_IMAGE_SRC_AUTO) {
         if (req->len >= 8u && memcmp(req->data, "\x89PNG\r\n\x1a\n", 8) == 0)
             fmt = QL_IMAGE_SRC_PNG;
+        else if (req->len >= 6u && memcmp(req->data, "GIF87a", 6) == 0)
+            fmt = QL_IMAGE_SRC_GIF;
+        else if (req->len >= 6u && memcmp(req->data, "GIF89a", 6) == 0)
+            fmt = QL_IMAGE_SRC_GIF;
         else if (req->len >= 2u && req->data[0] == 'B' && req->data[1] == 'M')
             fmt = QL_IMAGE_SRC_BMP;
         else if (req->len >= 4u && memcmp(req->data, "qoif", 4) == 0)
             fmt = QL_IMAGE_SRC_QOI;
+        else if (req->len >= 3u && req->data[0] == 0xFFu && req->data[1] == 0xD8u &&
+                 req->data[2] == 0xFFu)
+            fmt = QL_IMAGE_SRC_JPEG;
         else
             return QL_ERR_UNSUPPORTED;   /* RAW 无法探测，必须显式指定 */
     }
@@ -874,29 +1356,41 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
         return QL_OK;
     }
 
-    if (fmt == QL_IMAGE_SRC_BMP) {
+    /* 自有解码器优先。返回 UNSUPPORTED 才问平台后端 —— 这样后端永远抢不走
+     * BMP/QOI/PNG，但能补上自有解码器明确不做的分支（如隔行扫描的 PNG）。 */
+    int rc = QL_ERR_UNSUPPORTED;
+    switch (fmt) {
+    case QL_IMAGE_SRC_BMP:
 #if QL_FEAT_IMG_BMP
-        return decode_bmp(req, out, outf);
-#else
-        return QL_ERR_UNSUPPORTED;
+        rc = decode_bmp(req, out, outf);
 #endif
-    }
-    if (fmt == QL_IMAGE_SRC_QOI) {
+        break;
+    case QL_IMAGE_SRC_QOI:
 #if QL_FEAT_IMG_QOI
-        return decode_qoi(req, out, outf);
-#else
-        return QL_ERR_UNSUPPORTED;
+        rc = decode_qoi(req, out, outf);
 #endif
-    }
-
-    if (fmt == QL_IMAGE_SRC_PNG) {
+        break;
+    case QL_IMAGE_SRC_PNG:
 #if QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
-        return decode_png(req, out, outf);
-#else
-        return QL_ERR_UNSUPPORTED;
+        rc = decode_png(req, out, outf);
 #endif
+        break;
+    case QL_IMAGE_SRC_GIF:
+#if QL_FEAT_IMG_GIF
+        rc = decode_gif(req, out, outf);
+#endif
+        break;
+    default:                             /* JPEG 等：自有解码器一律不做 */
+        break;
     }
 
-    /* 平台后端（JPEG/GIF…）只搭了接口；对调用方是同一件事：这个构建不支持 */
+    if (rc != QL_ERR_UNSUPPORTED)
+        return rc;
+
+#if QL_FEAT_IMG_PLATFORM
+    if (s_backend != NULL && s_backend->decode != NULL)
+        return decode_via_backend(req, out, outf);
+#endif
+
     return QL_ERR_UNSUPPORTED;
 }

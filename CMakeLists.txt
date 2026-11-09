@@ -28,6 +28,7 @@ set(_ql_preset_bmp 1)
 set(_ql_preset_qoi 1)
 set(_ql_preset_png 1)
 set(_ql_preset_platform 1)
+set(_ql_preset_gif 1)
 if(QLGL_IMG_PRESET STREQUAL "raw-only")
     set(_ql_preset_bmp 0)
     set(_ql_preset_qoi 0)
@@ -36,6 +37,9 @@ if(QLGL_IMG_PRESET STREQUAL "raw-only")
 elseif(QLGL_IMG_PRESET STREQUAL "lean")
     set(_ql_preset_png 0)
     set(_ql_preset_platform 0)
+    set(_ql_preset_gif 0)
+elseif(QLGL_IMG_PRESET STREQUAL "raw-only")
+    set(_ql_preset_gif 0)
 endif()
 if(NOT DEFINED QL_FEAT_IMG_BMP)
     set(QL_FEAT_IMG_BMP ${_ql_preset_bmp})
@@ -49,9 +53,13 @@ endif()
 if(NOT DEFINED QL_FEAT_IMG_PLATFORM)
     set(QL_FEAT_IMG_PLATFORM ${_ql_preset_platform})
 endif()
+if(NOT DEFINED QL_FEAT_IMG_GIF)
+    set(QL_FEAT_IMG_GIF ${_ql_preset_gif})
+endif()
 add_compile_definitions(QL_FEAT_IMG_BMP=${QL_FEAT_IMG_BMP}
                         QL_FEAT_IMG_QOI=${QL_FEAT_IMG_QOI}
                         QL_FEAT_IMG_PNG=${QL_FEAT_IMG_PNG}
+                        QL_FEAT_IMG_GIF=${QL_FEAT_IMG_GIF}
                         QL_FEAT_IMG_PLATFORM=${QL_FEAT_IMG_PLATFORM})
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
@@ -59,6 +67,28 @@ option(QLGL_BUILD_EXAMPLES "构建 example/ 下的基本例程" ON)
 # 运行期 HTML/CSS 解析器（M3.5 第 3 步）。MCU 侧关掉它即零字节成本
 option(QLGL_BUILD_TEXT_PARSER "构建 ql_ui_load_text()（运行期 HTML/CSS 解析）" ON)
 option(QLGL_BUILD_FREETYPE "构建 FreeType 矢量字体后端（中文/任意字号）" ON)
+option(QLGL_BUILD_JPEG "构建 libjpeg-turbo 平台后端（JPEG；找不到就跳过）" ON)
+
+# ---- libjpeg-turbo：平台后端的参考实现（JPEG）----
+# 平台后端**接口**永远在（几十字节），这里加的是"自带一个 libjpeg 实现"。
+if(QLGL_BUILD_TESTS OR QLGL_BUILD_EXAMPLES)
+    set(_ql_need_jpeg_hint ON)
+endif()
+if(QLGL_BUILD_JPEG AND QL_FEAT_IMG_PLATFORM)
+    find_package(JPEG QUIET)
+    if(JPEG_FOUND)
+        target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/port/qlimage_jpeg.c)
+        target_include_directories(qlgl PUBLIC ${JPEG_INCLUDE_DIRS})
+        target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_LIBJPEG=1)
+        target_link_libraries(qlgl PUBLIC ${JPEG_LIBRARIES})
+        message(STATUS "QLGL: libjpeg-turbo 平台后端已启用（JPEG）")
+    else()
+        target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_LIBJPEG=0)
+        message(STATUS "QLGL: 未找到 libjpeg，JPEG 只能靠外部注册的后端")
+    endif()
+else()
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_LIBJPEG=0)
+endif()
 
 # ---- FreeType：矢量字体后端（PC/MPU；MCU 关掉即可，内置位图字体仍然可用） ----
 if(QLGL_BUILD_FREETYPE)
@@ -275,10 +305,15 @@ if(QLGL_BUILD_TESTS)
         else()
             add_executable(${test_name} ${test_src})
         endif()
-        # 对拍语料目录：这两条放在分支外面，因为它们不需要生成好的 doc
-        if(test_name STREQUAL "test_png_assets" OR test_name STREQUAL "test_png_fuzz")
+        # 对拍语料目录：放在分支外面，因为它们不需要生成好的 doc
+        if(test_name STREQUAL "test_png_assets" OR test_name STREQUAL "test_png_fuzz"
+           OR test_name STREQUAL "test_image_backend")
             target_compile_definitions(${test_name} PRIVATE
                 QL_PNG_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/assets/png")
+        endif()
+        if(test_name STREQUAL "test_gif_assets" OR test_name STREQUAL "test_jpeg")
+            target_compile_definitions(${test_name} PRIVATE
+                QL_IMG_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/assets/img")
         endif()
         target_link_libraries(${test_name} PRIVATE qlgl)
         target_compile_options(${test_name} PRIVATE -Wall -Wextra)
@@ -314,6 +349,8 @@ if(QLGL_BUILD_TESTS)
                          -DQLTEXT=$<TARGET_FILE:qltext>
                          -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
                          -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                         -DQL_FEAT_IMG_PLATFORM=${QL_FEAT_IMG_PLATFORM}
+                         -DQL_FEAT_IMG_LIBJPEG=${QL_FEAT_IMG_LIBJPEG}
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/gen_assets.cmake)
     endif()
 endif()

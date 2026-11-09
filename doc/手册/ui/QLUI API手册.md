@@ -785,13 +785,53 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 | `QL_IMAGE_SRC_BMP` | ✅ 24/32 位、8 位调色板、`BITFIELDS`、上下翻转（不解 RLE） | 按 `out_format` 转换 |
 | `QL_IMAGE_SRC_QOI` | ✅ 六种 op | 同上 |
 | `QL_IMAGE_SRC_PNG` 备注 | IDAT 是 **zlib 流**（校验头 + Adler-32）；chunk CRC 不校验；**不解** Adam7 隔行、APNG、iCCP/色彩管理 | — |
-| `QL_IMAGE_SRC_PNG` | ✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、`tRNS`；**隔行扫描（Adam7）明确报 `QL_ERR_UNSUPPORTED`** | 同上 |
+| `QL_IMAGE_SRC_PNG` | ✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、`tRNS`；**隔行扫描（Adam7）明确报 `QL_ERR_UNSUPPORTED`**（装了平台后端时会交给后端） | 同上 |
+| `QL_IMAGE_SRC_GIF` | ✅ **首帧**：全局/局部调色板、透明色、隔行、画布偏移。**不做动画** | 同上 |
+| `QL_IMAGE_SRC_JPEG` | ✅ 需要平台后端（Linux 上默认带 libjpeg-turbo）。没有后端 → `QL_ERR_UNSUPPORTED` | RGBA8888（再由本库转换） |
 
 `out_format` 默认 **RGBA8888**（它的枚举值就是 0，所以 `memset` 清零的请求即默认）。
 `src_format = QL_IMAGE_SRC_AUTO` 时按魔数探测（PNG/BMP/QOI；RAW 无法探测，必须显式给）。
 
 **构建期**用同一份解码器：`qltext cc --root DIR --pixel-format rgb565` 会把
 `<img src>` 指向的文件解成目标格式嵌入 doc，运行时**零解码**。
+
+### 平台后端（JPEG 等）
+
+```c
+typedef struct QLImageBackend {
+    int (*decode)(const uint8_t *data, size_t len, uint8_t out_format, QLImage *out,
+                  char *err, size_t err_cap);
+    const char *name;
+} QLImageBackend;
+
+void  ql_image_set_platform_backend(const QLImageBackend *be);   /* NULL = 卸载 */
+const QLImageBackend *ql_image_platform_backend(void);
+const char *ql_image_last_error(void);
+int         ql_image_convert(const QLImage *src, uint8_t dst_format, QLImage *out);
+
+#if QL_FEAT_IMG_LIBJPEG
+const QLImageBackend *ql_image_backend_libjpeg(void);            /* Linux/PC 参考实现 */
+#endif
+```
+
+| 规则 | 说明 |
+|---|---|
+| 调度顺序 | **自有解码器优先**；返回 `QL_ERR_UNSUPPORTED` 才问后端 |
+| 谁来装 | 由应用层（或 `qltext` 这样的宿主工具）调用 `ql_image_set_platform_backend()`；不装 = 只有自有解码器 |
+| 后端职责 | 只负责"解出来"：`px` 用 `ql_mem_alloc` 分配、`owned = 1`。返回 0 = 不认识、-1 = 失败 |
+| 返回值会被校验 | `stride`/`len`/`format`/像素数上限全部重查，不合规按失败处理（不信任第三方库） |
+| 格式收口 | 后端给的格式与请求不同时，本库用 `ql_image_convert()` 转换 |
+| 失败原因 | `ql_image_last_error()` 返回带后端名的文案（如 `libjpeg: Premature end of JPEG file`） |
+| 取消失败 | 一张坏图**不会**让进程退出（libjpeg 默认的 `error_exit` 会 `exit(1)`，参考实现换成了 longjmp） |
+
+典型用法：
+
+```c
+/* 应用启动时（PC） */
+#if QL_FEAT_IMG_LIBJPEG
+ql_image_set_platform_backend(ql_image_backend_libjpeg());
+#endif
+```
 
 **CPU 与 GPU 都有 `blit_image`**，两者逐像素一致（`test_gl_vs_cpu` 里有一页专门比对，
 差异 0.00%）。GPU 侧是"图片单独成批 + 纹理缓存"，滤波默认 `GL_NEAREST` 以对齐 CPU 的
