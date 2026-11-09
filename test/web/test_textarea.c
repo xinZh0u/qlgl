@@ -886,4 +886,97 @@ QL_TEST_BEGIN("test_textarea")
         }
     }
 
+    /* ---------- 22. 滚到底之后 Ctrl+A 删光：光标要回到第一行 ---------- */
+    {
+        /*
+         * 删光内容后视觉行只剩 1 行，可滚范围变成 0；旧的 scroll_y 还停在
+         * 几百像素上，光标被画到内容盒上面（裁剪掉）—— 表现就是"文字没了，
+         * 光标也不见了"。所有改缓冲的路径都必须把滚动夹回内容范围。
+         */
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            char html[512];
+            snprintf(html, sizeof(html),
+                     "<div id=r><textarea>l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\n"
+                     "l8\nl9\nl10\nl11\nl12\nl13\nl14\nl15</textarea></div>");
+            QLUIRoot *ui = NULL;
+            QLUIDoc *doc = mk(html,
+                              "#r { width: 200px } textarea { width: 200px; height: 60px;"
+                              " padding: 4px; color: #000000;"
+                              " background-color: #FFFFFF; line-height: 16px }", &ui);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+                const QLRect cb = ta->content_box;
+                const QLFont *font = ql_ui_node_font(ta);
+                const ql_coord_t lh = font->line_height;
+
+                click(ui, cb.x + 10, cb.y + 10);          /* 聚焦 */
+
+                /* 滚到底 */
+                QLInputEvent ev;
+                for (int i = 0; i < 10; i++) {
+                    memset(&ev, 0, sizeof(ev));
+                    ev.type = QL_INPUT_WHEEL;
+                    ev.x = cb.x + 10;
+                    ev.y = cb.y + 10;
+                    ev.dy = 1;
+                    ql_ui_input_event(ui, &ev);
+                }
+
+                /* Ctrl+A 再 Backspace：全删 */
+                key(ui, 'a', QL_MOD_CTRL);
+                key(ui, QL_KEY_BACKSPACE, 0);
+                QL_CHECK(strcmp(ql_ui_input_value(ui, ta), "") == 0);
+
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+
+                /* 光标应在**第一行**（内容盒顶部那一条），高度约等于字形高 */
+                int first_top = -1, first_bottom = -1, below = 0;
+                for (int y = cb.y; y < cb.y + cb.h; y++)
+                    for (int x = cb.x; x < cb.x + cb.w; x++)
+                        if (px(x, y) != 0xFFFFFF) {
+                            if (first_top < 0)
+                                first_top = y;
+                            first_bottom = y;
+                            if (y >= cb.y + lh)
+                                below++;
+                        }
+                printf("    删光后光标 y=[%d,%d]（内容盒顶 %d，行高 %d），下方墨迹 %d\n",
+                       first_top, first_bottom, cb.y, lh, below);
+                QL_CHECK(first_top >= cb.y);
+                QL_CHECK(first_top < cb.y + lh);      /* 落在第一行 */
+                QL_CHECK_EQ(below, 0);                /* 框里除了光标什么都没有 */
+
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+            ql_disp_mem_destroy(s_disp);
+        }
+    }
+
+    /* ---------- 23. set_value 换成长文本：textarea 容量是 512 不是 96 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>",
+                          "#r { width: 200px } textarea { width: 200px; height: 60px }", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            char big[300];
+            memset(big, 'x', sizeof(big) - 1);
+            big[sizeof(big) - 1] = '\0';
+            QL_CHECK_EQ((int)ql_ui_input_set_value(ui, ta, big), (int)QL_OK);
+            const char *v = ql_ui_input_value(ui, ta);
+            printf("    set_value(299 字节) → 实际 %d 字节\n", (int)strlen(v));
+            QL_CHECK_EQ((int)strlen(v), (int)strlen(big));
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
 QL_TEST_END()

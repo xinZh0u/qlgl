@@ -1077,6 +1077,17 @@ static uint16_t input_cap(const struct QLUIInput *in)
 }
 
 static void input_scroll_to_caret(struct QLUIInput *in);
+static ql_coord_t input_scroll_max(const struct QLUIInput *in);
+/* 编辑之后统一走这条：把视图拉回光标可见，并通知值变了 */
+static void input_after_edit(QLUIRoot *ui, struct QLUIInput *in);
+
+/* 编辑之后的收尾：视图归位 + 通知（所有改缓冲的路径都要过它） */
+static void input_after_edit(QLUIRoot *ui, struct QLUIInput *in)
+{
+    input_scroll_to_caret(in);
+    input_emit(ui, in);
+}
+
 
 static int input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
 {
@@ -1129,6 +1140,14 @@ static void input_scroll_to_caret(struct QLUIInput *in)
             in->scroll_y = cy;
         else if (cy + lh - in->scroll_y > cb.h)
             in->scroll_y = cy + lh - cb.h;
+        /*
+         * 夹到内容范围：内容变短（删字、Ctrl+A 后删光、程序改值）时，
+         * 旧的 scroll_y 可能已经超出末尾 —— 不夹的话光标会被画到框上面去，
+         * 看起来就是"文字清空了，光标也不见了"。
+         */
+        const ql_coord_t max_y = input_scroll_max(in);
+        if (in->scroll_y > max_y)
+            in->scroll_y = max_y;
         if (in->scroll_y < 0)
             in->scroll_y = 0;
     } else {
@@ -1216,7 +1235,7 @@ ql_err_t ql_ui_clipboard_cut(QLUIRoot *ui)
         return rc;
     if (in->sel != in->caret) {
         (void)input_drop_selection(in);
-        input_emit(ui, in);
+        input_after_edit(ui, in);      /* 剪切同样是"内容变短"，视图要归位 */
     }
     return QL_OK;
 }
@@ -1449,7 +1468,7 @@ static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
     case QL_KEY_BACKSPACE:
         if (in->sel != in->caret) {
             (void)input_drop_selection(in);
-            input_emit(ui, in);
+            input_after_edit(ui, in);
         } else if (in->caret > 0) {
             const uint16_t from = prev_boundary(in->buf, in->caret);
             memmove(in->buf + from, in->buf + in->caret,
@@ -1465,7 +1484,7 @@ static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
     case QL_KEY_DELETE:
         if (in->sel != in->caret) {
             (void)input_drop_selection(in);
-            input_emit(ui, in);
+            input_after_edit(ui, in);
         } else if (in->caret < in->len) {
             const uint16_t to = next_boundary(in->buf, in->len, in->caret);
             memmove(in->buf + in->caret, in->buf + to,
@@ -5230,14 +5249,20 @@ ql_err_t ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value
         return QL_ERR_INVAL;
 
     size_t n = (value != NULL) ? strlen(value) : 0u;
-    if (n > (size_t)QL_CFG_UI_INPUT_LEN - 1u)
-        n = (size_t)QL_CFG_UI_INPUT_LEN - 1u;
+    /* 容量按控件类型取：`<textarea>` 是 512，不是 `<input>` 的 96 */
+    if (n > (size_t)input_cap(in) - 1u)
+        n = (size_t)input_cap(in) - 1u;
     if (n > 0)
         memcpy(in->buf, value, n);
     in->buf[n] = '\0';
     in->len = (uint16_t)n;
     in->caret = in->len;          /* 光标到末尾，符合"程序改值"的直觉 */
     in->sel = in->caret;
+    in->want_x = -1;
+    /* 旧内容的滚动偏移对新内容没意义：先归零，再让光标露出来 */
+    in->scroll_x = 0;
+    in->scroll_y = 0;
+    input_scroll_to_caret(in);
     node->flags |= QL_UI_RT_DIRTY;
     return QL_OK;
 }

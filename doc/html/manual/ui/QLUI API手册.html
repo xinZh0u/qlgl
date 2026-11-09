@@ -1439,7 +1439,7 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 </tr>
 <tr>
 <td><code>input_set_value</code></td>
-<td>改值（夹到 <code>QL_CFG_UI_INPUT_LEN−1</code>），光标移到末尾</td>
+<td>改值（夹到<strong>该控件的容量</strong>：<code>&lt;input&gt;</code> 是 <code>QL_CFG_UI_INPUT_LEN−1</code>，<code>&lt;textarea&gt;</code> 是 <code>QL_CFG_UI_TEXTAREA_LEN−1</code>），光标移到末尾、滚动归零</td>
 </tr>
 </tbody>
 </table>

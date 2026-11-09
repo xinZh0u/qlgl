@@ -764,7 +764,7 @@ ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *va
 |---|---|
 | `set_input_cb` | 值变化 / 按回车时回调；`cb == NULL` 取消 |
 | `input_value` | 当前值；不是 `<input>` 返回 `NULL`。指针在下次编辑前有效 |
-| `input_set_value` | 改值（夹到 `QL_CFG_UI_INPUT_LEN−1`），光标移到末尾 |
+| `input_set_value` | 改值（夹到**该控件的容量**：`<input>` 是 `QL_CFG_UI_INPUT_LEN−1`，`<textarea>` 是 `QL_CFG_UI_TEXTAREA_LEN−1`），光标移到末尾、滚动归零 |
 
 编辑能力：点击定位、拖动选字、`Backspace`/`Delete`、`←`/`→`/`Home`/`End`、
 `Shift+方向` 扩展选区、`QL_INPUT_TEXT` 插入、`Esc` 收焦点。
