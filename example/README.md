@@ -81,6 +81,7 @@ python3 tools/qltext/qltext.py cc \
 | `22_media` | `@media (max-width)` 断点：同一份 HTML 在窄屏换成一列（构建期切区间，运行期不解析条件） |
 | `23_calc` | `calc()` / `min()` / `max()` / `clamp()`：三等分、clamp 条、绝对定位居中（后缀字节码 + 布局期求值） |
 | `24_b5` | B5 十二件：占位隐藏、装饰层不挡点击、单项/多行对齐、视觉重排、sticky 表头、分轴裁剪 |
+| `25_b4` | B4 第一批：`border-style: dashed/dotted`（沿边切段填色，CPU/GL 同路径）、`outline` 全套（不占布局的 focus 环，offset 可负） |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 

@@ -934,14 +934,17 @@ typedef struct {
     uint32_t bg_color, text_color, border_color;
     QLUILength width, height;
     QLUIEdges margin, padding;
-    uint8_t display, bg_alpha, border_width, border_radius;
+    uint8_t display, bg_alpha, border_width, border_style, border_radius;
     uint8_t text_align, font_id, box_sizing, reserved;
     /* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h
        （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）
        line-height 是 int16_t line_h（0 = normal），
        white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），
-       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */
-} QLUIStyle;  /* sizeof == 148（blob v19） */
+       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线）；
+       border_style 见 QLUIBorderStyle（blob v25），
+       outline 是 uint32_t outline_color + int8_t outline_width / outline_offset
+                 + uint8_t outline_style（不占布局） */
+} QLUIStyle;  /* sizeof == 176（blob v25） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;
@@ -992,7 +995,7 @@ QLRect    ql_ui_paint_bounds(const QLUIRoot *ui);
 | `ql_ui_build` | 把静态表物化成节点树；一次分配，失败返回 `NULL` |
 | `ql_ui_free` | 释放（不负责显示驱动） |
 | `ql_ui_layout` | 按视口尺寸做完整布局 + 算 `paint_box` |
-| `ql_ui_render` | 按树顺序绘制：阴影 → 背景 → 边框 → 文本 → 子节点 |
+| `ql_ui_render` | 按树顺序绘制：阴影 → 背景 → 边框 → outline → 文本 → 子节点 |
 | `ql_ui_render_rect` | 只重绘 `dirty`：裁剪设成 `dirty∩视口`，靠 `paint_box` 剪掉不相交的子树。**dirty 内的结果与全量重绘逐像素相同** |
 | `ql_ui_paint_bounds` | 整棵树的绘制范围（= 根节点的 `paint_box`，可能超出视口，例如带阴影的贴边元素） |
 

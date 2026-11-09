@@ -60,6 +60,7 @@
 #include "ui_flex_anim10.h"
 #include "ui_flex_bench100.h"
 #include "ui_flex_tags.h"
+#include "ui_flex_b4.h"
 
 #if defined(QLGL_ENABLE_GL)
 #include <qlgl/qlgfx_gl.h>
@@ -114,6 +115,7 @@ static const GoldenCase k_cases[] = {
     { "anim10", &ui_flex_anim10_doc, 0.02 },
     { "bench100", &ui_flex_bench100_doc, 0.02 },
     { "tags", &ui_flex_tags_doc, 0.02 },
+    { "b4", &ui_flex_b4_doc, 0.02 },
 };
 
 #define CASE_COUNT ((int)(sizeof(k_cases) / sizeof(k_cases[0])))

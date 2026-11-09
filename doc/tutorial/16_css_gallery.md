@@ -269,7 +269,39 @@ calc 字节码 35 条（每条 4 字节）
   `align-items` 才真的能用（golden 的 `align` 页因此变化，肉眼核对过：
   两个方块现在在 120px 高的容器里居中）。多行的 `align-content` 仍然没做。
 
-## 10. 这几个例程查出了什么
+## 10. `25_b4`：虚线边框与 outline
+
+<img src="../img/25-b4.png" alt="solid / dashed / dotted 三种边框、1px 与 4px 的虚线段、圆角配虚线、outline 的三种 offset、:focus 环" width="420">
+
+完整程序：`example/25_b4/`
+
+```css
+.a { border: 2px dashed #E0A030; }        /* 虚线：段 3w、缝 2w，跟着线宽缩放 */
+.b { border: 2px dotted #E0A030; }        /* 点线：点 1w、缝 1w */
+.c { border-width: 4px; border-style: none; }  /* 宽度归零，不占位 */
+
+.d { outline: 2px solid #38BDF8; }        /* 画在边框盒**外面**，不占布局 */
+.d { outline-offset: 5px; }               /* 往外推 5px */
+.d { outline-offset: -4px; }              /* 负值压进边框里面 */
+.inp:focus { outline: 2px solid #4ADE80; outline-offset: 2px; }  /* focus 环 */
+```
+
+```bash
+./build/example/example_25_b4 --size 720x760 --dump b4.ppm
+```
+
+三件事值得记：
+
+- **虚线是"沿边切段填矩形"**，不碰 SDF：CPU 与 GPU 走同一条 `fill_rect`，
+  所以两条后端逐像素一致（golden 的 `b4` 页 CPU vs GPU 差异 0.5%，
+  全在圆角抗锯齿上）。代价是 `border-radius` 配 dashed/dotted 时按直角画。
+- **`border-style: none` 会把宽度按 0 算**（CSS 语义）。只清样式不清宽度的实现
+  会让内容盒莫名缩水 2×width —— 例程第 6 节就是拿它跟 `solid` 比尺寸。
+- **`outline` 天生适合 focus 环**：它不占布局，所以出现/消失不会让页面抖一下。
+  注意 CSS 语义：`outline-width` 单独写**不画**（`outline-style` 初值是 `none`），
+  要画就用 `outline: 2px solid <色>` 简写。
+
+## 11. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

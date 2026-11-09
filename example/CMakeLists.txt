@@ -48,6 +48,7 @@ set(QL_EXAMPLES
     22_media
     23_calc
     24_b5
+    25_b4
 )
 
 foreach(e ${QL_EXAMPLES})

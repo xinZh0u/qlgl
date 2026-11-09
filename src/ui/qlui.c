@@ -4689,6 +4689,92 @@ static void render_children(QLUINodeRT *node, QLDraw2D *d2d)
     }
 }
 
+/*
+ * 虚线 / 点线的边框与轮廓。
+ *
+ * 做法是**沿四条边切段填矩形**，不碰 SDF：这样 CPU 与 GL 两条后端天然一致
+ * （都用同一个 fill_rect），也不给着色器加分支。
+ * 代价是 `border-radius` 在这两种样式下按直角处理（真实浏览器会沿着圆角绕，
+ * 见《CSS3 覆盖与裁剪》§18.5 的已知差异）。
+ *
+ * 图案尺寸按边框宽度的整数倍走（dashed: 段 3w + 缝 2w；dotted: 点 1w + 缝 1w），
+ * 与浏览器"随线宽缩放"的行为一致，1px 边框也不会糊成一条灰线。
+ */
+static void paint_dash_run(QLDraw2D *d2d, ql_coord_t x, ql_coord_t y, ql_coord_t len,
+                           ql_coord_t w, int vertical, uint8_t style, ql_color_t color)
+{
+    ql_coord_t dash = (style == QL_UI_BORDER_DOTTED) ? w : 3 * w;
+    ql_coord_t gap = (style == QL_UI_BORDER_DOTTED) ? w : 2 * w;
+    if (dash < 1)
+        dash = 1;
+    if (gap < 1)
+        gap = 1;
+    for (ql_coord_t p = 0; p < len; p += dash + gap) {
+        ql_coord_t d = len - p;
+        if (d > dash)
+            d = dash;
+        const QLRect seg = vertical ? ql_rect_make(x, y + p, w, d)
+                                    : ql_rect_make(x + p, y, d, w);
+        if (style == QL_UI_BORDER_DOTTED && w >= 4)
+            d2d->fill_round_rect(d2d, seg, w / 2, color, 255);
+        else
+            d2d->fill_rect(d2d, seg, color, 255);
+    }
+}
+
+/* 四条边都切成段（rect 是边框盒外侧那一圈所占的区域） */
+static void paint_dash_frame(QLDraw2D *d2d, QLRect rect, ql_coord_t w, uint8_t style,
+                             ql_color_t color)
+{
+    if (w <= 0 || rect.w <= 2 * w || rect.h <= 2 * w)
+        return;
+    const ql_coord_t right = ql_rect_right(rect) - w;
+    const ql_coord_t bottom = ql_rect_bottom(rect) - w;
+    paint_dash_run(d2d, rect.x, rect.y, rect.w, w, 0, style, color);          /* 上 */
+    paint_dash_run(d2d, rect.x, bottom, rect.w, w, 0, style, color);          /* 下 */
+    paint_dash_run(d2d, rect.x, rect.y + w, rect.h - 2 * w, w, 1, style,       /* 左 */
+                   color);
+    paint_dash_run(d2d, right, rect.y + w, rect.h - 2 * w, w, 1, style,        /* 右 */
+                   color);
+}
+
+/* `border-style: dashed/dotted`。solid 仍走 stroke_round_rect（有圆角） */
+static void paint_border(QLDraw2D *d2d, QLRect box, ql_coord_t w, ql_coord_t radius,
+                         uint8_t style, ql_color_t color)
+{
+    if (style == QL_UI_BORDER_SOLID) {
+        d2d->stroke_round_rect(d2d, box, radius, w, color);
+        return;
+    }
+    paint_dash_frame(d2d, box, w, style, color);
+}
+
+/*
+ * `outline`：贴**边框盒外侧**画一圈，不占布局。
+ * `outline-offset` 为负时那圈线会压进边框里面（CSS 语义）。
+ * 用 stroke_round_rect 实现：外沿 = 边框盒外扩 (offset + width)，
+ * 厚度 = width，于是这圈线正好落在 [offset, offset + width] 之间。
+ */
+static void paint_outline(QLDraw2D *d2d, QLRect box, ql_coord_t w, ql_coord_t off,
+                          ql_coord_t radius, uint8_t style, ql_color_t color)
+{
+    if (w <= 0)
+        return;
+    const ql_coord_t grow = off + w;
+    const QLRect outer = ql_rect_make(box.x - grow, box.y - grow, box.w + 2 * grow,
+                                      box.h + 2 * grow);
+    if (outer.w <= 0 || outer.h <= 0)
+        return;
+    ql_coord_t rad = radius + grow;
+    if (rad < 0)
+        rad = 0;
+    if (style == QL_UI_BORDER_SOLID) {
+        d2d->stroke_round_rect(d2d, outer, rad, w, color);
+        return;
+    }
+    paint_dash_frame(d2d, outer, w, style, color);
+}
+
 static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = ql_ui_node_style(node);
@@ -4781,9 +4867,17 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             d2d->fill_round_rect(d2d, box, s->border_radius, s->bg_color, s->bg_alpha);
     }
 
-    if (!inv && s->border_width > 0 && !ql_rect_is_empty(box))
-        d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,
-                               s->border_color);
+    if (!inv && s->border_width > 0 && s->border_style != QL_UI_BORDER_NONE &&
+        !ql_rect_is_empty(box))
+        paint_border(d2d, box, (ql_coord_t)s->border_width, s->border_radius,
+                     s->border_style, s->border_color);
+
+    /* outline 画在边框之后：它在最外圈，不该被自己的边框盖住 */
+    if (!inv && s->outline_width > 0 && s->outline_style != QL_UI_BORDER_NONE &&
+        !ql_rect_is_empty(box))
+        paint_outline(d2d, box, (ql_coord_t)s->outline_width,
+                      (ql_coord_t)s->outline_offset, s->border_radius, s->outline_style,
+                      s->outline_color);
 
     /* <img>：背景/边框画完之后贴图（P3a：object-fit: fill） */
     if (!inv && node->src != NULL && node->src->tag == QL_UI_TAG_IMG)

@@ -617,7 +617,34 @@ main img.shot { max-width: 100%; }
   <code>align-items</code> 才真的能用（golden 的 <code>align</code> 页因此变化，肉眼核对过：
   两个方块现在在 120px 高的容器里居中）。多行的 <code>align-content</code> 仍然没做。</li>
 </ul>
-<h2 id="10">10. 这几个例程查出了什么</h2>
+<h2 id="10-25_b4-outline">10. <code>25_b4</code>：虚线边框与 outline</h2>
+<p><img src="../img/25-b4.png" alt="solid / dashed / dotted 三种边框、1px 与 4px 的虚线段、圆角配虚线、outline 的三种 offset、:focus 环" width="420"></p>
+<p>完整程序：<code>example/25_b4/</code></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">a</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="kc">dashed</span><span class="w"> </span><span class="mh">#E0A030</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 虚线：段 3w、缝 2w，跟着线宽缩放 */</span>
+<span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="kc">dotted</span><span class="w"> </span><span class="mh">#E0A030</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 点线：点 1w、缝 1w */</span>
+<span class="p">.</span><span class="nc">c</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-width</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">border-style</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* 宽度归零，不占位 */</span>
+
+<span class="p">.</span><span class="nc">d</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">outline</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#38BDF8</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 画在边框盒**外面**，不占布局 */</span>
+<span class="p">.</span><span class="nc">d</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">outline-offset</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">               </span><span class="c">/* 往外推 5px */</span>
+<span class="p">.</span><span class="nc">d</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">outline-offset</span><span class="p">:</span><span class="w"> </span><span class="mi">-4</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* 负值压进边框里面 */</span>
+<span class="p">.</span><span class="nc">inp</span><span class="p">:</span><span class="nd">focus</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">outline</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#4ADE80</span><span class="p">;</span><span class="w"> </span><span class="k">outline-offset</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* focus 环 */</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>./build/example/example_25_b4<span class="w"> </span>--size<span class="w"> </span>720x760<span class="w"> </span>--dump<span class="w"> </span>b4.ppm
+</code></pre></div>
+
+<p>三件事值得记：</p>
+<ul>
+<li><strong>虚线是"沿边切段填矩形"</strong>，不碰 SDF：CPU 与 GPU 走同一条 <code>fill_rect</code>，
+  所以两条后端逐像素一致（golden 的 <code>b4</code> 页 CPU vs GPU 差异 0.5%，
+  全在圆角抗锯齿上）。代价是 <code>border-radius</code> 配 dashed/dotted 时按直角画。</li>
+<li><strong><code>border-style: none</code> 会把宽度按 0 算</strong>（CSS 语义）。只清样式不清宽度的实现
+  会让内容盒莫名缩水 2×width —— 例程第 6 节就是拿它跟 <code>solid</code> 比尺寸。</li>
+<li><strong><code>outline</code> 天生适合 focus 环</strong>：它不占布局，所以出现/消失不会让页面抖一下。
+  注意 CSS 语义：<code>outline-width</code> 单独写<strong>不画</strong>（<code>outline-style</code> 初值是 <code>none</code>），
+  要画就用 <code>outline: 2px solid &lt;色&gt;</code> 简写。</li>
+</ul>
+<h2 id="11">11. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

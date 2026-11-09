@@ -1,0 +1,63 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">B4 绘制细节：border-style 与 outline</div>
+    <div class="badge">两样都只改绘制，不动布局</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. border-style：solid / dashed / dotted（同样 2px）</div>
+    <div class="row">
+      <div class="box solid">solid</div>
+      <div class="box dashed">dashed</div>
+      <div class="box dotted">dotted</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. 图案跟着线宽缩放：1px 与 4px 的 dashed</div>
+    <div class="row">
+      <div class="box thin">1px dashed</div>
+      <div class="box thick">4px dashed</div>
+      <div class="box solid dbl">2px solid</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. 和 border-radius 一起用：圆角按直角画（已知差异）</div>
+    <div class="row">
+      <div class="box round-dash">radius 10</div>
+      <div class="box round-dot">radius 10</div>
+      <div class="box round-solid">radius 10 solid</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. outline-offset：0 / +5 / -4（负值压进边框里）</div>
+    <div class="row tall">
+      <div class="obox o0">offset 0</div>
+      <div class="obox o5">offset 5</div>
+      <div class="obox om">offset -4</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. focus 环：点一下"输入框"，outline 跟着 :focus 出现</div>
+    <div class="row">
+      <input id="name" class="inp" type="text" value="点我拿焦点">
+      <div class="obox odash">outline dashed</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">6. border-style: none 不占位：两个盒子一样大，左边没有边</div>
+    <div class="row">
+      <div class="box noborder">none (4px)</div>
+      <div class="box solid">solid (2px)</div>
+    </div>
+  </div>
+
+  <div class="note">
+    虚线/点线是"沿边切段填色"实现的：CPU 与 GPU 走同一条 fill_rect 路径，
+    所以两条后端逐像素一致（golden 里 b4 页 0.5% 差异，全在圆角抗锯齿上）。
+  </div>
+</div>

@@ -273,12 +273,17 @@ main img.shot { max-width: 100%; }
 <td>blob v23（见 §18.4）</td>
 </tr>
 <tr>
+<td><code>border-style</code> / <code>outline</code></td>
+<td>blob v25（见 §18.5）</td>
+</tr>
+<tr>
 <td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
 <td>编译成<strong>后缀字节码</strong>存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉</td>
 </tr>
 </tbody>
 </table>
-<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、<code>border-*-style: dashed</code>（B4）、
+<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、四边独立 <code>border-*</code>、
+多重/<code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>（B4 剩余）、
 <code>transform: rotate()</code>、<code>word-spacing</code>、<code>text-align: justify</code>。</p>
 <blockquote>
 <p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
@@ -1153,9 +1158,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>border-style</code></td>
-<td>⚠️</td>
+<td>✅</td>
 <td>R</td>
-<td><strong>只有 <code>solid</code></strong>；<code>dashed</code> / <code>dotted</code> 报错（要做虚线光栅，CPU+GL 两份）</td>
+<td><code>solid</code> / <code>dashed</code> / <code>dotted</code> / <code>none</code>。虚线是<strong>沿边切段填矩形</strong>（不碰 SDF，CPU 与 GL 同一条路径），图案尺寸跟线宽走（dashed 段 3w 缝 2w、dotted 点 1w 缝 1w）。已知差异：与 <code>border-radius</code> 同用时按直角画；<code>double</code> / <code>groove</code> 等仍报错</td>
 </tr>
 <tr>
 <td><code>border-top/right/bottom/left-width</code></td>
@@ -1207,9 +1212,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>outline</code> + <code>-width/-style/-color/-offset</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>焦点圈常用；可以复用边框的描边路径</td>
+<td>画在边框盒<strong>外侧</strong>、<strong>不占布局</strong>（focus 环标配）；<code>outline-offset</code> 可为负（压进边框里）。CSS 语义照抄：只写 <code>outline-width</code> 不画（<code>outline-style</code> 初值 <code>none</code>），要画就写 <code>outline: 2px solid &lt;色&gt;</code></td>
 </tr>
 <tr>
 <td><code>box-decoration-break</code></td>
@@ -1918,9 +1923,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>outline</code> 系列</td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>见 §7</td>
+<td>见 §7；不占布局，<code>offset</code> 可负</td>
 </tr>
 <tr>
 <td><code>user-select</code></td>
@@ -2249,7 +2254,7 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc-&gt;calc_ops[]（每条 4 字�
 <p>同一轮把 <code>align-content</code> 也补上了（多行的行间分配），所以现在单行、多行两种
 情况的交叉轴都按 CSS 语义走。</p>
 <hr />
-<h3 id="185-position-sticky-overflow">18.5 <code>position: sticky</code> 与分轴 <code>overflow</code> 为什么便宜</h3>
+<h3 id="1841-position-sticky-overflow">18.4.1 <code>position: sticky</code> 与分轴 <code>overflow</code> 为什么便宜</h3>
 <p>这两件看起来都要"动滚动子系统"，实际都只挂到已有机制上：</p>
 <div class="highlight"><pre><span></span><code>滚动      apply_scroll：把子树整体平移 -scroll         （早就有）
 sticky    平移之后再把自己推回可视边缘，改的是 border_box
@@ -2268,6 +2273,29 @@ overflow-x 裁剪矩形只改一个方向（另一轴沿用外层裁剪）
 <p><code>cursor</code> 则刻意只做一半：CSS 值 + 命中测试算出<strong>意图</strong>（<code>ql_ui_cursor_at()</code>），
 真正设光标要窗口系统配合（X11 <code>XDefineCursor</code> / Wayland <code>wl_cursor</code>），
 后端目前没有接 —— 写进 API 手册 §3.13，不让它悄悄失效。</p>
+<h3 id="185-b4-border-style-dasheddotted-outlineblob-v25">18.5 B4 第一批：<code>border-style: dashed/dotted</code> 与 <code>outline</code>（blob v25）</h3>
+<p>这两样都<strong>只改绘制、不动布局</strong>，所以实现上都不碰布局求解器：</p>
+<div class="highlight"><pre><span></span><code>border-style: dashed/dotted
+  → 绘制期把四条边切成小段，每段一个 fill_rect（点线宽 &gt;= 4 时用 fill_round_rect 画圆点）
+  → 图案尺寸跟线宽缩放：dashed = 段 3w + 缝 2w，dotted = 点 1w + 缝 1w
+  → CPU 与 GL 走的是同一条 fill_rect，天然像素一致（golden 的 b4 页差异 0.5%）
+
+border-style: none
+  → 解析期把 border-width 按 0 存（CSS 的 computed border-width = 0）
+  → 不改布局代码，但内容盒不会再莫名缩水 2×width
+
+outline: W style color
+  → 绘制期用 stroke_round_rect：外沿 = 边框盒外扩 (offset + width)，厚度 = width
+    → 这圈线正好落在 [offset, offset + width] 区间；offset 为负就压进边框里
+  → 不参与布局：盒子位置/尺寸、兄弟位置、命中测试都不受影响
+  → CSS 语义照抄：outline-style 初值是 none，只写 outline-width **不画**
+</code></pre></div>
+
+<p>为什么 dashed 不走 SDF：SDF 里只有"到形状边界的距离"，没有"沿周长走了多远"，
+要画虚线段得在着色器里反解周长参数，成本远高于"切段填矩形"。代价是与
+<code>border-radius</code> 同用时圆角按直角画 —— 这条写在覆盖表里，不藏着。</p>
+<p>验收：<code>test/web/test_b4.c</code>（64 项：解析 + 逐点取色）、
+golden 新页 <code>b4</code>（CPU vs GPU 0.52%）、例程 <code>example/25_b4</code>。</p>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -2662,8 +2690,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </tr>
 <tr>
 <td><code>border</code> / <code>border-style</code></td>
-<td>只有 <code>solid</code></td>
-<td><code>dashed</code> / <code>dotted</code> / <code>double</code> 报错</td>
+<td><code>solid</code> / <code>dashed</code> / <code>dotted</code> / <code>none</code></td>
+<td><code>double</code> / <code>groove</code> / <code>ridge</code> / <code>inset</code> / <code>outset</code> 报错</td>
 </tr>
 <tr>
 <td><code>border-radius</code></td>
@@ -2965,7 +2993,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td><code>CSS_BORDER_STYLE</code></td>
 <td><code>QL_FEAT_CSS_BORDER_STYLE</code></td>
-<td><strong>B4 之后</strong>：<code>dashed</code> / <code>dotted</code> / 四边独立 <code>border-*</code></td>
+<td><code>dashed</code> / <code>dotted</code>（✅ 已落地）、四边独立 <code>border-*</code>（⏳ B4 剩余）</td>
 <td>✅</td>
 <td>❌</td>
 <td>BASE</td>
@@ -3191,7 +3219,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>新 <code>test_text_adv</code>（25 项，含像素层）+ golden</td>
 </tr>
 <tr>
-<td><strong>B4 绘制细节</strong></td>
+<td><strong>B4 绘制细节</strong>（第一批 ✅：<code>border-style: dashed/dotted</code> + <code>outline</code> 全套，见 §18.5；剩四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>object-position</code>、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>；<code>background-size/position</code> 要等 <code>background-image: url()</code>）</td>
 <td><code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>outline</code>、<code>background-size/position</code>、<code>object-position</code>、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code></td>
 <td><code>CSS_BORDER_STYLE</code> + <code>CSS_SHADOW</code> / <code>CSS_GRADIENT</code></td>
 <td>视觉还原度</td>
@@ -3200,7 +3228,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>扩 <code>test_effects</code> + <code>test_gl_vs_cpu</code></td>
 </tr>
 <tr>
-<td><strong>B5 布局与交互</strong>（✅ 已完成：<code>align-self</code>/<code>align-content</code>/<code>order</code>/<code>flex-flow</code>/<code>overflow-x/y</code>/<code>sticky</code>/<code>inset</code>/<code>visibility</code>/<code>pointer-events</code>/<code>cursor</code>/<code>user-select</code>/<code>scroll-behavior</code>，见 §18.4）</td>
+<td><strong>B5 布局与交互</strong>（✅ 已完成：<code>align-self</code>/<code>align-content</code>/<code>order</code>/<code>flex-flow</code>/<code>overflow-x/y</code>/<code>sticky</code>/<code>inset</code>/<code>visibility</code>/<code>pointer-events</code>/<code>cursor</code>/<code>user-select</code>/<code>scroll-behavior</code>，见 §18.4 与 §18.4.1）</td>
 <td>上列十二项</td>
 <td><code>CSS_FLEX</code> 补全 + <code>CSS_UI</code></td>
 <td>表达力 + 桌面手感</td>

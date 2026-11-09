@@ -332,6 +332,7 @@ typedef struct {
     uint8_t     display;       /* QLUIDisplay */
     uint8_t     bg_alpha;      /* 0..255 */
     uint8_t     border_width;
+    uint8_t     border_style;   /* QLUIBorderStyle（blob v25）；width 为 0 时无效 */
     int16_t     border_radius;  /* px；>= 短边一半时就是内切圆/胶囊 */
     uint8_t     text_align;    /* QLTextAlign */
     uint8_t     font_id;       /* doc->font_sizes 的下标（字号，像素） */
@@ -529,7 +530,34 @@ typedef struct {
      * 只影响**子项之间**的顺序；绘制顺序也跟着它（z-index 相同时）。
      */
     int16_t     order;
+
+    /* ----- B4 绘制细节（blob v25） ----- */
+    /*
+     * `outline`：画在边框**外面**的一圈线，**不占布局**（不改变盒子尺寸、
+     * 不影响兄弟位置），所以 focus 环、选中高亮用它最合适。
+     *
+     * CSS 里 outline 有几条怪规则，本库照抄了最要紧的两条：
+     *   - 不参与布局，可以被 `overflow: hidden` 的祖先裁掉（CSS 也说可以）；
+     *   - `outline-offset` 决定离边框盒多远，负值会压进边框里面。
+     */
+    uint32_t    outline_color;
+    int8_t      outline_width;   /* px；0 = 不画 */
+    int8_t      outline_offset;  /* px，可为负 */
+    uint8_t     outline_style;   /* QLUIBorderStyle（outline 也支持 dashed/dotted） */
 } QLUIStyle;
+
+/*
+ * `border-style` / `outline-style`。
+ *
+ * 只做三种实心图案：`solid` 是普通描边；`dashed` / `dotted` 在绘制期
+ * 沿四条边切成小段填色（不改布局、不进 SDF）。`none` 让宽度失效。
+ */
+typedef enum {
+    QL_UI_BORDER_SOLID = 0,
+    QL_UI_BORDER_DASHED,
+    QL_UI_BORDER_DOTTED,
+    QL_UI_BORDER_NONE,
+} QLUIBorderStyle;
 
 /* `align-content`（多行 flex 的交叉轴分配） */
 typedef enum {
@@ -1372,7 +1400,11 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    24u  /* 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky */
+/*
+ * 25: + border-style、outline（width/color/offset/style）
+ * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
+ */
+#define QL_UI_BLOB_VERSION    25u
 
 typedef struct {
     uint32_t magic;

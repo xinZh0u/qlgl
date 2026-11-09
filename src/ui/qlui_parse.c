@@ -3004,12 +3004,56 @@ static int expand_shorthands(Decls *ds)
                     return 0;
             } else if (strcmp(low, "solid") == 0 || strcmp(low, "none") == 0 ||
                        strcmp(low, "dashed") == 0 || strcmp(low, "dotted") == 0) {
-                if (strcmp(low, "solid") != 0) {
-                    set_error("只支持 solid 边框，收到 '%s'", low);
+                if (!decls_set(ds, "border-style", low))
                     return 0;
-                }
             } else {
                 if (!decls_set(ds, "border-color", low))
+                    return 0;
+            }
+        }
+    }
+
+    /*
+     * `outline` 简写：`2px solid #f00` / `2px #f00` / `none`，三段任意顺序。
+     * 与 `border` 共用同一套 token 判别（px / 关键字 / 其它当颜色）。
+     */
+    if ((v = decls_get(ds, "outline")) != NULL) {
+        char buf[128];
+        size_t n = strlen(v);
+        if (n >= sizeof(buf))
+            n = sizeof(buf) - 1u;
+        memcpy(buf, v, n);
+        buf[n] = '\0';
+        (void)decls_remove(ds, "outline");
+
+        const char *p = buf;
+        while (*p != '\0') {
+            while (is_space(*p))
+                p++;
+            if (*p == '\0')
+                break;
+            const char *start = p;
+            while (*p != '\0' && !is_space(*p))
+                p++;
+            char tok[64];
+            size_t len = (size_t)(p - start);
+            if (len >= sizeof(tok))
+                len = sizeof(tok) - 1u;
+            memcpy(tok, start, len);
+            tok[len] = '\0';
+            char low[64];
+            trim_lower(tok, low, sizeof(low));
+
+            size_t ln = strlen(low);
+            if (ln > 2 && strcmp(low + ln - 2u, "px") == 0) {
+                if (!decls_set(ds, "outline-width", low))
+                    return 0;
+            } else if (strcmp(low, "solid") == 0 || strcmp(low, "none") == 0 ||
+                       strcmp(low, "dashed") == 0 || strcmp(low, "dotted") == 0) {
+                if (!decls_set(ds, "outline-style", low))
+                    return 0;
+            } else {
+                if (!decls_set(ds, "outline-color", low))
                     return 0;
             }
         }
@@ -3022,7 +3066,9 @@ static int expand_shorthands(Decls *ds)
 
 static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
-    "border-color", "border-radius", "background", "background-color", "color",
+    "border-color", "border-radius", "border-style",
+    "outline", "outline-width", "outline-color", "outline-style", "outline-offset",
+    "background", "background-color", "color",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
     "vertical-align", "font-family",
     "object-fit",
@@ -7643,6 +7689,26 @@ static int anim_index_of(const Decls *st, const char *where, const KfRanges *ran
     return 1;
 }
 
+/* `border-style` / `outline-style` 的关键字（solid / dashed / dotted / none） */
+static int parse_border_style_kw(const char *text, const char *where, uint8_t *out)
+{
+    char t[32];
+    trim_lower(text, t, sizeof(t));
+    if (strcmp(t, "solid") == 0)
+        *out = QL_UI_BORDER_SOLID;
+    else if (strcmp(t, "dashed") == 0)
+        *out = QL_UI_BORDER_DASHED;
+    else if (strcmp(t, "dotted") == 0)
+        *out = QL_UI_BORDER_DOTTED;
+    else if (strcmp(t, "none") == 0)
+        *out = QL_UI_BORDER_NONE;
+    else {
+        set_error("%s: 不支持的样式 '%s'（solid / dashed / dotted / none）", where, text);
+        return 0;
+    }
+    return 1;
+}
+
 /* 把一份声明集合编译成 QLUIStyle。检查顺序与 Python 侧一致（第一个错就停） */
 static int compile_style(const Decls *st, const char *where, const KfRanges *ranges,
                          const KfTable *kftab, AnimTable *anims, IntList *fonts,
@@ -8183,6 +8249,75 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         radius = num;
     }
 
+    /*
+     * `border-style`：`none` 按 CSS 语义把宽度也归零（否则"没有样式却占 2px"
+     * 会让内容盒缩水，这是最容易踩的坑）。
+     */
+    uint8_t border_style = QL_UI_BORDER_SOLID;
+    if ((v = decls_get(st, "border-style")) != NULL) {
+        if (!parse_border_style_kw(v, "border-style", &border_style))
+            return 0;
+        if (border_style == QL_UI_BORDER_NONE)
+            bw = 0;
+    }
+
+    /*
+     * `outline`：**不占布局**的一圈线（focus 环用它）。
+     * 默认 outline-style = none、宽度 0 —— 不写就完全不存在。
+     */
+    uint32_t outline_color = bd;
+    uint8_t outline_style = QL_UI_BORDER_NONE;
+    int outline_style_set = 0;   /* 显式写了 outline-style（`none` 不该被宽度顶掉） */
+    int outline_w = 0;
+    int outline_off = 0;
+    {
+        if ((v = decls_get(st, "outline-style")) != NULL) {
+            if (!parse_border_style_kw(v, "outline-style", &outline_style))
+                return 0;
+            outline_style_set = 1;
+        }
+        if ((v = decls_get(st, "outline-width")) != NULL) {
+            uint8_t unit;
+            int num;
+            if (!parse_length(v, where, 0, calc, &unit, &num))
+                return 0;
+            if (!length_wants_const(unit, where, "outline-width"))
+                return 0;
+            if (num < 0 || num > 64) {
+                set_error("%s: outline-width 必须在 0~64px（收到 '%s'）", where, v);
+                return 0;
+            }
+            outline_w = num;
+            /*
+             * 只写宽度**不画** —— 这是 CSS 的语义（`outline-style` 初值是 none，
+             * 省略样式就等于没有线）。要画就写 `outline: 2px solid red`。
+             * 反过来做（宽度隐含 solid）看着方便，但会让
+             * `outline-width: 2px` 这种"只改宽度"的覆盖意外画出线来。
+             */
+            (void)outline_style_set;
+        }
+        if ((v = decls_get(st, "outline-offset")) != NULL) {
+            uint8_t unit;
+            int num;
+            if (!parse_length(v, where, 0, calc, &unit, &num))
+                return 0;
+            if (!length_wants_const(unit, where, "outline-offset"))
+                return 0;
+            if (num < -64 || num > 64) {
+                set_error("%s: outline-offset 必须在 -64~64px（收到 '%s'）", where, v);
+                return 0;
+            }
+            outline_off = num;
+        }
+        if ((v = decls_get(st, "outline-color")) != NULL &&
+            !parse_color(v, where, &outline_color, &a))
+            return 0;
+        if (outline_style == QL_UI_BORDER_NONE || outline_w <= 0) {
+            outline_w = 0;
+            outline_style = QL_UI_BORDER_NONE;   /* 没宽度 = 不画 */
+        }
+    }
+
     int box_sizing = 0;
     v = decls_get(st, "box-sizing");
     if (v != NULL) {
@@ -8601,7 +8736,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->display = (uint8_t)disp;
     out->bg_alpha = bg_a;
     out->border_width = (uint8_t)bw;
+    out->border_style = border_style;
     out->border_radius = (int16_t)radius;
+    out->outline_color = outline_color;
+    out->outline_width = (int8_t)outline_w;
+    out->outline_offset = (int8_t)outline_off;
+    out->outline_style = outline_style;
     out->text_align = (uint8_t)align;
     out->font_id = (uint8_t)font_id;
     out->box_sizing = (uint8_t)box_sizing;

@@ -29,9 +29,11 @@
 | `hsl()` / `hsla()`、`#rrggbbaa` | |
 | `currentColor` / `inherit` / `initial` / `unset` | 颜色位置识别成特殊值 |
 | `visibility` / `pointer-events` / `align-self` / `order` / `flex-flow` | blob v23（见 §18.4） |
+| `border-style` / `outline` | blob v25（见 §18.5） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
-**还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、`border-*-style: dashed`（B4）、
+**还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、四边独立 `border-*`、
+多重/`inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`（B4 剩余）、
 `transform: rotate()`、`word-spacing`、`text-align: justify`。
 
 > 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
@@ -235,7 +237,7 @@
 | `border`（简写） | ⚠️ | R | 只认 `<width>px solid <color>` |
 | `border-width` | ✅ | R | 四边统一 |
 | `border-color` | ✅ | R | 四边统一 |
-| `border-style` | ⚠️ | R | **只有 `solid`**；`dashed` / `dotted` 报错（要做虚线光栅，CPU+GL 两份） |
+| `border-style` | ✅ | R | `solid` / `dashed` / `dotted` / `none`。虚线是**沿边切段填矩形**（不碰 SDF，CPU 与 GL 同一条路径），图案尺寸跟线宽走（dashed 段 3w 缝 2w、dotted 点 1w 缝 1w）。已知差异：与 `border-radius` 同用时按直角画；`double` / `groove` 等仍报错 |
 | `border-top/right/bottom/left-width` | ⏳ | R | `不支持的属性 'border-top-width'`；`QLDraw2D::stroke_round_rect` 只画整圈 |
 | `border-*-color` / `border-*-style` | ⏳ | R | 同上 |
 | `border-bottom: none` 之类的单边简写 | ⏳ | R | 同上 |
@@ -244,7 +246,7 @@
 | `border-image` | ❌ | M | 九宫格缩放 + 切片解析，代码量接近圆角的三倍，收益低 |
 | `box-shadow`（单条） | ✅ | R | CPU SDF + GPU `mode=2` 各一份实现 |
 | `box-shadow`（多重 / `inset`） | ⏳ | O | `box-shadow 里无法识别 ','`；`inset` 要反向 SDF |
-| `outline` + `-width/-style/-color/-offset` | ⏳ | R | 焦点圈常用；可以复用边框的描边路径 |
+| `outline` + `-width/-style/-color/-offset` | ✅ | R | 画在边框盒**外侧**、**不占布局**（focus 环标配）；`outline-offset` 可为负（压进边框里）。CSS 语义照抄：只写 `outline-width` 不画（`outline-style` 初值 `none`），要画就写 `outline: 2px solid <色>` |
 | `box-decoration-break` | ❌ | N | 跨行断开的盒子装饰，本库没有"跨行盒子"概念 |
 
 ---
@@ -423,7 +425,7 @@
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `cursor` | ✅ | L | 解析 + 命中测试算出"意图"（`ql_ui_cursor_at()`）；**形状由宿主设**（后端暂无光标钩子） |
-| `outline` 系列 | ⏳ | R | 见 §7 |
+| `outline` 系列 | ✅ | R | 见 §7；不占布局，`offset` 可负 |
 | `user-select` | ✅ | L | `none` 时输入框不再拖拽连选（本库只有输入框能选字，其余取值等价于可选中） |
 | `scroll-behavior: smooth` | ✅ | T | 由 `ql_ui_anim_tick()` 逐帧推进（160ms ease-out），与 CSS 动画同一个时钟 |
 | `overscroll-behavior` | ❌ | N | 惯性/回弹是平台层的事 |
@@ -579,7 +581,7 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc->calc_ops[]（每条 4 字节�
 
 ---
 
-### 18.5 `position: sticky` 与分轴 `overflow` 为什么便宜
+### 18.4.1 `position: sticky` 与分轴 `overflow` 为什么便宜
 
 这两件看起来都要"动滚动子系统"，实际都只挂到已有机制上：
 
@@ -601,6 +603,34 @@ sticky 的三条约束（都写在 `sticky_adjust` 里）：
 `cursor` 则刻意只做一半：CSS 值 + 命中测试算出**意图**（`ql_ui_cursor_at()`），
 真正设光标要窗口系统配合（X11 `XDefineCursor` / Wayland `wl_cursor`），
 后端目前没有接 —— 写进 API 手册 §3.13，不让它悄悄失效。
+
+### 18.5 B4 第一批：`border-style: dashed/dotted` 与 `outline`（blob v25）
+
+这两样都**只改绘制、不动布局**，所以实现上都不碰布局求解器：
+
+```
+border-style: dashed/dotted
+  → 绘制期把四条边切成小段，每段一个 fill_rect（点线宽 >= 4 时用 fill_round_rect 画圆点）
+  → 图案尺寸跟线宽缩放：dashed = 段 3w + 缝 2w，dotted = 点 1w + 缝 1w
+  → CPU 与 GL 走的是同一条 fill_rect，天然像素一致（golden 的 b4 页差异 0.5%）
+
+border-style: none
+  → 解析期把 border-width 按 0 存（CSS 的 computed border-width = 0）
+  → 不改布局代码，但内容盒不会再莫名缩水 2×width
+
+outline: W style color
+  → 绘制期用 stroke_round_rect：外沿 = 边框盒外扩 (offset + width)，厚度 = width
+    → 这圈线正好落在 [offset, offset + width] 区间；offset 为负就压进边框里
+  → 不参与布局：盒子位置/尺寸、兄弟位置、命中测试都不受影响
+  → CSS 语义照抄：outline-style 初值是 none，只写 outline-width **不画**
+```
+
+为什么 dashed 不走 SDF：SDF 里只有"到形状边界的距离"，没有"沿周长走了多远"，
+要画虚线段得在着色器里反解周长参数，成本远高于"切段填矩形"。代价是与
+`border-radius` 同用时圆角按直角画 —— 这条写在覆盖表里，不藏着。
+
+验收：`test/web/test_b4.c`（64 项：解析 + 逐点取色）、
+golden 新页 `b4`（CPU vs GPU 0.52%）、例程 `example/25_b4`。
 
 ---
 
@@ -727,7 +757,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 |---|---|---|
 | `background`（简写） | 只认纯色或**单个**渐变 | `background: #fff url(a.png)` 报错；图片请用 `<img>` |
 | `linear-gradient()` | **必须写方向** | `to bottom right` 不支持；用 `to right` / `90deg` |
-| `border` / `border-style` | 只有 `solid` | `dashed` / `dotted` / `double` 报错 |
+| `border` / `border-style` | `solid` / `dashed` / `dotted` / `none` | `double` / `groove` / `ridge` / `inset` / `outset` 报错 |
 | `border-radius` | 单值（px 或 %） | 四角 / 斜杠椭圆角都不行 |
 | `box-shadow` | 单条 | 多重、`inset` 都不行 |
 | `opacity` | 逐图元降透明 | 子元素会一起淡，但**同一子树内部互相覆盖处会略透**（真 group 要离屏图层，见 §20.1） |
@@ -813,7 +843,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_TRANSFORM` | `QL_FEAT_CSS_TRANSFORM` | `transform: translate/scale/scaleX/scaleY`，含负缩放镜像与文本几何缩放 | ✅ | ❌ | BASE | 80 |
 | `CSS_ANIM` | `QL_FEAT_CSS_ANIM` | `transition` + `@keyframes` + `animation`（过渡池、关键帧表、applier） | ✅ | ❌ | BASE | 52 |
 | `CSS_TEXT_ADV` | `QL_FEAT_CSS_TEXT_ADV` | **B3 之后**：`letter-spacing` / `word-spacing` / `text-indent` / `text-transform` / `text-overflow` / `word-break` | ✅ | ❌ | BASE | — |
-| `CSS_BORDER_STYLE` | `QL_FEAT_CSS_BORDER_STYLE` | **B4 之后**：`dashed` / `dotted` / 四边独立 `border-*` | ✅ | ❌ | BASE | — |
+| `CSS_BORDER_STYLE` | `QL_FEAT_CSS_BORDER_STYLE` | `dashed` / `dotted`（✅ 已落地）、四边独立 `border-*`（⏳ B4 剩余） | ✅ | ❌ | BASE | — |
 | `CSS_SELECTOR_ADV` | `QL_FEAT_CSS_SELECTOR_ADV` | **B2 之后**：`:nth-child` 等结构伪类、`[attr]`、`::before/::after` | ✅ | ⚠️ 见下 | BASE | 只省解析期 |
 | `CSS_IMAGE_FIT` | `QL_FEAT_CSS_IMAGE_FIT` | `object-fit` / `object-position`（只在有图片管线时有意义） | ✅ | ❌ | `QL_FEAT_UI_IMAGE` | 与图像管线共用 |
 | `CSS_UI` | `QL_FEAT_CSS_UI` | **B5 之后**：`cursor` / `pointer-events` / `user-select` / `scrollbar-*` | ✅ | ❌ | BASE | — |
@@ -910,8 +940,8 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
 | **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
 | **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
-| **B4 绘制细节** | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
-| **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
+| **B4 绘制细节**（第一批 ✅：`border-style: dashed/dotted` + `outline` 全套，见 §18.5；剩四边独立 `border-*`、多重/`inset` 阴影、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*`；`background-size/position` 要等 `background-image: url()`） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
+| **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
 **另外两项单独立项**（成本与一批相当，但语义是"新子系统"）：
 

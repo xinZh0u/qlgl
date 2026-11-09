@@ -190,6 +190,11 @@ static const char *const CURSOR_NAMES[] = {
     "QL_UI_CURSOR_HELP", "QL_UI_CURSOR_PROGRESS",
 };
 
+static const char *const BORDER_STYLE_NAMES[] = {
+    "QL_UI_BORDER_SOLID", "QL_UI_BORDER_DASHED", "QL_UI_BORDER_DOTTED",
+    "QL_UI_BORDER_NONE",
+};
+
 static const char *const POSITION_NAMES[] = {
     "QL_UI_POSITION_STATIC", "QL_UI_POSITION_RELATIVE",
     "QL_UI_POSITION_ABSOLUTE", "QL_UI_POSITION_FIXED",
@@ -313,7 +318,8 @@ static void fput_style(FILE *f, const QLUIStyle *s)
     fput_edges(f, s->padding);
     fprintf(f,
             ",\n"
-            "      .display = %s, .bg_alpha = %u, .border_width = %u,\n"
+            "      .display = %s, .bg_alpha = %u, .border_width = %u,"
+            " .border_style = %s,\n"
             "      .shadow_dx = %d, .shadow_dy = %d,\n"
             "      .border_radius = %d, .text_align = %s, .font_id = %u,"
             " .box_sizing = %u,\n"
@@ -338,10 +344,14 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .overflow_x = %s, .overflow_y = %s,\n"
             "      .align_content = %s, .cursor = %s,\n"
             "      .user_select_none = %u, .scroll_smooth = %u,\n"
+            "      .outline_color = 0x%06X, .outline_width = %d,"
+            " .outline_offset = %d, .outline_style = %s,\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
                       "QLUIDisplay"),
             (unsigned)s->bg_alpha, (unsigned)s->border_width,
+            enum_name(BORDER_STYLE_NAMES, COUNT_OF(BORDER_STYLE_NAMES), s->border_style,
+                      "QLUIBorderStyle"),
             (int)s->shadow_dx, (int)s->shadow_dy,
             (int)s->border_radius,
             enum_name(TEXT_ALIGN_NAMES, COUNT_OF(TEXT_ALIGN_NAMES), s->text_align,
@@ -388,7 +398,11 @@ static void fput_style(FILE *f, const QLUIStyle *s)
                       s->align_content, "QLUIAlignContent"),
             enum_name(CURSOR_NAMES, COUNT_OF(CURSOR_NAMES), s->cursor,
                       "QLUICursor"),
-            (unsigned)s->user_select_none, (unsigned)s->scroll_smooth);
+            (unsigned)s->user_select_none, (unsigned)s->scroll_smooth,
+            (unsigned)(s->outline_color & 0xFFFFFFu), (int)s->outline_width,
+            (int)s->outline_offset,
+            enum_name(BORDER_STYLE_NAMES, COUNT_OF(BORDER_STYLE_NAMES),
+                      s->outline_style, "QLUIBorderStyle"));
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);
     fputs(",\n      .inset = { ", f);

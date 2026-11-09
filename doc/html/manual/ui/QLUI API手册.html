@@ -1725,14 +1725,17 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">bg_color</span><span class="p">,</span><span class="w"> </span><span class="n">text_color</span><span class="p">,</span><span class="w"> </span><span class="n">border_color</span><span class="p">;</span>
 <span class="w">    </span><span class="n">QLUILength</span><span class="w"> </span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">;</span>
 <span class="w">    </span><span class="n">QLUIEdges</span><span class="w"> </span><span class="n">margin</span><span class="p">,</span><span class="w"> </span><span class="n">padding</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">display</span><span class="p">,</span><span class="w"> </span><span class="n">bg_alpha</span><span class="p">,</span><span class="w"> </span><span class="n">border_width</span><span class="p">,</span><span class="w"> </span><span class="n">border_radius</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">display</span><span class="p">,</span><span class="w"> </span><span class="n">bg_alpha</span><span class="p">,</span><span class="w"> </span><span class="n">border_width</span><span class="p">,</span><span class="w"> </span><span class="n">border_style</span><span class="p">,</span><span class="w"> </span><span class="n">border_radius</span><span class="p">;</span>
 <span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">text_align</span><span class="p">,</span><span class="w"> </span><span class="n">font_id</span><span class="p">,</span><span class="w"> </span><span class="n">box_sizing</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span>
 <span class="w">    </span><span class="cm">/* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h</span>
 <span class="cm">       （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）</span>
 <span class="cm">       line-height 是 int16_t line_h（0 = normal），</span>
 <span class="cm">       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），</span>
-<span class="cm">       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 148（blob v19） */</span>
+<span class="cm">       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线）；</span>
+<span class="cm">       border_style 见 QLUIBorderStyle（blob v25），</span>
+<span class="cm">       outline 是 uint32_t outline_color + int8_t outline_width / outline_offset</span>
+<span class="cm">                 + uint8_t outline_style（不占布局） */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 176（blob v25） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">,</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">;</span>
@@ -1796,7 +1799,7 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 </tr>
 <tr>
 <td><code>ql_ui_render</code></td>
-<td>按树顺序绘制：阴影 → 背景 → 边框 → 文本 → 子节点</td>
+<td>按树顺序绘制：阴影 → 背景 → 边框 → outline → 文本 → 子节点</td>
 </tr>
 <tr>
 <td><code>ql_ui_render_rect</code></td>
