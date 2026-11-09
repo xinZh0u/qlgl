@@ -52,6 +52,12 @@ typedef struct {
     int         cjk;       /* 1 = 文本用中文（顺带压矢量字体的字形缓存） */
     const char *dump;
     int         list;      /* 只列出维度就退出 */
+    /*
+     * 1 = 每个维度跑完再单独渲染一帧做**自检**：画面不能是纯底色、
+     * 颜色种类不能太少（防止"场景悄悄画了个空白"这种功能退化）。
+     * CI 用 `bench --backend cpu --seconds 0.05 --check`（见 CMakeLists）。
+     */
+    int         check;
 } BenchOpts;
 
 static void bench_usage(const char *prog)
@@ -74,7 +80,8 @@ static void bench_usage(const char *prog)
            "                     —— 想看超过屏幕帧率的吞吐就用它\n"
            "  --cjk              文本用中文\n"
            "  --no-hud           不画左上角信息\n"
-           "  --dump PATH        每个维度退出前导出一帧 PPM（文件名会加维度后缀）\n",
+           "  --dump PATH        每个维度退出前导出一帧 PPM（文件名会加维度后缀）\n"
+           "  --check            每个维度自检：画面不能是空白（CI 用，失败时退出码非 0）\n",
            prog);
 }
 
@@ -134,6 +141,8 @@ static void bench_opts_parse(BenchOpts *o, int argc, char **argv)
             o->cjk = 1;
         else if (strcmp(a, "--no-hud") == 0)
             o->hud = 0;
+        else if (strcmp(a, "--check") == 0)
+            o->check = 1;
         else if (strcmp(a, "--dump") == 0 && has_next)
             o->dump = argv[++i];
         else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {

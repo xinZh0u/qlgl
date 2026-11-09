@@ -717,6 +717,7 @@ static void emit_quad_shear(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t 
                             float u0, float v0, float u1, float v1, int use_tex,
                             float shear)
 {
+    alpha = ql_draw2d_eff_alpha(&g->draw, alpha);
     if (ql_rect_is_empty(r) || alpha == 0)
         return;
 
@@ -1867,6 +1868,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.blit_image = gl_blit_image;
     g->draw.flush = NULL;
     g->draw.scale_fx = g->scale_fx;
+    g->draw.alpha = 255;       /* 整体透明度默认不透明 */
     g->draw.offset_x_fx = 0;
     g->draw.offset_y_fx = 0;
     g->draw.user = g;

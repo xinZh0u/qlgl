@@ -1785,6 +1785,7 @@ static const char *const k_supported_props[] = {
     "padding-top", "padding-right", "padding-bottom", "padding-left",
     "background-image",
     "min-width", "max-width", "min-height", "max-height",
+    "opacity",
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
 };
 
@@ -6096,6 +6097,21 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     uint8_t mnwu = QL_UI_UNIT_AUTO, mxwu = QL_UI_UNIT_AUTO;
     uint8_t mnhu = QL_UI_UNIT_AUTO, mxhu = QL_UI_UNIT_AUTO;
     int mnwv = 0, mxwv = 0, mnhv = 0, mxhv = 0;
+    /* `opacity`：0..1 的数字，存成 0..255。默认 255（不透明） */
+    int opacity = 255;
+    if ((v = decls_get(st, "opacity")) != NULL) {
+        double ov = 0;
+        const char *end = NULL;
+        if (!match_number(skip_space(v), &end, &ov) || *skip_space(end) != '\0') {
+            set_error("%s: opacity 必须是 0~1 的数字（收到 '%s'）", where, v);
+            return 0;
+        }
+        if (ov < 0.0 || ov > 1.0) {
+            set_error("%s: opacity 超出 0~1（收到 '%s'）", where, v);
+            return 0;
+        }
+        opacity = (int)py_round(ov * 255.0);
+    }
     if ((v = decls_get(st, "min-width")) != NULL) {
         if (!parse_length(v, where, 1, &mnwu, &mnwv))
             return 0;
@@ -6706,6 +6722,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->min_height.unit = mnhu;
     out->max_height.value = (int16_t)mxhv;
     out->max_height.unit = mxhu;
+    out->opacity = (uint8_t)opacity;
     out->margin.top = (int16_t)margin[0];
     out->margin.right = (int16_t)margin[1];
     out->margin.bottom = (int16_t)margin[2];

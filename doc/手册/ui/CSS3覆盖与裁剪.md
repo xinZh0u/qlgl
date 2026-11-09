@@ -250,7 +250,7 @@
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `color` | ✅ | R | |
-| `opacity` | ⏳ | O | **只有 `@keyframes` 里能用**；普通属性报 `不支持的属性 'opacity'`。真 CSS 是**组不透明度**，见 §9 的说明 |
+| `opacity` | ✅ | R | 0~1，默认 1；**逐图元降透明并顺着子树往下乘**（背景/边框/阴影/文字/图片一起淡）。与真 group opacity 的差别见 §20.1 |
 | `mix-blend-mode` / `background-blend-mode` | ❌ | O | 要离屏图层 + 混合方程 |
 | `isolation` | ❌ | O | 同上（为混合服务的） |
 | `color-scheme` / `accent-color` / `caret-color` | ❌ | N | 与"主题由 CSS 自己写"重复 |
@@ -574,7 +574,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `border` / `border-style` | 只有 `solid` | `dashed` / `dotted` / `double` 报错 |
 | `border-radius` | 单值（px 或 %） | 四角 / 斜杠椭圆角都不行 |
 | `box-shadow` | 单条 | 多重、`inset` 都不行 |
-| `opacity` | 只有 `@keyframes` 里能用 | 普通属性报错；且只作用于背景 alpha（见 §20.1） |
+| `opacity` | 逐图元降透明 | 子元素会一起淡，但**同一子树内部互相覆盖处会略透**（真 group 要离屏图层，见 §20.1） |
 | `transform` | 只有 `translate` / `scale` / `scaleX` / `scaleY` | `rotate` / `skew` / `matrix` 报错 |
 | `transform-origin` | **固定为元素中心** | 属性本身没实现 |
 | `transition-timing-function` | 5 个具名缓动 | 没有 `cubic-bezier()` |
@@ -597,10 +597,11 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 
 写在这里，免得后面有人当"漏了"顺手补成半成品：
 
-1. **`opacity` 只能做近似**。真 CSS 的 `opacity` 是**组不透明度**：整棵子树先合成到一张
-   离屏图层，再整体混合。本库现在只有"元素自己的背景 alpha"（关键帧路径的做法）。
-   做真 group opacity 要在 CPU 与 GL 两端各加一层离屏合成 —— 和 `transform: rotate()`
-   同级成本，属于独立一项。
+1. **`opacity` 是"逐图元降透明"，不是严格的组不透明度**。真 CSS 把整棵子树先合成到一张
+   离屏图层再整体混合；本库的做法是把整体 alpha 乘到**每一个绘制入口**上，并顺着子树
+   往下乘（`QLDraw2D.alpha` / `ql_draw2d_set_alpha()`）。对"子树内部不重叠"的界面两者
+   逐像素一致；只有**子树内部互相覆盖**处会略透（每个图元各自降透明，重叠区乘了两次）。
+   严格版本要在 CPU 与 GL 两端各加一层离屏合成 —— 和 `transform: rotate()` 同级成本。
 2. **`margin: auto` 是布局概念，不是值解析**。块级盒要在**有确定可用宽度**时分掉剩余空间；
    flex 里的 `auto` margin 又是另一套（吸收剩余空间）。改动落在 `layout_node()` 与
    flex 求解器两处。
@@ -749,7 +750,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 - **`transform: rotate()` / `skew()`**：要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 +
   字形旋转 + 裁剪盒变换）。做完它，变换才算齐。
-- **真 group `opacity`**：要离屏图层（见 §20.1）。
+- **真 group `opacity`**：要离屏图层（见 §20.1）。现在的 `opacity` 是逐图元降透明。
 
 **建议顺序**：**B1 + B2 一起做**（一次抬 blob 版本、一次重生成 golden），之后 B3 → B4 → B5，
 中间可随时插入 `rotate`（对动效类页面它比 B5 更实用）。

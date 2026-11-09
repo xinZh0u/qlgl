@@ -548,6 +548,31 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
     }
 }
 
+/*
+ * `height` 是否"确定"（有具体像素值）。
+ *
+ * CSS 语义：百分比高度只有在**父级高度确定**时才能解析；父级是 auto 时
+ * 百分比按 `auto` 处理。之前这里一律当成确定，于是 `%` 乘以基准 0 得到 0 ——
+ * 表现就是"套一层 `height:100%` 的 div 变成 0 高，里面全空"。
+ */
+static int height_is_definite(const QLUIStyle *s, ql_coord_t basis_h)
+{
+    if (s->height.unit == QL_UI_UNIT_PX)
+        return 1;
+    if (s->height.unit == QL_UI_UNIT_PERCENT)
+        return basis_h >= 0;
+    return 0;
+}
+
+/* 解析 `height`：`basis_h < 0` 表示父级高度不确定 → 百分比退回 fallback */
+static ql_coord_t height_of_style(const QLUIStyle *s, ql_coord_t basis_h,
+                                  ql_coord_t fallback)
+{
+    if (s->height.unit == QL_UI_UNIT_PERCENT && basis_h < 0)
+        return fallback;
+    return resolve_length(s->height, basis_h > 0 ? basis_h : 0, fallback);
+}
+
 /* 样式 → 字体：字号来自生成期的 font_sizes 表，具体字体由字体系统按字号给 */
 static const QLFont *font_of_style(const QLUINodeRT *node, const QLUIStyle *style)
 {
@@ -729,7 +754,7 @@ static ql_coord_t natural_cross(const QLUINodeRT *node, int row)
  * 又要调 layout_flex_children —— 两者互相依赖。
  */
 static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
-                              ql_coord_t avail_w);
+                              ql_coord_t avail_w, ql_coord_t basis_h);
 static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
                                        ql_coord_t content_y, ql_coord_t content_w,
                                        ql_coord_t avail_h, int definite_h);
@@ -865,13 +890,13 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
     if (has_t) {
         y = cb.y + t;
     } else if (has_b) {
-        (void)layout_node(child, x, 0, avail_w);
+        (void)layout_node(child, x, 0, avail_w, cb.h);
         y = cb.y + cb.h - b - child->border_box.h - (s->margin.top + s->margin.bottom);
     } else {
         y = cb.y;        /* 都没给：贴在包含块左上（CSS 的 static position 未实现） */
     }
 
-    (void)layout_node(child, x, y, avail_w);
+    (void)layout_node(child, x, y, avail_w, cb.h);
 }
 
 /*
@@ -1732,7 +1757,7 @@ static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
 /* ------------------------------ 主布局 ------------------------------ */
 
 static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
-                              ql_coord_t avail_w)
+                              ql_coord_t avail_w, ql_coord_t basis_h)
 {
     const QLUIStyle *s = node->style;
 
@@ -1756,15 +1781,33 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
 
     ql_coord_t content_h;
 
+    /*
+     * 子节点的百分比高度基准：只有本节点高度**确定**时才把内容高传下去，
+     * 否则传 -1（子节点里的 `height:100%` 按 auto 处理，与 CSS 一致）。
+     *
+     * 必须在分支之前算：block 分支要先知道基准才能布局子节点，而 content_h
+     * 那时正由子节点的高度累加出来（鸡生蛋），所以这里直接用**声明值**。
+     */
+    ql_coord_t decl_h = -1;
+    if (height_is_definite(s, basis_h)) {
+        decl_h = height_of_style(s, basis_h, 0);
+        if (s->box_sizing == 1) {
+            decl_h -= 2 * (ql_coord_t)s->border_width + s->padding.top +
+                      s->padding.bottom;
+            if (decl_h < 0)
+                decl_h = 0;
+        }
+    }
+
     if (node->first_child != NULL && is_flex_container(s)) {
         /*
          * flex 容器：显式高度时才有剩余空间可分配（grow/shrink 才有意义）。
          * box-sizing：border-box 时 height 指边框盒，content-box 时指内容盒。
          */
-        int definite_h = (s->height.unit != QL_UI_UNIT_AUTO);
+        int definite_h = height_is_definite(s, basis_h);
         ql_coord_t avail_h = 0;
         if (definite_h) {
-            ql_coord_t hv = resolve_length(s->height, 0, 0);
+            ql_coord_t hv = height_of_style(s, basis_h, 0);
             if (s->box_sizing == 1) {
                 avail_h = hv - 2 * (ql_coord_t)s->border_width - s->padding.top -
                           s->padding.bottom;
@@ -1798,7 +1841,8 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                     row_h = 0;
                     in_row = 0;
                 }
-                cursor_y += layout_node(child, content_x, cursor_y, content_w);
+                cursor_y += layout_node(child, content_x, cursor_y, content_w,
+                                        decl_h);
             } else {
                 ql_coord_t child_avail = content_w;
                 ql_coord_t child_w = border_width_of(child, content_w) +
@@ -1808,7 +1852,8 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                     cursor_x = content_x;
                     row_h = 0;
                 }
-                ql_coord_t h = layout_node(child, cursor_x, cursor_y, child_avail);
+                ql_coord_t h = layout_node(child, cursor_x, cursor_y, child_avail,
+                                           decl_h);
                 cursor_x += outer_width_of(child);
                 if (h > row_h)
                     row_h = h;
@@ -1839,7 +1884,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                 lines = 1;
             content_h = lh * (ql_coord_t)lines;
         } else {
-            content_h = resolve_length(s->height, 0, lh);
+            content_h = height_of_style(s, basis_h, lh);
         }
     } else if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG) {
         /*
@@ -1869,9 +1914,9 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      *
      * 例外：flex 容器的高度已在上面算好（含剩余空间分配），这里不再覆盖。
      */
-    if (s->height.unit != QL_UI_UNIT_AUTO && !(node->first_child != NULL &&
-                                               is_flex_container(s))) {
-        ql_coord_t hv = resolve_length(s->height, 0, content_h);
+    if (height_is_definite(s, basis_h) && !(node->first_child != NULL &&
+                                           is_flex_container(s))) {
+        ql_coord_t hv = height_of_style(s, basis_h, content_h);
         if (s->box_sizing == 1) {
             hv -= 2 * (ql_coord_t)s->border_width + s->padding.top + s->padding.bottom;
             if (hv < 0)
@@ -2141,7 +2186,7 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             }
         }
 
-        (void)layout_node(c, 0, 0, content_w);   /* 位置无关紧要，只取尺寸 */
+        (void)layout_node(c, 0, 0, content_w, -1);  /* 位置无关紧要，只取尺寸 */
     }
 }
 
@@ -2253,7 +2298,8 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
         for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
             if (c->style->display == QL_UI_DISPLAY_NONE)
                 continue;
-            cy += layout_node(c, content_x, cy, content_w);
+            cy += layout_node(c, content_x, cy, content_w,
+                              definite_h ? avail_h : -1);
         }
         return cy - content_y;
     }
@@ -2402,9 +2448,11 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
 
             const ql_coord_t cross_at = cross_cursor + cross_pos;
             if (row)
-                (void)layout_node(c, content_x + main_pos, content_y + cross_at, inner_sz);
+                (void)layout_node(c, content_x + main_pos, content_y + cross_at,
+                                  inner_sz, definite_h ? avail_h : -1);
             else
-                (void)layout_node(c, content_x + cross_at, content_y + main_pos, content_w);
+                (void)layout_node(c, content_x + cross_at, content_y + main_pos,
+                                  content_w, definite_h ? avail_h : -1);
 
             /* justify 的额外间距同样累计分配：最后一项刚好落到行尾 */
             ql_coord_t extra = 0;
@@ -2786,7 +2834,7 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
     }
 
     root->abs_cb = ql_rect_make(0, 0, width, height);
-    layout_node(root, 0, 0, width);
+    layout_node(root, 0, 0, width, height);
 
     /* z-index 排序放在最后：之后绘制与命中测试都自动遵循 z 序 */
     sort_tree_by_z(root);
@@ -4002,7 +4050,7 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
     }
 }
 
-static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
+static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = ql_ui_node_style(node);
 
@@ -4402,6 +4450,33 @@ void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
         return;
     ui->click_cb = cb;
     ui->click_user_data = user_data;
+}
+
+/*
+ * `opacity`：把整体透明度乘下去再画。
+ *
+ * 做法是"顺着子树往下乘"而不是"先渲染再整体合成" —— 前者不需要离屏图层，
+ * 背景/边框/阴影/文字/图片会自动一起淡出。差别只在同一子树内部互相覆盖时：
+ * CSS 是先合成一张图再降透明，这里逐图元降透明，重叠处会略微透出来。
+ * 严格一致要离屏图层（见《CSS3 覆盖与裁剪》§20.1），这里选择"便宜且可预期"。
+ */
+static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
+{
+    const QLUIStyle *s = ql_ui_node_style(node);
+    if (s->display == QL_UI_DISPLAY_NONE)
+        return;
+
+    if (s->opacity == 0)
+        return;                      /* 完全透明：整棵子树不用画 */
+
+    const uint8_t saved = d2d->alpha;
+    if (s->opacity < 255 && saved > 0) {
+        uint32_t a = (uint32_t)saved * (uint32_t)s->opacity;
+        a = (a + 127u) / 255u;
+        d2d->alpha = (uint8_t)(a > 255u ? 255u : a);
+    }
+    render_node_inner(node, d2d);
+    d2d->alpha = saved;
 }
 
 ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text)
@@ -5037,6 +5112,70 @@ uint32_t ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms)
     return moving;
 }
 
+/*
+ * 把与毛玻璃元素相交的脏矩形扩成该元素的整个绘制盒。
+ *
+ * 为什么必须扩：毛玻璃不是"按脏区重画自己"就算完的 —— 它读的是**帧缓冲里
+ * 已经画好的像素**。脏区只盖住玻璃的一角时，那一角会用新的背景重新糊，
+ * 其余部分还是上一帧的糊法，交界处出现接缝；更糟的是模糊核在那一角的边缘
+ * 取不到外面的邻居像素，颜色会"断"。
+ *
+ * 代价可控：只有带 backdrop-filter 的元素会让脏区变大，普通界面一条都不多。
+ * 返回扩完之后仍在用的矩形数。
+ */
+static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
+{
+    int any_blur = 0;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        if (ql_ui_node_style(&ui->nodes[i])->backdrop_blur > 0) {
+            any_blur = 1;
+            break;
+        }
+    }
+    if (!any_blur)
+        return n;
+
+    /*
+     * 扩张会让原本不相交的矩形变成相交，所以要做一遍"扩张 + 合并"直到稳定。
+     * 每一趟至少能合并掉一对，最多 n 趟；实际上 2 趟就够（玻璃通常不嵌套）。
+     */
+    for (int pass = 0; pass < n; pass++) {
+        int changed = 0;
+        for (int k = 0; k < n; k++) {
+            for (uint16_t i = 0; i < ui->node_count; i++) {
+                const QLUINodeRT *node = &ui->nodes[i];
+                if (ql_ui_node_style(node)->backdrop_blur <= 0)
+                    continue;
+                const QLRect g = node->paint_box;
+                if (ql_rect_is_empty(g) || !ql_rect_overlaps(out[k], g))
+                    continue;
+                const QLRect u = ql_rect_union(out[k], g);
+                if (u.w != out[k].w || u.h != out[k].h || u.x != out[k].x ||
+                    u.y != out[k].y) {
+                    out[k] = u;
+                    changed = 1;
+                }
+            }
+        }
+        /* 合并相交的矩形（扩张之后可能出现） */
+        for (int a = 0; a < n; a++) {
+            for (int b = a + 1; b < n; b++) {
+                if (!ql_rect_overlaps(out[a], out[b]))
+                    continue;
+                out[a] = ql_rect_union(out[a], out[b]);
+                out[b] = out[n - 1];
+                n--;
+                b--;
+                changed = 1;
+            }
+        }
+        if (!changed)
+            break;
+    }
+    (void)max;
+    return n;
+}
+
 int ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max)
 {
     if (ui == NULL || out == NULL || max <= 0)
@@ -5069,7 +5208,7 @@ int ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max)
         else
             out[max - 1] = ql_rect_union(out[max - 1], r);
     }
-    return n;
+    return dirty_expand_for_blur(ui, out, n, max);
 }
 
 static void set_state_chain(QLUINodeRT *node, uint8_t mask, int on)

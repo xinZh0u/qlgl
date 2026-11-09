@@ -54,6 +54,13 @@ typedef struct {
 struct QLDraw2D {
     /* 设置裁剪矩形（绝对坐标）；之后的绘制都被裁到它里面 */
     void (*set_clip)(QLDraw2D *self, QLRect clip);
+
+    /*
+     * 整体透明度（0..255），**乘到每一个绘制入口的 alpha 上**。
+     * `opacity` 就靠它：一处设置，背景/边框/阴影/文字/图片全部一起淡出，
+     * 不会出现"背景淡了、边还硬着"那种半个正确。
+     */
+    uint8_t alpha;
     /* 圆遮罩（CSS px）。NULL = 该后端不支持，上层据此跳过该特性 */
     void (*set_mask)(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
 
@@ -243,6 +250,21 @@ const QLFont *ql_draw2d_device_font(const QLFont *font, ql_coord_t scale_fx);
  * 推到 QLCanvas 的像素汇点上，GPU 后端要写进顶点属性。
  */
 /* 毛玻璃。后端不支持时返回 0（调用方据此跳过自身背景的半透明处理） */
+/* 整体透明度（见 QLDraw2D.alpha）。0 = 全都别画 */
+static inline void ql_draw2d_set_alpha(QLDraw2D *d2d, uint8_t alpha)
+{
+    if (d2d != NULL)
+        d2d->alpha = alpha;
+}
+
+/* 入口 alpha × 整体 alpha */
+static inline uint8_t ql_draw2d_eff_alpha(const QLDraw2D *d2d, uint8_t alpha)
+{
+    if (d2d == NULL || d2d->alpha >= 255u)
+        return alpha;
+    return (uint8_t)(((uint32_t)alpha * (uint32_t)d2d->alpha + 127u) / 255u);
+}
+
 static inline int ql_draw2d_backdrop_blur(QLDraw2D *d2d, QLRect rect, int sigma)
 {
     if (d2d == NULL || d2d->backdrop_blur == NULL || sigma <= 0)

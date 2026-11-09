@@ -859,9 +859,10 @@ z-index 相同则保持文档顺序（稳定）。</p>
 
 <p><strong>不支持</strong>：<code>transition-delay</code>、<code>box-shadow</code>（构建期报错，不静默降级）。</p>
 <blockquote>
-<p><strong><code>opacity</code> 的真实含义</strong>：本实现没有 CSS 的"组不透明度"（那需要离屏合成），
-<code>transition: opacity</code> 插值的是<strong>背景 alpha</strong>（来自 <code>background-color: rgba(...)</code> 的 a 通道）。
-所以 <code>opacity: 0</code> 在这里等价于"背景变全透明"，子元素不受影响——与 Web 不同，
+<p><strong><code>transition: opacity</code> 与 <code>opacity</code> 不是同一件事</strong>：<code>transition: opacity</code> 插值的是
+<strong>背景 alpha</strong>（<code>background-color</code> 的 a 通道，关键帧 <code>opacity</code> 也落到这里）；
+而普通规则里的 <code>opacity: 0.5</code> 是<strong>整体不透明度</strong>（见下面 3.11.2），两者互不干扰。
+早先的实现只有前者，所以 <code>opacity: 0</code> 等价于"背景全透明、子元素不受影响"—— 现在不是了。
 写过渡时请用 <code>background-color: rgba(...)</code> 表达淡入淡出。</p>
 </blockquote>
 <p>运行期推进（主循环里）：</p>
@@ -1250,6 +1251,51 @@ z-index 相同则保持文档顺序（稳定）。</p>
 的变化只覆盖玻璃的一小块，就只有那一小块被重新模糊，模糊核够不到矩形外的邻居，
 边缘可能出现细接缝 —— 需要绝对干净时，把带 <code>backdrop-filter</code> 的元素整体当脏区。</p>
 <p><strong>构建期报错</strong>：<code>blur()</code> 以外的函数（<code>blur</code> 以外的 <code>backdrop-filter</code> 值）、半径 0 或 &gt; 64。</p>
+<hr />
+<h3 id="3112-opacity">3.11.2 整体不透明度（<code>opacity</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">dim</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">          </span><span class="c">/* 0~1，默认 1 */</span>
+</code></pre></div>
+
+<p>实现方式是<strong>把整体 alpha 乘到每一个绘制入口</strong>上（<code>QLDraw2D.alpha</code>），并且顺着子树往下乘：</p>
+<table>
+<thead>
+<tr>
+<th>会一起淡的</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>背景（含渐变）</td>
+<td><code>bg_alpha × opacity</code></td>
+</tr>
+<tr>
+<td>边框</td>
+<td>描边走新加的 <code>ql_canvas_stroke_rect_alpha()</code></td>
+</tr>
+<tr>
+<td>阴影</td>
+<td><code>shadow_alpha × opacity</code></td>
+</tr>
+<tr>
+<td>文字</td>
+<td>字形覆盖率 × opacity（<code>ql_canvas_draw_glyph_alpha()</code>）</td>
+</tr>
+<tr>
+<td><code>&lt;img&gt;</code></td>
+<td>位图搬运的 alpha × opacity</td>
+</tr>
+<tr>
+<td>子元素</td>
+<td>相加相乘（父 0.5 × 子 0.5 = 0.25）</td>
+</tr>
+</tbody>
+</table>
+<p><code>opacity: 0</code> 时整棵子树直接跳过（连遍历都不做）。</p>
+<p><strong>与 CSS 的差别</strong>：真 CSS 是<strong>组不透明度</strong> —— 子树先合成一张离屏图层再整体降透明。
+这里是逐图元降透明，所以只有"子树内部互相覆盖"的地方会略透（重叠区被乘了两次）。
+不重叠的界面两者逐像素一致。严格版本需要离屏图层（见《CSS3 覆盖与裁剪》§20.1）。</p>
+<p><strong>构建期报错</strong>：不是 0~1 的数字（<code>opacity: abc</code>）、越界（<code>opacity: 1.5</code>）。</p>
 <hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
 <div class="highlight"><pre><span></span><code>float / grid / align-self / align-content / order / flex-flow

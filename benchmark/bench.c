@@ -64,6 +64,13 @@ struct BenchBackend {
     unsigned (*verts)(BenchBackend *b);
     unsigned (*draws)(BenchBackend *b);
     double   (*busy_ms)(BenchBackend *b);
+    /*
+     * 把**最后一帧**读回成 RGB（w*h*3）。返回 0 = 这个后端不支持读回。
+     * 自检（--check）用它，**不能再建第二个 canvas draw2d** ——
+     * `ql_draw2d_canvas_init()` 背后是一份静态上下文，建第二个会把
+     * 正在用的那个 d2d 的 canvas 指针换掉（之后逐帧崩）。
+     */
+    int  (*snapshot)(BenchBackend *b, uint8_t *rgb, int w, int h);
     void (*destroy)(BenchBackend *b);
 };
 
@@ -152,6 +159,22 @@ static void cpu_end(BenchBackend *bb)
     b->busy = bench_now_ms() - b->t0;
 }
 
+static int cpu_snapshot(BenchBackend *bb, uint8_t *rgb, int w, int h)
+{
+    CpuBackend *b = (CpuBackend *)bb;
+    if (b->kind != 0)
+        return 0;      /* 窗口驱动没有读回接口：自检退化成"跳过" */
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            const ql_color_t c = ql_disp_mem_pixel(b->disp, x, y);
+            uint8_t *p = rgb + ((size_t)y * (size_t)w + (size_t)x) * 3u;
+            p[0] = (uint8_t)QL_COLOR_GET_R(c);
+            p[1] = (uint8_t)QL_COLOR_GET_G(c);
+            p[2] = (uint8_t)QL_COLOR_GET_B(c);
+        }
+    return 1;
+}
+
 static double cpu_busy_ms(BenchBackend *bb)
 {
     return ((CpuBackend *)bb)->busy;
@@ -227,6 +250,7 @@ static BenchBackend *cpu_backend_create(const BenchOpts *o)
     b->base.verts = NULL;
     b->base.draws = NULL;
     b->base.busy_ms = cpu_busy_ms;
+    b->base.snapshot = cpu_snapshot;
     b->base.destroy = cpu_destroy;
     cpu_layout_size(&b->base);
     return &b->base;
@@ -290,6 +314,39 @@ static double gl_busy_ms(BenchBackend *bb)
     return (double)ql_gfx_gl_frame_us(((GlBackend *)bb)->gfx) / 1000.0;
 }
 
+/*
+ * 读回最后一帧（RGBA → RGB）。离屏 pbuffer 与保留式 FBO 都支持；
+ * `ql_gfx_gl_read_pixels` 是同步读，只在自检时调一次，不进热路径。
+ */
+static int gl_snapshot(BenchBackend *bb, uint8_t *rgb, int w, int h)
+{
+    GlBackend *b = (GlBackend *)bb;
+#if defined(QLGL_ENABLE_GL)
+    if (b->gfx == NULL)
+        return 0;
+    uint8_t *rgba = (uint8_t *)ql_mem_calloc(1, (size_t)w * (size_t)h * 4u);
+    if (rgba == NULL)
+        return 0;
+    if (ql_gfx_gl_read_pixels(b->gfx, rgba, (uint32_t)w * 4u) != QL_OK) {
+        ql_mem_free(rgba);
+        return 0;
+    }
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            const uint8_t *q = rgba + ((size_t)y * (size_t)w + (size_t)x) * 4u;
+            uint8_t *p = rgb + ((size_t)y * (size_t)w + (size_t)x) * 3u;
+            p[0] = q[0];
+            p[1] = q[1];
+            p[2] = q[2];
+        }
+    ql_mem_free(rgba);
+    return 1;
+#else
+    (void)b; (void)rgb; (void)w; (void)h;
+    return 0;
+#endif
+}
+
 static void gl_destroy(BenchBackend *bb)
 {
     GlBackend *b = (GlBackend *)bb;
@@ -336,6 +393,7 @@ static BenchBackend *gl_backend_create(const BenchOpts *o)
     b->base.verts = gl_verts;
     b->base.draws = gl_draws;
     b->base.busy_ms = gl_busy_ms;
+    b->base.snapshot = gl_snapshot;
     b->base.destroy = gl_destroy;
     gl_layout_size(&b->base);
     return &b->base;
@@ -501,6 +559,53 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
         }
     }
 
+    /*
+     * 自检：把**最后一帧**读回来，数一下"非底色采样"和"颜色种类"。
+     *
+     * 只判"画了东西"这一条，不判具体像素 —— 它要能在任何机器上稳定通过，
+     * 目的是拦住"场景静默变成空白"这类功能退化（CI 里跑）。
+     * 注意用后端的 snapshot 而不是自己再建一块画布：`ql_draw2d_canvas_init()`
+     * 背后是一份静态上下文，建第二个会把正在用的 d2d 换掉（之后逐帧崩）。
+     */
+    int check_ok = 1;
+    if (opts->check) {
+        const int cw = (int)bk->cw, chh = (int)bk->ch;
+        uint8_t *rgb = (uint8_t *)malloc((size_t)cw * (size_t)chh * 3u);
+        if (rgb == NULL) {
+            check_ok = 0;
+        } else if (bk->snapshot == NULL || !bk->snapshot(bk, rgb, cw, chh)) {
+            printf("  [自检跳过] 维度 %s：这个后端不支持读回\n", sc->id);
+        } else {
+            static uint32_t seen[512];
+            int nseen = 0;
+            long nonbg = 0;
+            const uint32_t bgc = bg & 0xFFFFFFu;
+            for (int y = 0; y < chh; y += 4)
+                for (int x = 0; x < cw; x += 4) {
+                    const uint8_t *p = rgb + ((size_t)y * (size_t)cw + (size_t)x) * 3u;
+                    const uint32_t c =
+                        ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+                    if (c != bgc)
+                        nonbg++;
+                    int hit = 0;
+                    for (int k = 0; k < nseen; k++)
+                        if (seen[k] == c) {
+                            hit = 1;
+                            break;
+                        }
+                    if (!hit && nseen < (int)(sizeof(seen) / sizeof(seen[0])))
+                        seen[nseen++] = c;
+                }
+            if (nonbg < 200 || nseen < 8) {
+                printf("  [自检失败] 维度 %s 画面几乎是空白"
+                       "（非底色采样 %ld 个，颜色种类 %d）\n",
+                       sc->id, nonbg, nseen);
+                check_ok = 0;
+            }
+        }
+        free(rgb);
+    }
+
     const double busy_avg = (busy_n > 0) ? (busy_sum / (double)busy_n) : 0.0;
     const unsigned verts_avg = (busy_n > 0) ? (unsigned)(verts_sum / (unsigned long)busy_n) : 0;
     const unsigned draws_avg = (busy_n > 0) ? (unsigned)(draws_sum / (unsigned long)busy_n) : 0;
@@ -527,7 +632,7 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
     ql_ui_detach_input();
     ql_ui_free(ui);
     ql_ui_doc_free(doc);
-    return 1;
+    return check_ok ? 1 : -1;      /* -1 = 画出来了但自检不过（CI 要红） */
 }
 
 /* -------------------------------- main -------------------------------- */
@@ -589,6 +694,7 @@ int main(int argc, char **argv)
 
     BenchResult results[BENCH_SCENE_COUNT];
     int nres = 0;
+    int ncheck_fail = 0;
 
     if (all) {
         for (int i = 0; i < BENCH_SCENE_COUNT; i++) {
@@ -596,8 +702,11 @@ int main(int argc, char **argv)
             int items = (o.scale > 0) ? o.scale : sc->default_scale;
             if (items > sc->max_scale)
                 items = sc->max_scale;
-            if (run_scene(bk, sc, &o, items, &results[nres]))
+            const int rc = run_scene(bk, sc, &o, items, &results[nres]);
+            if (rc != 0)
                 nres++;
+            if (rc < 0)
+                ncheck_fail++;
         }
     } else {
         nids = bench_scene_split(scene_buf, ids, 16);
@@ -610,8 +719,11 @@ int main(int argc, char **argv)
             int items = (o.scale > 0) ? o.scale : sc->default_scale;
             if (items > sc->max_scale)
                 items = sc->max_scale;
-            if (run_scene(bk, sc, &o, items, &results[nres]))
+            const int rc = run_scene(bk, sc, &o, items, &results[nres]);
+            if (rc != 0)
                 nres++;
+            if (rc < 0)
+                ncheck_fail++;
         }
     }
 
@@ -621,5 +733,7 @@ int main(int argc, char **argv)
 
     bk->destroy(bk);
     qlgl_shutdown();
-    return (nres > 0) ? 0 : 1;
+    if (ncheck_fail > 0)
+        printf("\n自检失败 %d 个维度\n", ncheck_fail);
+    return (nres > 0 && ncheck_fail == 0) ? 0 : 1;
 }

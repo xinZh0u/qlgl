@@ -221,9 +221,19 @@ void ql_canvas_fill_round_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t ra
                                   ql_color_t color, uint8_t alpha);
 void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
                               ql_coord_t thickness_fx, ql_color_t color);
+void ql_canvas_stroke_rect_fx_alpha(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
+                                    ql_coord_t thickness_fx, ql_color_t color,
+                                    uint8_t alpha);
 
 void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                            ql_coord_t thickness, ql_color_t color);
+
+/*
+ * 同上，带整体 alpha（0 = 不画）。`opacity` 就靠它：描边是唯一没有 alpha 参数的
+ * 图元，元素透明度要把边框一起带上才不至于"背景淡了、边还硬着"。
+ */
+void ql_canvas_stroke_rect_alpha(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
+                                 ql_coord_t thickness, ql_color_t color, uint8_t alpha);
 void ql_canvas_draw_hline(QLCanvas *canvas, ql_coord_t x1, ql_coord_t x2, ql_coord_t y,
                           ql_coord_t thickness, ql_color_t color);
 void ql_canvas_draw_vline(QLCanvas *canvas, ql_coord_t x, ql_coord_t y1, ql_coord_t y2,
@@ -263,6 +273,23 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
 void ql_canvas_draw_glyph_ex(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
                              ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
                              int italic, int bold);
+
+/*
+ * 同上，再带一个整体 `alpha`（0 = 不画、255 = 原样）。
+ * 元素的 `opacity` 要作用到文字上就走它 —— 字形的覆盖率已经烘进 alpha，
+ * 所以这里是"覆盖率 × 元素透明度"，与背景的混合语义一致。
+ */
+void ql_canvas_draw_glyph_alpha(QLCanvas *canvas, const QLFont *font,
+                                const QLGlyph *glyph, ql_coord_t pen_x,
+                                ql_coord_t baseline_y, ql_color_t color, int italic,
+                                int bold, uint8_t alpha);
+
+/* 同一件事的 affine 版本（`transform: scaleX` + 元素透明度） */
+void ql_canvas_draw_glyph_xf_alpha(QLCanvas *canvas, const QLFont *font,
+                                   const QLGlyph *glyph, ql_coord_t pen_x,
+                                   ql_coord_t baseline_y, ql_color_t color, int italic,
+                                   int bold, ql_coord_t x_fx, ql_coord_t y_fx,
+                                   ql_coord_t pivot_x, ql_coord_t pivot_y, uint8_t alpha);
 
 /*
  * 带**水平 affine** 的字形绘制：`transform: scaleX(sx)` 用这个。

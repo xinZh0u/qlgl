@@ -1210,9 +1210,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>opacity</code></td>
-<td>⏳</td>
-<td>O</td>
-<td><strong>只有 <code>@keyframes</code> 里能用</strong>；普通属性报 <code>不支持的属性 'opacity'</code>。真 CSS 是<strong>组不透明度</strong>，见 §9 的说明</td>
+<td>✅</td>
+<td>R</td>
+<td>0~1，默认 1；<strong>逐图元降透明并顺着子树往下乘</strong>（背景/边框/阴影/文字/图片一起淡）。与真 group opacity 的差别见 §20.1</td>
 </tr>
 <tr>
 <td><code>mix-blend-mode</code> / <code>background-blend-mode</code></td>
@@ -2415,8 +2415,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </tr>
 <tr>
 <td><code>opacity</code></td>
-<td>只有 <code>@keyframes</code> 里能用</td>
-<td>普通属性报错；且只作用于背景 alpha（见 §20.1）</td>
+<td>逐图元降透明</td>
+<td>子元素会一起淡，但<strong>同一子树内部互相覆盖处会略透</strong>（真 group 要离屏图层，见 §20.1）</td>
 </tr>
 <tr>
 <td><code>transform</code></td>
@@ -2499,10 +2499,11 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <h2 id="20">20. 三处"看起来简单、其实不简单"</h2>
 <p>写在这里，免得后面有人当"漏了"顺手补成半成品：</p>
 <ol>
-<li><strong><code>opacity</code> 只能做近似</strong>。真 CSS 的 <code>opacity</code> 是<strong>组不透明度</strong>：整棵子树先合成到一张
-   离屏图层，再整体混合。本库现在只有"元素自己的背景 alpha"（关键帧路径的做法）。
-   做真 group opacity 要在 CPU 与 GL 两端各加一层离屏合成 —— 和 <code>transform: rotate()</code>
-   同级成本，属于独立一项。</li>
+<li><strong><code>opacity</code> 是"逐图元降透明"，不是严格的组不透明度</strong>。真 CSS 把整棵子树先合成到一张
+   离屏图层再整体混合；本库的做法是把整体 alpha 乘到<strong>每一个绘制入口</strong>上，并顺着子树
+   往下乘（<code>QLDraw2D.alpha</code> / <code>ql_draw2d_set_alpha()</code>）。对"子树内部不重叠"的界面两者
+   逐像素一致；只有<strong>子树内部互相覆盖</strong>处会略透（每个图元各自降透明，重叠区乘了两次）。
+   严格版本要在 CPU 与 GL 两端各加一层离屏合成 —— 和 <code>transform: rotate()</code> 同级成本。</li>
 <li><strong><code>margin: auto</code> 是布局概念，不是值解析</strong>。块级盒要在<strong>有确定可用宽度</strong>时分掉剩余空间；
    flex 里的 <code>auto</code> margin 又是另一套（吸收剩余空间）。改动落在 <code>layout_node()</code> 与
    flex 求解器两处。</li>
@@ -2904,7 +2905,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <ul>
 <li><strong><code>transform: rotate()</code> / <code>skew()</code></strong>：要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 +
   字形旋转 + 裁剪盒变换）。做完它，变换才算齐。</li>
-<li><strong>真 group <code>opacity</code></strong>：要离屏图层（见 §20.1）。</li>
+<li><strong>真 group <code>opacity</code></strong>：要离屏图层（见 §20.1）。现在的 <code>opacity</code> 是逐图元降透明。</li>
 </ul>
 <p><strong>建议顺序</strong>：<strong>B1 + B2 一起做</strong>（一次抬 blob 版本、一次重生成 golden），之后 B3 → B4 → B5，
 中间可随时插入 <code>rotate</code>（对动效类页面它比 B5 更实用）。</p>

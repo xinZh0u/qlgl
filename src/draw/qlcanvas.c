@@ -1092,6 +1092,15 @@ static inline void blend_px(uint8_t *row, ql_coord_t x, uint8_t fmt, uint32_t cr
                             uint32_t cg, uint32_t cb, ql_color_t color, uint32_t a);
 
 /* 带圆遮罩的 blend：alpha 先乘上该像素的圆覆盖率 */
+/*
+ * 字形覆盖率的整体缩放（元素 `opacity`）：覆盖率和元素透明度是两次独立的
+ * 乘法，顺序无关，所以直接乘在一起再混一次，不增加任何像素操作。
+ */
+static inline uint32_t ga_scale(uint32_t a, uint32_t ga)
+{
+    return (ga >= 255u) ? a : (a * ga) / 255u;
+}
+
 static inline void blend_px_masked(const QLCanvas *c, uint8_t *row, ql_coord_t x,
                                    ql_coord_t y, uint8_t fmt, uint32_t cr,
                                    uint32_t cg, uint32_t cb, ql_color_t color,
@@ -1559,7 +1568,14 @@ void ql_canvas_fill_round_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t ra
 void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
                               ql_coord_t thickness_fx, ql_color_t color)
 {
-    if (canvas == NULL || thickness_fx <= 0 || rect.w <= 0 || rect.h <= 0)
+    ql_canvas_stroke_rect_fx_alpha(canvas, rect, radius_fx, thickness_fx, color, 255);
+}
+
+void ql_canvas_stroke_rect_fx_alpha(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius_fx,
+                                    ql_coord_t thickness_fx, ql_color_t color,
+                                    uint8_t alpha)
+{
+    if (canvas == NULL || thickness_fx <= 0 || rect.w <= 0 || rect.h <= 0 || alpha == 0)
         return;
 
     /* 上限与整数版逐字一致（整数除法，所以 1px 宽的框直接被判为"画不下"） */
@@ -1589,6 +1605,8 @@ void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius
         if (cov == 0)
             continue;
         uint32_t ay = 255u * (uint32_t)cov / 64u;
+        if (alpha < 255)
+            ay = ay * (uint32_t)alpha / 255u;
 
         ql_coord_t ox0 = 0, ox1 = 0;
         if (!round_span_fx(rect, radius_fx, y, &ox0, &ox1))
@@ -1608,7 +1626,13 @@ void ql_canvas_stroke_rect_fx(QLCanvas *canvas, QLRectFx rect, ql_coord_t radius
 void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                            ql_coord_t thickness, ql_color_t color)
 {
-    if (canvas == NULL || thickness <= 0 || ql_rect_is_empty(rect))
+    ql_canvas_stroke_rect_alpha(canvas, rect, radius, thickness, color, 255);
+}
+
+void ql_canvas_stroke_rect_alpha(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
+                                 ql_coord_t thickness, ql_color_t color, uint8_t alpha)
+{
+    if (canvas == NULL || thickness <= 0 || ql_rect_is_empty(rect) || alpha == 0)
         return;
 
     if (thickness > rect.w / 2)
@@ -1620,18 +1644,22 @@ void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
 
     if (radius <= 0) {
         /* 直边快速路径：四条矩形 */
-        ql_canvas_fill_rect(canvas, ql_rect_make(rect.x, rect.y, rect.w, thickness), color);
-        ql_canvas_fill_rect(canvas,
-                            ql_rect_make(rect.x, ql_rect_bottom(rect) - thickness, rect.w, thickness),
-                            color);
-        ql_canvas_fill_rect(canvas,
-                            ql_rect_make(rect.x, rect.y + thickness, thickness,
-                                         rect.h - 2 * thickness),
-                            color);
-        ql_canvas_fill_rect(canvas,
-                            ql_rect_make(ql_rect_right(rect) - thickness, rect.y + thickness,
-                                         thickness, rect.h - 2 * thickness),
-                            color);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(rect.x, rect.y, rect.w, thickness), color,
+                                  alpha);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(rect.x, ql_rect_bottom(rect) - thickness,
+                                               rect.w, thickness),
+                                  color, alpha);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(rect.x, rect.y + thickness, thickness,
+                                               rect.h - 2 * thickness),
+                                  color, alpha);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(ql_rect_right(rect) - thickness,
+                                               rect.y + thickness, thickness,
+                                               rect.h - 2 * thickness),
+                                  color, alpha);
         return;
     }
 
@@ -1659,14 +1687,14 @@ void ql_canvas_stroke_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
         ql_coord_t seg1 = (has_inner ? ix0 - 1 : ox1);
         if (seg1 > clip_x1) seg1 = clip_x1;
         if (seg1 >= seg0)
-            fill_row(canvas, seg0, seg1, y, color, 255);
+            fill_row(canvas, seg0, seg1, y, color, alpha);
 
         /* 右段 */
         if (has_inner) {
             seg0 = ix1 + 1 > clip_x0 ? ix1 + 1 : clip_x0;
             seg1 = ox1 < clip_x1 ? ox1 : clip_x1;
             if (seg1 >= seg0)
-                fill_row(canvas, seg0, seg1, y, color, 255);
+                fill_row(canvas, seg0, seg1, y, color, alpha);
         }
     }
 }
@@ -1750,9 +1778,9 @@ void ql_canvas_draw_line(QLCanvas *canvas, ql_coord_t x1, ql_coord_t y1,
  */
 static void glyph_blit(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
                        ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
-                       ql_coord_t shear, ql_coord_t strike)
+                       ql_coord_t shear, ql_coord_t strike, uint32_t ga)
 {
-    if (canvas == NULL || font == NULL || glyph == NULL)
+    if (canvas == NULL || font == NULL || glyph == NULL || ga == 0u)
         return;
     if (glyph->box_w == 0 || glyph->box_h == 0)
         return;
@@ -1824,7 +1852,7 @@ static void glyph_blit(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyp
                 uint8_t nib = (gx % 2 == 0) ? (uint8_t)(byte >> 4) : (uint8_t)(byte & 0x0Fu);
                 if (nib != 0)
                     blend_px(row, line_x0 + gx, fmt, cr, cg, cb, color,
-                             (uint32_t)nib * 17u);
+                             ga_scale((uint32_t)nib * 17u, ga));
             }
             break;
         case 1:
@@ -1832,7 +1860,7 @@ static void glyph_blit(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyp
                 uint8_t byte = src[(uint32_t)gx / 8u];
                 if (byte & (0x80u >> (gx % 8)))
                     blend_px_masked(canvas, row, line_x0 + gx, y, fmt, cr, cg, cb, color,
-                                    255u);
+                                    ga);
             }
             break;
         default:
@@ -1840,7 +1868,7 @@ static void glyph_blit(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyp
                 uint8_t a = src[gx];
                 if (a != 0)
                     blend_px_masked(canvas, row, line_x0 + gx, y, fmt, cr, cg, cb, color,
-                                    a);
+                                    ga_scale(a, ga));
             }
             break;
         }
@@ -1858,9 +1886,9 @@ static void glyph_blit_xf(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
                           ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
                           ql_coord_t shear, ql_coord_t strike,
                           ql_coord_t x_fx, ql_coord_t y_fx,
-                          ql_coord_t pivot_x, ql_coord_t pivot_y)
+                          ql_coord_t pivot_x, ql_coord_t pivot_y, uint32_t ga)
 {
-    if (canvas == NULL || font == NULL || glyph == NULL)
+    if (canvas == NULL || font == NULL || glyph == NULL || ga == 0u)
         return;
     if (glyph->box_w == 0 || glyph->box_h == 0 || x_fx == 0 || y_fx == 0)
         return;
@@ -1972,6 +2000,7 @@ static void glyph_blit_xf(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
                     if (v > a)
                         a = v;
                 }
+            a = ga_scale(a, ga);
             if (a == 0)
                 continue;
             blend_px_masked(canvas, row, x, y, fmt, cr, cg, cb, color, a);
@@ -1985,11 +2014,21 @@ void ql_canvas_draw_glyph_xf2(QLCanvas *canvas, const QLFont *font, const QLGlyp
                               ql_coord_t x_fx, ql_coord_t y_fx,
                               ql_coord_t pivot_x, ql_coord_t pivot_y)
 {
-    if (glyph == NULL)
+    ql_canvas_draw_glyph_xf_alpha(canvas, font, glyph, pen_x, baseline_y, color, italic,
+                                  bold, x_fx, y_fx, pivot_x, pivot_y, 255);
+}
+
+void ql_canvas_draw_glyph_xf_alpha(QLCanvas *canvas, const QLFont *font,
+                                   const QLGlyph *glyph, ql_coord_t pen_x,
+                                   ql_coord_t baseline_y, ql_color_t color, int italic,
+                                   int bold, ql_coord_t x_fx, ql_coord_t y_fx,
+                                   ql_coord_t pivot_x, ql_coord_t pivot_y, uint8_t alpha)
+{
+    if (glyph == NULL || alpha == 0)
         return;
     if (x_fx == QL_SCALE_ONE && y_fx == QL_SCALE_ONE) {
-        ql_canvas_draw_glyph_ex(canvas, font, glyph, pen_x, baseline_y, color, italic,
-                                bold);
+        ql_canvas_draw_glyph_alpha(canvas, font, glyph, pen_x, baseline_y, color, italic,
+                                   bold, alpha);
         return;
     }
     ql_coord_t shear = 0;
@@ -1997,26 +2036,35 @@ void ql_canvas_draw_glyph_xf2(QLCanvas *canvas, const QLFont *font, const QLGlyp
         shear = (ql_coord_t)((int64_t)glyph->box_h * QL_GLYPH_SLANT_NUM *
                              QL_GLYPH_SHEAR_SUB / QL_GLYPH_SLANT_DEN);
     glyph_blit_xf(canvas, font, glyph, pen_x, baseline_y, color, shear, 0, x_fx, y_fx,
-                  pivot_x, pivot_y);
+                  pivot_x, pivot_y, alpha);
     if (bold)
         glyph_blit_xf(canvas, font, glyph, pen_x, baseline_y, color, shear, 1, x_fx, y_fx,
-                      pivot_x, pivot_y);
+                      pivot_x, pivot_y, alpha);
 }
 
 void ql_canvas_draw_glyph_ex(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
                              ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
                              int italic, int bold)
 {
-    if (glyph == NULL)
+    ql_canvas_draw_glyph_alpha(canvas, font, glyph, pen_x, baseline_y, color, italic,
+                               bold, 255);
+}
+
+void ql_canvas_draw_glyph_alpha(QLCanvas *canvas, const QLFont *font,
+                                const QLGlyph *glyph, ql_coord_t pen_x,
+                                ql_coord_t baseline_y, ql_color_t color, int italic,
+                                int bold, uint8_t alpha)
+{
+    if (glyph == NULL || alpha == 0)
         return;
     ql_coord_t shear = 0;      /* 1/16 像素单位 */
     if (italic && glyph->box_h > 1)
         shear = (ql_coord_t)((int64_t)glyph->box_h * QL_GLYPH_SLANT_NUM *
                              QL_GLYPH_SHEAR_SUB / QL_GLYPH_SLANT_DEN);
-    glyph_blit(canvas, font, glyph, pen_x, baseline_y, color, shear, 0);
+    glyph_blit(canvas, font, glyph, pen_x, baseline_y, color, shear, 0, alpha);
     if (bold) {
         /* 第二遍右移 1px：先画斜体那份、再补一遍，两遍剪切一致 */
-        glyph_blit(canvas, font, glyph, pen_x, baseline_y, color, shear, 1);
+        glyph_blit(canvas, font, glyph, pen_x, baseline_y, color, shear, 1, alpha);
     }
 }
 

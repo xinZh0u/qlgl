@@ -404,6 +404,17 @@ typedef struct {
      * `<pre>` / `<code>` / `<kbd>` / `<samp>` 走等宽，其余走正文。
      */
     uint8_t     font_family;
+
+    /*
+     * `opacity`：元素整体的不透明度（0..255，255 = 不透明）。
+     *
+     * 施加方式是**绘制期把所有 alpha 乘一遍**（背景/边框/阴影/文字/图片），
+     * 并且顺着子树往下乘 —— 所以子元素也会一起淡出，观感接近 CSS 的
+     * group opacity。差别只在"同一子树内部互相覆盖"的场合：CSS 是先合成
+     * 一张图再整体降透明，这里是逐个图元降透明，重叠处会略微透出来。
+     * 要做到严格一致需要离屏图层（见《CSS3 覆盖与裁剪》§20.1）。
+     */
+    uint8_t     opacity;
 } QLUIStyle;
 
 /*
@@ -1125,7 +1136,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    16u  /* 16: QLUIStyle += min/max-width/height */
+#define QL_UI_BLOB_VERSION    17u  /* 17: QLUIStyle += opacity */
 
 typedef struct {
     uint32_t magic;

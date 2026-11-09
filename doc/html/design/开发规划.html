@@ -2888,6 +2888,37 @@ blob v10 → <strong>v11</strong>。</p>
 内存可控；代价是使用者得学一个范式。第 8 步就是为了把这件事定下来并写成文档，
 <strong>在它定案之前不要往移动端堆功能</strong>。</p>
 <hr />
+<h3 id="m80-2026-11-09">M8.0 · 三个"小尾巴" —— <strong>已完成（2026-11-09）</strong></h3>
+<p>顺手收掉的三处"能用但别扭"：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>之前</th>
+<th>现在</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>百分比高度链</strong></td>
+<td>普通元素 <code>height:100%</code> 一律按基准 0 解析 → 套一层 <code>&lt;div class=stage&gt;</code> 就变 0 高，只能把 <code>position:relative</code> 塞进 <code>#root</code> 绕开</td>
+<td><code>layout_node()</code> 带 <code>basis_h</code>：父级高度确定时百分比才有解，父级 auto 时退回 auto（与 CSS 一致）；flex 行列、绝对定位包含块都按各自基准</td>
+</tr>
+<tr>
+<td><strong>毛玻璃的脏区接缝</strong></td>
+<td>脏区只盖玻璃一角时，只有那一角被重新糊 → 交界处接缝 + 模糊核取不到邻居</td>
+<td><code>ql_ui_consume_dirty()</code> 里凡与带 <code>backdrop-filter</code> 节点相交的脏矩形，扩成该节点整个绘制盒（实测：不做时脏区重绘与整屏重绘差 7118 像素）</td>
+</tr>
+<tr>
+<td><strong>静态 <code>opacity</code></strong></td>
+<td>只有 <code>@keyframes</code> 里能用；普通规则报"不支持的属性"</td>
+<td><code>QLDraw2D.alpha</code> 全局相乘（背景/边框/阴影/文字/图片），顺着子树往下乘；<code>opacity: 0</code> 整棵子树跳过。逐图元降透明 ≠ 严格 group opacity（见《CSS3 覆盖与裁剪》§20.1）</td>
+</tr>
+</tbody>
+</table>
+<p>配套：<code>test_pct_height</code>（6 组）、<code>test_blur_dirty</code>（脏区 vs 整屏逐像素）、
+<code>test_opacity</code>（CPU + GPU，25 项）；blob v17（<code>QLUIStyle</code> 的 2 字节尾部填充改成 <code>opacity</code>，
+结构体仍是 140）。</p>
 <h3 id="m8-css3-2026-11-09">M8 · CSS3 补全（五批）—— <strong>计划（2026-11-09 定案）</strong></h3>
 <p>HTML5 标签覆盖已到 114/114（含占位），接下来补 CSS。逐条覆盖与批次见
 <a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a>。</p>

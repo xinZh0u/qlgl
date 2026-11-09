@@ -256,7 +256,7 @@ if(QLGL_BUILD_TESTS)
     file(GLOB QLGL_TEST_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/*/*.c)
     foreach(test_src ${QLGL_TEST_SRC})
         get_filename_component(test_name ${test_src} NAME_WE)
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_line_height$|^test_text_wrap$|^test_html_tags$|^test_text_style$|^test_scroll$|^test_input_edit$|^test_select$|^test_progress$|^test_details$|^test_dialog$|^test_image$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_line_height$|^test_text_wrap$|^test_html_tags$|^test_text_style$|^test_scroll$|^test_input_edit$|^test_select$|^test_progress$|^test_details$|^test_dialog$|^test_image$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^test_pct_height$|^test_blur_dirty$|^test_opacity$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
@@ -355,6 +355,19 @@ if(QLGL_BUILD_TESTS)
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/gen_assets.cmake)
     endif()
 endif()
+
+    # ---- benchmark 回归 ----
+    #
+    # 每个维度只跑 0.05 s（跑完 8 个维度约 0.4 s），然后自检"最后一帧不是空白"。
+    # 这条不是性能门槛（CI 机器抖动会让 FPS 断言天天红），而是**功能门槛**：
+    # 场景被改坏、渲染管线静默画不出东西时，它会立刻失败。
+    #
+    # 想在本机看性能门槛：bench --backend cpu --offscreen（人工读表）。
+    if(QLGL_BUILD_BENCHMARK)
+        add_test(NAME test_bench_check
+                 COMMAND bench --backend cpu --offscreen --seconds 0.05 --check)
+        set_tests_properties(test_bench_check PROPERTIES TIMEOUT 120)
+    endif()
 
 # 重新生成类型 id 表：cmake --build build --target qlgen
 find_package(Python3 COMPONENTS Interpreter QUIET)

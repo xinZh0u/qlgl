@@ -338,9 +338,10 @@ z-index 相同则保持文档顺序（稳定）。
 
 **不支持**：`transition-delay`、`box-shadow`（构建期报错，不静默降级）。
 
-> **`opacity` 的真实含义**：本实现没有 CSS 的"组不透明度"（那需要离屏合成），
-> `transition: opacity` 插值的是**背景 alpha**（来自 `background-color: rgba(...)` 的 a 通道）。
-> 所以 `opacity: 0` 在这里等价于"背景变全透明"，子元素不受影响——与 Web 不同，
+> **`transition: opacity` 与 `opacity` 不是同一件事**：`transition: opacity` 插值的是
+> **背景 alpha**（`background-color` 的 a 通道，关键帧 `opacity` 也落到这里）；
+> 而普通规则里的 `opacity: 0.5` 是**整体不透明度**（见下面 3.11.2），两者互不干扰。
+> 早先的实现只有前者，所以 `opacity: 0` 等价于"背景全透明、子元素不受影响"—— 现在不是了。
 > 写过渡时请用 `background-color: rgba(...)` 表达淡入淡出。
 
 运行期推进（主循环里）：
@@ -612,6 +613,33 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 边缘可能出现细接缝 —— 需要绝对干净时，把带 `backdrop-filter` 的元素整体当脏区。
 
 **构建期报错**：`blur()` 以外的函数（`blur` 以外的 `backdrop-filter` 值）、半径 0 或 > 64。
+
+---
+
+### 3.11.2 整体不透明度（`opacity`）
+
+```css
+.dim { opacity: 0.5; }          /* 0~1，默认 1 */
+```
+
+实现方式是**把整体 alpha 乘到每一个绘制入口**上（`QLDraw2D.alpha`），并且顺着子树往下乘：
+
+| 会一起淡的 | 说明 |
+|---|---|
+| 背景（含渐变） | `bg_alpha × opacity` |
+| 边框 | 描边走新加的 `ql_canvas_stroke_rect_alpha()` |
+| 阴影 | `shadow_alpha × opacity` |
+| 文字 | 字形覆盖率 × opacity（`ql_canvas_draw_glyph_alpha()`） |
+| `<img>` | 位图搬运的 alpha × opacity |
+| 子元素 | 相加相乘（父 0.5 × 子 0.5 = 0.25） |
+
+`opacity: 0` 时整棵子树直接跳过（连遍历都不做）。
+
+**与 CSS 的差别**：真 CSS 是**组不透明度** —— 子树先合成一张离屏图层再整体降透明。
+这里是逐图元降透明，所以只有"子树内部互相覆盖"的地方会略透（重叠区被乘了两次）。
+不重叠的界面两者逐像素一致。严格版本需要离屏图层（见《CSS3 覆盖与裁剪》§20.1）。
+
+**构建期报错**：不是 0~1 的数字（`opacity: abc`）、越界（`opacity: 1.5`）。
 
 ---
 

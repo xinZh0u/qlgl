@@ -454,6 +454,9 @@ static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_
 static void cpu_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
     if (!has_offset(self)) {
         ql_canvas_fill_rect_alpha(ctx->canvas, sx(self, rect), color, alpha);
         return;
@@ -465,6 +468,9 @@ static void cpu_fill_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                 ql_color_t color, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
     if (!has_offset(self)) {
         ql_canvas_fill_round_rect_alpha(ctx->canvas, sx(self, rect), sl(self, radius), color,
                                         alpha);
@@ -479,6 +485,9 @@ static void cpu_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t
                                          uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
     /* 渐变走的是逐行整像素填充：偏移只取整数部分（亚像素对渐变几乎看不出） */
     ql_canvas_fill_round_rect_gradient(ctx->canvas,
                                        sx(self, shift_rect_rounded(self, rect)),
@@ -491,6 +500,9 @@ static void cpu_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
                             ql_color_t color, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
     ql_canvas_fill_shadow(ctx->canvas, sx(self, shift_rect_rounded(self, inner)),
                           sl(self, radius), sl(self, blur), sl(self, dx), sl(self, dy),
                           color, alpha);
@@ -500,13 +512,17 @@ static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius
                                   ql_coord_t thickness, ql_color_t color)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    const uint8_t alpha = ql_draw2d_eff_alpha(self, 255);
+    if (alpha == 0)
+        return;
     if (!has_offset(self)) {
-        ql_canvas_stroke_rect(ctx->canvas, sx(self, rect), sl(self, radius),
-                              sl(self, thickness), color);
+        ql_canvas_stroke_rect_alpha(ctx->canvas, sx(self, rect), sl(self, radius),
+                                    sl(self, thickness), color, alpha);
         return;
     }
-    ql_canvas_stroke_rect_fx(ctx->canvas, sxf(self, rect), ql_fx_of(sl(self, radius)),
-                             ql_fx_of(sl(self, thickness)), color);
+    ql_canvas_stroke_rect_fx_alpha(ctx->canvas, sxf(self, rect),
+                                   ql_fx_of(sl(self, radius)),
+                                   ql_fx_of(sl(self, thickness)), color, alpha);
 }
 
 static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *glyph,
@@ -518,15 +534,18 @@ static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gl
      * 只有"不是等比正缩放"时才需要逐字形做水平 affine（压扁 / 镜像）。
      * 等比时字形已经换过字号，这里保持恒等 —— 那条路必须逐像素不变。
      */
+    const uint8_t alpha = ql_draw2d_eff_alpha(self, 255);
+    if (alpha == 0)
+        return;
     if (!self->text_geo) {
-        ql_canvas_draw_glyph_ex(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
-                                ts->italic != 0, ts->bold != 0);
+        ql_canvas_draw_glyph_alpha(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+                                   ts->italic != 0, ts->bold != 0, alpha);
         return;
     }
-    ql_canvas_draw_glyph_xf2(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
-                             ts->italic != 0, ts->bold != 0,
-                             self->elem_x_fx, self->elem_y_fx,
-                             self->text_px, self->text_py);
+    ql_canvas_draw_glyph_xf_alpha(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+                                  ts->italic != 0, ts->bold != 0,
+                                  self->elem_x_fx, self->elem_y_fx,
+                                  self->text_px, self->text_py, alpha);
 }
 
 /*
@@ -615,6 +634,9 @@ static void cpu_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
                            const QLRect *src, ql_coord_t radius, uint8_t alpha)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
     /* dst 走与其它图元完全相同的坐标变换（offset / DPR / elem scale） */
     ql_canvas_blit_image(ctx->canvas, img,
                          ql_rect_from_fx(sxf(self, shift_rect_rounded(self, dst))), src,
@@ -646,6 +668,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->offset_x_fx = 0;
     out->offset_y_fx = 0;
     out->mask_r = -1;
+    out->alpha = 255;          /* 默认不透明 */
     out->elem_x_fx = QL_SCALE_ONE;
     out->text_geo = 0;
     out->elem_y_fx = QL_SCALE_ONE;

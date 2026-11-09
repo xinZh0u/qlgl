@@ -168,7 +168,7 @@ UA 默认样式（UA_DEFAULTS）
 |---|---|
 | 不支持的标签 | `<table>` / `<img>` / `<input>`（提示会告诉你替代做法） |
 | HTML 结构错 | 结束标签不匹配、标签未闭合、根元素不是恰好 1 个 |
-| 属性名不认识 | `inset` / `opacity` / 任意拼错的属性 |
+| 属性名不认识 | `inset` / 任意拼错的属性 |
 | 属性值不认识 | `position: sticky`、`display: grid`、`border: 2px dashed` |
 | 单位 | `1.5em` / `rem` / `vh`（只支持 `px` 与 `%`） |
 | 颜色 | `#12345`、拼错的命名色 |
