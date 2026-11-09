@@ -1,24 +1,28 @@
 #root { width: 300px; height: 240px; background-color: #10161E; color: #D6E2F0;
         font-size: 11px; padding: 6px; }
-.hd { font-size: 13px; color: #7CE0FF; margin-bottom: 6px; }
-.row { margin-bottom: 10px; }
-.b { display: inline-block; width: 74px; height: 26px; line-height: 26px;
-     text-align: center; background-color: #1B2531; color: #C8D2DE;
+.hd { font-size: 12px; color: #7CE0FF; margin-bottom: 6px; }
+.row { display: flex; align-items: center; gap: 10px; height: 38px; }
+.b { width: 78px; height: 24px; line-height: 24px; text-align: center;
+     background-color: #1B2531; color: #C8D2DE;
      border-width: 2px; border-color: #E0A030; border-radius: 3px; }
 .b.solid { border-style: solid; }
 .b.dashed { border-style: dashed; }
 .b.dotted { border-style: dotted; }
-.b.d1 { border-width: 1px; border-style: dashed; }
-.b.d4 { border-width: 4px; border-style: dotted; }
-.b.r8 { border-style: dashed; border-radius: 8px; }
-.o0, .o4, .om { display: inline-block; width: 70px; height: 22px;
-               line-height: 22px; text-align: center; margin-right: 12px;
-               background-color: #22303F; border: 1px solid #3C4E63;
-               outline: 2px solid #38BDF8; }
-.o4 { outline-offset: 4px; }
-.om { outline-offset: -3px; outline-color: #F472B6; }
-.focus, .nodraw { display: inline-block; width: 90px; height: 22px;
-                  line-height: 22px; text-align: center; background-color: #22303F;
-                  border: 1px solid #3C4E63; }
-.focus:focus { outline: 2px solid #4ADE80; outline-offset: 2px; }
-.nodraw { border-width: 4px; border-style: none; }
+.b.sides { border-width: 3px; border-style: solid; border-top-color: #EF4444;
+           border-left-color: #38BDF8; border-right-color: #1B2531;
+           border-bottom-color: #1B2531; }
+.b.only { border-width: 0 0 4px 0; border-style: solid; border-color: #4ADE80; }
+.b.r4 { border-style: solid; border-radius: 0 0 10px 10px; }
+.o { width: 74px; height: 22px; line-height: 22px; text-align: center;
+     background-color: #22303F; border: 1px solid #3C4E63;
+     outline: 2px solid #38BDF8; }
+.o.o4 { outline-offset: 3px; }
+.o.om { outline-offset: -3px; outline-color: #F472B6; }
+.sh2 { width: 78px; height: 22px; line-height: 22px; text-align: center;
+       background-color: #22303F;
+       box-shadow: 4px 0 0 #EF4444, 0 4px 0 #38BDF8; }
+.ins { width: 78px; height: 22px; line-height: 22px; text-align: center;
+       background-color: #2A3644; box-shadow: inset 0 0 6px #000000; }
+.tsh { width: 58px; height: 22px; line-height: 22px; text-align: center;
+       color: #FFFFFF; background-color: #22303F;
+       text-shadow: 1px 1px 0 #EF4444; }

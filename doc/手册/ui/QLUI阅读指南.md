@@ -92,7 +92,9 @@ typedef struct {
     uint32_t   bg_color, text_color, border_color;
     QLUILength width, height;      /* { 值, auto/px/% } */
     QLUIEdges  margin, padding;    /* 上右下左 */
-    uint8_t    display, bg_alpha, border_width, border_radius;
+    uint8_t    display, bg_alpha;
+    uint8_t    border_w[4];        /* 上 右 下 左 */
+    int16_t    radius[4];          /* 左上 右上 右下 左下 */
     uint8_t    text_align, font_id, box_sizing;
 } QLUIStyle;
 ```

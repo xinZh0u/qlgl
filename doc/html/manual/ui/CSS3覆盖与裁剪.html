@@ -277,14 +277,18 @@ main img.shot { max-width: 100%; }
 <td>blob v25（见 §18.5）</td>
 </tr>
 <tr>
+<td>四边 <code>border-*</code> / 四角 <code>border-*-radius</code> / 两层 + inset 阴影 / <code>text-shadow</code> / <code>image-rendering</code> / <code>scrollbar-*</code> / <code>object-position</code></td>
+<td>blob v26（见 §18.6）</td>
+</tr>
+<tr>
 <td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
 <td>编译成<strong>后缀字节码</strong>存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉</td>
 </tr>
 </tbody>
 </table>
-<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、四边独立 <code>border-*</code>、
-多重/<code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>（B4 剩余）、
-<code>transform: rotate()</code>、<code>word-spacing</code>、<code>text-align: justify</code>。</p>
+<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>background-size/position</code>（等 <code>background-image: url()</code>）、
+<code>transform: rotate()</code> / <code>skew()</code>、<code>word-spacing</code>、<code>text-align: justify</code>、
+阴影的 <code>spread</code> 展开半径、椭圆 <code>border-radius</code>（斜杠写法）。</p>
 <blockquote>
 <p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
 逐行状态在下一次整理时同步。</p>
@@ -1124,13 +1128,13 @@ main img.shot { max-width: 100%; }
 <td><code>background-size</code></td>
 <td>⏳</td>
 <td>R</td>
-<td><code>cover</code> / <code>contain</code> / 具体尺寸；影响绘制矩形，改动小</td>
+<td>等 <code>background-image: url()</code> 落地（渐变的尺寸就是元素尺寸）</td>
 </tr>
 <tr>
 <td><code>background-position</code></td>
 <td>⏳</td>
 <td>R</td>
-<td></td>
+<td>同上</td>
 </tr>
 <tr>
 <td><code>background-repeat</code> / <code>-attachment</code> / <code>-clip</code> / <code>-origin</code></td>
@@ -1140,21 +1144,21 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>border</code>（简写）</td>
-<td>⚠️</td>
+<td>✅</td>
 <td>R</td>
-<td>只认 <code>&lt;width&gt;px solid &lt;color&gt;</code></td>
+<td><code>&lt;width&gt;px &lt;style&gt; &lt;color&gt;</code>，三段任意顺序</td>
 </tr>
 <tr>
 <td><code>border-width</code></td>
 <td>✅</td>
 <td>R</td>
-<td>四边统一</td>
+<td>1 / 2 / 4 个值（上右下左）</td>
 </tr>
 <tr>
 <td><code>border-color</code></td>
 <td>✅</td>
 <td>R</td>
-<td>四边统一</td>
+<td>1 / 2 / 4 个颜色（上右下左）</td>
 </tr>
 <tr>
 <td><code>border-style</code></td>
@@ -1163,34 +1167,40 @@ main img.shot { max-width: 100%; }
 <td><code>solid</code> / <code>dashed</code> / <code>dotted</code> / <code>none</code>。虚线是<strong>沿边切段填矩形</strong>（不碰 SDF，CPU 与 GL 同一条路径），图案尺寸跟线宽走（dashed 段 3w 缝 2w、dotted 点 1w 缝 1w）。已知差异：与 <code>border-radius</code> 同用时按直角画；<code>double</code> / <code>groove</code> 等仍报错</td>
 </tr>
 <tr>
-<td><code>border-top/right/bottom/left-width</code></td>
-<td>⏳</td>
-<td>R</td>
-<td><code>不支持的属性 'border-top-width'</code>；<code>QLDraw2D::stroke_round_rect</code> 只画整圈</td>
-</tr>
-<tr>
-<td><code>border-*-color</code> / <code>border-*-style</code></td>
-<td>⏳</td>
-<td>R</td>
-<td>同上</td>
-</tr>
-<tr>
-<td><code>border-bottom: none</code> 之类的单边简写</td>
-<td>⏳</td>
-<td>R</td>
-<td>同上</td>
-</tr>
-<tr>
-<td><code>border-radius</code>（单值）</td>
+<td><code>border-{top,right,bottom,left}</code>（单边简写）</td>
 <td>✅</td>
 <td>R</td>
-<td>px 或 %；≥ 短边一半时是胶囊/内切圆</td>
+<td>与 <code>border</code> 同一套 token 判别，写进那一边的长写属性</td>
 </tr>
 <tr>
-<td><code>border-radius</code>（四角 / 斜杠椭圆角）</td>
+<td><code>border-*-width</code> / <code>-style</code> / <code>-color</code></td>
+<td>✅</td>
+<td>R</td>
+<td>单边长写；布局按四边各自的宽度内缩内容盒</td>
+</tr>
+<tr>
+<td><code>border-radius</code>（1 / 2 / 4 个值）</td>
+<td>✅</td>
+<td>R</td>
+<td><code>4px</code> 四角同；<code>4px 8px</code> 是"左上右下 / 右上左下"；四个值按 左上 右上 右下 左下。≥ 短边一半时是胶囊/内切圆</td>
+</tr>
+<tr>
+<td><code>border-{corner}-radius</code></td>
+<td>✅</td>
+<td>R</td>
+<td>四角长写，可单独覆盖</td>
+</tr>
+<tr>
+<td><code>border-radius</code> 斜杠椭圆角</td>
 <td>⏳</td>
 <td>R</td>
-<td><code>不支持的长度 '4px 8px 12px 16px'</code>；椭圆角要改 SDF，成本高</td>
+<td><code>10px / 20px</code> 报错：椭圆角要改两套 SDF，收益低</td>
+</tr>
+<tr>
+<td>四边不同色 + 圆角</td>
+<td>⚠️</td>
+<td>R</td>
+<td>四条边各自裁一次整圈描边；<strong>角部归上/下边</strong>（浏览器沿 45° 斜线切分）</td>
 </tr>
 <tr>
 <td><code>border-image</code></td>
@@ -1206,9 +1216,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>box-shadow</code>（多重 / <code>inset</code>）</td>
-<td>⏳</td>
-<td>O</td>
-<td><code>box-shadow 里无法识别 ','</code>；<code>inset</code> 要反向 SDF</td>
+<td>✅</td>
+<td>R</td>
+<td>最多<strong>两层</strong>（多写的报错，不静默丢弃）；<code>inset</code> 用反向 SDF（GPU <code>mode=7</code>）。<code>spread</code>（展开半径）报错</td>
+</tr>
+<tr>
+<td><code>text-shadow</code></td>
+<td>✅</td>
+<td>R</td>
+<td>一层（多层的语义是叠色）；<code>blur</code> 用 5 次采样近似（0~16px）</td>
 </tr>
 <tr>
 <td><code>outline</code> + <code>-width/-style/-color/-offset</code></td>
@@ -2105,11 +2121,13 @@ out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面
 | <code>direction</code> / <code>unicode-bidi</code> | ❌ | <strong>X</strong>：RTL 需要 bidi 算法 + 文本整形 |
 | <code>will-change</code> / <code>contain</code> / <code>backface-visibility</code> | ❌ | <strong>N</strong>：GPU 优化提示，自有渲染器不消费 |
 | Speech（<code>speak</code> / <code>volume</code> / <code>pause</code>…） | — | <strong>N</strong>：与 GUI 无关 |
-| <code>scrollbar-*</code> / <code>scrollbar-width</code> / <code>scrollbar-color</code> | ⏳ | <strong>R</strong>：滚动条现在是内置样式（<code>SCROLLBAR_W</code> / <code>0x808080 @ 0x96</code>），暴露成属性很便宜 |
+| <code>scrollbar-width</code> | ✅ | <strong>R</strong>：<code>auto</code>(4px) / <code>thin</code>(2px) / <code>none</code>（不画）。只影响覆盖式滚动条（本库滚动条不占布局） |
+| <code>scrollbar-color</code> | ✅ | <strong>R</strong>：<code>&lt;thumb&gt; [track]</code>，轨道暂不画；<code>auto</code> 用默认中灰 |
+| <code>scrollbar-gutter</code> | ❌ | <strong>N</strong>：本库滚动条不占布局，没有"占位"问题 |
 | <code>scroll-snap-*</code> | ❌ | <strong>T</strong>：要持续重绘 + 吸附动画 |
-| <code>image-rendering</code> | ⏳ | <strong>R</strong>：CPU 已是最近邻放大；GL 用的是 <code>GL_NEAREST</code>，做成属性很便宜 |
+| <code>image-rendering</code> | ✅ | <strong>R</strong>：<code>pixelated</code> 走最近邻；<code>auto</code>/<code>smooth</code> 交给后端默认。<strong>CPU 后端只有最近邻</strong>，所以这个属性在 CPU 上没有可见差异（GL 放大时才有） |
 | <code>object-fit</code> | ✅ | <strong>R</strong> | <code>fill</code> / <code>contain</code> / <code>cover</code> 等（<code>background-size</code> 的兄弟） |
-| <code>object-position</code> | ⏳ | <strong>R</strong> | |
+| <code>object-position</code> | ✅ | <strong>R</strong> | 1~2 个值（百分比 / px / <code>center</code>/<code>left</code>/<code>right</code>/<code>top</code>/<code>bottom</code>）；<code>cover</code> 时改的是源矩形（决定露哪一块） |
 | <code>image-orientation</code> | ❌ | <strong>N</strong> | EXIF 旋转由解码器负责 |</li>
 </ol>
 <hr />
@@ -2296,6 +2314,44 @@ outline: W style color
 <code>border-radius</code> 同用时圆角按直角画 —— 这条写在覆盖表里，不藏着。</p>
 <p>验收：<code>test/web/test_b4.c</code>（64 项：解析 + 逐点取色）、
 golden 新页 <code>b4</code>（CPU vs GPU 0.52%）、例程 <code>example/25_b4</code>。</p>
+<h3 id="186-b4-blob-v26">18.6 B4 收尾：四边四角 / 两层阴影 / 细节属性（blob v26）</h3>
+<p>这一批把 <code>QLUIStyle</code> 里的"单值边框"换成了"四边 + 四角"：</p>
+<div class="highlight"><pre><span></span><code>uint8_t  border_w[4]        /* 上 右 下 左 */
+uint8_t  border_style4[4]   /* 每边自己的样式 */
+uint32_t border_color4[4]   /* 每边自己的颜色 */
+int16_t  radius[4]          /* 左上 右上 右下 左下 */
+QLUIShadow shadow[2]        /* 两层，先写的画在下面（视觉上在最上） */
+QLUIShadow text_shadow
+</code></pre></div>
+
+<p>布局侧的改动很机械：<code>2 * border_width</code> 变成了 <code>ql_ui_border_h(s)</code>（左右之和）
+与 <code>ql_ui_border_v(s)</code>（上下之和），内容盒原点按 <code>border_w[3]</code> / <code>border_w[0]</code> 内缩 ——
+CSS 的"四边宽度不同"就是这样影响内容盒的。</p>
+<p>绘制侧分三条路（<code>paint_border</code>）：</p>
+<div class="highlight"><pre><span></span><code>四边全同        → 一次整圈描边（最常见，也是最快的一条）
+有 dashed/dotted → 逐边切段（角上按直角）
+各边不同        → 整圈描边被&quot;按边裁四次&quot;，每次换一种颜色
+</code></pre></div>
+
+<p>第三条里的裁剪<strong>必须原样恢复</strong>：一开始忘了恢复，结果 <code>.sides</code> 之后的所有兄弟节点
+都被裁进那一个小盒子里 —— 画面表现为"某一行之后整页空白"。写进注释，别再踩。</p>
+<p>四角圆角则靠两个新入口：</p>
+<ul>
+<li><code>QLDraw2D::fill_round_rect4</code> / <code>stroke_round_rect4</code> / <code>fill_round_rect_gradient4</code>
+  （四角不全同时才走；全同仍走单半径的快路径）</li>
+<li>CPU：<code>round_row_span4()</code> —— 每行左右两侧各算一次圆心到边的 <code>dx</code></li>
+<li>GPU：新增顶点属性 <code>a_radii</code>（vec4），片元里按象限挑半径，SDF 不变</li>
+</ul>
+<p>投影与文字：</p>
+<ul>
+<li><code>box-shadow</code> 最多<strong>两层</strong>，<code>inset</code> 用反向 SDF（GPU <code>mode=7</code>，CPU 逐像素但只算"环"）</li>
+<li><code>text-shadow</code> 一层，<code>blur</code> 用 5 次采样近似（不需要离屏缓冲，MCU 也能跑）</li>
+</ul>
+<p>细节属性都很便宜：<code>image-rendering</code>（GL 切纹理滤波）、
+<code>scrollbar-width/color</code>（内置滚动条的宽度与颜色）、
+<code>object-position</code>（<code>object-fit</code> 之后在余量里摆位，<code>cover</code> 时改的是源矩形）。</p>
+<p>验收：<code>test/web/test_b4.c</code>（104 项）、golden 的 <code>b4</code> 页（CPU vs GPU 0.05%）、
+例程 <code>example/25_b4</code>（九节，含滚动条与 focus 环）。</p>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -2993,7 +3049,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td><code>CSS_BORDER_STYLE</code></td>
 <td><code>QL_FEAT_CSS_BORDER_STYLE</code></td>
-<td><code>dashed</code> / <code>dotted</code>（✅ 已落地）、四边独立 <code>border-*</code>（⏳ B4 剩余）</td>
+<td><code>dashed</code> / <code>dotted</code>、四边独立 <code>border-*</code>（✅ 全部落地）</td>
 <td>✅</td>
 <td>❌</td>
 <td>BASE</td>
@@ -3219,7 +3275,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>新 <code>test_text_adv</code>（25 项，含像素层）+ golden</td>
 </tr>
 <tr>
-<td><strong>B4 绘制细节</strong>（第一批 ✅：<code>border-style: dashed/dotted</code> + <code>outline</code> 全套，见 §18.5；剩四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>object-position</code>、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>；<code>background-size/position</code> 要等 <code>background-image: url()</code>）</td>
+<td><strong>B4 绘制细节</strong>（✅ 已完成：<code>border-style: dashed/dotted</code> + <code>outline</code>（§18.5）、四边独立 <code>border-*</code>、四角 <code>border-*-radius</code>、两层 + <code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>、<code>object-position</code>（§18.6）。<strong>只剩</strong> <code>background-size/position</code> —— 它们要等 <code>background-image: url()</code> 那个子系统）</td>
 <td><code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>outline</code>、<code>background-size/position</code>、<code>object-position</code>、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code></td>
 <td><code>CSS_BORDER_STYLE</code> + <code>CSS_SHADOW</code> / <code>CSS_GRADIENT</code></td>
 <td>视觉还原度</td>

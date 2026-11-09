@@ -24,9 +24,9 @@ static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
         return;
     /* 点哪儿就把焦点给哪儿（真实控件由 ql_ui_input_event 内部处理，这里演示意图） */
     ql_ui_set_focus_node(ui, node);
-    printf("点击：outline=%dpx/%d，border=%dpx/%d\n", (int)node->style->outline_width,
-           (int)node->style->outline_style, (int)node->style->border_width,
-           (int)node->style->border_style);
+    printf("点击：outline=%dpx/%d，border=%dpx/%d（上边）\n",
+           (int)node->style->outline_width, (int)node->style->outline_style,
+           (int)node->style->border_w[0], (int)node->style->border_style4[0]);
 }
 
 int main(int argc, char **argv)

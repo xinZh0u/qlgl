@@ -297,18 +297,37 @@ static void fput_length(FILE *f, QLUILength l)
             enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), l.unit, "QLUIUnit"));
 }
 
-static void fput_style(FILE *f, const QLUIStyle *s)
+static void fput_shadow(FILE *f, const QLUIShadow *sh)
 {
     fprintf(f,
-            "    { .bg_color = 0x%06X, .text_color = 0x%06X,"
-            " .border_color = 0x%06X,\n"
-            "      .bg_color2 = 0x%06X, .shadow_color = 0x%06X,\n"
-            "      .width = ",
-            (unsigned)(s->bg_color & 0xFFFFFFu),
-            (unsigned)(s->text_color & 0xFFFFFFu),
-            (unsigned)(s->border_color & 0xFFFFFFu),
-            (unsigned)(s->bg_color2 & 0xFFFFFFu),
-            (unsigned)(s->shadow_color & 0xFFFFFFu));
+            "{ .dx = %d, .dy = %d, .blur = %u, .alpha = %u, .inset = %u,"
+            " .color = 0x%06X }",
+            (int)sh->dx, (int)sh->dy, (unsigned)sh->blur, (unsigned)sh->alpha,
+            (unsigned)sh->inset, (unsigned)(sh->color & 0xFFFFFFu));
+}
+
+static void fput_style(FILE *f, const QLUIStyle *s)
+{
+    char bs_name[4][24];
+    for (int i = 0; i < 4; i++)
+        snprintf(bs_name[i], sizeof(bs_name[i]), "%s",
+                 enum_name(BORDER_STYLE_NAMES, COUNT_OF(BORDER_STYLE_NAMES),
+                           s->border_style4[i], "QLUIBorderStyle"));
+    fprintf(f, "    { .bg_color = 0x%06X, .text_color = 0x%06X,\n",
+            (unsigned)(s->bg_color & 0xFFFFFFu), (unsigned)(s->text_color & 0xFFFFFFu));
+    fprintf(f, "      .bg_color2 = 0x%06X,\n", (unsigned)(s->bg_color2 & 0xFFFFFFu));
+    fprintf(f, "      .border_color4 = { 0x%06X, 0x%06X, 0x%06X, 0x%06X },\n",
+            (unsigned)(s->border_color4[0] & 0xFFFFFFu),
+            (unsigned)(s->border_color4[1] & 0xFFFFFFu),
+            (unsigned)(s->border_color4[2] & 0xFFFFFFu),
+            (unsigned)(s->border_color4[3] & 0xFFFFFFu));
+    fputs("      .shadow = { ", f);
+    fput_shadow(f, &s->shadow[0]);
+    fputs(",\n                  ", f);
+    fput_shadow(f, &s->shadow[1]);
+    fputs(" },\n      .text_shadow = ", f);
+    fput_shadow(f, &s->text_shadow);
+    fputs(",\n", f);
     fput_length(f, s->width);
     fputs(", .height = ", f);
     fput_length(f, s->height);
@@ -318,12 +337,13 @@ static void fput_style(FILE *f, const QLUIStyle *s)
     fput_edges(f, s->padding);
     fprintf(f,
             ",\n"
-            "      .display = %s, .bg_alpha = %u, .border_width = %u,"
-            " .border_style = %s,\n"
-            "      .shadow_dx = %d, .shadow_dy = %d,\n"
-            "      .border_radius = %d, .text_align = %s, .font_id = %u,"
+            "      .display = %s, .bg_alpha = %u,\n"
+            "      .border_w = { %u, %u, %u, %u },\n"
+            "      .border_style4 = { %s, %s, %s, %s },\n"
+            "      .radius = { %d, %d, %d, %d },\n"
+            "      .text_align = %s, .font_id = %u,"
             " .box_sizing = %u,\n"
-            "      .bg_grad_dir = %u, .shadow_blur = %u, .shadow_alpha = %u,\n"
+            "      .bg_grad_dir = %u,\n"
             "      .flex_direction = %s, .justify_content = %s,\n"
             "      .align_items = %s, .flex_wrap = %u, .gap_row = %d,"
             " .gap_col = %d,\n"
@@ -346,19 +366,21 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .user_select_none = %u, .scroll_smooth = %u,\n"
             "      .outline_color = 0x%06X, .outline_width = %d,"
             " .outline_offset = %d, .outline_style = %s,\n"
+            "      .image_rendering = %u, .scrollbar_width = %u,"
+            " .scrollbar_alpha = %u, .scrollbar_color = 0x%06X,\n"
+            "      .object_position = { { %d, %s }, { %d, %s } },\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
                       "QLUIDisplay"),
-            (unsigned)s->bg_alpha, (unsigned)s->border_width,
-            enum_name(BORDER_STYLE_NAMES, COUNT_OF(BORDER_STYLE_NAMES), s->border_style,
-                      "QLUIBorderStyle"),
-            (int)s->shadow_dx, (int)s->shadow_dy,
-            (int)s->border_radius,
+            (unsigned)s->bg_alpha,
+            (unsigned)s->border_w[0], (unsigned)s->border_w[1],
+            (unsigned)s->border_w[2], (unsigned)s->border_w[3],
+            bs_name[0], bs_name[1], bs_name[2], bs_name[3],
+            (int)s->radius[0], (int)s->radius[1], (int)s->radius[2], (int)s->radius[3],
             enum_name(TEXT_ALIGN_NAMES, COUNT_OF(TEXT_ALIGN_NAMES), s->text_align,
                       "QLTextAlign"),
             (unsigned)s->font_id, (unsigned)s->box_sizing,
-            (unsigned)s->bg_grad_dir, (unsigned)s->shadow_blur,
-            (unsigned)s->shadow_alpha,
+            (unsigned)s->bg_grad_dir,
             enum_name(FLEX_DIR_NAMES, COUNT_OF(FLEX_DIR_NAMES), s->flex_direction,
                       "QLUIDirection"),
             enum_name(JUSTIFY_NAMES, COUNT_OF(JUSTIFY_NAMES), s->justify_content,
@@ -402,7 +424,15 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)(s->outline_color & 0xFFFFFFu), (int)s->outline_width,
             (int)s->outline_offset,
             enum_name(BORDER_STYLE_NAMES, COUNT_OF(BORDER_STYLE_NAMES),
-                      s->outline_style, "QLUIBorderStyle"));
+                      s->outline_style, "QLUIBorderStyle"),
+            (unsigned)s->image_rendering, (unsigned)s->scrollbar_width,
+            (unsigned)s->scrollbar_alpha, (unsigned)(s->scrollbar_color & 0xFFFFFFu),
+            (int)s->object_position[0].value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->object_position[0].unit,
+                      "QLUIUnit"),
+            (int)s->object_position[1].value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->object_position[1].unit,
+                      "QLUIUnit"));
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);
     fputs(",\n      .inset = { ", f);

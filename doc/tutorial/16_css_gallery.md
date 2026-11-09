@@ -269,9 +269,9 @@ calc 字节码 35 条（每条 4 字节）
   `align-items` 才真的能用（golden 的 `align` 页因此变化，肉眼核对过：
   两个方块现在在 120px 高的容器里居中）。多行的 `align-content` 仍然没做。
 
-## 10. `25_b4`：虚线边框与 outline
+## 10. `25_b4`：虚线边框、四边四角、阴影、滚动条
 
-<img src="../img/25-b4.png" alt="solid / dashed / dotted 三种边框、1px 与 4px 的虚线段、圆角配虚线、outline 的三种 offset、:focus 环" width="420">
+<img src="../img/25-b4.png" alt="solid/dashed/dotted、四边独立边框、四角独立圆角、两层与 inset 阴影、text-shadow、outline 偏移、滚动条宽度与颜色、focus 环" width="420">
 
 完整程序：`example/25_b4/`
 
@@ -280,10 +280,24 @@ calc 字节码 35 条（每条 4 字节）
 .b { border: 2px dotted #E0A030; }        /* 点线：点 1w、缝 1w */
 .c { border-width: 4px; border-style: none; }  /* 宽度归零，不占位 */
 
+.e { border-width: 0 0 4px 0; }           /* 只有下边（上右下左） */
+.f { border-width: 3px; border-style: solid;
+     border-top-color: #EF4444; border-left-color: #38BDF8; }  /* 四边异色 */
+.g { border-radius: 0 0 14px 14px; }      /* 上直下圆 */
+.h { border-radius: 14px 0 14px 0; }      /* 对角圆 */
+
+.i { box-shadow: 5px 0 0 #EF4444, 0 5px 0 #38BDF8; }  /* 两层 */
+.j { box-shadow: inset 0 0 8px #000000; }             /* 内阴影 */
+.k { text-shadow: 2px 2px 0 #EF4444; }
+
 .d { outline: 2px solid #38BDF8; }        /* 画在边框盒**外面**，不占布局 */
 .d { outline-offset: 5px; }               /* 往外推 5px */
 .d { outline-offset: -4px; }              /* 负值压进边框里面 */
 .inp:focus { outline: 2px solid #4ADE80; outline-offset: 2px; }  /* focus 环 */
+
+.s1 { scrollbar-width: thin; }            /* 2px 滚动条 */
+.s2 { scrollbar-color: #38BDF8; }         /* 彩色滑块 */
+.s3 { scrollbar-width: none; }            /* 干脆不画 */
 ```
 
 ```bash
@@ -300,6 +314,11 @@ calc 字节码 35 条（每条 4 字节）
 - **`outline` 天生适合 focus 环**：它不占布局，所以出现/消失不会让页面抖一下。
   注意 CSS 语义：`outline-width` 单独写**不画**（`outline-style` 初值是 `none`），
   要画就用 `outline: 2px solid <色>` 简写。
+- **四边不同色 + 圆角**时，角部整块归上/下边（浏览器是沿 45° 斜线切分）。
+  这条例程第 3 节能直接看出来：`四边四色` 那个盒子的上边是红的、左右各自本色，
+  但两个上角没有斜切。
+- **`box-shadow` 最多两层**，多写的会**报错**而不是静默丢弃 —— 少一层阴影
+  在界面上很难发现，宁可构建期就炸。
 
 ## 11. 这几个例程查出了什么
 

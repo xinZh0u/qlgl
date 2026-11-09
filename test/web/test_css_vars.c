@@ -47,8 +47,8 @@ static int probe_of(const char *html, const char *css, int idx, Probe *out)
     const QLUIStyle *st = ql_ui_node_style(&ui->nodes[idx]);
     out->text_color = st->text_color;
     out->bg_color = st->bg_color;
-    out->border_color = st->border_color;
-    out->border_width = st->border_width;
+    out->border_color = st->border_color4[0];
+    out->border_width = st->border_w[0];
     out->margin[0] = st->margin.top;
     out->margin[1] = st->margin.right;
     out->margin[2] = st->margin.bottom;

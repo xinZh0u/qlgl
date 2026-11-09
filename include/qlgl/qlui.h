@@ -305,12 +305,35 @@ typedef struct {
     uint8_t  reserved;
 } QLUILength;
 
+/*
+ * 一层阴影（`box-shadow` 的一项，或 `text-shadow`）。
+ *
+ * `inset` 只对 box-shadow 有意义：1 = 画在盒子**里面**（内阴影），
+ * 常用于"凹陷的输入框 / 卡片内凹边"。
+ */
+typedef struct {
+    int16_t  dx;       /* 偏移（px） */
+    int16_t  dy;
+    uint8_t  blur;     /* 0 = 硬边；> 0 的软边由后端的覆盖率衰减实现 */
+    uint8_t  alpha;    /* 0 = 这一层不存在 */
+    uint8_t  inset;    /* 1 = 内阴影 */
+    uint8_t  reserved;
+    uint32_t color;    /* 0xRRGGBB */
+} QLUIShadow;          /* 12 字节 */
+
 typedef struct {
     uint32_t    bg_color;      /* 0xRRGGBB；alpha 见 bg_alpha */
     uint32_t    text_color;
-    uint32_t    border_color;
     uint32_t    bg_color2;     /* 渐变终止色：只有 bg_grad_dir != 0 时有效 */
-    uint32_t    shadow_color;
+    /*
+     * 四边的边框色，顺序 上 右 下 左（blob v26）。
+     * `border-color: #333` 会写满四个；`border-color: a b c d` 分别是四边。
+     */
+    uint32_t    border_color4[4];
+    /* `box-shadow` 列表：最多两层（顺序 = 书写顺序，先写的画在下面） */
+    QLUIShadow  shadow[2];
+    /* `text-shadow`：一层（dx/dy/color/alpha，blur 只做近似） */
+    QLUIShadow  text_shadow;
 
     QLUILength  width;
     QLUILength  height;
@@ -326,20 +349,24 @@ typedef struct {
     QLUIEdges   margin;
     QLUIEdges   padding;
 
-    int16_t     shadow_dx;     /* 阴影偏移 */
-    int16_t     shadow_dy;
-
     uint8_t     display;       /* QLUIDisplay */
     uint8_t     bg_alpha;      /* 0..255 */
-    uint8_t     border_width;
-    uint8_t     border_style;   /* QLUIBorderStyle（blob v25）；width 为 0 时无效 */
-    int16_t     border_radius;  /* px；>= 短边一半时就是内切圆/胶囊 */
+    /*
+     * 四边独立的边框宽度，顺序 上 右 下 左（blob v26）。
+     * `border-width: 2px` 写满四个；`border-width: 1px 2px` 是"上下 左右"。
+     */
+    uint8_t     border_w[4];
+    /* 每边的样式（QLUIBorderStyle）。`border-style` 简写同样写满四边 */
+    uint8_t     border_style4[4];
+    /*
+     * 四角圆角半径（px），顺序 左上 右上 右下 左下。
+     * `border-radius: 8px` 写满四个；两个值 = "左上右下 右上左下"。
+     */
+    int16_t     radius[4];
     uint8_t     text_align;    /* QLTextAlign */
     uint8_t     font_id;       /* doc->font_sizes 的下标（字号，像素） */
     uint8_t     box_sizing;    /* 0 = content-box, 1 = border-box */
     uint8_t     bg_grad_dir;   /* 0 = 纯色；1 = 垂直；2 = 水平；3 = 径向（= QLGradientDir+1） */
-    uint8_t     shadow_blur;   /* 0 = 硬阴影 */
-    uint8_t     shadow_alpha;  /* 0 = 无阴影 */
 
     /* ----- flex 容器 ----- */
     uint8_t     flex_direction;  /* QLUIDirection */
@@ -544,6 +571,28 @@ typedef struct {
     int8_t      outline_width;   /* px；0 = 不画 */
     int8_t      outline_offset;  /* px，可为负 */
     uint8_t     outline_style;   /* QLUIBorderStyle（outline 也支持 dashed/dotted） */
+
+    /* ----- B4 收尾（blob v26） ----- */
+    /*
+     * `image-rendering`：0 = auto（GL 用线性采样），1 = pixelated（最近邻放大，
+     * 像素画/放大镜要它）。CPU 后端本来就只有最近邻，所以在 CPU 上这个属性
+     * 没有可见差异；差异只在 GPU 放大图片时。
+     */
+    uint8_t     image_rendering;
+    /*
+     * `scrollbar-width`：0 = 默认 4px、1 = thin(2px)、2 = auto(4px)、3 = none(不画)。
+     * `scrollbar-color`：滑块色（0 = 默认中灰）+ 轨道色（alpha 0 = 不画轨道）。
+     * 只影响**覆盖式滚动条**（本库的滚动条不占布局）。
+     */
+    uint8_t     scrollbar_width;
+    uint8_t     scrollbar_alpha;    /* 滑块不透明度（0 = 默认 0x96） */
+    uint8_t     object_fit2;        /* 保留 */
+    uint32_t    scrollbar_color;
+    /*
+     * `object-position: x y`：图片在 object-fit 之后的盒子里怎么摆。
+     * 单位与其它长度一致（px / 百分比，百分比相对于"多出来的余量"）。
+     */
+    QLUILength  object_position[2];
 } QLUIStyle;
 
 /*
@@ -558,6 +607,69 @@ typedef enum {
     QL_UI_BORDER_DOTTED,
     QL_UI_BORDER_NONE,
 } QLUIBorderStyle;
+
+/*
+ * 四边/四角的访问器。
+ *
+ * 布局代码里大量出现"左右边框一共多宽"，写成 `s->border_w[1] + s->border_w[3]`
+ * 既长又容易把顺序写错，所以收在这里。顺序统一是 **上 右 下 左**。
+ */
+static inline ql_coord_t ql_ui_border_h(const QLUIStyle *s)
+{
+    return (ql_coord_t)s->border_w[1] + (ql_coord_t)s->border_w[3];
+}
+static inline ql_coord_t ql_ui_border_v(const QLUIStyle *s)
+{
+    return (ql_coord_t)s->border_w[0] + (ql_coord_t)s->border_w[2];
+}
+/* 四边是否有任何一边要画 */
+static inline int ql_ui_has_border(const QLUIStyle *s)
+{
+    for (int i = 0; i < 4; i++)
+        if (s->border_w[i] > 0 && s->border_style4[i] != QL_UI_BORDER_NONE)
+            return 1;
+    return 0;
+}
+/* 四边宽度/颜色全同？全同时绘制可以走一条"整圈"的快路径 */
+static inline int ql_ui_border_uniform(const QLUIStyle *s)
+{
+    if (s->border_w[0] != s->border_w[1] || s->border_w[0] != s->border_w[2] ||
+        s->border_w[0] != s->border_w[3])
+        return 0;
+    if (s->border_style4[0] != s->border_style4[1] ||
+        s->border_style4[0] != s->border_style4[2] ||
+        s->border_style4[0] != s->border_style4[3])
+        return 0;
+    for (int i = 1; i < 4; i++)
+        if (s->border_color4[i] != s->border_color4[0])
+            return 0;
+    return 1;
+}
+/* 四角半径是否全同（全同时可以用单半径的快路径） */
+static inline int ql_ui_radius_uniform(const QLUIStyle *s)
+{
+    return s->radius[0] == s->radius[1] && s->radius[0] == s->radius[2] &&
+           s->radius[0] == s->radius[3];
+}
+/* 四个圆角里的最大值（给"只支持单半径"的接口/兜底路径用） */
+static inline ql_coord_t ql_ui_radius_max4(const ql_coord_t r4[4])
+{
+    ql_coord_t m = r4[0];
+    for (int i = 1; i < 4; i++)
+        if (r4[i] > m)
+            m = r4[i];
+    return m;
+}
+
+/* 最大的那个圆角（给"只支持单半径"的旧接口/兜底路径用） */
+static inline ql_coord_t ql_ui_radius_max(const QLUIStyle *s)
+{
+    ql_coord_t m = s->radius[0];
+    for (int i = 1; i < 4; i++)
+        if (s->radius[i] > m)
+            m = s->radius[i];
+    return m;
+}
 
 /* `align-content`（多行 flex 的交叉轴分配） */
 typedef enum {
@@ -1401,10 +1513,12 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
 /*
+ * 26: 四边独立 border-*（宽/样式/色）、四角 radius、box-shadow 两层 + inset、
+ *     text-shadow、image-rendering、scrollbar-width/color、object-position
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    25u
+#define QL_UI_BLOB_VERSION    26u
 
 typedef struct {
     uint32_t magic;

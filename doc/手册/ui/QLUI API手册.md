@@ -863,7 +863,7 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 |---|---|
 | 背景（含渐变） | `bg_alpha × opacity` |
 | 边框 | 描边走新加的 `ql_canvas_stroke_rect_alpha()` |
-| 阴影 | `shadow_alpha × opacity` |
+| 阴影 | `shadow[i].alpha × opacity`（两层各自乘） |
 | 文字 | 字形覆盖率 × opacity（`ql_canvas_draw_glyph_alpha()`） |
 | `<img>` | 位图搬运的 alpha × opacity |
 | 子元素 | 相加相乘（父 0.5 × 子 0.5 = 0.25） |
@@ -934,17 +934,23 @@ typedef struct {
     uint32_t bg_color, text_color, border_color;
     QLUILength width, height;
     QLUIEdges margin, padding;
-    uint8_t display, bg_alpha, border_width, border_style, border_radius;
+    uint8_t display, bg_alpha;
+    uint8_t border_w[4];       /* 上 右 下 左 */
+    uint8_t border_style4[4];  /* QLUIBorderStyle，每边 */
+    int16_t radius[4];         /* 左上 右上 右下 左下 */
+    QLUIShadow shadow[2];      /* box-shadow 最多两层（inset 也在这里） */
+    QLUIShadow text_shadow;
     uint8_t text_align, font_id, box_sizing, reserved;
     /* 省略：渐变/阴影/flex/定位/过渡/动画/transform 的字段，完整定义见 qlui.h
        （transform 用 int16_t tf_x/tf_y + int16_t sc_x/sc_y，千分比）
        line-height 是 int16_t line_h（0 = normal），
        white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），
        font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线）；
-       border_style 见 QLUIBorderStyle（blob v25），
        outline 是 uint32_t outline_color + int8_t outline_width / outline_offset
-                 + uint8_t outline_style（不占布局） */
-} QLUIStyle;  /* sizeof == 176（blob v25） */
+                 + uint8_t outline_style（不占布局）；
+       border_color4[4] 是四边颜色（上右下左）；另有
+       image_rendering / scrollbar_width / scrollbar_color / object_position[2] */
+} QLUIStyle;  /* sizeof == 240（blob v26） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;

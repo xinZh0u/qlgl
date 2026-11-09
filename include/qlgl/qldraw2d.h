@@ -93,6 +93,27 @@ struct QLDraw2D {
      */
     void (*fill_shadow)(QLDraw2D *self, QLRect inner, ql_coord_t radius, ql_coord_t blur,
                         ql_coord_t dx, ql_coord_t dy, ql_color_t color, uint8_t alpha);
+    /*
+     * 内阴影：以 inner 的圆角轮廓为边界，阴影画在**里面**（`box-shadow: inset`）。
+     * 参数含义与 fill_shadow 相同，只是方向相反。
+     * NULL = 后端不支持（上层跳过并告警一次）。
+     */
+    void (*fill_inset_shadow)(QLDraw2D *self, QLRect inner, ql_coord_t radius,
+                              ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                              ql_color_t color, uint8_t alpha);
+
+    /*
+     * 四角各自圆角（顺序 左上 右上 右下 左下）。
+     * NULL = 后端只支持单半径，上层退回用最大半径（圆角会被放大，见阅读指南）。
+     * 只有"四角不全同"时上层才会走这几个入口，全同时仍用单半径的快路径。
+     */
+    void (*fill_round_rect4)(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                             ql_color_t color, uint8_t alpha);
+    void (*fill_round_rect_gradient4)(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                                      ql_color_t from, ql_color_t to, uint8_t dir,
+                                      uint8_t alpha);
+    void (*stroke_round_rect4)(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                               ql_coord_t thickness, ql_color_t color);
 
     /*
      * 直线：Bresenham，thickness > 1 时按方形笔刷加粗（与 ql_canvas_draw_line 同式）。
@@ -187,6 +208,12 @@ struct QLDraw2D {
      *   · 其余（非等比、镜像、或位图字体无法重取字号）→ 1，逐字形做 affine。
      * 位图字体必须走几何路径，否则 `scale(0.5)` 只会缩盒子、字一个像素都不缩。
      */
+    /*
+     * `image-rendering`：0 = auto（后端自己的默认采样），1 = pixelated。
+     * 上层在画图片前设置；GL 后端据此临时切 texture filter，CPU 后端忽略
+     * （它本来就只有最近邻）。
+     */
+    int        image_pixelated;
     int        text_geo;
     ql_coord_t text_px, text_py;   /* 几何变换的中心（设备像素） */
 

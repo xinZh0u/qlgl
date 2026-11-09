@@ -1,7 +1,7 @@
 <div id="root">
   <div class="top">
-    <div class="h1">B4 绘制细节：border-style 与 outline</div>
-    <div class="badge">两样都只改绘制，不动布局</div>
+    <div class="h1">B4 绘制细节：边框样式 / 四边四角 / 阴影 / 滚动条</div>
+    <div class="badge">全部只改绘制，不动布局（outline 除外，它也不占位）</div>
   </div>
 
   <div class="sec">
@@ -14,25 +14,52 @@
   </div>
 
   <div class="sec">
-    <div class="cap">2. 图案跟着线宽缩放：1px 与 4px 的 dashed</div>
+    <div class="cap">2. 图案跟着线宽缩放：1px 与 4px 的 dashed / dotted</div>
     <div class="row">
       <div class="box thin">1px dashed</div>
       <div class="box thick">4px dashed</div>
-      <div class="box solid dbl">2px solid</div>
+      <div class="box thickdot">4px dotted</div>
     </div>
   </div>
 
   <div class="sec">
-    <div class="cap">3. 和 border-radius 一起用：圆角按直角画（已知差异）</div>
+    <div class="cap">3. 四边独立：只有下边、四边四色、单边宽度不同</div>
     <div class="row">
-      <div class="box round-dash">radius 10</div>
-      <div class="box round-dot">radius 10</div>
-      <div class="box round-solid">radius 10 solid</div>
+      <div class="box only-b">只有下边</div>
+      <div class="box four">四边四色</div>
+      <div class="box tab">tab 页签</div>
     </div>
   </div>
 
   <div class="sec">
-    <div class="cap">4. outline-offset：0 / +5 / -4（负值压进边框里）</div>
+    <div class="cap">4. 四角独立：0 0 14 14（上直下圆）/ 14 0 14 0 / 胶囊</div>
+    <div class="row">
+      <div class="box r-bottom">上直下圆</div>
+      <div class="box r-diag">对角圆</div>
+      <div class="box r-pill">胶囊</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. box-shadow：两层 / 内阴影（inset）</div>
+    <div class="row">
+      <div class="box sh2">两层阴影</div>
+      <div class="box sh-inset">inset</div>
+      <div class="box sh-hard">硬阴影</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">6. text-shadow：文字右下红色影子（1px 硬边）</div>
+    <div class="row">
+      <div class="box tshard">text-shadow</div>
+      <div class="box tsoft">带模糊</div>
+      <div class="box thl">高对比</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">7. outline-offset：0 / +5 / -4（负值压进边框里）</div>
     <div class="row tall">
       <div class="obox o0">offset 0</div>
       <div class="obox o5">offset 5</div>
@@ -41,23 +68,34 @@
   </div>
 
   <div class="sec">
-    <div class="cap">5. focus 环：点一下"输入框"，outline 跟着 :focus 出现</div>
+    <div class="cap">8. scrollbar-width / scrollbar-color：细、彩色、隐藏</div>
+    <div class="row">
+      <div class="sc thin-sc">
+        <div class="line">thin 1</div><div class="line">thin 2</div>
+        <div class="line">thin 3</div><div class="line">thin 4</div>
+      </div>
+      <div class="sc color-sc">
+        <div class="line">彩色 1</div><div class="line">彩色 2</div>
+        <div class="line">彩色 3</div><div class="line">彩色 4</div>
+      </div>
+      <div class="sc none-sc">
+        <div class="line">none 1</div><div class="line">none 2</div>
+        <div class="line">none 3</div><div class="line">none 4</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">9. :focus 环：点一下输入框，outline 跟着出现（不动布局）</div>
     <div class="row">
       <input id="name" class="inp" type="text" value="点我拿焦点">
       <div class="obox odash">outline dashed</div>
     </div>
   </div>
 
-  <div class="sec">
-    <div class="cap">6. border-style: none 不占位：两个盒子一样大，左边没有边</div>
-    <div class="row">
-      <div class="box noborder">none (4px)</div>
-      <div class="box solid">solid (2px)</div>
-    </div>
-  </div>
-
   <div class="note">
     虚线/点线是"沿边切段填色"实现的：CPU 与 GPU 走同一条 fill_rect 路径，
-    所以两条后端逐像素一致（golden 里 b4 页 0.5% 差异，全在圆角抗锯齿上）。
+    golden 里这一页 CPU vs GPU 差异 0.05%（全在圆角抗锯齿上）。
+    四边不同色时，上/下边整块吃掉四个角（浏览器沿 45° 斜线切分）。
   </div>
 </div>

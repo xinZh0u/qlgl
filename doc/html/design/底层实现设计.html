@@ -823,8 +823,8 @@ main img.shot { max-width: 100%; }
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">bg_color</span><span class="p">;</span>
 <span class="w">    </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">fg_color</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">int16_t</span><span class="w">    </span><span class="n">border_width</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">border_radius</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">border_w</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w">    </span><span class="cm">/* 上 右 下 左 */</span>
+<span class="w">    </span><span class="kt">int16_t</span><span class="w">    </span><span class="n">radius</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w">      </span><span class="cm">/* 左上 右上 右下 左下 */</span>
 <span class="w">    </span><span class="kt">int16_t</span><span class="w">    </span><span class="n">font_size</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 已换算为像素 */</span>
 <span class="w">    </span><span class="kt">uint16_t</span><span class="w">   </span><span class="n">font_id</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 资源段里的字体索引 */</span>
 <span class="w">    </span><span class="kt">uint8_t</span><span class="w">    </span><span class="n">align</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 文本对齐 */</span>

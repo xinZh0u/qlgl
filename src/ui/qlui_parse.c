@@ -1591,9 +1591,11 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
 
 /* box-shadow: <dx> <dy> [blur] <color> */
 static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
-                        int *blur, uint32_t *rgb, uint8_t *alpha)
+                        int *blur, uint32_t *rgb, uint8_t *alpha, int *inset)
 {
     *dx = *dy = *blur = 0;
+    if (inset != NULL)
+        *inset = 0;
     *rgb = 0;
     *alpha = 0;
 
@@ -1712,6 +1714,16 @@ static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
         }
         memcpy(tok, start, len);
         tok[len] = '\0';
+        if (strcmp(tok, "inset") == 0) {
+            /* 内阴影：位置任意，抠掉即可（CSS 允许写在前也可写在后） */
+            if (inset != NULL)
+                *inset = 1;
+            else {
+                set_error("%s: text-shadow 不支持 inset", where);
+                return 0;
+            }
+            continue;
+        }
         if (strcmp(tok, "0") == 0) {
             nums[nn++] = 0;
             continue;
@@ -1732,7 +1744,8 @@ static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
         return 0;
     }
     if (nn < 2 || nn > 3) {
-        set_error("%s: box-shadow 需要 2 或 3 个长度，收到 %d 个", where, nn);
+        set_error("%s: 阴影需要 2 或 3 个长度（x y [blur]），收到 %d 个"
+                  "（spread 展开半径暂不支持）", where, nn);
         return 0;
     }
     *dx = nums[0];
@@ -1745,6 +1758,140 @@ static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
     uint8_t a = 0;
     return parse_color(color_txt, where, rgb, &a) ? (*alpha = a, 1) : 0;
 }
+
+/*
+ * 按**顶层逗号**切分（括号里的逗号不算）：`rgba(0,0,0,.4)` 里那两个逗号
+ * 不能被当成列表分隔符。最多切出 max 段，返回实际段数（超出的丢弃并报错）。
+ */
+static int split_top_commas(const char *text, const char *where, char (*out)[64],
+                            int max)
+{
+    int n = 0;
+    int depth = 0;
+    size_t k = 0;
+    const char *s = text;
+    while (is_space(*s))
+        s++;
+    for (; *s != '\0'; s++) {
+        if (*s == '(')
+            depth++;
+        else if (*s == ')')
+            depth--;
+        if (*s == ',' && depth <= 0) {
+            while (k > 0 && is_space(out[n][k - 1]))
+                k--;
+            out[n][k] = '\0';
+            n++;
+            k = 0;
+            if (n >= max) {
+                set_error("%s: 最多支持 %d 段（收到更多）", where, max);
+                return -1;
+            }
+            continue;
+        }
+        if (k + 1u < sizeof(out[0]))
+            out[n][k++] = *s;
+    }
+    while (k > 0 && is_space(out[n][k - 1]))
+        k--;
+    out[n][k] = '\0';
+    if (out[n][0] != '\0')
+        n++;
+    return n;
+}
+
+/*
+ * 按**顶层空白**切分（括号里的空白不算，`rgb(1, 2, 3)` 不会被拆开）。
+ * `border-width: 1px 2px 3px 4px` 这类简写用的是空格而不是逗号。
+ */
+static int split_top_spaces(const char *text, const char *where, char (*out)[64],
+                            int max)
+{
+    int n = 0;
+    int depth = 0;
+    size_t k = 0;
+    const char *s = text;
+    while (is_space(*s))
+        s++;
+    for (; *s != '\0'; s++) {
+        if (*s == '(')
+            depth++;
+        else if (*s == ')')
+            depth--;
+        if (is_space(*s) && depth <= 0) {
+            while (is_space(*s))
+                s++;
+            if (*s == '\0')
+                break;
+            s--;
+            if (k > 0) {
+                out[n][k] = '\0';
+                n++;
+                k = 0;
+                if (n >= max) {
+                    set_error("%s: 最多支持 %d 段（收到更多）", where, max);
+                    return -1;
+                }
+            }
+            continue;
+        }
+        if (k + 1u < sizeof(out[0]))
+            out[n][k++] = *s;
+    }
+    if (k > 0) {
+        out[n][k] = '\0';
+        n++;
+    }
+    return n;
+}
+
+/* `box-shadow` 列表：最多两层（多写的报错，不静默丢弃） */
+static int parse_shadow_list(const char *text, const char *where, QLUIShadow out[2])
+{
+    char parts[2][64];
+    const int n = split_top_commas(text, where, parts, 2);
+    if (n < 0)
+        return 0;
+    if (n == 0)
+        return 1;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(parts[i], "none") == 0)
+            continue;
+        int dx = 0, dy = 0, blur = 0, inset = 0;
+        uint32_t rgb = 0;
+        uint8_t al = 0;
+        if (!parse_shadow(parts[i], where, &dx, &dy, &blur, &rgb, &al, &inset))
+            return 0;
+        if (blur > 64) {
+            set_error("%s: 阴影模糊半径最大 64px（收到 %d）", where, blur);
+            return 0;
+        }
+        out[i].dx = (int16_t)dx;
+        out[i].dy = (int16_t)dy;
+        out[i].blur = (uint8_t)blur;
+        out[i].alpha = al;
+        out[i].inset = (uint8_t)(inset != 0);
+        out[i].color = rgb;
+    }
+    return 1;
+}
+
+/* 四边简写（上右下左）：1 / 2 / 4 个值铺满 */
+static void quad_fill(int n, int v[4])
+{
+    if (n == 1) {
+        v[1] = v[0];
+        v[2] = v[0];
+        v[3] = v[0];
+    } else if (n == 2) {
+        v[2] = v[0];
+        v[3] = v[1];
+    }
+}
+
+static const char *const k_side_names[4] = { "top", "right", "bottom", "left" };
+static const char *const k_corner_names[4] = { "top-left", "top-right",
+                                               "bottom-right", "bottom-left" };
 
 /* transform 里的 px 参数：`-40px` 或 `0` */
 static int tf_px(const char *token, const char *where, int *out)
@@ -3014,6 +3161,55 @@ static int expand_shorthands(Decls *ds)
     }
 
     /*
+     * `border-top` / `border-right` / `border-bottom` / `border-left`：
+     * 与 `border` 完全同一套 token 判别，只是写进"那一边"的长写属性。
+     */
+    for (int si = 0; si < 4; si++) {
+        char sh[24];
+        snprintf(sh, sizeof(sh), "border-%s", k_side_names[si]);
+        if ((v = decls_get(ds, sh)) == NULL)
+            continue;
+        char buf[128];
+        size_t n = strlen(v);
+        if (n >= sizeof(buf))
+            n = sizeof(buf) - 1u;
+        memcpy(buf, v, n);
+        buf[n] = '\0';
+        (void)decls_remove(ds, sh);
+
+        const char *p = buf;
+        while (*p != '\0') {
+            while (is_space(*p))
+                p++;
+            if (*p == '\0')
+                break;
+            const char *start = p;
+            while (*p != '\0' && !is_space(*p))
+                p++;
+            char tok[64];
+            size_t len = (size_t)(p - start);
+            if (len >= sizeof(tok))
+                len = sizeof(tok) - 1u;
+            memcpy(tok, start, len);
+            tok[len] = '\0';
+            char low[64];
+            trim_lower(tok, low, sizeof(low));
+
+            char dst[48];
+            const size_t ln = strlen(low);
+            if (ln > 2 && strcmp(low + ln - 2u, "px") == 0)
+                snprintf(dst, sizeof(dst), "border-%s-width", k_side_names[si]);
+            else if (strcmp(low, "solid") == 0 || strcmp(low, "none") == 0 ||
+                     strcmp(low, "dashed") == 0 || strcmp(low, "dotted") == 0)
+                snprintf(dst, sizeof(dst), "border-%s-style", k_side_names[si]);
+            else
+                snprintf(dst, sizeof(dst), "border-%s-color", k_side_names[si]);
+            if (!decls_set(ds, dst, low))
+                return 0;
+        }
+    }
+
+    /*
      * `outline` 简写：`2px solid #f00` / `2px #f00` / `none`，三段任意顺序。
      * 与 `border` 共用同一套 token 判别（px / 关键字 / 其它当颜色）。
      */
@@ -3067,6 +3263,18 @@ static int expand_shorthands(Decls *ds)
 static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "border-style",
+    /* 四边独立的 border-*（简写与长写） */
+    "border-top", "border-right", "border-bottom", "border-left",
+    "border-top-width", "border-right-width", "border-bottom-width",
+    "border-left-width",
+    "border-top-style", "border-right-style", "border-bottom-style",
+    "border-left-style",
+    "border-top-color", "border-right-color", "border-bottom-color",
+    "border-left-color",
+    "border-top-left-radius", "border-top-right-radius",
+    "border-bottom-right-radius", "border-bottom-left-radius",
+    "text-shadow", "object-position", "image-rendering",
+    "scrollbar-width", "scrollbar-color",
     "outline", "outline-width", "outline-color", "outline-style", "outline-offset",
     "background", "background-color", "color",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
@@ -7741,12 +7949,42 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             bg_a = 255;
     }
 
-    int sh_dx = 0, sh_dy = 0, sh_blur = 0;
-    uint32_t sh_color = 0;
-    uint8_t sh_a = 0;
+    /* 阴影：`box-shadow` 最多两层（先写的画在下面），`text-shadow` 一层 */
+    QLUIShadow shadows[2];
+    memset(shadows, 0, sizeof(shadows));
     if ((v = decls_get(st, "box-shadow")) != NULL &&
-        !parse_shadow(v, where, &sh_dx, &sh_dy, &sh_blur, &sh_color, &sh_a))
+        !parse_shadow_list(v, where, shadows))
         return 0;
+    QLUIShadow text_shadow;
+    memset(&text_shadow, 0, sizeof(text_shadow));
+    {
+        /* text-shadow 只支持一层（多层的语义是叠色，视觉收益低） */
+        char seg[2][64];
+        if ((v = decls_get(st, "text-shadow")) != NULL) {
+            const int n = split_top_commas(v, where, seg, 1);
+            if (n < 0) {
+                set_error("%s: text-shadow 只支持一层", where);
+                return 0;
+            }
+            if (n > 0 && strcmp(seg[0], "none") != 0) {
+                int dx = 0, dy = 0, blur = 0, ins = 0;
+                uint32_t rgb = 0;
+                uint8_t al = 0;
+                if (!parse_shadow(seg[0], where, &dx, &dy, &blur, &rgb, &al, NULL))
+                    return 0;
+                (void)ins;
+                if (blur > 16) {
+                    set_error("%s: text-shadow 模糊半径最大 16px（收到 %d）", where, blur);
+                    return 0;
+                }
+                text_shadow.dx = (int16_t)dx;
+                text_shadow.dy = (int16_t)dy;
+                text_shadow.blur = (uint8_t)blur;
+                text_shadow.alpha = al;
+                text_shadow.color = rgb;
+            }
+        }
+    }
 
     uint8_t wu = QL_UI_UNIT_AUTO, hu = QL_UI_UNIT_AUTO;
     int wv = 0, hv = 0;
@@ -8192,6 +8430,134 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     }
 
     /*
+     * `image-rendering`：`pixelated` 用最近邻放大（像素画/放大镜要它），
+     * `auto` / `smooth` 交给后端默认（GL 线性）。CPU 后端本来就只有最近邻，
+     * 所以这个属性在 CPU 上没有可见差异 —— 写进覆盖表，不假装两后端一致。
+     */
+    uint8_t image_rendering = 0;
+    if ((v = decls_get(st, "image-rendering")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "pixelated") == 0)
+            image_rendering = 1;
+        else if (strcmp(t, "auto") == 0 || strcmp(t, "smooth") == 0 ||
+                 strcmp(t, "crisp-edges") == 0)
+            image_rendering = 0;
+        else {
+            set_error("%s: 不支持的 image-rendering '%s'"
+                      "（auto / smooth / pixelated / crisp-edges）",
+                      where, v);
+            return 0;
+        }
+    }
+
+    /*
+     * `scrollbar-width`：`auto`(4px) / `thin`(2px) / `none`(不画)。
+     * `scrollbar-color: <thumb> [track]`：轨道现在不画，只取滑块色。
+     */
+    uint8_t scrollbar_width = 0;
+    uint8_t scrollbar_alpha = 0;
+    uint32_t scrollbar_color = 0;
+    if ((v = decls_get(st, "scrollbar-width")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "auto") == 0)
+            scrollbar_width = 2;
+        else if (strcmp(t, "thin") == 0)
+            scrollbar_width = 1;
+        else if (strcmp(t, "none") == 0)
+            scrollbar_width = 3;
+        else {
+            set_error("%s: 不支持的 scrollbar-width '%s'（auto / thin / none）", where, v);
+            return 0;
+        }
+    }
+    if ((v = decls_get(st, "scrollbar-color")) != NULL) {
+        char t[96];
+        memcpy(t, v, strlen(v) + 1u < sizeof(t) ? strlen(v) + 1u : sizeof(t) - 1u);
+        t[sizeof(t) - 1u] = '\0';
+        /* 第一个 token = 滑块色；第二个（轨道）暂时忽略 */
+        char first[48];
+        size_t k2 = 0;
+        const char *q = t;
+        while (is_space(*q))
+            q++;
+        while (*q != '\0' && !is_space(*q) && k2 + 1u < sizeof(first))
+            first[k2++] = *q++;
+        first[k2] = '\0';
+        uint8_t sa = 0;
+        if (!parse_color(first, where, &scrollbar_color, &sa))
+            return 0;
+        /* 全透明（auto）→ 用默认灰 */
+        if (sa == 0)
+            scrollbar_color = 0;
+        scrollbar_alpha = 0;
+    }
+
+    /* `object-position: x y`（百分比相对于"多出来的余量"，与 object-fit 一致） */
+    QLUILength obj_pos[2];
+    obj_pos[0].value = 500;
+    obj_pos[0].unit = QL_UI_UNIT_PERCENT;
+    obj_pos[0].reserved = 0;
+    obj_pos[1] = obj_pos[0];
+    if ((v = decls_get(st, "object-position")) != NULL) {
+        char t[96];
+        size_t n = strlen(v);
+        if (n >= sizeof(t))
+            n = sizeof(t) - 1u;
+        memcpy(t, v, n);
+        t[n] = '\0';
+        int cnt = 0;
+        char seg[2][48];
+        const char *q = t;
+        while (*q != '\0' && cnt < 2) {
+            while (is_space(*q))
+                q++;
+            if (*q == '\0')
+                break;
+            size_t k2 = 0;
+            while (*q != '\0' && !is_space(*q) && k2 + 1u < sizeof(seg[0]))
+                seg[cnt][k2++] = *q++;
+            seg[cnt][k2] = '\0';
+            cnt++;
+        }
+        if (cnt < 1 || cnt > 2) {
+            set_error("%s: object-position 需要 1 或 2 个值", where);
+            return 0;
+        }
+        for (int i = 0; i < cnt; i++) {
+            char low[48];
+            trim_lower(seg[i], low, sizeof(low));
+            if (strcmp(low, "center") == 0) {
+                obj_pos[i].value = 500;
+                obj_pos[i].unit = QL_UI_UNIT_PERCENT;
+                continue;
+            }
+            if (strcmp(low, "left") == 0 || strcmp(low, "top") == 0) {
+                obj_pos[i].value = 0;
+                obj_pos[i].unit = QL_UI_UNIT_PERCENT;
+                continue;
+            }
+            if (strcmp(low, "right") == 0 || strcmp(low, "bottom") == 0) {
+                obj_pos[i].value = 1000;
+                obj_pos[i].unit = QL_UI_UNIT_PERCENT;
+                continue;
+            }
+            uint8_t unit = QL_UI_UNIT_PX;
+            int num = 0;
+            if (!parse_length(low, where, 1, calc, &unit, &num))
+                return 0;
+            /* 百分比在代码里按"千分比"存（与 object-fit 的基准算法一致） */
+            if (unit == QL_UI_UNIT_PERCENT)
+                num *= 10;
+            obj_pos[i].value = (int16_t)num;
+            obj_pos[i].unit = unit;
+        }
+        if (cnt == 1)
+            obj_pos[1] = obj_pos[0];
+    }
+
+    /*
      * line-height：0 = normal（半行距 0，与旧行为一致）。
      * 三写法：`normal` / `<N>px` / 无单位倍数（按当前 font-size 折算成 px）。
      * 单行垂直居中就靠它：`height: 26px; line-height: 26px`。
@@ -8231,34 +8597,194 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         }
     }
 
-    int bw = 0, radius = 0;
-    {
-        uint8_t unit;
-        int num;
-        if (!parse_length((v = decls_get(st, "border-width")) != NULL ? v : "0", where,
-                          1, calc, &unit, &num))
-            return 0;
-        if (!length_wants_const(unit, where, "border-width"))
-            return 0;
-        bw = num;
-        if (!parse_length((v = decls_get(st, "border-radius")) != NULL ? v : "0", where,
-                          1, calc, &unit, &num))
-            return 0;
-        if (!length_wants_const(unit, where, "border-radius"))
-            return 0;
-        radius = num;
-    }
-
     /*
-     * `border-style`：`none` 按 CSS 语义把宽度也归零（否则"没有样式却占 2px"
-     * 会让内容盒缩水，这是最容易踩的坑）。
+     * ---- 四边边框：宽 / 样式 / 色（都支持 1/2/4 个值的简写） ----
+     *
+     * 顺序统一是 **上 右 下 左**（CSS 的 `border-width: 1px 2px 3px 4px`）。
+     * 长写 `border-top-width` 等可以单独覆盖某一边。
      */
-    uint8_t border_style = QL_UI_BORDER_SOLID;
-    if ((v = decls_get(st, "border-style")) != NULL) {
-        if (!parse_border_style_kw(v, "border-style", &border_style))
-            return 0;
-        if (border_style == QL_UI_BORDER_NONE)
-            bw = 0;
+    uint8_t bw4[4] = { 0, 0, 0, 0 };
+    uint8_t bstyle4[4] = { QL_UI_BORDER_SOLID, QL_UI_BORDER_SOLID,
+                           QL_UI_BORDER_SOLID, QL_UI_BORDER_SOLID };
+    uint32_t bcol4[4] = { bd, bd, bd, bd };
+    char pbuf_side[64];
+    {
+        /* 颜色：`border-color: a b c d` 分别是四边 */
+        int c4[4] = { 0, 0, 0, 0 };
+        if ((v = decls_get(st, "border-color")) != NULL) {
+            char seg[4][64];
+            const int n = split_top_spaces(v, where, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2 && n != 4) {
+                set_error("%s: border-color 需要 1/2/4 个颜色", where);
+                return 0;
+            }
+            for (int i = 0; i < n; i++) {
+                if (!parse_color(seg[i], where, &bcol4[i], &a))
+                    return 0;
+            }
+            if (n == 1) {
+                bcol4[1] = bcol4[2] = bcol4[3] = bcol4[0];
+            } else if (n == 2) {
+                bcol4[2] = bcol4[0];
+                bcol4[3] = bcol4[1];
+            }
+        }
+        (void)c4;
+    }
+    for (int i = 0; i < 4; i++) {
+        snprintf(pbuf_side, sizeof(pbuf_side), "border-%s-color", k_side_names[i]);
+        if ((v = decls_get(st, pbuf_side)) != NULL) {
+            if (!parse_color(v, where, &bcol4[i], &a))
+                return 0;
+        }
+    }
+    {
+        /* 宽度：1/2/4 个值 */
+        int w4[4] = { 0, 0, 0, 0 };
+        if ((v = decls_get(st, "border-width")) != NULL) {
+            char seg[4][64];
+            const int n = split_top_spaces(v, where, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2 && n != 4) {
+                set_error("%s: border-width 需要 1/2/4 个长度", where);
+                return 0;
+            }
+            for (int i = 0; i < n; i++) {
+                uint8_t unit;
+                int num;
+                if (!parse_length(seg[i], where, 0, calc, &unit, &num))
+                    return 0;
+                if (!length_wants_const(unit, where, "border-width"))
+                    return 0;
+                if (num < 0 || num > 64) {
+                    set_error("%s: border-width 必须在 0~64px（收到 '%s'）", where,
+                              seg[i]);
+                    return 0;
+                }
+                w4[i] = num;
+            }
+            quad_fill(n, w4);
+            for (int i = 0; i < 4; i++)
+                bw4[i] = (uint8_t)w4[i];
+        }
+        for (int i = 0; i < 4; i++) {
+            snprintf(pbuf_side, sizeof(pbuf_side), "border-%s-width", k_side_names[i]);
+            if ((v = decls_get(st, pbuf_side)) != NULL) {
+                uint8_t unit;
+                int num;
+                if (!parse_length(v, where, 0, calc, &unit, &num))
+                    return 0;
+                if (!length_wants_const(unit, where, "border-width"))
+                    return 0;
+                if (num < 0 || num > 64) {
+                    set_error("%s: border-%s-width 必须在 0~64px（收到 '%s'）", where,
+                              k_side_names[i], v);
+                    return 0;
+                }
+                bw4[i] = (uint8_t)num;
+            }
+        }
+    }
+    {
+        /* 样式：1/2/4 个关键字 */
+        if ((v = decls_get(st, "border-style")) != NULL) {
+            char seg[4][64];
+            const int n = split_top_spaces(v, where, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2 && n != 4) {
+                set_error("%s: border-style 需要 1/2/4 个关键字", where);
+                return 0;
+            }
+            uint8_t st4[4] = { 0, 0, 0, 0 };
+            for (int i = 0; i < n; i++) {
+                if (!parse_border_style_kw(seg[i], "border-style", &st4[i]))
+                    return 0;
+            }
+            if (n == 1) {
+                st4[1] = st4[2] = st4[3] = st4[0];
+            } else if (n == 2) {
+                st4[2] = st4[0];
+                st4[3] = st4[1];
+            }
+            for (int i = 0; i < 4; i++)
+                bstyle4[i] = st4[i];
+        }
+        for (int i = 0; i < 4; i++) {
+            snprintf(pbuf_side, sizeof(pbuf_side), "border-%s-style", k_side_names[i]);
+            if ((v = decls_get(st, pbuf_side)) != NULL) {
+                if (!parse_border_style_kw(v, pbuf_side, &bstyle4[i]))
+                    return 0;
+            }
+        }
+    }
+    /*
+     * `border-style: none`（或某一边 none）按 CSS 语义把**那一边的宽度**归零。
+     * 不这么做的话"没有样式却占 2px"会让内容盒莫名缩水。
+     */
+    for (int i = 0; i < 4; i++)
+        if (bstyle4[i] == QL_UI_BORDER_NONE)
+            bw4[i] = 0;
+
+    /* ---- 四角圆角（1/2/4 个值，顺序 左上 右上 右下 左下） ---- */
+    int16_t rad4[4] = { 0, 0, 0, 0 };
+    {
+        if ((v = decls_get(st, "border-radius")) != NULL) {
+            if (strchr(v, '/') != NULL) {
+                set_error("%s: 椭圆的 border-radius（'/' 写法）暂不支持", where);
+                return 0;
+            }
+            char seg[4][64];
+            const int n = split_top_spaces(v, where, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2 && n != 4) {
+                set_error("%s: border-radius 需要 1/2/4 个长度", where);
+                return 0;
+            }
+            int r4[4] = { 0, 0, 0, 0 };
+            for (int i = 0; i < n; i++) {
+                uint8_t unit;
+                int num;
+                if (!parse_length(seg[i], where, 0, calc, &unit, &num))
+                    return 0;
+                if (!length_wants_const(unit, where, "border-radius"))
+                    return 0;
+                if (num < 0 || num > 32767) {
+                    set_error("%s: border-radius 超出 0~32767px", where);
+                    return 0;
+                }
+                r4[i] = num;
+            }
+            quad_fill(n, r4);
+            for (int i = 0; i < 4; i++)
+                rad4[i] = (int16_t)r4[i];
+        }
+        for (int i = 0; i < 4; i++) {
+            snprintf(pbuf_side, sizeof(pbuf_side), "border-%s-radius",
+                     k_corner_names[i]);
+            if ((v = decls_get(st, pbuf_side)) != NULL) {
+                if (strchr(v, '/') != NULL) {
+                    set_error("%s: 椭圆的 border-radius（'/' 写法）暂不支持", where);
+                    return 0;
+                }
+                uint8_t unit;
+                int num;
+                if (!parse_length(v, where, 0, calc, &unit, &num))
+                    return 0;
+                if (!length_wants_const(unit, where, "border-radius"))
+                    return 0;
+                if (num < 0 || num > 32767) {
+                    set_error("%s: border-%s-radius 超出 0~32767px", where,
+                              k_corner_names[i]);
+                    return 0;
+                }
+                rad4[i] = (int16_t)num;
+            }
+        }
     }
 
     /*
@@ -8692,9 +9218,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
 
     out->bg_color = bg;
     out->text_color = fg;
-    out->border_color = bd;
+    (void)bd;
     out->bg_color2 = bg2;
-    out->shadow_color = sh_color;
     out->width.value = (int16_t)wv;
     out->width.unit = wu;
     out->width.reserved = 0;
@@ -8731,13 +9256,14 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->padding.bottom = padding_e[2].value;
     out->padding.left = padding_e[3].value;
     out->padding_unit = edges_unit_bits(padding_e);
-    out->shadow_dx = (int16_t)sh_dx;
-    out->shadow_dy = (int16_t)sh_dy;
     out->display = (uint8_t)disp;
     out->bg_alpha = bg_a;
-    out->border_width = (uint8_t)bw;
-    out->border_style = border_style;
-    out->border_radius = (int16_t)radius;
+    for (int i = 0; i < 4; i++) {
+        out->border_w[i] = bw4[i];
+        out->border_style4[i] = bstyle4[i];
+        out->border_color4[i] = bcol4[i];
+        out->radius[i] = rad4[i];
+    }
     out->outline_color = outline_color;
     out->outline_width = (int8_t)outline_w;
     out->outline_offset = (int8_t)outline_off;
@@ -8746,8 +9272,15 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->font_id = (uint8_t)font_id;
     out->box_sizing = (uint8_t)box_sizing;
     out->bg_grad_dir = (uint8_t)grad_dir;
-    out->shadow_blur = (uint8_t)sh_blur;
-    out->shadow_alpha = sh_a;
+    out->image_rendering = image_rendering;
+    out->scrollbar_width = scrollbar_width;
+    out->scrollbar_alpha = scrollbar_alpha;
+    out->scrollbar_color = scrollbar_color;
+    out->object_position[0] = obj_pos[0];
+    out->object_position[1] = obj_pos[1];
+    out->shadow[0] = shadows[0];
+    out->shadow[1] = shadows[1];
+    out->text_shadow = text_shadow;
     out->flex_direction = (uint8_t)fdir;
     out->justify_content = (uint8_t)jc;
     out->align_items = (uint8_t)ai;

@@ -288,14 +288,14 @@ QL_TEST_BEGIN("test_keyframes")
 
         /* 构造期就落在 0% 帧：border-radius 0 */
         QL_CHECK_EQ(style_of(ui, N_RADIAL)->bg_grad_dir, 3);   /* 3 = 径向 */
-        QL_CHECK_EQ(style_of(ui, N_RADIAL)->border_radius, 0);
+        QL_CHECK_EQ(style_of(ui, N_RADIAL)->radius[0], 0);
 
         (void)tick_at(ui, 5000);
-        QL_CHECK_EQ(style_of(ui, N_RADIAL)->border_radius, 0);
+        QL_CHECK_EQ(style_of(ui, N_RADIAL)->radius[0], 0);
         (void)tick_at(ui, 5300);                              /* 一半 */
-        QL_CHECK_EQ(style_of(ui, N_RADIAL)->border_radius, 15);
+        QL_CHECK_EQ(style_of(ui, N_RADIAL)->radius[0], 15);
         (void)tick_at(ui, 5600);                              /* 播完，fill: forwards */
-        QL_CHECK_EQ(style_of(ui, N_RADIAL)->border_radius, 30);
+        QL_CHECK_EQ(style_of(ui, N_RADIAL)->radius[0], 30);
 
         /* 像素：圆心是起始色（亮），四角是终止色（暗），且四角被圆角切掉 */
         QLDispDriver *disp = ql_disp_mem_create(W, H, QL_COLOR_ARGB8888);

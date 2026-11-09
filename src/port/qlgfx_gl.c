@@ -60,6 +60,8 @@ typedef struct {
      * 二者会冲突；这样顶点长到 80 B，换来"遮罩对任何图元都成立"。
      */
     float mcx, mcy, mr, mpad;
+    /* 四角圆角半径（顺序 左上 右上 右下 左下），设备像素 */
+    float r_tl, r_tr, r_br, r_bl;
 } QLGLVertex;
 
 typedef struct {
@@ -147,6 +149,12 @@ struct QLGfxGL {
     uint32_t         resize_until_ms;  /* 这个时刻之前不跟 vblank（正在拖边框） */
     uint64_t         last_end_us;      /* 上一帧 swap 结束的单调时钟（微秒） */
     uint32_t         pace_us;          /* 估算的"一帧该多久"（vsync 帧间隔的滑动平均） */
+    /*
+     * 四角半径覆盖：只有 fill/stroke/gradient4 这些入口会置位，
+     * emit_quad 系列读它填顶点的四角半径；全同的情况（绝大多数）为 0。
+     */
+    int              use_r4;
+    ql_coord_t       cur_r4[4];
     uint64_t         cfg_us;      /* 最近一次 ConfigureNotify 的时刻（QLGL_LAG_DEBUG 用） */
     int              present_now;      /* 刚收到 ConfigureNotify：这一帧不要等，立刻推上去 */
     int              keep_vsync_on_resize;  /* 拖动期间也跟 vblank（QLGL_KEEP_VSYNC=1） */
@@ -234,15 +242,17 @@ static const char *VS_SRC =
     "layout(location=4) in vec2 a_uv;\n"
     "layout(location=5) in vec4 a_color;\n"
     "layout(location=6) in vec4 a_mask;\n"
+    "layout(location=7) in vec4 a_radii;\n"
     "uniform vec2 u_viewport;\n"
     "out vec2 v_local; out vec2 v_half; out vec4 v_params; out vec2 v_uv; out vec4 v_color;\n"
     "out vec4 v_mask;\n"
+    "out vec4 v_radii;\n"
     "void main(){\n"
     "  vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;\n"
     "  ndc.y = -ndc.y;\n"
     "  gl_Position = vec4(ndc, 0.0, 1.0);\n"
     "  v_local = a_local; v_half = a_half; v_params = a_params;\n"
-    "  v_uv = a_uv; v_color = a_color; v_mask = a_mask;\n"
+    "  v_uv = a_uv; v_color = a_color; v_mask = a_mask; v_radii = a_radii;\n"
     "}\n";
 
 /*
@@ -264,6 +274,7 @@ static const char *FS_SRC =
     "#endif\n"
     "in vec2 v_local; in vec2 v_half; in vec4 v_params; in vec2 v_uv; in vec4 v_color;\n"
     "in vec4 v_mask;\n"
+    "in vec4 v_radii;\n"
     "uniform sampler2D u_atlas;\n"
     "uniform sampler2D u_bg;\n"
     "uniform sampler2D u_image;\n"
@@ -274,7 +285,13 @@ static const char *FS_SRC =
     "  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;\n"
     "}\n"
     "void main(){\n"
-    "  float radius = v_params.x;\n"
+    /*
+     * 四角半径：按象限从 v_radii 里挑（局部坐标 x 右为正、y 下为正）。
+     * 四个值相同时退化成单半径 —— 与 CPU 侧 round_row_span4 同一套语义。
+     */
+    "  float radius = (v_local.x > 0.0)\n"
+    "      ? ((v_local.y > 0.0) ? v_radii.z : v_radii.y)\n"
+    "      : ((v_local.y > 0.0) ? v_radii.w : v_radii.x);\n"
     "  float border = v_params.y;\n"
     "  float mode = v_params.z;\n"
     "  float cov;\n"
@@ -295,6 +312,17 @@ static const char *FS_SRC =
      * mode 5 = 位图（直接采样 RGBA）。两者都不做形状 AA：位图自身是矩形，
      * 边缘对齐由调用方保证（与字形同一个道理，外扩反而会糊）。
      */
+    /*
+     * mode 7 = 内阴影（`box-shadow: inset`）：同一个 SDF，但覆盖率从**边界向内**衰减。
+     * 必须排在最前面：下面的分支是按"从大到小"夹逼写的，7 会先命中 mode>4.5 的图片分支。
+     */
+    "  if (mode > 6.5) {\n"
+    "    float d = sdRoundBox(v_local, v_half, radius);\n"
+    "    float dd = -d;\n"
+    "    float cov = 1.0 - smoothstep(0.0, max(border, 1.0), dd);\n"
+    "    frag = vec4(v_color.rgb, v_color.a * cov * m);\n"
+    "    return;\n"
+    "  }\n"
     "  if (mode > 4.5) {\n"
     /* 图片也要跟着 border-radius 裁：圆角用同一个 SDF 算覆盖率 */
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
@@ -780,6 +808,19 @@ static void emit_quad_shear(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t 
 
     float b = (border < 0) ? -1.0f : (float)border;
 
+    /* 四角半径：默认四角相同；`use_r4` 时按角取（同样夹到短边一半） */
+    float r4v[4];
+    if (g->use_r4) {
+        for (int i = 0; i < 4; i++) {
+            float rr = (float)g->cur_r4[i];   /* 调用方已经换成设备像素 */
+            if (rr > half_min) rr = half_min;
+            if (rr < 0.0f) rr = 0.0f;
+            r4v[i] = rr;
+        }
+    } else {
+        r4v[0] = r4v[1] = r4v[2] = r4v[3] = rad;
+    }
+
     /* 绘制期平移：形状吃全偏移（亚像素），字形只吃整数部分（保持清晰） */
     const float ox = (use_tex == 1) ? round_to_int(off_x_of(g)) : off_x_of(g);
     const float oy = (use_tex == 1) ? round_to_int(off_y_of(g)) : off_y_of(g);
@@ -803,6 +844,10 @@ static void emit_quad_shear(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t 
     memset(&v, 0, sizeof(v));
     v.hx = hx; v.hy = hy;
     v.radius = rad;
+    v.r_tl = r4v[0];
+    v.r_tr = r4v[1];
+    v.r_br = r4v[2];
+    v.r_bl = r4v[3];
     v.border = b;
     v.use_tex = use_tex ? 1.0f : 0.0f;
     v.r = cr; v.g = cg; v.b = cb; v.a = ca;
@@ -826,6 +871,9 @@ static void emit_quad_shear(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t 
         emit_vertex(g, &v);
     }
 }
+
+static inline QLRect gsx(QLGfxGL *g, QLRect r);
+static inline ql_coord_t gsl(QLGfxGL *g, ql_coord_t v);
 
 static void emit_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_coord_t border,
                       ql_color_t color, uint8_t alpha,
@@ -866,6 +914,10 @@ static void emit_image_quad(QLGfxGL *g, QLRect r, ql_coord_t radius, ql_color_t 
     v.hx = hx;
     v.hy = hy;
     v.radius = (float)radius;         /* 圆角：片元里用同一个 SDF 算覆盖率 */
+    {
+        const float rr = (float)radius;
+        v.r_tl = v.r_tr = v.r_br = v.r_bl = rr;
+    }
     v.border = -1.0f;
     v.use_tex = mode;                 /* 5 = 位图，6 = A8 蒙版（着色用顶点色） */
     v.r = (float)QL_COLOR_GET_R(tint) / 255.0f;
@@ -948,6 +1000,7 @@ static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
     memset(&v, 0, sizeof(v));
     v.hx = hx; v.hy = hy;
     v.radius = rad;
+    v.r_tl = v.r_tr = v.r_br = v.r_bl = rad;
     v.border = -1.0f;
     v.use_tex = 0.0f;
     v.a = ca;
@@ -1030,6 +1083,7 @@ static void emit_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius, ql_coord_t 
     memset(&v, 0, sizeof(v));
     v.hx = hx; v.hy = hy;
     v.radius = rad;
+    v.r_tl = v.r_tr = v.r_br = v.r_bl = rad;
     v.border = (float)blur;
     v.use_tex = 2.0f;                 /* 2 = 阴影模式 */
     v.r = (float)QL_COLOR_GET_R(color) / 255.0f;
@@ -1053,6 +1107,109 @@ static void gl_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t 
                                         uint8_t alpha)
 {
     emit_quad_gradient((QLGfxGL *)self->user, rect, radius, from, to, dir, alpha);
+}
+
+static void emit_inset_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius,
+                              ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                              ql_color_t color, uint8_t alpha);
+
+static void gl_fill_inset_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
+                                 ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                                 ql_color_t color, uint8_t alpha)
+{
+    emit_inset_shadow((QLGfxGL *)self->user, inner, radius, blur, dx, dy, color, alpha);
+}
+
+static void gl_fill_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                                ql_color_t color, uint8_t alpha)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    for (int i = 0; i < 4; i++)
+        g->cur_r4[i] = r4[i];
+    g->use_r4 = 1;
+    emit_quad(g, gsx(g, rect), gsl(g, ql_ui_radius_max4(r4)), -1, color, alpha, 0, 0, 0, 0,
+              0);
+    g->use_r4 = 0;
+}
+
+static void gl_stroke_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                                  ql_coord_t thickness, ql_color_t color)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    for (int i = 0; i < 4; i++)
+        g->cur_r4[i] = r4[i];
+    g->use_r4 = 1;
+    emit_quad(g, gsx(g, rect), gsl(g, ql_ui_radius_max4(r4)), gsl(g, thickness), color,
+              255, 0, 0, 0, 0, 0);
+    g->use_r4 = 0;
+}
+
+static void gl_fill_round_rect_gradient4(QLDraw2D *self, QLRect rect,
+                                         const ql_coord_t r4[4], ql_color_t from,
+                                         ql_color_t to, uint8_t dir, uint8_t alpha)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    for (int i = 0; i < 4; i++)
+        g->cur_r4[i] = r4[i];
+    g->use_r4 = 1;
+    emit_quad_gradient(g, rect, ql_ui_radius_max4(r4), from, to, dir, alpha);
+    g->use_r4 = 0;
+}
+
+static void emit_inset_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius,
+                              ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                              ql_color_t color, uint8_t alpha)
+{
+    if (ql_rect_is_empty(inner) || alpha == 0)
+        return;
+    if (blur < 0)
+        blur = 0;
+    /* 边界 = inner 平移 (dx,dy)；只在 inner 里面画 */
+    const QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
+
+    float x0, y0, x1, y1;
+    if (!clip_quad(g, (float)inner.x, (float)inner.y, (float)ql_rect_right(inner),
+                   (float)ql_rect_bottom(inner), &x0, &y0, &x1, &y1))
+        return;
+
+    float cx = (float)shaped.x + (float)shaped.w * 0.5f;
+    float cy = (float)shaped.y + (float)shaped.h * 0.5f;
+    float hx = (float)shaped.w * 0.5f;
+    float hy = (float)shaped.h * 0.5f;
+
+    float half_min = (hx < hy ? hx : hy);
+    float rad = (float)radius;
+    if (rad > half_min) rad = half_min;
+    if (rad < 0.0f) rad = 0.0f;
+
+    const float ox = off_x_of(g), oy = off_y_of(g);
+    x0 += ox; y0 += oy; x1 += ox; y1 += oy;
+    cx += ox; cy += oy;
+
+    const float xs[4] = { x0, x1, x1, x0 };
+    const float ys[4] = { y0, y0, y1, y1 };
+
+    QLGLVertex v;
+    memset(&v, 0, sizeof(v));
+    v.hx = hx; v.hy = hy;
+    v.radius = rad;
+    v.r_tl = v.r_tr = v.r_br = v.r_bl = rad;
+    v.border = (float)((blur > 0) ? blur : 1);
+    v.use_tex = 7.0f;                 /* 7 = 内阴影 */
+    v.r = (float)QL_COLOR_GET_R(color) / 255.0f;
+    v.g = (float)QL_COLOR_GET_G(color) / 255.0f;
+    v.b = (float)QL_COLOR_GET_B(color) / 255.0f;
+    v.a = (float)alpha / 255.0f;
+
+    static const int order2[6] = { 0, 1, 2, 0, 2, 3 };
+    for (int i = 0; i < 6; i++) {
+        int k = order2[i];
+        v.x = xs[k];
+        v.y = ys[k];
+        v.lx = xs[k] - cx;
+        v.ly = ys[k] - cy;
+        emit_vertex(g, &v);
+    }
 }
 
 static void gl_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
@@ -1380,6 +1537,7 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
      * 于是模糊结果只写进圆角内，四个缺口保留原本已画好的内容 —— 正是 CSS 语义。
      */
     v.radius = (corner > 0) ? (float)gsl(g, corner) : 0.0f;
+    v.r_tl = v.r_tr = v.r_br = v.r_bl = v.radius;
     v.a = 1.0f;
     v.r = 1.0f;
     v.g = 1.0f;
@@ -1933,6 +2091,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.fill_round_rect = gl_fill_round_rect;
     g->draw.fill_round_rect_gradient = gl_fill_round_rect_gradient;
     g->draw.fill_shadow = gl_fill_shadow;
+    g->draw.fill_inset_shadow = gl_fill_inset_shadow;
+    g->draw.fill_round_rect4 = gl_fill_round_rect4;
+    g->draw.fill_round_rect_gradient4 = gl_fill_round_rect_gradient4;
+    g->draw.stroke_round_rect4 = gl_stroke_round_rect4;
     g->draw.stroke_round_rect = gl_stroke_round_rect;
     g->draw.draw_line = ql_draw2d_draw_line;
     g->draw.draw_text = gl_draw_text;
@@ -2271,6 +2433,10 @@ static void flush_batch(QLGfxGL *g)
         glEnableVertexAttribArray(6);
         glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, stride,
                               (void *)offsetof(QLGLVertex, mcx));
+        /* 四角圆角半径也必须绑：没绑时默认 (0,0,0,0) ⇒ 所有圆角归零 */
+        glEnableVertexAttribArray(7);
+        glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, stride,
+                              (void *)offsetof(QLGLVertex, r_tl));
 
         glEnable(GL_SCISSOR_TEST);      /* 顶点已按最终 clip 画好，这里只需要全屏 scope */
         glScissor(0, 0, (GLsizei)g->width, (GLsizei)g->height);
@@ -2283,6 +2449,7 @@ static void flush_batch(QLGfxGL *g)
         glDisableVertexAttribArray(4);
         glDisableVertexAttribArray(5);
         glDisableVertexAttribArray(6);
+        glDisableVertexAttribArray(7);
 
         g->draw_calls++;
         g->vertex_count = g->vert_count;

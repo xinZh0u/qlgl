@@ -37,7 +37,7 @@ static QLUINodeRT *node_with_radius(QLUIRoot *ui, ql_coord_t radius)
 {
     for (uint16_t i = 0; i < ui->node_count; i++) {
         const QLUIStyle *st = ui->nodes[i].style;
-        if (st != NULL && st->border_radius == radius)
+        if (st != NULL && st->radius[0] == radius)
             return &ui->nodes[i];
     }
     return NULL;

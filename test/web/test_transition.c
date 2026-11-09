@@ -72,7 +72,7 @@ static uint32_t text_of(QLUIRoot *ui, uint16_t index)
 
 static uint32_t border_of(QLUIRoot *ui, uint16_t index)
 {
-    return ql_ui_node_style(&ui->nodes[index])->border_color;
+    return ql_ui_node_style(&ui->nodes[index])->border_color4[0];
 }
 
 /* 取 r 通道，方便看插值进度 */
@@ -190,7 +190,7 @@ QL_TEST_BEGIN("test_transition")
 
         QL_CHECK_EQ(tick_at(ui, 2500), 1);
         /* 圆角也在这条过渡里（transition: all 含 border-radius）：4 → 12，一半 = 8 */
-        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->border_radius, 8);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->radius[0], 8);
         /* 一半：0x10 → 0xff 大约 0x87；0x30 → 0xaa 大约 0x6d */
         int tr = (int)((text_of(ui, 1) >> 16) & 0xFFu);
         int br = (int)((border_of(ui, 1) >> 16) & 0xFFu);
@@ -200,7 +200,7 @@ QL_TEST_BEGIN("test_transition")
         QL_CHECK_EQ(tick_at(ui, 2600), 0);
         QL_CHECK_EQ(text_of(ui, 1), 0xffeeddu);
         QL_CHECK_EQ(border_of(ui, 1), 0xaabbccu);
-        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->border_radius, 12);
+        QL_CHECK_EQ(ql_ui_node_style(&ui->nodes[1])->radius[0], 12);
 
         /* .lnk 只过渡 color：400ms，中途背景色不该被碰 */
         s_now = 2700;

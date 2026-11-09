@@ -81,7 +81,7 @@ cmake --build build -j
 | `22_media` | `@media` 宽度断点：同一份 HTML，拖窗口就换成另一套布局（构建期切区间） |
 | `23_calc` | `calc()` / `min()` / `max()` / `clamp()`：三等分、随视口伸缩的条、绝对定位居中（编译成字节码，布局期求值） |
 | `24_b5` | B5 十二件：`visibility` / `pointer-events` / `align-self` / `order` / `flex-flow` / `align-content` / `overflow-x/y` / `sticky` / `inset` / `cursor` / `user-select` / `scroll-behavior` |
-| `25_b4` | B4 第一批：`border-style`（solid/dashed/dotted/none）+ `outline`（不占布局的 focus 环，`outline-offset` 可负） |
+| `25_b4` | B4 绘制细节：`border-style` sol/dash/dot、四边独立 `border-*`、四角 `radius`、两层 + `inset` 阴影、`text-shadow`、`outline`、`scrollbar-*` |
 
 ## 构建与测试
 

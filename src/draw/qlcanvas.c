@@ -962,6 +962,185 @@ void ql_canvas_fill_round_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
     ql_canvas_fill_round_rect_alpha(canvas, rect, radius, color, 255);
 }
 
+/*
+ * 四角独立圆角。
+ *
+ * 单半径版本用 `round_row_span` 一次算出一行的跨度；四角不同时左右两侧
+ * 要各算一次（左上/左下、右上/右下），公式完全一样：
+ *
+ *     dy  = 该行到"圆角圆心"的距离
+ *     dx  = floor(sqrt(rad² - dy²))
+ *     跨度端点 = 圆心 ∓ dx
+ *
+ * 半径先按"不超过短边一半"夹一遍（与单半径版本同一口径）。
+ */
+static inline ql_coord_t corner_dx(ql_coord_t rad, ql_coord_t dy)
+{
+    if (rad <= 0 || dy > rad)
+        return 0;
+    const ql_coord_t rem = rad * rad - dy * dy;
+    if (rem <= 0)
+        return 0;
+    ql_coord_t dx = (ql_coord_t)sqrtf((float)rem);
+    while (dx * dx > rem)
+        dx--;
+    while ((dx + 1) * (dx + 1) <= rem)
+        dx++;
+    return dx;
+}
+
+/* 把四角半径夹到合法范围（负数归零、最大为短边一半） */
+static void clamp_radii4(QLRect rect, const ql_coord_t r4[4], ql_coord_t out[4])
+{
+    ql_coord_t lim = (rect.w < rect.h ? rect.w : rect.h) / 2;
+    if (lim < 0)
+        lim = 0;
+    for (int i = 0; i < 4; i++) {
+        ql_coord_t r = r4[i];
+        if (r < 0)
+            r = 0;
+        if (r > lim)
+            r = lim;
+        out[i] = r;
+    }
+}
+
+/* 四角圆角矩形在 y 这一行的可见跨度（顺序 左上 右上 右下 左下） */
+static int round_row_span4(QLRect rect, const ql_coord_t r4[4], ql_coord_t y,
+                           ql_coord_t *out_x0, ql_coord_t *out_x1)
+{
+    if (y < rect.y || y >= ql_rect_bottom(rect))
+        return 0;
+    ql_coord_t r[4];
+    clamp_radii4(rect, r4, r);
+
+    const ql_coord_t top = rect.y;
+    const ql_coord_t bottom = ql_rect_bottom(rect) - 1;
+    ql_coord_t x0 = rect.x;
+    ql_coord_t x1 = ql_rect_right(rect) - 1;
+
+    /* 左：上段用左上角，下段用左下角 */
+    if (y < top + r[0]) {
+        x0 = rect.x + r[0] - corner_dx(r[0], top + r[0] - y);
+    } else if (y > bottom - r[3]) {
+        x0 = rect.x + r[3] - corner_dx(r[3], y - (bottom - r[3]));
+    }
+    /* 右：上段右上、下段右下 */
+    if (y < top + r[1]) {
+        x1 = ql_rect_right(rect) - 1 - r[1] + corner_dx(r[1], top + r[1] - y);
+    } else if (y > bottom - r[2]) {
+        x1 = ql_rect_right(rect) - 1 - r[2] + corner_dx(r[2], y - (bottom - r[2]));
+    }
+    if (x1 < x0)
+        return 0;
+    *out_x0 = x0;
+    *out_x1 = x1;
+    return 1;
+}
+
+void ql_canvas_fill_round_rect4_alpha(QLCanvas *canvas, QLRect rect, const ql_coord_t r4[4],
+                                      ql_color_t color, uint8_t alpha)
+{
+    if (canvas == NULL || alpha == 0 || r4 == NULL)
+        return;
+
+    QLRect area = ql_rect_intersect(rect, canvas->clip);
+    if (ql_rect_is_empty(area))
+        return;
+
+    if (r4[0] <= 0 && r4[1] <= 0 && r4[2] <= 0 && r4[3] <= 0) {
+        ql_canvas_fill_rect_alpha(canvas, area, color, alpha);
+        return;
+    }
+
+    for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
+        ql_coord_t sx0 = 0, sx1 = 0;
+        if (!round_row_span4(rect, r4, y, &sx0, &sx1))
+            continue;
+        if (sx0 < area.x)
+            sx0 = area.x;
+        if (sx1 > ql_rect_right(area) - 1)
+            sx1 = ql_rect_right(area) - 1;
+        if (sx1 >= sx0)
+            fill_row(canvas, sx0, sx1, y, color, alpha);
+    }
+}
+
+void ql_canvas_stroke_rect4_alpha(QLCanvas *canvas, QLRect rect, const ql_coord_t r4[4],
+                                  ql_coord_t thickness, ql_color_t color, uint8_t alpha)
+{
+    if (canvas == NULL || thickness <= 0 || ql_rect_is_empty(rect) || alpha == 0 ||
+        r4 == NULL)
+        return;
+
+    if (thickness > rect.w / 2)
+        thickness = rect.w / 2;
+    if (thickness > rect.h / 2)
+        thickness = rect.h / 2;
+    if (thickness <= 0)
+        return;
+
+    int all_zero = 1;
+    for (int i = 0; i < 4; i++)
+        if (r4[i] > 0)
+            all_zero = 0;
+    if (all_zero) {
+        /* 直边快速路径：四条矩形（与单半径版本完全一致） */
+        ql_canvas_fill_rect_alpha(canvas, ql_rect_make(rect.x, rect.y, rect.w, thickness),
+                                  color, alpha);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(rect.x, ql_rect_bottom(rect) - thickness,
+                                               rect.w, thickness),
+                                  color, alpha);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(rect.x, rect.y + thickness, thickness,
+                                               rect.h - 2 * thickness),
+                                  color, alpha);
+        ql_canvas_fill_rect_alpha(canvas,
+                                  ql_rect_make(ql_rect_right(rect) - thickness,
+                                               rect.y + thickness, thickness,
+                                               rect.h - 2 * thickness),
+                                  color, alpha);
+        return;
+    }
+
+    const QLRect inner = ql_rect_make(rect.x + thickness, rect.y + thickness,
+                                      rect.w - 2 * thickness, rect.h - 2 * thickness);
+    if (ql_rect_is_empty(inner))
+        return;
+    ql_coord_t ir[4];
+    for (int i = 0; i < 4; i++)
+        ir[i] = (r4[i] - thickness > 0) ? (r4[i] - thickness) : 0;
+
+    QLRect area = ql_rect_intersect(rect, canvas->clip);
+    if (ql_rect_is_empty(area))
+        return;
+    const ql_coord_t clip_x0 = area.x;
+    const ql_coord_t clip_x1 = ql_rect_right(area) - 1;
+
+    for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
+        ql_coord_t ox0 = 0, ox1 = 0;
+        if (!round_row_span4(rect, r4, y, &ox0, &ox1))
+            continue;
+        ql_coord_t ix0 = 0, ix1 = 0;
+        const int has_inner = round_row_span4(inner, ir, y, &ix0, &ix1);
+
+        ql_coord_t seg0 = ox0 > clip_x0 ? ox0 : clip_x0;
+        ql_coord_t seg1 = (has_inner ? ix0 - 1 : ox1);
+        if (seg1 > clip_x1)
+            seg1 = clip_x1;
+        if (seg1 >= seg0)
+            fill_row(canvas, seg0, seg1, y, color, alpha);
+
+        if (has_inner) {
+            seg0 = (ix1 + 1 > clip_x0) ? ix1 + 1 : clip_x0;
+            seg1 = ox1 < clip_x1 ? ox1 : clip_x1;
+            if (seg1 >= seg0)
+                fill_row(canvas, seg0, seg1, y, color, alpha);
+        }
+    }
+}
+
 /* ------------------------------ 渐变 / 阴影 ------------------------------ */
 
 /* 两个颜色的定点插值：t 为 0..255 */
@@ -1203,6 +1382,79 @@ static inline uint8_t shadow_cov_u8(float d, float blur)
  * 一张 143×68 的卡片、blur=10：逐像素次数从 ~4200 降到 ~400（约 10×）。
  * 圆角半径为 0 时四个角退化掉，全部走行/列填充。
  */
+/*
+ * 内阴影（`box-shadow: inset ...`）。
+ *
+ * 与 `fill_shadow` 共用一套 SDF：轮廓同样取"inner 平移 (dx,dy)"，
+ * 区别只在于**画在内侧**：距离边界越近覆盖率越高，深入 blur 之后归零。
+ *
+ * 逐像素只在"环"上算（离边界 blur 以内），中间一大片直接跳过 ——
+ * 否则一个大卡片的内阴影会退化成整块逐像素运算。
+ */
+void ql_canvas_fill_inset_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
+                                 ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                                 ql_color_t color, uint8_t alpha)
+{
+    if (canvas == NULL || alpha == 0 || ql_rect_is_empty(inner))
+        return;
+    if (blur < 0)
+        blur = 0;
+
+    const QLRect shaped = ql_rect_make(inner.x + dx, inner.y + dy, inner.w, inner.h);
+    QLRect area = ql_rect_intersect(inner, canvas->clip);
+    if (ql_rect_is_empty(area))
+        return;
+
+    ql_coord_t limit = (shaped.w < shaped.h ? shaped.w : shaped.h) / 2;
+    ql_coord_t rad = (radius > limit) ? limit : (radius < 0 ? 0 : radius);
+    const float frad = (float)rad;
+    const float hx = (float)shaped.w * 0.5f;
+    const float hy = (float)shaped.h * 0.5f;
+    const float cx = (float)shaped.x + hx;
+    const float cy = (float)shaped.y + hy;
+    const float fblur = (blur > 0) ? (float)blur : 1.0f;
+
+    const ql_coord_t ay0 = area.y, ay1 = ql_rect_bottom(area);
+
+    for (ql_coord_t y = ay0; y < ay1; y++) {
+        ql_coord_t sx0 = 0, sx1 = 0;
+        if (!round_row_span(shaped, y, rad, &sx0, &sx1))
+            continue;
+        ql_coord_t x0 = (sx0 > area.x) ? sx0 : area.x;
+        ql_coord_t x1 = (sx1 < ql_rect_right(area) - 1) ? sx1 : ql_rect_right(area) - 1;
+        if (x1 < x0)
+            continue;
+
+        /* 这一行是否靠近上/下边？不靠近就只看左右两侧的窄带 */
+        const float fy = (float)y + 0.5f - cy;
+        const int near_tb = (fy + hy <= fblur) || (hy - fy <= fblur);
+
+        const ql_coord_t band = blur + 1;
+        for (ql_coord_t x = x0; x <= x1; x++) {
+            if (!near_tb && x > sx0 + band && x < sx1 - band)
+                continue;   /* 深处：覆盖率为 0 */
+            const float fx = (float)x + 0.5f - cx;
+            float qx = (fx < 0.0f ? -fx : fx) - (hx - frad);
+            float qy = (fy < 0.0f ? -fy : fy) - (hy - frad);
+            const float ex = qx > 0.0f ? qx : 0.0f;
+            const float ey = qy > 0.0f ? qy : 0.0f;
+            const float outside = sqrtf(ex * ex + ey * ey);
+            const float innerd = (qx > qy ? qx : qy);
+            const float d = (innerd < 0.0f ? innerd : 0.0f) + outside - frad;
+            /* d < 0 = 在轮廓里面：越贴近边界越浓 */
+            float cov = 1.0f - ql_smoothstep(0.0f, fblur, -d);
+            if (cov <= 0.0f)
+                continue;
+            if (cov > 1.0f)
+                cov = 1.0f;
+            const uint8_t a2 = (uint8_t)((float)alpha * cov + 0.5f);
+            if (a2 == 0)
+                continue;
+            put_px(canvas, x, y, color, a2);
+        }
+    }
+}
+
 void ql_canvas_fill_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
                            ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
                            ql_color_t color, uint8_t alpha)

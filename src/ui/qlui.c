@@ -735,7 +735,7 @@ static const QLFont *font_of_style(const QLUINodeRT *node, const QLUIStyle *styl
 static ql_coord_t inner_width_of(const QLUIStyle *style, ql_coord_t content_w)
 {
     return content_w - style->padding.left - style->padding.right -
-           2 * (ql_coord_t)style->border_width;
+           ql_ui_border_h(style);
 }
 
 static ql_coord_t outer_width_of(const QLUINodeRT *node)
@@ -802,8 +802,7 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
         s->width.unit == QL_UI_UNIT_AUTO) {
         ql_coord_t iw = 0, ih = 0;
         image_node_size(node->owner, node, &iw, &ih);
-        return iw + s->padding.left + s->padding.right +
-               2 * (ql_coord_t)s->border_width;
+        return iw + s->padding.left + s->padding.right + ql_ui_border_h(s);
     }
 
     const QLFont *font = font_of_style(node, s);
@@ -813,7 +812,7 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
 
     if (text_sized)
         return ql_font_line_width_ls(font, node->text, -1, (ql_coord_t)s->letter_spacing) +
-               s->padding.left + s->padding.right + 2 * (ql_coord_t)s->border_width;
+               s->padding.left + s->padding.right + ql_ui_border_h(s);
 
     if (s->width.unit == QL_UI_UNIT_AUTO) {
         ql_coord_t w = avail_w - s->margin.left - s->margin.right;
@@ -829,7 +828,7 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
      * （border-box 时它们指边框盒，直接夹总量 —— 上面那条 return。）
      */
     v = clamp_len(s->min_width, s->max_width, v, avail_w);
-    return v + s->padding.left + s->padding.right + 2 * (ql_coord_t)s->border_width;
+    return v + s->padding.left + s->padding.right + ql_ui_border_h(s);
 }
 
 
@@ -1017,8 +1016,7 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
         if (has_shown_text(child) && child->first_child == NULL && font != NULL) {
             ql_coord_t tw = ql_font_line_width_ls(font, child->text, -1,
                                                   (ql_coord_t)s->letter_spacing) +
-                            2 * (ql_coord_t)s->border_width + s->padding.left +
-                            s->padding.right;
+                            ql_ui_border_h(s) + s->padding.left + s->padding.right;
             ql_coord_t cap = cb.w - l - r;
             if (cap > 0 && tw > cap)
                 tw = cap;
@@ -2076,8 +2074,8 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     ql_coord_t box_x = x + m_left;
     ql_coord_t box_y = y + s->margin.top;
 
-    ql_coord_t content_x = box_x + s->border_width + s->padding.left;
-    ql_coord_t content_y = box_y + s->border_width + s->padding.top;
+    ql_coord_t content_x = box_x + s->border_w[3] + s->padding.left;
+    ql_coord_t content_y = box_y + s->border_w[0] + s->padding.top;
     ql_coord_t content_w = inner_width_of(s, border_w);
     if (content_w < 0)
         content_w = 0;
@@ -2095,8 +2093,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     if (height_is_definite(s, basis_h)) {
         decl_h = height_of_style(s, basis_h, 0);
         if (s->box_sizing == 1) {
-            decl_h -= 2 * (ql_coord_t)s->border_width + s->padding.top +
-                      s->padding.bottom;
+            decl_h -= ql_ui_border_v(s) + s->padding.top + s->padding.bottom;
             if (decl_h < 0)
                 decl_h = 0;
         }
@@ -2112,8 +2109,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         if (definite_h) {
             ql_coord_t hv = height_of_style(s, basis_h, 0);
             if (s->box_sizing == 1) {
-                avail_h = hv - 2 * (ql_coord_t)s->border_width - s->padding.top -
-                          s->padding.bottom;
+                avail_h = hv - ql_ui_border_v(s) - s->padding.top - s->padding.bottom;
             } else {
                 avail_h = hv;
             }
@@ -2222,7 +2218,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                                            is_flex_container(s))) {
         ql_coord_t hv = height_of_style(s, basis_h, content_h);
         if (s->box_sizing == 1) {
-            hv -= 2 * (ql_coord_t)s->border_width + s->padding.top + s->padding.bottom;
+            hv -= ql_ui_border_v(s) + s->padding.top + s->padding.bottom;
             if (hv < 0)
                 hv = 0;
         }
@@ -2243,7 +2239,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                              (int32_t)s->aspect_h);
             content_w = (cw > 0) ? cw : 0;
             border_w = content_w + s->padding.left + s->padding.right +
-                       2 * (ql_coord_t)s->border_width;
+                       ql_ui_border_h(s);
         } else if (!h_def) {
             const ql_coord_t ch =
                 (ql_coord_t)(((int32_t)content_w * (int32_t)s->aspect_h) /
@@ -2258,12 +2254,12 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      */
     if (s->box_sizing == 1) {
         ql_coord_t bh = content_h + s->padding.top + s->padding.bottom +
-                        2 * (ql_coord_t)s->border_width;
+                        ql_ui_border_v(s);
         const ql_coord_t clamped =
             clamp_len(s->min_height, s->max_height, bh, 0);
         if (clamped != bh) {
             content_h = clamped - s->padding.top - s->padding.bottom -
-                        2 * (ql_coord_t)s->border_width;
+                        ql_ui_border_v(s);
             if (content_h < 0)
                 content_h = 0;
         }
@@ -2272,7 +2268,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     }
 
     ql_coord_t border_h = content_h + s->padding.top + s->padding.bottom +
-                          2 * (ql_coord_t)s->border_width;
+                          ql_ui_border_v(s);
 
     node->border_box = ql_rect_make(box_x, box_y, border_w, border_h);
     node->content_box = ql_rect_make(content_x, content_y, content_w, content_h);
@@ -2284,9 +2280,9 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                            : ql_rect_make(0, 0, s_viewport_w, s_viewport_h);
     } else {
         /* 绝对定位的包含块是**padding box**（CSS 规范），即边框盒内缩一个边框宽 */
-        ql_coord_t bw = (ql_coord_t)s->border_width;
-        node->abs_cb = ql_rect_make(box_x + bw, box_y + bw,
-                                    border_w - 2 * bw, border_h - 2 * bw);
+        node->abs_cb = ql_rect_make(box_x + s->border_w[3], box_y + s->border_w[0],
+                                    border_w - ql_ui_border_h(s),
+                                    border_h - ql_ui_border_v(s));
     }
 
     for (QLUINodeRT *child = node->first_child; child != NULL;
@@ -2358,10 +2354,8 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
         return 0;
 
     const ql_coord_t pad_border =
-        row ? (ql_coord_t)(s->padding.left + s->padding.right +
-                           2 * (ql_coord_t)s->border_width)
-            : (ql_coord_t)(s->padding.top + s->padding.bottom +
-                           2 * (ql_coord_t)s->border_width);
+        row ? (ql_coord_t)(s->padding.left + s->padding.right + ql_ui_border_h(s))
+            : (ql_coord_t)(s->padding.top + s->padding.bottom + ql_ui_border_v(s));
     const ql_coord_t margin =
         row ? (ql_coord_t)(s->margin.left + s->margin.right)
             : (ql_coord_t)(s->margin.top + s->margin.bottom);
@@ -2517,9 +2511,9 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             const int row_axis = flex_is_row(node->style);
             const ql_coord_t pad_border =
                 row_axis ? (ql_coord_t)(c->style->padding.left + c->style->padding.right +
-                                        2 * (ql_coord_t)c->style->border_width)
+                                        ql_ui_border_h(c->style))
                          : (ql_coord_t)(c->style->padding.top + c->style->padding.bottom +
-                                        2 * (ql_coord_t)c->style->border_width);
+                                        ql_ui_border_v(c->style));
             const ql_coord_t len_value =
                 (c->style->box_sizing == 1) ? box : (box - pad_border);
 
@@ -2550,7 +2544,7 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             if (row_axis) {
                 const ql_coord_t pad_border =
                     (ql_coord_t)(c->style->padding.left + c->style->padding.right +
-                                 2 * (ql_coord_t)c->style->border_width);
+                                 ql_ui_border_h(c->style));
                 ql_coord_t v = resolve_length(*len, content_w, content_w);
                 if (c->style->box_sizing == 0)
                     v -= pad_border;
@@ -3089,11 +3083,19 @@ static int collect_node_styles(const QLUINodeRT *node, const QLUIStyle *out[4])
 /* 阴影可能画到的矩形（不算阴影时返回空矩形） */
 static QLRect shadow_extent(QLRect box, const QLUIStyle *s)
 {
-    if (s == NULL || s->shadow_alpha == 0 || ql_rect_is_empty(box))
+    if (s == NULL || ql_rect_is_empty(box))
         return ql_rect_make(0, 0, 0, 0);
-    ql_coord_t pad = s->shadow_blur + 1;
-    return ql_rect_make(box.x + s->shadow_dx - pad, box.y + s->shadow_dy - pad,
-                        box.w + 2 * pad, box.h + 2 * pad);
+    QLRect acc = ql_rect_make(0, 0, 0, 0);
+    for (int i = 0; i < 2; i++) {
+        if (s->shadow[i].alpha == 0 || s->shadow[i].inset)
+            continue;   /* 内阴影画在盒子里面，不扩张绘制范围 */
+        const ql_coord_t pad = s->shadow[i].blur + 1;
+        const QLRect r = ql_rect_make(box.x + s->shadow[i].dx - pad,
+                                      box.y + s->shadow[i].dy - pad,
+                                      box.w + 2 * pad, box.h + 2 * pad);
+        acc = (acc.w == 0) ? r : ql_rect_union(acc, r);
+    }
+    return acc;
 }
 
 /*
@@ -3585,15 +3587,29 @@ static void draw_scrollbar(QLUINodeRT *node, QLDraw2D *d2d)
     if (!ql_ui_scrollable(node) || d2d->fill_round_rect == NULL)
         return;
 
+    const QLUIStyle *s = ql_ui_node_style(node);
+    /* `scrollbar-width`：0 = 默认，1 = thin，2 = auto，3 = none 不画 */
+    if (s != NULL && s->scrollbar_width == 3)
+        return;
+    ql_coord_t w = SCROLLBAR_W;
+    if (s != NULL && s->scrollbar_width == 1)
+        w = 2;
+    else if (s != NULL && s->scrollbar_width == 2)
+        w = SCROLLBAR_W;
+
     const QLRect box = ql_ui_node_rect(node);
     ql_coord_t th = 0, ty = 0;
     scrollbar_thumb(box.h, node->scroll_max_y, node->scroll_y, &th, &ty);
     if (th <= 0)
         return;
 
-    QLRect bar = ql_rect_make(ql_rect_right(box) - SCROLLBAR_INSET - SCROLLBAR_W,
-                              box.y + ty, SCROLLBAR_W, th);
-    d2d->fill_round_rect(d2d, bar, SCROLLBAR_W / 2, 0x808080, 0x96);
+    QLRect bar = ql_rect_make(ql_rect_right(box) - SCROLLBAR_INSET - w, box.y + ty, w,
+                              th);
+    ql_color_t col = 0x808080;
+    uint8_t alpha = 0x96;
+    if (s != NULL && s->scrollbar_color != 0)
+        col = s->scrollbar_color;
+    d2d->fill_round_rect(d2d, bar, w / 2, col, alpha);
 }
 
 
@@ -4450,6 +4466,39 @@ static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
         return;
 
     /*
+     * `object-position`：图片在"多出来的余量"里怎么摆。
+     *   - contain / none / scale-down：余量在**目标盒**里（改 dst 的偏移）；
+     *   - cover：目标盒已经盖满，余量在**源**里（改 src 的起点，决定露哪一块）。
+     * 百分比按千分比存（500 = 居中），px 就是绝对偏移（CSS 语义）。
+     */
+    if (s->object_position[0].unit != 0 || s->object_position[0].value != 500 ||
+        s->object_position[1].unit != 0 || s->object_position[1].value != 500) {
+        const QLUILength *px = &s->object_position[0];
+        const QLUILength *py = &s->object_position[1];
+        const ql_coord_t slack_x = node->content_box.w - dst.w;
+        const ql_coord_t slack_y = node->content_box.h - dst.h;
+        const ql_coord_t ox = (px->unit == QL_UI_UNIT_PERCENT)
+                                  ? (ql_coord_t)((int32_t)slack_x * px->value / 1000)
+                                  : (ql_coord_t)px->value;
+        const ql_coord_t oy = (py->unit == QL_UI_UNIT_PERCENT)
+                                  ? (ql_coord_t)((int32_t)slack_y * py->value / 1000)
+                                  : (ql_coord_t)py->value;
+        if (slack_x != 0)
+            dst.x = node->content_box.x + ox;
+        if (slack_y != 0)
+            dst.y = node->content_box.y + oy;
+        /* cover：源也按同样比例挪（否则 object-position 对 cover 无效） */
+        if (ql_ui_style_object_fit(s) == QL_UI_FIT_COVER) {
+            const ql_coord_t ssx = (ql_coord_t)img->w - src.w;
+            const ql_coord_t ssy = (ql_coord_t)img->h - src.h;
+            if (ssx > 0 && px->unit == QL_UI_UNIT_PERCENT)
+                src.x = (ql_coord_t)((int32_t)ssx * px->value / 1000);
+            if (ssy > 0 && py->unit == QL_UI_UNIT_PERCENT)
+                src.y = (ql_coord_t)((int32_t)ssy * py->value / 1000);
+        }
+    }
+
+    /*
      * `object-fit: none`/`contain` 时图可能比内容盒大（或位置超出），
      * 按内容盒裁一下 —— 与 overflow: hidden 的效果一致。
      * 圆角继续交给 blit 的 radius（用它自己的 SDF，边缘才平滑）。
@@ -4462,7 +4511,10 @@ static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
             d2d->set_clip(d2d, c);
         node->owner->clip = c;
     }
-    const ql_coord_t radius = (ql_coord_t)s->border_radius;
+    /* 图片的圆角只能用单半径（blit 接口如此），四角不同时取最大 */
+    const ql_coord_t radius = ql_ui_radius_max(s);
+    if (d2d != NULL)
+        d2d->image_pixelated = (s->image_rendering != 0);
     d2d->blit_image(d2d, img, dst, &src, radius, 255);
     if (need_clip) {
         if (d2d->set_clip != NULL)
@@ -4738,15 +4790,159 @@ static void paint_dash_frame(QLDraw2D *d2d, QLRect rect, ql_coord_t w, uint8_t s
                    color);
 }
 
-/* `border-style: dashed/dotted`。solid 仍走 stroke_round_rect（有圆角） */
-static void paint_border(QLDraw2D *d2d, QLRect box, ql_coord_t w, ql_coord_t radius,
-                         uint8_t style, ql_color_t color)
+/* 四角半径 → 设备/逻辑坐标下的数组（给 4 半径接口用） */
+static void style_radii4(const QLUIStyle *s, ql_coord_t r4[4])
 {
-    if (style == QL_UI_BORDER_SOLID) {
-        d2d->stroke_round_rect(d2d, box, radius, w, color);
+    for (int i = 0; i < 4; i++)
+        r4[i] = (ql_coord_t)s->radius[i];
+}
+
+/* 圆角描边（自动选 4 半径 / 单半径 / 直角三条路） */
+static void stroke_rect_r4(QLDraw2D *d2d, QLRect rect, const ql_coord_t r4[4],
+                           ql_coord_t thickness, ql_color_t color)
+{
+    if (r4[0] == 0 && r4[1] == 0 && r4[2] == 0 && r4[3] == 0) {
+        d2d->stroke_round_rect(d2d, rect, 0, thickness, color);
         return;
     }
-    paint_dash_frame(d2d, box, w, style, color);
+    if (r4[0] == r4[1] && r4[0] == r4[2] && r4[0] == r4[3]) {
+        d2d->stroke_round_rect(d2d, rect, r4[0], thickness, color);
+        return;
+    }
+    if (d2d->stroke_round_rect4 != NULL) {
+        d2d->stroke_round_rect4(d2d, rect, r4, thickness, color);
+        return;
+    }
+    ql_coord_t m = r4[0];
+    for (int i = 1; i < 4; i++)
+        if (r4[i] > m)
+            m = r4[i];
+    d2d->stroke_round_rect(d2d, rect, m, thickness, color);
+}
+
+static void fill_rect_r4(QLDraw2D *d2d, QLRect rect, const ql_coord_t r4[4],
+                         ql_color_t color, uint8_t alpha)
+{
+    if (r4[0] == 0 && r4[1] == 0 && r4[2] == 0 && r4[3] == 0) {
+        d2d->fill_round_rect(d2d, rect, 0, color, alpha);
+        return;
+    }
+    if (r4[0] == r4[1] && r4[0] == r4[2] && r4[0] == r4[3]) {
+        d2d->fill_round_rect(d2d, rect, r4[0], color, alpha);
+        return;
+    }
+    if (d2d->fill_round_rect4 != NULL) {
+        d2d->fill_round_rect4(d2d, rect, r4, color, alpha);
+        return;
+    }
+    ql_coord_t m = r4[0];
+    for (int i = 1; i < 4; i++)
+        if (r4[i] > m)
+            m = r4[i];
+    d2d->fill_round_rect(d2d, rect, m, color, alpha);
+}
+
+/*
+ * 画边框。三种情形：
+ *
+ *   1. 四边宽度/样式/颜色全同 → 一次整圈描边（最常见，也是最快的一条）；
+ *   2. 有 dashed/dotted → 逐边切段（角上按直角处理，见覆盖表）；
+ *   3. 各边不同（颜色/宽度） → 把整圈描边**按边裁四次**，每次换一种颜色。
+ *      第 3 条是 CSS 里"上/下边优先占角"的简化：浏览器会沿 45° 斜线切分角部，
+ *      这里让上/下边整块吃掉角。视觉差异只在"四边颜色都不同 + 有圆角"时可见。
+ */
+static void paint_border(QLDraw2D *d2d, QLRect box, const QLUIStyle *s)
+{
+    ql_coord_t r4[4];
+    style_radii4(s, r4);
+
+    /* ---- 1. 全同：整圈 ---- */
+    if (ql_ui_border_uniform(s)) {
+        const ql_coord_t w = (ql_coord_t)s->border_w[0];
+        if (w <= 0)
+            return;
+        if (s->border_style4[0] == QL_UI_BORDER_SOLID) {
+            stroke_rect_r4(d2d, box, r4, w, s->border_color4[0]);
+        } else {
+            paint_dash_frame(d2d, box, w, s->border_style4[0], s->border_color4[0]);
+        }
+        return;
+    }
+
+    /* ---- 2. 有虚线/点线：逐边切段（各边自己的宽度与颜色） ---- */
+    int any_dash = 0;
+    for (int i = 0; i < 4; i++)
+        if (s->border_w[i] > 0 && s->border_style4[i] != QL_UI_BORDER_SOLID &&
+            s->border_style4[i] != QL_UI_BORDER_NONE)
+            any_dash = 1;
+    if (any_dash) {
+        const ql_coord_t wt = (ql_coord_t)s->border_w[0];
+        const ql_coord_t wr = (ql_coord_t)s->border_w[1];
+        const ql_coord_t wb = (ql_coord_t)s->border_w[2];
+        const ql_coord_t wl = (ql_coord_t)s->border_w[3];
+        const ql_coord_t right = ql_rect_right(box);
+        const ql_coord_t bottom = ql_rect_bottom(box);
+        if (wt > 0 && s->border_style4[0] != QL_UI_BORDER_NONE)
+            paint_dash_run(d2d, box.x + wl, box.y, box.w - wl - wr, wt, 0,
+                           s->border_style4[0], s->border_color4[0]);
+        if (wb > 0 && s->border_style4[2] != QL_UI_BORDER_NONE)
+            paint_dash_run(d2d, box.x + wl, bottom - wb, box.w - wl - wr, wb, 0,
+                           s->border_style4[2], s->border_color4[2]);
+        if (wl > 0 && s->border_style4[3] != QL_UI_BORDER_NONE)
+            paint_dash_run(d2d, box.x, box.y + wt, box.h - wt - wb, wl, 1,
+                           s->border_style4[3], s->border_color4[3]);
+        if (wr > 0 && s->border_style4[1] != QL_UI_BORDER_NONE)
+            paint_dash_run(d2d, right - wr, box.y + wt, box.h - wt - wb, wr, 1,
+                           s->border_style4[1], s->border_color4[1]);
+        return;
+    }
+
+    /* ---- 3. 各边不同色/宽：整圈描边 + 按边裁剪 ---- */
+    const QLRect saved_clip = d2d->user != NULL ? ql_rect_make(0, 0, 0, 0) : ql_rect_make(0, 0, 0, 0);
+    (void)saved_clip;
+    /*
+     * 每条边一圈：厚度取**这条边的宽度**，用裁剪矩形把那一条带切出来。
+     * 顺序 上 右 下 左：先上/下，后左/右 —— 左右只在"中间段"画，角归上/下。
+     */
+    const ql_coord_t wt = (ql_coord_t)s->border_w[0];
+    const ql_coord_t wr = (ql_coord_t)s->border_w[1];
+    const ql_coord_t wb = (ql_coord_t)s->border_w[2];
+    const ql_coord_t wl = (ql_coord_t)s->border_w[3];
+
+    struct {
+        ql_coord_t w;
+        QLRect     clip;
+        uint32_t   color;
+    } sides[4];
+
+    sides[0].w = wt;
+    sides[0].clip = ql_rect_make(box.x, box.y, box.w, wt);
+    sides[0].color = s->border_color4[0];
+    sides[2].w = wb;
+    sides[2].clip = ql_rect_make(box.x, ql_rect_bottom(box) - wb, box.w, wb);
+    sides[2].color = s->border_color4[2];
+    sides[1].w = wr;
+    sides[1].clip = ql_rect_make(ql_rect_right(box) - wr, box.y + wt, wr,
+                                 box.h - wt - wb);
+    sides[1].color = s->border_color4[1];
+    sides[3].w = wl;
+    sides[3].clip = ql_rect_make(box.x, box.y + wt, wl, box.h - wt - wb);
+    sides[3].color = s->border_color4[3];
+
+    for (int i = 0; i < 4; i++) {
+        if (sides[i].w <= 0 || ql_rect_is_empty(sides[i].clip))
+            continue;
+        /* 整圈描边被裁到这一条带上 ⇒ 只剩这一边的颜色 */
+        const QLRect c = ql_rect_intersect(sides[i].clip, box);
+        if (ql_rect_is_empty(c))
+            continue;
+        d2d->set_clip(d2d, c);
+        stroke_rect_r4(d2d, box, r4, sides[i].w, sides[i].color);
+    }
+    /*
+     * 恢复裁剪由调用方负责（render_node_inner 传进来、用完再设回去）——
+     * 这里**不能**自己设成 box：那会把后续兄弟节点一起裁掉（真踩过）。
+     */
 }
 
 /*
@@ -4756,7 +4952,7 @@ static void paint_border(QLDraw2D *d2d, QLRect box, ql_coord_t w, ql_coord_t rad
  * 厚度 = width，于是这圈线正好落在 [offset, offset + width] 之间。
  */
 static void paint_outline(QLDraw2D *d2d, QLRect box, ql_coord_t w, ql_coord_t off,
-                          ql_coord_t radius, uint8_t style, ql_color_t color)
+                          const ql_coord_t r4[4], uint8_t style, ql_color_t color)
 {
     if (w <= 0)
         return;
@@ -4765,11 +4961,14 @@ static void paint_outline(QLDraw2D *d2d, QLRect box, ql_coord_t w, ql_coord_t of
                                       box.h + 2 * grow);
     if (outer.w <= 0 || outer.h <= 0)
         return;
-    ql_coord_t rad = radius + grow;
-    if (rad < 0)
-        rad = 0;
+    ql_coord_t ro[4];
+    for (int i = 0; i < 4; i++) {
+        ro[i] = r4[i] + grow;
+        if (ro[i] < 0)
+            ro[i] = 0;
+    }
     if (style == QL_UI_BORDER_SOLID) {
-        d2d->stroke_round_rect(d2d, outer, rad, w, color);
+        stroke_rect_r4(d2d, outer, ro, w, color);
         return;
     }
     paint_dash_frame(d2d, outer, w, style, color);
@@ -4847,36 +5046,77 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
      */
     /*
      * 带上 border-radius：模糊是方框运算，圆角缺口里不该渗出方形的模糊块。
+     * 四角不同时取最大的那个（模糊只看外轮廓，差异肉眼不可见）。
      */
     if (!inv && s->backdrop_blur > 0 && !ql_rect_is_empty(box))
         (void)ql_draw2d_backdrop_blur_round(d2d, box, (int)s->backdrop_blur,
-                                            s->border_radius);
+                                            ql_ui_radius_max(s));
 
-    /* 阴影先画（在背景之下）；阴影轮廓取边框盒，与 CSS box-shadow 一致 */
-    if (!inv && s->shadow_alpha > 0 && d2d->fill_shadow != NULL &&
-        !ql_rect_is_empty(box))
-        d2d->fill_shadow(d2d, box, s->border_radius, s->shadow_blur,
-                         s->shadow_dx, s->shadow_dy, s->shadow_color, s->shadow_alpha);
+    ql_coord_t r4[4];
+    style_radii4(s, r4);
 
-    if (!inv && s->bg_alpha > 0 && !ql_rect_is_empty(box)) {
-        if (s->bg_grad_dir != 0 && d2d->fill_round_rect_gradient != NULL)
-            d2d->fill_round_rect_gradient(d2d, box, s->border_radius, s->bg_color,
-                                          s->bg_color2,
-                                          (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha);
-        else
-            d2d->fill_round_rect(d2d, box, s->border_radius, s->bg_color, s->bg_alpha);
+    /*
+     * 阴影先画（在背景之下）；轮廓取边框盒，与 CSS box-shadow 一致。
+     * 两层按书写顺序：先写的在下面（CSS 的语义是"第一层在最上面"，
+     * 但我们的绘制是后画的盖住先画的，所以这里**倒序**画，
+     * 让第一层最后画 → 视觉上位于最上）。
+     */
+    if (!inv && !ql_rect_is_empty(box)) {
+        for (int i = 1; i >= 0; i--) {
+            const QLUIShadow *sh = &s->shadow[i];
+            if (sh->alpha == 0 || sh->inset)
+                continue;
+            if (d2d->fill_shadow != NULL)
+                d2d->fill_shadow(d2d, box, ql_ui_radius_max(s), sh->blur, sh->dx, sh->dy,
+                                 sh->color, sh->alpha);
+        }
     }
 
-    if (!inv && s->border_width > 0 && s->border_style != QL_UI_BORDER_NONE &&
-        !ql_rect_is_empty(box))
-        paint_border(d2d, box, (ql_coord_t)s->border_width, s->border_radius,
-                     s->border_style, s->border_color);
+    if (!inv && s->bg_alpha > 0 && !ql_rect_is_empty(box)) {
+        const int uniform = (r4[0] == r4[1] && r4[0] == r4[2] && r4[0] == r4[3]);
+        if (s->bg_grad_dir != 0 && d2d->fill_round_rect_gradient != NULL) {
+            if (uniform || d2d->fill_round_rect_gradient4 == NULL)
+                d2d->fill_round_rect_gradient(
+                    d2d, box, uniform ? r4[0] : ql_ui_radius_max(s), s->bg_color,
+                    s->bg_color2, (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha);
+            else
+                d2d->fill_round_rect_gradient4(d2d, box, r4, s->bg_color, s->bg_color2,
+                                               (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha);
+        } else {
+            fill_rect_r4(d2d, box, r4, s->bg_color, s->bg_alpha);
+        }
+    }
+
+    if (!inv && !ql_rect_is_empty(box) && ql_ui_has_border(s)) {
+        /*
+         * 各边颜色/宽度不同时，paint_border 会临时改裁剪（每条边裁一次）。
+         * 必须原样恢复：否则后面的兄弟节点全被裁到这一个盒子里 ——
+         * 表现就是"某一行之后整页空白"。
+         */
+        const QLRect border_clip = node->owner->clip;
+        paint_border(d2d, box, s);
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, border_clip);
+        node->owner->clip = border_clip;
+    }
+
+    /* 内阴影：画在背景/边框之上、文本之下（CSS 里 inset 阴影盖在背景之上） */
+    if (!inv && !ql_rect_is_empty(box)) {
+        for (int i = 1; i >= 0; i--) {
+            const QLUIShadow *sh = &s->shadow[i];
+            if (sh->alpha == 0 || !sh->inset)
+                continue;
+            if (d2d->fill_inset_shadow != NULL)
+                d2d->fill_inset_shadow(d2d, box, ql_ui_radius_max(s), sh->blur, sh->dx,
+                                       sh->dy, sh->color, sh->alpha);
+        }
+    }
 
     /* outline 画在边框之后：它在最外圈，不该被自己的边框盖住 */
     if (!inv && s->outline_width > 0 && s->outline_style != QL_UI_BORDER_NONE &&
         !ql_rect_is_empty(box))
         paint_outline(d2d, box, (ql_coord_t)s->outline_width,
-                      (ql_coord_t)s->outline_offset, s->border_radius, s->outline_style,
+                      (ql_coord_t)s->outline_offset, r4, s->outline_style,
                       s->outline_color);
 
     /* <img>：背景/边框画完之后贴图（P3a：object-fit: fill） */
@@ -4960,8 +5200,43 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             ts.break_any = (uint8_t)(s->word_break == QL_UI_WORDBREAK_ALL);
             ts.ellipsis = (uint8_t)(s->text_overflow == QL_UI_OVERFLOW_ELLIPSIS);
         }
-        if (node->text[0] != '\0')
+        /*
+         * `text-shadow`：先把文字画一遍"影子"（偏移 + 影子色 + alpha），
+         * 再画正文盖上去。blur > 0 时用 5 次采样近似（中心 + 四斜向），
+         * 每次 alpha 摊薄 —— 不是真高斯，但对 1~4px 的模糊肉眼看不出差别，
+         * 而且完全不需要离屏缓冲（MCU 上也能跑）。
+         */
+        if (node->text[0] != '\0') {
+            const QLUIShadow *tsh = &s->text_shadow;
+            if (tsh->alpha > 0) {
+                QLTextStyle shadow_ts = ts;
+                shadow_ts.color = tsh->color;
+                QLRect sbox = tbox;
+                const ql_coord_t blur = (ql_coord_t)tsh->blur;
+                if (blur == 0) {
+                    sbox.x += tsh->dx;
+                    sbox.y += tsh->dy;
+                    d2d->alpha = tsh->alpha;
+                    d2d->draw_text(d2d, font_of(node), shown, -1, sbox, &shadow_ts);
+                    d2d->alpha = 255;
+                } else {
+                    /* 五采样近似：中心和四个斜向各 blur/2 */
+                    const ql_coord_t d = (blur > 1) ? blur / 2 : 1;
+                    static const ql_coord_t kdx[5] = { 0, -1, 1, -1, 1 };
+                    static const ql_coord_t kdy[5] = { 0, -1, -1, 1, 1 };
+                    for (int i = 0; i < 5; i++) {
+                        sbox = tbox;
+                        sbox.x += tsh->dx + kdx[i] * d;
+                        sbox.y += tsh->dy + kdy[i] * d;
+                        d2d->alpha = (uint8_t)(tsh->alpha / 5u + 1u);
+                        d2d->draw_text(d2d, font_of(node), shown, -1, sbox,
+                                       &shadow_ts);
+                    }
+                    d2d->alpha = 255;
+                }
+            }
             d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
+        }
         if (input_clipped) {
             node->owner->clip = input_saved_clip;
             d2d->set_clip(d2d, input_saved_clip);
@@ -5375,12 +5650,17 @@ static void trans_apply(void *user, const QLAnimValue *v)
     }
     if ((t->props & QL_UI_TRANS_TEXT) != 0)
         t->style.text_color = lerp_color(t->from.text_color, t->to.text_color, p);
-    if ((t->props & QL_UI_TRANS_BORDER) != 0)
-        t->style.border_color = lerp_color(t->from.border_color, t->to.border_color, p);
+    if ((t->props & QL_UI_TRANS_BORDER) != 0) {
+        for (int i = 0; i < 4; i++)
+            t->style.border_color4[i] =
+                lerp_color(t->from.border_color4[i], t->to.border_color4[i], p);
+    }
     if ((t->props & QL_UI_TRANS_RADIUS) != 0) {
-        float r = (float)t->from.border_radius +
-                  ((float)t->to.border_radius - (float)t->from.border_radius) * p;
-        t->style.border_radius = (int16_t)kf_i16(r);
+        for (int i = 0; i < 4; i++) {
+            const float r = (float)t->from.radius[i] +
+                            ((float)t->to.radius[i] - (float)t->from.radius[i]) * p;
+            t->style.radius[i] = (int16_t)kf_i16(r);
+        }
     }
     if ((t->props & QL_UI_TRANS_ALPHA) != 0) {
         float a = (float)t->from.bg_alpha +
@@ -5606,7 +5886,8 @@ static void kf_read(const QLUIAnimRun *run, const QLUIKeyframe *f, QLUIKfValue *
     out->tg = (float)QL_COLOR_GET_G(tx);
     out->tb = (float)QL_COLOR_GET_B(tx);
 
-    const ql_color_t bd = has_border ? f->border_color : base->border_color;
+    /* 关键帧的边框色是单值 → 四边都用它 */
+    const ql_color_t bd = has_border ? f->border_color : base->border_color4[0];
     out->br = (float)QL_COLOR_GET_R(bd);
     out->bg = (float)QL_COLOR_GET_G(bd);
     out->bb = (float)QL_COLOR_GET_B(bd);
@@ -5621,7 +5902,7 @@ static void kf_read(const QLUIAnimRun *run, const QLUIKeyframe *f, QLUIKfValue *
     if (!all_base && (f->props & QL_UI_KF_RADIUS) != 0)
         out->rad = (float)f->radius;
     else
-        out->rad = (float)base->border_radius;
+        out->rad = (float)ql_ui_radius_max(base);
 
     if (!all_base && (f->props & QL_UI_KF_CLIP) != 0)
         out->clip = (float)f->clip_r;
@@ -5732,12 +6013,19 @@ static void anim_apply(QLUIAnimRun *run, float u)
         run->style.text_color = QL_COLOR_RGB(kf_u8(a.tr + (b.tr - a.tr) * t),
                                              kf_u8(a.tg + (b.tg - a.tg) * t),
                                              kf_u8(a.tb + (b.tb - a.tb) * t));
-    if ((props & QL_UI_KF_BORDER) != 0)
-        run->style.border_color = QL_COLOR_RGB(kf_u8(a.br + (b.br - a.br) * t),
-                                               kf_u8(a.bg + (b.bg - a.bg) * t),
-                                               kf_u8(a.bb + (b.bb - a.bb) * t));
-    if ((props & QL_UI_KF_RADIUS) != 0)
-        run->style.border_radius = (int16_t)kf_i16(a.rad + (b.rad - a.rad) * t);
+    if ((props & QL_UI_KF_BORDER) != 0) {
+        /* 关键帧只有一个边框色 → 写满四边 */
+        const ql_color_t bc = QL_COLOR_RGB(kf_u8(a.br + (b.br - a.br) * t),
+                                           kf_u8(a.bg + (b.bg - a.bg) * t),
+                                           kf_u8(a.bb + (b.bb - a.bb) * t));
+        for (int i = 0; i < 4; i++)
+            run->style.border_color4[i] = bc;
+    }
+    if ((props & QL_UI_KF_RADIUS) != 0) {
+        const int16_t rr = (int16_t)kf_i16(a.rad + (b.rad - a.rad) * t);
+        for (int i = 0; i < 4; i++)
+            run->style.radius[i] = rr;
+    }
     if ((props & QL_UI_KF_CLIP) != 0)
         run->style.clip_r = (uint16_t)kf_i16(a.clip + (b.clip - a.clip) * t);
     if ((props & QL_UI_KF_MOVE) != 0) {

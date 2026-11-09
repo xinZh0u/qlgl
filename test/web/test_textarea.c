@@ -146,7 +146,7 @@ QL_TEST_BEGIN("test_textarea")
                 QL_CHECK_EQ((int)ta->style->display, (int)QL_UI_DISPLAY_INLINE_BLOCK);
                 QL_CHECK_EQ((int)ta->style->white_space, (int)QL_UI_WS_PRE_WRAP);
                 QL_CHECK_EQ((int)ta->style->font_family, (int)QL_UI_FAMILY_MONO);
-                QL_CHECK(ta->style->border_width > 0);
+                QL_CHECK(ta->style->border_w[0] > 0);
                 QL_CHECK(ta->border_box.h >= 60);
             }
             ql_ui_free(ui);

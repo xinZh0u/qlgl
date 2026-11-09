@@ -124,6 +124,22 @@ void ql_canvas_fill_round_rect(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                ql_color_t color);
 void ql_canvas_fill_round_rect_alpha(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                      ql_color_t color, uint8_t alpha);
+
+/*
+ * 四角各自的圆角半径（顺序 左上 右上 右下 左下）。CSS 的
+ * `border-radius: 4px 4px 0 0` 就是它；全相同时与单半径版本逐像素一致。
+ */
+void ql_canvas_fill_round_rect4_alpha(QLCanvas *canvas, QLRect rect,
+                                      const ql_coord_t r4[4], ql_color_t color,
+                                      uint8_t alpha);
+/* 四角圆角矩形沿着四条边的"环"（描边在矩形内侧，与 stroke_rect_alpha 同义） */
+void ql_canvas_stroke_rect4_alpha(QLCanvas *canvas, QLRect rect, const ql_coord_t r4[4],
+                                  ql_coord_t thickness, ql_color_t color, uint8_t alpha);
+
+/* 内阴影：软边画在 inner **里面**（`box-shadow: inset ...`） */
+void ql_canvas_fill_inset_shadow(QLCanvas *canvas, QLRect inner, ql_coord_t radius,
+                                 ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                                 ql_color_t color, uint8_t alpha);
 /* 线性渐变方向 */
 typedef enum {
     QL_GRADIENT_VERTICAL = 0,     /* 从 rect 上边到下边 */

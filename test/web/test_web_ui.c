@@ -172,7 +172,7 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color, QL_COLOR_RGB(0x4A, 0xD0, 0x8A));
     QL_CHECK_EQ(ql_ui_node_style(primary)->bg_color2, QL_COLOR_RGB(0x2A, 0x9A, 0x5C));
     QL_CHECK_EQ(ql_ui_node_style(primary)->bg_grad_dir, 1);   /* 1 = 垂直 */
-    QL_CHECK(ql_ui_node_style(primary)->shadow_alpha > 0);     /* 有阴影 */
+    QL_CHECK(ql_ui_node_style(primary)->shadow[0].alpha > 0);     /* 有阴影 */
 
     QLRect pr = ql_ui_node_rect(primary);
     QL_CHECK_EQ(ql_ui_pointer_move(ui, pr.x + 3, pr.y + 3), 1);
@@ -200,10 +200,10 @@ QL_TEST_BEGIN("test_web_ui")
     ql_ui_set_focus_node(ui, primary);
     QL_CHECK(ql_ui_focus_node(ui) == primary);
     settle(ui);
-    QL_CHECK_EQ(ql_ui_node_style(primary)->border_color, QL_COLOR_RGB(0xFF, 0xD0, 0x60));
+    QL_CHECK_EQ(ql_ui_node_style(primary)->border_color4[0], QL_COLOR_RGB(0xFF, 0xD0, 0x60));
     ql_ui_set_focus_node(ui, NULL);
     settle(ui);
-    QL_CHECK_EQ(ql_ui_node_style(primary)->border_color, QL_COLOR_RGB(0xE0, 0xFF, 0xE0));  /* 回落到 :hover */
+    QL_CHECK_EQ(ql_ui_node_style(primary)->border_color4[0], QL_COLOR_RGB(0xE0, 0xFF, 0xE0));  /* 回落到 :hover */
 
     /* 15. 视口变窄：根节点宽度跟着变，百分比仍按父内容宽计算 */
     ql_ui_layout(ui, 200, 160);

@@ -90,6 +90,24 @@ static int count_runs(int y, int x0, int x1, int want_border)
     return runs;
 }
 
+/* 期望被拒绝，且报错文案里含 needle */
+static int rejects(const char *css, const char *needle)
+{
+    const char *H = "<div id=r><div id=a>x</div></div>";
+    QLUIDoc *doc = ql_ui_load_text(H, css);
+    if (doc != NULL) {
+        ql_ui_doc_free(doc);
+        printf("  本该报错却编译通过了：%s\n", css);
+        return 0;
+    }
+    const char *msg = ql_ui_text_last_error();
+    if (msg == NULL || strstr(msg, needle) == NULL) {
+        printf("  报错文案不含 '%s'：%s\n", needle, msg ? msg : "(null)");
+        return 0;
+    }
+    return 1;
+}
+
 static const QLUIStyle *style_of(QLUIRoot *ui, int idx)
 {
     return ql_ui_node_style(&ui->nodes[idx]);
@@ -115,7 +133,7 @@ QL_TEST_BEGIN("test_b4")
             QL_CHECK(ui != NULL);
             if (ui == NULL)
                 continue;
-            QL_CHECK_EQ(style_of(ui, 0)->border_style, cases[i].want);
+            QL_CHECK_EQ(style_of(ui, 0)->border_style4[0], cases[i].want);
             release(ui);
         }
     }
@@ -128,8 +146,8 @@ QL_TEST_BEGIN("test_b4")
                                  "     border-width: 6px; border-style: none }");
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
-            QL_CHECK_EQ(style_of(ui, 1)->border_width, 0);   /* 宽度归零 */
-            QL_CHECK_EQ(style_of(ui, 1)->border_style, QL_UI_BORDER_NONE);
+            QL_CHECK_EQ(style_of(ui, 1)->border_w[0], 0);   /* 宽度归零 */
+            QL_CHECK_EQ(style_of(ui, 1)->border_style4[0], QL_UI_BORDER_NONE);
             const QLRect r = ql_ui_node_rect(&ui->nodes[1]);
             QL_CHECK_EQ(r.w, 40);   /* 没有多出 12px */
             QL_CHECK(is_bg(px(r.x + 1, r.y + 1)));   /* 也没画边 */
@@ -196,8 +214,8 @@ QL_TEST_BEGIN("test_b4")
                        "     width: 120px; height: 60px; background-color: #FFFFFF;"
                        "     border: 2px dashed #FF0000 }");
         QL_CHECK(ui != NULL);
-        QL_CHECK_EQ(style_of(ui, 1)->border_width, 2);
-        QL_CHECK_EQ(style_of(ui, 1)->border_style, QL_UI_BORDER_DASHED);
+        QL_CHECK_EQ(style_of(ui, 1)->border_w[0], 2);
+        QL_CHECK_EQ(style_of(ui, 1)->border_style4[0], QL_UI_BORDER_DASHED);
         r = ql_ui_node_rect(&ui->nodes[1]);
         QL_CHECK(count_runs(r.y, r.x, r.x + r.w - 1, 1) >= 8);
         release(ui);
@@ -331,6 +349,163 @@ QL_TEST_BEGIN("test_b4")
             ql_ui_set_focus_node(ui, NULL);
             release(ui);
         }
+    }
+
+    /* ---------- 7. 四边独立 border-width：只有下边有线，且不占多余宽度 ---------- */
+    {
+        const char *H = "<div id=r><div id=b>x</div></div>";
+        const char *CSS = "#r { width: 100%; height: 100%; background-color: #FFFFFF }"
+                          "#b { width: 60px; height: 30px; background-color: #FFFFFF;"
+                          "     border-width: 0 0 4px 0; border-style: solid;"
+                          "     border-color: #FF0000 }";
+        QLUIRoot *ui = render(H, CSS);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *st = style_of(ui, 1);
+            QL_CHECK_EQ(st->border_w[0], 0);      /* 上 */
+            QL_CHECK_EQ(st->border_w[2], 4);      /* 下 */
+            const QLRect r = ql_ui_node_rect(&ui->nodes[1]);
+            QL_CHECK_EQ(r.w, 60);                 /* 左右没有边框，宽度不变 */
+            QL_CHECK_EQ(r.h, 34);                 /* 下方多了 4px */
+            /* 上边不画、下边画 */
+            QL_CHECK(is_bg(px(r.x + 30, r.y)));
+            QL_CHECK(is_red(px(r.x + 30, r.y + 32)));
+            release(ui);
+        }
+    }
+
+    /* ---------- 8. 四边不同色：上红下蓝，中间是左/右的颜色 ---------- */
+    {
+        const char *H = "<div id=r><div id=b></div></div>";
+        const char *CSS = "#r { width: 100%; height: 100%; background-color: #FFFFFF }"
+                          "#b { width: 60px; height: 40px; background-color: #FFFFFF;"
+                          "     border: 4px solid #00FF00;"
+                          "     border-top-color: #FF0000;"
+                          "     border-bottom-color: #0000FF }";
+        QLUIRoot *ui = render(H, CSS);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLRect r = ql_ui_node_rect(&ui->nodes[1]);
+            QL_CHECK(is_red(px(r.x + r.w / 2, r.y + 1)));          /* 上红 */
+            QL_CHECK(is_blue(px(r.x + r.w / 2, r.y + r.h - 2)));   /* 下蓝 */
+            /* 左边带（中间段）是绿 */
+            const ql_color_t lc = px(r.x + 1, r.y + r.h / 2);
+            QL_CHECK(QL_COLOR_GET_G(lc) > 200 && QL_COLOR_GET_R(lc) < 60);
+            release(ui);
+        }
+    }
+
+    /* ---------- 9. 四角独立圆角：上面直角、下面圆角 ---------- */
+    {
+        const char *H = "<div id=r><div id=b></div></div>";
+        const char *CSS = "#r { width: 100%; height: 100%; background-color: #FFFFFF }"
+                          "#b { position: absolute; left: 10px; top: 10px;"
+                          "     width: 80px; height: 60px;"
+                          "     background-color: #0000FF; border-radius: 0 0 20px 20px }";
+        QLUIRoot *ui = render(H, CSS);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *st = style_of(ui, 1);
+            QL_CHECK_EQ(st->radius[0], 0);        /* 左上 */
+            QL_CHECK_EQ(st->radius[2], 20);       /* 右下 */
+            const QLRect r = ql_ui_node_rect(&ui->nodes[1]);
+            /* 左上角（直角）→ 画了；左下角（圆角缺口）→ 没画 */
+            QL_CHECK(is_blue(px(r.x, r.y)));
+            QL_CHECK(is_bg(px(r.x, r.y + r.h - 1)));
+            /* 右下角的缺口同理 */
+            QL_CHECK(is_bg(px(r.x + r.w - 1, r.y + r.h - 1)));
+            release(ui);
+        }
+    }
+
+    /* ---------- 10. 两层 box-shadow：各画各的 ---------- */
+    {
+        const char *H = "<div id=r><div id=b></div></div>";
+        const char *CSS = "#r { width: 100%; height: 100%; background-color: #FFFFFF }"
+                          "#b { position: absolute; left: 40px; top: 40px;"
+                          "     width: 40px; height: 40px; background-color: #FFFFFF;"
+                          "     box-shadow: 6px 0 0 #FF0000, 0 6px 0 #0000FF }";
+        QLUIRoot *ui = render(H, CSS);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *st = style_of(ui, 1);
+            QL_CHECK_EQ(st->shadow[0].alpha, 255);
+            QL_CHECK_EQ(st->shadow[1].alpha, 255);
+            const QLRect r = ql_ui_node_rect(&ui->nodes[1]);
+            QL_CHECK(is_red(px(r.x + r.w + 3, r.y + 20)));        /* 右侧红影 */
+            QL_CHECK(is_blue(px(r.x + 20, r.y + r.h + 3)));       /* 下方蓝影 */
+            release(ui);
+        }
+    }
+
+    /* ---------- 11. inset 阴影：边缘变暗、中间还是底色 ---------- */
+    {
+        const char *H = "<div id=r><div id=b></div></div>";
+        const char *CSS = "#r { width: 100%; height: 100%; background-color: #FFFFFF }"
+                          "#b { position: absolute; left: 20px; top: 20px;"
+                          "     width: 80px; height: 60px; background-color: #FFFFFF;"
+                          "     box-shadow: inset 0 0 10px #000000 }";
+        QLUIRoot *ui = render(H, CSS);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *st = style_of(ui, 1);
+            QL_CHECK_EQ(st->shadow[0].inset, 1);
+            const QLRect r = ql_ui_node_rect(&ui->nodes[1]);
+            const ql_color_t edge = px(r.x + 1, r.y + r.h / 2);
+            const ql_color_t mid = px(r.x + r.w / 2, r.y + r.h / 2);
+            QL_CHECK(QL_COLOR_GET_R(edge) < 200);       /* 边缘被压暗 */
+            QL_CHECK(QL_COLOR_GET_R(mid) > 240);        /* 中间不受影响 */
+            release(ui);
+        }
+    }
+
+    /* ---------- 12. text-shadow：影子在文字的左上方 ---------- */
+    {
+        QLUIRoot *ui = render("<div id=r><div id=b>x</div></div>",
+                              "#r { width: 100%; height: 100%; background-color: #FFFFFF }"
+                              "#b { position: absolute; left: 20px; top: 20px;"
+                              "     width: 60px; height: 30px; background-color: #FFFFFF;"
+                              "     color: #000000; font-size: 16px;"
+                              "     text-shadow: 2px 2px 0 #FF0000 }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *st = style_of(ui, 1);
+            QL_CHECK_EQ(st->text_shadow.alpha, 255);
+            QL_CHECK_EQ(st->text_shadow.dx, 2);
+            /* 右下偏移 → 字形右下方应该有红像素（"x" 的笔画斜向伸展） */
+            int red = 0, dark = 0;
+            for (int y = 18; y < 52; y++)
+                for (int x = 18; x < 84; x++) {
+                    const ql_color_t c = px(x, y);
+                    if (QL_COLOR_GET_R(c) > QL_COLOR_GET_G(c) + 30 &&
+                        QL_COLOR_GET_R(c) > QL_COLOR_GET_B(c) + 30)
+                        red++;
+                    if (QL_COLOR_GET_R(c) < 100)
+                        dark++;
+                }
+            QL_CHECK(dark > 0);          /* 文字本身画出来了 */
+            QL_CHECK(red > 0);           /* 影子也画出来了 */
+            release(ui);
+        }
+    }
+
+    /* ---------- 13. 解析：非法值要报错（而不是静默忽略） ---------- */
+    {
+        QL_CHECK(rejects("#a { border-radius: 1px 2px 3px }",
+                         "border-radius 需要 1/2/4 个长度"));
+        QL_CHECK(rejects("#a { border-width: 1px 2px 3px }",
+                         "border-width 需要 1/2/4 个长度"));
+        QL_CHECK(rejects("#a { border-style: solid dashed dotted }",
+                         "border-style 需要 1/2/4 个关键字"));
+        QL_CHECK(rejects("#a { border-top-color: nonsense }", "颜色"));
+        QL_CHECK(rejects("#a { box-shadow: 0 0 #f00, 0 0 #0f0, 0 0 #00f }",
+                         "最多支持 2 段"));
+        QL_CHECK(rejects("#a { text-shadow: 0 0 32px #f00 }",
+                         "text-shadow 模糊半径最大 16px"));
+        QL_CHECK(rejects("#a { border-radius: 10px / 20px }",
+                         "椭圆的 border-radius"));
+        QL_CHECK(rejects("#a { image-rendering: fancy }", "image-rendering"));
+        QL_CHECK(rejects("#a { scrollbar-width: fat }", "scrollbar-width"));
     }
 
     if (s_disp != NULL)

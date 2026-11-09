@@ -30,11 +30,12 @@
 | `currentColor` / `inherit` / `initial` / `unset` | 颜色位置识别成特殊值 |
 | `visibility` / `pointer-events` / `align-self` / `order` / `flex-flow` | blob v23（见 §18.4） |
 | `border-style` / `outline` | blob v25（见 §18.5） |
+| 四边 `border-*` / 四角 `border-*-radius` / 两层 + inset 阴影 / `text-shadow` / `image-rendering` / `scrollbar-*` / `object-position` | blob v26（见 §18.6） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
-**还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、四边独立 `border-*`、
-多重/`inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`（B4 剩余）、
-`transform: rotate()`、`word-spacing`、`text-align: justify`。
+**还没做**（下表里仍标 ⏳ 的）：`background-size/position`（等 `background-image: url()`）、
+`transform: rotate()` / `skew()`、`word-spacing`、`text-align: justify`、
+阴影的 `spread` 展开半径、椭圆 `border-radius`（斜杠写法）。
 
 > 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
 > 逐行状态在下一次整理时同步。
@@ -231,21 +232,23 @@
 | `background-image: linear-gradient()` | ⚠️ | R | **必须写方向**（`to right` / `to bottom` / `90deg` / `180deg`）；`to bottom right` 报错 |
 | `background-image: radial-gradient()` | ✅ | R | 需要 3 个参数（位置, 起色, 止色） |
 | `background-image: url(...)` | ⏳ | M | `只支持 linear-gradient() / radial-gradient()`；图片请用 `<img>`（图像管线是独立子系统） |
-| `background-size` | ⏳ | R | `cover` / `contain` / 具体尺寸；影响绘制矩形，改动小 |
-| `background-position` | ⏳ | R | |
+| `background-size` | ⏳ | R | 等 `background-image: url()` 落地（渐变的尺寸就是元素尺寸） |
+| `background-position` | ⏳ | R | 同上 |
 | `background-repeat` / `-attachment` / `-clip` / `-origin` | ❌ | N | 在"界面元素"上用不到（整页背景用渐变更省） |
-| `border`（简写） | ⚠️ | R | 只认 `<width>px solid <color>` |
-| `border-width` | ✅ | R | 四边统一 |
-| `border-color` | ✅ | R | 四边统一 |
+| `border`（简写） | ✅ | R | `<width>px <style> <color>`，三段任意顺序 |
+| `border-width` | ✅ | R | 1 / 2 / 4 个值（上右下左） |
+| `border-color` | ✅ | R | 1 / 2 / 4 个颜色（上右下左） |
 | `border-style` | ✅ | R | `solid` / `dashed` / `dotted` / `none`。虚线是**沿边切段填矩形**（不碰 SDF，CPU 与 GL 同一条路径），图案尺寸跟线宽走（dashed 段 3w 缝 2w、dotted 点 1w 缝 1w）。已知差异：与 `border-radius` 同用时按直角画；`double` / `groove` 等仍报错 |
-| `border-top/right/bottom/left-width` | ⏳ | R | `不支持的属性 'border-top-width'`；`QLDraw2D::stroke_round_rect` 只画整圈 |
-| `border-*-color` / `border-*-style` | ⏳ | R | 同上 |
-| `border-bottom: none` 之类的单边简写 | ⏳ | R | 同上 |
-| `border-radius`（单值） | ✅ | R | px 或 %；≥ 短边一半时是胶囊/内切圆 |
-| `border-radius`（四角 / 斜杠椭圆角） | ⏳ | R | `不支持的长度 '4px 8px 12px 16px'`；椭圆角要改 SDF，成本高 |
+| `border-{top,right,bottom,left}`（单边简写） | ✅ | R | 与 `border` 同一套 token 判别，写进那一边的长写属性 |
+| `border-*-width` / `-style` / `-color` | ✅ | R | 单边长写；布局按四边各自的宽度内缩内容盒 |
+| `border-radius`（1 / 2 / 4 个值） | ✅ | R | `4px` 四角同；`4px 8px` 是"左上右下 / 右上左下"；四个值按 左上 右上 右下 左下。≥ 短边一半时是胶囊/内切圆 |
+| `border-{corner}-radius` | ✅ | R | 四角长写，可单独覆盖 |
+| `border-radius` 斜杠椭圆角 | ⏳ | R | `10px / 20px` 报错：椭圆角要改两套 SDF，收益低 |
+| 四边不同色 + 圆角 | ⚠️ | R | 四条边各自裁一次整圈描边；**角部归上/下边**（浏览器沿 45° 斜线切分） |
 | `border-image` | ❌ | M | 九宫格缩放 + 切片解析，代码量接近圆角的三倍，收益低 |
 | `box-shadow`（单条） | ✅ | R | CPU SDF + GPU `mode=2` 各一份实现 |
-| `box-shadow`（多重 / `inset`） | ⏳ | O | `box-shadow 里无法识别 ','`；`inset` 要反向 SDF |
+| `box-shadow`（多重 / `inset`） | ✅ | R | 最多**两层**（多写的报错，不静默丢弃）；`inset` 用反向 SDF（GPU `mode=7`）。`spread`（展开半径）报错 |
+| `text-shadow` | ✅ | R | 一层（多层的语义是叠色）；`blur` 用 5 次采样近似（0~16px） |
 | `outline` + `-width/-style/-color/-offset` | ✅ | R | 画在边框盒**外侧**、**不占布局**（focus 环标配）；`outline-offset` 可为负（压进边框里）。CSS 语义照抄：只写 `outline-width` 不画（`outline-style` 初值 `none`），要画就写 `outline: 2px solid <色>` |
 | `box-decoration-break` | ❌ | N | 跨行断开的盒子装饰，本库没有"跨行盒子"概念 |
 
@@ -502,11 +505,13 @@ out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面
 | `direction` / `unicode-bidi` | ❌ | **X**：RTL 需要 bidi 算法 + 文本整形 |
 | `will-change` / `contain` / `backface-visibility` | ❌ | **N**：GPU 优化提示，自有渲染器不消费 |
 | Speech（`speak` / `volume` / `pause`…） | — | **N**：与 GUI 无关 |
-| `scrollbar-*` / `scrollbar-width` / `scrollbar-color` | ⏳ | **R**：滚动条现在是内置样式（`SCROLLBAR_W` / `0x808080 @ 0x96`），暴露成属性很便宜 |
+| `scrollbar-width` | ✅ | **R**：`auto`(4px) / `thin`(2px) / `none`（不画）。只影响覆盖式滚动条（本库滚动条不占布局） |
+| `scrollbar-color` | ✅ | **R**：`<thumb> [track]`，轨道暂不画；`auto` 用默认中灰 |
+| `scrollbar-gutter` | ❌ | **N**：本库滚动条不占布局，没有"占位"问题 |
 | `scroll-snap-*` | ❌ | **T**：要持续重绘 + 吸附动画 |
-| `image-rendering` | ⏳ | **R**：CPU 已是最近邻放大；GL 用的是 `GL_NEAREST`，做成属性很便宜 |
+| `image-rendering` | ✅ | **R**：`pixelated` 走最近邻；`auto`/`smooth` 交给后端默认。**CPU 后端只有最近邻**，所以这个属性在 CPU 上没有可见差异（GL 放大时才有） |
 | `object-fit` | ✅ | **R** | `fill` / `contain` / `cover` 等（`background-size` 的兄弟） |
-| `object-position` | ⏳ | **R** | |
+| `object-position` | ✅ | **R** | 1~2 个值（百分比 / px / `center`/`left`/`right`/`top`/`bottom`）；`cover` 时改的是源矩形（决定露哪一块） |
 | `image-orientation` | ❌ | **N** | EXIF 旋转由解码器负责 |
 
 ---
@@ -631,6 +636,53 @@ outline: W style color
 
 验收：`test/web/test_b4.c`（64 项：解析 + 逐点取色）、
 golden 新页 `b4`（CPU vs GPU 0.52%）、例程 `example/25_b4`。
+
+### 18.6 B4 收尾：四边四角 / 两层阴影 / 细节属性（blob v26）
+
+这一批把 `QLUIStyle` 里的"单值边框"换成了"四边 + 四角"：
+
+```
+uint8_t  border_w[4]        /* 上 右 下 左 */
+uint8_t  border_style4[4]   /* 每边自己的样式 */
+uint32_t border_color4[4]   /* 每边自己的颜色 */
+int16_t  radius[4]          /* 左上 右上 右下 左下 */
+QLUIShadow shadow[2]        /* 两层，先写的画在下面（视觉上在最上） */
+QLUIShadow text_shadow
+```
+
+布局侧的改动很机械：`2 * border_width` 变成了 `ql_ui_border_h(s)`（左右之和）
+与 `ql_ui_border_v(s)`（上下之和），内容盒原点按 `border_w[3]` / `border_w[0]` 内缩 ——
+CSS 的"四边宽度不同"就是这样影响内容盒的。
+
+绘制侧分三条路（`paint_border`）：
+
+```
+四边全同        → 一次整圈描边（最常见，也是最快的一条）
+有 dashed/dotted → 逐边切段（角上按直角）
+各边不同        → 整圈描边被"按边裁四次"，每次换一种颜色
+```
+
+第三条里的裁剪**必须原样恢复**：一开始忘了恢复，结果 `.sides` 之后的所有兄弟节点
+都被裁进那一个小盒子里 —— 画面表现为"某一行之后整页空白"。写进注释，别再踩。
+
+四角圆角则靠两个新入口：
+
+- `QLDraw2D::fill_round_rect4` / `stroke_round_rect4` / `fill_round_rect_gradient4`
+  （四角不全同时才走；全同仍走单半径的快路径）
+- CPU：`round_row_span4()` —— 每行左右两侧各算一次圆心到边的 `dx`
+- GPU：新增顶点属性 `a_radii`（vec4），片元里按象限挑半径，SDF 不变
+
+投影与文字：
+
+- `box-shadow` 最多**两层**，`inset` 用反向 SDF（GPU `mode=7`，CPU 逐像素但只算"环"）
+- `text-shadow` 一层，`blur` 用 5 次采样近似（不需要离屏缓冲，MCU 也能跑）
+
+细节属性都很便宜：`image-rendering`（GL 切纹理滤波）、
+`scrollbar-width/color`（内置滚动条的宽度与颜色）、
+`object-position`（`object-fit` 之后在余量里摆位，`cover` 时改的是源矩形）。
+
+验收：`test/web/test_b4.c`（104 项）、golden 的 `b4` 页（CPU vs GPU 0.05%）、
+例程 `example/25_b4`（九节，含滚动条与 focus 环）。
 
 ---
 
@@ -843,7 +895,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_TRANSFORM` | `QL_FEAT_CSS_TRANSFORM` | `transform: translate/scale/scaleX/scaleY`，含负缩放镜像与文本几何缩放 | ✅ | ❌ | BASE | 80 |
 | `CSS_ANIM` | `QL_FEAT_CSS_ANIM` | `transition` + `@keyframes` + `animation`（过渡池、关键帧表、applier） | ✅ | ❌ | BASE | 52 |
 | `CSS_TEXT_ADV` | `QL_FEAT_CSS_TEXT_ADV` | **B3 之后**：`letter-spacing` / `word-spacing` / `text-indent` / `text-transform` / `text-overflow` / `word-break` | ✅ | ❌ | BASE | — |
-| `CSS_BORDER_STYLE` | `QL_FEAT_CSS_BORDER_STYLE` | `dashed` / `dotted`（✅ 已落地）、四边独立 `border-*`（⏳ B4 剩余） | ✅ | ❌ | BASE | — |
+| `CSS_BORDER_STYLE` | `QL_FEAT_CSS_BORDER_STYLE` | `dashed` / `dotted`、四边独立 `border-*`（✅ 全部落地） | ✅ | ❌ | BASE | — |
 | `CSS_SELECTOR_ADV` | `QL_FEAT_CSS_SELECTOR_ADV` | **B2 之后**：`:nth-child` 等结构伪类、`[attr]`、`::before/::after` | ✅ | ⚠️ 见下 | BASE | 只省解析期 |
 | `CSS_IMAGE_FIT` | `QL_FEAT_CSS_IMAGE_FIT` | `object-fit` / `object-position`（只在有图片管线时有意义） | ✅ | ❌ | `QL_FEAT_UI_IMAGE` | 与图像管线共用 |
 | `CSS_UI` | `QL_FEAT_CSS_UI` | **B5 之后**：`cursor` / `pointer-events` / `user-select` / `scrollbar-*` | ✅ | ❌ | BASE | — |
@@ -940,7 +992,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
 | **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
 | **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
-| **B4 绘制细节**（第一批 ✅：`border-style: dashed/dotted` + `outline` 全套，见 §18.5；剩四边独立 `border-*`、多重/`inset` 阴影、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*`；`background-size/position` 要等 `background-image: url()`） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
+| **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）。**只剩** `background-size/position` —— 它们要等 `background-image: url()` 那个子系统） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
 | **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
 **另外两项单独立项**（成本与一批相当，但语义是"新子系统"）：

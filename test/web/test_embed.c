@@ -334,7 +334,7 @@ QL_TEST_BEGIN("test_embed")
             const QLRect r = ql_ui_node_rect(n);
             QL_CHECK_EQ((int)r.w, 80);
             QL_CHECK_EQ((int)r.h, 40);
-            QL_CHECK_EQ((int)n->style->border_width, 0);
+            QL_CHECK_EQ((int)n->style->border_w[0], 0);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }

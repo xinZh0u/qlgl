@@ -604,6 +604,89 @@ static void cpu_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
                           color, alpha);
 }
 
+static void cpu_fill_inset_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
+                                  ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
+                                  ql_color_t color, uint8_t alpha)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
+    ql_canvas_fill_inset_shadow(ctx->canvas, sx(self, shift_rect_rounded(self, inner)),
+                                sl(self, radius), sl(self, blur), sl(self, dx),
+                                sl(self, dy), color, alpha);
+}
+
+/* 四角圆角：偏移/缩放时退回"最大半径"的单半径路径（见 QLRender 阅读指南） */
+static void cpu_fill_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                                 ql_color_t color, uint8_t alpha)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
+    ql_coord_t maxr = 0;
+    for (int i = 0; i < 4; i++)
+        if (r4[i] > maxr)
+            maxr = r4[i];
+    if (!has_offset(self)) {
+        ql_coord_t sr[4];
+        for (int i = 0; i < 4; i++)
+            sr[i] = sl(self, r4[i]);
+        ql_canvas_fill_round_rect4_alpha(ctx->canvas, sx(self, rect), sr, color, alpha);
+        return;
+    }
+    ql_canvas_fill_round_rect_fx(ctx->canvas, sxf(self, rect), ql_fx_of(sl(self, maxr)),
+                                 color, alpha);
+}
+
+static void cpu_fill_round_rect_gradient4(QLDraw2D *self, QLRect rect,
+                                          const ql_coord_t r4[4], ql_color_t from,
+                                          ql_color_t to, uint8_t dir, uint8_t alpha)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    alpha = ql_draw2d_eff_alpha(self, alpha);
+    if (alpha == 0)
+        return;
+    ql_coord_t maxr = 0;
+    for (int i = 0; i < 4; i++)
+        if (r4[i] > maxr)
+            maxr = r4[i];
+    /*
+     * 渐变内核现在只接受单半径；四角不同时先用最大半径铺满，再把四个
+     * "缺角"用小矩形补成背景色做不到（我们没有底色），所以这里直接
+     * 退到单半径 —— 视觉上圆角偏大但不会露底。文档里如实写。
+     */
+    ql_canvas_fill_round_rect_gradient(ctx->canvas,
+                                       sx(self, shift_rect_rounded(self, rect)),
+                                       sl(self, maxr), from, to, (QLGradientDir)dir,
+                                       alpha);
+}
+
+static void cpu_stroke_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
+                                   ql_coord_t thickness, ql_color_t color)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    const uint8_t alpha = ql_draw2d_eff_alpha(self, 255);
+    if (alpha == 0)
+        return;
+    ql_coord_t maxr = 0;
+    for (int i = 0; i < 4; i++)
+        if (r4[i] > maxr)
+            maxr = r4[i];
+    if (!has_offset(self)) {
+        ql_coord_t sr[4];
+        for (int i = 0; i < 4; i++)
+            sr[i] = sl(self, r4[i]);
+        ql_canvas_stroke_rect4_alpha(ctx->canvas, sx(self, rect), sr, sl(self, thickness),
+                                     color, alpha);
+        return;
+    }
+    ql_canvas_stroke_rect_fx_alpha(ctx->canvas, sxf(self, rect),
+                                   ql_fx_of(sl(self, maxr)), ql_fx_of(sl(self, thickness)),
+                                   color, alpha);
+}
+
 static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                   ql_coord_t thickness, ql_color_t color)
 {
@@ -756,6 +839,10 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->fill_round_rect_gradient = cpu_fill_round_rect_gradient;
     out->fill_shadow = cpu_fill_shadow;
     out->stroke_round_rect = cpu_stroke_round_rect;
+    out->stroke_round_rect4 = cpu_stroke_round_rect4;
+    out->fill_round_rect4 = cpu_fill_round_rect4;
+    out->fill_round_rect_gradient4 = cpu_fill_round_rect_gradient4;
+    out->fill_inset_shadow = cpu_fill_inset_shadow;
     out->draw_line = ql_draw2d_draw_line;
     out->draw_text = cpu_draw_text;
     out->blit_image = cpu_blit_image;
