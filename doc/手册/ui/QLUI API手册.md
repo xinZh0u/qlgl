@@ -1061,6 +1061,34 @@ if (ql_gfx_gl_resize_pending(gfx)) {
 }
 ```
 
+**拖动边框时会闪黑？两个措施都做了，但你还得配合一件事**：窗口变大时，
+新露出来的那块区域是 **X 服务器用窗口背景像素**立刻填的（不是我们画的），
+而我们的第一帧要等一次 swap 才到。所以：
+
+1. 后端会把窗口背景像素同步成 `ql_gfx_gl_begin()` 的 `clear_color`
+   （颜色变了才发请求），新区域于是变成你给的底色而不是黑；
+2. **给 `clear_color` 传页面的底色**，别写死深色 —— 找一个能代表"空页面"的颜色，
+   最省事的做法是读根元素的 `background-color`：
+
+```c
+static ql_color_t page_bg(QLUIRoot *ui)
+{
+    const QLUIStyle *s = (ui != NULL && ui->node_count > 0)
+                             ? ql_ui_node_style(&ui->nodes[0]) : NULL;
+    return (s != NULL && s->bg_alpha > 0) ? s->bg_color : QL_COLOR_RGB(0xFF, 0xFF, 0xFF);
+}
+
+ql_gfx_gl_begin(gfx, page_bg(ui));
+```
+
+另外两条和"流畅"直接相关：
+
+- **保留模式的 FBO 不会每步重建**：窗口尺寸变了只在装不下时重新分配（按 256 对齐、
+  只增不减），连续拖动复用同一块显存 —— 否则每变一次尺寸都要 `glTexImage2D` 一整张
+  全屏纹理，缩放会一顿一顿的；
+- **默认开垂直同步**（`eglSwapInterval(1)`），帧率跟着 vblank 走。基准测试想要
+  不限帧再 `ql_gfx_gl_set_vsync(gfx, 0)`。
+
 ---
 
 ## 6. 完整示例

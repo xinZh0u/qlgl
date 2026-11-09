@@ -68,6 +68,23 @@ static int ex_dump_ppm(QLUIRoot *ui, int w, int h, const char *path)
 }
 
 /*
+ * 清除色 = 根元素的背景色。
+ *
+ * 它有两个作用：一是窗口拉大时 X 服务器立刻用这个色填新露出的区域
+ * （`ql_gfx_gl_begin` 会把它同步成窗口背景像素），二是万一一帧没画完，
+ * 露出来的是页面底色而不是黑块。写死一个颜色的话，换主题就会闪错色。
+ */
+static ql_color_t ex_clear_color(QLUIRoot *ui)
+{
+    const QLUIStyle *s = (ui != NULL && ui->node_count > 0)
+                             ? ql_ui_node_style(&ui->nodes[0])
+                             : NULL;
+    if (s != NULL && s->bg_alpha > 0)
+        return s->bg_color;
+    return QL_COLOR_RGB(0xFF, 0xFF, 0xFF);
+}
+
+/*
  * 打开一个真实窗口跑主循环（需要 -DQLGL_BUILD_GL=ON 且有 EGL/X11）。
  * `--frames N` 跑 N 帧后退出，`--dump out.ppm` 存最后一帧；
  * 只给 `--dump` 不给 `--frames` 时按 1 帧算（截图模式，不会卡住等关窗口）；
@@ -123,7 +140,7 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
             }
             ql_input_dispatch();
             (void)ql_ui_anim_tick(ui, ql_anim_now_ms());
-            ql_gfx_gl_begin(gfx, 0x0B0E13);
+            ql_gfx_gl_begin(gfx, ex_clear_color(ui));
             ql_ui_render(ui, d2d);
             ql_gfx_gl_end(gfx);
             if (max_frames > 0 && ++frame >= max_frames)

@@ -95,6 +95,13 @@ struct QLGfxGL {
     XIM              xim;
     XIC              xic;
     int              resize_pending;   /* 窗口尺寸变过，调用方需要重新 layout */
+    /*
+     * 窗口的 X11 背景像素（= 上一帧的清除色）。
+     * 窗口变大时，**新露出来的那块是 X 服务器用背景像素填的**，不是我们画的；
+     * 背景像素没设过就是黑的，于是拖边框缩放时会先闪一片黑再出内容。
+     */
+    unsigned long    bg_pixel;
+    int              bg_pixel_set;
 
     ql_coord_t       width, height;   /* 设备像素（framebuffer 尺寸） */
     ql_coord_t       scale_fx;        /* CSS px → 设备像素，26.6 定点 */
@@ -127,6 +134,13 @@ struct QLGfxGL {
     GLuint           fbo_tex;
     int              retained;     /* 调用方要求开启 */
     int              fbo_valid;    /* FBO 已建好并可用 */
+    /*
+     * FBO 的**分配**尺寸（≥ 窗口尺寸）。拖动边框时窗口每变一次就重建
+     * 一张全屏纹理的话，每步都要 glTexImage2D 一整块显存 —— 那正是
+     * "缩放一顿一顿"的来源。按 256 对齐、只增不减，连续拖动就复用了。
+     */
+    ql_coord_t       fbo_cap_w;
+    ql_coord_t       fbo_cap_h;
     int              fbo_fresh;    /* 刚建/刚改尺寸：内容未定义，下一帧必须整屏画 */
     int              fbo_w, fbo_h;
 
@@ -1745,6 +1759,15 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         goto fail;
     }
 
+    /*
+     * 默认开垂直同步：拖动边框缩放时，窗口每变一次尺寸就有一帧"新露出的区域
+     * 还没画"。不跟 vblank 的话主循环会以几百 Hz 空转、每次 swap 都塞一个新
+     * 尺寸的画面给 compositor，看起来就是"黑一下再出来"。
+     * 想要跑满帧率的基准测试可以 `ql_gfx_gl_set_vsync(gfx, 0)` 关掉。
+     */
+    if (!g->offscreen)
+        eglSwapInterval(g->egdpy, 1);
+
     QL_LOGI("gl: %s | %s | %s", glGetString(GL_RENDERER), glGetString(GL_VERSION),
             glGetString(GL_SHADING_LANGUAGE_VERSION));
 
@@ -1848,6 +1871,8 @@ static void fbo_release(QLGfxGL *g)
     g->fbo_fresh = 0;
     g->fbo_w = 0;
     g->fbo_h = 0;
+    g->fbo_cap_w = 0;
+    g->fbo_cap_h = 0;
 }
 
 /* 按当前尺寸建（或复用）FBO。窗口尺寸变了就重建 */
@@ -1855,14 +1880,25 @@ static int fbo_ensure(QLGfxGL *g)
 {
     if (!g->retained)
         return 0;
+
+    /* 已有的纹理装得下就直接用（窗口缩小/小幅拖动都不重新分配） */
     if (g->fbo_valid && g->fbo_w == g->width && g->fbo_h == g->height)
         return 1;
+    if (g->fbo_valid && g->width <= g->fbo_cap_w && g->height <= g->fbo_cap_h) {
+        g->fbo_w = g->width;
+        g->fbo_h = g->height;
+        g->fbo_fresh = 1;
+        return 1;
+    }
 
+    /* 需要更大：按 256 对齐分配，给拖动留出余量 */
+    const ql_coord_t cap_w = (g->width + 255) & ~(ql_coord_t)255;
+    const ql_coord_t cap_h = (g->height + 255) & ~(ql_coord_t)255;
     fbo_release(g);
 
     glGenTextures(1, &g->fbo_tex);
     glBindTexture(GL_TEXTURE_2D, g->fbo_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)g->width, (GLsizei)g->height, 0,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)cap_w, (GLsizei)cap_h, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -1886,6 +1922,8 @@ static int fbo_ensure(QLGfxGL *g)
     g->fbo_valid = 1;
     g->fbo_w = g->width;
     g->fbo_h = g->height;
+    g->fbo_cap_w = cap_w;
+    g->fbo_cap_h = cap_h;
 
     /*
      * 新建（或窗口改尺寸后的）FBO 内容是未定义的。必须让下一帧整屏重画——
@@ -1915,9 +1953,36 @@ ql_err_t ql_gfx_gl_set_retained(QLGfxGL *gfx, int on)
     return fbo_ensure(gfx) ? QL_OK : QL_ERR_NOMEM;
 }
 
+/*
+ * 把窗口的 X11 背景色设成"这一帧的清除色"。
+ *
+ * 窗口被拉大时，新增的那块区域由 X 服务器立刻用**窗口背景像素**填满，
+ * 我们的下一帧通常要等一次 swap 才到 —— 中间那一小段就是用户看到的黑边。
+ * 背景像素跟着清除色走，这一段就变成页面底色，视觉上无感。
+ *
+ * 只在颜色变化时才发请求（XChangeWindowAttributes 是个往返）。
+ */
+static void sync_window_background(QLGfxGL *g, ql_color_t clear_color)
+{
+    if (g->offscreen || g->win == 0 || g->dpy == NULL)
+        return;
+    const unsigned long px = ((unsigned long)QL_COLOR_GET_R(clear_color) << 16) |
+                             ((unsigned long)QL_COLOR_GET_G(clear_color) << 8) |
+                             (unsigned long)QL_COLOR_GET_B(clear_color);
+    if (g->bg_pixel_set && g->bg_pixel == px)
+        return;
+    XSetWindowAttributes swa;
+    memset(&swa, 0, sizeof(swa));
+    swa.background_pixel = px;
+    XChangeWindowAttributes(g->dpy, g->win, CWBackPixel, &swa);
+    g->bg_pixel = px;
+    g->bg_pixel_set = 1;
+}
+
 /* 绑定目标帧缓冲并设置视口（保留模式绑 FBO，否则绑默认） */
 static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
 {
+    sync_window_background(g, clear_color);
     now_us(&g->t0);
     g->vert_count = 0;
     g->vertex_count = 0;

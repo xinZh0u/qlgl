@@ -406,6 +406,42 @@ GPU 每个像素只算一次距离场。</p>
 <p>对比思路：一帧 220 µs ≈ 4500 fps 的 CPU 侧提交能力，
 实际帧率被 <code>eglSwapBuffers</code> 的 vsync 限到 60。也就是说<strong>目前完全不是 GPU 瓶颈</strong>。</p>
 <hr />
+<h2 id="71">7.1 窗口缩放为什么不再闪黑</h2>
+<p>三件事凑在一起，缺一个都会在拖边框时看到"黑一下再出内容"：</p>
+<table>
+<thead>
+<tr>
+<th>措施</th>
+<th>位置</th>
+<th>解决什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>窗口背景像素 = 本帧清除色</td>
+<td><code>sync_window_background()</code>（<code>begin_common</code> 里）</td>
+<td>窗口变大时新露出的那块是 <strong>X 服务器</strong>填的，背景像素没设过就是黑的</td>
+</tr>
+<tr>
+<td>清除色传页面底色</td>
+<td>调用方（例程里 <code>ex_clear_color()</code>）</td>
+<td>万一还漏一帧，露出来的是页面底色，视觉上无感</td>
+</tr>
+<tr>
+<td>FBO 按容量复用、只增不减（256 对齐）</td>
+<td><code>fbo_ensure()</code></td>
+<td>保留模式下窗口每变一次尺寸就重建全屏纹理 = 每步一次 <code>glTexImage2D</code>，拖起来一顿一顿</td>
+</tr>
+<tr>
+<td>默认 <code>eglSwapInterval(1)</code></td>
+<td><code>ql_gfx_gl_create()</code></td>
+<td>不跟 vblank 主循环会几百 Hz 空转，每帧都塞一个新尺寸给 compositor</td>
+</tr>
+</tbody>
+</table>
+<p>注意 FBO 的<strong>分配尺寸</strong>可以大于窗口：<code>glViewport</code> 与帧末 blit 都只取
+<code>(0, 0, width, height)</code> 那块子矩形，所以"分配得大一点"对绘制结果没有影响。</p>
+<hr />
 <h2 id="8">8. 加一个新后端要做什么</h2>
 <ol>
 <li>实现 <code>QLDraw2D</code> 的 5 个绘制函数（<code>flush</code> 可选）；</li>
