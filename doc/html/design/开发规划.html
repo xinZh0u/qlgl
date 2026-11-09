@@ -471,16 +471,22 @@ ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 <td>同上（对标 LVGL）</td>
 </tr>
 <tr>
-<td>CPU 800×480 混合场景</td>
-<td>2.2 ms（363 节点）</td>
+<td>CPU 800×480 <code>cards</code> 维度</td>
+<td>2.40 ms</td>
 <td>≤ 4 ms</td>
-<td><code>benchmark/bench_cpu</code></td>
+<td><code>bench --backend cpu --scene cards</code></td>
 </tr>
 <tr>
-<td>GL 800×480 混合场景</td>
-<td>0.30 ms（363 节点）</td>
+<td>GL 800×480 <code>cards</code> 维度</td>
+<td>0.34 ms</td>
 <td>≤ 1 ms</td>
-<td><code>benchmark/bench_gl</code></td>
+<td><code>bench --scene cards</code></td>
+</tr>
+<tr>
+<td>CPU <code>cards</code> 增量重绘</td>
+<td>0.46 ms（full 的 1/5）</td>
+<td>≤ 1 ms</td>
+<td><code>--mode dirty</code></td>
 </tr>
 <tr>
 <td>静态界面（100 节点）重绘</td>
@@ -2891,12 +2897,12 @@ blob v10 → <strong>v11</strong>。</p>
 <tbody>
 <tr>
 <td>~~可视化 benchmark~~</td>
-<td><code>benchmark/bench_cpu</code> / <code>bench_gl</code>：同一场景、左上角实时帧率，CPU 与 GL 直接对比</td>
+<td><code>benchmark/bench</code>：一个程序（<code>--backend cpu|gl</code>）× 8 个维度 × <code>--mode full|dirty</code>，左上角实时帧率，跑完出汇总表</td>
 <td>✅（2026-11-09）</td>
 </tr>
 <tr>
 <td>benchmark 回归</td>
-<td><code>bench_cpu --offscreen</code> / <code>bench_gl --offscreen</code> 的数字进 CI，阈值超标即失败</td>
+<td><code>bench --offscreen --frames N</code> 的汇总数字进 CI，阈值超标即失败</td>
 <td>⏳</td>
 </tr>
 <tr>
