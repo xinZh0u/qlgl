@@ -586,6 +586,77 @@ tools/qltext/qltext.c ┘
 所以 <code>.x::before { content: "• " }</code> 的圆点一定在正文之前、不重叠。
 这个匿名文本盒<strong>不是元素</strong>：它不参与 <code>:first-child</code> / <code>:nth-child</code> /
 <code>+</code> / <code>~</code> 的匹配与计数（与"文本留在宿主节点上"时完全一致）。</p>
+<h3 id="341">3.4.1 文本细节（字距 / 缩进 / 大小写 / 省略号 / 断词）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">title</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">letter-spacing</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">para</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">text-indent</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">em</span><span class="p">;</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">normal</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">    </span><span class="c">/* 中文首行缩进 */</span>
+<span class="p">.</span><span class="nc">badge</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">text-transform</span><span class="p">:</span><span class="w"> </span><span class="kc">uppercase</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">name</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">nowrap</span><span class="p">;</span><span class="w"> </span><span class="k">overflow</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="k">text-overflow</span><span class="p">:</span><span class="w"> </span><span class="kc">ellipsis</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">url</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">word-break</span><span class="p">:</span><span class="w"> </span><span class="n">break-all</span><span class="p">;</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">normal</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>允许值</th>
+<th>落在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>letter-spacing</code></td>
+<td>px / em / rem（可为负）</td>
+<td>加在<strong>每个字符之后</strong>，含最后一个；宽度与绘制一起变</td>
+</tr>
+<tr>
+<td><code>text-indent</code></td>
+<td>px / em / rem</td>
+<td>只作用在<strong>整段第一行</strong>：可用宽度减一截，绘制起点右移</td>
+</tr>
+<tr>
+<td><code>text-transform</code></td>
+<td><code>none</code> / <code>uppercase</code> / <code>lowercase</code> / <code>capitalize</code></td>
+<td><strong>建表期</strong>改文本（与空白折叠同一处）</td>
+</tr>
+<tr>
+<td><code>text-overflow</code></td>
+<td><code>clip</code> / <code>ellipsis</code></td>
+<td>一行比盒子宽时末尾换 <code>…</code></td>
+</tr>
+<tr>
+<td><code>word-break</code></td>
+<td><code>normal</code> / <code>break-all</code> / <code>keep-all</code>（= normal）</td>
+<td>折行时允许在任意字符之间断</td>
+</tr>
+<tr>
+<td><code>overflow-wrap</code></td>
+<td><code>normal</code> / <code>break-word</code> / <code>anywhere</code></td>
+<td>同上（<code>anywhere</code> = 允许断）</td>
+</tr>
+</tbody>
+</table>
+<p>四条要知道的行为：</p>
+<ol>
+<li><strong>布局与绘制共用一份折行</strong>（<code>ql_text_wrap_opt</code>）：<code>QLUIStyle</code> 里那几项由
+   <code>wrap_opt_of()</code> 取出，两边各传一份 —— 这是"数出来 2 行、画成 3 行"这类
+   bug 的唯一防线。</li>
+<li><strong><code>text-transform</code> 不改运行期的值</strong>：输入框 / <code>&lt;textarea&gt;</code> / <code>&lt;select&gt;</code> 跳过它
+   （那里的文字是用户输入的值，改了会和 <code>ql_ui_input_value()</code> 对不上）。</li>
+<li><strong><code>text-overflow: ellipsis</code> 不需要 <code>overflow: hidden</code></strong>：本库的语义是"少画几个字，
+   末尾补省略号"，既不裁也不溢出。字体里没有 <code>U+2026</code> 时退回三个点（内置位图字体就是）。</li>
+<li><strong>输入框不吃字距与缩进</strong>：光标位置按 <code>ql_font_line_width</code> 算，多一个字距就会和
+   字形错位。要字距就别用 <code>&lt;input&gt;</code>，用静态文本 + 自绘光标。</li>
+</ol>
+<blockquote>
+<p>省略号的经典写法（真实界面里最常见的一处）：</p>
+<p><code>html
+&lt;div class="row"&gt;&lt;div class="name"&gt;很长的名字…&lt;/div&gt;&lt;div class="meta"&gt;12 KB&lt;/div&gt;&lt;/div&gt;</code></p>
+<p><code>css
+.row  { display: flex; gap: 6px; }
+.name { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta { width: 40px; text-align: right; }</code></p>
+<p>左边自动让位、右边固定宽 —— 超过的部分变 <code>…</code>，不会顶翻右边的数字。</p>
+</blockquote>
 <h3 id="35">3.5 渐变</h3>
 <div class="highlight"><pre><span></span><code><span class="nt">background</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">to</span><span class="w"> </span><span class="nt">right</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">3399ff</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">1a4f8a</span><span class="o">);</span>
 <span class="nt">background</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">to</span><span class="w"> </span><span class="nt">bottom</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">4ad08a</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">2a9a5c</span><span class="o">);</span>

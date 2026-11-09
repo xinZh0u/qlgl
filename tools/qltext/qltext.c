@@ -316,6 +316,8 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .clip_kind = %u, .clip_r = %u, .opacity = %u,\n"
             "      .margin_unit = 0x%02X, .padding_unit = 0x%02X,\n"
             "      .aspect_w = %u, .aspect_h = %u,\n"
+            "      .letter_spacing = %d, .text_indent = %d, .text_transform = %u,"
+            " .text_overflow = %u, .word_break = %u,\n"
             "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
@@ -349,6 +351,9 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->clip_kind, (unsigned)s->clip_r, (unsigned)s->opacity,
             (unsigned)s->margin_unit, (unsigned)s->padding_unit,
             (unsigned)s->aspect_w, (unsigned)s->aspect_h,
+            (int)s->letter_spacing, (int)s->text_indent,
+            (unsigned)s->text_transform, (unsigned)s->text_overflow,
+            (unsigned)s->word_break,
             (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y);
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);

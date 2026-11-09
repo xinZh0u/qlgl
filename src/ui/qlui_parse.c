@@ -2062,6 +2062,8 @@ static const char *const k_supported_props[] = {
     "min-width", "max-width", "min-height", "max-height",
     "opacity",
     "aspect-ratio",
+    "letter-spacing", "text-indent", "text-transform", "text-overflow", "word-break",
+    "overflow-wrap",
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
 };
 
@@ -6429,6 +6431,103 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     uint8_t mnwu = QL_UI_UNIT_AUTO, mxwu = QL_UI_UNIT_AUTO;
     uint8_t mnhu = QL_UI_UNIT_AUTO, mxhu = QL_UI_UNIT_AUTO;
     int mnwv = 0, mxwv = 0, mnhv = 0, mxhv = 0;
+    /*
+     * 文本细节：`letter-spacing` / `text-indent` 是长度（em/rem 在末尾折成 px，
+     * 这里只存数值与"是否 em/rem"，与 margin/padding 同一套单位位）。
+     * `%` 与 `vw/vh` 对这两个属性没有意义，直接报错。
+     */
+    int ls_v = 0, ti_v = 0;
+    uint8_t ls_unit = 0, ti_unit = 0;
+    if ((v = decls_get(st, "letter-spacing")) != NULL) {
+        uint8_t lu = 0;
+        int lval = 0;
+        if (!parse_length(v, where, 0, &lu, &lval))
+            return 0;
+        if (lu == QL_UI_UNIT_PERCENT || lu == QL_UI_UNIT_VW ||
+            lu == QL_UI_UNIT_VH || lu == QL_UI_UNIT_VMIN ||
+            lu == QL_UI_UNIT_VMAX) {
+            set_error("%s: letter-spacing 只接受 px / em / rem（收到 '%s'）", where, v);
+            return 0;
+        }
+        ls_v = lval;
+        ls_unit = (lu == QL_UI_UNIT_EM) ? 1 : (lu == QL_UI_UNIT_REM) ? 2 : 0;
+    }
+    if ((v = decls_get(st, "text-indent")) != NULL) {
+        uint8_t lu = 0;
+        int lval = 0;
+        if (!parse_length(v, where, 0, &lu, &lval))
+            return 0;
+        if (lu == QL_UI_UNIT_PERCENT || lu == QL_UI_UNIT_VW ||
+            lu == QL_UI_UNIT_VH || lu == QL_UI_UNIT_VMIN ||
+            lu == QL_UI_UNIT_VMAX) {
+            set_error("%s: text-indent 只接受 px / em / rem（收到 '%s'）", where, v);
+            return 0;
+        }
+        ti_v = lval;
+        ti_unit = (lu == QL_UI_UNIT_EM) ? 1 : (lu == QL_UI_UNIT_REM) ? 2 : 0;
+    }
+
+    uint8_t text_transform = QL_UI_TEXT_NONE;
+    if ((v = decls_get(st, "text-transform")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "none") == 0)
+            text_transform = QL_UI_TEXT_NONE;
+        else if (strcmp(t, "uppercase") == 0)
+            text_transform = QL_UI_TEXT_UPPERCASE;
+        else if (strcmp(t, "lowercase") == 0)
+            text_transform = QL_UI_TEXT_LOWERCASE;
+        else if (strcmp(t, "capitalize") == 0)
+            text_transform = QL_UI_TEXT_CAPITALIZE;
+        else {
+            set_error("%s: 只支持 text-transform: none / uppercase / lowercase / "
+                      "capitalize（收到 '%s'）", where, v);
+            return 0;
+        }
+    }
+
+    uint8_t text_overflow = QL_UI_OVERFLOW_CLIP;
+    if ((v = decls_get(st, "text-overflow")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "clip") == 0)
+            text_overflow = QL_UI_OVERFLOW_CLIP;
+        else if (strcmp(t, "ellipsis") == 0)
+            text_overflow = QL_UI_OVERFLOW_ELLIPSIS;
+        else {
+            set_error("%s: 只支持 text-overflow: clip / ellipsis（收到 '%s'）", where, v);
+            return 0;
+        }
+    }
+
+    uint8_t word_break = QL_UI_WORDBREAK_NORMAL;
+    if ((v = decls_get(st, "word-break")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "normal") == 0 || strcmp(t, "keep-all") == 0)
+            word_break = QL_UI_WORDBREAK_NORMAL;
+        else if (strcmp(t, "break-all") == 0 || strcmp(t, "break-word") == 0)
+            word_break = QL_UI_WORDBREAK_ALL;
+        else {
+            set_error("%s: 只支持 word-break: normal / keep-all / break-all（收到 '%s'）",
+                      where, v);
+            return 0;
+        }
+    }
+    if ((v = decls_get(st, "overflow-wrap")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "normal") == 0)
+            ;                                    /* 保持 word-break 的结论 */
+        else if (strcmp(t, "break-word") == 0 || strcmp(t, "anywhere") == 0)
+            word_break = QL_UI_WORDBREAK_ALL;
+        else {
+            set_error("%s: 只支持 overflow-wrap: normal / break-word / anywhere"
+                      "（收到 '%s'）", where, v);
+            return 0;
+        }
+    }
+
     /* `aspect-ratio: 16 / 9`（也接受 `16/9` 与单个数字 `1.5`） */
     uint16_t aspect_w = 0, aspect_h = 0;
     if ((v = decls_get(st, "aspect-ratio")) != NULL) {
@@ -7114,6 +7213,14 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->opacity = (uint8_t)opacity;
     out->aspect_w = aspect_w;
     out->aspect_h = aspect_h;
+    out->letter_spacing = (int16_t)ls_v;
+    out->text_indent = (int16_t)ti_v;
+    /* em/rem 的单位先记在 reserved_text 里，末尾统一折（那时字号才确定） */
+    out->reserved_text =
+        (uint8_t)((ls_unit & 0x3u) | (uint8_t)((ti_unit & 0x3u) << 2));
+    out->text_transform = text_transform;
+    out->text_overflow = text_overflow;
+    out->word_break = word_break;
 
     out->margin.top = margin_e[0].value;
     out->margin.right = margin_e[1].value;
@@ -7171,6 +7278,18 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     resolve_length_units(out, font_px, 0);
     resolve_edge_units(&out->margin, &out->margin_unit, font_px, 0);
     resolve_edge_units(&out->padding, &out->padding_unit, font_px, 0);
+    /* letter-spacing / text-indent 共用同一套 em/rem 折算（1 位 em、2 位 rem） */
+    {
+        int16_t *lv[2] = { &out->letter_spacing, &out->text_indent };
+        for (int i = 0; i < 2; i++) {
+            const uint8_t u = (uint8_t)((out->reserved_text >> (2 * i)) & 0x3u);
+            if (u == 1 && font_px > 0)
+                *lv[i] = (int16_t)(((int32_t)*lv[i] * font_px) / 100);
+            /* `rem` 留到整棵树走完之后统一折（见 ql_ui_load_text 末尾那趟） */
+            out->reserved_text =
+                (uint8_t)(out->reserved_text & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
+        }
+    }
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
@@ -7246,6 +7365,46 @@ static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
     e->siglen = siglen;
     *out = (uint16_t)tab->n++;
     return 1;
+}
+
+/* 文字里有"运行期才定"的值（输入框/下拉框/多行输入）：`text-transform` 不动它们 */
+static int bears_runtime_value(const char *tag)
+{
+    return tag != NULL && (strcmp(tag, "input") == 0 || strcmp(tag, "textarea") == 0 ||
+                           strcmp(tag, "select") == 0);
+}
+
+/*
+ * `text-transform` 的实现：只动 ASCII 字母（CJK 没有大小写），
+ * `capitalize` 按"每个词的首字母" —— 词边界用空白与常见标点判定。
+ * 返回新分配的字符串（调用方负责 free）。
+ */
+static char *apply_text_transform(const char *src, uint8_t tt)
+{
+    const size_t n = strlen(src);
+    char *out = (char *)xalloc(n + 1u);
+    if (out == NULL)
+        return NULL;
+    int at_word_start = 1;
+    for (size_t i = 0; i < n; i++) {
+        const unsigned char c = (unsigned char)src[i];
+        char r = (char)c;
+        const int lower = (c >= 'a' && c <= 'z');
+        const int upper = (c >= 'A' && c <= 'Z');
+        if (tt == QL_UI_TEXT_UPPERCASE && lower) {
+            r = (char)(c - 'a' + 'A');
+        } else if (tt == QL_UI_TEXT_LOWERCASE && upper) {
+            r = (char)(c - 'A' + 'a');
+        } else if (tt == QL_UI_TEXT_CAPITALIZE && at_word_start && lower) {
+            r = (char)(c - 'a' + 'A');
+        }
+        at_word_start = (c == ' ' || c == '\t' || c == '\n' || c == '-' || c == '/' ||
+                         c == '(' || c == '.' || c == ',' || c == ':' || c == '"' ||
+                         c == '\'');
+        out[i] = r;
+    }
+    out[n] = '\0';
+    return out;
 }
 
 static int text_pool_intern(TextPool *tp, const char *text, uint16_t *out)
@@ -7800,6 +7959,23 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                 if (conv == NULL)
                     goto done;
                 src = conv;
+
+                /*
+                 * `text-transform` 也在这里结算（同样是"到这一步才知道样式"）。
+                 * 输入框/下拉框跳过：它们的文字是**运行期的值**，改写初始值会让
+                 * `ql_ui_input_text()` 读回来的东西和别处对不上。
+                 */
+                uint8_t tt = QL_UI_TEXT_NONE;
+                if (e->style_index >= 0 && e->style_index < styles.n)
+                    tt = styles.e[e->style_index].st.text_transform;
+                if (tt != QL_UI_TEXT_NONE && !bears_runtime_value(n->tag)) {
+                    char *tc = apply_text_transform(src, tt);
+                    if (tc == NULL)
+                        goto done;
+                    ql_mem_free(conv);
+                    conv = tc;
+                    src = tc;
+                }
             }
             int ok = text_pool_intern(&pool, src, &tidx);
             ql_mem_free(conv);
@@ -7822,6 +7998,16 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             const int fp = (st->font_id < fonts.n) ? fonts.v[st->font_id] : 16;
             resolve_edge_units(&st->margin, &st->margin_unit, fp, root_px);
             resolve_edge_units(&st->padding, &st->padding_unit, fp, root_px);
+            {
+                int16_t *lv[2] = { &st->letter_spacing, &st->text_indent };
+                for (int k = 0; k < 2; k++) {
+                    const uint8_t u = (uint8_t)((st->reserved_text >> (2 * k)) & 0x3u);
+                    if (u == 2 && root_px > 0)
+                        *lv[k] = (int16_t)(((int32_t)*lv[k] * root_px) / 100);
+                    st->reserved_text = (uint8_t)(st->reserved_text &
+                                                  (uint8_t)~(uint8_t)(0x3u << (2 * k)));
+                }
+            }
         }
     }
 

@@ -446,7 +446,56 @@ main img.shot { max-width: 100%; }
 </table>
 <p>毛玻璃那一格是这个例程的重点：<strong>跑道先画、玻璃后画</strong>，玻璃里看到的是跑道
 被糊开的样子，而且是每帧重新糊的。</p>
-<h2 id="4">4. 这三个例程查出了什么</h2>
+<h2 id="4-19_css_text">4. <code>19_css_text</code>：文本细节</h2>
+<p><img src="../img/19-css-text.png" alt="字距 / 缩进 / 大小写 / 省略号 / 断词" width="520"></p>
+<p>完整程序：<code>example/19_css_text/</code></p>
+<table>
+<thead>
+<tr>
+<th>格</th>
+<th>验证什么</th>
+<th>该看到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>letter-spacing: 0 / 2px / 6px</code></td>
+<td>字距加在<strong>每个字符之后</strong></td>
+<td>三行同一串字，一行比一行松</td>
+</tr>
+<tr>
+<td><code>text-indent: 2em</code></td>
+<td>首行缩进（只第一行）</td>
+<td>第一行缩进两个字，第二行顶格</td>
+</tr>
+<tr>
+<td><code>text-transform</code> 三种</td>
+<td><code>uppercase</code> / <code>lowercase</code> / <code>capitalize</code></td>
+<td><code>HELLO WORLD</code> / <code>hello world</code> / <code>Hello World</code></td>
+</tr>
+<tr>
+<td><code>text-overflow: ellipsis</code></td>
+<td>列表项经典写法：左名字自动缩、右数字固定宽</td>
+<td>超长的名字变 <code>…</code>，右边的 <code>12 KB</code> 不动</td>
+</tr>
+<tr>
+<td>对照：<code>text-overflow: clip</code></td>
+<td>不省略会怎样</td>
+<td>红字溢出到盒子外面</td>
+</tr>
+<tr>
+<td><code>word-break: normal</code> / <code>break-all</code></td>
+<td>折行时允许断在哪里</td>
+<td>同一句英文，normal 在空格断（右边参差），break-all 每行塞满（右边齐）</td>
+</tr>
+</tbody>
+</table>
+<p>两条容易踩的：</p>
+<ul>
+<li><strong>本库默认 <code>white-space: nowrap</code></strong>（与浏览器不同），要折行必须显式写 <code>white-space: normal</code>；</li>
+<li>写例程时别把类名起成 <code>.cap</code> —— <code>text-transform</code> 会被同名标题类一起套上（我第一版就把所有标题变成了大写）。</li>
+</ul>
+<h2 id="5">5. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

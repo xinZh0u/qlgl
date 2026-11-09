@@ -448,7 +448,32 @@ typedef struct {
      */
     uint16_t    aspect_w;
     uint16_t    aspect_h;
+
+    /* ----- 文本细节（B3） -----
+     * `letter-spacing` / `text-indent` 存 px（em/rem 在构建期已折成 px）；
+     * 后三个是枚举，见下面 QL_UI_TEXT_* / QL_UI_OVERFLOW_* / QL_UI_WORDBREAK_*。
+     */
+    int16_t     letter_spacing;  /* 字间距（px，可为负） */
+    int16_t     text_indent;     /* 首行缩进（px） */
+    uint8_t     text_transform;  /* QL_UI_TEXT_* */
+    uint8_t     text_overflow;   /* QL_UI_OVERFLOW_* */
+    uint8_t     word_break;      /* QL_UI_WORDBREAK_* */
+    uint8_t     reserved_text;   /* 对齐填充 */
 } QLUIStyle;
+
+/* `text-transform` */
+#define QL_UI_TEXT_NONE        0
+#define QL_UI_TEXT_UPPERCASE   1
+#define QL_UI_TEXT_LOWERCASE   2
+#define QL_UI_TEXT_CAPITALIZE  3
+
+/* `text-overflow`（只有单行裁切时才有意义：搭配 `white-space: nowrap` + `overflow`） */
+#define QL_UI_OVERFLOW_CLIP     0
+#define QL_UI_OVERFLOW_ELLIPSIS 1
+
+/* `word-break` / `overflow-wrap`：本库只区分"只在空格/CJK 处断"与"任意字符断" */
+#define QL_UI_WORDBREAK_NORMAL 0
+#define QL_UI_WORDBREAK_ALL    1
 
 /*
  * white-space 的取值。
@@ -1169,7 +1194,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    19u  /* 19: + aspect_w / aspect_h */
+#define QL_UI_BLOB_VERSION    20u  /* 20: + letter_spacing / text_indent / 文本三枚举 */
 
 typedef struct {
     uint32_t magic;

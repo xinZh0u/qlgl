@@ -195,7 +195,8 @@ int32_t ql_utf8_encode(uint32_t codepoint, char *buf)
     return 4;
 }
 
-ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len)
+ql_coord_t ql_font_line_width_ls(const QLFont *font, const char *text, int32_t len,
+                                 ql_coord_t letter_spacing)
 {
     if (font == NULL || text == NULL)
         return 0;
@@ -209,9 +210,15 @@ ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len)
             break;
         const QLGlyph *glyph = ql_font_find_glyph(font, cp);
         width += (glyph != NULL) ? glyph->adv_w : 0;
+        width += letter_spacing;      /* 每个字符之后都加，含最后一个（与 CSS 一致） */
         i += used;
     }
     return width;
+}
+
+ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len)
+{
+    return ql_font_line_width_ls(font, text, len, 0);
 }
 
 uint32_t ql_font_line_count(const char *text, int32_t len)

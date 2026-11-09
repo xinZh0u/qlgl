@@ -57,10 +57,13 @@ static int is_space_cp(uint32_t cp)
  * max_w <= 0 表示不折行。
  */
 static int32_t wrap_next(const QLFont *font, const char *t, int32_t pos, int32_t end,
-                         ql_coord_t max_w)
+                         ql_coord_t max_w, const QLTextWrapOpt *opt)
 {
     if (max_w <= 0)
         return end;
+
+    const ql_coord_t ls = (opt != NULL) ? opt->letter_spacing : 0;
+    const int break_any = (opt != NULL) ? (opt->break_any != 0) : 0;
 
     ql_coord_t w = 0;
     int32_t last_break = -1;      /* 候选断点（空格之后 / CJK 边界） */
@@ -80,13 +83,13 @@ static int32_t wrap_next(const QLFont *font, const char *t, int32_t pos, int32_t
          * 一行实际宽 120px 却以为只有 90px（这个 bug 第一次实现时就有）。
          * 行尾空格在断行后由 trim_line_end() 去掉，不影响视觉。
          */
-        if (w + adv > max_w && i > pos) {
+        if (w + adv + ls > max_w && i > pos) {
             if (last_break > pos)
                 return last_break;
             /* 没有可用的软断点：硬断在当前字符前（超长单词/长串数字） */
             return i;
         }
-        w += adv;
+        w += adv + ls;
 
         if (is_space_cp(cp)) {
             /* 空格之后是断点；跳过连续空白，下一行不以前导空格开头 */
@@ -99,8 +102,8 @@ static int32_t wrap_next(const QLFont *font, const char *t, int32_t pos, int32_t
                 j += u2;
             }
             last_break = j;
-        } else if (is_cjk(cp) && i + used < end) {
-            last_break = i + used;   /* CJK 字之间可以断 */
+        } else if ((break_any || is_cjk(cp)) && i + used < end) {
+            last_break = i + used;   /* CJK 字之间（或 break-all 时任意字符之间）可以断 */
         }
 
         i += used;
@@ -128,13 +131,15 @@ int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
     return ql_text_wrap_ex(font, text, max_w, out, max_lines, 0);
 }
 
-int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
-                    QLTextLine *out, int max_lines, int keep_trailing)
+int ql_text_wrap_opt(const QLFont *font, const char *text, ql_coord_t max_w,
+                     const QLTextWrapOpt *opt, QLTextLine *out, int max_lines,
+                     int keep_trailing)
 {
     if (font == NULL || text == NULL)
         return 0;
 
     const int32_t total = (int32_t)strlen(text);
+    const ql_coord_t indent = (opt != NULL) ? opt->indent : 0;
     int32_t pos = 0;
     int n = 0;
 
@@ -147,7 +152,15 @@ int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
         /* 这一行要拆成几个折行 */
         int32_t p = pos;
         for (;;) {
-            int32_t next = wrap_next(font, text, p, hard, max_w);
+            /*
+             * 首行缩进只作用在**整段的第一行**（n == 0）：可用的宽度少一截。
+             * 缩进本身由绘制那边把笔位右移，两边必须用同一个判据。
+             */
+            ql_coord_t avail = (n == 0 && indent > 0) ? (max_w - indent) : max_w;
+            /* 缩进比盒子还宽时第一行至少留一个字符的位置（与浏览器一致） */
+            if (max_w > 0 && avail < 1)
+                avail = 1;
+            int32_t next = wrap_next(font, text, p, hard, avail, opt);
             /*
              * 软折行点上的空格不占宽（被断行消费掉了）；但一行的最后一段
              * 在 `keep_trailing` 时保留尾随空格 —— 输入框靠它把光标顶过去。
@@ -172,6 +185,53 @@ int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
             break;
     }
     return n;
+}
+
+int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
+                    QLTextLine *out, int max_lines, int keep_trailing)
+{
+    return ql_text_wrap_opt(font, text, max_w, NULL, out, max_lines, keep_trailing);
+}
+
+/* 省略号用 U+2026；字体里没有（内置位图字体就没有）时退回三个点 */
+#define QL_ELLIPSIS_CP 0x2026u
+
+static int ellipsis_is_dots(const QLFont *font)
+{
+    return ql_font_find_glyph(font, QL_ELLIPSIS_CP) == NULL;
+}
+
+static ql_coord_t ellipsis_width(const QLFont *font, ql_coord_t letter_spacing)
+{
+    if (ellipsis_is_dots(font)) {
+        const QLGlyph *g = ql_font_find_glyph(font, '.');
+        const ql_coord_t adv = (g != NULL) ? g->adv_w : 0;
+        return 3 * (adv + letter_spacing);
+    }
+    const QLGlyph *g = ql_font_find_glyph(font, QL_ELLIPSIS_CP);
+    return ((g != NULL) ? g->adv_w : 0) + letter_spacing;
+}
+
+static void emit_ellipsis(QLDraw2D *self, const QLFont *font, ql_coord_t *pen_x,
+                          ql_coord_t baseline, const QLTextStyle *ts,
+                          ql_draw2d_glyph_fn emit_glyph)
+{
+    if (ellipsis_is_dots(font)) {
+        const QLGlyph *g = ql_font_find_glyph(font, '.');
+        if (g == NULL)
+            return;
+        for (int i = 0; i < 3; i++) {
+            if (g->box_w > 0)
+                emit_glyph(self, font, g, *pen_x, baseline, ts);
+            *pen_x += g->adv_w + ts->letter_spacing;
+        }
+        return;
+    }
+    const QLGlyph *g = ql_font_find_glyph(font, QL_ELLIPSIS_CP);
+    if (g != NULL && g->box_w > 0)
+        emit_glyph(self, font, g, *pen_x, baseline, ts);
+    if (g != NULL)
+        *pen_x += g->adv_w + ts->letter_spacing;
 }
 
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
@@ -208,10 +268,15 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
         src = buf;
     }
 
+    QLTextWrapOpt opt;
+    opt.letter_spacing = ts->letter_spacing;
+    opt.indent = ts->indent;
+    opt.break_any = ts->break_any;
+
     QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
     const int max_lines = (int)(sizeof(lines) / sizeof(lines[0]));
-    int count = ql_text_wrap_ex(font, src, ts->wrap ? box.w : 0, lines, max_lines,
-                               ts->keep_trailing);
+    int count = ql_text_wrap_opt(font, src, ts->wrap ? box.w : 0, &opt, lines,
+                                 max_lines, ts->keep_trailing);
     if (count > max_lines)
         count = max_lines;      /* 超出的行不画（布局统计不受此限） */
 
@@ -219,12 +284,41 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
     ql_coord_t baseline = box.y + half_lead + font->ascent + ts->baseline_dy;
     for (int li = 0; li < count; li++) {
         const char *lt = lines[li].start;
-        const int32_t llen = lines[li].len;
-        const ql_coord_t line_w = ql_font_line_width(font, lt, llen);
+        int32_t llen = lines[li].len;
+        /* 首行缩进：只影响第一行的起点（折行那边同时按缩进减了可用宽度） */
+        const ql_coord_t x_indent = (li == 0) ? ts->indent : 0;
+        ql_coord_t line_w = ql_font_line_width_ls(font, lt, llen, ts->letter_spacing);
 
-        ql_coord_t pen_x = box.x;
+        /*
+         * `text-overflow: ellipsis`：一行比盒子宽时，末尾一个省略号。
+         * 只在**明确要省略**且盒子有宽度时做，否则维持"溢出被裁掉"的老行为。
+         */
+        int draw_ellipsis = 0;
+        if (ts->ellipsis && box.w > 0 && line_w > box.w - x_indent) {
+            const ql_coord_t ell_w = ellipsis_width(font, ts->letter_spacing);
+            const ql_coord_t cap = box.w - x_indent - ell_w;
+            int32_t k = 0;
+            ql_coord_t acc = 0;
+            while (k < llen) {
+                uint32_t cp = 0;
+                int32_t used = ql_utf8_decode(lt + k, &cp);
+                if (used <= 0)
+                    break;
+                const QLGlyph *g = ql_font_find_glyph(font, cp);
+                const ql_coord_t adv = ((g != NULL) ? g->adv_w : 0) + ts->letter_spacing;
+                if (acc + adv > cap)
+                    break;
+                acc += adv;
+                k += used;
+            }
+            llen = k;
+            line_w = acc;
+            draw_ellipsis = (cap > 0);
+        }
+
+        ql_coord_t pen_x = box.x + x_indent;
         if (ts->align == QL_TEXT_ALIGN_CENTER)
-            pen_x = box.x + (box.w - line_w) / 2;
+            pen_x = box.x + x_indent + (box.w - x_indent - line_w) / 2;
         else if (ts->align == QL_TEXT_ALIGN_RIGHT)
             pen_x = box.x + box.w - line_w;
 
@@ -240,9 +334,11 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
             if (glyph != NULL && glyph->box_w > 0)
                 emit_glyph(self, font, glyph, pen_x, baseline, ts);
             if (glyph != NULL)
-                pen_x += glyph->adv_w;
+                pen_x += glyph->adv_w + ts->letter_spacing;
             j += used;
         }
+        if (draw_ellipsis)
+            emit_ellipsis(self, font, &pen_x, baseline, ts, emit_glyph);
 
         /*
          * 装饰线在这里画：本函数知道每行的起止与基线，两个后端就不用各写一遍。

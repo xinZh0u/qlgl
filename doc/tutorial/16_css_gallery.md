@@ -97,7 +97,27 @@ cmake --build build -j
 毛玻璃那一格是这个例程的重点：**跑道先画、玻璃后画**，玻璃里看到的是跑道
 被糊开的样子，而且是每帧重新糊的。
 
-## 4. 这三个例程查出了什么
+## 4. `19_css_text`：文本细节
+
+<img src="../img/19-css-text.png" alt="字距 / 缩进 / 大小写 / 省略号 / 断词" width="520">
+
+完整程序：`example/19_css_text/`
+
+| 格 | 验证什么 | 该看到什么 |
+|---|---|---|
+| `letter-spacing: 0 / 2px / 6px` | 字距加在**每个字符之后** | 三行同一串字，一行比一行松 |
+| `text-indent: 2em` | 首行缩进（只第一行） | 第一行缩进两个字，第二行顶格 |
+| `text-transform` 三种 | `uppercase` / `lowercase` / `capitalize` | `HELLO WORLD` / `hello world` / `Hello World` |
+| `text-overflow: ellipsis` | 列表项经典写法：左名字自动缩、右数字固定宽 | 超长的名字变 `…`，右边的 `12 KB` 不动 |
+| 对照：`text-overflow: clip` | 不省略会怎样 | 红字溢出到盒子外面 |
+| `word-break: normal` / `break-all` | 折行时允许断在哪里 | 同一句英文，normal 在空格断（右边参差），break-all 每行塞满（右边齐） |
+
+两条容易踩的：
+
+- **本库默认 `white-space: nowrap`**（与浏览器不同），要折行必须显式写 `white-space: normal`；
+- 写例程时别把类名起成 `.cap` —— `text-transform` 会被同名标题类一起套上（我第一版就把所有标题变成了大写）。
+
+## 5. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

@@ -75,6 +75,7 @@ cmake --build build -j
 | `16_css_units` | 单位与尺寸：`em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `min-max-*` / `aspect-ratio` / `margin: auto` |
 | `17_css_selectors` | 选择器与伪元素：结构伪类 / 属性选择器 / `:not()` / `::before` `::after` / `+` `~` `*` / 状态伪类 |
 | `18_css_paint` | 绘制效果：渐变 / 圆角边框阴影 / `opacity` / `clip-path` / `transform` / 毛玻璃 / `transition` / `@keyframes` / 文本样式 |
+| `19_css_text` | 文本细节：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` |
 
 ## 构建与测试
 

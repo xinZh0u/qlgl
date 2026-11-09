@@ -49,6 +49,14 @@ typedef struct {
      * 否则在末尾敲空格时光标不动、屏幕上什么也没发生。
      */
     uint8_t    keep_trailing;
+    /*
+     * CSS 文本细节（`letter-spacing` / `text-indent` / `word-break` / `text-overflow`）。
+     * 全部零初始化即为"不生效"，所以老代码 memset 之后的语义不变。
+     */
+    ql_coord_t letter_spacing;  /* 字间距（px，可为负），加在**每个字符之后** */
+    ql_coord_t indent;          /* 首行缩进（px） */
+    uint8_t    break_any;       /* 1 = 任意字符之间都能断行（`word-break: break-all`） */
+    uint8_t    ellipsis;        /* 1 = 一行放不下时末尾换省略号（`text-overflow: ellipsis`） */
 } QLTextStyle;
 
 struct QLDraw2D {
@@ -212,6 +220,21 @@ int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
  */
 int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
                     QLTextLine *out, int max_lines, int keep_trailing);
+
+/*
+ * 折行的可调项（对应 CSS 的 `letter-spacing` / `text-indent` / `word-break`）。
+ * 全零 = 老行为。布局数行数与绘制折行**必须传同一份**，否则行数与位置会打架。
+ */
+typedef struct {
+    ql_coord_t letter_spacing;   /* 字间距（px，可为负） */
+    ql_coord_t indent;           /* 首行缩进（px），只作用在整段的第一行 */
+    uint8_t    break_any;        /* 1 = 任意字符间断行（`word-break: break-all`） */
+} QLTextWrapOpt;
+
+/* `opt` 可以为 NULL（等于全零） */
+int ql_text_wrap_opt(const QLFont *font, const char *text, ql_coord_t max_w,
+                     const QLTextWrapOpt *opt, QLTextLine *out, int max_lines,
+                     int keep_trailing);
 
 /* 单行绘制文字的公共实现：后端可直接复用它的排版逻辑 */
 typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,

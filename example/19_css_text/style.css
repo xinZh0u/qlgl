@@ -1,0 +1,104 @@
+#root {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 11px;
+}
+
+.h1 {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  font-size: 14px;
+  color: #0969DA;
+}
+
+.cell {
+  position: absolute;
+}
+
+.cap {
+  font-size: 10px;
+  color: #6E7781;
+  margin-bottom: 6px;
+}
+
+.t {
+  margin-bottom: 5px;
+  line-height: 16px;
+  /* 本库的默认 white-space 是 nowrap（与浏览器不同），要折行必须显式写 */
+  white-space: normal;
+}
+
+/* ---- letter-spacing ---- */
+.ls0 { letter-spacing: 0px; }
+.ls2 { letter-spacing: 2px; }
+.ls6 { letter-spacing: 6px; }
+
+/* ---- text-indent ---- */
+.ind {
+  text-indent: 2em;   /* em 在构建期按本元素字号折成 px */
+  color: #1F2328;
+}
+
+/* ---- text-transform ---- */
+/* 注意：类名别用 .cap —— 那是上面标题用的类，撞上会连标题一起变大写 */
+.tu { text-transform: uppercase; }
+.tl { text-transform: lowercase; }
+.tc { text-transform: capitalize; }
+
+/* ---- 省略号：列表项的经典写法 ---- */
+.row {
+  display: flex;
+  gap: 6px;
+  height: 20px;
+  line-height: 20px;
+  margin-bottom: 4px;
+}
+
+.name {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #1F2328;
+}
+
+/* 对照：同样的盒子，只是不省略 */
+.name.clip {
+  text-overflow: clip;
+  overflow: visible;
+  color: #B42318;
+}
+
+.meta {
+  width: 40px;
+  text-align: right;
+  color: #8B949E;
+}
+
+.note {
+  font-size: 10px;
+  color: #8B949E;
+  line-height: 14px;
+}
+
+/* ---- 断词 ---- */
+.url {
+  color: #0A3069;
+  line-height: 15px;
+  white-space: normal;
+}
+
+.normal { word-break: normal; }
+.breakall { word-break: break-all; }
+
+.hint {
+  position: absolute;
+  left: 16px;
+  bottom: 10px;
+  font-size: 10px;
+  color: #8B949E;
+}

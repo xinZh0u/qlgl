@@ -623,6 +623,16 @@ static ql_coord_t line_height_of(const QLFont *font)
 }
 
 /* 文本行高：样式写了 line-height 就用它，否则用字体自己的（= normal） */
+/* 折行用的可调项（字间距 / 首行缩进 / word-break）：布局与绘制必须同一份 */
+static QLTextWrapOpt wrap_opt_of(const QLUIStyle *s)
+{
+    QLTextWrapOpt o;
+    o.letter_spacing = (ql_coord_t)s->letter_spacing;
+    o.indent = (ql_coord_t)s->text_indent;
+    o.break_any = (uint8_t)(s->word_break == QL_UI_WORDBREAK_ALL);
+    return o;
+}
+
 static ql_coord_t text_line_h_of(const QLUIStyle *s, const QLFont *font)
 {
     return (s->line_h > 0) ? s->line_h : line_height_of(font);
@@ -675,8 +685,8 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
                      has_shown_text(node) && node->first_child == NULL;
 
     if (text_sized)
-        return ql_font_line_width(font, node->text, -1) + s->padding.left +
-               s->padding.right + 2 * (ql_coord_t)s->border_width;
+        return ql_font_line_width_ls(font, node->text, -1, (ql_coord_t)s->letter_spacing) +
+               s->padding.left + s->padding.right + 2 * (ql_coord_t)s->border_width;
 
     if (s->width.unit == QL_UI_UNIT_AUTO) {
         ql_coord_t w = avail_w - s->margin.left - s->margin.right;
@@ -876,7 +886,8 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
     } else {
         const QLFont *font = font_of_style(child, s);
         if (has_shown_text(child) && child->first_child == NULL && font != NULL) {
-            ql_coord_t tw = ql_font_line_width(font, child->text, -1) +
+            ql_coord_t tw = ql_font_line_width_ls(font, child->text, -1,
+                                                  (ql_coord_t)s->letter_spacing) +
                             2 * (ql_coord_t)s->border_width + s->padding.left +
                             s->padding.right;
             ql_coord_t cap = cb.w - l - r;
@@ -1940,9 +1951,10 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
              * 不折行、但仍然按 `\n` 硬换行 —— 所以 `pre` 也走它，
              * 只是不给宽度。
              */
-            int lines = ql_text_wrap(font, node->text,
-                                     QL_UI_WS_WRAPS(s->white_space) ? content_w : 0,
-                                     NULL, 0);
+            const QLTextWrapOpt wopt = wrap_opt_of(s);
+            int lines = ql_text_wrap_opt(font, node->text,
+                                         QL_UI_WS_WRAPS(s->white_space) ? content_w : 0,
+                                         &wopt, NULL, 0, 0);
             if (lines < 1)
                 lines = 1;
             content_h = lh * (ql_coord_t)lines;
@@ -2141,7 +2153,10 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
             const QLFont *font = font_of_style(node, s);
             if (row) {
                 /* 主轴水平：max-content 就是把文本摊平不折行的宽度 */
-                own = (font != NULL) ? ql_font_line_width(font, node->text, -1) : 0;
+                own = (font != NULL)
+                          ? ql_font_line_width_ls(font, node->text, -1,
+                                                  (ql_coord_t)s->letter_spacing)
+                          : 0;
             } else {
                 /*
                  * 主轴竖直：max-content 高度 = 行数 × 行高。
@@ -2160,7 +2175,8 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
                         ql_coord_t inner = avail_w - pad_border - margin;
                         maxw = (inner > 0) ? inner : 0;
                     }
-                    lines = ql_text_wrap(font, node->text, maxw, NULL, 0);
+                    const QLTextWrapOpt wopt = wrap_opt_of(s);
+                    lines = ql_text_wrap_opt(font, node->text, maxw, &wopt, NULL, 0, 0);
                     if (lines < 1)
                         lines = 1;
                 }
@@ -4295,6 +4311,17 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
                                  : 0u));
         /* 输入框的行尾空格要占宽（和 input_visual_lines 保持一致） */
         ts.keep_trailing = (uint8_t)(in != NULL);
+        /*
+         * 文本细节：输入框/多行输入里**不套**字间距与缩进 —— 光标位置是按
+         * `ql_font_line_width` 算的（见 input_visual_lines），多一个字距就会
+         * 和字形错位。普通文本才吃这三项 + `text-overflow: ellipsis`。
+         */
+        if (in == NULL) {
+            ts.letter_spacing = (ql_coord_t)s->letter_spacing;
+            ts.indent = (ql_coord_t)s->text_indent;
+            ts.break_any = (uint8_t)(s->word_break == QL_UI_WORDBREAK_ALL);
+            ts.ellipsis = (uint8_t)(s->text_overflow == QL_UI_OVERFLOW_ELLIPSIS);
+        }
         if (node->text[0] != '\0')
             d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
         if (input_clipped) {

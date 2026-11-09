@@ -90,7 +90,7 @@ QL_TEST_BEGIN("test_ui_blob")
     QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 96);   /* v14：+ <area> 热区段 */
     QL_CHECK_EQ(sizeof(QLUINode), 20);   /* 9 个 uint16 + flags + reserved */
     /* v16：+ min/max-width/height（4 × QLUILength = 16 字节） */
-    QL_CHECK_EQ(sizeof(QLUIStyle), 148);   /* v19：+ aspect_w/h */
+    QL_CHECK_EQ(sizeof(QLUIStyle), 156);   /* v20：+ letter_spacing / text_indent / 文本枚举 */
 
     /* ---------- 2. 静态 doc 没有 arena，释放是空操作 ---------- */
     QL_CHECK_EQ(ui_demo_doc.arena, NULL);

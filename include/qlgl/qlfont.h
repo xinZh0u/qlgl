@@ -118,6 +118,13 @@ void ql_font_measure_text(const QLFont *font, const char *text, int32_t len,
 /* 单行宽度（不含换行处理） */
 ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len);
 
+/*
+ * 同上，另外把 `letter_spacing` 加在**每个字符之后**（CSS 的算法：
+ * 末字符后面那一份也算进宽度，所以居中/右对齐会随之偏移半个字距左右）。
+ */
+ql_coord_t ql_font_line_width_ls(const QLFont *font, const char *text, int32_t len,
+                                 ql_coord_t letter_spacing);
+
 /* 行数：'\n' 分隔，空串算 1 行 */
 uint32_t ql_font_line_count(const char *text, int32_t len);
 

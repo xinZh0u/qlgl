@@ -1359,39 +1359,45 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>letter-spacing</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>不支持的属性</code>；要动 <code>ql_text_wrap()</code>（见 §11 红线）</td>
+<td>加在<strong>每个字符之后</strong>（含最后一个，与 CSS 一致）；只吃 px / em / rem，<code>%</code> 与 <code>vw/vh</code> 报错</td>
 </tr>
 <tr>
 <td><code>word-spacing</code></td>
 <td>⏳</td>
 <td>L</td>
-<td>同上</td>
+<td>与 <code>letter-spacing</code> 同一条路，只差"加在哪些字符之后"</td>
 </tr>
 <tr>
 <td><code>text-indent</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>首行缩进；中文排版常用</td>
+<td>只作用在<strong>整段第一行</strong>（可用宽度减一截，绘制起点右移）；px / em / rem</td>
 </tr>
 <tr>
 <td><code>text-transform</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td><code>uppercase</code> / <code>lowercase</code> / <code>capitalize</code>；构建期就能改文本</td>
+<td><code>uppercase</code> / <code>lowercase</code> / <code>capitalize</code>；<strong>建表期</strong>改文本（与空白折叠同一处）。输入框/多行输入跳过（值是运行期的）</td>
 </tr>
 <tr>
 <td><code>text-overflow: ellipsis</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><strong>列表里最常用的一个</strong>；配合 <code>overflow: hidden</code> + <code>nowrap</code></td>
+<td>一行比盒子宽时末尾换 <code>…</code>（字体没有 U+2026 时退回三个点）；<strong>没有裁切盒也成立</strong> —— 它只是"少画几个字"，不像浏览器必须配 <code>overflow: hidden</code></td>
 </tr>
 <tr>
-<td><code>word-break</code> / <code>overflow-wrap</code> / <code>word-wrap</code></td>
+<td><code>word-break: break-all</code> / <code>overflow-wrap: break-word</code></td>
+<td>✅</td>
+<td>L</td>
+<td>与原来的"只在空格/CJK 处断"共用一份折行；<code>keep-all</code> 目前等同 <code>normal</code></td>
+</tr>
+<tr>
+<td><code>word-wrap</code></td>
 <td>⏳</td>
 <td>L</td>
-<td>长 URL 必须靠它；要动断行函数</td>
+<td>就是 <code>overflow-wrap</code> 的旧名字，加个别名即可</td>
 </tr>
 <tr>
 <td><code>hyphens</code></td>
@@ -2516,7 +2522,9 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
    flex 求解器两处。</li>
 <li><strong><code>letter-spacing</code> / <code>word-break</code> / <code>text-overflow</code> 都要动 <code>ql_text_wrap()</code></strong>。
    断行只有一份实现，布局（数行算高度）与绘制（逐行发射字形）<strong>共用它</strong> ——
-   这是"布局与绘制对行数有分歧"这类 bug 的唯一防线。改它必须两边同时验。</li>
+   这是"布局与绘制对行数有分歧"这类 bug 的唯一防线。改它必须两边同时验。
+   已经落地的做法：折行参数收进 <code>QLTextWrapOpt</code>（<code>ql_text_wrap_opt</code>），
+   布局与绘制都从 <code>QLUIStyle</code> 用同一个 <code>wrap_opt_of()</code> 取值。</li>
 </ol>
 <hr />
 <h2 id="21-css">21. CSS 能力包（编译期裁剪）</h2>
@@ -2862,7 +2870,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </thead>
 <tbody>
 <tr>
-<td><strong>B1 值与尺寸</strong>（进行中：<code>min/max-*</code>、<code>!important</code>、<code>hsl()</code>、<code>#rrggbbaa</code>、<code>currentColor/inherit/initial</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>、<code>margin: auto</code> <strong>已完成</strong>；剩 <code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>border-radius</code> 四角、<code>aspect-ratio</code>）</td>
+<td><strong>B1 值与尺寸</strong>（已完成：<code>min/max-*</code>、<code>!important</code>、<code>hsl()</code>、<code>#rrggbbaa</code>、<code>currentColor/inherit/initial</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>/<code>vmin</code>/<code>vmax</code>、<code>margin: auto</code>、<code>aspect-ratio</code>；<strong>剩 <code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>border-radius</code> 四角</strong>）</td>
 <td><code>min/max-*</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>、<code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>margin: auto</code>、<code>inherit</code>/<code>initial</code>/<code>currentColor</code>、<code>!important</code>、<code>border-radius</code> 四角、<code>aspect-ratio</code>、<code>hsl()</code>、<code>#rrggbbaa</code></td>
 <td>BASE（少量进 RADIUS）</td>
 <td>真实页面的<strong>基础语法</strong></td>
@@ -2871,22 +2879,22 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>新 <code>test_css_units</code> + golden</td>
 </tr>
 <tr>
-<td><strong>B2 选择器</strong></td>
+<td><strong>B2 选择器</strong>（已完成：结构伪类 / <code>[attr]</code> 系列 / <code>:not()</code> / <code>*</code> / <code>::before</code>+<code>::after</code>+<code>content</code>；<strong>剩 <code>:disabled/:checked</code>、<code>::placeholder</code> —— 它们要先有能表达"禁用/勾选"的控件</strong>，见 B5）</td>
 <td><code>:first/last/nth-child(an+b)/only-child/of-type</code>、<code>:not()</code>、<code>[attr]</code> 系列、<code>*</code>、<code>::before/::after</code>+<code>content</code>、<code>:disabled/:checked</code>、<code>::placeholder</code></td>
 <td><code>CSS_SELECTOR_ADV</code></td>
 <td><strong>兼容性收益最大</strong>（12.5% 声明 + 25% 选择器）</td>
 <td><strong>低</strong>：全在构建期展开，运行期零成本</td>
 <td><strong>否</strong>（伪元素在构建期变成真节点）</td>
-<td>新 <code>test_selectors</code> + golden</td>
+<td><code>test_pseudo_text</code> / <code>test_selectors</code> + golden</td>
 </tr>
 <tr>
-<td><strong>B3 文本细节</strong></td>
+<td><strong>B3 文本细节</strong>（第一批已完成：<code>letter-spacing</code> / <code>text-indent</code> / <code>text-transform</code> / <code>text-overflow: ellipsis</code> / <code>word-break</code> <strong>已落地</strong> → blob v20；剩 <code>word-spacing</code> / <code>tab-size</code> / <code>text-decoration-*</code>）</td>
 <td><code>letter-spacing</code>、<code>word-spacing</code>、<code>text-indent</code>、<code>text-transform</code>、<code>text-overflow: ellipsis</code>、<code>word-break</code>/<code>overflow-wrap</code>、<code>tab-size</code>、<code>text-decoration-*</code></td>
 <td><code>CSS_TEXT_ADV</code></td>
 <td>列表、标题、长 URL</td>
 <td>中：动 <code>ql_text_wrap()</code>（见 §20.3）</td>
-<td><strong>是</strong> → blob v16</td>
-<td>扩 <code>test_text_wrap</code> / <code>test_white_space</code> / <code>test_textarea</code></td>
+<td><strong>是</strong> → blob v20</td>
+<td>新 <code>test_text_adv</code>（25 项，含像素层）+ golden</td>
 </tr>
 <tr>
 <td><strong>B4 绘制细节</strong></td>

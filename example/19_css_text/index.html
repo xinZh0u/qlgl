@@ -1,0 +1,57 @@
+<div id="root">
+  <div class="h1">CSS 文本细节：字距 / 缩进 / 大小写 / 省略号 / 断词</div>
+
+  <!-- ===== 第一行 ===== -->
+  <div class="cell" style="left: 16px; top: 36px; width: 190px;">
+    <div class="cap">letter-spacing: 0 / 2px / 6px</div>
+    <div class="t ls0">ABCDEFG 字距为零</div>
+    <div class="t ls2">ABCDEFG 字距 2px</div>
+    <div class="t ls6">ABCDEFG 字距 6px</div>
+  </div>
+
+  <div class="cell" style="left: 222px; top: 36px; width: 190px;">
+    <div class="cap">text-indent: 2em（只有第一行）</div>
+    <div class="t ind">这一段的第一行往里缩两个字，第二行从最左边开始 —— 中文排版里的"首行缩进"。</div>
+  </div>
+
+  <div class="cell" style="left: 428px; top: 36px; width: 190px;">
+    <div class="cap">text-transform 三种</div>
+    <div class="t tu">Hello World</div>
+    <div class="t tl">Hello World</div>
+    <div class="t tc">hello world</div>
+  </div>
+
+  <!-- ===== 第二行：省略号 ===== -->
+  <div class="cell" style="left: 16px; top: 176px; width: 190px;">
+    <div class="cap">text-overflow: ellipsis</div>
+    <div class="row">
+      <div class="name">一个很长很长很长很长很长的条目名字</div>
+      <div class="meta">12 KB</div>
+    </div>
+    <div class="row">
+      <div class="name">短名字</div>
+      <div class="meta">3 KB</div>
+    </div>
+  </div>
+
+  <div class="cell" style="left: 222px; top: 176px; width: 190px;">
+    <div class="cap">对照：text-overflow: clip</div>
+    <div class="row">
+      <div class="name clip">很长很长很长的条目名字溢出到外面</div>
+    </div>
+    <div class="note">这一条溢出到盒子外面（既没有省略号，也没有裁）</div>
+  </div>
+
+  <!-- ===== 第三行：断词 ===== -->
+  <div class="cell" style="left: 428px; top: 176px; width: 190px;">
+    <div class="cap">word-break: normal（只在空格断）</div>
+    <div class="t url normal">the quick brown fox jumps over the lazy dog</div>
+  </div>
+
+  <div class="cell" style="left: 428px; top: 300px; width: 190px;">
+    <div class="cap">word-break: break-all（每行都塞满）</div>
+    <div class="t url breakall">the quick brown fox jumps over the lazy dog</div>
+  </div>
+
+  <div class="hint">每一格都只差一条属性：上面那格是"不生效"的样子，下面那格是"生效"的样子</div>
+</div>

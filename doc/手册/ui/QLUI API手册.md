@@ -182,6 +182,51 @@ target_include_directories(app PRIVATE ${UI_OUT})
 这个匿名文本盒**不是元素**：它不参与 `:first-child` / `:nth-child` /
 `+` / `~` 的匹配与计数（与"文本留在宿主节点上"时完全一致）。
 
+### 3.4.1 文本细节（字距 / 缩进 / 大小写 / 省略号 / 断词）
+
+```css
+.title  { letter-spacing: 1px; }
+.para   { text-indent: 2em; white-space: normal; }    /* 中文首行缩进 */
+.badge  { text-transform: uppercase; }
+.name   { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.url    { word-break: break-all; white-space: normal; }
+```
+
+| 属性 | 允许值 | 落在哪 |
+|---|---|---|
+| `letter-spacing` | px / em / rem（可为负） | 加在**每个字符之后**，含最后一个；宽度与绘制一起变 |
+| `text-indent` | px / em / rem | 只作用在**整段第一行**：可用宽度减一截，绘制起点右移 |
+| `text-transform` | `none` / `uppercase` / `lowercase` / `capitalize` | **建表期**改文本（与空白折叠同一处） |
+| `text-overflow` | `clip` / `ellipsis` | 一行比盒子宽时末尾换 `…` |
+| `word-break` | `normal` / `break-all` / `keep-all`（= normal） | 折行时允许在任意字符之间断 |
+| `overflow-wrap` | `normal` / `break-word` / `anywhere` | 同上（`anywhere` = 允许断） |
+
+四条要知道的行为：
+
+1. **布局与绘制共用一份折行**（`ql_text_wrap_opt`）：`QLUIStyle` 里那几项由
+   `wrap_opt_of()` 取出，两边各传一份 —— 这是"数出来 2 行、画成 3 行"这类
+   bug 的唯一防线。
+2. **`text-transform` 不改运行期的值**：输入框 / `<textarea>` / `<select>` 跳过它
+   （那里的文字是用户输入的值，改了会和 `ql_ui_input_value()` 对不上）。
+3. **`text-overflow: ellipsis` 不需要 `overflow: hidden`**：本库的语义是"少画几个字，
+   末尾补省略号"，既不裁也不溢出。字体里没有 `U+2026` 时退回三个点（内置位图字体就是）。
+4. **输入框不吃字距与缩进**：光标位置按 `ql_font_line_width` 算，多一个字距就会和
+   字形错位。要字距就别用 `<input>`，用静态文本 + 自绘光标。
+
+> 省略号的经典写法（真实界面里最常见的一处）：
+>
+> ```html
+> <div class="row"><div class="name">很长的名字…</div><div class="meta">12 KB</div></div>
+> ```
+>
+> ```css
+> .row  { display: flex; gap: 6px; }
+> .name { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+> .meta { width: 40px; text-align: right; }
+> ```
+>
+> 左边自动让位、右边固定宽 —— 超过的部分变 `…`，不会顶翻右边的数字。
+
 ### 3.5 渐变
 
 ```css

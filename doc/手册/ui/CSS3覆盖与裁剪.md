@@ -284,12 +284,13 @@
 | `vertical-align` | ⚠️ | L | **只有 `baseline` / `sub` / `super`**；`middle` / `text-top` / 长度值都报错（`<sub>`/`<sup>` 够用） |
 | `text-decoration` | ⚠️ | R | `underline` / `line-through` / `none`；**没有 `overline`**（本库没有上划线概念） |
 | `text-decoration-color/-style/-thickness` | ⏳ | R | 装饰线颜色现在固定跟文字色 |
-| `letter-spacing` | ⏳ | L | `不支持的属性`；要动 `ql_text_wrap()`（见 §11 红线） |
-| `word-spacing` | ⏳ | L | 同上 |
-| `text-indent` | ⏳ | L | 首行缩进；中文排版常用 |
-| `text-transform` | ⏳ | B | `uppercase` / `lowercase` / `capitalize`；构建期就能改文本 |
-| `text-overflow: ellipsis` | ⏳ | L | **列表里最常用的一个**；配合 `overflow: hidden` + `nowrap` |
-| `word-break` / `overflow-wrap` / `word-wrap` | ⏳ | L | 长 URL 必须靠它；要动断行函数 |
+| `letter-spacing` | ✅ | L | 加在**每个字符之后**（含最后一个，与 CSS 一致）；只吃 px / em / rem，`%` 与 `vw/vh` 报错 |
+| `word-spacing` | ⏳ | L | 与 `letter-spacing` 同一条路，只差"加在哪些字符之后" |
+| `text-indent` | ✅ | L | 只作用在**整段第一行**（可用宽度减一截，绘制起点右移）；px / em / rem |
+| `text-transform` | ✅ | B | `uppercase` / `lowercase` / `capitalize`；**建表期**改文本（与空白折叠同一处）。输入框/多行输入跳过（值是运行期的） |
+| `text-overflow: ellipsis` | ✅ | L | 一行比盒子宽时末尾换 `…`（字体没有 U+2026 时退回三个点）；**没有裁切盒也成立** —— 它只是"少画几个字"，不像浏览器必须配 `overflow: hidden` |
+| `word-break: break-all` / `overflow-wrap: break-word` | ✅ | L | 与原来的"只在空格/CJK 处断"共用一份折行；`keep-all` 目前等同 `normal` |
+| `word-wrap` | ⏳ | L | 就是 `overflow-wrap` 的旧名字，加个别名即可 |
 | `hyphens` | ❌ | X | 要连字词典（各语言各一份） |
 | `text-shadow` | ⏳ | R | 复用 `box-shadow` 的 SDF 路径（字形级） |
 | `text-justify` / `text-align-last` | ❌ | X | 见 `justify` |
@@ -609,6 +610,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 3. **`letter-spacing` / `word-break` / `text-overflow` 都要动 `ql_text_wrap()`**。
    断行只有一份实现，布局（数行算高度）与绘制（逐行发射字形）**共用它** ——
    这是"布局与绘制对行数有分歧"这类 bug 的唯一防线。改它必须两边同时验。
+   已经落地的做法：折行参数收进 `QLTextWrapOpt`（`ql_text_wrap_opt`），
+   布局与绘制都从 `QLUIStyle` 用同一个 `wrap_opt_of()` 取值。
 
 ---
 
@@ -741,9 +744,9 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 | 批 | 内容（对应上面各节） | 归属能力包 | 收益 | 风险 | 动 `QLUIStyle` | 验收 |
 |---|---|---|---|---|---|---|
-| **B1 值与尺寸**（进行中：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`、`margin: auto` **已完成**；剩 `calc()`/`min()`/`max()`、`border-radius` 四角、`aspect-ratio`） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
-| **B2 选择器** | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | 新 `test_selectors` + golden |
-| **B3 文本细节** | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v16 | 扩 `test_text_wrap` / `test_white_space` / `test_textarea` |
+| **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `calc()`/`min()`/`max()`、`border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
+| **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
+| **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
 | **B4 绘制细节** | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
 | **B5 布局与交互** | `align-self`、`align-content`、`order`、`flex-flow`、`overflow-x/y`、`position: sticky`、`inset`、`visibility`、`cursor`、`pointer-events`、`user-select`、`scroll-behavior` | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` |
 
