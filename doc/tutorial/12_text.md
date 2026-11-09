@@ -7,7 +7,7 @@
 
 <img src="../img/12-text-block.png" alt="代码块、诗句、化学式与行内代码" width="340">
 
-完整程序：`example/12_text_block.c`
+完整程序：`example/12_text_block/main.c`
 
 ## 为什么这件事不简单
 

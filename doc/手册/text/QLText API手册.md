@@ -344,7 +344,7 @@ QLGL 没有 `QLLabel` 这样的控件类 —— 文本是 **HTML 元素**，样�
 ql_ui_set_text(ui, node, "新内容");
 ```
 
-布局与绘制都是界面层的事，用例见 `example/02_text.c` / `example/08_tags.c`。
+布局与绘制都是界面层的事，用例见 `example/02_text/main.c` / `example/08_tags/main.c`。
 
 ---
 

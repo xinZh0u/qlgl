@@ -484,7 +484,7 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 
 <p>一张全是语义标签的页面（<code>dl</code> 缩进、<code>cite</code> 斜体、<code>del</code>/<code>ins</code> 装饰线、<code>fieldset</code> 边框）：</p>
 <p><img src="../img/11-semantic.png" alt="纯语义标签示例" width="320"></p>
-<p>完整程序：<code>example/11_semantic.c</code>。</p>
+<p>完整程序：<code>example/11_semantic/main.c</code>。</p>
 <p>UA 默认样式都很薄，只有"看结构就该知道"的那些：</p>
 <div class="highlight"><pre><span></span><code><span class="c">/* 大致相当于内置样式表的全部内容 */</span>
 <span class="nt">div</span><span class="o">,</span><span class="w"> </span><span class="nt">section</span><span class="o">,</span><span class="w"> </span><span class="nt">header</span><span class="o">,</span><span class="w"> </span><span class="nt">footer</span><span class="o">,</span><span class="w"> </span><span class="nt">nav</span><span class="o">,</span><span class="w"> </span><span class="nt">main</span><span class="o">,</span><span class="w"> </span><span class="nt">article</span><span class="o">,</span><span class="w"> </span><span class="nt">aside</span><span class="o">,</span>
@@ -514,28 +514,50 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 margin 是 8px 而不是 1em）。</p>
 <h2 id="_3">一个完整的文章页</h2>
 <p><img src="../img/08-tags.png" alt="标签示例" width="260"></p>
-<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_html</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="s">&quot;&lt;div id=</span><span class="se">\&quot;</span><span class="s">root</span><span class="se">\&quot;</span><span class="s">&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;header&gt;QLGL 标签示例&lt;/header&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;hr&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;p&gt;普通文本，&lt;mark&gt;高亮&lt;/mark&gt;，&lt;em&gt;强调&lt;/em&gt;，&lt;strong&gt;更强&lt;/strong&gt;。&lt;/p&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;ul&gt;&lt;li&gt;第一项&lt;/li&gt;&lt;li&gt;第二项&lt;/li&gt;&lt;/ul&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;blockquote&gt;引用一段话&lt;/blockquote&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;figure&gt;&lt;div class=</span><span class="se">\&quot;</span><span class="s">box</span><span class="se">\&quot;</span><span class="s">&gt;&lt;/div&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;    &lt;figcaption&gt;图 1：一个方块&lt;/figcaption&gt;&lt;/figure&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;&lt;/div&gt;&quot;</span><span class="p">;</span>
-
-<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_css</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="s">&quot;#root { width: 260px; background-color: #0B0E14; color: #C8D2DE;&quot;</span>
-<span class="w">    </span><span class="s">&quot;        font-size: 12px; }&quot;</span>
-<span class="w">    </span><span class="s">&quot;header { font-size: 14px; color: #7CE0FF; }&quot;</span>
-<span class="w">    </span><span class="s">&quot;blockquote { margin: 8px 10px; color: #8A94A0; }&quot;</span>
-<span class="w">    </span><span class="s">&quot;figcaption { font-size: 11px; color: #6C7783; }&quot;</span>
-<span class="w">    </span><span class="s">&quot;.box { width: 140px; height: 28px; border-radius: 4px;&quot;</span>
-<span class="w">    </span><span class="s">&quot;       background-color: #2E6BE6; }&quot;</span><span class="p">;</span>
+<div class="highlight"><pre><span></span><code><span class="cm">&lt;!-- example/08_tags/index.html --&gt;</span>
+<span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;root&quot;</span><span class="p">&gt;</span>
+  <span class="cm">&lt;!-- ---- 第一部分：只靠 UA 默认样式 ---- --&gt;</span>
+  <span class="p">&lt;</span><span class="nt">header</span><span class="p">&gt;</span>QLGL 标签示例<span class="p">&lt;/</span><span class="nt">header</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">hr</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">p</span><span class="p">&gt;</span>普通
+    <span class="p">&lt;</span><span class="nt">mark</span><span class="p">&gt;</span>高亮<span class="p">&lt;/</span><span class="nt">mark</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">b</span><span class="p">&gt;</span>加粗<span class="p">&lt;/</span><span class="nt">b</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">i</span><span class="p">&gt;</span>斜体<span class="p">&lt;/</span><span class="nt">i</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">p</span><span class="p">&gt;&lt;</span><span class="nt">u</span><span class="p">&gt;</span>下划线<span class="p">&lt;/</span><span class="nt">u</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">s</span><span class="p">&gt;</span>删除线<span class="p">&lt;/</span><span class="nt">s</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">span</span><span class="p">&gt;</span>普通<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">h2</span><span class="p">&gt;</span>二级标题<span class="p">&lt;/</span><span class="nt">h2</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">ul</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">li</span><span class="p">&gt;</span>第一项<span class="p">&lt;/</span><span class="nt">li</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">li</span><span class="p">&gt;</span>第二项<span class="p">&lt;/</span><span class="nt">li</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">ul</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">blockquote</span><span class="p">&gt;</span>引用一段话：标签不参与布局，只给默认样式。<span class="p">&lt;/</span><span class="nt">blockquote</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">figure</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;box&quot;</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">figcaption</span><span class="p">&gt;</span>图 1：一个圆角方块<span class="p">&lt;/</span><span class="nt">figcaption</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">figure</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;brdemo&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">span</span><span class="p">&gt;</span>上行<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">br</span><span class="p">&gt;&lt;</span><span class="nt">span</span><span class="p">&gt;</span>下行<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+  <span class="cm">&lt;!-- ---- 第二部分：同样的标签，只用 CSS 改观感 ---- --&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;themed&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">header</span><span class="p">&gt;</span>换一套观感<span class="p">&lt;/</span><span class="nt">header</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">hr</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">ul</span><span class="p">&gt;</span>
+      <span class="p">&lt;</span><span class="nt">li</span><span class="p">&gt;</span>缩进还在<span class="p">&lt;/</span><span class="nt">li</span><span class="p">&gt;</span>
+      <span class="p">&lt;</span><span class="nt">li</span><span class="p">&gt;</span>颜色变了<span class="p">&lt;/</span><span class="nt">li</span><span class="p">&gt;</span>
+    <span class="p">&lt;/</span><span class="nt">ul</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">blockquote</span><span class="p">&gt;</span>还是同一个 header / ul / blockquote。<span class="p">&lt;/</span><span class="nt">blockquote</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 </code></pre></div>
 
-<p>完整可运行的版本见 <code>example/08_tags.c</code>。</p>
+<p>样式全在 <code>example/08_tags/style.css</code> 里：上半部分只用 UA 默认值排版，下半部分
+（<code>.themed</code>）给同样的标签换一套观感 —— 两份 CSS 的差别就是"换皮肤"。</p>
+<p>完整可运行的版本见 <code>example/08_tags/</code>（<code>main.c</code> + <code>index.html</code> + <code>style.css</code>）。</p>
 <h2 id="_4">三个必须知道的"不完美"</h2>
 <h3 id="1">1. 字体变体是<strong>合成</strong>的，不是换了字体文件</h3>
 <p><code>b</code>/<code>strong</code> = 加粗，<code>i</code>/<code>em</code> = 斜体，<code>u</code> = 下划线，<code>s</code> = 删除线。

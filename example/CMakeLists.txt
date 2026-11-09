@@ -1,15 +1,27 @@
-# 基本例程：每个文件就是一个**完整可运行**的程序，从 01 开始逐级加一点东西。
+# 基本例程：**每个例程一个文件夹**，一个文件夹就是一个完整可运行的程序，
+# 从 01 开始逐级加一点东西。
+#
+#   example/01_window/
+#     main.c         程序（40~160 行，只讲自己那一件事）
+#     index.html     界面的结构
+#     style.css      界面的样式
+#
+# 这样拆的理由：HTML/CSS 单独成文件才好编辑（有高亮、有格式化），也才好直接喂给
+# 构建期编译工具：
+#
+#   python3 tools/qltext/qltext.py cc --html example/01_window/index.html \
+#                                     --css  example/01_window/style.css \
+#                                     --name demo --out build/
+#
+# 例程是**给 PC 上直接跑的**，所以 main.c 里读的是文件路径而不是内嵌字符串
+# （`ex_load_ui("index.html", "style.css")`，见 common.h）。
 #
 #   cmake -S . -B build && cmake --build build -j
-#   ./build/example/example_01_window            # 打开窗口
-#   ./build/example/example_01_window --dump /tmp/a.ppm   # 无显示器也能跑
+#   ./build/example/example_01_window                      # 打开窗口
+#   ./build/example/example_01_window --dump /tmp/a.ppm     # 无显示器也能跑
 #
 # 只需要其中某个：cmake --build build --target example_01_window
 # 完全不要例程：cmake -S . -B build -DQLGL_BUILD_EXAMPLES=OFF
-#
-# 刻意不依赖 test/、也不需要先跑代码生成：界面用 `ql_ui_load_text()` 内联在
-# 源文件里（HTML + CSS 就是字符串），一个 .c 文件就能编译运行。
-# 构建期编译（tools/qltext）的做法见 doc/tutorial 的「进阶」一章。
 
 set(QL_EXAMPLES
     01_window
@@ -30,6 +42,14 @@ set(QL_EXAMPLES
 )
 
 foreach(e ${QL_EXAMPLES})
-    add_executable(example_${e} ${CMAKE_CURRENT_SOURCE_DIR}/${e}.c)
+    add_executable(example_${e} ${CMAKE_CURRENT_SOURCE_DIR}/${e}/main.c)
     target_link_libraries(example_${e} PRIVATE qlgl)
+    # 共用样板（common.h）放在 example/ 根下，不进每个例程目录
+    target_include_directories(example_${e} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    # 例程的 HTML/CSS 在源码目录里躺着（运行期读），把它编进程序当默认目录，
+    # 这样 `./build/example/example_01_window` 从任何 cwd 启动都能找到 index.html。
+    target_compile_definitions(example_${e} PRIVATE
+        QL_EX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/${e}")
+    set_target_properties(example_${e} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/example)   # build/example/example_NN_xxx
 endforeach()

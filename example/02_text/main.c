@@ -1,8 +1,8 @@
 /**
- * @file    02_text.c
+ * @file    main.c
  * @brief   文本：字号、颜色、对齐、换行。
  *
- *   ./build/example/02_text --dump /tmp/02.ppm
+ *   ./build/example/example_02_text --dump /tmp/02.ppm
  *
  * 文本的规则很简单：
  *   - 一个元素只能有一整段文本（混合内容在编译期被消解成匿名 <span>）；
@@ -12,27 +12,6 @@
  */
 #include "common.h"
 
-static const char *k_html =
-    "<div id=\"root\">"
-    "  <div class=\"h1\">字号 = font-size</div>"
-    "  <div class=\"s12\">12px 小字</div>"
-    "  <div class=\"s16\">16px 正文</div>"
-    "  <div class=\"s24\">24px 标题</div>"
-    "  <div class=\"c\">居中的一行</div>"
-    "  <div class=\"dim\">灰色、右对齐</div>"
-    "</div>";
-
-static const char *k_css =
-    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
-    ".h1  { margin: 12px 0 8px 14px; font-size: 13px; color: #6E7781; }"
-    ".s12 { margin: 2px 14px; font-size: 12px; color: #1F2328; }"
-    ".s16 { margin: 2px 14px; font-size: 16px; color: #1F2328; }"
-    ".s24 { margin: 2px 14px; font-size: 24px; color: #0969DA; }"
-    ".c   { margin: 12px 14px 4px 14px; font-size: 14px; color: #E6C34A;"
-    "       text-align: center; }"
-    ".dim { margin: 2px 14px; font-size: 12px; color: #57606A;"
-    "       text-align: right; }";
-
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
@@ -40,7 +19,7 @@ int main(int argc, char **argv)
     ex_setup_locale();
     ex_load_font();
 
-    QLUIDoc *doc = ql_ui_load_text(k_html, k_css);
+    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
     if (doc == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();

@@ -1,5 +1,5 @@
 /**
- * @file    10_input.c
+ * @file    main.c
  * @brief   输入控件：`<input>` 与 `<select>`。
  *
  *   ./build/example/example_10_input                    # 打开窗口，直接打字
@@ -17,36 +17,6 @@
 
 #define W 300
 #define H 260
-
-static const char *k_html =
-    "<div id=\"root\">"
-    "  <div class=\"title\">登录</div>"
-    "  <div class=\"label\">账号</div>"
-    "  <input id=\"user\" value=\"admin\">"
-    "  <div class=\"label\">密码</div>"
-    "  <input id=\"pass\" type=\"password\" value=\"123456\">"
-    "  <div class=\"label\">角色</div>"
-    "  <select id=\"role\">"
-    "    <option>管理员</option><option>编辑</option><option>访客</option>"
-    "  </select>"
-    "  <div id=\"hint\" class=\"hint\">Tab 切换 · 回车提交 · 点下拉框展开</div>"
-    "</div>";
-
-static const char *k_css =
-    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
-    "        padding: 14px; font-size: 12px; color: #1F2328; }"
-    ".title { font-size: 15px; color: #0969DA; margin-bottom: 8px; }"
-    ".label { font-size: 10px; color: #6E7781; margin-top: 8px; margin-bottom: 3px; }"
-
-    /* 输入框与下拉框共用一套"框"的样式：宽高给足、内边距给足，
-       不然光标会贴在边框上 */
-    "input { width: 256px; height: 26px; padding-left: 8px; padding-right: 8px;"
-    "        background-color: #F6F8FA; border-radius: 6px; }"
-    "input:focus { background-color: #F0F6FF; }"
-    "select { width: 256px; height: 26px; padding-left: 8px;"
-    "         background-color: #F6F8FA; border-radius: 6px; }"
-
-    ".hint { margin-top: 12px; font-size: 10px; color: #6E7781; }";
 
 /* 回调里能拿到值：回车或点选后打印一行，方便在终端里看 */
 static void on_change(QLUIRoot *ui, QLUINodeRT *node, const char *value, void *user)
@@ -73,7 +43,7 @@ int main(int argc, char **argv)
     ex_setup_locale();
     ex_load_font();
 
-    QLUIDoc *doc = ql_ui_load_text(k_html, k_css);
+    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
     if (doc == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();

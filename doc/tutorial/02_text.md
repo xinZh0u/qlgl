@@ -5,29 +5,30 @@
 
 <img src="../img/02-text.png" alt="文本" width="260">
 
-完整程序：`example/02_text.c`
+完整程序：`example/02_text/main.c`
 
-```c
-static const char *k_html =
-    "<div id=\"root\">"
-    "  <div class=\"h1\">字号 = font-size</div>"
-    "  <div class=\"s12\">12px 小字</div>"
-    "  <div class=\"s16\">16px 正文</div>"
-    "  <div class=\"s24\">24px 标题</div>"
-    "  <div class=\"c\">居中的一行</div>"
-    "  <div class=\"dim\">灰色、右对齐</div>"
-    "</div>";
+```html
+<!-- example/02_text/index.html -->
+<div id="root">
+  <div class="h1">字号 = font-size</div>
+  <div class="s12">12px 小字</div>
+  <div class="s16">16px 正文</div>
+  <div class="s24">24px 标题</div>
+  <div class="c">居中的一行</div>
+  <div class="dim">灰色、右对齐</div>
+</div>
+```
 
-static const char *k_css =
-    "#root { width: 260px; height: 220px; background-color: #0F1218; }"
-    ".h1  { margin: 12px 0 8px 14px; font-size: 13px; color: #6C7783; }"
-    ".s12 { margin: 2px 14px; font-size: 12px; color: #C8D2DE; }"
-    ".s16 { margin: 2px 14px; font-size: 16px; color: #C8D2DE; }"
-    ".s24 { margin: 2px 14px; font-size: 24px; color: #7CE0FF; }"
-    ".c   { margin: 12px 14px 4px 14px; font-size: 14px; color: #E6C34A;"
-    "       text-align: center; }"
-    ".dim { margin: 2px 14px; font-size: 12px; color: #7A8794;"
-    "       text-align: right; }";
+```css
+/* example/02_text/style.css（节选） */
+.h1  { margin: 12px 0 8px 14px; font-size: 13px; color: #6E7781; }
+.s12 { margin: 2px 14px; font-size: 12px; color: #1F2328; }
+.s16 { margin: 2px 14px; font-size: 16px; color: #1F2328; }
+.s24 { margin: 2px 14px; font-size: 24px; color: #0969DA; }
+.c   { margin: 12px 14px 4px 14px; font-size: 14px; color: #E6C34A;
+       text-align: center; }
+.dim { margin: 2px 14px; font-size: 12px; color: #57606A;
+       text-align: right; }
 ```
 
 ## 规则一：一个元素 = 一整段文本

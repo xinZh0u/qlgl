@@ -4,11 +4,20 @@
 <img src="../img/06-theme-light.png" alt="浅色" width="260">
 <img src="../img/06-theme-warm.png" alt="暖色" width="260">
 
-完整程序：`example/06_theme.c`
+完整程序：`example/06_theme/main.c`
 
-三张图是**同一份 HTML**，只有 CSS 不同。
+三张图是**同一份 HTML**，只有 CSS 不同。例程目录里就是三份 CSS：
+
+```
+example/06_theme/
+  index.html      结构（三套皮肤共用）
+  dark.css
+  light.css
+  warm.css
+```
 
 ```html
+<!-- example/06_theme/index.html -->
 <div id="root">
   <div class="title">换皮肤</div>
   <div class="row">
@@ -20,8 +29,8 @@
 ```
 
 ```c
-/* 结构只写一次 */
-QLUIDoc *doc = ql_ui_load_text(k_html, css_text);
+/* 结构只写一次：换皮肤就是换这一个文件名 */
+QLUIDoc *doc = ex_load_ui("index.html", "dark.css");
 ```
 
 ## 为什么这很便宜
@@ -34,12 +43,10 @@ QLUIDoc *doc = ql_ui_load_text(k_html, css_text);
 ```c
 void apply_theme(const char *css_path)
 {
-    char *css = read_file(css_path);
-    QLUIDoc *doc = ql_ui_load_text(k_html, css);   /* 结构每次都一样 */
+    QLUIDoc *doc = ex_load_ui("index.html", css_path);   /* 结构每次都一样 */
     if (doc == NULL) {
         fprintf(stderr, "皮肤编译失败，保留旧皮肤：%s\n",
                 ql_ui_text_last_error());
-        free(css);
         return;                                    /* ← 失败就不换，别半个正确 */
     }
     QLUIRoot *ui = ql_ui_build(doc);
@@ -74,7 +81,7 @@ void apply_theme(const char *css_path)
 ./build/example/example_06_theme my.css
 ```
 
-试着自己改一份 `my.css`（从 `example/06_theme.c` 里那段 `k_dark` 抄一份改颜色），
+试着自己改一份 `my.css`（把 `example/06_theme/dark.css` 抄一份改颜色），
 跑一下 —— 三分钟内你就能体会到"改界面不用重编译"。
 
 ## 存成 `.qlui` 缓存

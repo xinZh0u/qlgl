@@ -272,18 +272,31 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 
 <p>想先看窗口、看完再截图，就显式给帧数：<code>--frames 120 --dump /tmp/01.ppm</code>。</p>
 <h2 id="_3">一个程序的四步</h2>
-<p>每个 QLGL 程序都是这四步，看一眼 <code>example/01_window.c</code>：</p>
+<p>每个 QLGL 程序都是这四步，看一眼 <code>example/01_window/main.c</code>：</p>
 <p><img src="../img/01-hello.png" alt="第一个窗口" width="240"></p>
+<p>先看界面本身 —— 它是<strong>两个独立文件</strong>，跟写网页一样：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">&lt;!-- example/01_window/index.html --&gt;</span>
+<span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;root&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;hello&quot;</span><span class="p">&gt;</span>Hello, QLGL<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="c">/* example/01_window/style.css */</span>
+<span class="p">#</span><span class="nn">root</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="p">;</span>
+<span class="w">  </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="p">;</span>
+<span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">.</span><span class="nc">hello</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#0969DA</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>程序这边只负责"读进来 → 编译 → 显示"：</p>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;common.h&quot;</span>
-
-<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_html</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="s">&quot;&lt;div id=</span><span class="se">\&quot;</span><span class="s">root</span><span class="se">\&quot;</span><span class="s">&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;  &lt;div class=</span><span class="se">\&quot;</span><span class="s">hello</span><span class="se">\&quot;</span><span class="s">&gt;Hello, QLGL&lt;/div&gt;&quot;</span>
-<span class="w">    </span><span class="s">&quot;&lt;/div&gt;&quot;</span><span class="p">;</span>
-
-<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_css</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="s">&quot;#root { width: 240px; height: 120px; background-color: #101820; }&quot;</span>
-<span class="w">    </span><span class="s">&quot;.hello { margin: 40px 0 0 24px; font-size: 20px; color: #7CE0FF; }&quot;</span><span class="p">;</span>
 
 <span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">**</span><span class="n">argv</span><span class="p">)</span>
 <span class="p">{</span>
@@ -291,8 +304,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
 <span class="w">    </span><span class="n">ex_load_font</span><span class="p">();</span>
 
-<span class="w">    </span><span class="cm">/* ① 编译界面 */</span>
-<span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">k_html</span><span class="p">,</span><span class="w"> </span><span class="n">k_css</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* ① 编译界面：读 index.html + style.css（相对例程目录，见 common.h） */</span>
+<span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_load_ui</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;style.css&quot;</span><span class="p">);</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">doc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;界面编译失败：%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_text_last_error</span><span class="p">());</span>
 <span class="w">        </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
@@ -313,6 +326,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 <span class="p">}</span>
 </code></pre></div>
 
+<blockquote>
+<p><strong>为什么读文件而不是写成字符串？</strong> 例程是给人在 PC 上直接跑的：改一行 CSS
+重跑就能看到效果，编辑器也有高亮和格式化。构建期编译（把 HTML/CSS 变成静态表）
+走的是同一批文件，见<a href="07_advanced.md">进阶</a>。</p>
+</blockquote>
 <h3 id="1-qlgl_init">① <code>qlgl_init()</code> 与字体</h3>
 <p><code>qlgl_init()</code> 初始化内存统计、字体、输入队列。所有程序开头都要调，
 结尾配一个 <code>qlgl_shutdown()</code>。</p>
@@ -364,6 +382,8 @@ free 路径不可能发生。</p>
 <p>数据在 <code>.rodata</code> 里，<strong>加载成本为零</strong> —— 连一次解析都没有。
 想两者兼得的话，也可以把运行期编译的结果存成 <code>.qlui</code> 二进制缓存，
 下次直接 <code>ql_ui_load_file()</code>。</p>
+<p>例程就是按这个方式组织文件的（<code>example/01_window/{index.html,style.css}</code>），
+所以把那两个文件直接换成 <code>qltext cc</code> 的 <code>--html/--css</code>，源码一个字都不用改。</p>
 <hr />
 <p>下一章：<a href="02_text.html">文本</a></p>
 <div class='pager'>

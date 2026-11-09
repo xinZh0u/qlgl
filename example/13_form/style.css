@@ -1,0 +1,85 @@
+/* 页面铺满窗口 + 竖向 flex：多行输入框用 `flex: 1 1 0px` 吃掉剩余高度， 窗口拉大它就变高。 注意是 `1 1 0px` 而不是 `1`：`flex: 1` 的 basis 是 auto（= 内容高度）， 内容一高就撑爆容器；basis 写成 0 才是"从零开始分配剩余空间"。 */
+#root {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background-color: #FFFFFF;
+  padding: 14px;
+  font-size: 12px;
+  color: #1F2328;
+}
+
+h2 {
+  font-size: 16px;
+  color: #0969DA;
+  margin: 0 0 10px 0;
+}
+
+label {
+  display: block;
+  color: #57606A;
+  font-size: 11px;
+  margin: 8px 0 4px 0;
+}
+
+/* 单行与多行共用同一套外观，读起来才像同一个表单。 `box-sizing: border-box` 不能省：`width: 100%` 是**内容盒**宽度， 不加它的话 padding + border 会加在 100% 外面，控件会比父容器更宽、 右边直接顶到窗口边缘（截图里"输入框和窗口贴住了"就是这个）。 */
+/* `height` 是边框盒：22(内容) + 3×2(内边距) + 1×2(边框) = 30px； 写成 22px 的话内容盒只剩 14px，比行高还矮，字上下都会被切掉。 */
+input {
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 3px 6px;
+  box-sizing: border-box;
+  border-width: 1px;
+  border-color: #D0D7DE;
+  border-radius: 4px;
+  background-color: #F6F8FA;
+  color: #1F2328;
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  flex: 1 1 0px;
+  padding: 6px;
+  box-sizing: border-box;
+  border-width: 1px;
+  border-color: #D0D7DE;
+  border-radius: 4px;
+  background-color: #F6F8FA;
+  color: #1F2328;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* 聚焦态用过渡描边，能直接看出焦点在哪个控件上 */
+input:focus {
+  border-color: #0969DA;
+}
+
+textarea:focus {
+  border-color: #0969DA;
+}
+
+#bar {
+  margin-top: 14px;
+}
+
+button {
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 4px;
+  border-width: 1px;
+  border-color: #0969DA;
+  background-color: #EDF3FF;
+  color: #0969DA;
+}
+
+#hint {
+  display: inline-block;
+  margin-left: 10px;
+  color: #6E7781;
+  font-size: 10px;
+}

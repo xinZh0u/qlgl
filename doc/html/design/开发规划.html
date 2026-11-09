@@ -1908,7 +1908,7 @@ golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <c
 <p>验收：<code>test_scroll</code>（46 项）—— auto/hidden 分工、滚轮方向、夹紧、<code>scroll_by</code> 标脏
 （顶到头不白重绘）、命中测试跟着滚、横向滚动、拖滚动条不算点击、无溢出时不画滚动条、
 嵌套时滚最近的可滚祖先。</p>
-<p>例程：<code>example/09_scroll.c</code>（播放列表，滚轮/拖滚动条/PageDown）；教程第 9 章。</p>
+<p>例程：<code>example/09_scroll/main.c</code>（播放列表，滚轮/拖滚动条/PageDown）；教程第 9 章。</p>
 <p><strong>已知缺口</strong>：没有滚动惯性（触屏会"硬"）；滚轮滚到底<strong>不传给父级</strong>（浏览器是链式滚动）。</p>
 <h5 id="18-img-2026-11-09">⑱ 图像管线（<code>&lt;img&gt;</code>）—— <strong>设计定案（2026-11-09）</strong></h5>
 <p>完整设计见 <a href="./图像管线设计.md">图像管线设计</a>。三条与"调库还是自己写"直接相关的决定：</p>
@@ -2207,7 +2207,7 @@ audio/video 后端自带线程，只调这一个函数。它是 P7h/P7j 的入�
 （三张表必须同步）；<code>ql_ui_input_cb</code> typedef 写在 <code>QLUIRoot</code> 之后 → 结构体里存不了函数指针。</p>
 <p>验收：<code>test_input_edit</code>（130 项）—— 初始值、点击定位光标、插入/删除/选区、
 UTF-8 边界、密码显示宽度、回调只在值真的变了时发、无 <code>&lt;input&gt;</code> 时池为 NULL。</p>
-<p>例程：<code>example/10_input.c</code>；教程第 11 章；手册 §5.7。</p>
+<p>例程：<code>example/10_input/main.c</code>；教程第 11 章；手册 §5.7。</p>
 <h5 id="16-c3-2026-11-08">⑯ 下拉框（C3）—— <strong>已完成（2026-11-08）</strong></h5>
 <p><code>&lt;select&gt;</code> + <code>&lt;option&gt;</code>：点击展开一个<strong>覆盖式</strong>面板。</p>
 <table>
@@ -2246,7 +2246,7 @@ select 自己时是"再点一次关掉"，必须 <code>return</code>；否则 <c
 <p>验收：<code>test_select</code>（62 项）—— option 的 <code>display:none</code>、默认选中 0、点击展开/选中/收起、
 点面板外只收起、面板真的画出来（白色像素数）、<code>set_index</code> 夹紧与回调、
 Tab 顺序与 Shift+Tab、下拉框键盘、无 select 时池为 NULL。</p>
-<p>例程：<code>example/10_input.c</code>（输入框 + 密码框 + 下拉框同一界面）；教程第 11 章；手册 §5.8。</p>
+<p>例程：<code>example/10_input/main.c</code>（输入框 + 密码框 + 下拉框同一界面）；教程第 11 章；手册 §5.8。</p>
 <p><strong>已知缺口</strong>：<code>&lt;textarea&gt;</code>（多行）、<code>&lt;form&gt;</code>/提交/校验、剪贴板、IME 候选框。</p>
 <hr />
 <h5 id="12-ua-2026-11-08">⑫ 标签集与 UA 默认样式 —— <strong>已完成（2026-11-08）</strong></h5>
@@ -2330,7 +2330,7 @@ Tab 顺序与 Shift+Tab、下拉框键盘、无 select 时池为 NULL。</p>
 块/行内 display、<code>mark</code> 背景、<code>hr</code> 尺寸与颜色、<code>br</code> 真的换行且自身 0 高、空元素不压栈、
 <code>ul/li</code> 缩进、行内空白保留 / 块级空白丢弃 / flex 里不产生项、<code>tag</code> 选择器、三类报错文案。
 新增 golden 页 <code>tags</code>（28 页），<code>test_text_parse</code> 同步加一页（365 项）。</p>
-<p>例程：<code>example/08_tags.c</code>（上半部分纯 UA 默认值排版，下半部分同标签只改 CSS）；
+<p>例程：<code>example/08_tags/main.c</code>（上半部分纯 UA 默认值排版，下半部分同标签只改 CSS）；
 教程新增第 8 章「标签与语义」。</p>
 <h5 id="11-white-space-normal-2026-11-08">⑪ 自动折行 <code>white-space: normal</code> —— <strong>已完成（2026-11-08）</strong></h5>
 <p>有了 <code>line-height</code> 打底，多行文本只剩"按宽度断行 + 行数决定高度"两件事。</p>
@@ -2378,15 +2378,15 @@ Tab 顺序与 Shift+Tab、下拉框键盘、无 select 时池为 NULL。</p>
 <p><strong>顺带修掉一个真 bug（分轴）</strong>：<code>max_content_main()</code> 给 flex 项算 max-content 主轴
 尺寸时，对文本节点<strong>一律返回文本宽度</strong>。可 <code>flex-direction: column</code> 时主轴是竖直，
 max-content 应该是高度（行数 × 行高）。后果：46 个汉字的简介在 column 容器里声称
-自己 <strong>322px 高</strong>，整页被撑爆、折行高度也算不出来（写 <code>example/07_player</code> 时撞上）。
+自己 <strong>322px 高</strong>，整页被撑爆、折行高度也算不出来（写 <code>example/07_player/</code> 时撞上）。
 现在按 <code>row ? 文本宽度 : 行数 × 行高</code> 分轴，折行时行数用父容器给的可用宽度估。</p>
 <p>验收：<code>test_text_wrap</code>（59 项）—— 英文按词断且每行不超宽、CJK 随处断、超长单词硬断、
 <code>'\n'</code> 叠加折行、默认 nowrap 高度 = 1 行、<code>normal</code> 高度随行数增长、绘制真的画出多行、
 继承、column flex 回归（高度 = 行数 × 行高且等于容器高）、三类非法值报错。</p>
-<p>例程：<code>example/07_player.c</code> —— 一个真实的播放器界面（渐变封面 / 进度条 / 折行简介 /
+<p>例程：<code>example/07_player/main.c</code> —— 一个真实的播放器界面（渐变封面 / 进度条 / 折行简介 /
 <code>line-height</code> 居中的按钮），顺带当"这套子集够不够写真实界面"的靶子。</p>
 <h5 id="10-line-height-2026-11-08">⑩ <code>line-height</code> —— <strong>已完成（2026-11-08）</strong></h5>
-<p>写 <code>example/03_layout</code> 时暴露的真实缺口：<code>height: 26px; text-align: center</code> 的按钮，
+<p>写 <code>example/03_layout/</code> 时暴露的真实缺口：<code>height: 26px; text-align: center</code> 的按钮，
 文字水平居中但<strong>贴着内容盒顶部</strong>。查下来引擎是对的（CSS 块布局本来就这样，
 浏览器也一样），错的是<strong>库里根本没有表达"垂直居中"的手段</strong> —— <code>text-align</code> 的
 竖直 counterpart 就是 <code>line-height</code>。</p>

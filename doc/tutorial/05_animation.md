@@ -2,7 +2,7 @@
 
 <img src="../img/05-animation.png" alt="动画" width="300">
 
-完整程序：`example/05_animation.c`
+完整程序：`example/05_animation/main.c`
 
 三类动效，全部只写 CSS：
 

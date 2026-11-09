@@ -56,21 +56,38 @@ cmake --build build -j --target example_01_window
 
 ## 一个程序的四步
 
-每个 QLGL 程序都是这四步，看一眼 `example/01_window.c`：
+每个 QLGL 程序都是这四步，看一眼 `example/01_window/main.c`：
 
 <img src="../img/01-hello.png" alt="第一个窗口" width="240">
 
+先看界面本身 —— 它是**两个独立文件**，跟写网页一样：
+
+```html
+<!-- example/01_window/index.html -->
+<div id="root">
+  <div class="hello">Hello, QLGL</div>
+</div>
+```
+
+```css
+/* example/01_window/style.css */
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #FFFFFF;
+}
+
+.hello {
+  margin: 40px 0 0 24px;
+  font-size: 20px;
+  color: #0969DA;
+}
+```
+
+程序这边只负责"读进来 → 编译 → 显示"：
+
 ```c
 #include "common.h"
-
-static const char *k_html =
-    "<div id=\"root\">"
-    "  <div class=\"hello\">Hello, QLGL</div>"
-    "</div>";
-
-static const char *k_css =
-    "#root { width: 240px; height: 120px; background-color: #101820; }"
-    ".hello { margin: 40px 0 0 24px; font-size: 20px; color: #7CE0FF; }";
 
 int main(int argc, char **argv)
 {
@@ -78,8 +95,8 @@ int main(int argc, char **argv)
         return 1;
     ex_load_font();
 
-    /* ① 编译界面 */
-    QLUIDoc *doc = ql_ui_load_text(k_html, k_css);
+    /* ① 编译界面：读 index.html + style.css（相对例程目录，见 common.h） */
+    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
     if (doc == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
@@ -99,6 +116,10 @@ int main(int argc, char **argv)
     return rc;
 }
 ```
+
+> **为什么读文件而不是写成字符串？** 例程是给人在 PC 上直接跑的：改一行 CSS
+> 重跑就能看到效果，编辑器也有高亮和格式化。构建期编译（把 HTML/CSS 变成静态表）
+> 走的是同一批文件，见[进阶](07_advanced.md)。
 
 ### ① `qlgl_init()` 与字体
 
@@ -170,6 +191,9 @@ QLUIRoot *ui = ql_ui_build(&ui_app_doc);
 数据在 `.rodata` 里，**加载成本为零** —— 连一次解析都没有。
 想两者兼得的话，也可以把运行期编译的结果存成 `.qlui` 二进制缓存，
 下次直接 `ql_ui_load_file()`。
+
+例程就是按这个方式组织文件的（`example/01_window/{index.html,style.css}`），
+所以把那两个文件直接换成 `qltext cc` 的 `--html/--css`，源码一个字都不用改。
 
 ---
 

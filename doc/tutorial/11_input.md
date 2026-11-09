@@ -5,7 +5,7 @@
 
 <img src="../img/10-input.png" alt="登录表单：输入框 + 密码框 + 下拉框" width="300">
 
-完整程序：`example/10_input.c`
+完整程序：`example/10_input/main.c`
 
 ## `<input>`：单行输入
 

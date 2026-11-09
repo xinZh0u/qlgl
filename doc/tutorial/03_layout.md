@@ -2,7 +2,7 @@
 
 <img src="../img/03-layout.png" alt="布局" width="300">
 
-完整程序：`example/03_layout.c`
+完整程序：`example/03_layout/main.c`
 
 这是一个"顶栏 + 三张卡 + 一条半宽色带 + 一个绝对定位徽标"的界面。
 布局代码只有 CSS，没有一行 C。

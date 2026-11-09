@@ -1,0 +1,20 @@
+<div id="root">
+  <h2>1 · 空白保留</h2>
+  <!-- 注意：源码里的缩进会被原样画出来 —— 这就是 pre 的语义 -->
+  <pre>int main(void) {
+    if (x > 0) {
+        return 1;	// tab 对齐到 8 列
+    }
+    return 0;
+}</pre>
+  <h2>2 · 只保留换行</h2>
+  <div class="poem">床前明月光
+疑是地上霜
+举头望明月
+低头思故乡</div>
+  <h2>3 · 上下标</h2>
+  <p>水分子 H<sub>2</sub>O，面积单位 cm<sup>2</sup>，能量 E = mc<sup>2</sup>。</p>
+  <p class="big">字号跟着父级走：<b>x<sup>2</sup></b></p>
+  <h2>4 · 行内代码</h2>
+  <p>按 <code>ql_ui_layout()</code> 之后才能取到盒子；<code>white-space</code> 默认是 <code>nowrap</code>。</p>
+</div>

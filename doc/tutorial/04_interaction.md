@@ -2,7 +2,7 @@
 
 <img src="../img/04-interaction.png" alt="交互" width="260">
 
-完整程序：`example/04_interaction.c`
+完整程序：`example/04_interaction/main.c`
 
 这一章做三件事：鼠标移上去变样、按下去下沉、点击改文本。
 

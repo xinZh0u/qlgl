@@ -1,0 +1,17 @@
+<div id="root">
+  <!-- 下层：四个色块各自来回跑，轨迹故意穿过中间的玻璃卡 -->
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+  <div class="blob b4"></div>
+  <!-- 上层：固定的玻璃卡 -->
+  <div id="card">
+    <div class="t1">backdrop-filter: blur(14px)</div>
+    <div class="t2">玻璃层背后有 4 个色块在动</div>
+  </div>
+  <!-- 上层：自己也在动的玻璃方块 -->
+  <div id="puck"></div>
+  <!-- 上层：细横条，小半径模糊 -->
+  <div id="pill">blur(3px)</div>
+  <div id="hint">上层固定 + 上层移动 + 下层动态，三条同时成立</div>
+</div>

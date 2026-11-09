@@ -367,7 +367,7 @@ if(Python3_Interpreter_FOUND)
     )
 endif()
 
-# ---- example/：基本例程（每个 .c 都是一个完整可运行的程序） ----
+# ---- example/：基本例程（每个文件夹都是一个完整可运行的程序） ----
 if(QLGL_BUILD_EXAMPLES)
     add_subdirectory(example)
 endif()

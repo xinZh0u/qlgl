@@ -1,8 +1,8 @@
 /**
- * @file    04_interaction.c
+ * @file    main.c
  * @brief   交互：鼠标移入/按下改样式，点击回调。
  *
- *   ./build/example/04_interaction
+ *   ./build/example/example_04_interaction
  *
  * 三件你要知道的事：
  *   1. `:hover` / `:active` / `:focus` 在编译期就变成了"状态变体样式"，
@@ -11,25 +11,6 @@
  *   3. 点击用 `ql_ui_set_click_cb()` 接回调，不需要自己算命中。
  */
 #include "common.h"
-
-static const char *k_html =
-    "<div id=\"root\">"
-    "  <div class=\"btn\">点我</div>"
-    "  <div class=\"log\">点击次数：0</div>"
-    "</div>";
-
-/* 注意 transition：状态变化时颜色/位置在 160ms 内插值过去 */
-static const char *k_css =
-    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
-    ".btn { position: absolute; left: 24px; top: 26px; width: 120px; height: 44px;"
-    "       border-radius: 10px; background-color: #D0D7DE; color: #1F2328;"
-    "       font-size: 15px; text-align: center; line-height: 44px;"
-    "       transition: 160ms ease-out; }"
-    ".btn:hover { background-color: #2E6BE6; color: #FFFFFF;"
-    "             transform: translate(0px, -2px); }"
-    ".btn:active { background-color: #1B4CA8; transform: translate(0px, 1px); }"
-    ".log { position: absolute; left: 24px; top: 92px; font-size: 13px;"
-    "       color: #57606A; }";
 
 static QLUIRoot *s_ui;
 static QLUINodeRT *s_log;
@@ -55,7 +36,7 @@ int main(int argc, char **argv)
     ex_setup_locale();
     ex_load_font();
 
-    QLUIDoc *doc = ql_ui_load_text(k_html, k_css);
+    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
     if (doc == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();

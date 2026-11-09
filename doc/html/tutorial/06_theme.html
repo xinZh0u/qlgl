@@ -215,9 +215,17 @@ main img.shot { max-width: 100%; }
 <p><img src="../img/06-theme-dark.png" alt="深色" width="260">
 <img src="../img/06-theme-light.png" alt="浅色" width="260">
 <img src="../img/06-theme-warm.png" alt="暖色" width="260"></p>
-<p>完整程序：<code>example/06_theme.c</code></p>
-<p>三张图是<strong>同一份 HTML</strong>，只有 CSS 不同。</p>
-<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;root&quot;</span><span class="p">&gt;</span>
+<p>完整程序：<code>example/06_theme/main.c</code></p>
+<p>三张图是<strong>同一份 HTML</strong>，只有 CSS 不同。例程目录里就是三份 CSS：</p>
+<div class="highlight"><pre><span></span><code>example/06_theme/
+  index.html      结构（三套皮肤共用）
+  dark.css
+  light.css
+  warm.css
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">&lt;!-- example/06_theme/index.html --&gt;</span>
+<span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;root&quot;</span><span class="p">&gt;</span>
   <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;title&quot;</span><span class="p">&gt;</span>换皮肤<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
   <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;row&quot;</span><span class="p">&gt;</span>
     <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;chip on&quot;</span><span class="p">&gt;</span>选中<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
@@ -227,8 +235,8 @@ main img.shot { max-width: 100%; }
 <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 </code></pre></div>
 
-<div class="highlight"><pre><span></span><code><span class="cm">/* 结构只写一次 */</span>
-<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">k_html</span><span class="p">,</span><span class="w"> </span><span class="n">css_text</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 结构只写一次：换皮肤就是换这一个文件名 */</span>
+<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_load_ui</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;dark.css&quot;</span><span class="p">);</span>
 </code></pre></div>
 
 <h2 id="_2">为什么这很便宜</h2>
@@ -237,12 +245,10 @@ main img.shot { max-width: 100%; }
 <p>所以"换皮肤"的成本 = 一次编译。可以直接这么写：</p>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">apply_theme</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css_path</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">read_file</span><span class="p">(</span><span class="n">css_path</span><span class="p">);</span>
-<span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">k_html</span><span class="p">,</span><span class="w"> </span><span class="n">css</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 结构每次都一样 */</span>
+<span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_load_ui</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">css_path</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 结构每次都一样 */</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">doc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;皮肤编译失败，保留旧皮肤：%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
 <span class="w">                </span><span class="n">ql_ui_text_last_error</span><span class="p">());</span>
-<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">css</span><span class="p">);</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span><span class="w">                                    </span><span class="cm">/* ← 失败就不换，别半个正确 */</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
@@ -293,7 +299,7 @@ main img.shot { max-width: 100%; }
 <div class="highlight"><pre><span></span><code>./build/example/example_06_theme<span class="w"> </span>my.css
 </code></pre></div>
 
-<p>试着自己改一份 <code>my.css</code>（从 <code>example/06_theme.c</code> 里那段 <code>k_dark</code> 抄一份改颜色），
+<p>试着自己改一份 <code>my.css</code>（把 <code>example/06_theme/dark.css</code> 抄一份改颜色），
 跑一下 —— 三分钟内你就能体会到"改界面不用重编译"。</p>
 <h2 id="qlui">存成 <code>.qlui</code> 缓存</h2>
 <p>编译结果可以再序列化成二进制，下次直接加载，连解析都省了：</p>

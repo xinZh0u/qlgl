@@ -1,0 +1,168 @@
+/* 根元素直接当舞台：`#root` 自身 `height:100%` 相对视口，是确定高度， 所以它的绝对定位子元素能拿到正确的包含块。 （注意：**普通元素**的 `height:100%` 目前不会去解析父元素的百分比高度， 多套一层 `#stage{height:100%}` 会变成 0 高，什么都看不见。） */
+#root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: #EEF3FB;
+  font-size: 12px;
+  color: #1F2328;
+}
+
+/* ---- 下层：色块。position:absolute + transform 动画，零重排 ---- */
+.blob {
+  position: absolute;
+  border-radius: 22px;
+}
+
+.b1 {
+  left: 24px;
+  top: 40px;
+  width: 96px;
+  height: 96px;
+  background-color: #4C8DFF;
+  animation: run1 2600ms ease-in-out infinite alternate;
+}
+
+.b2 {
+  left: 330px;
+  top: 30px;
+  width: 84px;
+  height: 84px;
+  background-color: #FFB020;
+  animation: run2 3200ms ease-in-out infinite alternate;
+}
+
+.b3 {
+  left: 250px;
+  top: 250px;
+  width: 104px;
+  height: 104px;
+  background-color: #34C759;
+  animation: run3 2100ms ease-in-out infinite alternate;
+}
+
+.b4 {
+  left: 60px;
+  top: 290px;
+  width: 72px;
+  height: 72px;
+  background-color: #FF5C7A;
+  animation: run4 3800ms ease-in-out infinite alternate;
+}
+
+/* 轨迹：都从右下往左上、或反过来，保证会从 #card 底下穿过 */
+@keyframes run1 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(190px, 110px);
+  }
+}
+
+@keyframes run2 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(-170px, 140px);
+  }
+}
+
+@keyframes run3 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(-140px, -150px);
+  }
+}
+
+@keyframes run4 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(250px, -110px);
+  }
+}
+
+/* ---- 玻璃卡：半透明底 + 高斯模糊 ---- */
+/* background-color 必须带 alpha。写 #FFFFFF 的话它会糊完再被自己盖回去， 屏幕上就是一整块白 —— 这是使用这个属性最常见的坑。 */
+#card {
+  position: absolute;
+  left: 56px;
+  top: 132px;
+  width: 236px;
+  height: 116px;
+  background-color: rgba(255, 255, 255, 0.42);
+  backdrop-filter: blur(14px);
+  border-radius: 16px;
+  border-width: 1px;
+  border-color: rgba(255,255,255,0.85);
+  box-shadow: 0px 8px 24px rgba(31, 35, 40, 0.12);
+  padding: 16px;
+}
+
+#card .t1 {
+  font-size: 13px;
+  color: #0B3D91;
+}
+
+#card .t2 {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #46536B;
+}
+
+/* ---- 会自己动的玻璃方块：模糊区域跟着一起走 ---- */
+#puck {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 92px;
+  height: 92px;
+  background-color: rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(8px);
+  border-radius: 20px;
+  border-width: 1px;
+  border-color: rgba(255,255,255,0.9);
+  animation: puck 3000ms ease-in-out infinite alternate;
+}
+
+@keyframes puck {
+  from {
+    transform: translate(30px, 16px);
+  }
+  to {
+    transform: translate(340px, 250px);
+  }
+}
+
+/* ---- 细横条：小半径对比 ---- */
+#pill {
+  position: absolute;
+  left: 56px;
+  top: 262px;
+  width: 150px;
+  height: 30px;
+  background-color: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(3px);
+  border-radius: 15px;
+  line-height: 30px;
+  padding: 0px 12px;
+  font-size: 11px;
+  color: #46536B;
+}
+
+#hint {
+  position: absolute;
+  left: 0px;
+  top: 356px;
+  width: 100%;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  font-size: 11px;
+  color: #6E7781;
+}

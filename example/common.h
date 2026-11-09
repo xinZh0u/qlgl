@@ -21,6 +21,94 @@
 #define HAS_GL 1
 #endif
 
+/*
+ * ---- 例程自己的 HTML / CSS ----
+ *
+ * 每个例程是一个文件夹：`example/01_window/{main.c,index.html,style.css}`。
+ * HTML/CSS 是**运行期从文件读**的，不是编进二进制的字符串 —— 改一行 CSS 重跑
+ * 就能看到效果，也能直接喂给 `qltext cc --html ... --css ...` 做构建期编译。
+ *
+ * `QL_EX_DIR` 由 CMake 注入成该例程目录的绝对路径，所以从任何目录启动都能找到。
+ * 直接 `gcc example/01_window/main.c` 时没有这个宏，退回到相对当前目录。
+ */
+#ifndef QL_EX_DIR
+#define QL_EX_DIR "example"
+#endif
+
+static const char *ex_dir(void)
+{
+    /* 想让例程读别处的文件：QLGL_EX_DIR=/path/to/dir ./example_01_window */
+    const char *env = getenv("QLGL_EX_DIR");
+    return (env != NULL && env[0] != '\0') ? env : QL_EX_DIR;
+}
+
+/* 读整个文件到堆上（补结尾 '\0'）。失败返回 NULL 并打印原因 */
+static char *ex_slurp(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        printf("打不开 %s（例程目录可用 QLGL_EX_DIR 指定）\n", path);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long n = ftell(f);
+    if (n < 0) {
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+    char *buf = (char *)malloc((size_t)n + 1u);
+    if (buf == NULL) {
+        fclose(f);
+        return NULL;
+    }
+    const size_t got = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[got] = '\0';
+    return buf;
+}
+
+/*
+ * 相对名 → 真路径。规则只有两条：
+ *   - 绝对路径原样用；
+ *   - 否则**当前目录下有的优先**（临时改一份 CSS 试效果最顺手），
+ *     没有就落到例程目录里。
+ */
+static int ex_resolve(char *out, size_t n, const char *rel)
+{
+    if (rel[0] == '/')
+        return snprintf(out, n, "%s", rel) > 0;
+    FILE *f = fopen(rel, "rb");
+    if (f != NULL) {
+        fclose(f);
+        return snprintf(out, n, "%s", rel) > 0;
+    }
+    return snprintf(out, n, "%s/%s", ex_dir(), rel) > 0;
+}
+
+/* 编译一份界面：`ex_load_ui("index.html", "style.css")` */
+static QLUIDoc *ex_load_ui(const char *html, const char *css)
+{
+    char hp[1024], cp[1024];
+    ex_resolve(hp, sizeof(hp), html);
+    ex_resolve(cp, sizeof(cp), css);
+    char *h = ex_slurp(hp);
+    char *c = (h != NULL) ? ex_slurp(cp) : NULL;
+    if (h == NULL || c == NULL) {
+        free(h);
+        free(c);
+        return NULL;
+    }
+    printf("读入 %s + %s\n", hp, cp);
+    QLUIDoc *doc = ql_ui_load_text(h, c);
+    free(h);
+    free(c);
+    return doc;
+}
+
 /* 找一个能显示中文的字体；找不到就退回内置位图字体（只有 ASCII） */
 /*
  * 进程的 locale 影响 XIM：`XOpenIM` 靠它挑输入法（fcitx/ibus）。

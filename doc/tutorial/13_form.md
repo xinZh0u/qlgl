@@ -4,7 +4,7 @@
 
 <img src="../img/13-form.png" alt="反馈表单：单行输入 + 多行输入 + 按钮" width="340">
 
-完整程序：`example/13_form.c`
+完整程序：`example/13_form/main.c`
 
 ## 一句话说清它和 `<input>` 的关系
 

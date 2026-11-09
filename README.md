@@ -51,8 +51,9 @@ cmake --build build -j
 ./build/example/example_01_window --dump /tmp/01.ppm
 ```
 
-**想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，10 章，每章配一个
-可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十五个自包含的 `.c`。
+**想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，一章配一个可编译运行
+的完整程序）。也可以直接看 [`example/`](example/)：**一个例程一个文件夹**，
+`main.c` + `index.html` + `style.css`，改一行 CSS 重跑就能看到效果。
 
 | 例程 | 讲什么 |
 |---|---|
@@ -206,7 +207,7 @@ test/text/         字体/文本示例与测试
 test/web/          HTML+CSS 编译示例与测试
 test/input/        交互（命中/悬停/点击/焦点）示例与测试
 test/uitext/       运行期 HTML/CSS 解析的示例
-example/           基本例程（每个 .c 都完整可运行，教程配套）
+example/           基本例程（一个例程一个文件夹：main.c + index.html + style.css）
 tools/doc/         文档生成：Markdown → doc/html/（静态站点）
 doc/tutorial/      入门教程（Markdown 源，配 example/）
 doc/img/           教程配图（由 example/ 渲染出来的真实截图）

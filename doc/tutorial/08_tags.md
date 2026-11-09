@@ -162,7 +162,7 @@ progress { width: 120px; height: 8px; border-radius: 4px;
 
 <img src="../img/11-semantic.png" alt="纯语义标签示例" width="320">
 
-完整程序：`example/11_semantic.c`。
+完整程序：`example/11_semantic/main.c`。
 
 UA 默认样式都很薄，只有"看结构就该知道"的那些：
 
@@ -198,29 +198,52 @@ margin 是 8px 而不是 1em）。
 
 <img src="../img/08-tags.png" alt="标签示例" width="260">
 
-```c
-static const char *k_html =
-    "<div id=\"root\">"
-    "  <header>QLGL 标签示例</header>"
-    "  <hr>"
-    "  <p>普通文本，<mark>高亮</mark>，<em>强调</em>，<strong>更强</strong>。</p>"
-    "  <ul><li>第一项</li><li>第二项</li></ul>"
-    "  <blockquote>引用一段话</blockquote>"
-    "  <figure><div class=\"box\"></div>"
-    "    <figcaption>图 1：一个方块</figcaption></figure>"
-    "</div>";
-
-static const char *k_css =
-    "#root { width: 260px; background-color: #0B0E14; color: #C8D2DE;"
-    "        font-size: 12px; }"
-    "header { font-size: 14px; color: #7CE0FF; }"
-    "blockquote { margin: 8px 10px; color: #8A94A0; }"
-    "figcaption { font-size: 11px; color: #6C7783; }"
-    ".box { width: 140px; height: 28px; border-radius: 4px;"
-    "       background-color: #2E6BE6; }";
+```html
+<!-- example/08_tags/index.html -->
+<div id="root">
+  <!-- ---- 第一部分：只靠 UA 默认样式 ---- -->
+  <header>QLGL 标签示例</header>
+  <hr>
+  <p>普通
+    <mark>高亮</mark>
+    <b>加粗</b>
+    <i>斜体</i>
+  </p>
+  <p><u>下划线</u>
+    <s>删除线</s>
+    <span>普通</span>
+  </p>
+  <h2>二级标题</h2>
+  <ul>
+    <li>第一项</li>
+    <li>第二项</li>
+  </ul>
+  <blockquote>引用一段话：标签不参与布局，只给默认样式。</blockquote>
+  <figure>
+    <div class="box"></div>
+    <figcaption>图 1：一个圆角方块</figcaption>
+  </figure>
+  <div class="brdemo">
+    <span>上行</span>
+    <br><span>下行</span>
+  </div>
+  <!-- ---- 第二部分：同样的标签，只用 CSS 改观感 ---- -->
+  <div class="themed">
+    <header>换一套观感</header>
+    <hr>
+    <ul>
+      <li>缩进还在</li>
+      <li>颜色变了</li>
+    </ul>
+    <blockquote>还是同一个 header / ul / blockquote。</blockquote>
+  </div>
+</div>
 ```
 
-完整可运行的版本见 `example/08_tags.c`。
+样式全在 `example/08_tags/style.css` 里：上半部分只用 UA 默认值排版，下半部分
+（`.themed`）给同样的标签换一套观感 —— 两份 CSS 的差别就是"换皮肤"。
+
+完整可运行的版本见 `example/08_tags/`（`main.c` + `index.html` + `style.css`）。
 
 ## 三个必须知道的"不完美"
 

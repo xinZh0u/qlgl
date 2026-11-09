@@ -1,0 +1,16 @@
+<div id="root">
+  <h2>变更说明</h2>
+  <p class="lead">这一版把 <code>ql_ui_scroll_by()</code> 的夹紧行为改了， 参考 <cite>QLGL 开发规划</cite> 的 ⑭ 一节。</p>
+  <dl>
+    <dt>新增</dt>
+    <dd><ins>滚动容器支持横向滚动</ins></dd>
+    <dt>修复</dt>
+    <dd><del>列表滚到底会卡在越界位置</del></dd>
+    <dt>说明</dt>
+    <dd>按下 <kbd>PageDown</kbd> 翻一屏，<small>（约 140px）</small></dd>
+  </dl>
+  <blockquote>滚动偏移烘进布局，所以绘制、命中、脏区都不用改。</blockquote>
+  <fieldset> <legend>兼容性</legend>
+    <p class="note">发布于 <time>2026-11-08</time>， 适用于 <abbr>QLGL</abbr> 0.1 之后的所有版本。</p>
+  </fieldset> <address>维护：<a>qlgl-dev</a> · 反馈请提 issue</address>
+</div>
