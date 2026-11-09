@@ -232,11 +232,17 @@ swap_us             ≈ 等垂直同步 + 合成器取帧
 窗口刚被拉大，新露出的区域等着画面，这一帧必须立刻推上去，否则就是"缩放闪白"。
 所以宿主的循环里"读尺寸 → 重排 → 画 → swap"要在同一个迭代里做完，中间不要插别的等待。
 
+**窗口管理器那边**：窗口创建时后端会把 `_NET_WM_SYNC_REQUEST_COUNTER` 写进属性、
+把 `_NET_WM_SYNC_REQUEST` 加进 `WM_PROTOCOLS`，并在每帧 `swap` 之后回执。
+这是 X11 交互式缩放"不跳帧"的关键（WM 等客户端画完再走下一步）；宿主不用管，
+只是不要在无关的时刻长时间不画、又不调用 `ql_gfx_gl_wait()`
+（那条路径会替你把"没东西可画"回执掉）。需要 libXext，CMake 找不到会自动退回不接协议。
+
 两个环境变量（排查用，不需要改代码）：
 
 | 变量 | 作用 |
 |---|---|
-| `QLGL_LAG_DEBUG=1` | 每次 `ConfigureNotify` 打一行"配置→上屏"的毫秒数（正常 p50 ≈ 1.2ms） |
+| `QLGL_LAG_DEBUG=1` | 每帧打 `dt/work/swap`，每次 `ConfigureNotify` 再打一行"配置→上屏"毫秒数（正常 p50 ≈ 1ms） |
 | `QLGL_KEEP_VSYNC=1` | 拖动期间也跟 vblank（某些驱动上不跟 vblank 会看到撕裂时用；代价是可能重新踩到 Mesa 等 1s 的老问题） |
 
 日志会打印 `GL_RENDERER` / `GL_VERSION` / `GLSL` 版本，便于区分是 llvmpipe 还是真 GPU。

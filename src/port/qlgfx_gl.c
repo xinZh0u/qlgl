@@ -17,6 +17,9 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <X11/Xlib.h>
+#ifdef QLGL_HAVE_XSYNC
+#include <X11/extensions/sync.h>
+#endif
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
@@ -83,6 +86,14 @@ struct QLGfxGL {
     Display         *dpy;
     Window           win;
     Atom             wm_delete;
+    Atom             wm_protocols;      /* WM_PROTOCOLS 的原子（判断 ClientMessage 用） */
+#ifdef QLGL_HAVE_XSYNC
+    /* _NET_WM_SYNC_REQUEST：缩放时由窗口管理器"点名要一帧"，我们画完再回执 */
+    Atom             net_wm_sync_request;
+    XSyncCounter     sync_counter;
+    XSyncValue       sync_value;
+    int              sync_pending;
+#endif
     EGLDisplay       egdpy;
     EGLSurface       surface;
     EGLContext       ctx;
@@ -1788,7 +1799,36 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         }
         x11_set_title(g->dpy, g->win, (title != NULL) ? title : "QLGL GL");
         g->wm_delete = XInternAtom(g->dpy, "WM_DELETE_WINDOW", False);
+        g->wm_protocols = XInternAtom(g->dpy, "WM_PROTOCOLS", False);
         XSetWMProtocols(g->dpy, g->win, &g->wm_delete, 1);
+#ifdef QLGL_HAVE_XSYNC
+        /*
+         * _NET_WM_SYNC_REQUEST：把"我正在缩放，画完这一帧会告诉你"这套协议接上。
+         *
+         * 不接的话，窗口管理器在交互式缩放时不知道我们何时画完：
+         * 它可能连着发好几次 ConfigureNotify、也可能等一阵再把尺寸一次跳到位，
+         * 肉眼就是"拖动时窗口大小停住、然后突然跳到目标大小"。
+         * 接上之后 WM 每发一次 resize 都等我们回执，节奏和我们的帧对齐。
+         * GTK / Qt 都这么做，这是 X11 上"丝滑缩放"的标准姿势。
+         */
+        g->net_wm_sync_request = XInternAtom(g->dpy, "_NET_WM_SYNC_REQUEST", False);
+        {
+            XSyncValue zero;
+            XSyncIntToValue(&zero, 0);
+            g->sync_counter = XSyncCreateCounter(g->dpy, zero);
+        }
+        if (g->sync_counter != None) {
+            const Atom prop = XInternAtom(g->dpy, "_NET_WM_SYNC_REQUEST_COUNTER", False);
+            const long xid = (long)g->sync_counter;
+            XChangeProperty(g->dpy, g->win, prop, XA_CARDINAL, 32, PropModeReplace,
+                            (const unsigned char *)&xid, 1);
+
+            Atom protos[2];
+            protos[0] = g->wm_delete;
+            protos[1] = g->net_wm_sync_request;
+            XSetWMProtocols(g->dpy, g->win, protos, 2);
+        }
+#endif
         XMapWindow(g->dpy, g->win);
 
         /*
@@ -2299,11 +2339,31 @@ void ql_gfx_gl_end(QLGfxGL *g)
         g->cfg_us = 0;
     }
 
+#ifdef QLGL_HAVE_XSYNC
+    /*
+     * 回执放在 swap 之后：此时这一帧已经推上屏，WM 可以放心走下一步缩放。
+     * 先 XSync 把我们这一帧的请求处理完，再设计数器。
+     */
+    if (g->sync_pending) {
+        g->sync_pending = 0;
+        XSync(g->dpy, False);
+        XSyncSetCounter(g->dpy, g->sync_counter, g->sync_value);
+    }
+#endif
+
     struct timespec t1;
     now_us(&t1);
     g->frame_us = (uint32_t)((t1.tv_sec - g->t0.tv_sec) * 1000000 +
                              (t1.tv_nsec - g->t0.tv_nsec) / 1000);
     g->frame_count++;
+
+    if (g->lag_debug) {
+        const uint64_t n2 = now_us_mono();
+        fprintf(stderr, "[frame] dt=%.2f work=%.2f swap=%.2f eff=%d\n",
+                g->last_end_us ? (double)(n2 - g->last_end_us) / 1000.0 : 0.0,
+                (double)g->frame_us / 1000.0 - (double)g->swap_us / 1000.0,
+                (double)g->swap_us / 1000.0, g->vsync_eff);
+    }
 
     /*
      * 帧率节流：
@@ -2334,6 +2394,25 @@ int ql_gfx_gl_wait(QLGfxGL *g, int timeout_ms)
             usleep((useconds_t)timeout_ms * 1000u);
         return 1;
     }
+#ifdef QLGL_HAVE_XSYNC
+    /*
+     * 窗口管理器在等我们的回执，但这一轮没有要画的东西（没有脏区、没有改尺寸）：
+     * 直接回执"内容就是现在这样"，别让它干等。移动窗口（尺寸没变）会走这条路。
+     */
+    if (g->sync_pending) {
+        g->sync_pending = 0;
+        XSync(g->dpy, False);
+        XSyncSetCounter(g->dpy, g->sync_counter, g->sync_value);
+    }
+#endif
+
+    /*
+     * 先看 Xlib 自己的队列：XPending 已经把数据读进缓冲时，socket 上可能
+     * 一个字节都没有，只 poll 会白等到超时（表现为"偶尔卡 32ms 再补帧"）。
+     */
+    if (XPending(g->dpy) > 0)
+        return 1;
+
     struct pollfd pfd;
     pfd.fd = ConnectionNumber(g->dpy);
     pfd.events = POLLIN;
@@ -2360,8 +2439,18 @@ int ql_gfx_gl_poll(QLGfxGL *g)
 
         switch (ev.type) {
         case ClientMessage:
-            if ((Atom)ev.xclient.data.l[0] == g->wm_delete)
+            if ((Atom)ev.xclient.data.l[0] == g->wm_delete) {
                 g->closed = 1;
+            }
+#ifdef QLGL_HAVE_XSYNC
+            else if (ev.xclient.message_type == g->wm_protocols &&
+                     (Atom)ev.xclient.data.l[0] == g->net_wm_sync_request) {
+                /* WM：画完这一帧（新尺寸）之后把计数器设成这个值 */
+                XSyncIntsToValue(&g->sync_value, (unsigned int)ev.xclient.data.l[2],
+                                 (int)ev.xclient.data.l[3]);
+                g->sync_pending = 1;
+            }
+#endif
             break;
         case DestroyNotify:
             g->closed = 1;
@@ -2504,6 +2593,10 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
         eglTerminate(g->egdpy);
     }
     if (g->dpy != NULL) {
+#ifdef QLGL_HAVE_XSYNC
+        if (g->sync_counter != None)
+            XSyncDestroyCounter(g->dpy, g->sync_counter);
+#endif
         if (g->win != 0)
             XDestroyWindow(g->dpy, g->win);
         XCloseDisplay(g->dpy);

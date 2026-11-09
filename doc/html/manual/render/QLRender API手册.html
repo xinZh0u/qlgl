@@ -482,6 +482,11 @@ swap_us             ≈ 等垂直同步 + 合成器取帧
 <p><strong>例外</strong>：收到 <code>ConfigureNotify</code> 之后的第一帧不等（内部置 <code>present_now</code>）——
 窗口刚被拉大，新露出的区域等着画面，这一帧必须立刻推上去，否则就是"缩放闪白"。
 所以宿主的循环里"读尺寸 → 重排 → 画 → swap"要在同一个迭代里做完，中间不要插别的等待。</p>
+<p><strong>窗口管理器那边</strong>：窗口创建时后端会把 <code>_NET_WM_SYNC_REQUEST_COUNTER</code> 写进属性、
+把 <code>_NET_WM_SYNC_REQUEST</code> 加进 <code>WM_PROTOCOLS</code>，并在每帧 <code>swap</code> 之后回执。
+这是 X11 交互式缩放"不跳帧"的关键（WM 等客户端画完再走下一步）；宿主不用管，
+只是不要在无关的时刻长时间不画、又不调用 <code>ql_gfx_gl_wait()</code>
+（那条路径会替你把"没东西可画"回执掉）。需要 libXext，CMake 找不到会自动退回不接协议。</p>
 <p>两个环境变量（排查用，不需要改代码）：</p>
 <table>
 <thead>
@@ -493,7 +498,7 @@ swap_us             ≈ 等垂直同步 + 合成器取帧
 <tbody>
 <tr>
 <td><code>QLGL_LAG_DEBUG=1</code></td>
-<td>每次 <code>ConfigureNotify</code> 打一行"配置→上屏"的毫秒数（正常 p50 ≈ 1.2ms）</td>
+<td>每帧打 <code>dt/work/swap</code>，每次 <code>ConfigureNotify</code> 再打一行"配置→上屏"毫秒数（正常 p50 ≈ 1ms）</td>
 </tr>
 <tr>
 <td><code>QLGL_KEEP_VSYNC=1</code></td>

@@ -434,6 +434,22 @@ pace 拉到 0.6ms，节流等于没做）；拖动期间在<strong>下一帧开�
 ./build/qlperf<span class="w"> </span>watch<span class="w"> </span>--seconds<span class="w"> </span><span class="m">4</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span><span class="nv">$!</span>
 </code></pre></div>
 
+<p><strong>⑤ 接上 <code>_NET_WM_SYNC_REQUEST</code>（让窗口管理器跟我们的帧对齐）</strong></p>
+<p>上面的节流只解决"我们自己什么时候画"。还有一半在窗口管理器那边：
+X11 的交互式缩放里，WM 不知道客户端什么时候把新尺寸画完。它可能连着发好几次
+<code>ConfigureNotify</code>，也可能等一阵再把尺寸<strong>一次跳到位</strong> —— 肉眼就是
+"拖动时窗口大小停住一会儿，然后突然变大"。</p>
+<p>标准解法是 EWMH 的 <code>_NET_WM_SYNC_REQUEST</code>（GTK / Qt 都实现了）：</p>
+<ol>
+<li>建一个 XSync 计数器，把它的 XID 写进窗口属性 <code>_NET_WM_SYNC_REQUEST_COUNTER</code>；</li>
+<li>把 <code>_NET_WM_SYNC_REQUEST</code> 加进 <code>WM_PROTOCOLS</code>；</li>
+<li>WM 每次要缩放，会先发一条带<strong>新计数值</strong>的 <code>ClientMessage</code>；</li>
+<li>客户端画完这一帧（<code>eglSwapBuffers</code> 之后）<code>XSync</code> 一下，再把计数器设成那个值。</li>
+</ol>
+<p>我们在 <code>qlgfx_gl.c</code> 里按上面四步接好了（<code>XSyncCreateCounter</code> 需要 libXext，
+CMake 会自己判断，没有就退回旧的"不接协议"路径）。另外有个细节：如果 WM 发来
+请求、而我们这一轮<strong>没有</strong>东西要画（比如只是移动窗口，尺寸没变），
+<code>ql_gfx_gl_wait()</code> 会立刻回执，否则 WM 会一直等我们。</p>
 <h3 id="24">2.4 修复后</h3>
 <table>
 <thead>

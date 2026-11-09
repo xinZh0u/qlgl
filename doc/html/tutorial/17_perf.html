@@ -418,7 +418,12 @@ main img.shot { max-width: 100%; }
 区域正等着我们填，这一帧先睡 7ms 就会看到"缩放时闪一下空白"，画面也永远比
 鼠标慢半拍。后端收到 <code>ConfigureNotify</code> 会置 <code>present_now</code>，那一帧立刻画立刻推，
 之后的帧再回到节流节奏——帧率照样稳，跟手却是亚毫秒级。
-用 <code>QLGL_LAG_DEBUG=1</code> 可以把这个延迟逐帧打出来（正常 p50 ≈ 1.2ms）。</p>
+用 <code>QLGL_LAG_DEBUG=1</code> 可以把这个延迟逐帧打出来（正常 p50 ≈ 1ms）。</p>
+<p>最后一环在窗口管理器那边：X11 交互式缩放时 WM 不知道我们何时画完，可能攒几次
+配置再一次性跳到位（"窗口大小停一下，然后突然变大"）。所以后端接上了 EWMH 的
+<code>_NET_WM_SYNC_REQUEST</code> 协议 —— WM 点名要一帧、我们画完回执，节奏就对齐了。
+这也是 GTK / Qt 的常规做法；<code>ql_gfx_gl_wait()</code> 在"没东西可画"时会立刻回执，
+避免 WM 干等。</p>
 <p>修复后：</p>
 <table>
 <thead>
