@@ -406,7 +406,14 @@ main img.shot { max-width: 100%; }
    拖动时"一个 ConfigureNotify 画一帧"。</li>
 <li><strong>拖动期间不跟 vblank</strong>：收到 ConfigureNotify 后 200ms 内
    <code>eglSwapInterval = 0</code>，拖动结束自动恢复（GTK/Qt 在互动缩放期间也这么做）。</li>
+<li><strong>不跟 vblank 时按显示节奏节流</strong>：后端用"跟 vsync 时的帧间隔"当 <code>pace_us</code>
+   （只在 <code>vsync_eff == 1</code> 的帧更新，避免被快帧污染），拖动期间在下一帧开头
+   补睡到 <code>last_end_us + pace_us</code>。</li>
 </ol>
+<blockquote>
+<p>第 3 条不是可选优化：关掉 vsync 又不节流，<code>--spin</code> 的 fps 会飙到上千
+（每帧只花 0.6ms），看不到"卡"也测不准；曾有人把这种数字当成 bug 报上来。</p>
+</blockquote>
 <p>修复后：</p>
 <table>
 <thead>
@@ -425,7 +432,7 @@ main img.shot { max-width: 100%; }
 <tr>
 <td>拖动时 p50</td>
 <td>6.9ms</td>
-<td><strong>1.1ms</strong></td>
+<td><strong>7.3ms</strong>（按 144Hz 节流；其中我们的活 0.6ms）</td>
 </tr>
 <tr>
 <td>静止时 CPU / 帧数</td>

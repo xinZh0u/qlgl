@@ -223,6 +223,11 @@ swap_us             ≈ 等垂直同步 + 合成器取帧
 送 frame callback，Mesa 的 Present/XCB 会一直等，实测最坏单帧卡 **1000ms**。
 `ql_gfx_gl_set_vsync()` 改的是用户的意图，这个临时关闭是内建的、不需要宿主处理。
 
+临时关闭期间**不会失去节流**：后端用跟 vsync 时的帧间隔（`pace_us`）当目标节奏，
+在下一帧开头补睡到"上一帧结束 + pace_us"，所以拖动时帧率仍贴着刷新率，
+不会飙到上千。这个等待发生在 `ql_gfx_gl_begin()` 里、计时开始之前，
+因此 `ql_gfx_gl_frame_us()` 包含它（与跟 vsync 时口径一致）。
+
 日志会打印 `GL_RENDERER` / `GL_VERSION` / `GLSL` 版本，便于区分是 llvmpipe 还是真 GPU。
 
 ---

@@ -170,6 +170,8 @@ static QLUINodeRT *dialog_top(const QLUIRoot *ui);
 static void dialog_apply(QLUIRoot *ui, QLUINodeRT *nd, int open);
 static void dialog_center(QLUIRoot *ui);
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d);
+/* 子节点分两趟画（普通流 → sticky），见 render_children 的说明 */
+static void render_children(QLUINodeRT *node, QLDraw2D *d2d);
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -4658,6 +4660,35 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
     }
 }
 
+/*
+ * 画子节点：**先画普通流，再画 sticky**。
+ *
+ * CSS 的绘制顺序里，定位元素（relative/absolute/fixed/sticky）画在普通流之后。
+ * 不这么做的话，`position: sticky` 的表头会被"滚上来的下一个兄弟"盖住
+ * （我们按兄弟顺序画，而 sticky 头通常是第一个子节点）——实测就是
+ * "表头上半截透出下一行的文字"。
+ *
+ * 只做 sticky：其它定位元素的历史行为（兄弟顺序）暂时不动，避免影响既有基准；
+ * 需要时把判断换成 `position != STATIC` 即可（见 CSS3 覆盖 §19.1）。
+ */
+static void render_children(QLUINodeRT *node, QLDraw2D *d2d)
+{
+    int has_sticky = 0;
+    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style != NULL && c->style->position == QL_UI_POSITION_STICKY) {
+            has_sticky = 1;
+            continue;
+        }
+        render_node(c, d2d);
+    }
+    if (!has_sticky)
+        return;
+    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style != NULL && c->style->position == QL_UI_POSITION_STICKY)
+            render_node(c, d2d);
+    }
+}
+
 static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = ql_ui_node_style(node);
@@ -4867,10 +4898,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
            否则会按外层更大的裁剪放行，白跑一遍 */
         node->owner->clip = clipped;
         d2d->set_clip(d2d, clipped);
-        for (QLUINodeRT *child = node->first_child; child != NULL;
-             child = child->next_sibling) {
-            render_node(child, d2d);
-        }
+        render_children(node, d2d);
         draw_scrollbar(node, d2d);
         d2d->set_clip(d2d, saved);
         node->owner->clip = saved;
@@ -4882,10 +4910,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         return;
     }
 
-    for (QLUINodeRT *child = node->first_child; child != NULL;
-         child = child->next_sibling) {
-        render_node(child, d2d);
-    }
+    render_children(node, d2d);
     ql_draw2d_set_offset(d2d, saved_ox, saved_oy);
     if (d2d->set_mask != NULL)
         ql_draw2d_set_mask(d2d, saved_mx, saved_my, saved_mr);
@@ -5068,12 +5093,22 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         ncy = box.y + box.h / 2;
     }
 
+    /*
+     * 子节点按"普通流 → sticky"两趟遍历，与绘制顺序保持一致
+     * （sticky 画在最上面，所以也最后命中）。
+     */
     QLUINodeRT *hit = NULL;
-    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
-        QLUINodeRT *found = hit_walk_ui(c, x, y, child_clip, ox + s->tf_x,
-                                        oy + s->tf_y, nfx, nfy, ncx, ncy);
-        if (found != NULL)
-            hit = found;
+    for (int pass = 0; pass < 2; pass++) {
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            const int is_sticky = (c->style != NULL &&
+                                   c->style->position == QL_UI_POSITION_STICKY);
+            if (is_sticky != (pass == 1))
+                continue;
+            QLUINodeRT *found = hit_walk_ui(c, x, y, child_clip, ox + s->tf_x,
+                                            oy + s->tf_y, nfx, nfy, ncx, ncy);
+            if (found != NULL)
+                hit = found;
+        }
     }
     if (hit != NULL)
         return hit;

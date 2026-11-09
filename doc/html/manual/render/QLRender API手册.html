@@ -475,6 +475,10 @@ swap_us             ≈ 等垂直同步 + 合成器取帧
 （拖动期间优先"跟手"，结束后恢复垂直同步）。原因是合成器忙于重配窗口时不会及时
 送 frame callback，Mesa 的 Present/XCB 会一直等，实测最坏单帧卡 <strong>1000ms</strong>。
 <code>ql_gfx_gl_set_vsync()</code> 改的是用户的意图，这个临时关闭是内建的、不需要宿主处理。</p>
+<p>临时关闭期间<strong>不会失去节流</strong>：后端用跟 vsync 时的帧间隔（<code>pace_us</code>）当目标节奏，
+在下一帧开头补睡到"上一帧结束 + pace_us"，所以拖动时帧率仍贴着刷新率，
+不会飙到上千。这个等待发生在 <code>ql_gfx_gl_begin()</code> 里、计时开始之前，
+因此 <code>ql_gfx_gl_frame_us()</code> 包含它（与跟 vsync 时口径一致）。</p>
 <p>日志会打印 <code>GL_RENDERER</code> / <code>GL_VERSION</code> / <code>GLSL</code> 版本，便于区分是 llvmpipe 还是真 GPU。</p>
 <hr />
 <h3 id="34-ql_gfx_gl_begin_rects">3.4 保留式脏区（<code>ql_gfx_gl_begin_rects</code>）</h3>

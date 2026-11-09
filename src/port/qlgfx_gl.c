@@ -134,6 +134,8 @@ struct QLGfxGL {
     int              vsync_user;   /* 用户要的：1 = 开（默认），0 = 关 */
     int              vsync_eff;    /* 当前生效的 swap interval */
     uint32_t         resize_until_ms;  /* 这个时刻之前不跟 vblank（正在拖边框） */
+    uint64_t         last_end_us;      /* 上一帧 swap 结束的单调时钟（微秒） */
+    uint32_t         pace_us;          /* 估算的"一帧该多久"（vsync 帧间隔的滑动平均） */
     struct timespec  t0;
 
     /* 保留式脏区：和窗口同尺寸的 FBO，帧末 blit 到窗口 */
@@ -1831,6 +1833,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
      */
     g->vsync_user = 1;
     g->vsync_eff = 1;
+    g->pace_us = 16666;    /* 没测到之前按 60Hz 估 */
     if (!g->offscreen)
         eglSwapInterval(g->egdpy, 1);
 
@@ -2062,7 +2065,20 @@ static void sync_window_background(QLGfxGL *g, ql_color_t clear_color)
 static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
 {
     sync_window_background(g, clear_color);
+
+    /*
+     * 拖动期间关了 vsync（见 ql_gfx_gl_end），这里按**显示节奏**补上等待。
+     *
+     * 放在 begin 且 t0 在睡之前抓：`frame_us` 是 begin→end，等待算进去之后
+     * "--stats 的帧时间 / fps" 与跟 vsync 时口径一致（都是真实节奏）。
+     * 若放在 end 之后才睡，fps 会虚高到几百上千，看起来像坏了。
+     */
     now_us(&g->t0);
+    if (!g->offscreen && g->vsync_eff == 0 && g->vsync_user && g->last_end_us != 0) {
+        const uint64_t due = g->last_end_us + (uint64_t)g->pace_us;
+        while (now_us_mono() < due)
+            usleep(200);
+    }
     g->vert_count = 0;
     g->vertex_count = 0;
     g->draw_calls = 0;
@@ -2264,6 +2280,24 @@ void ql_gfx_gl_end(QLGfxGL *g)
     g->frame_us = (uint32_t)((t1.tv_sec - g->t0.tv_sec) * 1000000 +
                              (t1.tv_nsec - g->t0.tv_nsec) / 1000);
     g->frame_count++;
+
+    /*
+     * 帧率节流：
+     *   - 跟 vsync 时，把实测间隔记进 pace_us（滑动平均，给下面用）；
+     *   - 拖动期间关了 vsync，下一帧开头（begin_common）按 pace_us 补齐，
+     *     否则"不跟 vblank"会让 fps 直接飙到上万（看起来像坏了，也白烧 CPU）。
+     */
+    if (!g->offscreen) {
+        const uint64_t now = now_us_mono();
+        if (g->vsync_eff == 1) {
+            if (g->last_end_us != 0) {
+                const uint64_t dt = now - g->last_end_us;
+                if (dt > 1000 && dt < 100000)
+                    g->pace_us = (uint32_t)((g->pace_us * 7u + (uint32_t)dt) / 8u);
+            }
+        }
+        g->last_end_us = now;
+    }
 }
 
 int ql_gfx_gl_wait(QLGfxGL *g, int timeout_ms)

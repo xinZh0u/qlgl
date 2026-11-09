@@ -410,6 +410,18 @@ main img.shot { max-width: 100%; }
 <p>收到 <code>ConfigureNotify</code> 后 200ms 内把 <code>eglSwapInterval</code> 设为 0（<code>ql_gfx_gl_end</code> 里
 按 <code>resize_until_ms</code> 判断），拖动结束自动恢复。这是 GTK/Qt 在互动缩放期间的常规做法：
 拖动时优先"跟手"，静止时再回到垂直同步（避免撕裂）。</p>
+<p><strong>③ 不跟 vblank 时按显示节奏节流（同一个函数）</strong></p>
+<p>关掉 vsync 就等于"谁快谁赢"：<code>--spin</code>（或基准测试）的循环每帧只花 0.6ms，
+fps 会直接飙到 1700+，看起来像坏了，也白烧 CPU 和电。</p>
+<p>所以后端记了两个量：
+- <code>pace_us</code>：跟 vsync 时的帧间隔滑动平均（EMA，7:1，限幅 1~100ms），默认 16666；
+- <code>last_end_us</code>：上一帧 swap 结束的时刻。</p>
+<p><strong>只在 <code>vsync_eff == 1</code> 的帧更新 <code>pace_us</code></strong>（否则被测到的"无 vsync 快帧"会把
+pace 拉到 0.6ms，节流等于没做）；拖动期间在<strong>下一帧开头</strong>（<code>begin_common</code>，
+且在抓 <code>t0</code> 之前）补睡到 <code>last_end_us + pace_us</code>。</p>
+<p>放在帧开头而不是帧末，是为了让 <code>frame_us</code>（begin→end）把等待算进去 —— 这样
+<code>--stats</code> 的帧时间/fps 与跟 vsync 时的口径一致，不会出现"帧时间 0.6ms 却报 1700fps"
+这种吓人的数字。</p>
 <h3 id="24">2.4 修复后</h3>
 <table>
 <thead>
@@ -428,7 +440,7 @@ main img.shot { max-width: 100%; }
 <tr>
 <td>拖动时 p50 帧时间</td>
 <td>6.9ms（被 vsync 限住）</td>
-<td><strong>1.1ms</strong></td>
+<td><strong>7.3ms</strong>（按 144Hz 节流，我们只花 0.6ms）</td>
 </tr>
 <tr>
 <td>静止时 CPU</td>
@@ -439,6 +451,11 @@ main img.shot { max-width: 100%; }
 <td>静止时帧数</td>
 <td>144 fps</td>
 <td>0 fps</td>
+</tr>
+<tr>
+<td>拖动时帧率</td>
+<td>144 fps</td>
+<td><strong>137~144 fps</strong>（不再是上万）</td>
 </tr>
 </tbody>
 </table>
