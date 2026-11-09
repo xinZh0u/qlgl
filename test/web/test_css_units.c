@@ -8,6 +8,8 @@
  *   rem   相对**根元素字号**，要等整棵树走完再折（根的 font-size 也可能是 em）
  *   vw/vh 相对视口，只有布局期才知道 → 活到布局期解析
  *   auto  横向把剩余空间分掉（`margin: 0 auto` 居中）
+ *   vmin/vmax  视口短边/长边的百分比
+ *   aspect-ratio  只补"缺的那一边"（宽确定推高，高确定推宽）
  */
 #include "../ql_test.h"
 
@@ -134,5 +136,47 @@ QL_TEST_BEGIN("test_css_units")
                              "#a { width: 100px; height: 20px; margin: 10px }",
                           300, 100, b, 2));
     QL_CHECK_EQ(b[1].x, 10);
+
+    /* ---------- 7. vmin / vmax：短边 / 长边 ---------- */
+    QL_CHECK(layout_boxes(H, "#r { width: 100%; height: 100% }"
+                             "#a { width: 10vmin; height: 10vmax }",
+                          400, 200, b, 2));
+    QL_CHECK_EQ(b[1].w, 20);      /* vmin = min(400,200) = 200 → 10% = 20 */
+    QL_CHECK_EQ(b[1].h, 40);      /* vmax = 400 → 10% = 40 */
+
+    /* ---------- 8. aspect-ratio：宽确定 → 推高 ---------- */
+    QL_CHECK(layout_boxes(H, "#r { width: 300px; height: 300px }"
+                             "#a { width: 200px; aspect-ratio: 16 / 9 }",
+                          300, 300, b, 2));
+    QL_CHECK_EQ(b[1].w, 200);
+    QL_CHECK_EQ(b[1].h, 112);     /* 200 * 9 / 16 */
+
+    /* 高确定 → 推宽 */
+    QL_CHECK(layout_boxes(H, "#r { width: 300px; height: 300px }"
+                             "#a { height: 180px; aspect-ratio: 16 / 9 }",
+                          300, 300, b, 2));
+    QL_CHECK_EQ(b[1].w, 320);
+    QL_CHECK_EQ(b[1].h, 180);
+
+    /* 单个数字 = 宽/高比 */
+    QL_CHECK(layout_boxes(H, "#r { width: 300px; height: 300px }"
+                             "#a { width: 120px; aspect-ratio: 1.5 }",
+                          300, 300, b, 2));
+    QL_CHECK_EQ(b[1].h, 80);
+
+    /* 两个方向都写了：以具体值为准，比例不生效 */
+    QL_CHECK(layout_boxes(H, "#r { width: 300px; height: 300px }"
+                             "#a { width: 100px; height: 100px;"
+                             "     aspect-ratio: 2 / 1 }",
+                          300, 300, b, 2));
+    QL_CHECK_EQ(b[1].w, 100);
+    QL_CHECK_EQ(b[1].h, 100);
+
+    /* 块级 auto 宽：宽度先撑满，高度按比例 */
+    QL_CHECK(layout_boxes(H, "#r { width: 300px; height: 300px }"
+                             "#a { aspect-ratio: 2 / 1 }",
+                          300, 300, b, 2));
+    QL_CHECK_EQ(b[1].w, 300);
+    QL_CHECK_EQ(b[1].h, 150);
 
 QL_TEST_END()

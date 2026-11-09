@@ -752,9 +752,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>vmin</code> <code>vmax</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>取视口长边走短边，加两个分支即可，暂时没做</td>
+<td>相对视口<strong>短边 / 长边</strong>；同样在布局期解析</td>
 </tr>
 <tr>
 <td><code>s</code> / <code>ms</code></td>
@@ -922,9 +922,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>aspect-ratio</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>用于图片位、卡片缩略图</td>
+<td><code>宽 / 高</code> 或单个数字；只补"缺的那一边"（高确定推宽、宽度撑满推高），两边都写了以具体值为准</td>
 </tr>
 <tr>
 <td><code>margin</code> + <code>-top/right/bottom/left</code></td>

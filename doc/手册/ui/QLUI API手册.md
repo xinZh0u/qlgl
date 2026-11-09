@@ -685,7 +685,8 @@ typedef enum { QL_UI_DISPLAY_BLOCK, QL_UI_DISPLAY_INLINE,
  * EM/REM 在构建期就折成 PX；只有 VW/VH 活到布局期（那时才知道视口多大）。
  */
 typedef enum { QL_UI_UNIT_AUTO, QL_UI_UNIT_PX, QL_UI_UNIT_PERCENT,
-               QL_UI_UNIT_EM, QL_UI_UNIT_REM, QL_UI_UNIT_VW, QL_UI_UNIT_VH } QLUIUnit;
+               QL_UI_UNIT_EM, QL_UI_UNIT_REM, QL_UI_UNIT_VW, QL_UI_UNIT_VH,
+               QL_UI_UNIT_VMIN, QL_UI_UNIT_VMAX } QLUIUnit;
 
 typedef struct { int16_t top, right, bottom, left; } QLUIEdges;
 typedef struct { int16_t value; uint8_t unit; uint8_t reserved; } QLUILength;
@@ -701,12 +702,12 @@ typedef struct {
        line-height 是 int16_t line_h（0 = normal），
        white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），
        font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */
-} QLUIStyle;  /* sizeof == 144（blob v18） */
+} QLUIStyle;  /* sizeof == 148（blob v19） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;
     uint8_t  flags, reserved;      /* QL_UI_NODE_PASSWORD 等 */
-} QLUINode;  /* sizeof == 20（blob v18） */
+} QLUINode;  /* sizeof == 20（blob v19） */
 
 typedef struct {
     const char *name;

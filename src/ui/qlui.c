@@ -551,6 +551,14 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
         return (ql_coord_t)(((int32_t)s_viewport_w * (int32_t)len.value) / 100);
     case QL_UI_UNIT_VH:
         return (ql_coord_t)(((int32_t)s_viewport_h * (int32_t)len.value) / 100);
+    case QL_UI_UNIT_VMIN: {
+        const ql_coord_t m = (s_viewport_w < s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)len.value) / 100);
+    }
+    case QL_UI_UNIT_VMAX: {
+        const ql_coord_t m = (s_viewport_w > s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)len.value) / 100);
+    }
     default:
         return fallback;
     }
@@ -566,7 +574,8 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
 static int height_is_definite(const QLUIStyle *s, ql_coord_t basis_h)
 {
     if (s->height.unit == QL_UI_UNIT_PX || s->height.unit == QL_UI_UNIT_VW ||
-        s->height.unit == QL_UI_UNIT_VH)
+        s->height.unit == QL_UI_UNIT_VH || s->height.unit == QL_UI_UNIT_VMIN ||
+        s->height.unit == QL_UI_UNIT_VMAX)
         return 1;
     if (s->height.unit == QL_UI_UNIT_PERCENT)
         return basis_h >= 0;
@@ -810,6 +819,14 @@ static ql_coord_t resolve_inset(QLUILength len, ql_coord_t basis, ql_coord_t fal
         return (ql_coord_t)(((int32_t)s_viewport_w * (int32_t)len.value) / 100);
     case QL_UI_UNIT_VH:
         return (ql_coord_t)(((int32_t)s_viewport_h * (int32_t)len.value) / 100);
+    case QL_UI_UNIT_VMIN: {
+        const ql_coord_t m = (s_viewport_w < s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)len.value) / 100);
+    }
+    case QL_UI_UNIT_VMAX: {
+        const ql_coord_t m = (s_viewport_w > s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)len.value) / 100);
+    }
     default:
         return fallback;
     }
@@ -1969,6 +1986,29 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                 hv = 0;
         }
         content_h = hv;
+    }
+
+    /*
+     * `aspect-ratio`：只补"缺的那一边"。
+     *   - 高度确定 + 宽度 auto → 由高推宽（同时要把 border_w 一起改，否则盒子对不上）
+     *   - 否则高度 auto → 由宽推高
+     * 两个方向都写了具体值时以具体值为准（与 CSS 一致）。
+     */
+    if (s->aspect_w > 0 && s->aspect_h > 0) {
+        const int h_def = height_is_definite(s, basis_h);
+        if (h_def && s->width.unit == QL_UI_UNIT_AUTO) {
+            const ql_coord_t cw =
+                (ql_coord_t)(((int32_t)content_h * (int32_t)s->aspect_w) /
+                             (int32_t)s->aspect_h);
+            content_w = (cw > 0) ? cw : 0;
+            border_w = content_w + s->padding.left + s->padding.right +
+                       2 * (ql_coord_t)s->border_width;
+        } else if (!h_def) {
+            const ql_coord_t ch =
+                (ql_coord_t)(((int32_t)content_w * (int32_t)s->aspect_h) /
+                             (int32_t)s->aspect_w);
+            content_h = (ch > 0) ? ch : 0;
+        }
     }
 
     /*

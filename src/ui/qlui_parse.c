@@ -523,6 +523,23 @@ static int parse_length(const char *text, const char *where, int allow_percent,
             return 1;
         }
     }
+    if (n > 4 && (strcmp(t + n - 4u, "vmin") == 0 || strcmp(t + n - 4u, "vmax") == 0)) {
+        char num[128];
+        memcpy(num, t, n - 4u);
+        num[n - 4u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *end == '\0') {
+            if (!allow_percent) {
+                set_error("%s: 此处不支持视口单位 '%s'", where, text);
+                return 0;
+            }
+            /* "vmin" 的倒数第二个字符是 'i'，"vmax" 是 'a' */
+            *unit = (t[n - 2u] == 'i') ? QL_UI_UNIT_VMIN : QL_UI_UNIT_VMAX;
+            *value = (int)py_round(v);
+            return 1;
+        }
+    }
     if (n > 2 && (strcmp(t + n - 2u, "vw") == 0 || strcmp(t + n - 2u, "vh") == 0)) {
         char num[128];
         memcpy(num, t, n - 2u);
@@ -639,8 +656,10 @@ static int parse_edges(const char *text, const char *where, int allow_auto,
             return 0;
         }
         if (unit == QL_UI_UNIT_PERCENT || unit == QL_UI_UNIT_VW ||
-            unit == QL_UI_UNIT_VH) {
-            set_error("%s: margin/padding 暂不支持 %% / vw / vh（用 px / em / rem）",
+            unit == QL_UI_UNIT_VH || unit == QL_UI_UNIT_VMIN ||
+            unit == QL_UI_UNIT_VMAX) {
+            set_error("%s: margin/padding 暂不支持 %% / vw / vh / vmin / vmax"
+                      "（用 px / em / rem）",
                       where);
             return 0;
         }
@@ -1913,6 +1932,7 @@ static const char *const k_supported_props[] = {
     "background-image",
     "min-width", "max-width", "min-height", "max-height",
     "opacity",
+    "aspect-ratio",
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
 };
 
@@ -6224,6 +6244,54 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     uint8_t mnwu = QL_UI_UNIT_AUTO, mxwu = QL_UI_UNIT_AUTO;
     uint8_t mnhu = QL_UI_UNIT_AUTO, mxhu = QL_UI_UNIT_AUTO;
     int mnwv = 0, mxwv = 0, mnhv = 0, mxhv = 0;
+    /* `aspect-ratio: 16 / 9`（也接受 `16/9` 与单个数字 `1.5`） */
+    uint16_t aspect_w = 0, aspect_h = 0;
+    if ((v = decls_get(st, "aspect-ratio")) != NULL) {
+        char t[64];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "auto") != 0) {
+            double a = 0, b = 1;
+            char *slash = strchr(t, '/');
+            int ok = 0;
+            if (slash != NULL) {
+                *slash = '\0';
+                const char *e1 = NULL, *e2 = NULL;
+                double x = 0, y = 0;
+                if (match_number(skip_space(t), &e1, &x) &&
+                    *skip_space(e1) == '\0' &&
+                    match_number(skip_space(slash + 1), &e2, &y) &&
+                    *skip_space(e2) == '\0' && x > 0 && y > 0) {
+                    a = x;
+                    b = y;
+                    ok = 1;
+                }
+            } else {
+                const char *e1 = NULL;
+                double x = 0;
+                if (match_number(skip_space(t), &e1, &x) && *skip_space(e1) == '\0' &&
+                    x > 0) {
+                    /* `aspect-ratio: 1.5` = 1.5 / 1 */
+                    a = x;
+                    b = 1;
+                    ok = 1;
+                }
+            }
+            if (!ok) {
+                set_error("%s: aspect-ratio 必须是 `宽 / 高` 或正数（收到 '%s'）",
+                          where, v);
+                return 0;
+            }
+            /* 存千分比：16/9 → 1778/1000 太糊；直接存整数比，四舍五入到 1/100 */
+            if (a < 100.0 && b < 100.0) {
+                aspect_w = (uint16_t)py_round(a * 100.0);
+                aspect_h = (uint16_t)py_round(b * 100.0);
+            } else {
+                aspect_w = (uint16_t)py_round(a);
+                aspect_h = (uint16_t)py_round(b);
+            }
+        }
+    }
+
     /* `opacity`：0..1 的数字，存成 0..255。默认 255（不透明） */
     int opacity = 255;
     if ((v = decls_get(st, "opacity")) != NULL) {
@@ -6848,6 +6916,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->max_height.value = (int16_t)mxhv;
     out->max_height.unit = mxhu;
     out->opacity = (uint8_t)opacity;
+    out->aspect_w = aspect_w;
+    out->aspect_h = aspect_h;
 
     out->margin.top = margin_e[0].value;
     out->margin.right = margin_e[1].value;

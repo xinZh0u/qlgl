@@ -187,7 +187,9 @@ static const char *const OVERFLOW_NAMES[] = {
 };
 
 static const char *const UNIT_NAMES[] = {
-    "QL_UI_UNIT_AUTO", "QL_UI_UNIT_PX", "QL_UI_UNIT_PERCENT",
+    "QL_UI_UNIT_AUTO", "QL_UI_UNIT_PX",   "QL_UI_UNIT_PERCENT",
+    "QL_UI_UNIT_EM",   "QL_UI_UNIT_REM",  "QL_UI_UNIT_VW",
+    "QL_UI_UNIT_VH",   "QL_UI_UNIT_VMIN", "QL_UI_UNIT_VMAX",
 };
 
 static const char *const EASE_NAMES[] = {
@@ -313,6 +315,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             " .font_flags = 0x%02X,\n"
             "      .clip_kind = %u, .clip_r = %u, .opacity = %u,\n"
             "      .margin_unit = 0x%02X, .padding_unit = 0x%02X,\n"
+            "      .aspect_w = %u, .aspect_h = %u,\n"
             "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
@@ -345,6 +348,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->white_space, (unsigned)s->font_flags,
             (unsigned)s->clip_kind, (unsigned)s->clip_r, (unsigned)s->opacity,
             (unsigned)s->margin_unit, (unsigned)s->padding_unit,
+            (unsigned)s->aspect_w, (unsigned)s->aspect_h,
             (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y);
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);

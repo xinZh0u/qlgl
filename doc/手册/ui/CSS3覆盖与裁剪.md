@@ -155,7 +155,7 @@
 | `em` | ✅ | L | 相对**元素自己的字号**；构建期就折成 px（字号那时已确定），运行期零成本 |
 | `rem` | ✅ | L | 相对**根元素字号**；整棵树走完才折（根的 `font-size` 自己也可能是 em/px） |
 | `vw` `vh` | ✅ | L | 相对视口；只有布局期才知道视口多大，所以在 `resolve_length()` 里解析（窗口缩放自动跟着变） |
-| `vmin` `vmax` | ⏳ | L | 取视口长边走短边，加两个分支即可，暂时没做 |
+| `vmin` `vmax` | ✅ | L | 相对视口**短边 / 长边**；同样在布局期解析 |
 | `s` / `ms` | ✅ | T | `transition-duration` / `animation-duration` |
 | `deg` | ⚠️ | L | 只在渐变方向里（`90deg` / `180deg`），不进 `transform` |
 | `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而旋转本身还没做 |
@@ -188,7 +188,7 @@
 | `max-width` | ⏳ | L | 同上 |
 | `min-height` | ⏳ | L | |
 | `max-height` | ⏳ | L | |
-| `aspect-ratio` | ⏳ | L | 用于图片位、卡片缩略图 |
+| `aspect-ratio` | ✅ | L | `宽 / 高` 或单个数字；只补"缺的那一边"（高确定推宽、宽度撑满推高），两边都写了以具体值为准 |
 | `margin` + `-top/right/bottom/left` | ✅ | L | px / em / rem（构建期折 px）；`auto` 见下一行；负值可用 |
 | `margin: … auto` | ✅ | L | **横向**把剩余空间分掉（`margin: 0 auto` 居中）；纵向 auto 按 0 处理（本库还不做外边距合并） |
 | `padding` + 四方向 | ✅ | L | px / em / rem；`%` 与 `vw/vh` 报错（边距的百分比相对包含块宽度，算边距时还没有基准） |

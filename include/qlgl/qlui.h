@@ -255,6 +255,8 @@ typedef enum {
     QL_UI_UNIT_REM,
     QL_UI_UNIT_VW,
     QL_UI_UNIT_VH,
+    QL_UI_UNIT_VMIN,       /* 视口长边/短边里**较小**的那个 */
+    QL_UI_UNIT_VMAX,
 } QLUIUnit;
 
 /* 一条边的四个值，顺序固定为 上右下左 */
@@ -438,6 +440,14 @@ typedef struct {
      */
     uint8_t     margin_unit;
     uint8_t     padding_unit;
+
+    /*
+     * `aspect-ratio: 宽 / 高`（存成两个 uint16；任一为 0 = 没设）。
+     * 只在"一个方向是确定长度、另一个是 auto"时生效 —— 两个方向都写了具体值时
+     * 以具体值为准（与 CSS 一致）。
+     */
+    uint16_t    aspect_w;
+    uint16_t    aspect_h;
 } QLUIStyle;
 
 /*
@@ -1159,7 +1169,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    18u  /* 18: + margin/padding 的单位位（em/rem/auto） */
+#define QL_UI_BLOB_VERSION    19u  /* 19: + aspect_w / aspect_h */
 
 typedef struct {
     uint32_t magic;

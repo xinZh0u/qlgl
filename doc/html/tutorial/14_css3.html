@@ -444,9 +444,9 @@ main img.shot { max-width: 100%; }
 <td>相对根元素字号 —— 根的 <code>font-size</code> 自己也可能是 em，所以留到最后一趟</td>
 </tr>
 <tr>
-<td><code>vw</code> / <code>vh</code></td>
+<td><code>vw</code> / <code>vh</code> / <code>vmin</code> / <code>vmax</code></td>
 <td><strong>布局期</strong></td>
-<td>视口尺寸只有布局时才知道；窗口缩放会自动重算</td>
+<td>视口尺寸只有布局时才知道；<code>vmin</code>/<code>vmax</code> 取短边/长边</td>
 </tr>
 <tr>
 <td><code>%</code></td>
@@ -463,6 +463,13 @@ main img.shot { max-width: 100%; }
   <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;box&quot;</span><span class="p">&gt;</span>320px 宽，水平居中<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 </code></pre></div>
+
+<p>顺带一提 <code>aspect-ratio</code>（缩略图、卡片封面都用得上）：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">thumb</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">aspect-ratio</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">9</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 高 = 200 × 9/16 = 112 */</span>
+<span class="p">.</span><span class="nc">cover</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">aspect-ratio</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">9</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* 宽 = 180 × 16/9 = 320 */</span>
+</code></pre></div>
+
+<p>它只补<strong>缺的那一边</strong>：宽高都写了具体值时以具体值为准（与 CSS 一致）。</p>
 <div class='pager'>
 <a href='../tutorial/13_form.html'><span class='dir'>上一页</span>多行输入与表单</a>
 <a class='next' href='../tutorial/15_backdrop.html'><span class='dir'>下一页</span>毛玻璃叠在动的背景上</a>
