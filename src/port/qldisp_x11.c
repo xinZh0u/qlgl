@@ -33,6 +33,9 @@ typedef struct {
     int          closed;
     char         title[128];
     int          screen;
+    Visual      *visual;        /* 重建 XImage 要用 */
+    int          depth;
+    int          resize_pending; /* 窗口尺寸变过，调用方需要重建画布并重排 */
 } QLDispX11;
 
 /*
@@ -125,6 +128,53 @@ static int x11_flush_done(QLDispDriver *self)
 }
 
 /*
+ * 窗口尺寸变了：**重新分配帧缓冲**。
+ *
+ * 这里没有别的选择 —— 渲染器直接写 XImage 的像素存储，"画布多大"就等于
+ * "这块内存多大"。旧的 XImage/pixels 必须先拆掉再按新尺寸建，
+ * 顺便把 base.width/height/stride 一起更新（调用方据此重建 QLCanvas）。
+ *
+ * 失败时保持旧尺寸不变（下一次 ConfigureNotify 还会再来）。
+ */
+static int x11_apply_resize(QLDispX11 *x, int w, int h)
+{
+    if (w <= 0 || h <= 0)
+        return 0;
+    if (x->image != NULL && x->image->width == w && x->image->height == h)
+        return 0;
+
+    XImage *ni = XCreateImage(x->dpy, x->visual, (unsigned)x->depth, ZPixmap, 0,
+                              NULL, (unsigned)w, (unsigned)h, 32, 0);
+    if (ni == NULL) {
+        QL_LOGW("x11: resize %dx%d: XCreateImage failed", w, h);
+        return 0;
+    }
+    const uint32_t stride = (uint32_t)ni->bytes_per_line;
+    uint8_t *np = (uint8_t *)ql_mem_calloc(1, (size_t)stride * (size_t)h);
+    if (np == NULL) {
+        ni->data = NULL;
+        XDestroyImage(ni);
+        QL_LOGW("x11: resize %dx%d: out of memory", w, h);
+        return 0;
+    }
+    ni->data = (char *)np;
+
+    if (x->image != NULL) {
+        x->image->data = NULL;      /* 像素内存归我们管，别让 XDestroyImage 去 free */
+        XDestroyImage(x->image);
+    }
+    ql_mem_free(x->pixels);
+
+    x->image = ni;
+    x->pixels = np;
+    x->base.framebuffer = np;
+    x->base.stride = stride;
+    x->base.width = (ql_coord_t)w;
+    x->base.height = (ql_coord_t)h;
+    return 1;
+}
+
+/*
  * 从 X 资源里读 Xft.dpi（桌面环境普遍会设），换算成 26.6 缩放系数。
  * 拿不到就返回 1.0；应用随时可以用 ql_disp_set_scale() 覆盖。
  */
@@ -193,6 +243,8 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     Visual *visual = DefaultVisual(dpy, screen);
     int depth = DefaultDepth(dpy, screen);
 
+    x->visual = visual;
+    x->depth = depth;
     x->image = XCreateImage(dpy, visual, (unsigned)depth, ZPixmap, 0, NULL,
                             (unsigned)width, (unsigned)height, 32, 0);
     if (x->image == NULL) {
@@ -292,6 +344,16 @@ int ql_disp_x11_poll(QLDispDriver *driver)
             x->expose_count++;
             break;
 
+        case ConfigureNotify: {
+            /*
+             * 拖动缩放：帧缓冲要跟着变大变小。只置位 + 重建，重排是应用的事
+             * （它知道界面该按哪个逻辑尺寸布局，而且缩放是 CSS px）。
+             */
+            if (x11_apply_resize(x, ev.xconfigure.width, ev.xconfigure.height))
+                x->resize_pending = 1;
+            break;
+        }
+
         case ClientMessage:
             if ((Atom)ev.xclient.data.l[0] == x->wm_delete)
                 x->closed = 1;
@@ -348,6 +410,16 @@ const char *ql_disp_x11_title(QLDispDriver *driver)
     if (driver == NULL)
         return "";
     return ((QLDispX11 *)driver)->title;
+}
+
+int ql_disp_x11_resize_pending(QLDispDriver *driver)
+{
+    if (driver == NULL)
+        return 0;
+    QLDispX11 *x = (QLDispX11 *)driver;
+    const int p = x->resize_pending;
+    x->resize_pending = 0;
+    return p;
 }
 
 uint32_t ql_disp_x11_expose_count(QLDispDriver *driver)

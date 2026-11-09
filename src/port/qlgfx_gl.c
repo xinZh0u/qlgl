@@ -1891,9 +1891,17 @@ static int fbo_ensure(QLGfxGL *g)
         return 1;
     }
 
-    /* 需要更大：按 256 对齐分配，给拖动留出余量 */
-    const ql_coord_t cap_w = (g->width + 255) & ~(ql_coord_t)255;
-    const ql_coord_t cap_h = (g->height + 255) & ~(ql_coord_t)255;
+    /*
+     * 需要更大：多留 25% + 至少 256px 的余量，再按 256 对齐。
+     *
+     * 只按"刚好装下"分配的话，拖边框这种连续小幅增长会一步步触发重建
+     * （每步一次 glTexImage2D + 整屏 clear，几毫秒），看起来就是"缩放掉帧"。
+     * 一次性多要一点，整个拖拽过程通常只需重建一次。
+     */
+    const ql_coord_t want_w = g->width + (g->width / 4) + 256;
+    const ql_coord_t want_h = g->height + (g->height / 4) + 256;
+    const ql_coord_t cap_w = (want_w + 255) & ~(ql_coord_t)255;
+    const ql_coord_t cap_h = (want_h + 255) & ~(ql_coord_t)255;
     fbo_release(g);
 
     glGenTextures(1, &g->fbo_tex);

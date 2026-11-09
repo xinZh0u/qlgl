@@ -53,7 +53,9 @@ struct BenchBackend {
     int         can_vsync;   /* 只有 GL 窗口有 vsync */
 
     int  (*poll)(BenchBackend *b);                        /* 1 = 继续 */
-    void (*layout_size)(BenchBackend *b);                 /* 窗口改尺寸后刷新 cw/ch */
+    /* 表面尺寸变了就重建画布；返回 1 = 建过了（调用方随后要重排） */
+    int  (*refresh_surface)(BenchBackend *b);
+    void (*layout_size)(BenchBackend *b);                 /* 刷新 cw/ch（CSS px） */
     void (*begin)(BenchBackend *b, ql_color_t bg);        /* 整屏清 */
     /* 只清这几块；返回 1 表示调用方必须整屏重画（首帧/FBO 刚建/不支持局部） */
     int  (*begin_rects)(BenchBackend *b, ql_color_t bg, const QLRect *r, int n);
@@ -96,6 +98,23 @@ static void cpu_layout_size(BenchBackend *bb)
     CpuBackend *b = (CpuBackend *)bb;
     bb->cw = ql_disp_css_width(b->disp);
     bb->ch = ql_disp_css_height(b->disp);
+}
+
+/* X11 的帧缓冲在 ConfigureNotify 里已经重建了，画布是它的拷贝，得重新取 */
+static int cpu_refresh_surface(BenchBackend *bb)
+{
+    CpuBackend *b = (CpuBackend *)bb;
+#if defined(QLGL_ENABLE_X11)
+    if (b->kind == 2 && ql_disp_x11_resize_pending(b->disp)) {
+        if (ql_canvas_from_disp(&b->canvas, b->disp) != QL_OK)
+            return 0;
+        if (ql_draw2d_canvas_init(&b->d2d, &b->canvas) != QL_OK)
+            return 0;
+        cpu_layout_size(bb);
+        return 1;
+    }
+#endif
+    return 0;
 }
 
 static void cpu_begin(BenchBackend *bb, ql_color_t bg)
@@ -199,6 +218,7 @@ static BenchBackend *cpu_backend_create(const BenchOpts *o)
     b->base.can_dirty = 1;
     b->base.can_vsync = 0;
     b->base.poll = cpu_poll;
+    b->base.refresh_surface = cpu_refresh_surface;
     b->base.layout_size = cpu_layout_size;
     b->base.begin = cpu_begin;
     b->base.begin_rects = cpu_begin_rects;
@@ -307,6 +327,7 @@ static BenchBackend *gl_backend_create(const BenchOpts *o)
     b->base.can_dirty = retained;
     b->base.can_vsync = !o->offscreen;
     b->base.poll = gl_poll;
+    b->base.refresh_surface = NULL;     /* GL 的表面由 begin/end 自己处理 */
     b->base.layout_size = gl_layout_size;
     b->base.begin = gl_begin;
     b->base.begin_rects = gl_begin_rects;
@@ -344,7 +365,7 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
         ql_gfx_gl_attach_clipboard(((GlBackend *)bk)->gfx, ui);
 #endif
 
-    const ql_color_t bg = 0x0E1116;
+    const ql_color_t bg = 0xFFFFFF;   /* 浅色主题：和场景底色一致 */
     BenchFps fps;
     bench_fps_init(&fps);
 
@@ -378,9 +399,29 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
         bk->end(bk);
     }
 
+    long resizes = 0;
+    double busy_sum = 0.0;
+    unsigned verts_sum = 0, draws_sum = 0;
+    long busy_n = 0;
     const double t_start = bench_now_ms();
     long frames = 0;
+    ql_coord_t last_w = bk->cw, last_h = bk->ch;
     while (bk->poll(bk)) {
+        /*
+         * 窗口被拖动缩放：尺寸一变就重排（并重建保留式 FBO、重画整屏）。
+         * 漏了这一步，画面会停在旧尺寸上 —— 用户看到的是"半屏白 + 掉帧"。
+         */
+        if (bk->refresh_surface != NULL)
+            (void)bk->refresh_surface(bk);
+        bk->layout_size(bk);
+        if (bk->cw != last_w || bk->ch != last_h) {
+            last_w = bk->cw;
+            last_h = bk->ch;
+            if (last_w > 0 && last_h > 0) {
+                ql_ui_layout(ui, last_w, last_h);
+                resizes++;
+            }
+        }
         /* 整帧从"处理输入"开始算：tick（含动画、滚动重排）也是应用要付的成本 */
         const double f0 = bench_now_ms();
         ql_input_dispatch();
@@ -425,11 +466,17 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
         info.busy_ms = bk->busy_ms(bk);
         info.verts = (bk->verts != NULL) ? bk->verts(bk) : 0;
         info.draws = (bk->draws != NULL) ? bk->draws(bk) : 0;
+        busy_sum += info.busy_ms;
+        verts_sum += info.verts;
+        draws_sum += info.draws;
+        busy_n++;
         bench_fps_add(&fps, f1 - f0);
 
-        const int stop = (opts->seconds > 0.0)
-                             ? ((bench_now_ms() - t_start) >= opts->seconds * 1000.0)
-                             : (frames >= (long)opts->frames);
+        int stop = 0;
+        if (opts->frames > 0 && frames >= (long)opts->frames)
+            stop = 1;
+        if (opts->seconds > 0.0 && (bench_now_ms() - t_start) >= opts->seconds * 1000.0)
+            stop = 1;
         if (stop)
             break;
         bench_limit_fps(opts->fps_cap, f0);
@@ -454,8 +501,13 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
         }
     }
 
+    const double busy_avg = (busy_n > 0) ? (busy_sum / (double)busy_n) : 0.0;
+    const unsigned verts_avg = (busy_n > 0) ? (unsigned)(verts_sum / (unsigned long)busy_n) : 0;
+    const unsigned draws_avg = (busy_n > 0) ? (unsigned)(draws_sum / (unsigned long)busy_n) : 0;
     bench_report_one(bk->name, sc->id, sc->what, opts, items, bk->can_vsync,
-                     &fps, &info);
+                     &fps, &info, busy_avg, verts_avg, draws_avg);
+    if (resizes > 0)
+        printf("窗口重排  %ld 次（拖动缩放；每次都要重排 + 整屏重画）\n", resizes);
 
     if (out != NULL) {
         double p50 = 0.0, p95 = 0.0;
@@ -469,7 +521,7 @@ static int run_scene(BenchBackend *bk, const BenchScene *sc, const BenchOpts *op
         out->p50 = p50;
         out->p95 = p95;
         out->max_ms = fps.max_ms;
-        out->busy_ms = info.busy_ms;
+        out->busy_ms = busy_avg;
     }
 
     ql_ui_detach_input();

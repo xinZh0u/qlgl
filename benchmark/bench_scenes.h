@@ -82,18 +82,18 @@ static QLUIDoc *bh_finish(BenchHtml *h, const char *css, const char *name)
 static const char *k_css_cards =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
     "        display: flex; flex-wrap: wrap; gap: 8px;"
-    "        background-color: #0E1116; padding: 10px;"
-    "        font-size: 11px; color: #E6EDF3; }"
+    "        background-color: #FFFFFF; padding: 10px;"
+    "        font-size: 11px; color: #1F2328; }"
     ".hero { width: 100%; height: 44px; box-sizing: border-box;"
-    "        border-radius: 10px; box-shadow: 0px 4px 10px #000000;"
+    "        border-radius: 10px; box-shadow: 0px 4px 10px #C9D1D9;"
     "        background-image: linear-gradient(to right, #2E6BE6, #7A5AF8); }"
     ".card { width: 122px; height: 62px; box-sizing: border-box; padding: 6px;"
-    "        border-radius: 8px; border-width: 1px; border-color: #30363D;"
-    "        background-color: #161B22; }"
-    ".c2 { background-color: #1B2430; border-color: #3D4854; }"
-    ".c3 { background-image: linear-gradient(to bottom, #1F2933, #131A21); }"
-    ".t { font-size: 12px; color: #E6EDF3; }"
-    ".s { font-size: 10px; color: #8B949E; }";
+    "        border-radius: 8px; border-width: 1px; border-color: #D0D7DE;"
+    "        background-color: #F6F8FA; }"
+    ".c2 { background-color: #EEF3FB; border-color: #C7D6EA; }"
+    ".c3 { background-image: linear-gradient(to bottom, #F4F6F9, #E8EDF3); }"
+    ".t { font-size: 12px; color: #1F2328; }"
+    ".s { font-size: 10px; color: #57606A; }";
 
 static QLUIDoc *scene_cards_build(const BenchOpts *o, int scale)
 {
@@ -120,15 +120,15 @@ static QLUIDoc *scene_cards_build(const BenchOpts *o, int scale)
 static const char *k_css_anim =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
     "        display: flex; flex-wrap: wrap; gap: 6px;"
-    "        background-color: #0B0E13; padding: 10px; }"
+    "        background-color: #FFFFFF; padding: 10px; }"
     ".b { width: 44px; height: 44px; border-radius: 8px;"
     "     background-color: #2FB8A6; animation: pulse 900ms ease-in-out infinite alternate; }"
     ".b2 { background-color: #3B82F6; animation-duration: 1200ms; }"
     ".b3 { background-color: #E6C34A; animation-duration: 700ms; }"
     ".b4 { background-color: #A855F7; animation-duration: 1500ms; }"
     "@keyframes pulse {"
-    "  from { background-color: #1F2933; opacity: 1.0; transform: scale(1.0); }"
-    "  to   { background-color: #7CE0FF; opacity: 0.35; transform: scale(0.7); }"
+    "  from { background-color: #BFE9E1; opacity: 1.0; transform: scale(1.0); }"
+    "  to   { background-color: #2E6BE6; opacity: 0.35; transform: scale(0.7); }"
     "}";
 
 static QLUIDoc *scene_anim_build(const BenchOpts *o, int scale)
@@ -160,7 +160,7 @@ static QLUIDoc *scene_anim_build(const BenchOpts *o, int scale)
 static const char *k_css_move =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
     "        display: flex; flex-wrap: wrap; gap: 14px;"
-    "        background-color: #0B0E13; overflow: hidden; padding: 10px; }"
+    "        background-color: #FFFFFF; overflow: hidden; padding: 10px; }"
     ".m { width: 26px; height: 26px; border-radius: 6px;"
     "     background-color: #2FB8A6; }"
     ".x { animation: mv-x 1400ms ease-in-out infinite alternate; }"
@@ -194,10 +194,10 @@ static QLUIDoc *scene_move_build(const BenchOpts *o, int scale)
 
 static const char *k_css_text =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
-    "        background-color: #0B0E13; padding: 8px;"
-    "        font-size: 12px; color: #C9D1D9; }"
+    "        background-color: #FFFFFF; padding: 8px;"
+    "        font-size: 12px; color: #1F2328; }"
     "p { white-space: normal; line-height: 16px; margin: 0 0 6px 0; }"
-    ".h { color: #7CE0FF; font-size: 13px; }";
+    ".h { color: #0969DA; font-size: 13px; }";
 
 static QLUIDoc *scene_text_build(const BenchOpts *o, int scale)
 {
@@ -227,13 +227,13 @@ static QLUIDoc *scene_text_build(const BenchOpts *o, int scale)
 static const char *k_css_shapes =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
     "        display: flex; flex-wrap: wrap; gap: 10px; align-items: center;"
-    "        background-color: #0B0E13; padding: 12px; }"
+    "        background-color: #FFFFFF; padding: 12px; }"
     ".r { width: 56px; height: 56px; border-radius: 14px;"
     "     background-color: #2FB8A6; }"
-    ".g { background-image: linear-gradient(to right, #2E6BE6, #7A5AF8); }"
-    ".s { box-shadow: 0px 5px 12px #000000; }"
+    ".g { background-image: linear-gradient(to bottom, #2E6BE6, #7A5AF8); }"
+    ".s { box-shadow: 0px 5px 12px #B6BEC8; }"
     ".c { border-radius: 28px; background-color: #E6C34A; }"
-    ".b { border-width: 3px; border-color: #7CE0FF; background-color: #161B22; }"
+    ".b { border-width: 3px; border-color: #0969DA; background-color: #F6F8FA; }"
     ".k { clip-path: circle(45%); background-image: linear-gradient(to right, #A855F7, #2FB8A6); }";
 
 static QLUIDoc *scene_shapes_build(const BenchOpts *o, int scale)
@@ -262,10 +262,10 @@ static QLUIDoc *scene_shapes_build(const BenchOpts *o, int scale)
 
 static const char *k_css_scroll =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
-    "        display: flex; flex-direction: column; background-color: #0B0E13;"
-    "        padding: 10px; font-size: 12px; color: #C9D1D9; }"
+    "        display: flex; flex-direction: column; background-color: #FFFFFF;"
+    "        padding: 10px; font-size: 12px; color: #1F2328; }"
     ".list { width: 100%; flex: 1 1 0px; overflow: auto;"
-    "        background-color: #161B22; border-radius: 8px; }"
+    "        background-color: #F6F8FA; border-radius: 8px; }"
     ".row { display: flex; gap: 8px; height: 28px; padding-left: 8px;"
     "       align-items: center; }"
     ".n { width: 40px; color: #6E7781; }";
@@ -305,12 +305,12 @@ static void scene_scroll_tick(QLUIRoot *ui, uint32_t frame)
 static const char *k_css_form =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
     "        display: flex; flex-wrap: wrap; gap: 10px;"
-    "        background-color: #0B0E13; padding: 12px;"
-    "        font-size: 11px; color: #C9D1D9; }"
+    "        background-color: #FFFFFF; padding: 12px;"
+    "        font-size: 11px; color: #1F2328; }"
     ".cell { width: 236px; padding: 8px; box-sizing: border-box;"
-    "        border-radius: 8px; background-color: #161B22;"
-    "        border-width: 1px; border-color: #30363D; }"
-    ".lbl { color: #8B949E; font-size: 10px; margin-bottom: 3px; }"
+    "        border-radius: 8px; background-color: #F6F8FA;"
+    "        border-width: 1px; border-color: #D0D7DE; }"
+    ".lbl { color: #57606A; font-size: 10px; margin-bottom: 3px; }"
     "input { width: 100%; height: 26px; padding: 0px 6px; font-size: 11px; }"
     "select { width: 100%; height: 26px; padding: 0px 6px; font-size: 11px; }"
     "textarea { width: 100%; height: 46px; padding: 4px; font-size: 10px;"
@@ -353,10 +353,10 @@ static QLUIDoc *scene_form_build(const BenchOpts *o, int scale)
 static const char *k_css_dirty =
     "#root { width: 100%; height: 100%; box-sizing: border-box;"
     "        display: flex; flex-wrap: wrap; gap: 8px;"
-    "        background-color: #0E1116; padding: 10px; }"
+    "        background-color: #FFFFFF; padding: 10px; }"
     ".card { width: 122px; height: 62px; border-radius: 8px;"
-    "        border-width: 1px; border-color: #30363D;"
-    "        background-color: #161B22; }"
+    "        border-width: 1px; border-color: #D0D7DE;"
+    "        background-color: #F6F8FA; }"
     ".dot { width: 40px; height: 40px; border-radius: 20px;"
     "       background-color: #2FB8A6;"
     "       animation: tip 900ms ease-in-out infinite alternate; }"

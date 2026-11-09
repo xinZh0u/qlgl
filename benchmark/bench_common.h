@@ -40,8 +40,8 @@ typedef struct {
     const char *backend;   /* "cpu" / "gl" / NULL = 自动（有 GL 就用 GL） */
     const char *scenes;    /* "all" 或逗号分隔的维度 id */
     BenchMode   mode;
-    int         frames;    /* 每个维度跑多少帧（默认 120） */
-    double      seconds;   /* >0 = 按时间跑，覆盖 frames */
+    int         frames;    /* 每个维度最多跑多少帧（0 = 不限，按时间停） */
+    double      seconds;   /* 每个维度跑多少秒（默认 3；<=0 表示不按时间停） */
     ql_coord_t  w, h;
     int         scale;     /* 维度内的"份数"，0 = 用维度自己的默认值 */
     int         hud;
@@ -62,8 +62,9 @@ static void bench_usage(const char *prog)
            "  --list             列出所有维度\n"
            "  --mode full|dirty  full=每帧整屏重画（默认），dirty=只画脏区\n"
            "  --scale N          维度内的份数（卡片数/元素数…），0=维度默认\n"
-           "  --frames N         每个维度跑 N 帧（默认 120）\n"
-           "  --seconds S        每个维度跑 S 秒（优先于 --frames）\n"
+           "  --seconds S        每个维度跑多少**秒**（默认 3；这是主口径）\n"
+           "  --frames N         每个维度最多跑 N 帧（默认 0=不限，按时间停）\n"
+           "                     两个都是上限，谁先到就停\n"
            "  --size WxH         窗口/画布尺寸（默认 800x480）\n"
            "  --vsync 0|1        GL 垂直同步（默认 1）\n"
            "  --retained 0|1     GL 保留式 FBO（默认 1；--mode dirty 需要它）\n"
@@ -85,7 +86,8 @@ static void bench_opts_parse(BenchOpts *o, int argc, char **argv)
     memset(o, 0, sizeof(*o));
     o->w = 800;
     o->h = 480;
-    o->frames = 120;
+    o->frames = 0;          /* 默认只按时间跑，见 --seconds */
+    o->seconds = 3.0;
     o->hud = 1;
     o->vsync = 1;
     o->retained = 1;
@@ -139,8 +141,13 @@ static void bench_opts_parse(BenchOpts *o, int argc, char **argv)
             exit(0);
         }
     }
-    if (o->frames < 1)
-        o->frames = 1;
+    /* 两个都是"上限"：谁先到就停。至少要有一个，否则会跑到关窗口 */
+    if (o->frames < 0)
+        o->frames = 0;
+    if (o->seconds < 0.0)
+        o->seconds = 0.0;
+    if (o->frames == 0 && o->seconds == 0.0)
+        o->seconds = 3.0;
 }
 
 /* ------------------------------ 帧率统计 ------------------------------ */
@@ -276,7 +283,10 @@ static void bench_hud_draw(QLDraw2D *d2d, ql_coord_t scr_w, ql_coord_t scr_h,
 
     QLRect panel;
     bench_hud_rect(&panel);
-    d2d->fill_round_rect(d2d, panel, 6, 0x0B0E13, 208);
+    /* 浅色主题：白底 + 一条淡边框，深色字 */
+    d2d->fill_round_rect(d2d, panel, 6, 0xF2F5F9, 244);
+    if (d2d->stroke_round_rect != NULL)
+        d2d->stroke_round_rect(d2d, panel, 6, 1, 0xBFC7D1);
 
     const QLFont *font = ql_font_mono(11);
     if (font == NULL)
@@ -287,7 +297,7 @@ static void bench_hud_draw(QLDraw2D *d2d, ql_coord_t scr_w, ql_coord_t scr_h,
             continue;
         QLTextStyle ts;
         memset(&ts, 0, sizeof(ts));
-        ts.color = (i == 0) ? 0x7CE0FF : 0xC9D1D9;
+        ts.color = (i == 0) ? 0x0969DA : 0x24292F;
         ts.line_h = LH;
         const QLRect lb = ql_rect_make(panel.x + PAD, panel.y + PAD + LH * i,
                                        BOX_W - PAD * 2, LH);
@@ -328,7 +338,8 @@ static const char *bench_limit_desc(const BenchOpts *o, int can_vsync)
 
 static void bench_report_one(const char *backend, const char *scene, const char *what,
                              const BenchOpts *o, int items, int can_vsync,
-                             const BenchFps *f, const BenchHudInfo *info)
+                             const BenchFps *f, const BenchHudInfo *info,
+                             double busy_avg, unsigned verts_avg, unsigned draws_avg)
 {
     if (f->frames <= 0) {
         printf("%s：没有跑任何帧\n", scene);
@@ -345,15 +356,17 @@ static void bench_report_one(const char *backend, const char *scene, const char 
     printf("规模        %dx%d，份数 %d，节点 %d\n",
            (int)o->w, (int)o->h, items, info->nodes);
     printf("限速        %s\n", bench_limit_desc(o, can_vsync));
-    printf("帧数        %ld（合计 %.2f s）\n", f->frames, f->total_ms / 1000.0);
+    printf("时长        %.2f s，%ld 帧（平均 %.0f 帧/秒）\n",
+           f->total_ms / 1000.0, f->frames,
+           (f->total_ms > 0.0) ? ((double)f->frames * 1000.0 / f->total_ms) : 0.0);
     printf("平均帧率    %.2f fps（整帧 %.2f ms）\n", bench_fps_value(f),
            f->total_ms / (double)f->frames);
     printf("帧时间      p50 %.2f / p95 %.2f / max %.2f ms\n", p50, p95, f->max_ms);
-    if (info->draws > 0)
-        printf("绘制提交    %.3f ms/帧，%u 顶点，%u draw call\n",
-               info->busy_ms, info->verts, info->draws);
+    if (draws_avg > 0)
+        printf("绘制提交    %.3f ms/帧（均值），%u 顶点，%u draw call\n",
+               busy_avg, verts_avg, draws_avg);
     else
-        printf("绘制提交    %.3f ms/帧\n", info->busy_ms);
+        printf("绘制提交    %.3f ms/帧（均值）\n", busy_avg);
 
     if (o->vsync && bench_fps_value(f) < 55.0)
         printf("提示        帧率低于 55：开了 vsync 就是这个数（等出来的），"

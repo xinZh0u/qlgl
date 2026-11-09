@@ -53,6 +53,19 @@ const char *ql_disp_x11_title(QLDispDriver *driver);
 /* 已经处理过的 Expose 次数，测试/调试用 */
 uint32_t ql_disp_x11_expose_count(QLDispDriver *driver);
 
+/*
+ * 窗口尺寸变过没有（取一次清零）。
+ *
+ * X11 后端在 ConfigureNotify 里**已经重建了帧缓冲**（`driver->width/height/stride/
+ * framebuffer` 都是新的），但 QLCanvas 是这些字段的拷贝，所以返回 1 时调用方必须：
+ *
+ *     ql_canvas_from_disp(&canvas, driver);      // 重新取一份
+ *     ql_ui_layout(ui, ql_disp_css_width(driver), ql_disp_css_height(driver));
+ *
+ * 漏掉这一步的表现是"窗口拉大之后内容还挤在左上角、右边一片空白"。
+ */
+int ql_disp_x11_resize_pending(QLDispDriver *driver);
+
 #endif /* QLGL_ENABLE_X11 */
 
 #endif /* QLGL_DISP_X11_H */
