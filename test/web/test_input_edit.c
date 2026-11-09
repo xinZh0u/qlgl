@@ -312,6 +312,30 @@ QL_TEST_BEGIN("test_input_edit")
         }
     }
 
+    /* ---------- 11. 空输入框聚焦：光标照样要画出来 ---------- */
+    {
+        /*
+         * 空值以前会走进"没有文字就整段跳过"的分支，把光标也一起跳过了 ——
+         * 清空内容后就看不见焦点在哪。判据：空框聚焦必须有墨迹（那就是光标）。
+         */
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk("<input id=a>", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *in = &ui->nodes[1];
+            render(ui);
+            const int ink_plain = ink_count();
+
+            ql_ui_pointer_down(ui, in->content_box.x + 1, 12);
+            ql_ui_pointer_up(ui, in->content_box.x + 1, 12);
+            render(ui);
+            printf("    空输入框：未聚焦 %d → 聚焦 %d\n", ink_plain, ink_count());
+            QL_CHECK(ink_count() - ink_plain >= 4);   /* 多出来的就是光标竖线 */
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
     ql_disp_mem_destroy(s_disp);
 
 QL_TEST_END()

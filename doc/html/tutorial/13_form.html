@@ -339,6 +339,18 @@ main img.shot { max-width: 100%; }
 </code></pre></div>
 
 <p>横向同理（单行框也受益 —— 长文本时光标不再跑出框外）。</p>
+<h2 id="x-y">拖选：按 (x, y) 定位，拖出框外会自己滚</h2>
+<p>鼠标拖选和"点哪落哪"必须走同一条定位路径：</p>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">pos</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">caret_at_xy</span><span class="p">(</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="n">in</span><span class="p">,</span><span class="w"> </span><span class="n">cb</span><span class="p">.</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">lh</span><span class="p">,</span>
+<span class="w">                                 </span><span class="n">x</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">cb</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">scroll_x</span><span class="p">,</span>
+<span class="w">                                 </span><span class="n">y</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">cb</span><span class="p">.</span><span class="n">y</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">scroll_y</span><span class="p">);</span>
+</code></pre></div>
+
+<p>只拿 <code>x</code> 按单行折算字节偏移的话，单行框看着没问题（一行就是全部），
+多行框一拖到第二行选区和鼠标就分家了 —— 因为同一个 <code>x</code> 在每一行都对，
+差别全在 <code>y</code> 上。</p>
+<p>指针拖到内容盒上方/下方（<code>y &lt; cb.y</code> 或 <code>y &gt; cb.y + cb.h</code>）时每帧按一次行高
+滚动，再重新定位光标，这样长文本能跨屏选。</p>
 <h2 id="_5">读值与写值</h2>
 <p>和 <code>&lt;input&gt;</code> 完全一样，不需要区分：</p>
 <div class="highlight"><pre><span></span><code><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_input_value</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ta</span><span class="p">));</span><span class="w">       </span><span class="cm">/* 多行值里带真实 &#39;\n&#39; */</span>
@@ -359,9 +371,10 @@ main img.shot { max-width: 100%; }
 
 <p>没有剪贴板、没有 IME、光标不闪 —— 三条限制与单行输入框完全一致（见第 10 章）。</p>
 <blockquote>
-<p><strong>Linux 上能打 ASCII，打不了中文</strong>：X11 后端用 <code>XLookupString</code> 取字符，
-只覆盖 Latin-1；CJK 要走 XIM 输入法，本库还没接。中文只能用
-<code>ql_ui_input_set_value()</code> 从程序里填进去。</p>
+<p><strong>Linux 上中文要走输入法</strong>：X11 后端优先用 XIM（<code>XOpenIM</code>/<code>XCreateIC</code> +
+<code>Xutf8LookupString</code>），所以 ibus / fcitx 挂上 <code>XMODIFIERS=@im=...</code> 就能直接
+打中文；XIM 不可用时退回 <code>XLookupString</code>，那时只有 Latin-1。
+没有输入法环境（比如裸 X）就还是只能用 <code>ql_ui_input_set_value()</code> 从程序里填。</p>
 </blockquote>
 <h2 id="_7">与浏览器不同的地方</h2>
 <ol>

@@ -70,6 +70,27 @@ static void type(QLUIRoot *ui, const char *s)
     }
 }
 
+/* 按下 → 拖到 (x,y) → 抬起（选区靠这条路径） */
+static void drag(QLUIRoot *ui, ql_coord_t x0, ql_coord_t y0, ql_coord_t x1, ql_coord_t y1)
+{
+    QLInputEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_POINTER_DOWN;
+    ev.x = x0;
+    ev.y = y0;
+    ql_ui_input_event(ui, &ev);
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_POINTER_MOVE;
+    ev.x = x1;
+    ev.y = y1;
+    ql_ui_input_event(ui, &ev);
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_POINTER_UP;
+    ev.x = x1;
+    ev.y = y1;
+    ql_ui_input_event(ui, &ev);
+}
+
 static void click(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
     QLInputEvent ev;
@@ -86,6 +107,25 @@ static void click(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 }
 
 static QLDispDriver *s_disp;
+
+/* --- 假剪贴板：用来"看到"选区内容（不需要新增公开 API） --- */
+static char s_clip_buf[512];
+
+static void clip_set(const char *utf8, void *user)
+{
+    (void)user;
+    snprintf(s_clip_buf, sizeof(s_clip_buf), "%s", utf8 != NULL ? utf8 : "");
+}
+
+static int clip_get(char *buf, size_t cap, void *user)
+{
+    (void)user;
+    (void)buf;
+    (void)cap;
+    return 0;   /* 这个测试只关心 set（复制出去），不需要粘贴 */
+}
+
+static const QLUIClipboard s_clip = { clip_set, clip_get };
 
 static ql_color_t px(int x, int y)
 {
@@ -491,6 +531,125 @@ QL_TEST_BEGIN("test_textarea")
                 printf("    全选后输入 = [%s]\n", ql_ui_input_value(ui, ta));
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 16. 跨行拖选：选区必须跟着鼠标走 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc"
+                          "</textarea></div>",
+                          "#r { width: 300px } textarea { width: 240px; height: 90px;"
+                          " padding: 4px; line-height: 16px }", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            ql_ui_set_clipboard(ui, &s_clip, NULL);
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            const QLFont *font = ql_ui_node_font(ta);
+            const ql_coord_t lh = font->line_height;
+            const QLRect cb = ta->content_box;
+
+            /*
+             * 第 1 行第 4 列 → 第 3 行第 4 列。
+             * 期望选区 = "aaaaaa\nbbbbbbbbbb\ncccc"（6 + 1 + 10 + 1 + 4 = 22 字节）。
+             *
+             * 这是"拖选走单行公式"那个 bug 的守门用例：以前按 x 当单行算，
+             * 会落到第 1 行的第 26 个字符（不存在）或者别处，选区完全对不上。
+             */
+            const ql_coord_t x4 = ql_font_line_width(font, "aaaa", 4);
+            drag(ui, cb.x + x4, cb.y + 2, cb.x + x4, cb.y + 2 * lh + 2);
+            (void)ql_ui_clipboard_copy(ui);
+            printf("    跨行选区 = [%s]\n", s_clip_buf);
+            QL_CHECK(strcmp(s_clip_buf, "aaaaaa\nbbbbbbbbbb\ncccc") == 0);
+
+            /* 反向拖（从下往上）也应该是同一段文本 */
+            s_clip_buf[0] = '\0';
+            drag(ui, cb.x + x4, cb.y + 2 * lh + 2, cb.x + x4, cb.y + 2);
+            (void)ql_ui_clipboard_copy(ui);
+            QL_CHECK(strcmp(s_clip_buf, "aaaaaa\nbbbbbbbbbb\ncccc") == 0);
+
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 17. 拖出框外自动滚：滚到末尾就停，选区到文本末尾 ---------- */
+    {
+        const char *txt = "l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9";
+        char html[256];
+        snprintf(html, sizeof(html), "<div id=r><textarea>%s</textarea></div>", txt);
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk(html,
+                          "#r { width: 300px } textarea { width: 240px; height: 48px;"
+                          " padding: 4px; line-height: 16px }", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            ql_ui_set_clipboard(ui, &s_clip, NULL);
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            const QLRect cb = ta->content_box;
+
+            /* 按下在第 1 行行首，然后连续 30 帧把指针停在盒子下方很远处 */
+            QLInputEvent ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.type = QL_INPUT_POINTER_DOWN;
+            ev.x = cb.x;
+            ev.y = cb.y + 2;
+            ql_ui_input_event(ui, &ev);
+
+            for (int i = 0; i < 30; i++) {
+                memset(&ev, 0, sizeof(ev));
+                ev.type = QL_INPUT_POINTER_MOVE;
+                ev.x = cb.x;
+                ev.y = cb.y + cb.h + 200;
+                ql_ui_input_event(ui, &ev);
+            }
+            memset(&ev, 0, sizeof(ev));
+            ev.type = QL_INPUT_POINTER_UP;
+            ev.x = cb.x;
+            ev.y = cb.y + cb.h + 200;
+            ql_ui_input_event(ui, &ev);
+
+            (void)ql_ui_clipboard_copy(ui);
+            /* 滚到末尾就停：选区正好是全文，不会多也不会少 */
+            printf("    拖出框外选区长 %d（全文 %d）\n",
+                   (int)strlen(s_clip_buf), (int)strlen(txt));
+            QL_CHECK(strcmp(s_clip_buf, txt) == 0);
+
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 18. 空 textarea 聚焦也要有光标 ---------- */
+    {
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            QLUIRoot *ui = NULL;
+            QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>",
+                              "#r { width: 200px } textarea { color: #000000;"
+                              " background-color: #FFFFFF }", &ui);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+                click(ui, ta->content_box.x + 1, ta->content_box.y + 2);
+
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+
+                const QLRect cb = ta->content_box;
+                int ink = 0;
+                for (int y = cb.y; y < cb.y + cb.h && y < H; y++)
+                    if (px(cb.x, y) != 0xFFFFFF)
+                        ink++;
+                QL_CHECK(ink >= 4);   /* 空文本：第一行行首也该有竖线 */
+                printf("    空框聚焦竖线像素 %d 个\n", ink);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+            ql_disp_mem_destroy(s_disp);
         }
     }
 

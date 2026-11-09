@@ -1290,6 +1290,14 @@ static uint16_t caret_at_xy(const QLFont *font, const struct QLUIInput *in,
         return 0;
     if (count > QL_CFG_TEXT_MAX_LINES)
         count = QL_CFG_TEXT_MAX_LINES;
+    /*
+     * 指针跑到文本上方/下方：直接落到全文首/尾，**不再按最后一行的 x 折算**。
+     * 浏览器就是这样（拖选往下拉到底，选中的是到文末，而不是"最后一行的第 0 列"）。
+     */
+    if (y < 0)
+        return 0;
+    if (line_h > 0 && y >= (ql_coord_t)count * line_h)
+        return in->len;
     int li = (line_h > 0 && y > 0) ? (int)(y / line_h) : 0;
     if (li >= count)
         li = count - 1;
@@ -1325,7 +1333,7 @@ static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x,
     return 1;
 }
 
-static void input_pointer_move(QLUIRoot *ui, ql_coord_t x)
+static void input_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 {
     struct QLUIInput *in = (ui->focus != NULL) ? input_of(ui, ui->focus) : NULL;
     if (in == NULL || !ui->input_drag)
@@ -1333,8 +1341,59 @@ static void input_pointer_move(QLUIRoot *ui, ql_coord_t x)
     const QLFont *font = font_of_style(in->node, in->node->style);
     const QLRect cb = in->node->content_box;
     const ql_coord_t rel = x - cb.x + in->scroll_x;
-    const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
+
+    if (!in->multiline) {
+        const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
+        input_set_caret(ui, in, pos, 1);
+        return;
+    }
+
+    /*
+     * 多行拖选：**必须按 (x, y) 定位**，不能只拿 x 当单行算。
+     * 之前这里走的是单行公式 —— 拖到第二行时按"整串一行"折算字节偏移，
+     * 选区和鼠标就对不上了（单行没这个问题，所以一直没暴露）。
+     */
+    const ql_coord_t lh = line_height_of(font);
+    const ql_coord_t ry = y - cb.y + in->scroll_y;
+    const uint16_t pos = caret_at_xy(font, in, cb.w, lh, rel > 0 ? rel : 0, ry);
     input_set_caret(ui, in, pos, 1);
+
+    /*
+     * 拖到框外继续滚（浏览器行为）：指针在上下边界外时按行距滚，
+     * 否则内容一长就没法跨屏选。
+     */
+    if (lh > 0 && in->node->content_box.h > 0) {
+        const ql_coord_t top = cb.y;
+        const ql_coord_t bottom = cb.y + cb.h;
+        ql_coord_t dy = 0;
+        if (y < top)
+            dy = y - top;              /* 负数 = 往上滚 */
+        else if (y > bottom)
+            dy = y - bottom;
+        if (dy != 0) {
+            const ql_coord_t step = (dy > 0) ? ((dy < lh) ? dy : lh)
+                                             : ((-dy < lh) ? dy : -lh);
+            ql_coord_t want = in->scroll_y + step;
+            /* 夹到内容末尾：不然拖到框外会一直滚进空白 */
+            QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+            int count = input_visual_lines(font, in, cb.w, lines, QL_CFG_TEXT_MAX_LINES);
+            if (count > QL_CFG_TEXT_MAX_LINES)
+                count = QL_CFG_TEXT_MAX_LINES;
+            ql_coord_t max_y = (count > 0) ? (count * lh - cb.h) : 0;
+            if (max_y < 0)
+                max_y = 0;          /* 内容比盒子矮：不能滚 */
+            if (want < 0)
+                want = 0;
+            if (want > max_y)
+                want = max_y;
+            in->scroll_y = want;
+            /* 滚完重新定位（内容动了，同一个 y 对应的字符变了） */
+            const ql_coord_t ry2 = y - cb.y + in->scroll_y;
+            const uint16_t p2 = caret_at_xy(font, in, cb.w, lh,
+                                            rel > 0 ? rel : 0, ry2);
+            input_set_caret(ui, in, p2, 1);
+        }
+    }
 }
 
 /* 键盘：只处理"编辑"这一层；没有剪贴板（平台层不提供） */
@@ -3912,13 +3971,18 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
      * <img> 的 `node->text` 是**资源名**（"logo.png"），不是要显示的文字 ——
      * 这一条必须挡住，否则资源名会被当成正文画在图片上。
      */
-    if (has_shown_text(node) && node->text[0] != '\0' &&
+    /*
+     * 输入框是例外：**空值也要进这一段**。
+     * 光标和选区不是"文字"，空输入框照样得有光标（否则清空内容后就看不见焦点在哪）。
+     * 所以判据是"有文字" 或 "这个节点是输入框"。
+     */
+    struct QLUIInput *in = input_of(node->owner, node);
+    if (has_shown_text(node) && (node->text[0] != '\0' || in != NULL) &&
         !ql_rect_is_empty(node->content_box)) {
         /*
          * 输入框：显示文本可能被换成圆点（密码），而且比盒子宽时要横向滚。
          * 这两件事都只在输入框上发生，普通文本节点走的是同一条 draw_text。
          */
-        struct QLUIInput *in = input_of(node->owner, node);
         char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
         const char *shown = node->text;
         QLRect tbox = node->content_box;
@@ -3935,7 +3999,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
              * 以前这里是 tbox.h += scroll_y 让文字不被高度截断 —— 方向反了：
              * 该裁的是绘制，不是把盒子撑高。
              */
-            if (d2d->set_clip != NULL && !ql_rect_is_empty(node->content_box)) {
+            if (node->text[0] != '\0' && d2d->set_clip != NULL &&
+                !ql_rect_is_empty(node->content_box)) {
                 const QLRect c = ql_rect_intersect(clip, node->content_box);
                 node->owner->clip = c;
                 d2d->set_clip(d2d, c);
@@ -3957,7 +4022,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
                             ((s->font_flags & QL_UI_FONT_LINE_THROUGH)
                                  ? QL_TEXT_DECO_LINE_THROUGH
                                  : 0u));
-        d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
+        if (node->text[0] != '\0')
+            d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
         if (input_clipped) {
             node->owner->clip = input_saved_clip;
             d2d->set_clip(d2d, input_saved_clip);
@@ -5039,7 +5105,7 @@ int ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     }
 
     if (ui->input_drag) {
-        input_pointer_move(ui, x);
+        input_pointer_move(ui, x, y);
         return 1;
     }
 

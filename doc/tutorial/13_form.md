@@ -100,6 +100,23 @@ else if (cy + lh - in->scroll_y > cb.h)
 
 横向同理（单行框也受益 —— 长文本时光标不再跑出框外）。
 
+## 拖选：按 (x, y) 定位，拖出框外会自己滚
+
+鼠标拖选和"点哪落哪"必须走同一条定位路径：
+
+```c
+const uint16_t pos = caret_at_xy(font, in, cb.w, lh,
+                                 x - cb.x + in->scroll_x,
+                                 y - cb.y + in->scroll_y);
+```
+
+只拿 `x` 按单行折算字节偏移的话，单行框看着没问题（一行就是全部），
+多行框一拖到第二行选区和鼠标就分家了 —— 因为同一个 `x` 在每一行都对，
+差别全在 `y` 上。
+
+指针拖到内容盒上方/下方（`y < cb.y` 或 `y > cb.y + cb.h`）时每帧按一次行高
+滚动，再重新定位光标，这样长文本能跨屏选。
+
 ## 读值与写值
 
 和 `<input>` 完全一样，不需要区分：
@@ -126,9 +143,10 @@ ql_ui_set_input_cb(ui, on_input, NULL);
 
 没有剪贴板、没有 IME、光标不闪 —— 三条限制与单行输入框完全一致（见第 10 章）。
 
-> **Linux 上能打 ASCII，打不了中文**：X11 后端用 `XLookupString` 取字符，
-> 只覆盖 Latin-1；CJK 要走 XIM 输入法，本库还没接。中文只能用
-> `ql_ui_input_set_value()` 从程序里填进去。
+> **Linux 上中文要走输入法**：X11 后端优先用 XIM（`XOpenIM`/`XCreateIC` +
+> `Xutf8LookupString`），所以 ibus / fcitx 挂上 `XMODIFIERS=@im=...` 就能直接
+> 打中文；XIM 不可用时退回 `XLookupString`，那时只有 Latin-1。
+> 没有输入法环境（比如裸 X）就还是只能用 `ql_ui_input_set_value()` 从程序里填。
 
 ## 与浏览器不同的地方
 

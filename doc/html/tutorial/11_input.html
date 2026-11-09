@@ -238,7 +238,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>选一段</td>
-<td>按下后拖动</td>
+<td>按下后拖动（多行框按 <code>(x, y)</code> 定位，拖出框外会自动滚）</td>
 </tr>
 <tr>
 <td>插入字符</td>
@@ -266,6 +266,10 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p><strong>空框也有光标</strong>：光标和选区不是"文字"，是输入框的装饰，所以空值聚焦
+照样画竖线（否则清空内容后就看不见焦点在哪）。</p>
+</blockquote>
 <p><strong>值和输入框是同一份数据</strong>：<code>node-&gt;text</code> 直接指向池里的可变缓冲，所以绘制、
 <code>text-align</code>、横向滚动这些全都不用改 —— 它们读到的就是最新值。</p>
 <h3 id="_2">值放在哪：一条按需分配的池</h3>
