@@ -228,6 +228,17 @@ swap_us             ≈ 等垂直同步 + 合成器取帧
 不会飙到上千。这个等待发生在 `ql_gfx_gl_begin()` 里、计时开始之前，
 因此 `ql_gfx_gl_frame_us()` 包含它（与跟 vsync 时口径一致）。
 
+**例外**：收到 `ConfigureNotify` 之后的第一帧不等（内部置 `present_now`）——
+窗口刚被拉大，新露出的区域等着画面，这一帧必须立刻推上去，否则就是"缩放闪白"。
+所以宿主的循环里"读尺寸 → 重排 → 画 → swap"要在同一个迭代里做完，中间不要插别的等待。
+
+两个环境变量（排查用，不需要改代码）：
+
+| 变量 | 作用 |
+|---|---|
+| `QLGL_LAG_DEBUG=1` | 每次 `ConfigureNotify` 打一行"配置→上屏"的毫秒数（正常 p50 ≈ 1.2ms） |
+| `QLGL_KEEP_VSYNC=1` | 拖动期间也跟 vblank（某些驱动上不跟 vblank 会看到撕裂时用；代价是可能重新踩到 Mesa 等 1s 的老问题） |
+
 日志会打印 `GL_RENDERER` / `GL_VERSION` / `GLSL` 版本，便于区分是 llvmpipe 还是真 GPU。
 
 ---

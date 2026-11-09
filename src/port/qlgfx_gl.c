@@ -136,6 +136,10 @@ struct QLGfxGL {
     uint32_t         resize_until_ms;  /* 这个时刻之前不跟 vblank（正在拖边框） */
     uint64_t         last_end_us;      /* 上一帧 swap 结束的单调时钟（微秒） */
     uint32_t         pace_us;          /* 估算的"一帧该多久"（vsync 帧间隔的滑动平均） */
+    uint64_t         cfg_us;      /* 最近一次 ConfigureNotify 的时刻（QLGL_LAG_DEBUG 用） */
+    int              present_now;      /* 刚收到 ConfigureNotify：这一帧不要等，立刻推上去 */
+    int              keep_vsync_on_resize;  /* 拖动期间也跟 vblank（QLGL_KEEP_VSYNC=1） */
+    int              lag_debug;        /* QLGL_LAG_DEBUG=1：逐帧打印"配置→上屏"延迟 */
     struct timespec  t0;
 
     /* 保留式脏区：和窗口同尺寸的 FBO，帧末 blit 到窗口 */
@@ -1834,6 +1838,13 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->vsync_user = 1;
     g->vsync_eff = 1;
     g->pace_us = 16666;    /* 没测到之前按 60Hz 估 */
+    /*
+     * 环境变量而不是 API：拖动期间不跟 vblank 是为了绕开 Mesa Present 在
+     * 重配窗口时等 1s 的老问题（见 ql_gfx_gl_end）。如果某些驱动上看到撕裂，
+     * 设 QLGL_KEEP_VSYNC=1 就退回"拖动时也跟 vblank"。
+     */
+    g->keep_vsync_on_resize = getenv("QLGL_KEEP_VSYNC") != NULL;
+    g->lag_debug = getenv("QLGL_LAG_DEBUG") != NULL;
     if (!g->offscreen)
         eglSwapInterval(g->egdpy, 1);
 
@@ -2069,16 +2080,24 @@ static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
     /*
      * 拖动期间关了 vsync（见 ql_gfx_gl_end），这里按**显示节奏**补上等待。
      *
+     * 例外：刚收到 ConfigureNotify 的那一帧（`present_now`）不睡 —— 窗口
+     * 已经被拉大了，新露出来的那块还等着我们填。这一帧立刻画、立刻推上去，
+     * 空白/黑边就只存在"渲染 + swap"这一小段（亚毫秒）；若按节奏先睡 7ms，
+     * 就会发现"缩放时闪一下空白"，而且帧越等越旧（跟手变差）。
+     * 下一帧（没有新事件时）照旧按 pace_us 补齐，所以帧率仍然是稳的。
+     *
      * 放在 begin 且 t0 在睡之前抓：`frame_us` 是 begin→end，等待算进去之后
      * "--stats 的帧时间 / fps" 与跟 vsync 时口径一致（都是真实节奏）。
      * 若放在 end 之后才睡，fps 会虚高到几百上千，看起来像坏了。
      */
     now_us(&g->t0);
-    if (!g->offscreen && g->vsync_eff == 0 && g->vsync_user && g->last_end_us != 0) {
+    if (!g->offscreen && g->vsync_eff == 0 && g->vsync_user && g->last_end_us != 0 &&
+        !g->present_now) {
         const uint64_t due = g->last_end_us + (uint64_t)g->pace_us;
         while (now_us_mono() < due)
             usleep(200);
     }
+    g->present_now = 0;
     g->vert_count = 0;
     g->vertex_count = 0;
     g->draw_calls = 0;
@@ -2259,9 +2278,8 @@ void ql_gfx_gl_end(QLGfxGL *g)
      */
     if (g->egdpy != EGL_NO_DISPLAY && !g->offscreen) {
         const uint32_t now32 = (uint32_t)(now_us_mono() / 1000);
-        const int want = (g->vsync_user && (int32_t)(now32 - g->resize_until_ms) >= 0)
-                             ? g->vsync_user
-                             : 0;
+        const int dragging = (int32_t)(now32 - g->resize_until_ms) < 0;
+        const int want = (g->vsync_user && (!dragging || g->keep_vsync_on_resize)) ? 1 : 0;
         if (want != g->vsync_eff) {
             g->vsync_eff = want;
             eglSwapInterval(g->egdpy, want);
@@ -2274,6 +2292,12 @@ void ql_gfx_gl_end(QLGfxGL *g)
     now_us(&ts1);
     g->swap_us = (uint32_t)((ts1.tv_sec - ts0.tv_sec) * 1000000 +
                             (ts1.tv_nsec - ts0.tv_nsec) / 1000);
+
+    if (g->lag_debug && g->cfg_us != 0) {
+        fprintf(stderr, "[lag] cfg_to_present=%.3fms eff=%d\n",
+                (double)(now_us_mono() - g->cfg_us) / 1000.0, g->vsync_eff);
+        g->cfg_us = 0;
+    }
 
     struct timespec t1;
     now_us(&t1);
@@ -2356,6 +2380,8 @@ int ql_gfx_gl_poll(QLGfxGL *g)
                 g->resize_pending = 1;
                 /* 未来 200ms 内不跟 vblank（见 ql_gfx_gl_end 里的说明） */
                 g->resize_until_ms = (uint32_t)(now_us_mono() / 1000) + 200u;
+                g->present_now = 1;
+                g->cfg_us = now_us_mono();
             }
             break;
         }

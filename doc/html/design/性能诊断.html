@@ -422,6 +422,18 @@ pace 拉到 0.6ms，节流等于没做）；拖动期间在<strong>下一帧开�
 <p>放在帧开头而不是帧末，是为了让 <code>frame_us</code>（begin→end）把等待算进去 —— 这样
 <code>--stats</code> 的帧时间/fps 与跟 vsync 时的口径一致，不会出现"帧时间 0.6ms 却报 1700fps"
 这种吓人的数字。</p>
+<p><strong>④ 例外：刚改变尺寸的那一帧不等</strong></p>
+<p>节流不能无脑套在"每一帧"上。窗口被拉大时，新露出来的那块区域正等着我们填；
+如果这一帧还先睡 7ms，看到的就是"缩放时闪一下空白"，而且画面永远比鼠标慢半拍。</p>
+<p>所以 <code>ConfigureNotify</code> 会置 <code>present_now</code>，紧接着的那一帧<strong>跳过等待</strong>，
+立刻画、立刻 swap；之后的帧照旧按 <code>pace_us</code> 补。实测这一改把
+"配置事件 → 新画面推上屏"的中位延迟从 7ms 级压到 <strong>1.2ms</strong>（p95 1.9ms），
+帧率仍然稳在 144。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 量这个延迟（每个 ConfigureNotify 打一行）</span>
+<span class="nv">QLGL_LAG_DEBUG</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>./build/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="p">&amp;</span>
+./build/qlperf<span class="w"> </span>watch<span class="w"> </span>--seconds<span class="w"> </span><span class="m">4</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span><span class="nv">$!</span>
+</code></pre></div>
+
 <h3 id="24">2.4 修复后</h3>
 <table>
 <thead>
@@ -455,7 +467,12 @@ pace 拉到 0.6ms，节流等于没做）；拖动期间在<strong>下一帧开�
 <tr>
 <td>拖动时帧率</td>
 <td>144 fps</td>
-<td><strong>137~144 fps</strong>（不再是上万）</td>
+<td><strong>144 fps</strong>（p50 6.97ms / p95 8.30ms / max 15ms）</td>
+</tr>
+<tr>
+<td>配置事件 → 上屏延迟</td>
+<td>7ms 级（先睡再画）</td>
+<td><strong>p50 1.2ms / p95 1.9ms</strong></td>
 </tr>
 </tbody>
 </table>
