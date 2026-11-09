@@ -553,12 +553,12 @@ ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 </tr>
 <tr>
 <td>事件路由</td>
-<td>命中测试 → 目标控件 → 冒泡到根；<code>stop_propagation</code> 有效</td>
+<td>输入队列 → 事件汇 → <code>ql_ui_input_event</code>（命中测试 + 状态 + 点击合成都在界面层）</td>
 <td>✅</td>
 </tr>
 <tr>
 <td>回调 API</td>
-<td>用既有的 <code>ql_connect(obj, QL_WIDGET_EVENT_*, cb, user)</code>；12 个控件事件</td>
+<td><code>ql_ui_set_click_cb</code> / <code>ql_ui_set_input_cb</code> / <code>ql_ui_set_select_cb</code> / <code>ql_ui_set_area_cb</code></td>
 <td>✅</td>
 </tr>
 <tr>
@@ -568,7 +568,7 @@ ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 </tr>
 <tr>
 <td>验收</td>
-<td><code>test/input/test_input.c</code>（130 项断言）、<code>example_input</code>（窗口 + <code>--demo</code> 自检）、<code>test_web_ui</code> 增补 13 项</td>
+<td><code>test/input/test_input_queue.c</code>（49 项，队列语义）+ <code>test_web_ui</code> / <code>test_input_edit</code> / <code>test_select</code>（界面层命中与状态）</td>
 <td>✅</td>
 </tr>
 </tbody>
@@ -2014,7 +2014,7 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 </tr>
 <tr>
 <td>P2a ✅</td>
-<td><code>WIDGET</code> 一半：<code>progress</code> <code>meter</code> <code>output</code> <code>datalist</code></td>
+<td><code>CONTROL</code> 一半：<code>progress</code> <code>meter</code> <code>output</code> <code>datalist</code></td>
 <td>76</td>
 <td>1 天</td>
 </tr>
@@ -2044,7 +2044,7 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 </tr>
 <tr>
 <td>P5</td>
-<td><code>WIDGET</code> 补齐：<code>textarea</code> 多行编辑</td>
+<td><code>CONTROL</code> 补齐：<code>textarea</code> 多行编辑</td>
 <td>91</td>
 <td>2–3 天</td>
 </tr>

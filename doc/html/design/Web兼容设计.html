@@ -1002,13 +1002,13 @@ QLUIStyle / QLUIDoc 是 POD，也可以直接暴露给脚本层。</p>
 <tbody>
 <tr>
 <td>element / tag</td>
-<td>控件</td>
-<td>Web 里没有"控件类"，只有标签</td>
+<td>标签（<code>QLUITag</code>）+ 节点</td>
+<td>没有"控件类"，只有标签与样式</td>
 </tr>
 <tr>
 <td><code>style.width</code></td>
-<td><code>QL_WIDGET_PROPERTY_WIDTH</code></td>
-<td>对外必须暴露成 CSS 字符串</td>
+<td><code>QLUIStyle.width</code>（构建期算好的 <code>{值, 单位}</code>）</td>
+<td>界面用 CSS 写，运行期只读</td>
 </tr>
 <tr>
 <td>layout / reflow</td>

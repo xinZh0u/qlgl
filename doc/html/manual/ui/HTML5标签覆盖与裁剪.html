@@ -807,7 +807,7 @@ main img.shot { max-width: 100%; }
 <tr>
 <td>表单</td>
 <td><code>&lt;datalist&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
@@ -825,7 +825,7 @@ main img.shot { max-width: 100%; }
 <tr>
 <td>表单</td>
 <td><code>&lt;input&gt;</code></td>
-<td><code>CORE</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
@@ -843,61 +843,61 @@ main img.shot { max-width: 100%; }
 <tr>
 <td>表单</td>
 <td><code>&lt;meter&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>表单</td>
 <td><code>&lt;optgroup&gt;</code></td>
-<td><code>CORE</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>表单</td>
 <td><code>&lt;option&gt;</code></td>
-<td><code>CORE</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>表单</td>
 <td><code>&lt;output&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>表单</td>
 <td><code>&lt;progress&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>表单</td>
 <td><code>&lt;select&gt;</code></td>
-<td><code>CORE</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>表单</td>
 <td><code>&lt;textarea&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>⏳ 计划</td>
 </tr>
 <tr>
 <td>交互</td>
 <td><code>&lt;details&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>交互</td>
 <td><code>&lt;dialog&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
 <td>交互</td>
 <td><code>&lt;summary&gt;</code></td>
-<td><code>WIDGET</code></td>
+<td><code>CONTROL</code></td>
 <td>✅ 已支持</td>
 </tr>
 <tr>
@@ -950,6 +950,12 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <hr />
 <h2 id="2">2. 能力包</h2>
 <p>一个"包"= 一组标签 + 支撑它们的那部分引擎。包是<strong>编译期开关</strong>，也是<strong>构建期报告的单位</strong>。</p>
+<blockquote>
+<p><strong>现状（老实说）</strong>：除 <code>QL_FEAT_UI_META</code>、<code>QL_FEAT_UI_IMAGE</code> 与
+<code>QL_FEAT_IMG_*</code> 之外，表里的宏目前<strong>只有名字、还没进代码</strong>（<code>grep</code> 不到）。
+它们是"裁剪时的口径"，不是现在能 <code>-D</code> 的东西。已落地的开关见
+<a href="../design/图像管线设计.html">图像管线设计 §2</a> 与 <code>include/qlgl/qlconfig.h</code>。</p>
+</blockquote>
 <table>
 <thead>
 <tr>
@@ -965,7 +971,7 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <tr>
 <td><code>CORE</code></td>
 <td>恒开</td>
-<td>66</td>
+<td>62</td>
 <td>✅</td>
 <td>✅</td>
 <td>无（永远有）</td>
@@ -1003,20 +1009,12 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <td>开关正交、组合都合法；<code>full</code>/<code>lean</code>/<code>raw-only</code> 只是预设。构建期转码是零成本路径，任何平台可选。设计见<a href="../../design/图像管线设计.html">图像管线设计</a></td>
 </tr>
 <tr>
-<td><code>WIDGET</code></td>
-<td><code>QL_FEAT_UI_WIDGET</code></td>
-<td>8（<code>progress meter output datalist textarea details summary dialog</code>）</td>
+<td><code>CONTROL</code></td>
+<td><code>QL_FEAT_UI_CONTROL</code></td>
+<td>12（<code>input select option optgroup</code> + <code>progress meter output datalist textarea details summary dialog</code>）</td>
 <td>✅</td>
 <td>❌</td>
-<td>复用已有池/覆盖层机制 + `</td>
-</tr>
-<tr>
-<td><code>（</code>textarea`）</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td><strong>需要专用运行期状态或覆盖层</strong>：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；<code>textarea</code> 复用输入框池</td>
 </tr>
 <tr>
 <td><code>EMBED</code></td>
@@ -1028,7 +1026,14 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 </tr>
 </tbody>
 </table>
-<p><code>CORE</code> 里那 66 个就是现在能画的那批（含 <code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / 滚动容器）。</p>
+<p><code>CORE</code> 里那 62 个是"不需要任何额外运行期机制、只靠样式+布局就能画"的那批
+（含滚动容器）。<strong>判据是"要不要专用机制"，不是"有没有状态"</strong>：</p>
+<ul>
+<li><code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> 是状态最重的两个（光标、选区、覆盖面板），但正因为如此
+  它们必须能被裁 —— 所以归 <code>CONTROL</code>；</li>
+<li><code>&lt;output&gt;</code> / <code>&lt;datalist&gt;</code> 其实零成本（前者等价 <code>span</code>，后者 <code>display:none</code>），
+  仍归 <code>CONTROL</code> 是因为<strong>用户视角它们是表单控件</strong>，一起裁更省心。</li>
+</ul>
 <hr />
 <h2 id="3">3. 一条硬约束：枚举不可条件化</h2>
 <p><code>QLUITag</code> 的数值会<strong>写进 blob</strong>（<code>QLUINode.tag</code> 是 <code>uint16</code> 索引），而且三张表
@@ -1067,7 +1072,7 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <blockquote>
 <p><strong>现状</strong>：机制与第一个包（<code>META</code>）已经落地，开关在 <code>qlconfig.h</code>：
 <code>QL_FEAT_UI_META</code>（默认 1）与 <code>QL_CFG_UI_LENIENT_TAGS</code>（默认 0）。
-其余包（<code>TEXT</code> / <code>TABLE</code> / <code>IMAGE</code> / <code>WIDGET</code> / <code>EMBED</code>）随实现追加，
+其余包（<code>TEXT</code> / <code>TABLE</code> / <code>IMAGE</code> / <code>CONTROL</code> / <code>EMBED</code>）随实现追加，
 在那之前它们的标签还不在枚举里，遇到就是"不认识的标签"报错。</p>
 </blockquote>
 <p>解析器先按名字认标签（<code>tag_index()</code>，全量表），再看这个标签所属的包开没开：</p>
@@ -1132,9 +1137,13 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 </tbody>
 </table>
 <p><strong>这就是"HTML5 全支持"的准确含义</strong>：114 个标签<strong>全能编译通过</strong>，
-其中 66 个现在真画、48 个按包补齐后真画或占位、0 个报"不认识的标签"。</p>
+其中 84 个现在真画、30 个按包补齐后真画或占位、0 个报"不认识的标签"。</p>
 <hr />
 <h2 id="6">6. 构建期就该知道结果</h2>
+<blockquote>
+<p><strong>现状</strong>：下面的 <code>--features</code> 参数<strong>还没实现</strong>（<code>qltext check</code> 现在只报"能否编译"）。
+这一节是设计意图 —— 包的名字在这里是<strong>用户可见的报错单位</strong>，所以名字得起对。</p>
+</blockquote>
 <p><code>qltext</code> 拿得到目标平台的能力包，所以不用等到跑起来才发现被降级：</p>
 <div class="highlight"><pre><span></span><code>$<span class="w"> </span>qltext<span class="w"> </span>check<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--features<span class="w"> </span>core,image
 app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </span>个节点，使用标签<span class="w"> </span><span class="m">9</span><span class="w"> </span>种
@@ -1172,7 +1181,7 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 </tr>
 <tr>
 <td>P2a ✅ 已完成</td>
-<td><code>WIDGET</code> 一半：<code>progress</code> <code>meter</code>（value/max → 完成度池）、<code>output</code>、<code>datalist</code></td>
+<td><code>CONTROL</code> 一半：<code>progress</code> <code>meter</code>（value/max → 完成度池）、<code>output</code>、<code>datalist</code></td>
 <td>76</td>
 <td>1 天</td>
 </tr>
@@ -1238,7 +1247,7 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 </tr>
 <tr>
 <td>P5</td>
-<td><code>WIDGET</code> 补齐：<code>textarea</code>（多行编辑）</td>
+<td><code>CONTROL</code> 补齐：<code>textarea</code>（多行编辑）</td>
 <td>91</td>
 <td>2–3 天</td>
 </tr>
@@ -1267,7 +1276,7 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <hr />
 <h2 id="8">8. 与文档其它地方的口径</h2>
 <ul>
-<li>现在（P0 之后）：<strong>已支持 66 / 114</strong>，未支持 48。</li>
+<li>现在：<strong>已支持 84 / 114</strong>，未支持 30（见 §1 的统计行）。</li>
 <li>教程的"<a href="10_vs_web.html">与 Web 的差别</a>"列的是<strong>用户会踩到的差异</strong>，不重复这份清单。</li>
 <li>各标签的 UA 默认样式见<a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>；
   属性白名单见 <a href="QLUI API手册.html">API 手册 §3.2</a>。</li>

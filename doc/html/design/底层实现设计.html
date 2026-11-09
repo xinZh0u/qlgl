@@ -446,9 +446,7 @@ main img.shot { max-width: 100%; }
 <div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/generated/qltype_gen.h  —— 由 tools/qlgen 生成，勿手改 */</span>
 <span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">QL_TYPE_OBJECT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="n">QL_TYPE_WIDGET</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-<span class="w">    </span><span class="n">QL_TYPE_LABEL</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
-<span class="w">    </span><span class="n">QL_TYPE_BUTTON</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/* 其它类追加到这里（当前只有根类） */</span>
 <span class="w">    </span><span class="cm">/* 新类追加到末尾，禁止插入或重排 */</span>
 <span class="w">    </span><span class="n">QL_TYPE_COUNT</span>
 <span class="p">}</span><span class="w"> </span><span class="n">QLTypeBuiltin</span><span class="p">;</span>
@@ -466,7 +464,7 @@ main img.shot { max-width: 100%; }
 <span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLClassReg</span><span class="w"> </span><span class="n">ql_class_reg_table</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_object_class</span><span class="w"> </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_FOO</span><span class="p">,</span><span class="w">    </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_foo_class</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_BUTTON</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_button_class</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="cm">/* 其它类追加到这里 */</span>
 <span class="p">};</span>
 
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_class_init_all</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="w">      </span><span class="cm">/* qlgl_init() 内部调用，顺序即枚举顺序 */</span>
@@ -545,7 +543,7 @@ main img.shot { max-width: 100%; }
 </code></pre></div>
 
 <p>同时把 <code>start = object 的 SPACE_END + 1</code>，保证相邻类区间不重叠：
-根类 <code>OBJECT</code> 占 <code>[1, 100]</code>，<code>WIDGET</code> 占 <code>[101, 200]</code>，<code>LABEL</code> 占 <code>[201, 300]</code> ……</p>
+根类 <code>OBJECT</code> 占 <code>[1, 100]</code>，第一个子类占 <code>[101, 200]</code>，依此类推 ……</p>
 <h3 id="42">4.2 派发</h3>
 <div class="highlight"><pre><span></span><code><span class="cm">/* 计划路径: /src/core/qlprop.c */</span>
 <span class="kt">void</span><span class="w"> </span><span class="nf">ql_object_set_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">v</span><span class="p">)</span>

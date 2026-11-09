@@ -432,8 +432,8 @@ QLUIStyle / QLUIDoc 是 POD，也可以直接暴露给脚本层。
 
 | Web | QLGL 现有 | 说明 |
 |---|---|---|
-| element / tag | 控件 | Web 里没有"控件类"，只有标签 |
-| `style.width` | `QL_WIDGET_PROPERTY_WIDTH` | 对外必须暴露成 CSS 字符串 |
+| element / tag | 标签（`QLUITag`）+ 节点 | 没有"控件类"，只有标签与样式 |
+| `style.width` | `QLUIStyle.width`（构建期算好的 `{值, 单位}`） | 界面用 CSS 写，运行期只读 |
 | layout / reflow | 无（绝对坐标） | 需要新增布局趟 |
 | repaint | 脏矩形重绘 ✅ | 已有 |
 | `addEventListener` | `ql_connect` ✅ | 语义对齐即可 |

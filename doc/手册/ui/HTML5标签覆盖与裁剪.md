@@ -120,22 +120,22 @@
 | 表格 | `<thead>` | `TABLE` | ⏳ 计划 |
 | 表格 | `<tr>` | `TABLE` | ⏳ 计划 |
 | 表单 | `<button>` | `CORE` | ✅ 已支持 |
-| 表单 | `<datalist>` | `WIDGET` | ✅ 已支持 |
+| 表单 | `<datalist>` | `CONTROL` | ✅ 已支持 |
 | 表单 | `<fieldset>` | `CORE` | ✅ 已支持 |
 | 表单 | `<form>` | `CORE` | ✅ 已支持 |
-| 表单 | `<input>` | `CORE` | ✅ 已支持 |
+| 表单 | `<input>` | `CONTROL` | ✅ 已支持 |
 | 表单 | `<label>` | `CORE` | ✅ 已支持 |
 | 表单 | `<legend>` | `CORE` | ✅ 已支持 |
-| 表单 | `<meter>` | `WIDGET` | ✅ 已支持 |
-| 表单 | `<optgroup>` | `CORE` | ✅ 已支持 |
-| 表单 | `<option>` | `CORE` | ✅ 已支持 |
-| 表单 | `<output>` | `WIDGET` | ✅ 已支持 |
-| 表单 | `<progress>` | `WIDGET` | ✅ 已支持 |
-| 表单 | `<select>` | `CORE` | ✅ 已支持 |
-| 表单 | `<textarea>` | `WIDGET` | ⏳ 计划 |
-| 交互 | `<details>` | `WIDGET` | ✅ 已支持 |
-| 交互 | `<dialog>` | `WIDGET` | ✅ 已支持 |
-| 交互 | `<summary>` | `WIDGET` | ✅ 已支持 |
+| 表单 | `<meter>` | `CONTROL` | ✅ 已支持 |
+| 表单 | `<optgroup>` | `CONTROL` | ✅ 已支持 |
+| 表单 | `<option>` | `CONTROL` | ✅ 已支持 |
+| 表单 | `<output>` | `CONTROL` | ✅ 已支持 |
+| 表单 | `<progress>` | `CONTROL` | ✅ 已支持 |
+| 表单 | `<select>` | `CONTROL` | ✅ 已支持 |
+| 表单 | `<textarea>` | `CONTROL` | ⏳ 计划 |
+| 交互 | `<details>` | `CONTROL` | ✅ 已支持 |
+| 交互 | `<dialog>` | `CONTROL` | ✅ 已支持 |
+| 交互 | `<summary>` | `CONTROL` | ✅ 已支持 |
 | 脚本 | `<canvas>` | `EMBED` | ⏳ 计划 |
 | 脚本 | `<noscript>` | `EMBED` | ⏳ 计划 |
 | 脚本 | `<script>` | `EMBED` | ⏳ 计划 |
@@ -154,18 +154,28 @@ P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 
 一个"包"= 一组标签 + 支撑它们的那部分引擎。包是**编译期开关**，也是**构建期报告的单位**。
 
+> **现状（老实说）**：除 `QL_FEAT_UI_META`、`QL_FEAT_UI_IMAGE` 与
+> `QL_FEAT_IMG_*` 之外，表里的宏目前**只有名字、还没进代码**（`grep` 不到）。
+> 它们是"裁剪时的口径"，不是现在能 `-D` 的东西。已落地的开关见
+> [图像管线设计 §2](../design/图像管线设计.html) 与 `include/qlgl/qlconfig.h`。
+
 | 包 | 宏 | 含标签（个数） | PC/移动默认 | MCU 默认 | 依赖 |
 |---|---|---|---|---|---|
-| `CORE` | 恒开 | 66 | ✅ | ✅ | 无（永远有） |
+| `CORE` | 恒开 | 62 | ✅ | ✅ | 无（永远有） |
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
 | `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | ✅ | ❌ | 文本内 `\n`、`white-space: pre`、等宽字体族、行内注音 |
 | `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
 | `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG/GIF`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM` / `QL_FEAT_IMG_LIBJPEG`（JPEG） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
-| `WIDGET` | `QL_FEAT_UI_WIDGET` | 8（`progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | 复用已有池/覆盖层机制 + `
-`（`textarea`） |
+| `CONTROL` | `QL_FEAT_UI_CONTROL` | 12（`input select option optgroup` + `progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | **需要专用运行期状态或覆盖层**：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；`textarea` 复用输入框池 |
 | `EMBED` | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ❌ | **只做占位盒 / 忽略**，见 §5 |
 
-`CORE` 里那 66 个就是现在能画的那批（含 `<input>` / `<select>` / 滚动容器）。
+`CORE` 里那 62 个是"不需要任何额外运行期机制、只靠样式+布局就能画"的那批
+（含滚动容器）。**判据是"要不要专用机制"，不是"有没有状态"**：
+
+- `<input>` / `<select>` 是状态最重的两个（光标、选区、覆盖面板），但正因为如此
+  它们必须能被裁 —— 所以归 `CONTROL`；
+- `<output>` / `<datalist>` 其实零成本（前者等价 `span`，后者 `display:none`），
+  仍归 `CONTROL` 是因为**用户视角它们是表单控件**，一起裁更省心。
 
 ---
 
@@ -194,7 +204,7 @@ P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 
 > **现状**：机制与第一个包（`META`）已经落地，开关在 `qlconfig.h`：
 > `QL_FEAT_UI_META`（默认 1）与 `QL_CFG_UI_LENIENT_TAGS`（默认 0）。
-> 其余包（`TEXT` / `TABLE` / `IMAGE` / `WIDGET` / `EMBED`）随实现追加，
+> 其余包（`TEXT` / `TABLE` / `IMAGE` / `CONTROL` / `EMBED`）随实现追加，
 > 在那之前它们的标签还不在枚举里，遇到就是"不认识的标签"报错。
 
 解析器先按名字认标签（`tag_index()`，全量表），再看这个标签所属的包开没开：
@@ -224,11 +234,14 @@ P3e 加 `picture`/`source`/`map`/`area`）、**⏳ 30 个**、**❌ 0 个**。
 | `svg` `math` | 各自需要独立渲染器（等于写第二个 QLGL） | 空盒子占位 |
 
 **这就是"HTML5 全支持"的准确含义**：114 个标签**全能编译通过**，
-其中 66 个现在真画、48 个按包补齐后真画或占位、0 个报"不认识的标签"。
+其中 84 个现在真画、30 个按包补齐后真画或占位、0 个报"不认识的标签"。
 
 ---
 
 ## 6. 构建期就该知道结果
+
+> **现状**：下面的 `--features` 参数**还没实现**（`qltext check` 现在只报"能否编译"）。
+> 这一节是设计意图 —— 包的名字在这里是**用户可见的报错单位**，所以名字得起对。
 
 `qltext` 拿得到目标平台的能力包，所以不用等到跑起来才发现被降级：
 
@@ -253,7 +266,7 @@ app.html: 42 个节点，使用标签 9 种
 |---|---|---|---|
 | P0 ✅ 已完成 | 31 个纯语义标签（`a` `code` `del` `ins` `dl` `form` `fieldset`…） | 66 | 1 天 |
 | P1 ✅ 已完成 | `META` 包：元数据标签一律跳过（`<style>` 内容整段不解析）+ 包机制骨架 | 72 | 0.5 天 |
-| P2a ✅ 已完成 | `WIDGET` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
+| P2a ✅ 已完成 | `CONTROL` 一半：`progress` `meter`（value/max → 完成度池）、`output`、`datalist` | 76 | 1 天 |
 | P2b ✅ 已完成 | `details` `summary`：收起时把子节点指向共享隐藏样式 | 78 | 0.5 天 |
 | P2c ✅ 已完成 | `dialog`：真正的浮层（居中 + 遮罩 + `Esc` / 点外面关闭） | 79 | 1 天 |
 | P3a ✅ 已完成 | `QLImage` + `blit_image`（**CPU + GPU**）+ `<img>` + doc 资源段（blob v13）+ 固有尺寸 | 80 | 3–4 天 |
@@ -264,7 +277,7 @@ app.html: 42 个节点，使用标签 9 种
 | P3c ✅ 已完成 | PNG 解码（`qlinflate.c` + 容器：位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6 × filter 0–4）+ 对拍 + fuzz | 84 | 3–4 天 |
 | P3g ✅ 已完成 | 平台后端接口 + libjpeg-turbo 参考实现（JPEG）+ **GIF 首帧（自有 LZW）** | 84 | 1 天 |
 | P4 | `TEXT` 包：文本内 `\n` + `white-space: pre` + 等宽字体 + `sub`/`sup` + `ruby` | 90 | 5–6 天 |
-| P5 | `WIDGET` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
+| P5 | `CONTROL` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |
 | P7 | `EMBED` 包：13 个占位盒 + `script` 内容跳过 | 114 | 1–2 天 |
 | P8 | `<input>` 的其余 `type`（`checkbox` `radio` `range` `number` `search`） | — | 3–5 天 |
@@ -276,7 +289,7 @@ app.html: 42 个节点，使用标签 9 种
 
 ## 8. 与文档其它地方的口径
 
-- 现在（P0 之后）：**已支持 66 / 114**，未支持 48。
+- 现在：**已支持 84 / 114**，未支持 30（见 §1 的统计行）。
 - 教程的"[与 Web 的差别](10_vs_web.html)"列的是**用户会踩到的差异**，不重复这份清单。
 - 各标签的 UA 默认样式见[阅读指南 §5.4.7](QLUI阅读指南.html)；
   属性白名单见 [API 手册 §3.2](QLUI API手册.html)。
