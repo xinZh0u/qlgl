@@ -73,14 +73,14 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `input` | `display:inline-block`，带内边距/边框/圆角；`type` 只支持 `text` / `password` |
 | `select` / `option` | 与 `input` 同形 / **`display:none`**（只活在面板里） |
 
-目前认 **80 个**（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+目前认 **101 个**（HTML5 共 114 个；其中 13 个是占位盒）。全量清单、每个标签的状态与能力包见
 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)；UA 默认样式细节见
 [阅读指南 §5.4.7](QLUI阅读指南.html)。
 
 **限制**：
 - 文档必须**有且只有一个根元素**；
 - 元素不能同时包含文本和子元素（混合内容）→ 报错，请把文本包进 `<span>`；
-- `img` / `table` / `textarea` / 任意未实现的 `type` → 报错，错误信息给出替代做法；
+- `table` 全家 / `ruby` `rt` `rp` / 任意未实现的 `<input type>` → 报错，错误信息给出替代做法；
 
 ---
 
@@ -113,7 +113,10 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `background` / `background-color` | 颜色，或 `linear-gradient(...)`（见 §3.5） | |
 | `box-shadow` | `<dx> <dy> [blur] <color>` | 软阴影，SDF 实现，单趟。`none` 关闭 |
 | `color` | 颜色 | |
-| `font-size` | `Npx` | 任意整数；生成期汇总成 `font_sizes` 表，运行期按字号取 `ql_font_default(N)`（配置了矢量字体就是该字号的动态字体，支持中文；否则回落到内置 12/16 位图字体） |
+| `font-size` | `Npx` `smaller` `larger` | 任意整数；生成期汇总成 `font_sizes` 表，运行期按字号取字体。`smaller` = 父级 ×5/6、`larger` = 父级 ×6/5（相对父级，所以标题里的上标也协调） |
+| `font-family` | `monospace`（含 `mono` 的候选名）、其他一律正文 | 只有**两级**：`QL_UI_FAMILY_DEFAULT` / `QL_UI_FAMILY_MONO`。写 `Arial, sans-serif` 不报错，落到正文 |
+| `white-space` | `nowrap`（**默认**）`normal` `pre` `pre-wrap` `pre-line` | 见 §3.2.1 |
+| `vertical-align` | `baseline`（默认）`sub` `super` | 基线偏移 = 自身字号 × ±(33%/20%)；**不改行盒高度**。`middle`/`top`/`bottom` 明确报错 |
 | `text-align` | `left` `center` `right` | |
 | `box-sizing` | `content-box` `border-box` | 默认 `content-box`（与浏览器一致） |
 | `flex` / `flex-grow` / `flex-shrink` / `flex-basis` | `1` / `1 0 auto` / `0 0 100px` | 见 §3.8 |
@@ -126,6 +129,32 @@ target_include_directories(app PRIVATE ${UI_OUT})
 | `top` / `right` / `bottom` / `left` | `Npx` `N%` `auto` | 仅非 static 时生效 |
 | `z-index` | 整数（int16） | 同级兄弟间排序 |
 | `overflow` | `visible` `hidden` `auto`（`scroll` 视同 `auto`） | `hidden`/`auto` 都裁掉溢出 |
+
+#### 3.2.1 `white-space` 与空白折叠的时机
+
+`white-space` 既管"折不折行"，也管"空白留不留"：
+
+| 值 | 空白 | 换行 `\n` | 自动折行 |
+|---|---|---|---|
+| `nowrap`（**默认**，与浏览器不同） | 折叠 | 保留 | 不折 |
+| `normal` | 折叠 | 保留 | 折 |
+| `pre` | 保留 | 保留 | 不折 |
+| `pre-wrap` | 保留 | 保留 | 折 |
+| `pre-line` | 折叠 | 保留 | 折 |
+
+**折叠发生在建表期，不是解析期。** 原因：`white-space` 是级联之后才知道的，而折叠要
+改文本字节。所以原始空白一路留到样式算好之后再折叠 —— 这样 `<pre>` 标签和
+`div { white-space: pre }` 两条路都能生效。对非 `pre*` 的页面结果与旧版本逐字节相同。
+
+`\t` 在保留模式下展开成空格（制表位 8 列，按**列数**而不是像素宽），
+否则制表符落到字体查不到的字形上、宽度 0，整块缩进消失。
+
+`<pre>` / `<textarea>` 起始标签后紧接的**一个** `\n` 会被丢掉（HTML 的
+"ignore the first newline" 规则）。
+
+**已知限制**：`pre*` 的**行首空格**只在 `<pre>` / `<textarea>` 元素上保留 ——
+给普通 `div` 写 `white-space: pre` 时，行首空白已经在解析期作为"元素内容两端"
+被 strip 掉了（strip 是结构性的，必须在解析期做）。
 
 ### 3.3 颜色写法
 

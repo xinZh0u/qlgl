@@ -65,7 +65,7 @@
 | 分组 | `<menu>` | `CORE` | ✅ 已支持 |
 | 分组 | `<ol>` | `CORE` | ✅ 已支持 |
 | 分组 | `<p>` | `CORE` | ✅ 已支持 |
-| 分组 | `<pre>` | `TEXT` | ⏳ 计划 |
+| 分组 | `<pre>` | `TEXT` | ✅ 已实现 |
 | 分组 | `<ul>` | `CORE` | ✅ 已支持 |
 | 行内文本 | `<a>` | `CORE` | ✅ 已支持 |
 | 行内文本 | `<abbr>` | `CORE` | ✅ 已支持 |
@@ -90,8 +90,8 @@
 | 行内文本 | `<small>` | `CORE` | ✅ 已支持 |
 | 行内文本 | `<span>` | `CORE` | ✅ 已支持 |
 | 行内文本 | `<strong>` | `CORE` | ✅ 已支持 |
-| 行内文本 | `<sub>` | `TEXT` | ⏳ 计划 |
-| 行内文本 | `<sup>` | `TEXT` | ⏳ 计划 |
+| 行内文本 | `<sub>` | `TEXT` | ✅ 已实现 |
+| 行内文本 | `<sup>` | `TEXT` | ✅ 已实现 |
 | 行内文本 | `<time>` | `CORE` | ✅ 已支持 |
 | 行内文本 | `<u>` | `CORE` | ✅ 已支持 |
 | 行内文本 | `<var>` | `CORE` | ✅ 已支持 |
@@ -132,7 +132,7 @@
 | 表单 | `<output>` | `CONTROL` | ✅ 已支持 |
 | 表单 | `<progress>` | `CONTROL` | ✅ 已支持 |
 | 表单 | `<select>` | `CONTROL` | ✅ 已支持 |
-| 表单 | `<textarea>` | `CONTROL` | ⏳ 计划 |
+| 表单 | `<textarea>` | `CONTROL` | ✅ 已实现 |
 | 交互 | `<details>` | `CONTROL` | ✅ 已支持 |
 | 交互 | `<dialog>` | `CONTROL` | ✅ 已支持 |
 | 交互 | `<summary>` | `CONTROL` | ✅ 已支持 |
@@ -144,13 +144,14 @@
 | SVG / MathML | `<math>` | `EMBED` | ✅ 占位 |
 | SVG / MathML | `<svg>` | `EMBED` | ✅ 占位 |
 
-统计：**✅ 97 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+统计：**✅ 101 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
 P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`、
-P3e 加 `picture`/`source`/`map`/`area`、P7 加 13 个占位标签）、
-**⏳ 17 个**、**❌ 0 个**。
+P3e 加 `picture`/`source`/`map`/`area`、P7 加 13 个占位标签、
+P4a/P4b 加 `pre`/`sub`/`sup`、P5 加 `textarea`）、
+**⏳ 13 个**、**❌ 0 个**。
 
-其中 97 个里 **13 个是占位**（`EMBED` 包，只画提示盒或不产生盒子），
-真正按 HTML 语义渲染的是 **84 个**。
+其中 101 个里 **13 个是占位**（`EMBED` 包，只画提示盒或不产生盒子），
+真正按 HTML 语义渲染的是 **88 个**。
 
 ---
 
@@ -167,7 +168,7 @@ P3e 加 `picture`/`source`/`map`/`area`、P7 加 13 个占位标签）、
 |---|---|---|---|---|---|
 | `CORE` | 恒开 | 62 | ✅ | ✅ | 无（永远有） |
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
-| `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | ✅ | ❌ | 文本内 `\n`、`white-space: pre`、等宽字体族、行内注音 |
+| `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | 4/6 ✅ | ❌ | 已做：`white-space: pre/pre-wrap/pre-line`、`vertical-align: sub/super`、两级字体族；未做：`ruby`/`rt`/`rp` 行内注音 |
 | `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
 | `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG/GIF`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM` / `QL_FEAT_IMG_LIBJPEG`（JPEG） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `CONTROL` | `QL_FEAT_UI_CONTROL` | 12（`input select option optgroup` + `progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | **需要专用运行期状态或覆盖层**：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；`textarea` 复用输入框池 |
@@ -332,6 +333,10 @@ app.html: 42 个节点，使用标签 9 种
 | P5 | `CONTROL` 补齐：`textarea`（多行编辑） | 91 | 2–3 天 |
 | P6 | `TABLE` 包：表格布局算法 | 101 | 5–8 天（**风险最高**） |
 | P7 ✅ 已完成 | `EMBED` 包：13 个占位盒 + `script`/`svg`/`math`/`template` 内容跳过 | 114 | 1–2 天 |
+| P4a ✅ 已完成 | `TEXT`：`white-space: pre / pre-wrap / pre-line`（空白折叠推迟到建表期）+ `<pre>` | 111 | 1–2 天 |
+| P4b ✅ 已完成 | `TEXT`：`<sub>` / `<sup>`（`vertical-align: sub/super`）+ `font-size: smaller/larger` | 113 | 1 天 |
+| P4c ✅ 已完成 | `TEXT`：等宽字体族两级（`font-family: monospace` → `ql_font_mono`） | 113 | 0.5 天 |
+| P5 ✅ 已完成 | `CONTROL`：`<textarea>` 多行编辑（独立 arena、视觉行光标、sticky 列） | 114* | 1–2 天 |
 | P8 | `<input>` 的其余 `type`（`checkbox` `radio` `range` `number` `search`） | — | 3–5 天 |
 
 总计约 **24–34 人日**。P6 单独标风险：它是唯一一处"要从零写一套布局算法"的地方，
@@ -341,7 +346,7 @@ app.html: 42 个节点，使用标签 9 种
 
 ## 8. 与文档其它地方的口径
 
-- 现在：**已支持 97 / 114**（含 13 个占位），未支持 17（见 §1 的统计行）。
+- 现在：**已支持 101 / 114**（含 13 个占位），未支持 13（见 §1 的统计行）。
 - 教程的"[与 Web 的差别](10_vs_web.html)"列的是**用户会踩到的差异**，不重复这份清单。
 - 各标签的 UA 默认样式见[阅读指南 §5.4.7](QLUI阅读指南.html)；
   属性白名单见 [API 手册 §3.2](QLUI API手册.html)。

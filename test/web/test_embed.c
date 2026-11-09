@@ -77,12 +77,19 @@ QL_TEST_BEGIN("test_embed")
             "iframe", "embed", "object", "audio", "video", "track", "canvas",
             "script", "noscript", "slot", "template", "svg", "math",
         };
-        const int before = (int)QL_UI_TAG_COUNT - (int)(sizeof(k_tags) / sizeof(k_tags[0]));
-        QL_CHECK_EQ(before >= 0, 1);
-
         for (size_t i = 0; i < sizeof(k_tags) / sizeof(k_tags[0]); i++) {
-            /* 枚举值必须等于"表内下标"，这是三张表同序的契约 */
-            const int idx = before + (int)i;
+            /*
+             * 枚举值必须等于"表内下标"，这是三张表同序的契约。
+             * 这里**按名字查**而不是按算术推：后加的包会追加在枚举末尾，
+             * 算术推出来的偏移会跟着变，查名字才不受影响。
+             */
+            int idx = -1;
+            for (int t = 0; t < (int)QL_UI_TAG_COUNT; t++)
+                if (strcmp(ql_ui_tag_name((uint16_t)t), k_tags[i]) == 0) {
+                    idx = t;
+                    break;
+                }
+            QL_CHECK(idx >= 0);
             QL_CHECK(strcmp(ql_ui_tag_name((uint16_t)idx), k_tags[i]) == 0);
 
             char html[256];

@@ -23,6 +23,8 @@ set(QL_EXAMPLES
     09_scroll
     10_input
     11_semantic
+    12_text_block
+    13_form
 )
 
 foreach(e ${QL_EXAMPLES})

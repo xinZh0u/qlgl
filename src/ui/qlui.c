@@ -58,6 +58,9 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     /* --- EMBED 包：只做占位的 13 个 --- */
     "iframe", "embed", "object", "audio", "video", "track", "canvas",
     "script", "noscript", "slot", "template", "svg", "math",
+    /* --- TEXT 包（P4） --- */
+    "pre", "sub", "sup",
+    "textarea",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -111,11 +114,24 @@ struct QLUISelectState {
  */
 struct QLUIInput {
     QLUINodeRT *node;
-    char        buf[QL_CFG_UI_INPUT_LEN];
+    /*
+     * 可变文本。**指针**而不是内联数组：单行框用结构体里自带的 line[]，
+     * 多行框指向共享的 textarea arena（缓冲大得多，不能给每个单行框都背上）。
+     */
+    char       *buf;
     uint16_t    len;      /* 字节数（不含结尾 0） */
     uint16_t    caret;    /* 光标：字节偏移，0..len */
     uint16_t    sel;      /* 选区锚点；== caret 表示没有选区 */
     ql_coord_t  scroll_x; /* 文本比盒子宽时横向滚动的像素 */
+    ql_coord_t  scroll_y; /* 多行：纵向滚动的像素（单行恒 0） */
+    uint8_t     multiline;/* 1 = <textarea> */
+    /*
+     * 上下键要用"记住的横向位置"而不是当前行的实际 x：
+     * 从长行移到短行时光标会被夹到行尾，再移回去应该回到原来的列
+     * （浏览器的 sticky column）。-1 = 无效，下次需要重新量。
+     */
+    ql_coord_t  want_x;
+    char        line[QL_CFG_UI_INPUT_LEN];   /* 单行框的存储 */
 };
 
 /*
@@ -212,11 +228,26 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
      * 顺便把每个输入框的 node->text 指到池里的可变缓冲 —— 之后编辑只改缓冲，
      * 绘制、ql_ui_set_text 那套一行都不用改。
      */
+    uint16_t n_ta = 0;
     for (uint16_t i = 0; i < doc->node_count; i++) {
-        if (doc->nodes[i].tag == QL_UI_TAG_INPUT) {
+        if (doc->nodes[i].tag == QL_UI_TAG_INPUT)
             ui->input_count = (uint16_t)(ui->input_count + 1u);
-        }
+        else if (doc->nodes[i].tag == QL_UI_TAG_TEXTAREA)
+            n_ta = (uint16_t)(n_ta + 1u);
     }
+    if (n_ta > QL_CFG_UI_TEXTAREA_MAX)
+        n_ta = QL_CFG_UI_TEXTAREA_MAX;
+    if (n_ta > 0) {
+        ui->ta_arena = (char *)ql_mem_calloc(n_ta, QL_CFG_UI_TEXTAREA_LEN);
+        if (ui->ta_arena == NULL) {
+            ql_ui_free(ui);
+            return NULL;
+        }
+        ui->ta_count = n_ta;
+    }
+    if (n_ta > 0)
+        ui->input_count = (uint16_t)(ui->input_count + n_ta);
+
     if (ui->input_count > 0) {
         if (ui->input_count > QL_CFG_UI_INPUT_MAX)
             ui->input_count = QL_CFG_UI_INPUT_MAX;
@@ -227,17 +258,33 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
             return NULL;
         }
         uint16_t k = 0;
+        uint16_t ta_slot = 0;
         for (uint16_t i = 0; i < doc->node_count && k < ui->input_count; i++) {
             QLUINodeRT *rt = &ui->nodes[i];
-            if (rt->src->tag != QL_UI_TAG_INPUT)
+            const int is_ta = (rt->src->tag == QL_UI_TAG_TEXTAREA);
+            if (rt->src->tag != QL_UI_TAG_INPUT && !is_ta)
                 continue;
             struct QLUIInput *in = &ui->inputs[k++];
             in->node = rt;
-            /* 初始值 = 解析期从 value 属性带进来的文本（可能没有） */
+            /*
+             * 多行框从 arena 里切一段；单行框用结构体自带的 line[]。
+             * 两者都走 in->buf，所以后面所有编辑逻辑**只有一份**。
+             */
+            uint16_t cap;
+            if (is_ta && ta_slot < ui->ta_count) {
+                in->buf = ui->ta_arena + (size_t)ta_slot * QL_CFG_UI_TEXTAREA_LEN;
+                in->multiline = 1;
+                cap = QL_CFG_UI_TEXTAREA_LEN;
+                ta_slot++;
+            } else {
+                in->buf = in->line;
+                cap = QL_CFG_UI_INPUT_LEN;
+            }
+            /* 初始值 = 解析期带进来的文本（`value` 属性或 `<textarea>` 的内容） */
             const char *init = rt->text;
             size_t n = (init != NULL) ? strlen(init) : 0u;
-            if (n > (size_t)QL_CFG_UI_INPUT_LEN - 1u)
-                n = (size_t)QL_CFG_UI_INPUT_LEN - 1u;
+            if (n > (size_t)cap - 1u)
+                n = (size_t)cap - 1u;
             if (n > 0)
                 memcpy(in->buf, init, n);
             in->buf[n] = '\0';
@@ -469,6 +516,7 @@ void ql_ui_free(QLUIRoot *ui)
         ql_mem_free(ui->images);
     }
     ql_mem_free(ui->progresses);
+    ql_mem_free(ui->ta_arena);
     ql_mem_free(ui->inputs);
     ql_mem_free(ui->selects);
     ql_mem_free(ui->nodes);
@@ -509,7 +557,9 @@ static const QLFont *font_of_style(const QLUINodeRT *node, const QLUIStyle *styl
         if (doc->font_sizes != NULL && style->font_id < doc->font_size_count)
             size = (int)doc->font_sizes[style->font_id];
     }
-    return ql_font_default(size > 0 ? size : 16);
+    const int px = (size > 0) ? size : 16;
+    return (style->font_family == QL_UI_FAMILY_MONO) ? ql_font_mono(px)
+                                                    : ql_font_default(px);
 }
 
 static ql_coord_t inner_width_of(const QLUIStyle *style, ql_coord_t content_w)
@@ -929,11 +979,56 @@ static uint16_t next_boundary(const char *text, uint16_t len, uint16_t off)
     return (nx > len) ? len : nx;
 }
 
+/* ------------------------------ 多行光标计算 ------------------------------ */
+
+/*
+ * 把输入串按盒子宽折成视觉行（`\n` 是硬换行）。
+ * `lines` 为 NULL 时只数行数。上限是 QL_CFG_TEXT_MAX_LINES。
+ */
+static int input_visual_lines(const QLFont *font, const struct QLUIInput *in,
+                              ql_coord_t box_w, QLTextLine *lines, int max)
+{
+    return ql_text_wrap(font, in->buf, box_w, lines, max);
+}
+
+/* 字节偏移落在第几个视觉行（lines 的 start 指向 buf 内部） */
+static int line_index_of(const char *base, const QLTextLine *lines, int count,
+                         uint16_t off)
+{
+    int li = 0;
+    for (int i = 0; i < count; i++) {
+        const uint16_t s = (uint16_t)(lines[i].start - base);
+        if (s <= off)
+            li = i;
+        else
+            break;
+    }
+    return li;
+}
+
+/* 光标在内容盒内的位置（相对 content_box 左上角，未减去滚动） */
+static void caret_px(const QLFont *font, const struct QLUIInput *in,
+                     const QLTextLine *lines, int count, ql_coord_t line_h,
+                     ql_coord_t *out_x, ql_coord_t *out_y)
+{
+    int li = line_index_of(in->buf, lines, count, in->caret);
+    const QLTextLine *ln = &lines[li];
+    const uint16_t ls = (uint16_t)(ln->start - in->buf);
+    const uint16_t rel = (in->caret > ls) ? (uint16_t)(in->caret - ls) : 0u;
+    /* 行尾之后跟着尾部空白被 trim 过，光标仍要能落到"逻辑行尾" */
+    const uint16_t measure = (uint16_t)((rel <= ln->len) ? rel : ln->len);
+    *out_x = ql_font_line_width(font, ln->start, (int32_t)measure);
+    *out_y = (ql_coord_t)li * line_h;
+}
+
 static struct QLUIInput *input_of(const QLUIRoot *ui, const QLUINodeRT *node)
 {
     if (ui == NULL || node == NULL || ui->inputs == NULL)
         return NULL;
-    if (node->src == NULL || node->src->tag != QL_UI_TAG_INPUT)
+    if (node->src == NULL)
+        return NULL;
+    if (node->src->tag != QL_UI_TAG_INPUT &&
+        node->src->tag != QL_UI_TAG_TEXTAREA)
         return NULL;
     for (uint16_t i = 0; i < ui->input_count; i++)
         if (ui->inputs[i].node == node)
@@ -970,18 +1065,25 @@ static uint16_t input_drop_selection(struct QLUIInput *in)
 }
 
 /* 在光标处插入一段 UTF-8；超长就截断（不报错：用户打字不该因为满而失败） */
-static void input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
+/* 这个输入框的缓冲容量（含结尾 0），单行与多行不同 */
+static uint16_t input_cap(const struct QLUIInput *in)
+{
+    return in->multiline ? (uint16_t)QL_CFG_UI_TEXTAREA_LEN
+                         : (uint16_t)QL_CFG_UI_INPUT_LEN;
+}
+
+static int input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
 {
     size_t add = strlen(s);
     if (add == 0)
-        return;
+        return 0;
     (void)input_drop_selection(in);
 
-    const size_t room = (size_t)(QL_CFG_UI_INPUT_LEN - 1u) - in->len;
+    const size_t room = (size_t)input_cap(in) - 1u - in->len;
     if (add > room)
         add = room;
     if (add == 0)
-        return;
+        return 0;      /* 满了：静默截断（打字不该因为"满了"而失败） */
 
     memmove(in->buf + in->caret + add, in->buf + in->caret,
             (size_t)(in->len - in->caret) + 1u);
@@ -990,6 +1092,45 @@ static void input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
     in->caret = (uint16_t)(in->caret + add);
     in->sel = in->caret;
     input_emit(ui, in);
+    return 1;
+}
+
+/* 光标移完把视图滚到能看见它（横向单行 / 纵向多行） */
+static void input_scroll_to_caret(struct QLUIInput *in)
+{
+    if (in->node == NULL)
+        return;
+    const QLFont *font = font_of_style(in->node, in->node->style);
+    if (font == NULL)
+        return;
+    const QLRect cb = in->node->content_box;
+    const ql_coord_t lh = line_height_of(font);
+
+    ql_coord_t cx = 0, cy = 0;
+    if (in->multiline) {
+        QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+        int count = input_visual_lines(font, in, cb.w, lines, QL_CFG_TEXT_MAX_LINES);
+        if (count > QL_CFG_TEXT_MAX_LINES)
+            count = QL_CFG_TEXT_MAX_LINES;
+        if (count > 0)
+            caret_px(font, in, lines, count, lh, &cx, &cy);
+        /* 竖直：整行露出来（上边界优先，与浏览器一致） */
+        if (cy - in->scroll_y < 0)
+            in->scroll_y = cy;
+        else if (cy + lh - in->scroll_y > cb.h)
+            in->scroll_y = cy + lh - cb.h;
+        if (in->scroll_y < 0)
+            in->scroll_y = 0;
+    } else {
+        cx = ql_font_line_width(font, in->buf, (int32_t)in->caret);
+    }
+    /* 横向：留 1px 余量，别让光标贴着边框 */
+    if (cx - in->scroll_x < 0)
+        in->scroll_x = cx;
+    else if (cx - in->scroll_x > cb.w - 2 && cb.w > 2)
+        in->scroll_x = cx - (cb.w - 2);
+    if (in->scroll_x < 0)
+        in->scroll_x = 0;
 }
 
 static void input_set_caret(QLUIRoot *ui, struct QLUIInput *in, uint16_t pos, int extend)
@@ -999,13 +1140,38 @@ static void input_set_caret(QLUIRoot *ui, struct QLUIInput *in, uint16_t pos, in
     in->caret = pos;
     if (!extend)
         in->sel = pos;
+    in->want_x = -1;      /* 横向位置变了：上下键重新量 */
+    input_scroll_to_caret(in);
     if (in->node != NULL)
         in->node->flags |= QL_UI_RT_DIRTY;
     (void)ui;
 }
 
 /* 点进来：聚焦 + 定光标（并开始拖动选字） */
-static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x)
+/* 多行：按 y 找到视觉行，再在行内按 x 定位 */
+static uint16_t caret_at_xy(const QLFont *font, const struct QLUIInput *in,
+                            ql_coord_t box_w, ql_coord_t line_h,
+                            ql_coord_t x, ql_coord_t y)
+{
+    QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+    int count = input_visual_lines(font, in, box_w, lines, QL_CFG_TEXT_MAX_LINES);
+    if (count <= 0)
+        return 0;
+    if (count > QL_CFG_TEXT_MAX_LINES)
+        count = QL_CFG_TEXT_MAX_LINES;
+    int li = (line_h > 0 && y > 0) ? (int)(y / line_h) : 0;
+    if (li >= count)
+        li = count - 1;
+    const QLTextLine *ln = &lines[li];
+    const uint16_t ls = (uint16_t)(ln->start - in->buf);
+    const ql_coord_t rel = (x > 0) ? x : 0;
+    const uint16_t within = caret_at_px(font, ln->start, (uint16_t)ln->len,
+                                       rel > 0 ? rel : 0);
+    return (uint16_t)(ls + within);
+}
+
+static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x,
+                              ql_coord_t y)
 {
     struct QLUIInput *in = input_of(ui, node);
     if (in == NULL)
@@ -1014,8 +1180,16 @@ static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x)
     const QLFont *font = font_of_style(node, node->style);
     const QLRect cb = node->content_box;
     const ql_coord_t rel = x - cb.x + in->scroll_x;
-    const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
-    input_set_caret(ui, in, pos, 0);
+    if (in->multiline) {
+        /* 多行：y 定行、x 定列。行高用绘制时的同一个值 */
+        const ql_coord_t lh = line_height_of(font);
+        const ql_coord_t ry = y - cb.y + in->scroll_y;
+        const uint16_t pos = caret_at_xy(font, in, cb.w, lh, rel, ry);
+        input_set_caret(ui, in, pos, 0);
+    } else {
+        const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
+        input_set_caret(ui, in, pos, 0);
+    }
     ui->input_drag = 1;
     return 1;
 }
@@ -1071,12 +1245,82 @@ static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
         input_set_caret(ui, in, next_boundary(in->buf, in->len, in->caret), shift);
         return 1;
     case QL_KEY_HOME:
-        input_set_caret(ui, in, 0, shift);
+    case QL_KEY_END: {
+        /*
+         * 单行：整串开头/结尾。多行：**本行**开头/结尾（与浏览器一致）——
+         * 否则 Home 会跳到全文开头，跨十行的 textarea 上基本没法用。
+         */
+        uint16_t pos;
+        if (!in->multiline) {
+            pos = (ev->key == QL_KEY_HOME) ? 0u : in->len;
+        } else {
+            QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+            const QLFont *font = font_of_style(in->node, in->node->style);
+            const ql_coord_t bw = in->node->content_box.w;
+            int count = input_visual_lines(font, in, bw, lines, QL_CFG_TEXT_MAX_LINES);
+            if (count > QL_CFG_TEXT_MAX_LINES)
+                count = QL_CFG_TEXT_MAX_LINES;
+            if (count <= 0) {
+                pos = 0;
+            } else {
+                const int li = line_index_of(in->buf, lines, count, in->caret);
+                const uint16_t ls = (uint16_t)(lines[li].start - in->buf);
+                pos = (ev->key == QL_KEY_HOME) ? ls
+                                               : (uint16_t)(ls + lines[li].len);
+            }
+        }
+        input_set_caret(ui, in, pos, shift);
         return 1;
-    case QL_KEY_END:
-        input_set_caret(ui, in, in->len, shift);
+    }
+    case QL_KEY_UP:
+    case QL_KEY_DOWN: {
+        /* 单行没有"上一行"：上下键应该拿去做别的事（这里是翻页/滚动），所以不吃 */
+        if (!in->multiline)
+            return 0;
+        const QLFont *font = font_of_style(in->node, in->node->style);
+        const ql_coord_t bw = in->node->content_box.w;
+        const ql_coord_t lh = line_height_of(font);
+        QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+        int count = input_visual_lines(font, in, bw, lines, QL_CFG_TEXT_MAX_LINES);
+        if (count > QL_CFG_TEXT_MAX_LINES)
+            count = QL_CFG_TEXT_MAX_LINES;
+        if (count <= 0)
+            return 1;
+        int li = line_index_of(in->buf, lines, count, in->caret);
+        const int want = (ev->key == QL_KEY_UP) ? li - 1 : li + 1;
+        if (want < 0 || want >= count)
+            return 1;      /* 到边界就停住，不跳到全文首/尾 */
+        /*
+         * 横向位置用**记住的** want_x（sticky column）：
+         *   "长行 → 短行 → 长行"要回到原来的列，而不是停在短行的行尾。
+         * want_x 由 input_set_caret 在"非上下键"的移动时置为 -1 失效。
+         */
+        ql_coord_t cx = in->want_x;
+        if (cx < 0) {
+            ql_coord_t cy = 0;
+            caret_px(font, in, lines, count, lh, &cx, &cy);
+            in->want_x = cx;
+        }
+        const QLTextLine *ln = &lines[want];
+        const uint16_t ls = (uint16_t)(ln->start - in->buf);
+        const uint16_t within = caret_at_px(font, ln->start, (uint16_t)ln->len, cx);
+        const uint16_t npos = (uint16_t)(ls + within);
+        /* 直接落位：不经过 input_set_caret，免得把 want_x 清掉 */
+        in->caret = (npos > in->len) ? in->len : npos;
+        if (!shift)
+            in->sel = in->caret;
+        input_scroll_to_caret(in);
+        if (in->node != NULL)
+            in->node->flags |= QL_UI_RT_DIRTY;
         return 1;
+        return 1;
+    }
     case QL_KEY_ENTER:
+        if (in->multiline) {
+            /* 多行：回车就是插入一个 '\n'（走和普通字符同一条插入路径） */
+            if (input_insert(ui, in, "\n"))
+                return 1;
+        }
         if (ui->input_cb != NULL)
             ui->input_cb(ui, in->node, in->buf, ui->input_user);
         return 1;
@@ -1099,8 +1343,8 @@ static int node_is_focusable(const QLUINodeRT *nd)
     if (nd->style->display == QL_UI_DISPLAY_NONE)
         return 0;
     const uint16_t tag = nd->src->tag;
-    return tag == QL_UI_TAG_INPUT || tag == QL_UI_TAG_SELECT ||
-           tag == QL_UI_TAG_BUTTON;
+    return tag == QL_UI_TAG_INPUT || tag == QL_UI_TAG_TEXTAREA ||
+           tag == QL_UI_TAG_SELECT || tag == QL_UI_TAG_BUTTON;
 }
 
 /*
@@ -1298,9 +1542,14 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
              * （ql_text_wrap 传 out = NULL 就只数行），否则会出现
              * "布局按一行算、绘制画了三行"的错位。
              */
-            int lines = 1;
-            if (s->white_space == 1)
-                lines = ql_text_wrap(font, node->text, content_w, NULL, 0);
+            /*
+             * 行数必须和绘制用同一份统计：`ql_text_wrap` 在 max_w = 0 时
+             * 不折行、但仍然按 `\n` 硬换行 —— 所以 `pre` 也走它，
+             * 只是不给宽度。
+             */
+            int lines = ql_text_wrap(font, node->text,
+                                     QL_UI_WS_WRAPS(s->white_space) ? content_w : 0,
+                                     NULL, 0);
             if (lines < 1)
                 lines = 1;
             content_h = lh * (ql_coord_t)lines;
@@ -1470,13 +1719,15 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
                  */
                 const ql_coord_t lh = text_line_h_of(s, font);
                 int lines = 1;
-                if (s->white_space == 1 && font != NULL) {
-                    ql_coord_t inner = avail_w - pad_border - margin;
-                    if (inner > 0) {
-                        lines = ql_text_wrap(font, node->text, inner, NULL, 0);
-                        if (lines < 1)
-                            lines = 1;
+                if (font != NULL) {
+                    ql_coord_t maxw = 0;
+                    if (QL_UI_WS_WRAPS(s->white_space)) {
+                        ql_coord_t inner = avail_w - pad_border - margin;
+                        maxw = (inner > 0) ? inner : 0;
                     }
+                    lines = ql_text_wrap(font, node->text, maxw, NULL, 0);
+                    if (lines < 1)
+                        lines = 1;
                 }
                 own = lh * (ql_coord_t)lines;
             }
@@ -3288,15 +3539,60 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
     #define DISP_OFF(o)                                                        \
         ((uint16_t)((pw) ? (uint16_t)(cp_count(in->buf, (o)) * 3) : (o)))
 
-    /* 选区 */
-    if (in->sel != in->caret && d2d->fill_rect != NULL) {
-        uint16_t a = in->sel;
-        uint16_t b = in->caret;
-        if (a > b) {
-            const uint16_t t = a;
-            a = b;
-            b = t;
+    /*
+     * 多行（textarea）：选区与光标都得按**视觉行**摆。
+     * 单行走下面那条老路径（逐字节量宽度），保持像素级不变。
+     */
+    const ql_coord_t lh = line_height_of(font);
+    const ql_coord_t base_y = cb.y - in->scroll_y;
+
+    uint16_t a = in->sel;
+    uint16_t b = in->caret;
+    if (a > b) {
+        const uint16_t t = a;
+        a = b;
+        b = t;
+    }
+
+    if (in->multiline && d2d->fill_rect != NULL) {
+        QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+        int count = input_visual_lines(font, in, cb.w, lines, QL_CFG_TEXT_MAX_LINES);
+        if (count > QL_CFG_TEXT_MAX_LINES)
+            count = QL_CFG_TEXT_MAX_LINES;
+        if (count > 0) {
+            /* 选区：逐行铺（跨行时每行一段，行尾到行首是两段，不是一个大矩形） */
+            if (a != b) {
+                for (int i = 0; i < count; i++) {
+                    const uint16_t ls = (uint16_t)(lines[i].start - in->buf);
+                    const uint16_t le = (uint16_t)(ls + lines[i].len);
+                    if (b <= ls || a >= le)
+                        continue;
+                    const uint16_t s0 = (a > ls) ? a : ls;
+                    const uint16_t s1 = (b < le) ? b : le;
+                    const ql_coord_t x0 = base_x + ql_font_line_width(font, in->buf + ls,
+                                                                     (int32_t)(s0 - ls));
+                    const ql_coord_t x1 = base_x + ql_font_line_width(font, in->buf + ls,
+                                                                     (int32_t)(s1 - ls));
+                    if (x1 > x0) {
+                        QLRect r = ql_rect_make(x0, base_y + (ql_coord_t)i * lh,
+                                                x1 - x0, lh);
+                        d2d->fill_rect(d2d, r, node->style->text_color, 0x50);
+                    }
+                }
+            }
+            if (ui->focus == node) {
+                ql_coord_t cx = 0, cy = 0;
+                caret_px(font, in, lines, count, lh, &cx, &cy);
+                QLRect r = ql_rect_make(base_x + cx, base_y + cy + 2, 1,
+                                        (lh > 4) ? lh - 4 : lh);
+                d2d->fill_rect(d2d, r, node->style->text_color, 255);
+            }
         }
+        return;
+    }
+
+    /* 选区（单行） */
+    if (a != b && d2d->fill_rect != NULL) {
         const ql_coord_t x0 = base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(a));
         const ql_coord_t x1 = base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(b));
         if (x1 > x0) {
@@ -3431,6 +3727,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
             shown = input_display_text(in, (node->src->flags & QL_UI_NODE_PASSWORD) != 0,
                                        dots, sizeof(dots));
             tbox.x -= in->scroll_x;
+            tbox.y -= in->scroll_y;      /* 多行：纵向滚动（单行恒 0） */
+            tbox.h += in->scroll_y;      /* 文本整体上移后不再被内容盒高度截断 */
         }
 
         QLTextStyle ts;
@@ -3438,7 +3736,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
         ts.color = s->text_color;
         ts.line_h = s->line_h;
         ts.align = s->text_align;
-        ts.wrap = (uint8_t)(s->white_space == 1);
+        ts.wrap = (uint8_t)QL_UI_WS_WRAPS(s->white_space);
+        ts.baseline_dy = (ql_coord_t)s->baseline_dy;
         ts.bold = (uint8_t)((s->font_flags & QL_UI_FONT_BOLD) != 0);
         ts.italic = (uint8_t)((s->font_flags & QL_UI_FONT_ITALIC) != 0);
         ts.deco = (uint8_t)(((s->font_flags & QL_UI_FONT_UNDERLINE) ? QL_TEXT_DECO_UNDERLINE
@@ -4424,8 +4723,9 @@ int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
      * 输入框：点进来就聚焦 + 定光标（并进入"拖动选字"状态）。
      * 命中点是输入框自己（它是 void 元素，没有子节点）。
      */
-    if (hit != NULL && hit->src != NULL && hit->src->tag == QL_UI_TAG_INPUT) {
-        if (input_pointer_down(ui, hit, x))
+    if (hit != NULL && hit->src != NULL &&
+        (hit->src->tag == QL_UI_TAG_INPUT || hit->src->tag == QL_UI_TAG_TEXTAREA)) {
+        if (input_pointer_down(ui, hit, x, y))
             return 1;
     }
 

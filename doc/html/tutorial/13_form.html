@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>多行输入与表单 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html' class='active'>多行输入与表单</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">多行输入与表单</h1>
+<p>上一章讲完 <code>&lt;pre&gt;</code> 与上下标，这一章补上最后一个表单控件：<code>&lt;textarea&gt;</code>。</p>
+<p><img src="../img/13-form.png" alt="反馈表单：单行输入 + 多行输入 + 按钮" width="340"></p>
+<p>完整程序：<code>example/13_form.c</code></p>
+<h2 id="input">一句话说清它和 <code>&lt;input&gt;</code> 的关系</h2>
+<p><strong>同一套输入池、同一个缓冲区模型</strong>，区别只有三处：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>&lt;input&gt;</code></th>
+<th><code>&lt;textarea&gt;</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓冲容量</td>
+<td><code>QL_CFG_UI_INPUT_LEN</code>（默认 96）</td>
+<td><code>QL_CFG_UI_TEXTAREA_LEN</code>（默认 512）</td>
+</tr>
+<tr>
+<td>池</td>
+<td>每个框一份，内联在结构体里</td>
+<td>共享一块 arena，按槽位切</td>
+</tr>
+<tr>
+<td><code>white-space</code></td>
+<td>默认 <code>nowrap</code></td>
+<td>默认 <strong><code>pre-wrap</code></strong></td>
+</tr>
+<tr>
+<td>光标</td>
+<td>单行字节偏移</td>
+<td>（视觉行, 行内 x）+ sticky 列</td>
+</tr>
+<tr>
+<td>Enter</td>
+<td>不插换行（只触发回调）</td>
+<td><strong>插入 <code>'\n'</code></strong></td>
+</tr>
+</tbody>
+</table>
+<p>结构体是这个样子（<code>QLUIRoot.ta_arena</code> 就是那块共享 arena）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">QLUIInput</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">       </span><span class="o">*</span><span class="n">buf</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 单行 → line[]；多行 → arena 里的一段 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w">    </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">caret</span><span class="p">,</span><span class="w"> </span><span class="n">sel</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_coord_t</span><span class="w">  </span><span class="n">scroll_x</span><span class="p">,</span><span class="w"> </span><span class="n">scroll_y</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">     </span><span class="n">multiline</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_coord_t</span><span class="w">  </span><span class="n">want_x</span><span class="p">;</span><span class="w">     </span><span class="cm">/* 上下键记住的横向位置 */</span>
+<span class="w">    </span><span class="kt">char</span><span class="w">        </span><span class="n">line</span><span class="p">[</span><span class="n">QL_CFG_UI_INPUT_LEN</span><span class="p">];</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<p><strong>为什么分池</strong>：8 个单行框各多背 400 字节在 MCU 上不能接受；反过来把多行缓冲
+缩到 96 字节又装不下几行字。两块池各自按需分配 —— 界面里没有 <code>&lt;textarea&gt;</code>
+时 <code>ta_arena == NULL</code>，零字节。</p>
+<div class="highlight"><pre><span></span><code><span class="cp">#ifndef QL_CFG_UI_TEXTAREA_MAX</span>
+<span class="cp">#define QL_CFG_UI_TEXTAREA_MAX      2      </span><span class="cm">/* 一个界面最多几个 */</span>
+<span class="cp">#endif</span>
+<span class="cp">#ifndef QL_CFG_UI_TEXTAREA_LEN</span>
+<span class="cp">#define QL_CFG_UI_TEXTAREA_LEN      512    </span><span class="cm">/* 单个最多多少字节 */</span>
+<span class="cp">#endif</span>
+</code></pre></div>
+
+<h2 id="_2">写一个能填的表单</h2>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">label</span><span class="p">&gt;</span>详细描述<span class="p">&lt;/</span><span class="nt">label</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">textarea</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;d&quot;</span><span class="p">&gt;</span>第一行：复现步骤
+第二行：期望结果<span class="p">&lt;/</span><span class="nt">textarea</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="nt">label</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">block</span><span class="p">;</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">11</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#7A8794</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">textarea</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">block</span><span class="p">;</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">96</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">           </span><span class="k">border-width</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">           </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#11161F</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#E6EDF3</span><span class="p">;</span>
+<span class="w">           </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">11</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">line-height</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">textarea</span><span class="p">:</span><span class="nd">focus</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#7CE0FF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>UA 默认已经给了 <code>display: inline-block</code> / <code>width: 200px</code> / <code>height: 60px</code> /
+<code>white-space: pre-wrap</code> / <code>font-family: monospace</code> / 一圈边框。
+<strong><code>rows</code> / <code>cols</code> 属性不解析</strong> —— HTML 属性进不了样式表，改尺寸请用 CSS。</p>
+<p><code>&lt;textarea&gt;</code> 开始标签后紧接的一个换行同样会被丢掉（和 <code>&lt;pre&gt;</code> 同一条规则），
+所以上面那段 <code>&gt;</code> 后面直接换行写内容不会多出空行。</p>
+<h2 id="_3">键盘行为</h2>
+<table>
+<thead>
+<tr>
+<th>键</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Enter</td>
+<td>插入 <code>'\n'</code>（走和普通字符同一条插入路径）</td>
+</tr>
+<tr>
+<td>Backspace</td>
+<td>行首退格会<strong>合并两行</strong>（就是删掉了那个 <code>\n</code>）</td>
+</tr>
+<tr>
+<td>↑ / ↓</td>
+<td>上一行 / 下一行，<strong>记住横向位置</strong></td>
+</tr>
+<tr>
+<td>Home / End</td>
+<td><strong>本行</strong>首尾（不是全文首尾）</td>
+</tr>
+<tr>
+<td>鼠标点击</td>
+<td>按 y 定行、按 x 定列</td>
+</tr>
+</tbody>
+</table>
+<p><strong>sticky 列</strong>这件事值得单独说：从长行移到短行时光标会被夹到行尾，但再移回长行
+应该回到<strong>原来的列</strong>，而不是停在短行的行尾。所以有个 <code>want_x</code>：</p>
+<ul>
+<li>任何非上下键的光标移动都会把它置为 <code>-1</code>（失效，下次重新量）；</li>
+<li>上下键先看 <code>want_x</code>，失效了就量当前行内 x 并记住。</li>
+</ul>
+<p>单行输入框的 ↑/↓ <strong>不被吃掉</strong>，它们会继续往上传（给外层滚动容器翻页）。</p>
+<h2 id="_4">纵向滚动</h2>
+<p>内容比盒子高时，光标移动会把视图滚到能看见它：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">cy</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">scroll_y</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+<span class="w">    </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">scroll_y</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cy</span><span class="p">;</span><span class="w">                        </span><span class="cm">/* 上方被挡住 */</span>
+<span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">cy</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">lh</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">scroll_y</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">cb</span><span class="p">.</span><span class="n">h</span><span class="p">)</span>
+<span class="w">    </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">scroll_y</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cy</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">lh</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">cb</span><span class="p">.</span><span class="n">h</span><span class="p">;</span><span class="w">            </span><span class="cm">/* 下方被挡住 */</span>
+</code></pre></div>
+
+<p>横向同理（单行框也受益 —— 长文本时光标不再跑出框外）。</p>
+<h2 id="_5">读值与写值</h2>
+<p>和 <code>&lt;input&gt;</code> 完全一样，不需要区分：</p>
+<div class="highlight"><pre><span></span><code><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_input_value</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ta</span><span class="p">));</span><span class="w">       </span><span class="cm">/* 多行值里带真实 &#39;\n&#39; */</span>
+<span class="n">ql_ui_input_set_value</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ta</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;重新填</span><span class="se">\n</span><span class="s">两行&quot;</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 光标移到末尾 */</span>
+</code></pre></div>
+
+<p><code>ql_ui_set_input_cb()</code> 的回调也是同一个 —— 拿到的 <code>value</code> 里含换行。</p>
+<h2 id="_6">一个完整的提交回路</h2>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_input</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">value</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">ui</span><span class="p">;</span><span class="w"> </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">node</span><span class="p">;</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;当前内容：</span><span class="se">\n</span><span class="s">%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">value</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 多行值原样打印 */</span>
+<span class="p">}</span>
+
+<span class="cm">/* 建好界面之后 */</span>
+<span class="n">ql_ui_set_input_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_input</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+</code></pre></div>
+
+<p>没有剪贴板、没有 IME、光标不闪 —— 三条限制与单行输入框完全一致（见第 10 章）。</p>
+<h2 id="_7">与浏览器不同的地方</h2>
+<ol>
+<li><strong><code>rows</code> / <code>cols</code> 属性不解析</strong>，用 CSS 定尺寸（UA 默认 200×60）。</li>
+<li><strong>不折行</strong>时超长的单行会横向滚动，而不是撑出盒子（<code>pre-wrap</code> 默认是折行的，
+   所以只有你显式写 <code>white-space: pre</code> 才会遇到）。</li>
+<li><strong><code>maxlength</code> 不解析</strong>，长度上限是编译期的 <code>QL_CFG_UI_TEXTAREA_LEN</code>。</li>
+<li><strong><code>spellcheck</code> / <code>placeholder</code> 不做</strong>（<code>placeholder</code> 在 <code>&lt;input&gt;</code> 上也没做）。</li>
+</ol>
+<h2 id="_8">到这里为止</h2>
+<p>能力包 <code>TEXT</code>（6 个）与 <code>CONTROL</code>（补齐 <code>textarea</code>）都完成了。
+剩下的是 <code>TABLE</code> 包 —— 10 个标签、唯一要从零写一套布局算法的一期，
+见 <a href="../../design/开发规划.html">开发规划</a>。</p>
+<div class='pager'>
+<a href='../tutorial/12_text.html'><span class='dir'>上一页</span>空白与上下标</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

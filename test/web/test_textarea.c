@@ -1,0 +1,390 @@
+/**
+ * @file    test_textarea.c
+ * @brief   CONTROL 包 P5：`<textarea>` 多行编辑。
+ *
+ * 多行编辑"看起来"只是把单行输入框放大，实际上多出三件事，测试就按这三件分：
+ *   1. **渲染**：换行与行首空白要保留（靠 P4a 的 `white-space: pre-wrap`），
+ *      内容比盒子高时纵向滚动；
+ *   2. **光标**：位置是（视觉行, 行内 x）而不是（单行字节偏移）——
+ *      上下键要保住横向位置、Home/End 是本行首尾、点哪落哪；
+ *   3. **池**：`<textarea>` 与 `<input>` **分池**（缓冲 512 vs 96），
+ *      没有 textarea 的界面零字节。
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "../ql_test.h"
+
+#define W 360
+#define H 240
+
+static QLUIDoc *mk(const char *html, const char *css, QLUIRoot **out_ui)
+{
+    QLUIDoc *doc = ql_ui_load_text(html, css);
+    if (doc == NULL) {
+        printf("  编译失败：%s\n", ql_ui_text_last_error());
+        return NULL;
+    }
+    QLUIRoot *ui = ql_ui_build(doc);
+    if (ui == NULL) {
+        ql_ui_doc_free(doc);
+        return NULL;
+    }
+    ql_ui_layout(ui, W, H);
+    *out_ui = ui;
+    return doc;
+}
+
+static QLUINodeRT *find_tag(QLUIRoot *ui, const char *name, int nth)
+{
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        if (strcmp(ql_ui_tag_name(ui->nodes[i].src->tag), name) != 0)
+            continue;
+        if (nth-- == 0)
+            return &ui->nodes[i];
+    }
+    return NULL;
+}
+
+/* 造一条键盘事件 */
+static void key(QLUIRoot *ui, uint32_t k, uint8_t mods)
+{
+    QLInputEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_KEY_DOWN;
+    ev.key = k;
+    ev.mods = mods;
+    ql_ui_input_event(ui, &ev);
+}
+
+/* 打一串 ASCII */
+static void type(QLUIRoot *ui, const char *s)
+{
+    for (const char *p = s; *p != '\0'; p++) {
+        QLInputEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = QL_INPUT_TEXT;
+        ev.text[0] = *p;
+        ql_ui_input_event(ui, &ev);
+    }
+}
+
+static void click(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
+{
+    QLInputEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_POINTER_DOWN;
+    ev.x = x;
+    ev.y = y;
+    ql_ui_input_event(ui, &ev);
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_POINTER_UP;
+    ev.x = x;
+    ev.y = y;
+    ql_ui_input_event(ui, &ev);
+}
+
+static QLDispDriver *s_disp;
+
+static ql_color_t px(int x, int y)
+{
+    return ql_disp_mem_pixel(s_disp, (ql_coord_t)x, (ql_coord_t)y);
+}
+
+QL_TEST_BEGIN("test_textarea")
+
+    /* ---------- 1. 标签认识 + UA 默认 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            QL_CHECK(ta != NULL);
+            if (ta != NULL) {
+                QL_CHECK_EQ((int)ta->style->display, (int)QL_UI_DISPLAY_INLINE_BLOCK);
+                QL_CHECK_EQ((int)ta->style->white_space, (int)QL_UI_WS_PRE_WRAP);
+                QL_CHECK_EQ((int)ta->style->font_family, (int)QL_UI_FAMILY_MONO);
+                QL_CHECK(ta->style->border_width > 0);
+                QL_CHECK(ta->border_box.h >= 60);
+            }
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 2. 池：分池、按需分配 ---------- */
+    {
+        /* 没有 textarea：arena 为 NULL */
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><input value=a></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK(ui->ta_arena == NULL);
+            QL_CHECK_EQ((int)ui->ta_count, 0);
+            QL_CHECK_EQ((int)ui->input_count, 1);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+        /* 有一个 textarea：arena 分配，且它占另一个池位（input_count 计入） */
+        ui = NULL;
+        doc = mk("<div id=r><input value=a><textarea></textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK(ui->ta_arena != NULL);
+            QL_CHECK_EQ((int)ui->ta_count, 1);
+            QL_CHECK_EQ((int)ui->input_count, 2);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 3. 初始内容：保留换行、丢开头那一个 '\n' ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>\nabc\ndef</textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            QL_CHECK(ta != NULL);
+            QL_CHECK(ta->text != NULL && strcmp(ta->text, "abc\ndef") == 0);
+            if (ta->text != NULL)
+                printf("    初始值 = %s\n", ta->text);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 4. 回车插入换行、退格跨行合并 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            click(ui, ta->content_box.x + 2, ta->content_box.y + 2);
+            type(ui, "ab");
+            key(ui, QL_KEY_ENTER, 0);
+            type(ui, "cd");
+            QL_CHECK(strcmp(ql_ui_input_value(ui, ta), "ab\ncd") == 0);
+            if (ql_ui_input_value(ui, ta) != NULL)
+                printf("    输入后 = %s\n", ql_ui_input_value(ui, ta));
+
+            /* 退格三次：'d'、'c'、再删掉换行（跨行合并）→ "ab" */
+            key(ui, QL_KEY_BACKSPACE, 0);
+            key(ui, QL_KEY_BACKSPACE, 0);
+            key(ui, QL_KEY_BACKSPACE, 0);
+            if (ql_ui_input_value(ui, ta) != NULL)
+                printf("    三次退格后 = [%s]\n", ql_ui_input_value(ui, ta));
+            QL_CHECK(strcmp(ql_ui_input_value(ui, ta), "ab") == 0);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 5. 上下键保住横向位置 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>abcdef\nxyz\n123456</textarea></div>",
+                          "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            /* 光标放到第一行第 3 个字符之后 */
+            const QLFont *font = ql_ui_node_font(ta);
+            const ql_coord_t x3 = ql_font_line_width(font, "abc", 3);
+            click(ui, ta->content_box.x + x3, ta->content_box.y + 2);
+
+            /* 下 → 第二行（"xyz"，短行）应停在行尾 */
+            key(ui, QL_KEY_DOWN, 0);
+            type(ui, "!");
+            QL_CHECK(strcmp(ql_ui_input_value(ui, ta), "abcdef\nxyz!\n123456") == 0);
+            if (ql_ui_input_value(ui, ta) != NULL)
+                printf("    下移后 = %s\n", ql_ui_input_value(ui, ta));
+
+            /* 再下 → 第三行，横向位置回到第 3 列（"12?3456"） */
+            key(ui, QL_KEY_DOWN, 0);
+            type(ui, "?");
+            const char *v = ql_ui_input_value(ui, ta);
+            QL_CHECK(v != NULL && strcmp(v, "abcdef\nxyz!\n123?456") == 0);
+            if (v != NULL)
+                printf("    再下移后 = %s\n", v);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 6. Home / End 是本行首尾（不是全文） ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>aa\nbbbb\ncc</textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            click(ui, ta->content_box.x + 2, ta->content_box.y + 2);
+            /* 到第二行（"bbbb"），End 应落在 'bbbb' 之后，不是全文尾 */
+            key(ui, QL_KEY_DOWN, 0);
+            key(ui, QL_KEY_END, 0);
+            type(ui, "X");
+            const char *v = ql_ui_input_value(ui, ta);
+            QL_CHECK(v != NULL && strcmp(v, "aa\nbbbbX\ncc") == 0);
+            if (v != NULL)
+                printf("    End 后 = %s\n", v);
+
+            /* Home 回本行行首 */
+            key(ui, QL_KEY_HOME, 0);
+            type(ui, "Y");
+            v = ql_ui_input_value(ui, ta);
+            QL_CHECK(v != NULL && strcmp(v, "aa\nYbbbbX\ncc") == 0);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 7. 单行输入框的上/下键不被吃掉 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><input value=ab></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *in = find_tag(ui, "input", 0);
+            click(ui, in->content_box.x + 2, in->content_box.y + 2);
+            /* 上下键对单行框没有语义：值不变（交给外层滚动） */
+            key(ui, QL_KEY_UP, 0);
+            key(ui, QL_KEY_DOWN, 0);
+            QL_CHECK(strcmp(ql_ui_input_value(ui, in), "ab") == 0);
+            /* Enter 不插换行 */
+            key(ui, QL_KEY_ENTER, 0);
+            QL_CHECK(strcmp(ql_ui_input_value(ui, in), "ab") == 0);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 8. 容量：textarea 能吃下远超单行上限的文本 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            click(ui, ta->content_box.x + 2, ta->content_box.y + 2);
+            /* 200 个字符：超过 QL_CFG_UI_INPUT_LEN(96)，但远小于 512 */
+            char big[201];
+            memset(big, 'z', 200);
+            big[200] = '\0';
+            type(ui, big);
+            const char *v = ql_ui_input_value(ui, ta);
+            QL_CHECK(v != NULL && strlen(v) == 200);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 9. set_value / value 往返（含换行） ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            QL_CHECK_EQ((int)ql_ui_input_set_value(ui, ta, "p\nq"), (int)QL_OK);
+            const char *got = ql_ui_input_value(ui, ta);
+            QL_CHECK(got != NULL && strcmp(got, "p\nq") == 0);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 10. 像素：光标画在对应的行上 ---------- */
+    {
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            QLUIRoot *ui = NULL;
+            QLUIDoc *doc = mk("<div id=r><textarea>aa\nbb</textarea></div>",
+                              "#r { width: 200px } textarea { color: #000000;"
+                              " background-color: #FFFFFF }", &ui);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+                /* 点第二行行首：聚焦 + 光标落在第二行 */
+                const QLFont *font = ql_ui_node_font(ta);
+                const ql_coord_t lh = font->line_height;
+                click(ui, ta->content_box.x + 1, ta->content_box.y + lh + 2);
+
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+
+                /* 第二行的行盒范围内应该有竖线（非白） */
+                const QLRect cb = ta->content_box;
+                int col_ink = 0;
+                for (int y = cb.y + lh + 1; y < cb.y + 2 * lh - 1; y++)
+                    if (px(cb.x, y) != 0xFFFFFF)
+                        col_ink++;
+                QL_CHECK(col_ink > 0);
+                printf("    第二行行首竖线像素 %d 个\n", col_ink);
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+            ql_disp_mem_destroy(s_disp);
+        }
+    }
+
+    /* ---------- 11. 纵向滚动：内容高于盒子时光标仍能往下走 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>1\n2\n3\n4\n5\n6</textarea></div>",
+                          "#r { width: 200px } textarea { height: 32px }", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            click(ui, ta->content_box.x + 1, ta->content_box.y + 1);
+            for (int i = 0; i < 5; i++)
+                key(ui, QL_KEY_DOWN, 0);
+            type(ui, "Z");
+            const char *v = ql_ui_input_value(ui, ta);
+            QL_CHECK(v != NULL && strchr(v, 'Z') != NULL);
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 12. blob 往返：textarea 仍然是多行可编辑 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>m\nn</textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            size_t cap = ql_ui_doc_encode(doc, NULL, 0);
+            void *buf = (cap > 0) ? malloc(cap) : NULL;
+            QL_CHECK(buf != NULL);
+            if (buf != NULL) {
+                QL_CHECK_EQ((int)ql_ui_doc_encode(doc, buf, cap), (int)cap);
+                QLUIDoc *back = ql_ui_doc_load_mem(buf, cap);
+                QL_CHECK(back != NULL);
+                if (back != NULL) {
+                    QLUIRoot *ui2 = ql_ui_build(back);
+                    QL_CHECK(ui2 != NULL);
+                    if (ui2 != NULL) {
+                        ql_ui_layout(ui2, W, H);
+                        QLUINodeRT *ta = find_tag(ui2, "textarea", 0);
+                        QL_CHECK(ta != NULL);
+                        QL_CHECK(ql_ui_input_value(ui2, ta) != NULL &&
+                                 strcmp(ql_ui_input_value(ui2, ta), "m\nn") == 0);
+                        QL_CHECK(ui2->ta_arena != NULL);
+                        ql_ui_free(ui2);
+                    }
+                    ql_ui_doc_free(back);
+                }
+                free(buf);
+            }
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+QL_TEST_END()

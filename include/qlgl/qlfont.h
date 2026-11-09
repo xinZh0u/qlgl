@@ -92,6 +92,16 @@ const QLFont *ql_font_default(int pixel_size);
 
 /* 内部接线：矢量字体后端把"按字号造字体"的工厂挂进来（qlgl_init 之后由 FT 后端调用） */
 void ql_font_set_default_factory(QLFont *(*factory)(int pixel_size));
+
+/*
+ * 等宽字体工厂（可选）。没设时 `ql_font_mono(size)` 回落到 `ql_font_default` ——
+ * 内建位图字体本身就是等宽的，所以"没接矢量字体"时两级完全一样。
+ * 接了 FreeType 之后，`font-family: monospace` 才真的换字体。
+ */
+void ql_font_set_mono_factory(QLFont *(*factory)(int pixel_size));
+
+/* 按字号取等宽字体（见 ql_font_set_mono_factory） */
+const QLFont *ql_font_mono(int pixel_size);
 /* 释放默认字体缓存里所有动态字体（qlgl_shutdown 调用） */
 void ql_font_reset_defaults(void);
 

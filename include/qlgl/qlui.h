@@ -185,6 +185,12 @@ typedef enum {
     QL_UI_TAG_TEMPLATE,   /* display:none；**内容整段跳过**（惰性内容） */
     QL_UI_TAG_SVG,        /* 占位盒；**内容整段跳过**（非 HTML 子树） */
     QL_UI_TAG_MATH,       /* 占位盒；**内容整段跳过**（非 HTML 子树） */
+
+    /* --- TEXT 包（P4）：空白保留与上下标 --- */
+    QL_UI_TAG_PRE,        /* block + white-space: pre + 等宽字体：空白与换行全保留 */
+    QL_UI_TAG_SUB,        /* 行内 + 下标（基线略降 + 字号缩小） */
+    QL_UI_TAG_SUP,        /* 行内 + 上标（基线略升 + 字号缩小） */
+    QL_UI_TAG_TEXTAREA,   /* 多行输入框（P5）：复用输入池的另一半 */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -356,8 +362,7 @@ typedef struct {
     int16_t     line_h;
 
     /*
-     * white-space：0 = `nowrap`（默认，本库与浏览器的**故意差异**，见下），
-     *              1 = `normal`（按内容盒宽度折行）。
+     * white-space：见 QL_UI_WS_*。
      *
      * 为什么默认是 nowrap：本库的 v0 文本模型是"一段文本就是一行"，
      * 大量已有界面（含 golden 基准）都建立在这个前提上。改成浏览器默认的
@@ -372,7 +377,51 @@ typedef struct {
      * 斜体=按行剪切、装饰线=画一条 1px 的横线。MCU 上也一样。
      */
     uint8_t     font_flags;   /* 低 4 位 = QL_UI_FONT_*，高 4 位 = object-fit */
+
+    /*
+     * 基线额外偏移（px，负数 = 上移）。`<sup>` 用负值、`<sub>` 用正值。
+     *
+     * 只影响**这一行文字的基线**，不影响行盒高度 —— 与浏览器一致
+     * （`vertical-align: super` 不会把行撑高；浏览器是靠字体自身的
+     * 上升/下降空间容下它）。所以上下标可能顶到上一行的空隙里，
+     * 要干净就显式给 `line-height`。
+     */
+    int8_t      baseline_dy;
+
+    /*
+     * 字体族下标：0 = 正文（`ql_font_default`），1 = 等宽。
+     *
+     * 本库只有两级：内建位图字体本身就是等宽的，所以**不接矢量字体时
+     * 两级其实一样**。接了 FreeType（`ql_font_set_mono_factory`）才分得开：
+     * `<pre>` / `<code>` / `<kbd>` / `<samp>` 走等宽，其余走正文。
+     */
+    uint8_t     font_family;
 } QLUIStyle;
+
+/*
+ * white-space 的取值。
+ *
+ * 空白**保留**（`pre*`）必须在这里能表达，但有一处架构上的取舍要说清楚：
+ * 文本的空白折叠发生在**解析期**（见 qlui_parse.c 的 add_text_chunk），
+ * 而 `white-space` 是级联之后才知道的。所以本库的做法是把折叠**推迟到建表期**
+ * （那时样式已经算好），原始空白一直留到建表 —— 这样 `<pre>` 标签和
+ * `div { white-space: pre }` 两条路都能生效，代价只是编译期内存。
+ */
+#define QL_UI_WS_NOWRAP     0   /* 默认：不折行（与浏览器不同，见 QLUIStyle.white_space） */
+#define QL_UI_WS_NORMAL     1   /* 折行；空白折叠 */
+#define QL_UI_WS_PRE        2   /* 不折行；空白与换行**全部保留** */
+#define QL_UI_WS_PRE_WRAP   3   /* 折行；空白与换行**全部保留** */
+#define QL_UI_WS_PRE_LINE   4   /* 折行；折叠空格但**保留换行** */
+
+/* `QLUIStyle.font_family` 的取值 */
+#define QL_UI_FAMILY_DEFAULT   0
+#define QL_UI_FAMILY_MONO      1
+
+/* 空白是否保留（不折叠）。`<pre>` / `<textarea>` 靠这个判断 */
+#define QL_UI_WS_PRESERVES(v)   ((v) >= QL_UI_WS_PRE)
+/* 是否自动折行（`pre` 只按 `\n` 硬换行） */
+#define QL_UI_WS_WRAPS(v)       ((v) == QL_UI_WS_NORMAL || (v) == QL_UI_WS_PRE_WRAP || \
+                                 (v) == QL_UI_WS_PRE_LINE)
 
 /* 字体变体与装饰线：QLUIStyle.font_flags 的位 */
 #define QL_UI_FONT_BOLD           0x01u   /* font-weight >= 600：合成加粗 */
@@ -777,8 +826,10 @@ struct QLUIRoot {
     ql_coord_t     scroll_drag_scroll0;
 
     /* 输入框池：doc 里没有 <input> 时为 NULL（零字节） */
-    struct QLUIInput *inputs;      /* 输入框池（没有 <input> 时为 NULL） */
+    struct QLUIInput *inputs;      /* 输入框池（没有 <input>/<textarea> 时为 NULL） */
     uint16_t       input_count;
+    char          *ta_arena;       /* <textarea> 的文本 arena（没有则为 NULL） */
+    uint16_t       ta_count;
     uint16_t       dialog_count;
     struct QLUIImageRT *images;        /* 图像池（没有 <img> 时为 NULL） */
     uint16_t       image_count;       /* doc 里 <dialog> 的个数（0 时可以跳过整段浮层逻辑） */
@@ -1032,7 +1083,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    14u  /* 14: 图像热区段（areas / area_coords） */
+#define QL_UI_BLOB_VERSION    15u  /* 15: QLUIStyle += baseline_dy / font_family */
 
 typedef struct {
     uint32_t magic;

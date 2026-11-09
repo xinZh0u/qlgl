@@ -175,6 +175,8 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/09_scroll.html'>滚动</a>
 <a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
 <a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2038,21 +2040,21 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 <td>3–4 天</td>
 </tr>
 <tr>
-<td>P4</td>
-<td><code>TEXT</code>：文本内 <code>\n</code> + <code>white-space: pre</code> + 等宽字体族 + <code>sub</code>/<code>sup</code> + <code>ruby</code></td>
-<td>90</td>
-<td>5–6 天</td>
+<td>P4 ✅</td>
+<td><code>TEXT</code>：<code>white-space: pre*</code> + <code>&lt;pre&gt;</code> + <code>sub</code>/<code>sup</code> + 两级字体族（<code>ruby</code> 另计）</td>
+<td>113</td>
+<td>2–3 天</td>
 </tr>
 <tr>
-<td>P5</td>
-<td><code>CONTROL</code> 补齐：<code>textarea</code> 多行编辑</td>
-<td>91</td>
-<td>2–3 天</td>
+<td>P5 ✅</td>
+<td><code>CONTROL</code> 补齐：<code>textarea</code> 多行编辑（独立 arena、视觉行光标、sticky 列）</td>
+<td>114*</td>
+<td>1–2 天</td>
 </tr>
 <tr>
 <td>P6</td>
 <td><code>TABLE</code>：表格布局算法（列宽分配、跨行跨列、边框合并）</td>
-<td>101</td>
+<td>114</td>
 <td>5–8 天，<strong>风险最高</strong></td>
 </tr>
 <tr>

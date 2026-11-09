@@ -130,6 +130,18 @@
 #ifndef QL_CFG_UI_INPUT_LEN
 #define QL_CFG_UI_INPUT_LEN         96
 #endif
+/*
+ * 多行输入（`<textarea>`）：最多几个、单个最多多少字节。
+ * 与单行输入**分池**：单行框多、缓冲小；多行框少、缓冲大。混在一起会让
+ * 8 个单行框各自多背 400 字节（MCU 上不能接受）。
+ * 池只在 doc 里真的出现 `<textarea>` 时才分配。
+ */
+#ifndef QL_CFG_UI_TEXTAREA_MAX
+#define QL_CFG_UI_TEXTAREA_MAX      2
+#endif
+#ifndef QL_CFG_UI_TEXTAREA_LEN
+#define QL_CFG_UI_TEXTAREA_LEN      512
+#endif
 /* 下拉框：最多几个、面板最高多少像素（超出就滚动） */
 /*
  * ---- 图像（`<img>`）----

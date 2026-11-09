@@ -151,6 +151,8 @@ static const char *const TAG_NAMES[] = {
     "QL_UI_TAG_VIDEO", "QL_UI_TAG_TRACK", "QL_UI_TAG_CANVAS", "QL_UI_TAG_SCRIPT",
     "QL_UI_TAG_NOSCRIPT", "QL_UI_TAG_SLOT", "QL_UI_TAG_TEMPLATE", "QL_UI_TAG_SVG",
     "QL_UI_TAG_MATH",
+    "QL_UI_TAG_PRE", "QL_UI_TAG_SUB", "QL_UI_TAG_SUP",
+    "QL_UI_TAG_TEXTAREA",
 };
 
 static const char *const DISPLAY_NAMES[] = {

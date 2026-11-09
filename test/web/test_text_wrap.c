@@ -225,11 +225,21 @@ QL_TEST_BEGIN("test_text_wrap")
         }
     }
 
-    /* ---------- 11. 明确报错：pre 系列不做 ---------- */
+    /* ---------- 11. pre 系列现在支持了；真正不认的值仍然明确报错 ---------- */
     {
-        const char *bad[] = { "#r { white-space: pre }",
-                              "#r { white-space: pre-wrap }",
-                              "#r { white-space: break-spaces }" };
+        /* 认：pre / pre-wrap / pre-line（行为测试在 test_white_space.c） */
+        const char *good[] = { "#r { white-space: pre }",
+                               "#r { white-space: pre-wrap }",
+                               "#r { white-space: pre-line }" };
+        for (size_t i = 0; i < sizeof(good) / sizeof(good[0]); i++) {
+            QLUIDoc *doc = ql_ui_load_text("<div id=r>x</div>", good[i]);
+            QL_CHECK(doc != NULL);
+            if (doc != NULL)
+                ql_ui_doc_free(doc);
+        }
+        /* 不认：break-spaces 需要"按最长单词撑破"的语义，本库不做 */
+        const char *bad[] = { "#r { white-space: break-spaces }",
+                              "#r { white-space: pre-wrap-x }" };
         for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
             QLUIDoc *doc = ql_ui_load_text("<div id=r>x</div>", bad[i]);
             QL_CHECK(doc == NULL);

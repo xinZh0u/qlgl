@@ -37,6 +37,7 @@ typedef struct QLDraw2D QLDraw2D;
 typedef struct {
     ql_color_t color;
     ql_coord_t line_h;    /* 行高（px）；0 = normal（字体自身的 line_height） */
+    ql_coord_t baseline_dy; /* 基线额外下移（px，负数=上移）。`<sup>` 用负值 */
     uint8_t    align;     /* QLTextAlign */
     uint8_t    wrap;      /* 1 = 按 box.w 折行；0 = 只按 '\n' 断 */
     uint8_t    bold;

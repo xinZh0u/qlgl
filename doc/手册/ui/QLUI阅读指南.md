@@ -608,7 +608,7 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 标签在本架构里**只影响三件事**：UA 默认样式、`tag` 选择器、调试名。
 布局与绘制只看编译出来的 `QLUIStyle`，不看标签——所以加标签几乎零成本（只加枚举）。
 
-共 97 个（HTML5 共 114 个；其中 13 个是占位；全量状态见 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)）。
+共 101 个（HTML5 共 114 个；其中 13 个是占位；全量状态见 [HTML5 标签覆盖与裁剪](HTML5标签覆盖与裁剪.html)）。
 `QLUITag` / `k_tags[]` / `s_tag_names[]` **三处顺序必须一致**，
 且只能在末尾追加：`node.tag` 是存进 blob 的数字）：
 
@@ -617,6 +617,8 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 容器 | `div` `section` `header` `footer` `nav` `main` `article` `aside` `figure` `figcaption` `blockquote` | `display: block` |
 | 标题 | `h1`…`h6` | block + 字号 24/20/17/15/13/12 + 递减 margin |
 | 文本块 | `p` | block + `margin: 8px 0` |
+| 代码块 | `pre` | block + **`white-space: pre`**（空白与换行全保留、不折行）+ 等宽 + `margin: 8px 0` |
+| 上下标 | `sub` / `sup` | inline + `vertical-align: sub/super` + `font-size: smaller`（父级 ×5/6） |
 | 行内 | `span` | `display: inline` |
 | 语义行内 | `b` `strong`（加粗）`i` `em`（斜体）`u`（下划线）`s`（删除线） | inline + 对应的字体变体 |
 | 高亮 | `mark` | inline + 黄底黑字 |
@@ -624,6 +626,7 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 空元素 | `hr` / `br` | 1px 细线 + margin / 高度 0 的块 |
 | 控件 | `button` | inline-block + 内边距 + 边框 + 圆角 |
 | 输入 | `input` | inline-block + 内边距 + 边框 + 圆角（`type=password` 额外置位） |
+| 多行输入 | `textarea` | inline-block + 200×60 + **`white-space: pre-wrap`** + 等宽 + 边框 |
 | 下拉 | `select` / `option` / `optgroup` | 与 `input` 同形 / **`display: none`** |
 | 位图 | `img` | 固有尺寸来自 doc 的资源条目（不看解码是否成功）；`text` 存**资源名** |
 | 浮层 | `dialog` | 居中 + 遮罩；整棵树画完再画一遍（子树每帧多画一次） |

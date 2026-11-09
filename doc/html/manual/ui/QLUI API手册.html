@@ -175,6 +175,8 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/09_scroll.html'>滚动</a>
 <a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
 <a href='../../tutorial/11_input.html'>输入控件</a>
+<a href='../../tutorial/12_text.html'>空白与上下标</a>
+<a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -319,13 +321,13 @@ tools/qltext/qltext.c ┘
 </tr>
 </tbody>
 </table>
-<p>目前认 <strong>80 个</strong>（HTML5 共 114 个）。全量清单、每个标签的状态与能力包见
+<p>目前认 <strong>101 个</strong>（HTML5 共 114 个；其中 13 个是占位盒）。全量清单、每个标签的状态与能力包见
 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>；UA 默认样式细节见
 <a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>。</p>
 <p><strong>限制</strong>：
 - 文档必须<strong>有且只有一个根元素</strong>；
 - 元素不能同时包含文本和子元素（混合内容）→ 报错，请把文本包进 <code>&lt;span&gt;</code>；
-- <code>img</code> / <code>table</code> / <code>textarea</code> / 任意未实现的 <code>type</code> → 报错，错误信息给出替代做法；</p>
+- <code>table</code> 全家 / <code>ruby</code> <code>rt</code> <code>rp</code> / 任意未实现的 <code>&lt;input type&gt;</code> → 报错，错误信息给出替代做法；</p>
 <hr />
 <h2 id="3-css">3. 支持的 CSS</h2>
 <h3 id="31">3.1 选择器</h3>
@@ -426,8 +428,23 @@ tools/qltext/qltext.c ┘
 </tr>
 <tr>
 <td><code>font-size</code></td>
-<td><code>Npx</code></td>
-<td>任意整数；生成期汇总成 <code>font_sizes</code> 表，运行期按字号取 <code>ql_font_default(N)</code>（配置了矢量字体就是该字号的动态字体，支持中文；否则回落到内置 12/16 位图字体）</td>
+<td><code>Npx</code> <code>smaller</code> <code>larger</code></td>
+<td>任意整数；生成期汇总成 <code>font_sizes</code> 表，运行期按字号取字体。<code>smaller</code> = 父级 ×5/6、<code>larger</code> = 父级 ×6/5（相对父级，所以标题里的上标也协调）</td>
+</tr>
+<tr>
+<td><code>font-family</code></td>
+<td><code>monospace</code>（含 <code>mono</code> 的候选名）、其他一律正文</td>
+<td>只有<strong>两级</strong>：<code>QL_UI_FAMILY_DEFAULT</code> / <code>QL_UI_FAMILY_MONO</code>。写 <code>Arial, sans-serif</code> 不报错，落到正文</td>
+</tr>
+<tr>
+<td><code>white-space</code></td>
+<td><code>nowrap</code>（<strong>默认</strong>）<code>normal</code> <code>pre</code> <code>pre-wrap</code> <code>pre-line</code></td>
+<td>见 §3.2.1</td>
+</tr>
+<tr>
+<td><code>vertical-align</code></td>
+<td><code>baseline</code>（默认）<code>sub</code> <code>super</code></td>
+<td>基线偏移 = 自身字号 × ±(33%/20%)；<strong>不改行盒高度</strong>。<code>middle</code>/<code>top</code>/<code>bottom</code> 明确报错</td>
 </tr>
 <tr>
 <td><code>text-align</code></td>
@@ -491,6 +508,60 @@ tools/qltext/qltext.c ┘
 </tr>
 </tbody>
 </table>
+<h4 id="321-white-space">3.2.1 <code>white-space</code> 与空白折叠的时机</h4>
+<p><code>white-space</code> 既管"折不折行"，也管"空白留不留"：</p>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>空白</th>
+<th>换行 <code>\n</code></th>
+<th>自动折行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nowrap</code>（<strong>默认</strong>，与浏览器不同）</td>
+<td>折叠</td>
+<td>保留</td>
+<td>不折</td>
+</tr>
+<tr>
+<td><code>normal</code></td>
+<td>折叠</td>
+<td>保留</td>
+<td>折</td>
+</tr>
+<tr>
+<td><code>pre</code></td>
+<td>保留</td>
+<td>保留</td>
+<td>不折</td>
+</tr>
+<tr>
+<td><code>pre-wrap</code></td>
+<td>保留</td>
+<td>保留</td>
+<td>折</td>
+</tr>
+<tr>
+<td><code>pre-line</code></td>
+<td>折叠</td>
+<td>保留</td>
+<td>折</td>
+</tr>
+</tbody>
+</table>
+<p><strong>折叠发生在建表期，不是解析期。</strong> 原因：<code>white-space</code> 是级联之后才知道的，而折叠要
+改文本字节。所以原始空白一路留到样式算好之后再折叠 —— 这样 <code>&lt;pre&gt;</code> 标签和
+<code>div { white-space: pre }</code> 两条路都能生效。对非 <code>pre*</code> 的页面结果与旧版本逐字节相同。</p>
+<p><code>\t</code> 在保留模式下展开成空格（制表位 8 列，按<strong>列数</strong>而不是像素宽），
+否则制表符落到字体查不到的字形上、宽度 0，整块缩进消失。</p>
+<p><code>&lt;pre&gt;</code> / <code>&lt;textarea&gt;</code> 起始标签后紧接的<strong>一个</strong> <code>\n</code> 会被丢掉（HTML 的
+"ignore the first newline" 规则）。</p>
+<p><strong>已知限制</strong>：<code>pre*</code> 的<strong>行首空格</strong>只在 <code>&lt;pre&gt;</code> / <code>&lt;textarea&gt;</code> 元素上保留 ——
+给普通 <code>div</code> 写 <code>white-space: pre</code> 时，行首空白已经在解析期作为"元素内容两端"
+被 strip 掉了（strip 是结构性的，必须在解析期做）。</p>
 <h3 id="33">3.3 颜色写法</h3>
 <p><code>#rgb</code>、<code>#rrggbb</code>、<code>rgb(r,g,b)</code>、<code>rgba(r,g,b,a)</code>、命名色（<code>black</code>/<code>white</code>/<code>red</code>/<code>green</code>/<code>lime</code>/<code>blue</code>/<code>gray</code>/<code>silver</code>/<code>yellow</code>/<code>orange</code>/<code>purple</code>/<code>navy</code>/<code>teal</code>/<code>transparent</code>）。</p>
 <h3 id="34">3.4 混合内容</h3>

@@ -202,7 +202,8 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
     if (count > max_lines)
         count = max_lines;      /* 超出的行不画（布局统计不受此限） */
 
-    ql_coord_t baseline = box.y + half_lead + font->ascent;
+    /* `baseline_dy` 只挪基线，不影响行盒（与浏览器一样：行高不会因上标而变） */
+    ql_coord_t baseline = box.y + half_lead + font->ascent + ts->baseline_dy;
     for (int li = 0; li < count; li++) {
         const char *lt = lines[li].start;
         const int32_t llen = lines[li].len;

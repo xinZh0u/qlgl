@@ -1649,6 +1649,7 @@ static const char *const k_supported_props[] = {
     "display", "width", "height", "margin", "padding", "border", "border-width",
     "border-color", "border-radius", "background", "background-color", "color",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
+    "vertical-align", "font-family",
     "object-fit",
     "box-shadow", "font-weight", "font-style", "text-decoration",
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
@@ -2480,6 +2481,10 @@ static const char *const k_tags[] = {
     /* --- EMBED 包：永远只做占位（见 QLUITag 的注释） --- */
     "iframe", "embed", "object", "audio", "video", "track", "canvas",
     "script", "noscript", "slot", "template", "svg", "math",
+    /* --- TEXT 包（P4） --- */
+    "pre", "sub", "sup",
+    /* --- CONTROL 包（P5） --- */
+    "textarea",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -2512,6 +2517,7 @@ static QLUITag tag_value(const char *tag)
  */
 static const char *const k_inline_tags[] = {
     "span", "b", "i", "em", "strong", "u", "s", "mark", "del", "ins",
+    "sub", "sup",
     "a", "abbr", "code", "kbd", "samp", "var", "q", "dfn", "cite", "data",
     "time", "small", "bdi", "bdo", "wbr", "label", "legend",
 };
@@ -2789,21 +2795,144 @@ static char *collapse_ws(const char *chunk)
     return out;
 }
 
+/* 去掉首尾空白（Unicode 空白也算），返回新的起点；尾部就地截断 */
+static char *strip_ws_ptr(char *s)
+{
+    char *p = s;
+    for (;;) {
+        size_t wl = u8_ws_len(p);
+        if (wl == 0)
+            break;
+        p += wl;
+    }
+    size_t len = strlen(p);
+    while (len > 0) {
+        /* 从尾部回退一个码点再判空白 */
+        size_t back = 1;
+        while (back < 4 && back < len && ((unsigned char)p[len - back] & 0xC0u) == 0x80u)
+            back++;
+        if (u8_ws_len(p + len - back) != back)
+            break;
+        len -= back;
+    }
+    p[len] = '\0';
+    return p;
+}
+
+/*
+ * `white-space: pre-line`：折叠空白，但 `\n` 保留成换行。
+ * 等价于"按行切开，逐行 collapse_ws"。
+ */
+static char *collapse_ws_keep_nl(const char *chunk)
+{
+    size_t len = strlen(chunk);
+    char *out = (char *)xalloc(len + 1u);
+    if (out == NULL)
+        return NULL;
+    size_t k = 0;
+    int prev_ws = 0;      /* 上一字符是折叠出来的空格 */
+    for (size_t i = 0; i < len;) {
+        if (chunk[i] == '\n') {
+            out[k++] = '\n';
+            prev_ws = 1;  /* pre-line 的行首空格也要去掉（与浏览器一致） */
+            i++;
+            continue;
+        }
+        size_t wl = u8_ws_len(chunk + i);
+        if (wl > 0) {
+            if (!prev_ws) {
+                out[k++] = ' ';
+                prev_ws = 1;
+            }
+            i += wl;
+        } else {
+            out[k++] = chunk[i];
+            prev_ws = 0;
+            i++;
+        }
+    }
+    out[k] = '\0';
+    return out;
+}
+
+/*
+ * 保留空白（`pre` / `pre-wrap`）：原文照抄，只把 `\t` 展开成空格。
+ *
+ * 制表位按**列**算（`tab-size: 8`），列号按码点数而不是像素宽 ——
+ * 与浏览器一致（浏览器也是按字符格数，不是按实际度量）。
+ * 不做这一步的话 `\t` 会落到字体查不到的字形上，宽度 0，整块代码缩进消失。
+ */
+static char *preserve_ws_expand_tabs(const char *chunk)
+{
+    size_t len = strlen(chunk);
+    /* 最坏情况：每个字节都变 8 个空格 */
+    char *out = (char *)xalloc(len * 8u + 1u);
+    if (out == NULL)
+        return NULL;
+    size_t k = 0;
+    int col = 0;
+    for (size_t i = 0; i < len;) {
+        if (chunk[i] == '\t') {
+            int n = 8 - (col % 8);
+            for (int j = 0; j < n; j++)
+                out[k++] = ' ';
+            col += n;
+            i++;
+            continue;
+        }
+        if (chunk[i] == '\n') {
+            out[k++] = '\n';
+            col = 0;
+            i++;
+            continue;
+        }
+        /* 一个码点占一列（多字节字符按首字节判断长度，列数不按东亚宽度分） */
+        unsigned char c = (unsigned char)chunk[i];
+        size_t clen = (c < 0x80u) ? 1u : ((c >= 0xF0u) ? 4u : ((c >= 0xE0u) ? 3u : 2u));
+        if (i + clen > len)
+            clen = len - i;
+        memcpy(out + k, chunk + i, clen);
+        k += clen;
+        col++;
+        i += clen;
+    }
+    out[k] = '\0';
+    return out;
+}
+
 static int html_add_text(PNode *n, const char *chunk)
 {
-    char *collapsed = collapse_ws(chunk);
-    if (collapsed == NULL)
+    /*
+     * **原样保留**，不在这里折叠。
+     *
+     * `white-space` 是级联之后才知道的，而折叠必须在知道它之后做（`pre*` 不折叠）。
+     * 所以原始空白一路留到建表期（见 build 里 text_pool_intern 之前的转换），
+     * 代价只是编译期的临时内存 —— 静态产物的字节不受影响。
+     */
+    const char *src = chunk;
+    /*
+     * 规范：`<pre>` / `<textarea>` 起始标签后紧接的**一个**换行要丢掉
+     * （HTML 的 "ignore the first newline" 规则）。不做这一步，每个代码块
+     * 开头都会多一个空行 —— 而 `<pre>\n  x\n</pre>` 是最自然的写法。
+     */
+    if (src[0] == '\n' && n->nitems == 0 && n->first_child == NULL &&
+        n->tag != NULL &&
+        (strcmp(n->tag, "pre") == 0 || strcmp(n->tag, "textarea") == 0))
+        src++;
+
+    char *raw = xstrdup(src);
+    if (raw == NULL)
         return 0;
-    if (collapsed[0] == '\0') {
-        ql_mem_free(collapsed);
+    if (raw[0] == '\0') {
+        ql_mem_free(raw);
         return 1;
     }
     Item it;
     it.is_text = 1;
-    it.text = collapsed;
+    it.text = raw;
     it.node = NULL;
     if (!pnode_add_item(n, it)) {
-        ql_mem_free(collapsed);
+        ql_mem_free(raw);
         return 0;
     }
     return 1;
@@ -3171,34 +3300,27 @@ static int flatten_node(PNode *n)
             n->text = NULL;
             return 1;
         }
-        /* strip（含 Unicode 空白） */
-        char *s = sb.p;
-        for (;;) {
-            size_t wl = u8_ws_len(s);
-            if (wl == 0)
-                break;
-            s += wl;
-        }
-        size_t len = strlen(s);
-        while (len > 0) {
-            /* 从尾部回退一个码点再判空白 */
-            size_t back = 1;
-            while (back < 4 && back < len && ((unsigned char)s[len - back] & 0xC0u) == 0x80u)
-                back++;
-            if (u8_ws_len(s + len - back) != back)
-                break;
-            len -= back;
-        }
-        s[len] = '\0';
-        char *collapsed = collapse_ws(s);
-        sb_free(&sb);
-        if (collapsed == NULL)
-            return 0;
-        if (collapsed[0] == '\0') {
-            ql_mem_free(collapsed);
-            n->text = NULL;
+        /*
+         * 只 strip、**不折叠**。
+         *
+         * strip 是**结构性**的：它看的是"这段文字是不是元素内容的开头/结尾"，
+         * 与样式无关，所以在解析期做。折叠是样式相关的（`pre*` 不折叠），
+         * 推迟到建表期（见下面 text_pool_intern 之前）。
+         *
+         * 例外：`<pre>` / `<textarea>` 的行首空格是**内容**，不能 strip。
+         * （CSS 里给别的标签写 `white-space: pre` 时，行首空格已经在解析期
+         *  丢了 —— 想要保留请直接用 `<pre>`，这条写进了文档。）
+         */
+        if (n->tag != NULL &&
+            (strcmp(n->tag, "pre") == 0 || strcmp(n->tag, "textarea") == 0)) {
+            n->text = sb.p;          /* 接管所有权 */
         } else {
-            n->text = collapsed;
+            char *body = strip_ws_ptr(sb.p);
+            char *kept = xstrdup(body);
+            sb_free(&sb);
+            if (kept == NULL)
+                return 0;
+            n->text = (kept[0] != '\0') ? kept : (ql_mem_free(kept), NULL);
         }
         return 1;
     }
@@ -3211,6 +3333,9 @@ static int flatten_node(PNode *n)
                 first_text = i;
             last_text = i;
         }
+    const int preserve_tag =
+        (n->tag != NULL && (strcmp(n->tag, "pre") == 0 ||
+                            strcmp(n->tag, "textarea") == 0));
 
     PNode *prev = NULL;
     for (int i = 0; i < n->nitems; i++) {
@@ -3219,28 +3344,30 @@ static int flatten_node(PNode *n)
             char *dup = xstrdup(txt);
             if (dup == NULL)
                 return 0;
-            /* 首段 lstrip、末段 rstrip */
+            /* 首段 lstrip、末段 rstrip（`pre` / `textarea` 里这些空格是内容） */
             char *t = dup;
-            if (i == first_text) {
-                for (;;) {
-                    size_t wl = u8_ws_len(t);
-                    if (wl == 0)
-                        break;
-                    t += wl;
+            if (!preserve_tag) {
+                if (i == first_text) {
+                    for (;;) {
+                        size_t wl = u8_ws_len(t);
+                        if (wl == 0)
+                            break;
+                        t += wl;
+                    }
                 }
-            }
-            if (i == last_text) {
-                size_t len = strlen(t);
-                while (len > 0) {
-                    size_t back = 1;
-                    while (back < 4 && back < len &&
-                           ((unsigned char)t[len - back] & 0xC0u) == 0x80u)
-                        back++;
-                    if (u8_ws_len(t + len - back) != back)
-                        break;
-                    len -= back;
+                if (i == last_text) {
+                    size_t len = strlen(t);
+                    while (len > 0) {
+                        size_t back = 1;
+                        while (back < 4 && back < len &&
+                               ((unsigned char)t[len - back] & 0xC0u) == 0x80u)
+                            back++;
+                        if (u8_ws_len(t + len - back) != back)
+                            break;
+                        len -= back;
+                    }
+                    t[len] = '\0';
                 }
-                t[len] = '\0';
             }
             int blank = 1;
             for (const char *q = t; *q != '\0';) {
@@ -3549,15 +3676,12 @@ static PNode *parse_html(const char *html)
                  * 这里只管**当前还没实现**的那批（table 包 / textarea）；
                  * img / input / select 都已支持，别再往这里加。
                  */
-                if (strcmp(name, "textarea") == 0)
-                    set_error("HTML: 不支持 <textarea>（还没有多行编辑）："
-                              "单行用 <input>，纯展示用 div");
-                else if (strcmp(name, "table") == 0 || strcmp(name, "tr") == 0 ||
+                if (strcmp(name, "table") == 0 || strcmp(name, "tr") == 0 ||
                          strcmp(name, "td") == 0 || strcmp(name, "th") == 0)
                     set_error("HTML: 不支持表格 <%s>：用嵌套的 flex 行来做", name);
-                else if (strcmp(name, "pre") == 0 || strcmp(name, "ruby") == 0)
-                    set_error("HTML: 不支持 <%s>（需要 TEXT 能力包）："
-                              "用 white-space: pre 或普通行内文本代替", name);
+                else if (strcmp(name, "ruby") == 0 || strcmp(name, "rt") == 0 ||
+                         strcmp(name, "rp") == 0)
+                    set_error("HTML: 不支持注音 <%s>：用两行文本自己排", name);
                 else
                     set_error("HTML: 不支持的标签 <%s>", name);
                 attrs_free(&at);
@@ -4038,6 +4162,34 @@ static int ua_defaults(const char *tag, Decls *out)
     if (strcmp(tag, "details") == 0 || strcmp(tag, "summary") == 0)
         return decls_set(out, "display", "block");
 
+    /*
+     * <pre>：代码块。
+     *   - display:block + 上下 margin（与 <p> 一致，块级之间才有视觉间隔）
+     *   - white-space: pre —— 空白与换行**全部保留**、不自动折行
+     * 等宽字体在 P4c 补（Qt/浏览器的 `font-family: monospace` 需要一个字体族维度）。
+     * 不写 `overflow:auto`：本库的滚动要显式开，默认让长行横向撑出父盒更符合"看得见"。
+     */
+    if (strcmp(tag, "pre") == 0) {
+        return decls_set(out, "display", "block") &&
+               decls_set(out, "white-space", "pre") &&
+               decls_set(out, "font-family", "monospace") &&
+               decls_set(out, "margin", "8px 0");
+    }
+
+    /*
+     * <sub> / <sup>：基线偏移 + 字号缩小。
+     * 浏览器用的是 `vertical-align: sub/super` + `font-size: smaller`，
+     * 这里两者都真的支持，所以继承来的字号会被正确地乘上 5/6。
+     */
+    if (strcmp(tag, "sub") == 0)
+        return ua_set_inline(out) &&
+               decls_set(out, "vertical-align", "sub") &&
+               decls_set(out, "font-size", "smaller");
+    if (strcmp(tag, "sup") == 0)
+        return ua_set_inline(out) &&
+               decls_set(out, "vertical-align", "super") &&
+               decls_set(out, "font-size", "smaller");
+
     /* ---- 纯语义标签：只给"看结构就该知道"的 display ---- */
     /*
      * 描述列表：<dd> 的缩进用 padding-left（与 <ul> 一致，39 行的 40px margin 不要）。
@@ -4077,6 +4229,31 @@ static int ua_defaults(const char *tag, Decls *out)
         return ua_set_inline(out) && decls_set(out, "text-decoration", "line-through");
     if (strcmp(tag, "ins") == 0)
         return ua_set_inline(out) && decls_set(out, "text-decoration", "underline");
+
+    /*
+     * <textarea>：多行输入框。
+     *   - 默认尺寸按浏览器量级（cols≈20 字符、rows≈3 行 → 200×60）
+     *   - `white-space: pre-wrap`：保留换行、按宽度折行（这就是多行编辑的渲染基础）
+     *   - 行首空白也要保留（textarea 的内容就是纯文本）
+     * `rows` / `cols` **属性不解析**：HTML 属性不能直接进样式，改尺寸请用 CSS。
+     */
+    if (strcmp(tag, "textarea") == 0) {
+        return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "width", "200px") &&
+               decls_set(out, "height", "60px") &&
+               decls_set(out, "white-space", "pre-wrap") &&
+               decls_set(out, "font-family", "monospace") &&
+               decls_set(out, "padding", "4px") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-radius", "4px") &&
+               decls_set(out, "border-color", "#8A8A8A") &&
+               decls_set(out, "background-color", "#FFFFFF");
+    }
+
+    /* 代码类标签用等宽（与浏览器一致；内建位图字体本来就是等宽的） */
+    if (strcmp(tag, "code") == 0 || strcmp(tag, "kbd") == 0 ||
+        strcmp(tag, "samp") == 0)
+        return ua_set_inline(out) && decls_set(out, "font-family", "monospace");
 
     /* 剩下这些纯行内标签 UA 默认只有 display:inline（与 tag_inline_by_default 同表） */
     if (tag_inline_by_default(tag))
@@ -4264,6 +4441,22 @@ static int apply_inline_style(const char *style, Decls *decls)
 }
 
 /* 继承 + 行内 → 最终声明集合 */
+/* 从 "16px" / "16" 里取整数；取不到返回 def */
+static int px_of_decl(const char *v, int def)
+{
+    if (v == NULL)
+        return def;
+    int n = atoi(v);
+    return (n > 0) ? n : def;
+}
+
+/* 浏览器 `font-size: smaller/larger` 的比例：5/6 ≈ 0.833，1.2。窄到整数 px */
+static int font_size_nudge(int parent_px, int larger)
+{
+    int px = larger ? (parent_px * 6) / 5 : (parent_px * 5 + 3) / 6;
+    return (px > 0) ? px : 1;
+}
+
 static int finalize_style(Decls *decls, const PNode *n, const Decls *inherited,
                           Decls *out)
 {
@@ -4274,6 +4467,25 @@ static int finalize_style(Decls *decls, const PNode *n, const Decls *inherited,
     for (int i = 0; i < decls->n; i++)
         if (!decls_set(out, decls->d[i].key, decls->d[i].val))
             return 0;
+
+    /*
+     * `font-size: smaller / larger` 是**相对父级**的，必须在合并之后算 ——
+     * 到 `compile_style` 那一步父级的 px 已经不在手上了。
+     * 根没有继承时按 16px 起算，与 `font-size` 的默认值一致。
+     */
+    const char *fs = decls_get(out, "font-size");
+    if (fs != NULL) {
+        char fv[32];
+        trim_lower(fs, fv, sizeof(fv));
+        if (strcmp(fv, "smaller") == 0 || strcmp(fv, "larger") == 0) {
+            int parent_px = px_of_decl(decls_get(inherited, "font-size"), 16);
+            int px = font_size_nudge(parent_px, strcmp(fv, "larger") == 0);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%dpx", px);
+            if (!decls_set(out, "font-size", buf))
+                return 0;
+        }
+    }
     return 1;
 }
 
@@ -5039,6 +5251,45 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         return 0;
 
     /*
+     * `vertical-align`：只支持 baseline / sub / super 三个值
+     * （middle/top/bottom 要按行盒对齐，属于行内布局，本库还没有行内格式化上下文）。
+     * 偏移量按**字号**算，所以继承不同字号时比例一致：
+     *   super = -33% em（浏览器约 1/3 em），sub = +20% em。
+     */
+    int baseline_dy = 0;
+    {
+        const char *vav = decls_get(st, "vertical-align");
+        if (vav != NULL) {
+            char vt[32];
+            trim_lower(vav, vt, sizeof(vt));
+            if (strcmp(vt, "baseline") == 0) {
+                baseline_dy = 0;
+            } else if (strcmp(vt, "super") == 0) {
+                baseline_dy = -(font_px * 33 / 100);
+            } else if (strcmp(vt, "sub") == 0) {
+                baseline_dy = (font_px * 20 / 100);
+            } else {
+                set_error("%s: 不支持的 vertical-align '%s'（只支持 baseline / sub / super）",
+                          where, vav);
+                return 0;
+            }
+        }
+    }
+
+    /*
+     * `font-family`：本库只有**两级**（正文 / 等宽）。
+     * 认 `monospace` 一族；其他常见族名一律落到正文，不报错 ——
+     * 写 `font-family: Arial, sans-serif` 的页面不该因为"没有 Arial"编译不过。
+     * 要真正分家，得先 `ql_font_set_mono_factory()` 注册等宽字体。
+     */
+    uint8_t font_family = QL_UI_FAMILY_DEFAULT;
+    {
+        const char *ffv = decls_get(st, "font-family");
+        if (ffv != NULL && strstr(ffv, "mono") != NULL)
+            font_family = QL_UI_FAMILY_MONO;
+    }
+
+    /*
      * 字体变体 + 装饰线。三者都**合成**实现（不换字体文件），见 QL_UI_FONT_*。
      *
      * font-weight：支持 normal(400)/bold(700)/100..900 的数字写法。
@@ -5121,20 +5372,30 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
 
     /*
      * white-space：默认 nowrap（与浏览器的**故意差异**，见 qlui.h 里该字段的注释）。
-     * 只支持 nowrap / normal —— pre* 系列需要保留空白与制表符语义，本库不做。
+     *
+     * `pre*` 系列不是"不理会"，而是**把空白折叠推迟到建表期**：
+     * 原始空白一路留到样式算好之后才折叠（见 add_text_chunk / 建表期 intern）。
+     * 所以这里只做取值翻译，不做任何文本处理。
      */
-    int white_space = 0;
+    int white_space = QL_UI_WS_NOWRAP;
     {
         const char *ws = decls_get(st, "white-space");
         if (ws != NULL) {
             char wt[64];
             trim_lower(ws, wt, sizeof(wt));
             if (strcmp(wt, "normal") == 0) {
-                white_space = 1;
+                white_space = QL_UI_WS_NORMAL;
             } else if (strcmp(wt, "nowrap") == 0) {
-                white_space = 0;
+                white_space = QL_UI_WS_NOWRAP;
+            } else if (strcmp(wt, "pre") == 0) {
+                white_space = QL_UI_WS_PRE;
+            } else if (strcmp(wt, "pre-wrap") == 0) {
+                white_space = QL_UI_WS_PRE_WRAP;
+            } else if (strcmp(wt, "pre-line") == 0) {
+                white_space = QL_UI_WS_PRE_LINE;
             } else {
-                set_error("%s: 不支持的 white-space '%s'（只支持 nowrap / normal）",
+                set_error("%s: 不支持的 white-space '%s'"
+                          "（支持 nowrap / normal / pre / pre-wrap / pre-line）",
                           where, ws);
                 return 0;
             }
@@ -5558,6 +5819,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
+    out->baseline_dy = (int8_t)baseline_dy;
+    out->font_family = font_family;
     out->font_flags = (uint8_t)(font_flags | (uint8_t)(object_fit << QL_UI_FIT_SHIFT));
     return 1;
 }
@@ -6147,8 +6410,34 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         ql_mem_free(base_sig);
 
         uint16_t tidx = 0xFFFF;
-        if (!text_pool_intern(&pool, n->text, &tidx))
-            goto done;
+        {
+            /*
+             * 空白折叠在这里做（不是解析期）：只有到这一步才知道这个节点
+             * 最终的 `white-space`。`pre*` 保留原文并把 `\t` 展开成空格，
+             * 其余与旧行为逐字节相同（collapse_ws 就是原来那个函数）。
+             */
+            const char *src = n->text;
+            char *conv = NULL;
+            uint8_t ws = QL_UI_WS_NOWRAP;
+            if (e->style_index >= 0 && e->style_index < styles.n)
+                ws = styles.e[e->style_index].st.white_space;
+
+            if (src != NULL) {
+                if (ws == QL_UI_WS_PRE_LINE)
+                    conv = collapse_ws_keep_nl(src);
+                else if (QL_UI_WS_PRESERVES(ws))
+                    conv = preserve_ws_expand_tabs(src);
+                else
+                    conv = collapse_ws(src);
+                if (conv == NULL)
+                    goto done;
+                src = conv;
+            }
+            int ok = text_pool_intern(&pool, src, &tidx);
+            ql_mem_free(conv);
+            if (!ok)
+                goto done;
+        }
         e->text_index = tidx;
     }
 

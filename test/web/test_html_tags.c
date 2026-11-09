@@ -57,6 +57,7 @@ QL_TEST_BEGIN("test_html_tags")
             /* --- EMBED 包：只做占位 --- */
             "iframe", "embed", "object", "audio", "video", "track", "canvas",
             "script", "noscript", "slot", "template", "svg", "math",
+            "pre", "sub", "sup", "textarea",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -271,7 +272,6 @@ QL_TEST_BEGIN("test_html_tags")
     {
         struct { const char *html; const char *needle; } bad[] = {
             { "<div id=r><table><tr><td>x</td></tr></table></div>", "用嵌套的 flex" },
-            { "<div id=r><textarea></textarea></div>", "还没有多行编辑" },
 
             { "<div id=r><input type=\"date\"></div>", "只支持 text / password" },
         };

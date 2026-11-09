@@ -293,33 +293,46 @@ void ql_font_destroy(QLFont *font)
 #define QL_FONT_DEFAULT_SLOTS 32
 #endif
 
-static struct {
+typedef struct {
     int      size;
     QLFont  *font;
-} s_defaults[QL_FONT_DEFAULT_SLOTS];
-static int s_default_count;
-static int s_default_next;        /* 满了以后轮转淘汰的游标 */
-static QLFont *(*s_default_factory)(int pixel_size);
+} FontSlot;
+
+typedef struct {
+    FontSlot s[QL_FONT_DEFAULT_SLOTS];
+    int      count;
+    int      next;                /* 满了以后轮转淘汰的游标 */
+    QLFont *(*factory)(int pixel_size);
+} FontCache;
+
+static FontCache s_cache_default;
+static FontCache s_cache_mono;
 
 void ql_font_set_default_factory(QLFont *(*factory)(int pixel_size))
 {
     ql_font_reset_defaults();
-    s_default_factory = factory;
+    s_cache_default.factory = factory;
 }
 
-const QLFont *ql_font_default(int pixel_size)
+void ql_font_set_mono_factory(QLFont *(*factory)(int pixel_size))
+{
+    ql_font_reset_defaults();
+    s_cache_mono.factory = factory;
+}
+
+static const QLFont *cache_get(FontCache *c, int pixel_size)
 {
     if (pixel_size <= 0)
         pixel_size = 16;
 
-    for (int i = 0; i < s_default_count; i++) {
-        if (s_defaults[i].size == pixel_size)
-            return s_defaults[i].font;
+    for (int i = 0; i < c->count; i++) {
+        if (c->s[i].size == pixel_size)
+            return c->s[i].font;
     }
 
     QLFont *font = NULL;
-    if (s_default_factory != NULL)
-        font = s_default_factory(pixel_size);
+    if (c->factory != NULL)
+        font = c->factory(pixel_size);
 
     if (font == NULL) {
         /* 没有矢量字体：回落到内置位图字体（只覆盖 ASCII） */
@@ -327,23 +340,42 @@ const QLFont *ql_font_default(int pixel_size)
     }
 
     int slot;
-    if (s_default_count < QL_FONT_DEFAULT_SLOTS) {
-        slot = s_default_count++;
+    if (c->count < QL_FONT_DEFAULT_SLOTS) {
+        slot = c->count++;
     } else {
         /* 满了：淘汰最老的一个（轮转）。只有"字体的持有者是本表"时才能销毁 */
-        slot = s_default_next;
-        s_default_next = (s_default_next + 1) % QL_FONT_DEFAULT_SLOTS;
-        ql_font_destroy(s_defaults[slot].font);
+        slot = c->next;
+        c->next = (c->next + 1) % QL_FONT_DEFAULT_SLOTS;
+        ql_font_destroy(c->s[slot].font);
     }
-    s_defaults[slot].size = pixel_size;
-    s_defaults[slot].font = font;
+    c->s[slot].size = pixel_size;
+    c->s[slot].font = font;
     return font;
+}
+
+const QLFont *ql_font_default(int pixel_size)
+{
+    return cache_get(&s_cache_default, pixel_size);
+}
+
+const QLFont *ql_font_mono(int pixel_size)
+{
+    /* 没注册等宽工厂：内建位图字体本来就是等宽的，两级等价 */
+    if (s_cache_mono.factory == NULL)
+        return ql_font_default(pixel_size);
+    return cache_get(&s_cache_mono, pixel_size);
+}
+
+static void cache_reset(FontCache *c)
+{
+    for (int i = 0; i < c->count; i++)
+        ql_font_destroy(c->s[i].font);
+    c->count = 0;
+    c->next = 0;
 }
 
 void ql_font_reset_defaults(void)
 {
-    for (int i = 0; i < s_default_count; i++)
-        ql_font_destroy(s_defaults[i].font);
-    s_default_count = 0;
-    s_default_next = 0;
+    cache_reset(&s_cache_default);
+    cache_reset(&s_cache_mono);
 }

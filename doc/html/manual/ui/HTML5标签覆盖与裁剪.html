@@ -175,6 +175,8 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/09_scroll.html'>滚动</a>
 <a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
 <a href='../../tutorial/11_input.html'>输入控件</a>
+<a href='../../tutorial/12_text.html'>空白与上下标</a>
+<a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -479,7 +481,7 @@ main img.shot { max-width: 100%; }
 <td>分组</td>
 <td><code>&lt;pre&gt;</code></td>
 <td><code>TEXT</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已实现</td>
 </tr>
 <tr>
 <td>分组</td>
@@ -629,13 +631,13 @@ main img.shot { max-width: 100%; }
 <td>行内文本</td>
 <td><code>&lt;sub&gt;</code></td>
 <td><code>TEXT</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已实现</td>
 </tr>
 <tr>
 <td>行内文本</td>
 <td><code>&lt;sup&gt;</code></td>
 <td><code>TEXT</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已实现</td>
 </tr>
 <tr>
 <td>行内文本</td>
@@ -881,7 +883,7 @@ main img.shot { max-width: 100%; }
 <td>表单</td>
 <td><code>&lt;textarea&gt;</code></td>
 <td><code>CONTROL</code></td>
-<td>⏳ 计划</td>
+<td>✅ 已实现</td>
 </tr>
 <tr>
 <td>交互</td>
@@ -945,12 +947,13 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p>统计：<strong>✅ 97 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
+<p>统计：<strong>✅ 101 个</strong>（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
 P2a 加 4 个控件、P2b/P2c 加 <code>details</code>/<code>summary</code>/<code>dialog</code>、P3a 加 <code>img</code>、
-P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</code>、P7 加 13 个占位标签）、
-<strong>⏳ 17 个</strong>、<strong>❌ 0 个</strong>。</p>
-<p>其中 97 个里 <strong>13 个是占位</strong>（<code>EMBED</code> 包，只画提示盒或不产生盒子），
-真正按 HTML 语义渲染的是 <strong>84 个</strong>。</p>
+P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</code>、P7 加 13 个占位标签、
+P4a/P4b 加 <code>pre</code>/<code>sub</code>/<code>sup</code>、P5 加 <code>textarea</code>）、
+<strong>⏳ 13 个</strong>、<strong>❌ 0 个</strong>。</p>
+<p>其中 101 个里 <strong>13 个是占位</strong>（<code>EMBED</code> 包，只画提示盒或不产生盒子），
+真正按 HTML 语义渲染的是 <strong>88 个</strong>。</p>
 <hr />
 <h2 id="2">2. 能力包</h2>
 <p>一个"包"= 一组标签 + 支撑它们的那部分引擎。包是<strong>编译期开关</strong>，也是<strong>构建期报告的单位</strong>。</p>
@@ -992,9 +995,9 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <td><code>TEXT</code></td>
 <td><code>QL_FEAT_UI_TEXT</code></td>
 <td>6（<code>pre sub sup ruby rt rp</code>）</td>
-<td>✅</td>
+<td>4/6 ✅</td>
 <td>❌</td>
-<td>文本内 <code>\n</code>、<code>white-space: pre</code>、等宽字体族、行内注音</td>
+<td>已做：<code>white-space: pre/pre-wrap/pre-line</code>、<code>vertical-align: sub/super</code>、两级字体族；未做：<code>ruby</code>/<code>rt</code>/<code>rp</code> 行内注音</td>
 </tr>
 <tr>
 <td><code>TABLE</code></td>
@@ -1389,6 +1392,30 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <td>1–2 天</td>
 </tr>
 <tr>
+<td>P4a ✅ 已完成</td>
+<td><code>TEXT</code>：<code>white-space: pre / pre-wrap / pre-line</code>（空白折叠推迟到建表期）+ <code>&lt;pre&gt;</code></td>
+<td>111</td>
+<td>1–2 天</td>
+</tr>
+<tr>
+<td>P4b ✅ 已完成</td>
+<td><code>TEXT</code>：<code>&lt;sub&gt;</code> / <code>&lt;sup&gt;</code>（<code>vertical-align: sub/super</code>）+ <code>font-size: smaller/larger</code></td>
+<td>113</td>
+<td>1 天</td>
+</tr>
+<tr>
+<td>P4c ✅ 已完成</td>
+<td><code>TEXT</code>：等宽字体族两级（<code>font-family: monospace</code> → <code>ql_font_mono</code>）</td>
+<td>113</td>
+<td>0.5 天</td>
+</tr>
+<tr>
+<td>P5 ✅ 已完成</td>
+<td><code>CONTROL</code>：<code>&lt;textarea&gt;</code> 多行编辑（独立 arena、视觉行光标、sticky 列）</td>
+<td>114*</td>
+<td>1–2 天</td>
+</tr>
+<tr>
 <td>P8</td>
 <td><code>&lt;input&gt;</code> 的其余 <code>type</code>（<code>checkbox</code> <code>radio</code> <code>range</code> <code>number</code> <code>search</code>）</td>
 <td>—</td>
@@ -1401,7 +1428,7 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <hr />
 <h2 id="8">8. 与文档其它地方的口径</h2>
 <ul>
-<li>现在：<strong>已支持 97 / 114</strong>（含 13 个占位），未支持 17（见 §1 的统计行）。</li>
+<li>现在：<strong>已支持 101 / 114</strong>（含 13 个占位），未支持 13（见 §1 的统计行）。</li>
 <li>教程的"<a href="10_vs_web.html">与 Web 的差别</a>"列的是<strong>用户会踩到的差异</strong>，不重复这份清单。</li>
 <li>各标签的 UA 默认样式见<a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>；
   属性白名单见 <a href="QLUI API手册.html">API 手册 §3.2</a>。</li>
