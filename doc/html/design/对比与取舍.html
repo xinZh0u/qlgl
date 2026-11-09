@@ -417,6 +417,11 @@ main img.shot { max-width: 100%; }
 <td>Dart VM + AOT 快照</td>
 </tr>
 <tr>
+<td>热重载</td>
+<td><strong>UI 有</strong>：改 HTML/CSS → 运行期重编译整份 doc（<strong>实测 1 ms</strong>，见 §12）；C 逻辑改动仍需重编译</td>
+<td>有，且<strong>覆盖 Dart 代码</strong>；配套 DevTools 成熟</td>
+</tr>
+<tr>
 <td>界面语言</td>
 <td>HTML + CSS（<strong>设计稿/网页可搬</strong>，构建期编译成静态数据）</td>
 <td>Dart 代码里写 widget 树</td>
@@ -448,7 +453,109 @@ main img.shot { max-width: 100%; }
 <li>复杂文字整形（阿拉伯/印度语系）与 RTL：qlgl 明确不做（要 HarfBuzz/SheenBidi）；</li>
 <li>平台原生观感：自绘框架都不像系统控件（GTK/Qt 才是那一档）。</li>
 </ul>
-<p><strong>该选 Flutter 的时候</strong>：做移动端产品、要现成控件与生态、要热重载、团队愿意学 Dart。</p>
+<p><strong>该选 Flutter 的时候</strong>：做移动端产品、要现成控件与生态、团队愿意学 Dart。</p>
+<h3 id="41-flutter">4.1 渲染性能：能不能比 Flutter 强？</h3>
+<p><strong>先给结论，分档说</strong>（不分档的"谁更快"没有意义）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>谁更快</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小/中屏（≤800×480）、<strong>无 GPU</strong>、CPU 光栅</td>
+<td><strong>qlgl 更快</strong>（而且是唯一能跑的）</td>
+<td>800×480 全屏 p95 <strong>2.0 ms</strong>、320×240 <strong>0.30 ms</strong>；Flutter 的 Impeller 要 GL/Vulkan，没有 GPU 直接不成立</td>
+</tr>
+<tr>
+<td>静态界面 / 只有一小块在动</td>
+<td><strong>qlgl 结构性领先</strong></td>
+<td>静态时 <code>ql_ui_anim_tick()</code> 返回 0，主循环整帧跳过（0 draw call、0 CPU）；局部刷新成本是全量的 <strong>4.5%</strong></td>
+</tr>
+<tr>
+<td>启动到首帧、常驻内存</td>
+<td><strong>qlgl 快一个量级</strong></td>
+<td>二进制 262~519 KB、RSS 3.2 MB；Flutter 桌面 20~30 MB / 60~150 MB</td>
+</tr>
+<tr>
+<td>大屏 + <strong>满屏合成特效</strong> + 120 Hz 全屏动画</td>
+<td><strong>Flutter 更强</strong></td>
+<td>Impeller 是多线程 GPU 光栅 + 预编译着色器；我们的 GPU 后端目前只是"和 CPU 逐像素对齐地追平"，且<strong>没有离屏图层</strong>（真 group opacity、rotate 都还没做）</td>
+</tr>
+<tr>
+<td>复杂文字（大量字号 / 需要整形）</td>
+<td><strong>Flutter 更强</strong></td>
+<td>Skia + HarfBuzz；我们只做单字体 + UTF-8，不做整形/RTL</td>
+</tr>
+<tr>
+<td>大量图片合成、视频</td>
+<td><strong>Flutter 更强</strong></td>
+<td>我们没有视频解码，图片是 CPU blit</td>
+</tr>
+</tbody>
+</table>
+<p><strong>我们这边拿得出的硬数字</strong>（本机，800×480 离屏全速，<code>benchmark/</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>CPU 光栅 p50</th>
+<th>GPU 后端 p50</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cards（圆角/边框/渐变/阴影 + 文本）</td>
+<td>1.76 ms</td>
+<td>0.21 ms</td>
+</tr>
+<tr>
+<td>text（折行 + 字形缓存）</td>
+<td>1.84 ms</td>
+<td>0.56 ms</td>
+</tr>
+<tr>
+<td>anim（关键帧 + 脏区）</td>
+<td>0.88 ms</td>
+<td>0.07 ms</td>
+</tr>
+<tr>
+<td>dirty（全屏静止 + 一小块在动）</td>
+<td>1.01 ms</td>
+<td>0.08 ms</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>注意：上表 GL 一列<strong>跑的是 Mesa 的软件光栅（llvmpipe）</strong>，不是真 GPU ——
+也就是说这些数字已经是"没有显卡也成立"的下限。真 GPU 上只会更快，
+但"更快多少"没有实测，不写。</p>
+</blockquote>
+<p><strong>为什么可能真的比 Flutter 快（结构性原因，不是调参）</strong></p>
+<ol>
+<li><strong>工作量和"变了多少"成正比</strong>：没有保留式场景图，不做 layer 树重建、不做全屏合成，
+   脏区外一个像素都不碰；</li>
+<li><strong>界面在构建期就编译成了静态表</strong>：运行期没有 CSS 匹配、没有选择器、没有布局求解之外的
+   解释执行（<code>ql_ui_node_style()</code> 是一次数组取值）；</li>
+<li><strong>没有 GC/JIT</strong>：没有"某帧突然多花 8 ms"的抖动，节点数上限是编译期常量，
+   最坏帧可以算出来；</li>
+<li><strong>CPU 光栅的单帧成本已经低于 16.7 ms 一个数量级</strong>（p95 2 ms ≈ 8 倍余量），
+   所以在小屏上"要不要上 GPU"根本不是问题。</li>
+</ol>
+<p><strong>为什么在大屏重特效上会输</strong></p>
+<ol>
+<li>我们没有多线程光栅、没有瓦片化（tiler）；</li>
+<li>满屏 <code>backdrop-filter</code> 在我们这里是"读回像素 → 两趟模糊 → 写回"，在 Impeller 里是
+   一次离屏 pass；</li>
+<li>没有离屏图层 ⇒ group opacity / 旋转 / 图层缓存这些"GPU 才划算"的手法用不了。</li>
+</ol>
+<p><strong>要把这件事说成定论，得怎么测</strong>（现在<strong>没有</strong>做，别把上面的分档当成实测对比）：
+同一块板子（同分辨率、同刷新率）上跑两边的等价界面，量
+①冷启动到首帧、②稳态 p50/p95 帧时间、③峰值 RSS、④二进制体积。
+本仓库的纪律是"没有基准数据就不许写'高于 XX'" —— 所以本文只写分档与结构性论证。</p>
 <hr />
 <h2 id="5-vs-gtk-4">5. vs GTK 4：桌面这一侧的正面对手</h2>
 <p><strong>GTK 4 强在哪</strong>（这几点 qlgl 明确不做，也不打算做）</p>
@@ -721,6 +828,15 @@ qlgl 的赌注是"<strong>PC 上的原型和板子上是同一份 HTML/CSS</stro
 <td>✅</td>
 <td>✅</td>
 <td>❌</td>
+</tr>
+<tr>
+<td>UI 热重载</td>
+<td>✅ 改 HTML/CSS，<strong>1 ms</strong> 重编译；C 逻辑仍需重编译</td>
+<td>✅ 全量（含 JS）</td>
+<td>✅ 含 Dart 代码</td>
+<td>❌ 要重编译</td>
+<td>❌ 要重编译</td>
+<td>❌ 要重编译</td>
 </tr>
 <tr>
 <td>下到 MCU</td>
@@ -1071,7 +1187,107 @@ PC 上想要中文与 GL，就得付这两笔账（Electron 也一样要付，�
 </tbody>
 </table>
 <hr />
-<h2 id="12">12. 相关文档</h2>
+<h2 id="12">12. 热重载与设计工具（这条路上我们其实占优）</h2>
+<p>"改一行 CSS 立刻看到效果"经常被当成 Flutter/Web 的专利，但它<strong>跟框架无关，跟界面语言有关</strong>：</p>
+<ul>
+<li>Web 系（Electron/浏览器）：天生有，因为界面在运行期解释；</li>
+<li>Flutter：有，但重载的是 <strong>Dart 代码</strong>（UI 与逻辑同一门语言，所以能一起热更）；</li>
+<li>GTK / Qt：<strong>没有</strong>（C/C++ 改了必须重新编译 + 重启）；</li>
+<li>qlgl：<strong>有，而且只需要重新编译界面那一半</strong>。</li>
+</ul>
+<h3 id="121">12.1 现在就能跑</h3>
+<div class="highlight"><pre><span></span><code>./build/example/example_20_live_reload<span class="w">      </span><span class="c1"># 打开窗口</span>
+<span class="c1"># 然后编辑 example/20_live_reload/style.css，保存</span>
+</code></pre></div>
+
+<p>终端会打印：</p>
+<div class="highlight"><pre><span></span><code>首次编译：41 个节点，17 个样式，32 ms
+重载：41 个节点，17 个样式，1 ms        ← 改完 CSS 之后
+</code></pre></div>
+
+<p>原理就一句：<strong>界面是可以在运行期编译的</strong>（<code>ql_ui_load_text(html, css)</code>），
+所以热重载 = 重新读文件 + 重新建树：</p>
+<div class="highlight"><pre><span></span><code>stat() 看 mtime → 读文件 → ql_ui_load_text → ql_ui_build → 换掉旧的 → ql_ui_layout
+</code></pre></div>
+
+<p>三条已经内建的规矩让它很安全：</p>
+<table>
+<thead>
+<tr>
+<th>规矩</th>
+<th>表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新文件写坏了<strong>保留旧界面</strong></td>
+<td>编译失败只打印原因，屏幕上还是能用的那一版（"明确失败优于半个正确"）</td>
+</tr>
+<tr>
+<td>整份重建而不是打补丁</td>
+<td>doc 之间不能合并，但<strong>只要 1 ms</strong></td>
+</tr>
+<tr>
+<td>UI 与逻辑分离</td>
+<td>改 CSS/HTML 不用重编译；只有改 C 逻辑才需要重编译 —— 比 Flutter 的"全都重载"少了不确定性</td>
+</tr>
+</tbody>
+</table>
+<p>另一种形态（不重新编译应用、也不改 C）：把界面编译成 <code>.qlui</code> blob，
+窗口 <code>--watch</code> 监视文件变化，<code>qltext</code> + <code>qlblob</code> 在另一个终端生成新 blob
+（见 <a href="手册/ui/QLUI阅读指南.md">QLUI 阅读指南</a> §8）。两条路都<strong>不需要重新编译应用二进制</strong>。</p>
+<h3 id="122">12.2 设计工具要补什么</h3>
+<p>现在缺的不是机制，是<strong>工具</strong>。要做的是一个"活的设计器"：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>现状</th>
+<th>要补的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>编辑 → 重编译 → 立刻看到</td>
+<td>✅ 已有（§12.1）</td>
+<td>编辑器内嵌预览（把 <code>ql_ui_load_text</code> 的产物画进一块 canvas）</td>
+</tr>
+<tr>
+<td>点选元素 → 高亮盒子</td>
+<td>⚠️ 有基础：<code>ql_ui_hit_test</code>、<code>ql_ui_node_rect</code>、<code>node-&gt;paint_box</code></td>
+<td>一个属主：选中 id → 画描边 + 角标</td>
+</tr>
+<tr>
+<td>拖动改尺寸 → 回写 CSS</td>
+<td>❌</td>
+<td>反向代码生成（改的是 CSS 文本，不是内存里的样式）</td>
+</tr>
+<tr>
+<td>样式面板（可改的属性列表）</td>
+<td>⚠️ 属性表已经是静态数组（<code>k_supported_props</code>）</td>
+<td>生成"这个元素命中了哪些规则"的视图 —— 级联结果在构建期就没了，<strong>需要额外保留一份来源信息</strong></td>
+</tr>
+<tr>
+<td>状态保持（重载后焦点/滚动/输入值不丢）</td>
+<td>❌ 重载是整份重建</td>
+<td>按 <code>id</code> 做状态快照与回填（keyed diff）</td>
+</tr>
+<tr>
+<td>主题/变量</td>
+<td>❌ 无 <code>var()</code></td>
+<td>先支持 <code>--x</code> 自定义属性，再让设计器暴露成表单</td>
+</tr>
+</tbody>
+</table>
+<p>最值得先做的是上表前三行：<strong>内嵌预览 + 点选高亮 + 状态保持</strong>。这三件事做完，
+"改 CSS 实时看效果"的体验就和浏览器 DevTools 同档了；而"拖动改尺寸并反写 CSS"与
+"这个元素命中了哪些规则"这两行才是真正的工作量（后者要求构建期多留一份样式来源信息）。</p>
+<blockquote>
+<p>这也是 qlgl 在"开发体验"这条轴上唯一有可能赢的地方：
+<strong>界面语言是 Web 的，运行时又是自己的</strong> —— 既有 CSS 的编辑体验，
+又有 C 的确定性与体积。</p>
+</blockquote>
+<h2 id="13">13. 相关文档</h2>
 <ul>
 <li><a href="Web兼容设计.md">Web 兼容设计</a> —— 子集的边界与三条红线（不做 JS/DOM、不嵌 WebView、不支持就报错）</li>
 <li><a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> —— 逐模块状态 + 覆盖率 + 能力包 + 五批计划</li>

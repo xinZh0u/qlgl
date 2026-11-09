@@ -76,5 +76,6 @@ python3 tools/qltext/qltext.py cc \
 | `17_css_selectors` | 选择器与伪元素：结构伪类 / 属性选择器 / `:not()` / `::before` `::after` / `+` `~` `*` / `:hover` `:active` `:focus` |
 | `18_css_paint` | 绘制效果：渐变 / 圆角边框阴影 / `opacity` / `clip-path` / `transform` / 毛玻璃 / `transition` / `@keyframes` / 文本样式 |
 | `19_css_text` | 文本细节：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` |
+| `20_live_reload` | 热重载：改 `style.css` → 运行期重编译整份 doc（1 ms），失败保留旧界面 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。

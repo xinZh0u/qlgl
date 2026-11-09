@@ -43,6 +43,7 @@ set(QL_EXAMPLES
     17_css_selectors
     18_css_paint
     19_css_text
+    20_live_reload
 )
 
 foreach(e ${QL_EXAMPLES})

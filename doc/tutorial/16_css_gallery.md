@@ -117,7 +117,24 @@ cmake --build build -j
 - **本库默认 `white-space: nowrap`**（与浏览器不同），要折行必须显式写 `white-space: normal`；
 - 写例程时别把类名起成 `.cap` —— `text-transform` 会被同名标题类一起套上（我第一版就把所有标题变成了大写）。
 
-## 5. 这几个例程查出了什么
+## 5. `20_live_reload`：改 CSS 窗口自己变
+
+<img src="../img/20-live-reload.png" alt="热重载：改 style.css 窗口自己更新" width="480">
+
+完整程序：`example/20_live_reload/`
+
+```bash
+./build/example/example_20_live_reload
+# 另开编辑器改 example/20_live_reload/style.css，保存
+```
+
+终端会打印 `重载：41 个节点，17 个样式，1 ms` —— **应用二进制没动过**。
+
+原理只有一句：界面是可以在运行期编译的（`ql_ui_load_text`），所以热重载 = 重新读文件 +
+重新建树。新文件写坏了会**保留旧界面**并打印原因（"明确失败优于半个正确"）。
+这件事和"设计工具"是同一套东西，见 [对比与取舍 §12](../design/对比与取舍.html)。
+
+## 6. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

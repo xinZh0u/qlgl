@@ -1653,7 +1653,9 @@ qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> <
 <p>要点：</p>
 <ul>
 <li>应用<strong>不需要重编译</strong>（<code>example_ui_blob</code> 的二进制没变）；</li>
-<li>重载是整份重建（几十微秒），因为 doc 之间不能合并；</li>
+<li>想做"改文件就自动更新"的应用：<code>example/20_live_reload/main.c</code> 是最小实现（<code>stat()</code> 看 mtime →
+  <code>ql_ui_load_text</code> → 换树，<strong>实测整份重编译 1 ms</strong>，编译失败保留旧界面）；</li>
+<li>重载是整份重建（几十微秒~1 ms），因为 doc 之间不能合并；</li>
 <li>如果新的 <code>.qlui</code> 坏了，示例<strong>保留旧界面</strong>并打印原因——这条规则来自
   "明确失败优于半个正确"，<code>test_ui_blob</code> 里有对应断言。</li>
 </ul>

@@ -1,0 +1,35 @@
+<div id="root">
+  <div class="h1">热重载：改这一份 CSS，窗口自己变</div>
+
+  <div class="panel">
+    <div class="row">
+      <span class="k">界面语言</span>
+      <span class="v">HTML + CSS</span>
+    </div>
+    <div class="row">
+      <span class="k">重载方式</span>
+      <span class="v">运行期重新编译整份 doc</span>
+    </div>
+    <div class="row">
+      <span class="k">应用是否重编译</span>
+      <span class="v accent">否</span>
+    </div>
+    <div class="row">
+      <span class="k">耗时 / 节点数</span>
+      <span class="v">看终端输出</span>
+    </div>
+  </div>
+
+  <div class="tip">
+    现在去改 <code>style.css</code>：把 <code>.accent</code> 换成别的颜色、
+    把 <code>.panel</code> 的 <code>border-radius</code> 改大、把 <code>.h1</code>
+    的 <code>font-size</code> 改小。保存后窗口在 <b>100ms 内</b>换掉 ——
+    应用二进制没动过。写坏了也不怕：编译失败会保留旧界面并在终端报原因。
+  </div>
+
+  <div class="bar">
+    <div class="fill"></div>
+  </div>
+
+  <div class="foot">把 <code>style.css</code> 存成空文件试试 —— 界面不会变白，只会打印原因。</div>
+</div>

@@ -76,6 +76,7 @@ cmake --build build -j
 | `17_css_selectors` | 选择器与伪元素：结构伪类 / 属性选择器 / `:not()` / `::before` `::after` / `+` `~` `*` / 状态伪类 |
 | `18_css_paint` | 绘制效果：渐变 / 圆角边框阴影 / `opacity` / `clip-path` / `transform` / 毛玻璃 / `transition` / `@keyframes` / 文本样式 |
 | `19_css_text` | 文本细节：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` |
+| `20_live_reload` | 热重载：改 `style.css` 窗口自己变（运行期重编译，**1 ms**，应用不重编译） |
 
 ## 构建与测试
 

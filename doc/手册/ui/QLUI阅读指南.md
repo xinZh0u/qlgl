@@ -1015,7 +1015,9 @@ qltext cc --html test/web/ui_demo.html \
 要点：
 
 - 应用**不需要重编译**（`example_ui_blob` 的二进制没变）；
-- 重载是整份重建（几十微秒），因为 doc 之间不能合并；
+- 想做"改文件就自动更新"的应用：`example/20_live_reload/main.c` 是最小实现（`stat()` 看 mtime →
+  `ql_ui_load_text` → 换树，**实测整份重编译 1 ms**，编译失败保留旧界面）；
+- 重载是整份重建（几十微秒~1 ms），因为 doc 之间不能合并；
 - 如果新的 `.qlui` 坏了，示例**保留旧界面**并打印原因——这条规则来自
   "明确失败优于半个正确"，`test_ui_blob` 里有对应断言。
 

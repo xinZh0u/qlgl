@@ -496,7 +496,18 @@ main img.shot { max-width: 100%; }
 <li><strong>本库默认 <code>white-space: nowrap</code></strong>（与浏览器不同），要折行必须显式写 <code>white-space: normal</code>；</li>
 <li>写例程时别把类名起成 <code>.cap</code> —— <code>text-transform</code> 会被同名标题类一起套上（我第一版就把所有标题变成了大写）。</li>
 </ul>
-<h2 id="5">5. 这几个例程查出了什么</h2>
+<h2 id="5-20_live_reload-css">5. <code>20_live_reload</code>：改 CSS 窗口自己变</h2>
+<p><img src="../img/20-live-reload.png" alt="热重载：改 style.css 窗口自己更新" width="480"></p>
+<p>完整程序：<code>example/20_live_reload/</code></p>
+<div class="highlight"><pre><span></span><code>./build/example/example_20_live_reload
+<span class="c1"># 另开编辑器改 example/20_live_reload/style.css，保存</span>
+</code></pre></div>
+
+<p>终端会打印 <code>重载：41 个节点，17 个样式，1 ms</code> —— <strong>应用二进制没动过</strong>。</p>
+<p>原理只有一句：界面是可以在运行期编译的（<code>ql_ui_load_text</code>），所以热重载 = 重新读文件 +
+重新建树。新文件写坏了会<strong>保留旧界面</strong>并打印原因（"明确失败优于半个正确"）。
+这件事和"设计工具"是同一套东西，见 <a href="../design/对比与取舍.html">对比与取舍 §12</a>。</p>
+<h2 id="6">6. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，
