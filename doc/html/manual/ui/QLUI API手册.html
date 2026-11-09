@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -212,7 +209,8 @@ main img.shot { max-width: 100%; }
 <p>配套阅读：<a href="./QLUI阅读指南.md">QLUI 阅读指南</a> · 定位：<a href="../../Web兼容设计.md">Web 兼容设计</a> §7</p>
 <blockquote>
 <p><strong>先明确适用场景</strong>
-- <strong>MCU</strong>：不要用本模块，直接用 <code>QLWidget</code>/<code>QLLabel</code> 的 C API（见 <a href="../widget/QLWidget%20API手册.md">QLWidget API手册</a>）。
+- <strong>MCU</strong>：本模块就是唯一路径。想省 Flash 就裁能力包（<code>QL_FEAT_UI_*</code>），
+  或者干脆用构建期编译出来的静态 doc（见 <a href="./QLUI阅读指南.md">QLUI 阅读指南</a> 的 blob 一节）。
 - <strong>MPU / 嵌入式 Linux</strong>：用本模块，把 HTML+CSS 编译成 C。
 - <strong>PC 要高兼容</strong>：用系统 WebView（WebView2 / WKWebView / WebKitGTK），不用本模块。</p>
 </blockquote>

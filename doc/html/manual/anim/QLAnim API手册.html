@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -225,15 +222,17 @@ main img.shot { max-width: 100%; }
 
 <span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_apply</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="o">*</span><span class="n">v</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">w</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">;</span>
-<span class="w">    </span><span class="n">ql_label_set_alpha</span><span class="p">(</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">uint8_t</span><span class="p">)(</span><span class="n">v</span><span class="o">-&gt;</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">));</span>
+<span class="w">    </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">;</span>
+<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">node</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 动画结果已由引擎写进节点的生效样式 */</span>
 <span class="p">}</span>
 
-<span class="kt">void</span><span class="w"> </span><span class="nf">fade_in</span><span class="p">(</span><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="n">w</span><span class="p">)</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">fade_in</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">)</span>
+<span class="cm">/* ui 未用：动画由引擎按节点生效样式绘制，见 §… */</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">.</span><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mf">255.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">};</span>
 <span class="w">    </span><span class="n">s_alpha_key</span><span class="p">.</span><span class="n">cur</span><span class="p">.</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">;</span><span class="w">             </span><span class="cm">/* 起点 = 当前值 */</span>
-<span class="w">    </span><span class="n">ql_anim_start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s_alpha_key</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="n">QL_EASE_OUT</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">on_apply</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_anim_start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s_alpha_key</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="n">QL_EASE_OUT</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">on_apply</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* 动画自己会标脏；这里只是示例里显式说明&quot;改了什么就标什么&quot; */</span>
 <span class="p">}</span>
 
 <span class="cm">/* 主循环 */</span>

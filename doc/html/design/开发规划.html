@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
@@ -241,8 +238,8 @@ PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏
 <td>✅</td>
 </tr>
 <tr>
-<td>控件</td>
-<td><code>QLWidget</code> / <code>QLLabel</code>（属性 + 自动尺寸 + 对齐）</td>
+<td>界面</td>
+<td><code>QLUI</code>：HTML+CSS 编译成静态 doc，运行期只读</td>
 <td>✅</td>
 </tr>
 <tr>
@@ -267,8 +264,8 @@ PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏
 </tr>
 <tr>
 <td>交互</td>
-<td><code>QLInput</code>：命中测试、hover/active/focus 状态、点击合成、键盘焦点、冒泡</td>
-<td>✅ 130 项断言</td>
+<td><code>QLInput</code> 队列 + <code>QLUI</code> 命中测试 / hover-active-focus / 点击合成 / 键盘焦点</td>
+<td>✅ 队列 49 项 + 界面层各测试</td>
 </tr>
 <tr>
 <td>脏区</td>
@@ -433,9 +430,9 @@ ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 </tr>
 <tr>
 <td>E2</td>
-<td>控件层未接 <code>QLDraw2D</code></td>
-<td>控件用不上 GPU</td>
-<td><code>qlwidget.h</code></td>
+<td>~~控件层未接 <code>QLDraw2D</code>~~</td>
+<td>已解决：界面层直接吃 <code>QLDraw2D</code></td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
@@ -588,7 +585,7 @@ ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 <p><strong>顺带修掉的真 bug</strong></p>
 <ol>
 <li><code>ql_object_set_parent</code> 头插 + 渲染正序遍历 → <strong>最后挂上的控件画在最下面</strong>，
-   与 <code>qlwidget.h</code> 的承诺相反。改为追加到链尾（链表顺序 == 绘制顺序）。</li>
+   与"后挂的覆盖先挂的"相反。改为追加到链尾（链表顺序 == 绘制顺序）。</li>
 <li><code>ql_ui_build</code> 用 <code>node_count</code> 给<strong>样式下标</strong>做越界检查，
    样式数一旦超过节点数就静默回落到 <code>styles[0]</code>。<code>QLUIDoc</code> 增加 <code>style_count</code>。</li>
 </ol>
@@ -1153,7 +1150,7 @@ qlui: 21 处降级，1 处无法降级
 <tr>
 <td>驱动 <code>flush(area)</code> / 清屏</td>
 <td>设备像素</td>
-<td><code>ql_render()</code> 各自换一次</td>
+<td>每帧的 <code>ql_ui_render*()</code></td>
 </tr>
 </tbody>
 </table>
@@ -1272,7 +1269,7 @@ GL 侧是 <code>QLGfxGL.scale_fx</code>。上层代码<strong>一行都不用改
 </tbody>
 </table>
 <blockquote>
-<p>这件事越晚做越贵：rect 已经扩散到 qlui/widget/canvas/GL 四处，必须单独一个里程碑完成。</p>
+<p>这件事越晚做越贵：rect 已经扩散到 qlui/canvas/GL 等多处，必须单独一个里程碑完成。</p>
 </blockquote>
 <hr />
 <h3 id="m55-ui-45-pcmcu">M5.5 · 动效与现代 UI（约 4~5 周）—— <strong>PC/移动优先；MCU 暂缓</strong></h3>
@@ -3055,12 +3052,12 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <tr>
 <td>画布/绘制原语</td>
 <td><code>src/draw/qlcanvas.c</code></td>
-<td><a href="./手册/widget/QLWidget阅读指南.md">QLWidget 手册</a></td>
+<td><a href="./手册/render/QLRender阅读指南.md">QLRender 手册</a></td>
 </tr>
 <tr>
-<td>控件</td>
-<td><code>src/widget/</code></td>
-<td>同上</td>
+<td>界面（HTML/CSS）</td>
+<td><code>src/ui/</code></td>
+<td><a href="./手册/ui/QLUI阅读指南.md">QLUI 手册</a></td>
 </tr>
 <tr>
 <td>字体/文本</td>

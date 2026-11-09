@@ -286,9 +286,10 @@ int ql_disp_x11_poll(QLDispDriver *driver)
 
         switch (ev.type) {
         case Expose:
+            /* 窗口被遮挡/重新显示：整屏都要重画。
+             * 计数本身就是信号 —— 应用（或测试）看到它变了就整帧重绘，
+             * 这一层不持有任何"脏区"状态。 */
             x->expose_count++;
-            /* 窗口被遮挡/重新显示：整屏都要重画 */
-            ql_render_invalidate_all();
             break;
 
         case ClientMessage:

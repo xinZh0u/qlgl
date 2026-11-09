@@ -90,7 +90,6 @@ QLGL 不是"只有一套 API"，而是四层，看你需要多底层：
 | 层 | 头文件 | 是什么 |
 |---|---|---|
 | 对象系统 | `qlobject.h` / `qlprop.h` / `qlclass.h` | C 里的类、属性、信号（GTK 那套思路） |
-| 控件 | `qlwidget.h` / `qllabel.h` | 用 C 拼界面的传统路子 |
 | 界面（推荐） | `qlui.h` / `qluitext.h` | HTML+CSS → 静态数据 |
 | 绘制 | `qldraw2d.h` / `qlcanvas.h` / `qlgfx_gl.h` | 直接画 |
 | 文本 | `qlfont.h` / `qlfont_ft.h` | 字体与字形 |
@@ -120,7 +119,7 @@ QLGL 不是"只有一套 API"，而是四层，看你需要多底层：
 | 运行期解析的边界与上限 | [QLUIText API 手册](../manual/uitext/QLUIText%20API手册.html) |
 | 渲染管线、字形、脏区细节 | [QLRender 阅读指南](../manual/render/QLRender阅读指南.html) |
 | 动效的求值模型 | [QLAnim 阅读指南](../manual/anim/QLAnim阅读指南.html) |
-| 自己写控件 | [QLWidget 阅读指南](../manual/widget/QLWidget阅读指南.html) |
+| 界面描述能力 | [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html) |
 | 用 C 拼界面（不用 CSS） | [QLObject 阅读指南](../manual/object/QLObject阅读指南.html) |
 
 ## 例程一览

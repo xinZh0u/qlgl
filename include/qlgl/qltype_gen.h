@@ -5,8 +5,6 @@
 /* 类型 id：新类只能追加到末尾，禁止插入或重排。 */
 enum {
     QL_TYPE_OBJECT               = 0,
-    QL_TYPE_WIDGET               = 1,
-    QL_TYPE_LABEL                = 2,
     QL_TYPE_COUNT,              /* 内置类数量，动态注册从它开始 */
 };
 

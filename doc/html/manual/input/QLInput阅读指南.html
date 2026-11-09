@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -226,81 +223,70 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>include/qlgl/qlinput.h</code></td>
-<td><code>QLInputEvent</code>、<code>QLKey</code>、队列与派发接口</td>
+<td><code>QLInputEvent</code>、<code>QLKey</code>、队列与事件汇接口</td>
 <td>①</td>
 </tr>
 <tr>
 <td><code>src/core/qlinput.c</code></td>
-<td>队列、命中测试、hover/pressed/focus 状态机、点击合成</td>
+<td>环形队列 + 坐标/按钮/修饰键跟踪 + 派发（198 行）</td>
 <td>②</td>
-</tr>
-<tr>
-<td><code>include/qlgl/qlwidget.h</code></td>
-<td>控件事件 id（<code>QL_WIDGET_EVENT_*</code>）、状态位（<code>QL_WIDGET_STATE_*</code>）</td>
-<td>③</td>
-</tr>
-<tr>
-<td><code>src/widget/qlwidget.c</code></td>
-<td>状态位实现、状态背景色、<code>draw_default</code> 里的状态选色</td>
-<td>④</td>
 </tr>
 <tr>
 <td><code>src/port/qlinput_x11.h</code></td>
 <td>X11 事件 → <code>QLInputEvent</code>（X11 与 GL 后端共用）</td>
-<td>⑤</td>
+<td>③</td>
 </tr>
 <tr>
 <td><code>src/port/qlinput_evdev.h</code></td>
 <td>evdev 扫描码 → <code>QLKey</code>（Wayland 用，US 布局）</td>
-<td>⑥</td>
+<td>④</td>
 </tr>
 <tr>
 <td><code>src/port/qldisp_x11.c</code></td>
 <td><code>XSelectInput</code> + 事件轮询里调用 <code>ql_x11_push_input</code></td>
-<td>⑦</td>
+<td>⑤</td>
 </tr>
 <tr>
 <td><code>src/port/qldisp_wayland.c</code></td>
 <td><code>wl_pointer</code> / <code>wl_keyboard</code> 监听器</td>
-<td>⑧</td>
+<td>⑥</td>
 </tr>
 <tr>
 <td><code>src/port/qlgfx_gl.c</code></td>
 <td>GL 窗口的 X11 事件同样走 <code>ql_x11_push_input</code></td>
-<td>⑨</td>
+<td>⑦</td>
 </tr>
 <tr>
 <td><code>src/ui/qlui.c</code></td>
-<td><code>ql_ui_input_event</code>：把输入事件映射到 <code>QLUIRoot</code> 的 <code>:hover/:active</code></td>
-<td>⑩</td>
+<td><code>ql_ui_input_event</code>：命中测试 + <code>:hover/:active/:focus</code> + 点击合成</td>
+<td>⑧</td>
 </tr>
 <tr>
-<td><code>test/input/test_input.c</code></td>
-<td>130 项断言，覆盖下面所有规则</td>
-<td>⑪</td>
-</tr>
-<tr>
-<td><code>test/input/example_input.c</code></td>
-<td>可交互窗口示例</td>
-<td>⑫</td>
+<td><code>test/input/test_input_queue.c</code></td>
+<td>队列语义（顺序、溢出、状态跟踪、汇）</td>
+<td>⑨</td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>命中测试<strong>不在这里</strong>。它在 <code>src/ui/qlui.c</code>，因为只有界面层认识
+HTML/CSS 编译出来的节点树（<code>display:none</code>、<code>overflow</code> 裁剪、<code>transform</code>、热区）。</p>
+</blockquote>
 <hr />
-<h2 id="2">2. 为什么要有独立一层</h2>
-<p>后端只认识"坐标 + 按钮 + 键码"，<strong>不认识控件树</strong>。
-输入层负责把原始事件变成有语义的控件事件，因此：</p>
+<h2 id="2">2. 为什么队列要独立一层</h2>
+<p>后端只认识"坐标 + 按钮 + 键码"，界面层只认识节点树。中间隔一个<strong>定长队列</strong>，
+换来三件事：</p>
 <div class="highlight"><pre><span></span><code>X11/Wayland 事件 ──┐
-测试注入的事件   ──┼─→ QLInputEvent 队列 ─→ ql_input_dispatch() ─→ 命中测试 ─→ ql_emit()
-自动化脚本       ──┘                                                          │
-                                                            捕获 / 目标 / 冒泡（复用对象系统）
+测试注入的事件   ──┼─→ QLInputEvent 队列 ─→ ql_input_dispatch() ─→ 事件汇 ─→ ql_ui_input_event()
+自动化脚本       ──┘
 </code></pre></div>
 
-<p>这样带来三个直接好处：</p>
 <ol>
-<li><strong>无窗口也能测</strong>：<code>test_input.c</code> 不开窗口，直接 push 事件，断言派发结果；</li>
-<li><strong>后端极薄</strong>：新增后端只写一个"翻译函数"，不碰交互逻辑；</li>
-<li><strong>交互逻辑只有一份</strong>：X11、Wayland、离屏、测试走同一条路。</li>
+<li><strong>后端与界面解耦</strong>：后端不 include 任何界面头文件，加一个新后端只写翻译代码；</li>
+<li><strong>时序可预测</strong>：所有输入都在主循环的固定位置派发（而不是在 <code>poll()</code> 里），
+   所以"一帧内的输入按顺序处理完再重绘"成立；</li>
+<li><strong>测试能注入</strong>：<code>test_input_queue</code> 与界面层的输入测试都靠 <code>ql_input_push*</code>
+   走真实路径，而不是直接调内部函数。</li>
 </ol>
 <hr />
 <h2 id="3">3. 事件队列</h2>
@@ -317,68 +303,39 @@ main img.shot { max-width: 100%; }
 派发会调用户回调，用户回调里可能改控件、甚至销毁控件。放在主循环的固定位置，
 时序可预测，也让"一帧内的所有输入"能按顺序处理完再重绘。</p>
 <hr />
-<h2 id="4">4. 命中测试</h2>
-<p><code>ql_input_hit_test(root, x, y)</code> 的关键规则，全部有测试覆盖：</p>
-<ol>
-<li><strong>后挂的子控件在上层</strong>
-   子链表顺序 == 绘制顺序（<code>ql_object_set_parent</code> 追加到链尾，见 §8），
-   所以命中测试递归时"最后一个命中的"就是视觉上最上层的。</li>
-<li><strong>父控件先于子控件？</strong> 不是。先递归子节点，子节点命中就返回子节点；
-   子节点都没命中才考虑父节点自己。</li>
-<li><strong><code>pointer-events: none</code></strong>（<code>ql_widget_set_pointer_events(obj, 0)</code>）：
-   该控件自己不吃命中，事件穿透到下层。标签放在按钮里时必须设成 0。</li>
-<li><strong>不可见控件</strong>（<code>visible = 0</code> 或 <code>QL_OBJ_FLAG_HIDDEN</code>）整棵子树跳过。</li>
-<li><strong><code>clip_children</code></strong>：父控件裁剪子控件时，超出父盒子的部分不参与命中
-   （和绘制表现一致）。</li>
-<li>点在最外层的空白处 → 命中最外层根控件；点在根之外 → <code>NULL</code>。</li>
-</ol>
-<p>递归实现（简化）：</p>
-<div class="highlight"><pre><span></span><code><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">hit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">child</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">first_child</span><span class="p">;</span><span class="w"> </span><span class="n">child</span><span class="p">;</span><span class="w"> </span><span class="n">child</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">hit_walk</span><span class="p">(</span><span class="n">child</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">box</span><span class="p">);</span><span class="w">   </span><span class="cm">/* box = 本节点矩形 */</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">found</span><span class="p">)</span><span class="w"> </span><span class="n">hit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">found</span><span class="p">;</span><span class="w">                        </span><span class="cm">/* 后者覆盖前者 = 后者在上 */</span>
-<span class="p">}</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">hit</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">hit</span><span class="p">;</span><span class="w">                               </span><span class="cm">/* 子节点优先 */</span>
-<span class="k">return</span><span class="w"> </span><span class="n">本节点包含该点</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">本节点</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
-</code></pre></div>
-
+<h2 id="4">4. 界面层接手之后的四件事</h2>
+<p>队列把事件交出去之后，<code>ql_ui_input_event()</code> 做这些（细节见
+<a href="../ui/QLUI阅读指南.md">QLUI 阅读指南</a>）：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>命中测试</td>
+<td>自顶向下、后挂的在上；<code>display:none</code> 整棵跳过；<code>overflow</code> 裁掉的部分不参与</td>
+</tr>
+<tr>
+<td>状态位</td>
+<td><code>:hover</code> 沿祖先链生效；<code>:active</code> 在按下到抬起之间保持；<code>:focus</code> 由点击/程序设置</td>
+</tr>
+<tr>
+<td>点击合成</td>
+<td>按下与抬起命中同一节点才算点击；滚轮/拖动不算</td>
+</tr>
+<tr>
+<td>派发热区</td>
+<td>命中 <code>&lt;img&gt;</code> 的 <code>&lt;area&gt;</code> 时派发 <code>area_cb</code> 而<strong>不是</strong> <code>click_cb</code></td>
+</tr>
+</tbody>
+</table>
 <hr />
-<h2 id="5-hover-pressed-focus">5. 状态机：hover / pressed / focus</h2>
-<p>三个全局状态（<code>s_hover</code> / <code>s_pressed</code> / <code>s_focus</code>）驱动控件上的三个状态位
-（<code>QL_WIDGET_STATE_HOVER / ACTIVE / FOCUS</code>）。</p>
-<p><strong>状态位沿父链设置</strong>（<code>set_state_chain</code>），因为 CSS 的 <code>:hover</code> 对祖先同样成立：
-鼠标停在按钮上时，<code>root</code>、<code>card</code>、<code>btn</code> 都带 <code>HOVER</code>。</p>
-<h3 id="hover">hover</h3>
-<div class="highlight"><pre><span></span><code>MOVE(40,80) ──→ 命中 btn ──→ 与 s_hover 不同 ──→ 清旧链 HOVER / 设新链 HOVER
-                                            └─→ 对旧目标发 POINTER_LEAVE
-                                            └─→ 对新目标发 POINTER_ENTER
-</code></pre></div>
-
-<p>同一目标重复移动不重复发 ENTER（<code>s_hover == target</code> 直接返回），避免每帧刷事件。</p>
-<h3 id="pressed">pressed（按下）</h3>
-<ul>
-<li><code>POINTER_DOWN</code> 记录 <code>s_pressed</code>、<code>s_press_x/y</code>，给目标链设 <code>ACTIVE</code>；</li>
-<li><strong>按住时移动</strong>：事件仍然送给 <code>s_pressed</code>（等价 DOM 的隐式指针捕获），
-  否则"按下按钮 → 拖出按钮 → 松手"会永远收不到 UP；</li>
-<li><code>POINTER_UP</code> 清 <code>ACTIVE</code>、清 <code>s_pressed</code>；</li>
-<li><code>POINTER_LEAVE</code>（指针离开窗口表面）也会清 <code>ACTIVE</code> + <code>s_pressed</code>，防止卡住。</li>
-</ul>
-<h3 id="click">click 合成</h3>
-<p><code>UP</code> 时若同时满足：</p>
-<ul>
-<li>抬起目标 == 按下目标（<code>pressed == target</code>）</li>
-<li>位移 ≤ <code>QL_CLICK_SLOP</code>（4 px）</li>
-</ul>
-<p>才发 <code>CLICK</code>。所以"按下后拖到别处松手"不算点击。</p>
-<h3 id="focus">focus</h3>
-<p><code>ql_input_set_focus(obj)</code> 负责发出 <code>FOCUS_OUT</code> / <code>FOCUS_IN</code> 并同步状态位。
-键盘事件和文本输入的目标是焦点控件（没有焦点则回落到输入根），
-因此<strong>按键会沿控件树冒泡</strong>，容器可以统一处理按键。</p>
-<p>启动时<strong>没有</strong>默认焦点，也没有 Tab 遍历（M1 未做，见 §9）。</p>
-<hr />
-<h2 id="6">6. 事件参数约定</h2>
+<h2 id="5">5. 事件参数约定</h2>
 <p><code>QL_EMIT_*</code> 的参数是定长数组，所以每个事件的参数个数与顺序必须写死。
-下表就是契约（<code>qlwidget.h</code> 里也有注释）：</p>
+下表就是契约：</p>
 <table>
 <thead>
 <tr>
@@ -423,7 +380,7 @@ main img.shot { max-width: 100%; }
 所以 <code>ql_event_stop_propagation()</code> 有效，事件会冒泡到根。</p>
 </blockquote>
 <hr />
-<h2 id="7">7. 后端怎么接</h2>
+<h2 id="6">6. 后端怎么接</h2>
 <p>后端只需要两件事：<strong>选对事件掩码</strong>、<strong>把事件翻译成 <code>QLInputEvent</code></strong>。</p>
 <h3 id="x11qselectinput">X11（<code>QSelectInput</code> 必须包含）</h3>
 <div class="highlight"><pre><span></span><code><span class="n">ExposureMask</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">StructureNotifyMask</span><span class="w"> </span><span class="o">|</span>
@@ -457,20 +414,28 @@ X11 显示后端和 GL 后端共用，键码表只有一份。</p>
 <code>*_release</code> 是 v3+ 才有的请求，在 v1 上发出去就是"不存在的方法"。</p>
 </blockquote>
 <h3 id="_1">关闭窗口</h3>
-<p><strong>后端不再把 Esc/q 当关闭键</strong>（否则应用自己收不到 Esc）。
-需要"按 Esc 退出"就在应用里连一个 <code>KEY_DOWN</code> 处理器，再调
-<code>ql_disp_x11_close()</code> / <code>ql_disp_wayland_close()</code> / <code>ql_gfx_gl_close()</code>。
-<code>test/window_helper.h</code> 的 <code>ql_win_bind_esc()</code> 就是这么做的。</p>
+<p><strong>后端不把 Esc/q 当关闭键</strong>（否则应用自己收不到 Esc）。
+需要"按 Esc 退出"就在自己装的汇里判断（<code>example/common.h</code> 就是这么做的）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">sink</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLInputEvent</span><span class="w"> </span><span class="o">*</span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_INPUT_KEY_DOWN</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">ev</span><span class="o">-&gt;</span><span class="n">key</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_KEY_ESCAPE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_gfx_gl_close</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">ql_ui_input_event</span><span class="p">((</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">,</span><span class="w"> </span><span class="n">ev</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
 <hr />
-<h2 id="8-bug">8. 顺带修掉的一个真 bug：子链表顺序</h2>
+<h2 id="7-bug">7. 顺带修掉的一个真 bug：子链表顺序</h2>
 <p>原来 <code>ql_object_set_parent</code> 是<strong>头插</strong>（<code>child-&gt;next_sibling = parent-&gt;first_child</code>），
-而 <code>qlrender</code> 从 <code>first_child</code> 正序遍历绘制 —— 于是<strong>最后挂上的控件画在最下面</strong>，
-和 <code>qlwidget.h</code> 里"后挂的子控件覆盖先挂的"的承诺相反。</p>
-<p>命中测试一写就把这个矛盾暴露了（重叠区域总是命中最老的控件）。
+而绘制从 <code>first_child</code> 正序遍历 —— 于是<strong>最后挂上的节点画在最下面</strong>，
+和"后挂的子节点覆盖先挂的"的承诺相反。</p>
+<p>命中测试一写就把这个矛盾暴露了（重叠区域总是命中最老的节点）。
 处理方式：改成<strong>追加到链尾</strong>，让"链表顺序 == 绘制顺序"，
 每对象省一个 <code>last_child</code> 指针（挂接只在构建期发生，O(n) 尾查找可接受）。</p>
 <hr />
-<h2 id="9-m1">9. M1 的已知边界</h2>
+<h2 id="8">8. 已知边界</h2>
 <table>
 <thead>
 <tr>
@@ -518,15 +483,13 @@ X11 显示后端和 GL 后端共用，键码表只有一份。</p>
 </tbody>
 </table>
 <hr />
-<h2 id="10">10. 建议阅读顺序</h2>
+<h2 id="9">9. 建议阅读顺序</h2>
 <ol>
 <li><code>include/qlgl/qlinput.h</code>（先看 <code>QLInputEvent</code> 和 <code>QLKey</code>）</li>
-<li><code>src/core/qlinput.c</code> 的 <code>hit_walk</code>（命中测试的全部规则）</li>
-<li><code>handle_move</code> / <code>handle_button</code>（状态机 + 点击合成）</li>
-<li><code>ql_input_dispatch</code>（队列与 sink 的关系）</li>
-<li><code>src/widget/qlwidget.c</code> 的 <code>ql_widget_set_state</code> 与 <code>ql_widget_draw_default</code></li>
+<li><code>src/core/qlinput.c</code>（198 行：队列 + 状态跟踪 + 派发，一次读完）</li>
 <li><code>src/port/qlinput_x11.h</code>（一个后端怎么翻译事件）</li>
-<li><code>test/input/test_input.c</code>（所有规则的可执行说明）</li>
+<li><code>test/input/test_input_queue.c</code>（所有队列语义的可执行说明）</li>
+<li>想看"命中之后发生什么"：<code>src/ui/qlui.c</code> 的 <code>ql_ui_pointer_down/up/move</code></li>
 </ol>
 <div class='pager'>
 <a href='../../manual/input/QLInput API手册.html'><span class='dir'>上一页</span>QLInput / 交互 API 手册（v0.1）</a>

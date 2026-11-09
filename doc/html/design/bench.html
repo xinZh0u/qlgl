@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
@@ -412,8 +409,8 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build-rel<span class="w">
 <td>局部重绘 0.026 → <strong>0.016 ms</strong></td>
 </tr>
 <tr>
-<td><strong>控件层接 <code>QLDraw2D</code></strong>：绘制函数签名从 <code>QLCanvas*</code> 改为 <code>QLDraw2D*</code>，新增 <code>ql_render_draw2d()</code></td>
-<td>同一棵控件树可上 GPU；自定义控件只写一次</td>
+<td><strong>绘制入口统一到 <code>QLDraw2D</code></strong>：界面层的绘制只调这一层接口</td>
+<td>同一份界面可上 GPU；加后端只写一次</td>
 <td>架构性，无 CPU 耗时变化</td>
 </tr>
 </tbody>

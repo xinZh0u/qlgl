@@ -8,10 +8,11 @@
  *     QLDispDriver *d = ql_disp_x11_create("QLGL Demo", 320, 240,
  *                                          QL_COLOR_FORMAT_AUTO);
  *     if (d == NULL) { 无 X 环境，降级到内存驱动 }
- *     ql_render_set_root(root);
+ *     QLCanvas cv;
+ *     ql_canvas_from_disp(&cv, d);
  *     while (ql_disp_x11_poll(d)) {
- *         ... 修改控件 ...
- *         ql_render();
+ *         ql_input_dispatch();              // 事件交给装了的事件汇（ql_ui）
+ *         ql_ui_render_canvas(ui, &cv);     // 或 ql_ui_render(ui, d2d)
  *     }
  *     ql_disp_x11_destroy(d);
  *

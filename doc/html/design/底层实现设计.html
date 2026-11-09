@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
@@ -243,13 +240,13 @@ main img.shot { max-width: 100%; }
 <h2 id="1">1. 设计总纲</h2>
 <h3 id="11">1.1 分层</h3>
 <div class="highlight"><pre><span></span><code>┌───────────────────────────────────────────────┐
-│ 控件层  ql_label / ql_button / ...             │  不在本文
+│ 界面层  ql_ui（HTML/CSS 编译出来的节点树）      │  [QLUI 阅读指南](手册/ui/QLUI阅读指南.md)
 ├───────────────────────────────────────────────┤
 │ 布局层  ql_layout   （盒模型、两趟测量/排布）    │  §8
 ├───────────────────────────────────────────────┤
 │ 样式层  ql_style    （级联结果、继承白名单）     │  §9
 ├───────────────────────────────────────────────┤
-│ 绘制层  ql_draw / ql_render（脏矩形、字形 blit） │  §7
+│ 绘制层  ql_draw2d / qlcanvas（字形 blit、脏区） │  §7
 ├───────────────────────────────────────────────┤
 │ 对象层  ql_object / ql_class / ql_prop / ql_event│  §2~§6
 ├───────────────────────────────────────────────┤
@@ -468,8 +465,7 @@ main img.shot { max-width: 100%; }
 
 <span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLClassReg</span><span class="w"> </span><span class="n">ql_class_reg_table</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_object_class</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_widget_class</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_LABEL</span><span class="p">,</span><span class="w">  </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_label_class</span><span class="w">  </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_FOO</span><span class="p">,</span><span class="w">    </span><span class="n">QL_TYPE_OBJECT</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_foo_class</span><span class="w"> </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">QL_TYPE_BUTTON</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TYPE_WIDGET</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_button_class</span><span class="w"> </span><span class="p">},</span>
 <span class="p">};</span>
 
@@ -1080,13 +1076,13 @@ qcssc<span class="w"> </span>--dump-ids<span class="w"> </span>&gt;<span class="
 ├── CMakeLists.txt
 ├── include/qlgl/            # 对外头文件（唯一安装目录）
 │   ├── qlgl.h  qlobject.h  qlclass.h  qlprop.h  qlevent.h  qlstr.h
-│   └── qlwidget.h qllabel.h ...
+│   └── qlui.h qlimage.h ...
 ├── src/
 │   ├── core/     qlobject.c qlclass.c qlprop.c qlevent.c qlstr.c qlmem.c qllog.c
 │   ├── draw/     qldraw.c qlfill.c qltext.c qlfont.c qldirty.c
 │   ├── layout/   qlbox.c qllayout.c
 │   ├── style/    qlstyle.c
-│   ├── widget/   qlwidget.c qllabel.c qlbutton.c
+│   ├── ui/       qlui.c（界面）/ qlui_parse.c / qlui_blob.c
 │   ├── html/     qlbin.c qlhtml.c qlcss.c          # 可按 QL_CFG_* 裁剪
 │   ├── port/     qldisp_fb.c qlinput_touch.c
 │   └── generated/ qltype_gen.h qlclass_gen.c qlprop_gen.h qlevent_gen.h
@@ -1330,7 +1326,7 @@ qcssc<span class="w"> </span>--dump-ids<span class="w"> </span>&gt;<span class="
 <td>✅ 编译复现</td>
 </tr>
 <tr>
-<td>当前 QLLabel 对象分配 80 字节（需求 64）</td>
+<td>三层继承的私有区实测零浪费（不再按层累加）</td>
 <td>✅ 实测</td>
 </tr>
 <tr>
@@ -1417,7 +1413,7 @@ qcssc<span class="w"> </span>--dump-ids<span class="w"> </span>&gt;<span class="
 </ul>
 <hr />
 <h2 id="cv01">附录 C：绘制系统落地说明（v0.1）</h2>
-<p><code>src/draw/</code> 与 <code>src/widget/</code> 已实现并通过测试，与 §7 草案的差异如下，后续以本附录为准：</p>
+<p><code>src/draw/</code> 与 <code>src/ui/</code> 已实现并通过测试，与 §7 草案的差异如下，后续以本附录为准：</p>
 <table>
 <thead>
 <tr>
@@ -1448,9 +1444,9 @@ qcssc<span class="w"> </span>--dump-ids<span class="w"> </span>&gt;<span class="
 </tr>
 <tr>
 <td>4</td>
-<td>未说明控件绘制虚函数放哪</td>
-<td>放"类型 id → 绘制函数"表（<code>ql_widget_class_set_draw</code>），<strong>不放类结构体</strong></td>
-<td>类结构体逐层嵌套，派生类加字段后从 <code>QLObjectClass*</code> 反查字段偏移不确定</td>
+<td>未说明"绘制函数"放哪</td>
+<td>界面层用<strong>数据驱动</strong>（样式 + 节点类型分派），没有逐类虚函数表</td>
+<td>保留式控件的虚函数表会引入"每类一份绘制代码"，与 HTML/CSS 的数据驱动冲突</td>
 </tr>
 <tr>
 <td>5</td>
@@ -1506,7 +1502,7 @@ qcssc<span class="w"> </span>--dump-ids<span class="w"> </span>&gt;<span class="
 </tbody>
 </table>
 <h3 id="_1">落地时发现并对对象系统做的修正</h3>
-<p><code>QLWidget</code> 的私有区只有 4 字节（3 层继承时 <code>priv_total = 36</code>），
+<p>派生类的私有区只算自己那一份（3 层继承时 <code>priv_total</code> 不再翻倍），
 导致 <code>self = mem + priv_total</code> 落在 4 字节边界上 —— UBSan 报
 <code>member access within misaligned address for type 'struct QLObject'</code>。</p>
 <p>修正：<code>ql_class_register</code> 把每层的 <code>own_private_size</code> <strong>向上对齐到 <code>_Alignof(max_align_t)</code></strong>，

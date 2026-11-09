@@ -19,15 +19,17 @@ static QLAnimKey s_alpha_key;
 
 static void on_apply(void *user, const QLAnimValue *v)
 {
-    QLWidget *w = (QLLabel *)user;
-    ql_label_set_alpha(w, (uint8_t)(v->v[0] + 0.5f));
+    QLUINodeRT *node = (QLUINodeRT *)user;
+    (void)node;   /* 动画结果已由引擎写进节点的生效样式 */
 }
 
-void fade_in(QLLabel *w)
+void fade_in(QLUIRoot *ui, QLUINodeRT *node)
+/* ui 未用：动画由引擎按节点生效样式绘制，见 §… */
 {
     QLAnimValue to = { .v = { 255.0f, 0.0f, 0.0f, 0.0f } };
     s_alpha_key.cur.v[0] = 0.0f;             /* 起点 = 当前值 */
-    ql_anim_start(&s_alpha_key, &to, 200, QL_EASE_OUT, 0, on_apply, NULL, w);
+    ql_anim_start(&s_alpha_key, &to, 200, QL_EASE_OUT, 0, on_apply, node, node);
+    /* 动画自己会标脏；这里只是示例里显式说明"改了什么就标什么" */
 }
 
 /* 主循环 */

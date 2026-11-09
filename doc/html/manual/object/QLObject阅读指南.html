@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item active' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -346,7 +343,7 @@ main img.shot { max-width: 100%; }
 <span class="p">}</span>
 </code></pre></div>
 
-<p><code>ql_widget_get_private(self)</code> 由宏自动生成，内部就是这一行。</p>
+<p><code>ql_mything_get_private(self)</code>（<code>QL_DEFINE_WITH_PRIVATE</code> 自动生成）内部就是这一行。</p>
 <p><strong>为什么不用"私有区大小累加"的老做法？</strong> 老做法把每层的 <code>private_size()</code>（本身已含父类）再求和，
 5 层继承时分配量是需求的 3 倍；现在的做法是每层只算自己那一份，零浪费。</p>
 <p><strong>析构时必须释放块首</strong>：<code>ql_mem_free((char *)self - self-&gt;klass-&gt;priv_total)</code>。
@@ -420,8 +417,8 @@ main img.shot { max-width: 100%; }
 <h2 id="5">5. 属性派发</h2>
 <p>每个类向父类要一段 id 区间（默认 100 个），区间是<strong>闭区间</strong>：</p>
 <div class="highlight"><pre><span></span><code>QLObject : 1        .. 100      （START=1，END=100，都是哨兵）
-QLWidget : 101      .. 200
-QLLabel  : 201      .. 300
+子类 A   : 101      .. 200      （每个子类向父类要 100 个 id）
+子类 B   : 201      .. 300
 </code></pre></div>
 
 <ul>
@@ -430,10 +427,10 @@ QLLabel  : 201      .. 300
 <li>派发：从对象自己的类开始向上找，谁包含这个 id 就由谁的 <code>set_property/get_property</code> 处理；</li>
 <li>找不到（或该类的函数为空）返回 <code>QL_ERR_INVAL</code> / <code>QL_VALUE_NULL</code>。</li>
 </ul>
-<div class="highlight"><pre><span></span><code><span class="n">ql_object_set_property</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">QL_LABEL_PROPERTY_TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">ql_value_string</span><span class="p">(</span><span class="s">&quot;hi&quot;</span><span class="p">));</span>
+<div class="highlight"><pre><span></span><code><span class="n">ql_object_set_property</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">QL_MYTHING_PROPERTY_TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">ql_value_string</span><span class="p">(</span><span class="s">&quot;hi&quot;</span><span class="p">));</span>
 </code></pre></div>
 
-<p>即使 <code>obj</code> 是最派生的类，也会沿着链找到 <code>QLLabel</code> 的 setter。</p>
+<p>即使 <code>obj</code> 是最派生的类，也会沿着链找到声明这个属性的那一层的 setter。</p>
 <hr />
 <h2 id="6">6. 事件系统</h2>
 <h3 id="61">6.1 连接池</h3>
@@ -630,7 +627,7 @@ QLLabel  : 201      .. 300
 </ol>
 <div class='pager'>
 <a href='../../manual/object/QLObject API手册.html'><span class='dir'>上一页</span>QLObject API 手册（对象系统 v0.1）</a>
-<a class='next' href='../../manual/widget/QLWidget API手册.html'><span class='dir'>下一页</span>QLWidget / 绘制 API 手册（v0.1）</a>
+<a class='next' href='../../manual/text/QLText API手册.html'><span class='dir'>下一页</span>QLText / 字体 API 手册（v0.1）</a>
 </div>
 </main>
 </div>

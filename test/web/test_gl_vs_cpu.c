@@ -36,37 +36,6 @@ int main(void)
  */
 #define MAX_BAD_RATIO 0.02
 
-/* 最小自定义控件：只画两条直线，用来验证 d2d->draw_line 的 GL/CPU 一致性 */
-QL_PROPERTY_ENUM_EMPTY(QL_XGL, QLXgl, QL_WIDGET, 20)
-QL_EVENT_ENUM_EMPTY(QL_XGL, QLXgl, QL_WIDGET, 20)
-QL_DECLARE(QLXgl, ql_xgl)
-struct QLXgl        { QLWidget parent; };
-struct QLXglClass   { QLWidgetClass parent; };
-struct QLXglPrivate { int unused; };
-QL_DEFINE_WITH_PRIVATE(QL_XGL, QLXgl, ql_xgl, ql_widget)
-
-static void ql_xgl_draw(QLWidget *self, QLDraw2D *d2d)
-{
-    ql_widget_draw_default(self, d2d);
-    QLRect r = ql_widget_abs_rect((QLObject *)self);
-    const ql_color_t col = QL_COLOR_RGB(0x90, 0xE0, 0x90);
-    d2d->draw_line(d2d, r.x + 4, r.y + 4, ql_rect_right(r) - 5, ql_rect_bottom(r) - 5, 3, col);
-    d2d->draw_line(d2d, ql_rect_right(r) - 5, r.y + 4, r.x + 4, ql_rect_bottom(r) - 5, 1, col);
-}
-
-static void ql_xgl_class_init(QLXglClass *klass)
-{
-    ql_widget_class_set_draw(((QLObjectClass *)(void *)klass)->type, ql_xgl_draw);
-}
-
-static void ql_xgl_init(QLXgl *self)
-{
-    struct QLXglPrivate *priv = ql_xgl_get_private(self);
-    priv->unused = 0;
-}
-
-static void ql_xgl_deinit(QLXgl *self) { QL_UNUSED(self); }
-
 QL_TEST_BEGIN("test_gl_vs_cpu")
 
     /* ---- CPU 参考图 ---- */
@@ -413,40 +382,30 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
     ql_disp_mem_destroy(disp);
 
     /*
-     * ---- 控件层也走 QLDraw2D：GL 与 CPU 必须一致 ----
+     * ---- QLDraw2D 原语本身：GL 与 CPU 必须一致 ----
      *
-     * 这一段验证 ql_render_draw2d()：同一棵 QLWidget 树分别画到 CPU 画布和
-     * GL 离屏帧缓冲，逐像素比较。涵盖背景、圆角边框、文本、以及自定义控件
-     * 用 d2d->draw_line 画直线（直线是公共 Bresenham 实现，不应有差异）。
+     * 这里不走任何"节点树"，直接按顺序调 draw2d 原语画同一张图，两个后端
+     * 逐像素比较。涵盖实心矩形、圆角填充、圆角描边、文本，以及 draw_line
+     * （直线是公共 Bresenham 实现，两个后端同源，本不该有任何差异）。
+     *
+     * 不覆盖的部分：布局（那由 test_render / test_flex 守）。
      */
     {
-        QLWidget *wroot = ql_widget_new_ex(0, 0, W, H);
-        QL_CHECK(wroot != NULL);
-        ql_widget_set_bg((QLObject *)wroot, QL_COLOR_RGB(0x18, 0x20, 0x2A), 255);
-
-        QLWidget *card = ql_widget_new_child((QLObject *)wroot, 20, 20, 120, 70);
-        ql_widget_set_bg((QLObject *)card, QL_COLOR_RGB(0x2A, 0x3A, 0x50), 255);
-        ql_widget_set_border((QLObject *)card, 2, QL_COLOR_RGB(0x88, 0xAA, 0xCC), 8);
-
-        QLWidget *hib = ql_widget_new_child((QLObject *)wroot, 60, 130, 80, 40);
-        ql_widget_set_bg((QLObject *)hib, QL_COLOR_RGB(0x50, 0x30, 0x40), 200);
-
-        QLLabel *lab = ql_label_new_child((QLObject *)wroot, "QLGL", 24, 100);
-        ql_label_set_text_color((QLObject *)lab, QL_COLOR_RGB(0xE8, 0xF0, 0xFF));
-
-        QLType xtype = QL_REGISTER(ql_xgl, QL_WIDGET_TYPE);
-        QL_CHECK(xtype != QL_TYPE_NONE);
-        QLWidget *barc = (QLWidget *)ql_object_new(xtype);
-        QL_CHECK(barc != NULL);
-        ql_object_add_child((QLObject *)wroot, (QLObject *)barc);
-        ql_widget_set_pos((QLObject *)barc, 200, 30);
-        ql_widget_set_bg((QLObject *)barc, QL_COLOR_RGB(0x1E, 0x2A, 0x1E), 255);
-        ql_widget_set_border((QLObject *)barc, 1, QL_COLOR_RGB(0x40, 0x60, 0x40), 0);
-        ql_object_set_property((QLObject *)barc, QL_WIDGET_PROPERTY_WIDTH, ql_value_int(90));
-        ql_object_set_property((QLObject *)barc, QL_WIDGET_PROPERTY_HEIGHT, ql_value_int(90));
-
-        ql_render_set_root((QLObject *)wroot);
-        ql_render_invalidate_all();
+        /* 同一段绘制代码，对两个后端各跑一遍 */
+        #define DRAW_SCENE(d2d)                                                    \
+            do {                                                                   \
+                (d2d)->fill_rect((d2d), ql_rect_make(0, 0, 120, 80),               \
+                                 QL_COLOR_RGB(0x2A, 0x3A, 0x50), 255);             \
+                (d2d)->fill_round_rect((d2d), ql_rect_make(8, 90, 60, 24), 8,      \
+                                       QL_COLOR_RGB(0x50, 0x30, 0x40), 200);       \
+                (d2d)->stroke_round_rect((d2d), ql_rect_make(70, 90, 60, 24), 6,\
+                                         2, QL_COLOR_RGB(0x88, 0xAA, 0xCC));       \
+                (d2d)->draw_line((d2d), 4, 4, ql_rect_right(                       \
+                                     ql_rect_make(0, 0, 120, 80)) - 5, 75, 3,      \
+                                 QL_COLOR_RGB(0x90, 0xE0, 0x90));                  \
+                (d2d)->draw_line((d2d), 115, 4, 4, 75, 1,                          \
+                                 QL_COLOR_RGB(0x90, 0xE0, 0x90));                  \
+            } while (0)
 
         /* CPU 参考 */
         QLDispDriver *d2 = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
@@ -455,19 +414,25 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
         ql_canvas_clear(&c2, QL_COLOR_RGB(0x08, 0x0C, 0x10));
         QLDraw2D cd2d;
         QL_CHECK_EQ(ql_draw2d_canvas_init(&cd2d, &c2), QL_OK);
-        QL_CHECK(ql_render_draw2d(&cd2d, W, H) > 0);
+        DRAW_SCENE(&cd2d);
+        if (cd2d.flush != NULL)
+            cd2d.flush(&cd2d);
 
-        /* 自定义控件确实画出来了（直线起点处的方形笔刷） */
-        QL_CHECK_EQ(ql_disp_mem_pixel(d2, 204, 34), QL_COLOR_RGB(0x90, 0xE0, 0x90));
-        QL_CHECK_EQ(ql_disp_mem_pixel(d2, 210, 32), QL_COLOR_RGB(0x1E, 0x2A, 0x1E));
+        /* 直线用公共 Bresenham（方形笔刷），起点处应有确定的一格 */
+        QL_CHECK_EQ(ql_disp_mem_pixel(d2, 4, 4), QL_COLOR_RGB(0x90, 0xE0, 0x90));
+        /* 矩形内部 */
+        QL_CHECK_EQ(ql_disp_mem_pixel(d2, 10, 10), QL_COLOR_RGB(0x2A, 0x3A, 0x50));
 
         /* GPU */
-        QLGfxGL *g2 = ql_gfx_gl_create("widget-gl", W, H, QL_GFX_GL_OFFSCREEN);
+        QLGfxGL *g2 = ql_gfx_gl_create("draw2d-gl", W, H, QL_GFX_GL_OFFSCREEN);
         if (g2 == NULL) {
-            printf("  [SKIP] 控件层 GL 对比：无法创建上下文\n");
+            printf("  [SKIP] draw2d 原语 GL 对比：无法创建上下文\n");
         } else {
             ql_gfx_gl_begin(g2, QL_COLOR_RGB(0x08, 0x0C, 0x10));
-            QL_CHECK(ql_render_draw2d(ql_gfx_gl_draw(g2), W, H) > 0);
+            QLDraw2D *gd2d = ql_gfx_gl_draw(g2);
+            DRAW_SCENE(gd2d);
+            if (gd2d->flush != NULL)
+                gd2d->flush(gd2d);
             ql_gfx_gl_end(g2);
 
             uint8_t *rgba2 = (uint8_t *)ql_mem_calloc(1, (size_t)W * H * 4);
@@ -488,15 +453,14 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
                 }
             }
             double ratio2 = (double)bad2 / ((double)W * (double)H);
-            printf("  控件层像素差异：%ld/%d = %.2f%%\n", bad2, W * H, ratio2 * 100);
+            printf("  draw2d 原语像素差异：%ld/%d = %.2f%%\n", bad2, W * H, ratio2 * 100);
             QL_CHECK(ratio2 <= 0.02);
             ql_mem_free(rgba2);
             ql_gfx_gl_destroy(g2);
         }
 
+        #undef DRAW_SCENE
         ql_disp_mem_destroy(d2);
-        ql_object_unref((QLObject *)wroot);
-        ql_render_set_root(NULL);
     }
 
 QL_TEST_END()

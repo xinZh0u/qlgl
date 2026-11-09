@@ -3,7 +3,8 @@
 配套阅读：[QLUI 阅读指南](./QLUI阅读指南.md) · 定位：[Web 兼容设计](../../Web兼容设计.md) §7
 
 > **先明确适用场景**
-> - **MCU**：不要用本模块，直接用 `QLWidget`/`QLLabel` 的 C API（见 [QLWidget API手册](../widget/QLWidget%20API手册.md)）。
+> - **MCU**：本模块就是唯一路径。想省 Flash 就裁能力包（`QL_FEAT_UI_*`），
+>   或者干脆用构建期编译出来的静态 doc（见 [QLUI 阅读指南](./QLUI阅读指南.md) 的 blob 一节）。
 > - **MPU / 嵌入式 Linux**：用本模块，把 HTML+CSS 编译成 C。
 > - **PC 要高兼容**：用系统 WebView（WebView2 / WKWebView / WebKitGTK），不用本模块。
 

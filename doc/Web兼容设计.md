@@ -39,17 +39,17 @@ HTML 标签  →  元素对象（div/span/button/img/input...）
 
 所以"照搬 Web"要求我们：
 
-| 现在 | Web 模型下 |
+| 旧模型（已删除） | 现行模型 |
 |---|---|
-| `QLWidget` 子类体系（QLButton/QLabel） | **标签名 → 元素行为**（tag handler）+ **UA 样式表** |
+| ~~`QLWidget` 子类体系（QLButton/QLabel）~~ | **标签名 → 元素行为**（tag handler）+ **UA 样式表** |
 | `ql_object_set_property(WIDTH, 100)` | `element.style.width = "100px"` / CSS 规则 |
 | `x/y/w/h` 四个 int | `auto` / `%` / `em` / `flex` 算出来的**布局结果** |
 | 属性 id 区间 | 内部实现细节，对外**完全不可见**；对外是 attribute / style |
 | 事件 `ql_connect` | `addEventListener` + 冒泡/捕获 + `Event` 对象 |
 
-**影响评估**：`src/core/`（对象/事件/内存）、`src/draw/`（画布/渲染器）、`src/text/`（字体）**全部保留**；
-`src/widget/qlwidget.c` 的"属性 + 绝对几何"要拆成 **DOM 元素（样式）** 与 **布局盒（几何）** 两层，
-原来的 `ql_widget_*` API 变成内部实现或废弃。
+**落地结果**：`src/core/`（对象/事件/内存）、`src/draw/`（画布/绘制接口）、`src/text/`（字体）全部保留；
+`src/widget/`（`QLWidget` / `QLLabel`）**已删除** —— "属性 + 绝对几何"被拆成
+**节点 + 样式（`QLUIStyle`）** 与 **布局盒（`border_box` / `content_box`）** 两层。
 
 > 这不是推翻重来，而是把"控件"这一层从"类继承"换成"标签 + CSS"。底下四层地基不动。
 
@@ -265,29 +265,30 @@ MCU 目标用 **Duktape** 或直接关闭 JS。
 
 | 平台 | 界面怎么写 | 渲染实现 | 兼容目标 |
 |---|---|---|---|
-| **MCU**（Cortex-M） | **纯 C**，直接用 `QLObject` / `QLWidget` / `QLCanvas` | QLGL 原生实现（自制布局/绘制） | **不追求 Web 兼容**，追求小体积、确定性 |
-| **MPU / 嵌入式 Linux** | HTML + CSS 子集，**构建期编译成 C**（`tools/qlui`，见 §12） | QLGL 原生实现 | Web **子集**兼容（差分测试达标） |
+| **MCU**（Cortex-M） | HTML/CSS，**构建期编译成静态 doc**（`qltext cc`） | QLGL 原生实现（自制布局/绘制） | **子集兼容**：标签全认，能力按开关裁；追求小体积、确定性 |
+| **MPU / 嵌入式 Linux** | HTML + CSS 子集，构建期编译成 C（同上）或运行期解析 | QLGL 原生实现 | Web **子集**兼容（差分测试达标） |
 | **PC / 移动** | HTML + CSS + JS 原样使用 | **JS 引擎 + 系统 WebView / 浏览器引擎** | **高兼容**，接近真浏览器 |
 
-### 7.1 MCU：不追求 Web 兼容是对的
+### 7.1 MCU：**同一份 HTML/CSS**，裁的是能力不是语言
 
-在 MCU 上做 CSS 级联 + JS 引擎，等于把浏览器塞进 200KB RAM，收益低、风险高。
-MCU 的界面本来就该用 C 写：
+> 早期结论是"MCU 用 C 写界面"，**已推翻**。原因见
+> [HTML5 标签覆盖与裁剪](./手册/ui/HTML5标签覆盖与裁剪.md) §3：分两套语言意味着
+> 两套界面、两份教程、两倍回归，"设计师出图"这件事在 MCU 上直接消失。
 
-```c
-QLWidget *card = ql_widget_new_child(root, 8, 8, 240, 120);
-ql_widget_set_bg((QLObject *)card, QL_COLOR_RGB(0x1E, 0x25, 0x33), 255);
-ql_widget_set_border((QLObject *)card, 2, QL_COLOR_SKY, 12);
-QLLabel *t = ql_label_new_child((QLObject *)card, "Temp 26C", 10, 8);
-```
+现在的做法是**一套代码 + 一组开关**（Linux Kconfig 那套）：
 
-这条路**已经完成并有测试**（对象/绘制/文本/后端四层，14 个测试用例）。
-它不需要任何 Web 兼容层，也不该被 Web 兼容需求污染。
+- 标签全认，`QLUITag` 枚举**不可条件化**（数值写进 blob，裁枚举会让同一份 `.qlui`
+  解释成不同标签）；
+- 裁的是**代码路径**：`QL_FEAT_UI_TABLE=0` 就把表格布局算法整段摘掉，
+  `<table>` 在构建期报"被降级"；
+- 界面资源在开发机上用 `qltext cc` 编译成静态 doc，MCU 侧**零解析、零 CSS 匹配**，
+  图片默认转成目标像素格式的 `RAW`（`owned = 0`，图片 RAM 为 0）；
+- 在 MCU 上做 CSS 级联 + JS 引擎仍然不做 —— JS 是完全另一件事，见 §6。
 
 ### 7.2 MPU：HTML/CSS 构建期编译成 C
 
-这是"一份页面，两端跑"的桥梁：设计师写的 HTML/CSS 在构建期被 `tools/qlui`
-翻译成静态 C 数据（节点表 + 样式表 + 文本池），运行时零解析（§12）。
+这是"一份页面，两端跑"的桥梁：设计师写的 HTML/CSS 在构建期被 `qltext`
+翻译成静态 C 数据（节点表 + 样式表 + 文本池 + 资源段），运行时零解析。
 兼容范围是**子集**，不支持项构建期报错（§3.3）。
 
 ### 7.3 PC：高兼容靠"多语言 + 真引擎"，不靠自己重写浏览器
@@ -414,10 +415,10 @@ QLUIStyle / QLUIDoc 是 POD，也可以直接暴露给脚本层。
 
 | 项 | 结论 |
 |---|---|
-| 平台分级 | MCU 纯 C 不做 Web 兼容；MPU 用 HTML/CSS 编译成 C；PC 用 WebView + 多语言（§7） |
+| 平台分级 | **一套 HTML/CSS + 一组能力开关**，任何平台都用同一份界面描述；PC 若追求高兼容可另接 WebView（§7） |
 | HTML/CSS 处理方式 | **构建期编译成 C 文件**，运行时零解析（§12） |
 | 不支持的特性 | **构建期报错**，不静默降级 |
-| 控件模型 | MPU/PC 路径下"控件 = 标签 + UA CSS"；MCU 路径保留 `QLWidget` C API |
+| 控件模型 | **只有一种**："控件 = 标签 + UA CSS + 状态样式"。`QLWidget` 类体系已删除 |
 
 ### 待定（下一步要拍板）
 

@@ -65,7 +65,7 @@ static inline void *ql_priv(QLObject *self, QLObjectClass *klass)
 }
 ```
 
-`ql_widget_get_private(self)` 由宏自动生成，内部就是这一行。
+`ql_mything_get_private(self)`（`QL_DEFINE_WITH_PRIVATE` 自动生成）内部就是这一行。
 
 **为什么不用"私有区大小累加"的老做法？** 老做法把每层的 `private_size()`（本身已含父类）再求和，
 5 层继承时分配量是需求的 3 倍；现在的做法是每层只算自己那一份，零浪费。
@@ -135,8 +135,8 @@ static inline void *ql_priv(QLObject *self, QLObjectClass *klass)
 
 ```
 QLObject : 1        .. 100      （START=1，END=100，都是哨兵）
-QLWidget : 101      .. 200
-QLLabel  : 201      .. 300
+子类 A   : 101      .. 200      （每个子类向父类要 100 个 id）
+子类 B   : 201      .. 300
 ```
 
 - `*_PROPERTY_START` 和 `*_PROPERTY_END` 是**区间哨兵**，不绑定具体属性；
@@ -145,10 +145,10 @@ QLLabel  : 201      .. 300
 - 找不到（或该类的函数为空）返回 `QL_ERR_INVAL` / `QL_VALUE_NULL`。
 
 ```c
-ql_object_set_property(obj, QL_LABEL_PROPERTY_TEXT, ql_value_string("hi"));
+ql_object_set_property(obj, QL_MYTHING_PROPERTY_TEXT, ql_value_string("hi"));
 ```
 
-即使 `obj` 是最派生的类，也会沿着链找到 `QLLabel` 的 setter。
+即使 `obj` 是最派生的类，也会沿着链找到声明这个属性的那一层的 setter。
 
 ---
 

@@ -162,34 +162,4 @@ static inline int ql_win_load_font(void)
     return 0;
 }
 
-/* ------------------------- Esc 退出 ------------------------- */
-
-/*
- * 后端不再自动把 Esc 当"关闭窗口"（否则应用收不到这个键），
- * 示例统一在这里挂一个 KEY_DOWN 处理器。
- */
-static QLWin *ql_win_active;
-
-static inline void ql_win_on_esc(QLEvent *ev)
-{
-    if (ql_event_arg_int(ev, 0, 0) != QL_KEY_ESCAPE || ql_win_active == NULL)
-        return;
-
-    switch (ql_win_active->kind) {
-#if defined(QLGL_ENABLE_WAYLAND)
-    case QL_WIN_KIND_WAYLAND: ql_disp_wayland_close(ql_win_active->disp); break;
-#endif
-#if defined(QLGL_ENABLE_X11)
-    case QL_WIN_KIND_X11:     ql_disp_x11_close(ql_win_active->disp); break;
-#endif
-    default:                  ql_win_active->max_frames = 1; break;
-    }
-}
-
-static inline void ql_win_bind_esc(QLWin *w, QLObject *root)
-{
-    ql_win_active = w;
-    ql_connect(root, QL_WIDGET_EVENT_KEY_DOWN, ql_win_on_esc, NULL);
-}
-
 #endif /* QLGL_EXAMPLE_WINDOW_HELPER_H */

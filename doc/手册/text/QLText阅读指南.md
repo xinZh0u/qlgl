@@ -1,7 +1,8 @@
 # QLText / 字体系统 阅读指南
 
-> 本部分包含四层：**字体**（qlfont，静态位图 / FreeType 动态）→ **字符串**（qlstr）→
-> **画布文本原语** → **文本控件**（qllabel）。
+> 本部分包含三层：**字体**（qlfont，静态位图 / FreeType 动态）→ **字符串**（qlstr）→
+> **画布文本原语**（`ql_canvas_draw_text`）；界面层的文本样式（`font-size` 等）见
+> [QLUI 阅读指南](../ui/QLUI阅读指南.md)。
 > 目标读者：要读懂或修改 `src/text/`、`src/core/qlstr.c`、文本绘制相关代码的人。
 > 只想用 API，请看 [QLText API手册](./QLText%20API手册.md)。
 
@@ -20,9 +21,8 @@
 | `include/qlgl/qlstr.h` | 自管理字符串与两种容量策略 | ⑤ |
 | `src/core/qlstr.c` | 容量增长、只读字面量转自有内存 | ⑥ |
 | `src/draw/qlcanvas.c` | `ql_canvas_draw_text` / `draw_glyph`（在文件末尾） | ⑦ |
-| `include/qlgl/qllabel.h` | 文本控件 | ⑧ |
-| `src/widget/qllabel.c` | 属性、自动尺寸、绘制 | ⑨ |
-| `test/text/*.c` | 可执行的说明 | ⑩ |
+| `src/ui/qlui.c` | 界面层：按样式测量与绘制文本 | ⑧ |
+| `test/text/*.c` | 可执行的说明 | ⑨ |
 
 ---
 
@@ -185,35 +185,33 @@ void ql_canvas_draw_text(canvas, font, text, len, box, color, align);
 `draw_glyph` 对每个像素调 `ql_canvas_write_pixel(color, alpha)`，
 alpha 就是字形的覆盖率，因此**抗锯齿是天然支持的**，不需要额外的混合代码路径。
 
-绘制顺序要点：标签先画背景/边框（`ql_widget_draw_default`），再画文字，所以文字在背景之上。
+绘制顺序要点：界面层先画节点自己的背景/边框，再画文字，所以文字在背景之上。
 
 ---
 
-## 8. 文本控件 QLLabel
+## 8. 文本由谁画：没有"文本控件"
 
-```
-QLWidget（几何、背景、边框）
-  └── QLLabel（文本、字体、颜色、对齐、自动尺寸）
-```
+QLGL 里**没有** `QLLabel` 这类控件类。文本要么是 HTML 元素，要么直接画在画布上：
 
-| 属性 | 说明 |
-|---|---|
-| `TEXT` | 会被 `QLStr` **复制**，调用方的缓冲区用完即可释放 |
-| `FONT` | `const QLFont *`，null 时退回 `ql_font_mono_12` |
-| `TEXT_COLOR` | 文字颜色 |
-| `ALIGN` | 左 / 中 / 右 |
-| `AUTO_SIZE` | 为 1 时，文本或字体变化会重算宽高 |
+| 场景 | 谁负责排版 | 入口 |
+|---|---|---|
+| 有界面（推荐） | 界面层（HTML/CSS 的 `font-size` / `color` / `text-align` / `line-height`） | `ql_ui_render_canvas()` |
+| 只有画布 | 你自己给一个 `box` | `ql_canvas_draw_text()` |
+| GPU 直绘 | 你自己 | `QLDraw2D->draw_text()` |
 
-### 自动尺寸与手动尺寸的交互
-
-`AUTO_SIZE=1` 时，任何文本/字体变化都会调 `ql_object_set_property(WIDTH/HEIGHT)`。
-如果用户想自己控制尺寸，先 `AUTO_SIZE=0` 再设宽高 —— **顺序很重要**，
-否则设完宽高又改文本会被覆盖回去。
+三者用的是**同一套字体层**（`ql_font_measure_text` / `draw_glyph`），所以字形完全一致。
 
 ### 文本在矩形内的位置
 
-- 水平：按 `ALIGN` 在标签宽度内对齐；
-- 垂直：**永远从矩形顶部开始**，不垂直居中（v0.1 简化）。
+- 水平：`QL_TEXT_ALIGN_LEFT` / `CENTER` / `RIGHT`（界面层对应 `text-align`）；
+- 垂直：**永远从 `box.y` 开始**，不垂直居中 —— 要居中就自己算 `y` 偏移，
+  或者给界面层写 `line-height`（它按行高居中的那套算法处理）。
+
+### 多行
+
+`ql_canvas_draw_text()` 只处理 `'\n'`，**不自动折行**。界面层额外支持
+`white-space: pre`（保留 `\n` 与空格）与 `nowrap`；自动折行由布局完成，
+见 [QLUI 阅读指南](../ui/QLUI阅读指南.md) 的文本测量一节。
 
 ---
 
@@ -221,12 +219,10 @@ QLWidget（几何、背景、边框）
 
 | 坑 | 现象 | 说明 |
 |---|---|---|
-| 中文显示成 `?` | 字形缺失 | 内置字体只有 ASCII；需要自带 CJK 字体 |
-| 文字画到控件外 | 看到文字溢出 | 不会：已裁剪到控件矩形；看不到说明控件太小 |
-| 改了源字符串内容 | 标签文本也变了？ | 不会：`TEXT` 是复制语义；显示旧值说明没重新 set |
-| 设置宽高无效 | 尺寸被覆盖 | `AUTO_SIZE` 还开着，先关掉 |
-| 文字垂直不居中 | 文字偏上 | v0.1 只支持顶端对齐，需要自己算 `y` 偏移 |
-| 长文本不换行 | 超出部分被裁 | 只支持 `'\n'`，不自动折行 |
+| 中文显示成 `?` | 字形缺失 | 内置字体只有 ASCII；需要自带 CJK 字体或开 FreeType |
+| 文字画到盒子外 | 看到文字溢出 | 画布路径会裁到 `box ∩ canvas->clip`；看不到说明 `box` 太小 |
+| 文字垂直不居中 | 文字偏上 | 只支持顶端对齐，需要自己算 `y` 偏移或用 `line-height` |
+| 长文本不换行 | 超出部分被裁 | 只支持 `'\n'`，不自动折行；界面层可写 `white-space` |
 | 自定义字体不显示 | 全是空白 | 检查 `bpp` 是否为 1/4/8，`glyphs` 是否按 codepoint 升序 |
 
 ---
@@ -241,20 +237,21 @@ QLWidget（几何、背景、边框）
    - `glyphs` 按 `codepoint` **升序**；
    - 每个 `QLGlyph.data_offset` 指向 `bitmap` 内自己那段；
    - `bpp` ∈ {1,4,8}，行字节数符合 `(box_w+7)/8` / `(box_w+1)/2` / `box_w`；
-3. 使用时 `ql_label_set_font(label, &my_font)`。
+3. 界面上用 `font-family` 指向它，或画布路径直接把 `&my_font` 传给 `ql_canvas_draw_text()`。
 
 ### 10.2 动态矢量字体（PC/MPU 路线）
 
 ```c
 QLFont *f = ql_font_ft_load("/path/to/NotoSansCJK-Regular.ttc", -1, 16);
-ql_label_set_font(label, f);       /* 用完 ql_font_destroy(f) */
+ql_canvas_draw_text(&cv, f, "你好", -1, box, color, QL_TEXT_ALIGN_LEFT);
+/* 用完 ql_font_destroy(f) */
 ```
 
 或者设成"默认字体"，之后按字号到处用：
 
 ```c
 ql_font_set_default_file("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", -1);
-ql_label_set_font_size(label, 18);          /* == ql_font_default(18) */
+const QLFont *f18 = ql_font_default(18);    /* 界面层同样走这里 */
 ```
 
 `qlui` 的 `font-size: Npx` 会自动走 `ql_font_default(N)`，无需额外代码。

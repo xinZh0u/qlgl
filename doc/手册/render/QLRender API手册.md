@@ -243,11 +243,12 @@ for (;;) {
 | 模块 | 是否依赖 QLDraw2D |
 |---|---|
 | `qlui`（HTML/CSS 编译结果） | ✅ `ql_ui_render(ui, d2d)` |
-| 控件（`QLWidget`/`QLLabel`） | ❌ 仍走 `QLCanvas`（CPU），后续迁移 |
+| 界面层（`QLUI`） | ✅ 直接吃 `QLDraw2D`，CPU/GPU 同一份布局与绘制代码 |
 | 显示后端（X11/Wayland） | ❌ 它们提供帧缓冲给 CPU 用 |
 
 > 也就是说：**目前 GPU 路径服务于 qlui 界面**，控件路径仍是 CPU。
-> 下一步可以把 `ql_widget_draw_func` 也改成 `QLDraw2D`，让控件同样能用 GPU。
+> 界面层的绘制已经全部走 `QLDraw2D`（见 `ql_ui_render(ui, d2d)`），
+> 所以同一份 HTML/CSS 在 CPU 与 GPU 后端上像素一致（`test_gl_vs_cpu` 守着）。
 
 ---
 

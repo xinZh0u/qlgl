@@ -34,7 +34,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # 模块的显示名与顺序
 MODULES = [
     ("object", "QLObject", "对象系统：类、属性、信号"),
-    ("widget", "QLWidget", "控件：标签、按钮、布局"),
     ("text", "QLText", "文本：字体、字形、UTF-8"),
     ("ui", "QLUI", "界面：HTML/CSS → 静态数据"),
     ("uitext", "QLUIText", "运行期 HTML/CSS 解析"),

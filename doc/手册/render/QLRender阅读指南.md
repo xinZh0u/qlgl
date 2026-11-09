@@ -253,7 +253,7 @@ y=top  │  █████████████  │   中间行： [x0, xl)
 
 6. `qlcanvas.c` 的 `put_px` / `fill_row` / `round_row_span`（三个基础件）
 7. `ql_canvas_fill_round_rect_alpha`（怎么用它们拼出圆角）
-8. `test/widget/test_canvas.c`（像素级断言，改这些函数后必须全绿）
+8. `test/draw/test_canvas.c`（像素级断言，改这些函数后必须全绿）
 
 ---
 
@@ -449,7 +449,7 @@ GPU 直接在片元里算；CPU 用等价的展开式（`qx = |px| - hx + rad`�
 
 ### 11.4 测试
 
-- `test/widget/test_effects.c`：28 项检查。除了渐变端点/中点/同色行、alpha=0、
+- `test/draw/test_effects.c`：28 项检查。除了渐变端点/中点/同色行、alpha=0、
   阴影衰减方向、blur=0 硬边这些**特征断言**，还有一份
   **朴素参考实现 `ref_shadow()`**——对整块外框逐像素求圆角 SDF、不做任何分解——
   用 3 种外框 × 4 种半径 × 4 种模糊 × 3 种偏移 × 3 种 alpha = **432 组**逐像素对照。

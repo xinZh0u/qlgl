@@ -9,38 +9,37 @@
 
 | 文件 | 职责 | 顺序 |
 |---|---|---|
-| `include/qlgl/qlinput.h` | `QLInputEvent`、`QLKey`、队列与派发接口 | ① |
-| `src/core/qlinput.c` | 队列、命中测试、hover/pressed/focus 状态机、点击合成 | ② |
-| `include/qlgl/qlwidget.h` | 控件事件 id（`QL_WIDGET_EVENT_*`）、状态位（`QL_WIDGET_STATE_*`） | ③ |
-| `src/widget/qlwidget.c` | 状态位实现、状态背景色、`draw_default` 里的状态选色 | ④ |
-| `src/port/qlinput_x11.h` | X11 事件 → `QLInputEvent`（X11 与 GL 后端共用） | ⑤ |
-| `src/port/qlinput_evdev.h` | evdev 扫描码 → `QLKey`（Wayland 用，US 布局） | ⑥ |
-| `src/port/qldisp_x11.c` | `XSelectInput` + 事件轮询里调用 `ql_x11_push_input` | ⑦ |
-| `src/port/qldisp_wayland.c` | `wl_pointer` / `wl_keyboard` 监听器 | ⑧ |
-| `src/port/qlgfx_gl.c` | GL 窗口的 X11 事件同样走 `ql_x11_push_input` | ⑨ |
-| `src/ui/qlui.c` | `ql_ui_input_event`：把输入事件映射到 `QLUIRoot` 的 `:hover/:active` | ⑩ |
-| `test/input/test_input.c` | 130 项断言，覆盖下面所有规则 | ⑪ |
-| `test/input/example_input.c` | 可交互窗口示例 | ⑫ |
+| `include/qlgl/qlinput.h` | `QLInputEvent`、`QLKey`、队列与事件汇接口 | ① |
+| `src/core/qlinput.c` | 环形队列 + 坐标/按钮/修饰键跟踪 + 派发（198 行） | ② |
+| `src/port/qlinput_x11.h` | X11 事件 → `QLInputEvent`（X11 与 GL 后端共用） | ③ |
+| `src/port/qlinput_evdev.h` | evdev 扫描码 → `QLKey`（Wayland 用，US 布局） | ④ |
+| `src/port/qldisp_x11.c` | `XSelectInput` + 事件轮询里调用 `ql_x11_push_input` | ⑤ |
+| `src/port/qldisp_wayland.c` | `wl_pointer` / `wl_keyboard` 监听器 | ⑥ |
+| `src/port/qlgfx_gl.c` | GL 窗口的 X11 事件同样走 `ql_x11_push_input` | ⑦ |
+| `src/ui/qlui.c` | `ql_ui_input_event`：命中测试 + `:hover/:active/:focus` + 点击合成 | ⑧ |
+| `test/input/test_input_queue.c` | 队列语义（顺序、溢出、状态跟踪、汇） | ⑨ |
+
+> 命中测试**不在这里**。它在 `src/ui/qlui.c`，因为只有界面层认识
+> HTML/CSS 编译出来的节点树（`display:none`、`overflow` 裁剪、`transform`、热区）。
 
 ---
 
-## 2. 为什么要有独立一层
+## 2. 为什么队列要独立一层
 
-后端只认识"坐标 + 按钮 + 键码"，**不认识控件树**。
-输入层负责把原始事件变成有语义的控件事件，因此：
+后端只认识"坐标 + 按钮 + 键码"，界面层只认识节点树。中间隔一个**定长队列**，
+换来三件事：
 
 ```
 X11/Wayland 事件 ──┐
-测试注入的事件   ──┼─→ QLInputEvent 队列 ─→ ql_input_dispatch() ─→ 命中测试 ─→ ql_emit()
-自动化脚本       ──┘                                                          │
-                                                            捕获 / 目标 / 冒泡（复用对象系统）
+测试注入的事件   ──┼─→ QLInputEvent 队列 ─→ ql_input_dispatch() ─→ 事件汇 ─→ ql_ui_input_event()
+自动化脚本       ──┘
 ```
 
-这样带来三个直接好处：
-
-1. **无窗口也能测**：`test_input.c` 不开窗口，直接 push 事件，断言派发结果；
-2. **后端极薄**：新增后端只写一个"翻译函数"，不碰交互逻辑；
-3. **交互逻辑只有一份**：X11、Wayland、离屏、测试走同一条路。
+1. **后端与界面解耦**：后端不 include 任何界面头文件，加一个新后端只写翻译代码；
+2. **时序可预测**：所有输入都在主循环的固定位置派发（而不是在 `poll()` 里），
+   所以"一帧内的输入按顺序处理完再重绘"成立；
+3. **测试能注入**：`test_input_queue` 与界面层的输入测试都靠 `ql_input_push*`
+   走真实路径，而不是直接调内部函数。
 
 ---
 
@@ -61,85 +60,24 @@ uint16_t s_head, s_tail, s_count;           /* 环形队列 */
 
 ---
 
-## 4. 命中测试
+## 4. 界面层接手之后的四件事
 
-`ql_input_hit_test(root, x, y)` 的关键规则，全部有测试覆盖：
+队列把事件交出去之后，`ql_ui_input_event()` 做这些（细节见
+[QLUI 阅读指南](../ui/QLUI阅读指南.md)）：
 
-1. **后挂的子控件在上层**
-   子链表顺序 == 绘制顺序（`ql_object_set_parent` 追加到链尾，见 §8），
-   所以命中测试递归时"最后一个命中的"就是视觉上最上层的。
-2. **父控件先于子控件？** 不是。先递归子节点，子节点命中就返回子节点；
-   子节点都没命中才考虑父节点自己。
-3. **`pointer-events: none`**（`ql_widget_set_pointer_events(obj, 0)`）：
-   该控件自己不吃命中，事件穿透到下层。标签放在按钮里时必须设成 0。
-4. **不可见控件**（`visible = 0` 或 `QL_OBJ_FLAG_HIDDEN`）整棵子树跳过。
-5. **`clip_children`**：父控件裁剪子控件时，超出父盒子的部分不参与命中
-   （和绘制表现一致）。
-6. 点在最外层的空白处 → 命中最外层根控件；点在根之外 → `NULL`。
-
-递归实现（简化）：
-
-```c
-QLObject *hit = NULL;
-for (child = first_child; child; child = next_sibling) {
-    QLObject *found = hit_walk(child, x, y, box);   /* box = 本节点矩形 */
-    if (found) hit = found;                        /* 后者覆盖前者 = 后者在上 */
-}
-if (hit) return hit;                               /* 子节点优先 */
-return 本节点包含该点 ? 本节点 : NULL;
-```
+| 步骤 | 说明 |
+|---|---|
+| 命中测试 | 自顶向下、后挂的在上；`display:none` 整棵跳过；`overflow` 裁掉的部分不参与 |
+| 状态位 | `:hover` 沿祖先链生效；`:active` 在按下到抬起之间保持；`:focus` 由点击/程序设置 |
+| 点击合成 | 按下与抬起命中同一节点才算点击；滚轮/拖动不算 |
+| 派发热区 | 命中 `<img>` 的 `<area>` 时派发 `area_cb` 而**不是** `click_cb` |
 
 ---
 
-## 5. 状态机：hover / pressed / focus
-
-三个全局状态（`s_hover` / `s_pressed` / `s_focus`）驱动控件上的三个状态位
-（`QL_WIDGET_STATE_HOVER / ACTIVE / FOCUS`）。
-
-**状态位沿父链设置**（`set_state_chain`），因为 CSS 的 `:hover` 对祖先同样成立：
-鼠标停在按钮上时，`root`、`card`、`btn` 都带 `HOVER`。
-
-### hover
-
-```
-MOVE(40,80) ──→ 命中 btn ──→ 与 s_hover 不同 ──→ 清旧链 HOVER / 设新链 HOVER
-                                            └─→ 对旧目标发 POINTER_LEAVE
-                                            └─→ 对新目标发 POINTER_ENTER
-```
-
-同一目标重复移动不重复发 ENTER（`s_hover == target` 直接返回），避免每帧刷事件。
-
-### pressed（按下）
-
-- `POINTER_DOWN` 记录 `s_pressed`、`s_press_x/y`，给目标链设 `ACTIVE`；
-- **按住时移动**：事件仍然送给 `s_pressed`（等价 DOM 的隐式指针捕获），
-  否则"按下按钮 → 拖出按钮 → 松手"会永远收不到 UP；
-- `POINTER_UP` 清 `ACTIVE`、清 `s_pressed`；
-- `POINTER_LEAVE`（指针离开窗口表面）也会清 `ACTIVE` + `s_pressed`，防止卡住。
-
-### click 合成
-
-`UP` 时若同时满足：
-
-- 抬起目标 == 按下目标（`pressed == target`）
-- 位移 ≤ `QL_CLICK_SLOP`（4 px）
-
-才发 `CLICK`。所以"按下后拖到别处松手"不算点击。
-
-### focus
-
-`ql_input_set_focus(obj)` 负责发出 `FOCUS_OUT` / `FOCUS_IN` 并同步状态位。
-键盘事件和文本输入的目标是焦点控件（没有焦点则回落到输入根），
-因此**按键会沿控件树冒泡**，容器可以统一处理按键。
-
-启动时**没有**默认焦点，也没有 Tab 遍历（M1 未做，见 §9）。
-
----
-
-## 6. 事件参数约定
+## 5. 事件参数约定
 
 `QL_EMIT_*` 的参数是定长数组，所以每个事件的参数个数与顺序必须写死。
-下表就是契约（`qlwidget.h` 里也有注释）：
+下表就是契约：
 
 | 事件 | 参数 |
 |---|---|
@@ -158,7 +96,7 @@ MOVE(40,80) ──→ 命中 btn ──→ 与 s_hover 不同 ──→ 清旧�
 
 ---
 
-## 7. 后端怎么接
+## 6. 后端怎么接
 
 后端只需要两件事：**选对事件掩码**、**把事件翻译成 `QLInputEvent`**。
 
@@ -198,26 +136,35 @@ X11 显示后端和 GL 后端共用，键码表只有一份。
 
 ### 关闭窗口
 
-**后端不再把 Esc/q 当关闭键**（否则应用自己收不到 Esc）。
-需要"按 Esc 退出"就在应用里连一个 `KEY_DOWN` 处理器，再调
-`ql_disp_x11_close()` / `ql_disp_wayland_close()` / `ql_gfx_gl_close()`。
-`test/window_helper.h` 的 `ql_win_bind_esc()` 就是这么做的。
+**后端不把 Esc/q 当关闭键**（否则应用自己收不到 Esc）。
+需要"按 Esc 退出"就在自己装的汇里判断（`example/common.h` 就是这么做的）：
+
+```c
+static void sink(const QLInputEvent *ev, void *user)
+{
+    if (ev->type == QL_INPUT_KEY_DOWN && ev->key == QL_KEY_ESCAPE) {
+        ql_gfx_gl_close(gfx);
+        return;
+    }
+    ql_ui_input_event((QLUIRoot *)user, ev);
+}
+```
 
 ---
 
-## 8. 顺带修掉的一个真 bug：子链表顺序
+## 7. 顺带修掉的一个真 bug：子链表顺序
 
 原来 `ql_object_set_parent` 是**头插**（`child->next_sibling = parent->first_child`），
-而 `qlrender` 从 `first_child` 正序遍历绘制 —— 于是**最后挂上的控件画在最下面**，
-和 `qlwidget.h` 里"后挂的子控件覆盖先挂的"的承诺相反。
+而绘制从 `first_child` 正序遍历 —— 于是**最后挂上的节点画在最下面**，
+和"后挂的子节点覆盖先挂的"的承诺相反。
 
-命中测试一写就把这个矛盾暴露了（重叠区域总是命中最老的控件）。
+命中测试一写就把这个矛盾暴露了（重叠区域总是命中最老的节点）。
 处理方式：改成**追加到链尾**，让"链表顺序 == 绘制顺序"，
 每对象省一个 `last_child` 指针（挂接只在构建期发生，O(n) 尾查找可接受）。
 
 ---
 
-## 9. M1 的已知边界
+## 8. 已知边界
 
 | 项 | 现状 | 计划 |
 |---|---|---|
@@ -231,12 +178,10 @@ X11 显示后端和 GL 后端共用，键码表只有一份。
 
 ---
 
-## 10. 建议阅读顺序
+## 9. 建议阅读顺序
 
 1. `include/qlgl/qlinput.h`（先看 `QLInputEvent` 和 `QLKey`）
-2. `src/core/qlinput.c` 的 `hit_walk`（命中测试的全部规则）
-3. `handle_move` / `handle_button`（状态机 + 点击合成）
-4. `ql_input_dispatch`（队列与 sink 的关系）
-5. `src/widget/qlwidget.c` 的 `ql_widget_set_state` 与 `ql_widget_draw_default`
-6. `src/port/qlinput_x11.h`（一个后端怎么翻译事件）
-7. `test/input/test_input.c`（所有规则的可执行说明）
+2. `src/core/qlinput.c`（198 行：队列 + 状态跟踪 + 派发，一次读完）
+3. `src/port/qlinput_x11.h`（一个后端怎么翻译事件）
+4. `test/input/test_input_queue.c`（所有队列语义的可执行说明）
+5. 想看"命中之后发生什么"：`src/ui/qlui.c` 的 `ql_ui_pointer_down/up/move`

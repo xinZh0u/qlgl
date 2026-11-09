@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -562,7 +559,7 @@ y=top  │  █████████████  │   中间行： [x0, xl)
 <ol start="6">
 <li><code>qlcanvas.c</code> 的 <code>put_px</code> / <code>fill_row</code> / <code>round_row_span</code>（三个基础件）</li>
 <li><code>ql_canvas_fill_round_rect_alpha</code>（怎么用它们拼出圆角）</li>
-<li><code>test/widget/test_canvas.c</code>（像素级断言，改这些函数后必须全绿）</li>
+<li><code>test/draw/test_canvas.c</code>（像素级断言，改这些函数后必须全绿）</li>
 </ol>
 <hr />
 <h2 id="107-dpidpr">10.7 高 DPI（DPR）：缩放只在后端入口发生</h2>
@@ -819,7 +816,7 @@ cov = 1 - smoothstep(0, blur, d)
 </table>
 <h3 id="114">11.4 测试</h3>
 <ul>
-<li><code>test/widget/test_effects.c</code>：28 项检查。除了渐变端点/中点/同色行、alpha=0、
+<li><code>test/draw/test_effects.c</code>：28 项检查。除了渐变端点/中点/同色行、alpha=0、
   阴影衰减方向、blur=0 硬边这些<strong>特征断言</strong>，还有一份
   <strong>朴素参考实现 <code>ref_shadow()</code></strong>——对整块外框逐像素求圆角 SDF、不做任何分解——
   用 3 种外框 × 4 种半径 × 4 种模糊 × 3 种偏移 × 3 种 alpha = <strong>432 组</strong>逐像素对照。

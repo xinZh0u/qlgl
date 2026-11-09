@@ -1,13 +1,20 @@
 # QLText / 字体 API 手册（v0.1）
 
-配套阅读：[QLText 阅读指南](./QLText阅读指南.md) · 前置：[QLWidget API手册](../widget/QLWidget%20API手册.md)
+配套阅读：[QLText 阅读指南](./QLText阅读指南.md) · 相关：[QLUI API手册](../ui/QLUI%20API%20手册.md)（界面里的文本样式）
 
-- 头文件：`#include <qlgl/qlgl.h>`（已包含 `qlfont.h` / `qlstr.h` / `qllabel.h`）
+- 头文件：`#include <qlgl/qlgl.h>`（已包含 `qlfont.h` / `qlstr.h`）
+- **文本最终由谁画**：界面层的 `QLUI` 引擎（HTML/CSS 的 `font-size` / `font-weight` … 编译成样式），
+  或者你在画布上直接调 `ql_canvas_draw_text()`。这一章讲的是**字体与测量**那一层，
+  没有"文本控件"这种对象 —— 显示文本是 `<span>` / `<p>` 的事。
 - C11，无 POSIX 依赖
 
 ---
 
 ## 1. 最小示例
+
+两条路都只依赖字体层，选哪条看你有没有界面：
+
+**① 画布上直接画（最省，没有任何页面）**
 
 ```c
 #include <qlgl/qlgl.h>
@@ -16,21 +23,35 @@ int main(void)
 {
     qlgl_init();
     QLDispDriver *d = ql_disp_mem_create(240, 60, QL_COLOR_RGB888);
-    ql_disp_set_bg_color(QL_COLOR_RGB(0x10, 0x14, 0x1C));
-
-    QLWidget *root = ql_widget_new_ex(0, 0, 240, 60);
-    ql_widget_set_bg((QLObject *)root, QL_COLOR_RGB(0x10, 0x14, 0x1C), 255);
-    ql_render_set_root((QLObject *)root);
-
-    QLLabel *label = ql_label_new_child((QLObject *)root, "Hello, QLGL!", 8, 8);
-    ql_label_set_font((QLObject *)label, &ql_font_mono_16);
-    ql_label_set_text_color((QLObject *)label, QL_COLOR_WHITE);
-
-    ql_render();
+    QLCanvas cv;
+    ql_canvas_from_disp(&cv, d);
+    ql_canvas_clear(&cv, QL_COLOR_RGB(0x10, 0x14, 0x1C));
+    ql_canvas_draw_text(&cv, &ql_font_mono_16, "Hello, QLGL!", -1,
+                        ql_rect_make(8, 8, 224, 24), QL_COLOR_WHITE, QL_TEXT_ALIGN_LEFT);
     ql_disp_mem_save_ppm(d, "/tmp/hello.ppm");
-    ...
+    ql_disp_mem_destroy(d);
+    qlgl_shutdown();
+    return 0;
 }
 ```
+
+**② 交给界面层（字号/字重/颜色写进 CSS）**
+
+```html
+<div id="r">Hello, QLGL!</div>
+```
+```css
+#r { font-size: 16px; color: #FFFFFF; }
+```
+
+```c
+QLUIDoc *doc = ql_ui_load_text(html, css);
+QLUIRoot *ui = ql_ui_build(doc);
+ql_ui_layout(ui, 240, 60);
+ql_ui_render_canvas(ui, &cv);
+```
+
+界面层内部就是用下面这些字体 API 测量与绘制的，所以两边字形完全一致。
 
 ---
 
@@ -97,17 +118,17 @@ const QLFont *ql_font_default(int pixel_size);   /* 带缓存，返回值不要�
 - 没设或加载失败 → **回落到最接近的内置位图字体**（`>=14` 用 mono_16，否则 mono_12）。
 
 > 生命周期：默认字体表由 `qlgl_shutdown()` 释放（`ql_font_reset_defaults()`），
-> 所以控件必须在 shutdown 之前销毁，否则会留下悬垂字体指针。
+> 所以界面/画布必须在 shutdown 之前用完最后一帧，否则会留下悬垂字体指针。
 > 表容量固定 8 个字号，超出后不再缓存（每次新建，调用方别依赖指针相等）。
 > 单线程使用；与其它 GL/绘制状态一样不做加锁。
 
-`qllabel` 与 `qlui` 都走它：
+只有界面层直接用它 —— CSS 里写 `font-size: 18px;` 就会拿到 18px 的动态字体：
 
 ```c
-ql_label_set_font_size(label, 18);      /* 返回实际使用的字体 */
+const QLFont *f = ql_font_default(18);   /* 同字号复用；失败回落到内置位图字体 */
 ```
 
-`qlui` 里写 `font-size: 18px;` 就会自动用上 18px 的动态字体。
+手写画布代码同样可以这么取字体，再交给 `ql_canvas_draw_text()`。
 
 ### 动态字体的行为约定
 
@@ -295,58 +316,35 @@ void ql_canvas_draw_glyph(QLCanvas *canvas, const QLFont *font, const QLGlyph *g
 
 ---
 
-## 8. 文本控件 QLLabel
+## 8. 界面里的文本（没有"文本控件"）
 
-```c
-QLLabel *ql_label_new(const char *text);
-QLLabel *ql_label_new_child(QLObject *parent, const char *text,
-                            ql_coord_t x, ql_coord_t y);
+QLGL 没有 `QLLabel` 这样的控件类 —— 文本是 **HTML 元素**，样式是 CSS：
+
+```html
+<p class="title">QLGL</p>
+<span>普通文本</span>
+```
+```css
+.title { font-size: 20px; font-weight: bold; color: #7CE0FF; }
 ```
 
-### 属性
+| 想要的效果 | 写法 |
+|---|---|
+| 字号 | `font-size: 18px` |
+| 颜色 | `color: #RRGGBB` |
+| 对齐 | `text-align: left\|center\|right` |
+| 加粗 / 斜体 / 下划线 / 删除线 | `font-weight: bold` / `font-style: italic` / `text-decoration: underline\|line-through` |
+| 行高 | `line-height: 24px`（数值或百分比） |
+| 换行 | 放 `<br>`，或写 `white-space: pre` 并在文本里留 `\n` |
+| 不折行 | `white-space: nowrap` |
 
-| 属性 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `QL_LABEL_PROPERTY_TEXT` | STRING | `""` | **复制**，调用方缓冲区可立即释放 |
-| `QL_LABEL_PROPERTY_FONT` | POINTER | `&ql_font_mono_12` | 传 `NULL` 退回默认字体 |
-| `QL_LABEL_PROPERTY_TEXT_COLOR` | COLOR | 白 | |
-| `QL_LABEL_PROPERTY_ALIGN` | INT | `QL_TEXT_ALIGN_LEFT` | |
-| `QL_LABEL_PROPERTY_AUTO_SIZE` | BOOL | 1 | 文本/字体变化时自动改宽高 |
-
-`TEXT` 只接受 `QL_VALUE_STRING`（或 `NONE` 表示清空），其他类型返回 `QL_ERR_INVAL`。
-
-### 便捷函数
+**运行期改文本**（唯一允许的结构改动，见 [QLUI API手册](../ui/QLUI%20API%20手册.md)）：
 
 ```c
-void            ql_label_set_text(QLObject *obj, const char *text);
-const char     *ql_label_text(QLObject *obj);
-void            ql_label_set_font(QLObject *obj, const QLFont *font);
-const QLFont   *ql_label_font(QLObject *obj);
-void            ql_label_set_text_color(QLObject *obj, ql_color_t color);
-void            ql_label_set_align(QLObject *obj, QLTextAlign align);
-void            ql_label_refit(QLObject *obj);   /* 按当前文本重算宽高 */
+ql_ui_set_text(ui, node, "新内容");
 ```
 
-`ql_label_text` 返回的是**标签内部缓冲区**的指针，随时可能因为下一次 `set_text` 失效；
-需要长期保存请自己拷贝。
-
-### 自动尺寸
-
-`AUTO_SIZE=1` 时，`TEXT` / `FONT` 变化会自动把 `WIDTH` / `HEIGHT` 设成
-`ql_font_measure_text` 的结果。
-
-想自己控制尺寸时**先关掉自动尺寸**：
-
-```c
-ql_object_set_property((QLObject *)label, QL_LABEL_PROPERTY_AUTO_SIZE,
-                       ql_value_bool(0));
-ql_object_set_property((QLObject *)label, QL_WIDGET_PROPERTY_WIDTH, ql_value_int(120));
-```
-
-### 继承自 QLWidget 的属性
-
-`X` / `Y` / `WIDTH` / `HEIGHT` / `BG_COLOR` / `BG_ALPHA` / `BORDER_*` /
-`CLIP_CHILDREN` / `VISIBLE` 全部可用；标签默认 `BG_ALPHA = 0`（透明）。
+布局与绘制都是界面层的事，用例见 `example/02_text.c` / `example/08_tags.c`。
 
 ---
 
@@ -369,7 +367,7 @@ ql_object_set_property((QLObject *)label, QL_WIDGET_PROPERTY_WIDTH, ql_value_int
 | 字号 | 内置只有 12/16px；动态字体任意字号 |
 | 自动折行 | 不支持，只有手动 `'\n'` |
 | 垂直对齐 | 只支持顶端对齐 |
-| 字体样式 | 无粗体/斜体/描边/阴影（可以横向偏移多次绘制来模拟） |
+| 字体样式 | 粗体/斜体/下划线/删除线都是**合成**的（见 `QL_UI_FONT_*`）；无描边/阴影 |
 | 排版 | 无字距调整（kerning）、无连字 |
 | 矢量字体 | ✅ M2 已支持（FreeType，按需光栅化 + 缓存） |
 | 字重/斜体 | 需要不同字体文件（`FT_Face`），无合成加粗 |

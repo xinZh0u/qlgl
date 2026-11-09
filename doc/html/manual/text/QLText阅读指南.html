@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item active' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -210,8 +207,9 @@ main img.shot { max-width: 100%; }
 <main>
 <h1 id="qltext">QLText / 字体系统 阅读指南</h1>
 <blockquote>
-<p>本部分包含四层：<strong>字体</strong>（qlfont，静态位图 / FreeType 动态）→ <strong>字符串</strong>（qlstr）→
-<strong>画布文本原语</strong> → <strong>文本控件</strong>（qllabel）。
+<p>本部分包含三层：<strong>字体</strong>（qlfont，静态位图 / FreeType 动态）→ <strong>字符串</strong>（qlstr）→
+<strong>画布文本原语</strong>（<code>ql_canvas_draw_text</code>）；界面层的文本样式（<code>font-size</code> 等）见
+<a href="../ui/QLUI阅读指南.md">QLUI 阅读指南</a>。
 目标读者：要读懂或修改 <code>src/text/</code>、<code>src/core/qlstr.c</code>、文本绘制相关代码的人。
 只想用 API，请看 <a href="./QLText%20API手册.md">QLText API手册</a>。</p>
 </blockquote>
@@ -272,19 +270,14 @@ main img.shot { max-width: 100%; }
 <td>⑦</td>
 </tr>
 <tr>
-<td><code>include/qlgl/qllabel.h</code></td>
-<td>文本控件</td>
+<td><code>src/ui/qlui.c</code></td>
+<td>界面层：按样式测量与绘制文本</td>
 <td>⑧</td>
-</tr>
-<tr>
-<td><code>src/widget/qllabel.c</code></td>
-<td>属性、自动尺寸、绘制</td>
-<td>⑨</td>
 </tr>
 <tr>
 <td><code>test/text/*.c</code></td>
 <td>可执行的说明</td>
-<td>⑩</td>
+<td>⑨</td>
 </tr>
 </tbody>
 </table>
@@ -447,52 +440,47 @@ main img.shot { max-width: 100%; }
 
 <p><code>draw_glyph</code> 对每个像素调 <code>ql_canvas_write_pixel(color, alpha)</code>，
 alpha 就是字形的覆盖率，因此<strong>抗锯齿是天然支持的</strong>，不需要额外的混合代码路径。</p>
-<p>绘制顺序要点：标签先画背景/边框（<code>ql_widget_draw_default</code>），再画文字，所以文字在背景之上。</p>
+<p>绘制顺序要点：界面层先画节点自己的背景/边框，再画文字，所以文字在背景之上。</p>
 <hr />
-<h2 id="8-qllabel">8. 文本控件 QLLabel</h2>
-<div class="highlight"><pre><span></span><code>QLWidget（几何、背景、边框）
-  └── QLLabel（文本、字体、颜色、对齐、自动尺寸）
-</code></pre></div>
-
+<h2 id="8">8. 文本由谁画：没有"文本控件"</h2>
+<p>QLGL 里<strong>没有</strong> <code>QLLabel</code> 这类控件类。文本要么是 HTML 元素，要么直接画在画布上：</p>
 <table>
 <thead>
 <tr>
-<th>属性</th>
-<th>说明</th>
+<th>场景</th>
+<th>谁负责排版</th>
+<th>入口</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>TEXT</code></td>
-<td>会被 <code>QLStr</code> <strong>复制</strong>，调用方的缓冲区用完即可释放</td>
+<td>有界面（推荐）</td>
+<td>界面层（HTML/CSS 的 <code>font-size</code> / <code>color</code> / <code>text-align</code> / <code>line-height</code>）</td>
+<td><code>ql_ui_render_canvas()</code></td>
 </tr>
 <tr>
-<td><code>FONT</code></td>
-<td><code>const QLFont *</code>，null 时退回 <code>ql_font_mono_12</code></td>
+<td>只有画布</td>
+<td>你自己给一个 <code>box</code></td>
+<td><code>ql_canvas_draw_text()</code></td>
 </tr>
 <tr>
-<td><code>TEXT_COLOR</code></td>
-<td>文字颜色</td>
-</tr>
-<tr>
-<td><code>ALIGN</code></td>
-<td>左 / 中 / 右</td>
-</tr>
-<tr>
-<td><code>AUTO_SIZE</code></td>
-<td>为 1 时，文本或字体变化会重算宽高</td>
+<td>GPU 直绘</td>
+<td>你自己</td>
+<td><code>QLDraw2D-&gt;draw_text()</code></td>
 </tr>
 </tbody>
 </table>
-<h3 id="_4">自动尺寸与手动尺寸的交互</h3>
-<p><code>AUTO_SIZE=1</code> 时，任何文本/字体变化都会调 <code>ql_object_set_property(WIDTH/HEIGHT)</code>。
-如果用户想自己控制尺寸，先 <code>AUTO_SIZE=0</code> 再设宽高 —— <strong>顺序很重要</strong>，
-否则设完宽高又改文本会被覆盖回去。</p>
-<h3 id="_5">文本在矩形内的位置</h3>
+<p>三者用的是<strong>同一套字体层</strong>（<code>ql_font_measure_text</code> / <code>draw_glyph</code>），所以字形完全一致。</p>
+<h3 id="_4">文本在矩形内的位置</h3>
 <ul>
-<li>水平：按 <code>ALIGN</code> 在标签宽度内对齐；</li>
-<li>垂直：<strong>永远从矩形顶部开始</strong>，不垂直居中（v0.1 简化）。</li>
+<li>水平：<code>QL_TEXT_ALIGN_LEFT</code> / <code>CENTER</code> / <code>RIGHT</code>（界面层对应 <code>text-align</code>）；</li>
+<li>垂直：<strong>永远从 <code>box.y</code> 开始</strong>，不垂直居中 —— 要居中就自己算 <code>y</code> 偏移，
+  或者给界面层写 <code>line-height</code>（它按行高居中的那套算法处理）。</li>
 </ul>
+<h3 id="_5">多行</h3>
+<p><code>ql_canvas_draw_text()</code> 只处理 <code>'\n'</code>，<strong>不自动折行</strong>。界面层额外支持
+<code>white-space: pre</code>（保留 <code>\n</code> 与空格）与 <code>nowrap</code>；自动折行由布局完成，
+见 <a href="../ui/QLUI阅读指南.md">QLUI 阅读指南</a> 的文本测量一节。</p>
 <hr />
 <h2 id="9">9. 常见坑</h2>
 <table>
@@ -507,32 +495,22 @@ alpha 就是字形的覆盖率，因此<strong>抗锯齿是天然支持的</stro
 <tr>
 <td>中文显示成 <code>?</code></td>
 <td>字形缺失</td>
-<td>内置字体只有 ASCII；需要自带 CJK 字体</td>
+<td>内置字体只有 ASCII；需要自带 CJK 字体或开 FreeType</td>
 </tr>
 <tr>
-<td>文字画到控件外</td>
+<td>文字画到盒子外</td>
 <td>看到文字溢出</td>
-<td>不会：已裁剪到控件矩形；看不到说明控件太小</td>
-</tr>
-<tr>
-<td>改了源字符串内容</td>
-<td>标签文本也变了？</td>
-<td>不会：<code>TEXT</code> 是复制语义；显示旧值说明没重新 set</td>
-</tr>
-<tr>
-<td>设置宽高无效</td>
-<td>尺寸被覆盖</td>
-<td><code>AUTO_SIZE</code> 还开着，先关掉</td>
+<td>画布路径会裁到 <code>box ∩ canvas-&gt;clip</code>；看不到说明 <code>box</code> 太小</td>
 </tr>
 <tr>
 <td>文字垂直不居中</td>
 <td>文字偏上</td>
-<td>v0.1 只支持顶端对齐，需要自己算 <code>y</code> 偏移</td>
+<td>只支持顶端对齐，需要自己算 <code>y</code> 偏移或用 <code>line-height</code></td>
 </tr>
 <tr>
 <td>长文本不换行</td>
 <td>超出部分被裁</td>
-<td>只支持 <code>'\n'</code>，不自动折行</td>
+<td>只支持 <code>'\n'</code>，不自动折行；界面层可写 <code>white-space</code></td>
 </tr>
 <tr>
 <td>自定义字体不显示</td>
@@ -551,16 +529,17 @@ alpha 就是字形的覆盖率，因此<strong>抗锯齿是天然支持的</stro
    - <code>glyphs</code> 按 <code>codepoint</code> <strong>升序</strong>；
    - 每个 <code>QLGlyph.data_offset</code> 指向 <code>bitmap</code> 内自己那段；
    - <code>bpp</code> ∈ {1,4,8}，行字节数符合 <code>(box_w+7)/8</code> / <code>(box_w+1)/2</code> / <code>box_w</code>；</li>
-<li>使用时 <code>ql_label_set_font(label, &amp;my_font)</code>。</li>
+<li>界面上用 <code>font-family</code> 指向它，或画布路径直接把 <code>&amp;my_font</code> 传给 <code>ql_canvas_draw_text()</code>。</li>
 </ol>
 <h3 id="102-pcmpu">10.2 动态矢量字体（PC/MPU 路线）</h3>
 <div class="highlight"><pre><span></span><code><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_font_ft_load</span><span class="p">(</span><span class="s">&quot;/path/to/NotoSansCJK-Regular.ttc&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">);</span>
-<span class="n">ql_label_set_font</span><span class="p">(</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 用完 ql_font_destroy(f) */</span>
+<span class="n">ql_canvas_draw_text</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cv</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;你好&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TEXT_ALIGN_LEFT</span><span class="p">);</span>
+<span class="cm">/* 用完 ql_font_destroy(f) */</span>
 </code></pre></div>
 
 <p>或者设成"默认字体"，之后按字号到处用：</p>
 <div class="highlight"><pre><span></span><code><span class="n">ql_font_set_default_file</span><span class="p">(</span><span class="s">&quot;/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">);</span>
-<span class="n">ql_label_set_font_size</span><span class="p">(</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="mi">18</span><span class="p">);</span><span class="w">          </span><span class="cm">/* == ql_font_default(18) */</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">f18</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_font_default</span><span class="p">(</span><span class="mi">18</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 界面层同样走这里 */</span>
 </code></pre></div>
 
 <p><code>qlui</code> 的 <code>font-size: Npx</code> 会自动走 <code>ql_font_default(N)</code>，无需额外代码。</p>

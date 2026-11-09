@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -507,8 +504,8 @@ main img.shot { max-width: 100%; }
 <td>✅ <code>ql_ui_render(ui, d2d)</code></td>
 </tr>
 <tr>
-<td>控件（<code>QLWidget</code>/<code>QLLabel</code>）</td>
-<td>❌ 仍走 <code>QLCanvas</code>（CPU），后续迁移</td>
+<td>界面层（<code>QLUI</code>）</td>
+<td>✅ 直接吃 <code>QLDraw2D</code>，CPU/GPU 同一份布局与绘制代码</td>
 </tr>
 <tr>
 <td>显示后端（X11/Wayland）</td>
@@ -518,7 +515,8 @@ main img.shot { max-width: 100%; }
 </table>
 <blockquote>
 <p>也就是说：<strong>目前 GPU 路径服务于 qlui 界面</strong>，控件路径仍是 CPU。
-下一步可以把 <code>ql_widget_draw_func</code> 也改成 <code>QLDraw2D</code>，让控件同样能用 GPU。</p>
+界面层的绘制已经全部走 <code>QLDraw2D</code>（见 <code>ql_ui_render(ui, d2d)</code>），
+所以同一份 HTML/CSS 在 CPU 与 GPU 后端上像素一致（<code>test_gl_vs_cpu</code> 守着）。</p>
 </blockquote>
 <hr />
 <h2 id="cpu">附：CPU 光栅内部基础件（非公开）</h2>

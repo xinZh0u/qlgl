@@ -184,9 +184,6 @@ main img.shot { max-width: 100%; }
 <h4>QLObject</h4>
 <a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
 <a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLWidget</h4>
-<a class='sub-item' href='../../manual/widget/QLWidget阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/widget/QLWidget API手册.html'>API 手册</a>
 <h4>QLText</h4>
 <a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
 <a class='sub-item active' href='../../manual/text/QLText API手册.html'>API 手册</a>
@@ -209,35 +206,50 @@ main img.shot { max-width: 100%; }
 </aside>
 <main>
 <h1 id="qltext-api-v01">QLText / 字体 API 手册（v0.1）</h1>
-<p>配套阅读：<a href="./QLText阅读指南.md">QLText 阅读指南</a> · 前置：<a href="../widget/QLWidget%20API手册.md">QLWidget API手册</a></p>
+<p>配套阅读：<a href="./QLText阅读指南.md">QLText 阅读指南</a> · 相关：<a href="../ui/QLUI%20API%20手册.md">QLUI API手册</a>（界面里的文本样式）</p>
 <ul>
-<li>头文件：<code>#include &lt;qlgl/qlgl.h&gt;</code>（已包含 <code>qlfont.h</code> / <code>qlstr.h</code> / <code>qllabel.h</code>）</li>
+<li>头文件：<code>#include &lt;qlgl/qlgl.h&gt;</code>（已包含 <code>qlfont.h</code> / <code>qlstr.h</code>）</li>
+<li><strong>文本最终由谁画</strong>：界面层的 <code>QLUI</code> 引擎（HTML/CSS 的 <code>font-size</code> / <code>font-weight</code> … 编译成样式），
+  或者你在画布上直接调 <code>ql_canvas_draw_text()</code>。这一章讲的是<strong>字体与测量</strong>那一层，
+  没有"文本控件"这种对象 —— 显示文本是 <code>&lt;span&gt;</code> / <code>&lt;p&gt;</code> 的事。</li>
 <li>C11，无 POSIX 依赖</li>
 </ul>
 <hr />
 <h2 id="1">1. 最小示例</h2>
+<p>两条路都只依赖字体层，选哪条看你有没有界面：</p>
+<p><strong>① 画布上直接画（最省，没有任何页面）</strong></p>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
 
 <span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="n">qlgl_init</span><span class="p">();</span>
 <span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB888</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_disp_set_bg_color</span><span class="p">(</span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x10</span><span class="p">,</span><span class="w"> </span><span class="mh">0x14</span><span class="p">,</span><span class="w"> </span><span class="mh">0x1C</span><span class="p">));</span>
-
-<span class="w">    </span><span class="n">QLWidget</span><span class="w"> </span><span class="o">*</span><span class="n">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_widget_new_ex</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_widget_set_bg</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x10</span><span class="p">,</span><span class="w"> </span><span class="mh">0x14</span><span class="p">,</span><span class="w"> </span><span class="mh">0x1C</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_render_set_root</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">);</span>
-
-<span class="w">    </span><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="n">label</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_label_new_child</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Hello, QLGL!&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_label_set_font</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_font_mono_16</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_label_set_text_color</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_WHITE</span><span class="p">);</span>
-
-<span class="w">    </span><span class="n">ql_render</span><span class="p">();</span>
+<span class="w">    </span><span class="n">QLCanvas</span><span class="w"> </span><span class="n">cv</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_canvas_from_disp</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cv</span><span class="p">,</span><span class="w"> </span><span class="n">d</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_canvas_clear</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cv</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x10</span><span class="p">,</span><span class="w"> </span><span class="mh">0x14</span><span class="p">,</span><span class="w"> </span><span class="mh">0x1C</span><span class="p">));</span>
+<span class="w">    </span><span class="n">ql_canvas_draw_text</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cv</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ql_font_mono_16</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Hello, QLGL!&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span>
+<span class="w">                        </span><span class="n">ql_rect_make</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="mi">224</span><span class="p">,</span><span class="w"> </span><span class="mi">24</span><span class="p">),</span><span class="w"> </span><span class="n">QL_COLOR_WHITE</span><span class="p">,</span><span class="w"> </span><span class="n">QL_TEXT_ALIGN_LEFT</span><span class="p">);</span>
 <span class="w">    </span><span class="n">ql_disp_mem_save_ppm</span><span class="p">(</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp/hello.ppm&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="p">...</span>
+<span class="w">    </span><span class="n">ql_disp_mem_destroy</span><span class="p">(</span><span class="n">d</span><span class="p">);</span>
+<span class="w">    </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
 
+<p><strong>② 交给界面层（字号/字重/颜色写进 CSS）</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;r&quot;</span><span class="p">&gt;</span>Hello, QLGL!<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="p">#</span><span class="nn">r</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">html</span><span class="p">,</span><span class="w"> </span><span class="n">css</span><span class="p">);</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span>
+<span class="n">ql_ui_render_canvas</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cv</span><span class="p">);</span>
+</code></pre></div>
+
+<p>界面层内部就是用下面这些字体 API 测量与绘制的，所以两边字形完全一致。</p>
 <hr />
 <h2 id="2">2. 内置字体</h2>
 <div class="highlight"><pre><span></span><code><span class="k">extern</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="n">ql_font_mono_12</span><span class="p">;</span><span class="w">   </span><span class="cm">/* DejaVu Sans Mono, 12px, 4bpp */</span>
@@ -334,15 +346,15 @@ python3<span class="w"> </span>tools/qlfontgen/gen_bitmap_font.py<span class="w"
 </ul>
 <blockquote>
 <p>生命周期：默认字体表由 <code>qlgl_shutdown()</code> 释放（<code>ql_font_reset_defaults()</code>），
-所以控件必须在 shutdown 之前销毁，否则会留下悬垂字体指针。
+所以界面/画布必须在 shutdown 之前用完最后一帧，否则会留下悬垂字体指针。
 表容量固定 8 个字号，超出后不再缓存（每次新建，调用方别依赖指针相等）。
 单线程使用；与其它 GL/绘制状态一样不做加锁。</p>
 </blockquote>
-<p><code>qllabel</code> 与 <code>qlui</code> 都走它：</p>
-<div class="highlight"><pre><span></span><code><span class="n">ql_label_set_font_size</span><span class="p">(</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="mi">18</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 返回实际使用的字体 */</span>
+<p>只有界面层直接用它 —— CSS 里写 <code>font-size: 18px;</code> 就会拿到 18px 的动态字体：</p>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_font_default</span><span class="p">(</span><span class="mi">18</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 同字号复用；失败回落到内置位图字体 */</span>
 </code></pre></div>
 
-<p><code>qlui</code> 里写 <code>font-size: 18px;</code> 就会自动用上 18px 的动态字体。</p>
+<p>手写画布代码同样可以这么取字体，再交给 <code>ql_canvas_draw_text()</code>。</p>
 <h3 id="_2">动态字体的行为约定</h3>
 <table>
 <thead>
@@ -667,80 +679,58 @@ python3<span class="w"> </span>tools/qlfontgen/gen_bitmap_font.py<span class="w"
 </table>
 <p><code>draw_glyph</code> 是单字形版本，坐标是<strong>基线笔位</strong>，一般不用直接调用。</p>
 <hr />
-<h2 id="8-qllabel">8. 文本控件 QLLabel</h2>
-<div class="highlight"><pre><span></span><code><span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_label_new</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">);</span>
-<span class="n">QLLabel</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_label_new_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span>
-<span class="w">                            </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
+<h2 id="8">8. 界面里的文本（没有"文本控件"）</h2>
+<p>QLGL 没有 <code>QLLabel</code> 这样的控件类 —— 文本是 <strong>HTML 元素</strong>，样式是 CSS：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;title&quot;</span><span class="p">&gt;</span>QLGL<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">span</span><span class="p">&gt;</span>普通文本<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
 </code></pre></div>
 
-<h3 id="_4">属性</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">title</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">font-weight</span><span class="p">:</span><span class="w"> </span><span class="kc">bold</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#7CE0FF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
 <table>
 <thead>
 <tr>
-<th>属性</th>
-<th>类型</th>
-<th>默认</th>
-<th>说明</th>
+<th>想要的效果</th>
+<th>写法</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>QL_LABEL_PROPERTY_TEXT</code></td>
-<td>STRING</td>
-<td><code>""</code></td>
-<td><strong>复制</strong>，调用方缓冲区可立即释放</td>
+<td>字号</td>
+<td><code>font-size: 18px</code></td>
 </tr>
 <tr>
-<td><code>QL_LABEL_PROPERTY_FONT</code></td>
-<td>POINTER</td>
-<td><code>&amp;ql_font_mono_12</code></td>
-<td>传 <code>NULL</code> 退回默认字体</td>
+<td>颜色</td>
+<td><code>color: #RRGGBB</code></td>
 </tr>
 <tr>
-<td><code>QL_LABEL_PROPERTY_TEXT_COLOR</code></td>
-<td>COLOR</td>
-<td>白</td>
-<td></td>
+<td>对齐</td>
+<td><code>text-align: left\|center\|right</code></td>
 </tr>
 <tr>
-<td><code>QL_LABEL_PROPERTY_ALIGN</code></td>
-<td>INT</td>
-<td><code>QL_TEXT_ALIGN_LEFT</code></td>
-<td></td>
+<td>加粗 / 斜体 / 下划线 / 删除线</td>
+<td><code>font-weight: bold</code> / <code>font-style: italic</code> / <code>text-decoration: underline\|line-through</code></td>
 </tr>
 <tr>
-<td><code>QL_LABEL_PROPERTY_AUTO_SIZE</code></td>
-<td>BOOL</td>
-<td>1</td>
-<td>文本/字体变化时自动改宽高</td>
+<td>行高</td>
+<td><code>line-height: 24px</code>（数值或百分比）</td>
+</tr>
+<tr>
+<td>换行</td>
+<td>放 <code>&lt;br&gt;</code>，或写 <code>white-space: pre</code> 并在文本里留 <code>\n</code></td>
+</tr>
+<tr>
+<td>不折行</td>
+<td><code>white-space: nowrap</code></td>
 </tr>
 </tbody>
 </table>
-<p><code>TEXT</code> 只接受 <code>QL_VALUE_STRING</code>（或 <code>NONE</code> 表示清空），其他类型返回 <code>QL_ERR_INVAL</code>。</p>
-<h3 id="_5">便捷函数</h3>
-<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_text</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">);</span>
-<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w">     </span><span class="o">*</span><span class="nf">ql_label_text</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
-<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_font</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">);</span>
-<span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w">   </span><span class="o">*</span><span class="nf">ql_label_font</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
-<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_text_color</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
-<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_set_align</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">);</span>
-<span class="kt">void</span><span class="w">            </span><span class="nf">ql_label_refit</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 按当前文本重算宽高 */</span>
+<p><strong>运行期改文本</strong>（唯一允许的结构改动，见 <a href="../ui/QLUI%20API%20手册.md">QLUI API手册</a>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;新内容&quot;</span><span class="p">);</span>
 </code></pre></div>
 
-<p><code>ql_label_text</code> 返回的是<strong>标签内部缓冲区</strong>的指针，随时可能因为下一次 <code>set_text</code> 失效；
-需要长期保存请自己拷贝。</p>
-<h3 id="_6">自动尺寸</h3>
-<p><code>AUTO_SIZE=1</code> 时，<code>TEXT</code> / <code>FONT</code> 变化会自动把 <code>WIDTH</code> / <code>HEIGHT</code> 设成
-<code>ql_font_measure_text</code> 的结果。</p>
-<p>想自己控制尺寸时<strong>先关掉自动尺寸</strong>：</p>
-<div class="highlight"><pre><span></span><code><span class="n">ql_object_set_property</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">QL_LABEL_PROPERTY_AUTO_SIZE</span><span class="p">,</span>
-<span class="w">                       </span><span class="n">ql_value_bool</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
-<span class="n">ql_object_set_property</span><span class="p">((</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">label</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WIDGET_PROPERTY_WIDTH</span><span class="p">,</span><span class="w"> </span><span class="n">ql_value_int</span><span class="p">(</span><span class="mi">120</span><span class="p">));</span>
-</code></pre></div>
-
-<h3 id="qlwidget">继承自 QLWidget 的属性</h3>
-<p><code>X</code> / <code>Y</code> / <code>WIDTH</code> / <code>HEIGHT</code> / <code>BG_COLOR</code> / <code>BG_ALPHA</code> / <code>BORDER_*</code> /
-<code>CLIP_CHILDREN</code> / <code>VISIBLE</code> 全部可用；标签默认 <code>BG_ALPHA = 0</code>（透明）。</p>
+<p>布局与绘制都是界面层的事，用例见 <code>example/02_text.c</code> / <code>example/08_tags.c</code>。</p>
 <hr />
 <h2 id="9-cmake">9. CMake 选项</h2>
 <table>
@@ -802,7 +792,7 @@ python3<span class="w"> </span>tools/qlfontgen/gen_bitmap_font.py<span class="w"
 </tr>
 <tr>
 <td>字体样式</td>
-<td>无粗体/斜体/描边/阴影（可以横向偏移多次绘制来模拟）</td>
+<td>粗体/斜体/下划线/删除线都是<strong>合成</strong>的（见 <code>QL_UI_FONT_*</code>）；无描边/阴影</td>
 </tr>
 <tr>
 <td>排版</td>
@@ -855,7 +845,7 @@ python3<span class="w"> </span>tools/qlfontgen/gen_bitmap_font.py<span class="w"
 ctest<span class="w"> </span>--test-dir<span class="w"> </span>build<span class="w"> </span>--output-on-failure
 </code></pre></div>
 <div class='pager'>
-<a href='../../manual/widget/QLWidget阅读指南.html'><span class='dir'>上一页</span>QLWidget / 绘制系统 阅读指南</a>
+<a href='../../manual/object/QLObject阅读指南.html'><span class='dir'>上一页</span>QLObject 阅读指南</a>
 <a class='next' href='../../manual/text/QLText阅读指南.html'><span class='dir'>下一页</span>QLText / 字体系统 阅读指南</a>
 </div>
 </main>

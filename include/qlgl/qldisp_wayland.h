@@ -3,15 +3,19 @@
  * @brief   Linux Wayland 窗口显示后端（xdg-shell + wl_shm）。
  *
  * 与 X11 后端的差别：
- *   - Wayland 要求客户端自己提交缓冲区，因此渲染器有一块**持久帧缓冲**，
- *     每次 flush 把脏矩形拷进当前 shm 缓冲区，再 damage + attach + commit；
+ *   - Wayland 要求客户端自己提交缓冲区，因此这块驱动有一块**持久帧缓冲**，
+ *     每次 flush 把改过的区域拷进当前 shm 缓冲区，再 damage + attach + commit；
  *   - 使用双缓冲：两个 wl_buffer 轮换，全部在用时跳过本帧，避免撕裂。
  *
  * 用法与 X11 后端一致：
  *     QLDispDriver *d = ql_disp_wayland_create("QLGL Demo", 320, 240,
  *                                              QL_COLOR_FORMAT_AUTO);
- *     ql_render_set_root(root);
- *     while (ql_disp_wayland_poll(d)) { ...; ql_render(); }
+ *     QLCanvas cv;
+ *     ql_canvas_from_disp(&cv, d);
+ *     while (ql_disp_wayland_poll(d)) {
+ *         ql_input_dispatch();
+ *         ql_ui_render_canvas(ui, &cv);
+ *     }
  *     ql_disp_wayland_destroy(d);
  *
  * 需要的环境变量：WAYLAND_DISPLAY（通常已由桌面会话设置）、XDG_RUNTIME_DIR。
