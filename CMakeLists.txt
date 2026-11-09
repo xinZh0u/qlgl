@@ -64,6 +64,7 @@ add_compile_definitions(QL_FEAT_IMG_BMP=${QL_FEAT_IMG_BMP}
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
 option(QLGL_BUILD_EXAMPLES "构建 example/ 下的基本例程" ON)
+option(QLGL_BUILD_BENCHMARK "构建 benchmark/ 下的可视化性能基准（bench_cpu / bench_gl）" ON)
 # 运行期 HTML/CSS 解析器（M3.5 第 3 步）。MCU 侧关掉它即零字节成本
 option(QLGL_BUILD_TEXT_PARSER "构建 ql_ui_load_text()（运行期 HTML/CSS 解析）" ON)
 option(QLGL_BUILD_FREETYPE "构建 FreeType 矢量字体后端（中文/任意字号）" ON)
@@ -369,6 +370,11 @@ endif()
 # ---- example/：基本例程（每个 .c 都是一个完整可运行的程序） ----
 if(QLGL_BUILD_EXAMPLES)
     add_subdirectory(example)
+endif()
+
+# ---- benchmark/：可视化性能基准（CPU / GL 两个后端，同一场景） ----
+if(QLGL_BUILD_BENCHMARK)
+    add_subdirectory(benchmark)
 endif()
 
 # ---- 文档站：doc/**/*.md → doc/html/*.html（需要 python3-markdown） ----
