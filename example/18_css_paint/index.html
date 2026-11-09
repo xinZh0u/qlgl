@@ -1,0 +1,85 @@
+<div id="root">
+  <div class="h1">CSS 绘制效果：渐变 / 圆角 / 阴影 / 透明 / 毛玻璃 / 变换</div>
+
+  <!-- ===== 第一行 ===== -->
+  <div class="cell" style="left: 16px; top: 36px;">
+    <div class="cap">linear-gradient 垂直 / 水平</div>
+    <div class="sw gv"></div>
+    <div class="sw gh"></div>
+  </div>
+
+  <div class="cell" style="left: 176px; top: 36px;">
+    <div class="cap">radial-gradient 中心到边</div>
+    <div class="sw gr"></div>
+  </div>
+
+  <div class="cell" style="left: 336px; top: 36px;">
+    <div class="cap">圆角 + 边框 + 阴影</div>
+    <div class="card"></div>
+  </div>
+
+  <div class="cell" style="left: 496px; top: 36px;">
+    <div class="cap">opacity 1 / 0.5 / 0.2</div>
+    <div class="oprow">
+      <div class="op o1"></div>
+      <div class="op o5"></div>
+      <div class="op o2"></div>
+    </div>
+  </div>
+
+  <!-- ===== 第二行 ===== -->
+  <div class="cell" style="left: 16px; top: 152px;">
+    <div class="cap">clip-path: circle() 与 transform</div>
+    <div class="sw circ"></div>
+    <div class="sw tscale">scale</div>
+    <div class="sw tflip">flip</div>
+  </div>
+
+  <!-- 毛玻璃：自己带一条会动的跑道，跑道先画、玻璃后画 -->
+  <div class="cell" style="left: 176px; top: 152px;">
+    <div class="cap">backdrop-filter: blur(8px)</div>
+    <div class="stage">
+      <div class="runner"></div>
+      <div class="glass"></div>
+    </div>
+  </div>
+
+  <div class="cell" style="left: 336px; top: 152px;">
+    <div class="cap">transition 悬停变色 200ms</div>
+    <div class="trans">hover me</div>
+  </div>
+
+  <div class="cell" style="left: 496px; top: 152px;">
+    <div class="cap">@keyframes 平移 + 缩放</div>
+    <div class="anim"></div>
+  </div>
+
+  <!-- ===== 第三行：文本样式 ===== -->
+  <div class="cell" style="left: 16px; top: 292px; width: 148px;">
+    <div class="cap">文本样式（字体合成）</div>
+    <div class="t"><span class="bold">加粗</span> / <span class="italic">斜体</span></div>
+    <div class="t"><span class="under">下划线</span> / <span class="strike">删除线</span></div>
+    <div class="t">H<span class="sub">2</span>O，cm<span class="sup">2</span></div>
+    <div class="t small">font-size: smaller</div>
+  </div>
+
+  <div class="cell" style="left: 176px; top: 292px; width: 148px;">
+    <div class="cap">text-align / line-height</div>
+    <div class="al">左对齐</div>
+    <div class="al c2">居中</div>
+    <div class="al r">右对齐</div>
+    <div class="lh">行高 26px</div>
+  </div>
+
+  <div class="cell" style="left: 336px; top: 292px; width: 148px;">
+    <div class="cap">white-space: normal 折行</div>
+    <div class="wrap">这一段跟着容器宽度自动折行，用来验证断行与行高。</div>
+  </div>
+
+  <div class="cell" style="left: 496px; top: 292px; width: 148px;">
+    <div class="cap">white-space: nowrap 不折</div>
+    <div class="nowrap">这一段不折行，超出部分裁掉</div>
+  </div>
+
+  <div class="hint">毛玻璃里那条蓝色跑道一直在动：玻璃下的内容被实时糊开，方块移动时糊影跟着动</div>
+</div>

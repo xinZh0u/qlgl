@@ -1,0 +1,132 @@
+#root {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  /* 根字号决定 rem：下面所有 rem 都相对这 12px */
+  font-size: 12px;
+}
+
+.h1 {
+  margin: 12px 0 0 16px;
+  font-size: 14px;
+  color: #0969DA;
+}
+
+.cell {
+  position: absolute;
+  width: 190px;
+}
+
+.cap {
+  font-size: 10px;
+  color: #6E7781;
+}
+
+/* 所有示例块的共同外观：看得见边界，方便量尺寸 */
+.box {
+  margin-top: 4px;
+  background-color: #4C8DFF;
+  border-radius: 3px;
+}
+
+/* ---- 第一行 ---- */
+.em {
+  font-size: 16px;
+  width: 2em;
+  height: 1.5em;
+}
+
+.rem {
+  width: 6rem;
+  height: 3rem;
+  background-color: #2FB8A6;
+}
+
+.ratio {
+  width: 140px;
+  aspect-ratio: 16 / 9;
+  background-color: #E8743B;
+}
+
+/* ---- 第二行 ---- */
+.vw {
+  width: 12vw;
+  height: 28px;
+  background-color: #7A5AF8;
+}
+
+.vh {
+  width: 60px;
+  height: 15vh;
+  background-color: #E63B7A;
+}
+
+.vmin {
+  width: 10vmin;
+  height: 18px;
+  background-color: #E6C34A;
+}
+
+.vmax {
+  width: 20vmax;
+  height: 18px;
+  margin-top: 6px;
+  background-color: #C08A2E;
+}
+
+/* ---- 第三行 ---- */
+.clamp {
+  width: 190px;
+  margin-top: 4px;
+}
+
+.clampmax {
+  width: 50%;
+  max-width: 70px;
+  height: 34px;
+}
+
+.clampmin {
+  width: 20%;
+  min-width: 110px;
+  height: 34px;
+  background-color: #2E6BE6;
+}
+
+.center {
+  width: 100px;
+  margin: 0 auto;
+  height: 34px;
+  background-color: #1A7F37;
+}
+
+/* ---- 第四行 ---- */
+.pad1 {
+  width: 10px;
+  height: 10px;
+  padding: 1em;
+  background-color: #B7791F;
+}
+
+.pad2 {
+  box-sizing: border-box;
+  width: 42px;
+  height: 42px;
+  padding: 1em;
+  background-color: #9A6700;
+}
+
+.hslbox {
+  width: 70px;
+  height: 26px;
+  background-color: hsl(210, 90%, 55%);
+}
+
+.hextrans {
+  width: 70px;
+  height: 26px;
+  margin-top: 6px;
+  background-color: #E63B7A55;
+}

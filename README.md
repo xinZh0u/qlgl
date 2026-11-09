@@ -72,6 +72,9 @@ cmake --build build -j
 | `13_form` | `<textarea>` 多行编辑 + 整张表单（Tab 跳、Ctrl+A/C/V、中文输入） |
 | `14_css3` | `::before` / `:nth-child` / `[data-*]` / `:not()` / `min-max` / `!important` / `hsl()` |
 | `15_backdrop` | 毛玻璃叠在动的背景上：半透明上层 + `backdrop-filter`，下层实时变 |
+| `16_css_units` | 单位与尺寸：`em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `min-max-*` / `aspect-ratio` / `margin: auto` |
+| `17_css_selectors` | 选择器与伪元素：结构伪类 / 属性选择器 / `:not()` / `::before` `::after` / `+` `~` `*` / 状态伪类 |
+| `18_css_paint` | 绘制效果：渐变 / 圆角边框阴影 / `opacity` / `clip-path` / `transform` / 毛玻璃 / `transition` / `@keyframes` / 文本样式 |
 
 ## 构建与测试
 
@@ -237,7 +240,8 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [滚动](doc/tutorial/09_scroll.md) → [与 Web 的差别](doc/tutorial/10_vs_web.md) →
 [输入控件](doc/tutorial/11_input.md) → [空白与上下标](doc/tutorial/12_text.md) →
 [多行输入与表单](doc/tutorial/13_form.md) → [CSS3 补全](doc/tutorial/14_css3.md) →
-**[毛玻璃叠在动的背景上](doc/tutorial/15_backdrop.md)**。
+[毛玻璃叠在动的背景上](doc/tutorial/15_backdrop.md) →
+**[CSS 效果检阅：三个例程](doc/tutorial/16_css_gallery.md)**。
 
 模块手册：
 

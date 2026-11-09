@@ -179,6 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2982,12 +2983,20 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>✅</td>
 </tr>
 <tr>
+<td>效果检阅</td>
+<td><code>example/16_css_units</code> / <code>17_css_selectors</code> / <code>18_css_paint</code>：每个已支持的效果摆成一格，改一行 CSS 重跑就能看出哪格不对</td>
+<td>✅</td>
+</tr>
+<tr>
 <td>性能</td>
 <td><code>benchmark/bench --scene all</code>（8 个维度 × 2 后端 × full/dirty）</td>
 <td>✅</td>
 </tr>
 </tbody>
 </table>
+<p><strong>效果检阅比单元测试更容易抓到真 bug</strong>：单元测试每绿一项就只看一项，
+三个 gallery 例程把特性和特性摆在一起，才看得出它们的相互作用 ——
+例如"<code>::before</code> 配宿主文本"的重叠问题，就是 17 号例程第一次跑出来的。</p>
 <hr />
 <h2 id="25">25. 相关文档</h2>
 <ul>

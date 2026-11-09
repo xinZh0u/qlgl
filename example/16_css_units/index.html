@@ -1,0 +1,69 @@
+<div id="root">
+  <div class="h1">CSS 单位与尺寸：逐个对照着看</div>
+
+  <!-- ===== 第一行：相对单位换算 ===== -->
+  <div class="cell" style="left: 16px; top: 34px;">
+    <div class="cap">font-size:16px 时 2em × 1.5em = 32 × 24</div>
+    <div class="box em"></div>
+  </div>
+
+  <div class="cell" style="left: 232px; top: 34px;">
+    <div class="cap">根字号 12px 时 6rem × 3rem = 72 × 36</div>
+    <div class="box rem"></div>
+  </div>
+
+  <div class="cell" style="left: 448px; top: 34px;">
+    <div class="cap">aspect-ratio:16/9，宽 140 → 高 78</div>
+    <div class="box ratio"></div>
+  </div>
+
+  <!-- ===== 第二行：视口单位 ===== -->
+  <div class="cell" style="left: 16px; top: 150px;">
+    <div class="cap">12vw（窗口宽度的 12%）</div>
+    <div class="box vw"></div>
+  </div>
+
+  <div class="cell" style="left: 232px; top: 150px;">
+    <div class="cap">15vh（窗口高度的 15%）</div>
+    <div class="box vh"></div>
+  </div>
+
+  <div class="cell" style="left: 448px; top: 150px;">
+    <div class="cap">10vmin / 20vmax（短边 / 长边）</div>
+    <div class="box vmin"></div>
+    <div class="box vmax"></div>
+  </div>
+
+  <!-- ===== 第三行：min/max 与 auto ===== -->
+  <div class="cell" style="left: 16px; top: 280px;">
+    <div class="cap">width:50% 被 max-width:70px 夹住</div>
+    <div class="clamp"><div class="box clampmax"></div></div>
+  </div>
+
+  <div class="cell" style="left: 232px; top: 280px;">
+    <div class="cap">width:20% 被 min-width:110px 撑开</div>
+    <div class="clamp"><div class="box clampmin"></div></div>
+  </div>
+
+  <div class="cell" style="left: 448px; top: 280px;">
+    <div class="cap">margin:0 auto 水平居中（父宽 190）</div>
+    <div class="clamp"><div class="box center"></div></div>
+  </div>
+
+  <!-- ===== 第四行：盒模型 ===== -->
+  <div class="cell" style="left: 16px; top: 396px;">
+    <div class="cap">padding:1em（16px）+ content-box → 10+32</div>
+    <div class="box pad1"></div>
+  </div>
+
+  <div class="cell" style="left: 232px; top: 396px;">
+    <div class="cap">同上但 box-sizing:border-box → 仍是 42</div>
+    <div class="box pad2"></div>
+  </div>
+
+  <div class="cell" style="left: 448px; top: 396px;">
+    <div class="cap">hsl() 与 #rrggbbaa 半透明</div>
+    <div class="box hslbox"></div>
+    <div class="box hextrans"></div>
+  </div>
+</div>

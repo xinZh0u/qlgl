@@ -72,5 +72,8 @@ python3 tools/qltext/qltext.py cc \
 | `13_form` | `<textarea>` 多行编辑 + 整张表单 |
 | `14_css3` | `::before` / `:nth-child` / `[data-*]` / `:not()` / `min-max` / `!important` / `hsl()` |
 | `15_backdrop` | 毛玻璃叠在动的背景上：半透明上层 + `backdrop-filter` |
+| `16_css_units` | 单位与尺寸：`px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `min-max-*` / `aspect-ratio` / `margin: auto` |
+| `17_css_selectors` | 选择器与伪元素：结构伪类 / 属性选择器 / `:not()` / `::before` `::after` / `+` `~` `*` / `:hover` `:active` `:focus` |
+| `18_css_paint` | 绘制效果：渐变 / 圆角边框阴影 / `opacity` / `clip-path` / `transform` / 毛玻璃 / `transition` / `@keyframes` / 文本样式 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。

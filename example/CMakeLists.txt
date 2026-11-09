@@ -39,6 +39,9 @@ set(QL_EXAMPLES
     13_form
     14_css3
     15_backdrop
+    16_css_units
+    17_css_selectors
+    18_css_paint
 )
 
 foreach(e ${QL_EXAMPLES})

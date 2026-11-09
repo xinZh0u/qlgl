@@ -176,6 +176,12 @@ target_include_directories(app PRIVATE ${UI_OUT})
 - 匿名 span 继承父元素的 `color` / `font-size` / `text-align`；
 - 相邻文本段不会自动合并，写 CSS 时按"每个文本段是一个 inline 盒子"来理解。
 
+**与 `::before` / `::after` 的关系**：伪元素是构建期造出来的**真节点**，
+它排在这个匿名文本盒的**前面**（`::before`）或**后面**（`::after`），
+所以 `.x::before { content: "• " }` 的圆点一定在正文之前、不重叠。
+这个匿名文本盒**不是元素**：它不参与 `:first-child` / `:nth-child` /
+`+` / `~` 的匹配与计数（与"文本留在宿主节点上"时完全一致）。
+
 ### 3.5 渐变
 
 ```css

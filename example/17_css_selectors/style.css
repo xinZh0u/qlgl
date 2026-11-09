@@ -1,0 +1,203 @@
+/* 通配选择器：先把盒模型统一，后面的格子就不用各自写 box-sizing */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 11px;
+}
+
+.h1 {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  font-size: 14px;
+  color: #0969DA;
+}
+
+.cell {
+  position: absolute;
+  width: 292px;
+}
+
+.cap {
+  font-size: 10px;
+  color: #6E7781;
+  margin-bottom: 4px;
+}
+
+/* ---------- 结构伪类 ---------- */
+.list {
+  border-radius: 6px;
+  overflow: hidden;   /* 让子行的底色跟着圆角裁掉，否则末行会顶出方角 */
+  background-color: #F6F8FA;
+  border-width: 1px;
+  border-color: #E4E8ED;
+}
+
+.row {
+  height: 22px;
+  line-height: 22px;
+  padding: 0 8px;
+  border-width: 1px;
+  border-color: #E4E8ED;
+}
+
+/* 偶数行换底色：不用手工加 class */
+.row:nth-child(2n) {
+  background-color: #EAF0F7;
+}
+
+.row:first-child {
+  color: #0969DA;
+  background-color: #DDEBFF;
+}
+
+.row:last-child {
+  color: #B42318;
+  background-color: #FFE7E4;
+}
+
+/* ---------- 属性选择器 ---------- */
+.row2 {
+  padding: 2px 8px;
+  line-height: 18px;
+  border-width: 1px;
+  border-color: #E4E8ED;
+}
+
+.row2[data-state=ok] {
+  color: #1A7F37;
+}
+
+.row2[data-state=warn] {
+  color: #9A6700;
+  background-color: #FFF6E5;
+}
+
+/* 前缀匹配：data-tag 以 "fe" 开头 */
+.row2[data-tag^=fe] {
+  color: #6E40C9;
+  background-color: #F3EEFF;
+}
+
+/* ---------- :not 与 :nth-of-type ---------- */
+.tagrow {
+  margin-bottom: 6px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-right: 4px;
+  border-radius: 9px;
+  background-color: #EAF2FF;
+  color: #0969DA;
+  font-size: 10px;
+}
+
+.tag:not(.on) {
+  background-color: #F0F2F5;
+  color: #8B949E;
+}
+
+.typed {
+  color: #57606A;
+}
+
+.typed p:nth-of-type(2) {
+  font-weight: bold;
+  color: #1F2328;
+}
+
+/* ---------- ::before / ::after ---------- */
+.bullets {
+  margin-bottom: 6px;
+}
+
+.b::before {
+  content: "• ";
+  color: #2E6BE6;
+}
+
+.quote {
+  padding: 4px 8px;
+  color: #57606A;
+  background-color: #F6F8FA;
+  border-radius: 4px;
+}
+
+.quote::before {
+  content: "“";
+  color: #BFC7D1;
+}
+
+.quote::after {
+  content: "”";
+  color: #BFC7D1;
+}
+
+/* ---------- 兄弟组合符 ---------- */
+.s {
+  padding: 1px 8px;
+}
+
+.s.first {
+  color: #8B949E;
+}
+
+/* 相邻兄弟：除第一个之外都命中 */
+.s + .s {
+  color: #0969DA;
+}
+
+.gh {
+  margin: 6px 0 2px 0;
+  font-size: 11px;
+  color: #1F2328;
+}
+
+/* 一般兄弟：选择器里所有 h3 之后的 .after-h3 */
+.gh ~ .after-h3 {
+  color: #1A7F37;
+  padding-left: 6px;
+}
+
+/* ---------- 状态伪类 ---------- */
+.hoverbox,
+.pressbox,
+.focusbox {
+  padding: 3px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background-color: #F0F2F5;
+  color: #57606A;
+}
+
+.hoverbox:hover {
+  background-color: #DDEBFF;
+  color: #0969DA;
+}
+
+.pressbox:active {
+  background-color: #FFE7E4;
+  color: #B42318;
+}
+
+.focusbox:focus {
+  border-width: 2px;
+  border-color: #2E6BE6;
+  background-color: #FFFFFF;
+}
+
+.hint {
+  position: absolute;
+  left: 16px;
+  bottom: 10px;
+  font-size: 10px;
+  color: #8B949E;
+}

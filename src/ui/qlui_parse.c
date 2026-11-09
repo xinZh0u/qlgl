@@ -3086,6 +3086,12 @@ struct PNode {
     int    type_idx;         /* 同标签兄弟里的位置 */
     int    type_n;
     int    is_pseudo;        /* 1 = `::before` / `::after` 生成的合成节点 */
+    /*
+     * 1 = 为了和伪元素节点排队而给宿主文本套的匿名 span（见 expand_pseudo_rec）。
+     * 文本本来不是元素，所以它也不参与 `:first-child` / `:nth-child` 计数 ——
+     * 这与"文本留在宿主上"时的行为完全一样。
+     */
+    int    is_anon_text;
     char  *style_attr;
     uint8_t flags;           /* QL_UI_NODE_*（<input type="password">） */
     /* 图像热区（`<map>` / `<img usemap>` / `<area>`）：解析完就地解析成 doc->areas */
@@ -3103,6 +3109,12 @@ struct PNode {
     int    nitems;
     int    capitems;
 };
+
+/* 不是"元素"的节点：伪元素合成节点、包裹宿主文本的匿名 span */
+static int not_an_element(const PNode *n)
+{
+    return n->is_pseudo || n->is_anon_text;
+}
 
 /* 下标 == QLUITag 的枚举值，顺序不能改（只在末尾追加） */
 /* 本次解析里被降级/裁掉的标签个数；ql_ui_load_text 开始时清零 */
@@ -4691,8 +4703,14 @@ static int simple_matches(const PNode *n, const SelPart *sp)
     if (sp->not_p != NULL && simple_matches(n, sp->not_p))
         return 0;
 
-    /* 结构伪类：位置在 flatten 之后算好（1 基） */
+    /*
+     * 结构伪类：位置在 flatten 之后算好（1 基）。
+     * 匿名文本节点不算元素，也就没有"位置" —— 不挡住的话它会顶着
+     * `sib_idx` 的初值 0 冒充 `:first-child`。
+     */
     if (sp->pseudo != 0) {
+        if (n->is_anon_text)
+            return 0;
         const int pos = n->sib_idx + 1;
         const int tpos = n->type_idx + 1;
         if ((sp->pseudo & SELP_FIRST_CHILD) && pos != 1)
@@ -4737,7 +4755,7 @@ static int match_rec(const PNode *n, const Rule *r, int idx)
             return 0;
         const PNode *prev = NULL;
         for (const PNode *c = p->first_child; c != NULL && c != n; c = c->next_sibling)
-            if (!c->is_pseudo)
+            if (!not_an_element(c))
                 prev = c;
         if (comb == SEL_COMB_ADJACENT)
             return prev != NULL && match_rec(prev, r, idx - 1);
@@ -4746,7 +4764,7 @@ static int match_rec(const PNode *n, const Rule *r, int idx)
                 return 1;
             prev = NULL;
             for (const PNode *o = p->first_child; o != NULL && o != c; o = o->next_sibling)
-                if (!o->is_pseudo)
+                if (!not_an_element(o))
                     prev = o;
         }
         return 0;
@@ -5205,7 +5223,6 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
     }
     pe->is_pseudo = 1;
     pe->text = text;
-    if (!selpart_add_class(&(SelPart){0}, "", 0)) { /* 占位，避免未用告警 */ }
     /* 给合成节点挂 class（直接建，不用 selpart 那套） */
     pe->classes = (char **)ql_mem_calloc(1, sizeof(char *));
     if (pe->classes == NULL) {
@@ -5218,6 +5235,18 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
         return 0;
     }
     pe->nclasses = 1;
+
+    /*
+     * 下面会给规则表追加一条内部规则 —— `realloc` 可能把 `rs->r` 整体搬走，
+     * 传进来的 `r` 就成了野指针。所以先把这一趟要用到的字段抄下来。
+     */
+    const int is_before = (r->parts[r->nparts - 1].pseudo_elem == 1);
+    const int spec_cls = r->spec_cls;
+    const int spec_tags = r->spec_tags;
+    const int spec_ids = r->spec_ids;
+    const int order = r->order;
+    Decl *const src_decls = r->decls.d;   /* 声明数组本身不随规则表搬家 */
+    const int src_n = r->decls.n;
 
     /* 内部规则：`.__pe_N` + 原规则的全部声明（去掉 content） */
     if (rs->n >= rs->cap) {
@@ -5251,32 +5280,59 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
         return 0;
     }
     nr->parts[0].nclasses = 1;
-    nr->spec_cls = r->spec_cls + 1;      /* 伪元素在规范里"比元素更强" */
-    nr->spec_tags = r->spec_tags;
-    nr->spec_ids = r->spec_ids;
-    nr->order = r->order;
-    for (int i = 0; i < r->decls.n; i++) {
-        if (strcmp(r->decls.d[i].key, "content") == 0)
+    nr->spec_cls = spec_cls + 1;      /* 伪元素在规范里"比元素更强" */
+    nr->spec_tags = spec_tags;
+    nr->spec_ids = spec_ids;
+    nr->order = order;
+    for (int i = 0; i < src_n; i++) {
+        if (strcmp(src_decls[i].key, "content") == 0)
             continue;
-        if (!decls_set(&nr->decls, r->decls.d[i].key, r->decls.d[i].val)) {
+        if (!decls_set(&nr->decls, src_decls[i].key, src_decls[i].val)) {
             pnode_free(pe);
             return 0;
         }
     }
     rs->n++;
 
-    /* 拼进兄弟链表：::before 当第一个孩子，::after 追加到末尾 */
+    /*
+     * 宿主自己还有文本（`<div>正文</div>` 上加 `::before`）：把文本挪进匿名 span。
+     *
+     * `flatten_node` 只在"HTML 里本来就写了子元素"时才拆混排，而伪元素是这里才
+     * 造出来的。不拆的话文本留在宿主身上、伪元素节点又落在内容盒原点上，两者会
+     * 叠在同一个位置（圆点被正文盖掉），`::before` 也失去了"在正文之前"的含义。
+     * 拆出来走的是与混排完全相同的那条路，布局与绘制不需要任何新分支。
+     */
+    PNode *text_span = NULL;
+    if (n->text != NULL) {
+        text_span = pnode_new("span", n);
+        if (text_span == NULL) {
+            pnode_free(pe);
+            return 0;
+        }
+        text_span->is_anon_text = 1;
+        text_span->text = n->text;      /* 接管所有权 */
+        n->text = NULL;
+    }
+
+    /* 拼进兄弟链表：::before 在最前（后面紧跟正文），::after 在最后（正文在它前面） */
     pe->parent = n;
-    if (r->parts[r->nparts - 1].pseudo_elem == 1) {
-        pe->next_sibling = n->first_child;
-        n->first_child = pe;
-    } else if (n->first_child == NULL) {
+    if (is_before) {
+        PNode *rest = n->first_child;
+        pe->next_sibling = (text_span != NULL) ? text_span : rest;
+        if (text_span != NULL)
+            text_span->next_sibling = rest;
         n->first_child = pe;
     } else {
-        PNode *last = n->first_child;
-        while (last->next_sibling != NULL)
-            last = last->next_sibling;
-        last->next_sibling = pe;
+        PNode *tail = n->first_child;
+        if (tail == NULL) {
+            n->first_child = (text_span != NULL) ? text_span : pe;
+        } else {
+            while (tail->next_sibling != NULL)
+                tail = tail->next_sibling;
+            tail->next_sibling = (text_span != NULL) ? text_span : pe;
+        }
+        if (text_span != NULL)
+            text_span->next_sibling = pe;
     }
     return 1;
 }
@@ -5317,16 +5373,16 @@ static void assign_sibling_pos(PNode *n)
 {
     int idx = 0, total = 0;
     for (PNode *c = n->first_child; c != NULL; c = c->next_sibling)
-        if (!c->is_pseudo)
+        if (!not_an_element(c))
             total++;
     for (PNode *c = n->first_child; c != NULL; c = c->next_sibling) {
-        if (c->is_pseudo)
+        if (not_an_element(c))
             continue;
         c->sib_idx = idx++;
         c->sib_n = total;
         int tidx = 0, ttotal = 0;
         for (PNode *o = n->first_child; o != NULL; o = o->next_sibling) {
-            if (o->is_pseudo || strcmp(o->tag, c->tag) != 0)
+            if (not_an_element(o) || strcmp(o->tag, c->tag) != 0)
                 continue;
             if (o == c)
                 tidx = ttotal;

@@ -179,6 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -580,6 +581,11 @@ tools/qltext/qltext.c ┘
 <li>匿名 span 继承父元素的 <code>color</code> / <code>font-size</code> / <code>text-align</code>；</li>
 <li>相邻文本段不会自动合并，写 CSS 时按"每个文本段是一个 inline 盒子"来理解。</li>
 </ul>
+<p><strong>与 <code>::before</code> / <code>::after</code> 的关系</strong>：伪元素是构建期造出来的<strong>真节点</strong>，
+它排在这个匿名文本盒的<strong>前面</strong>（<code>::before</code>）或<strong>后面</strong>（<code>::after</code>），
+所以 <code>.x::before { content: "• " }</code> 的圆点一定在正文之前、不重叠。
+这个匿名文本盒<strong>不是元素</strong>：它不参与 <code>:first-child</code> / <code>:nth-child</code> /
+<code>+</code> / <code>~</code> 的匹配与计数（与"文本留在宿主节点上"时完全一致）。</p>
 <h3 id="35">3.5 渐变</h3>
 <div class="highlight"><pre><span></span><code><span class="nt">background</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">to</span><span class="w"> </span><span class="nt">right</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">3399ff</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">1a4f8a</span><span class="o">);</span>
 <span class="nt">background</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">to</span><span class="w"> </span><span class="nt">bottom</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">4ad08a</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">2a9a5c</span><span class="o">);</span>

@@ -1,0 +1,75 @@
+<div id="root">
+  <div class="h1">CSS 选择器与伪元素：左边看命中，右边看组合</div>
+
+  <!-- ===== 左列 1：结构伪类 ===== -->
+  <div class="cell" style="left: 16px; top: 34px;">
+    <div class="cap">:first-child 蓝 / :last-child 红 / :nth-child(2n) 斑马</div>
+    <div class="list">
+      <div class="row">第 1 行</div>
+      <div class="row">第 2 行</div>
+      <div class="row">第 3 行</div>
+      <div class="row">第 4 行</div>
+      <div class="row">第 5 行</div>
+    </div>
+  </div>
+
+  <!-- ===== 左列 2：属性选择器 ===== -->
+  <div class="cell" style="left: 16px; top: 190px;">
+    <div class="cap">[data-state] / [data-state=warn] / [data-tag^=fe]</div>
+    <div class="list">
+      <div class="row2" data-state="ok">ok → 绿</div>
+      <div class="row2" data-state="warn">warn → 橙</div>
+      <div class="row2" data-tag="feature-a">feature-a → 前缀命中</div>
+      <div class="row2" data-tag="bugfix">bugfix → 未命中</div>
+    </div>
+  </div>
+
+  <!-- ===== 左列 3：:not 与 of-type ===== -->
+  <div class="cell" style="left: 16px; top: 344px;">
+    <div class="cap">:not(.on) 灰；:nth-of-type(2) 加粗</div>
+    <div class="tagrow">
+      <span class="tag on">on</span>
+      <span class="tag">off</span>
+      <span class="tag">off</span>
+    </div>
+    <div class="typed">
+      <p>p 第一条</p>
+      <div>div 插在中间</div>
+      <p>p 第二条 → :nth-of-type(2)</p>
+    </div>
+  </div>
+
+  <!-- ===== 右列 1：::before / ::after ===== -->
+  <div class="cell" style="left: 332px; top: 34px;">
+    <div class="cap">::before 圆点 / ::after 引号（构建期变成真节点）</div>
+    <div class="bullets">
+      <div class="b">列表项：前缀由 ::before 生成</div>
+      <div class="b">第二条：同样只有 content 里有字符</div>
+      <div class="b">第三条：HTML 里没有任何图标元素</div>
+    </div>
+    <div class="quote">引用一段话</div>
+  </div>
+
+  <!-- ===== 右列 2：兄弟组合符 ===== -->
+  <div class="cell" style="left: 332px; top: 190px;">
+    <div class="cap">li + li（相邻）与大标题之后的 ~（一般兄弟）</div>
+    <div class="sibs">
+      <div class="s first">第一项（无前缀）</div>
+      <div class="s">第二项 → 相邻命中</div>
+      <div class="s">第三项 → 相邻命中</div>
+    </div>
+    <h3 class="gh">小标题</h3>
+    <div class="after-h3">标题之后的兄弟 → 命中</div>
+    <div class="after-h3">再一个 → 也命中</div>
+  </div>
+
+  <!-- ===== 右列 3：* 与状态伪类 ===== -->
+  <div class="cell" style="left: 332px; top: 344px;">
+    <div class="cap">* 统一 box-sizing；:hover / :active / :focus</div>
+    <div class="hoverbox">鼠标移上来 → 变蓝</div>
+    <div class="pressbox">按住 → 缩小</div>
+    <div class="focusbox">点一下拿焦点 → 描边</div>
+  </div>
+
+  <div class="hint">悬停 / 按下 / 点击可获得焦点的三块在最右下；其余都是静态命中结果</div>
+</div>
