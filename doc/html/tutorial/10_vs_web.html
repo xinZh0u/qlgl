@@ -505,8 +505,12 @@ main img.shot { max-width: 100%; }
 <td>✅ 无单位倍数（按 font-size 折算）</td>
 </tr>
 <tr>
-<td><code>em</code> <code>rem</code> <code>vh</code> <code>vw</code> <code>ch</code></td>
-<td>❌ <code>不支持的长度 '2em'（只支持 px 与 %)</code></td>
+<td><code>em</code> <code>rem</code> <code>vw</code> <code>vh</code></td>
+<td>✅ 构建期折 px（<code>vw</code>/<code>vh</code> 在布局期按视口解析）</td>
+</tr>
+<tr>
+<td><code>ch</code> <code>ex</code> <code>vmin</code> <code>vmax</code></td>
+<td>❌ <code>不支持的长度 '2ch'</code></td>
 </tr>
 <tr>
 <td><code>calc()</code></td>
@@ -514,7 +518,7 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p>百分比<strong>只相对父容器的内容宽</strong>（不是所有属性都用百分比，比如 margin 不行）。</p>
+<p>百分比<strong>只相对父容器的内容宽</strong>（<code>margin</code> / <code>padding</code> 的百分比不支持 —— 边距的百分比相对的是包含块宽度，算边距时还没有那个基准）。</p>
 <p><strong>三条例外要记牢</strong>：</p>
 <ol>
 <li><strong>根元素的 <code>width/height: %</code> 按视口解析</strong> —— 这是让页面自适应窗口的做法。

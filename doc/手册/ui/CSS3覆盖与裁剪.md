@@ -152,9 +152,10 @@
 | `%` | ✅ | L | 根元素按视口解析；子元素主要用在 `width/height` |
 | `auto` | ✅ | L | |
 | 无单位倍数 | ⚠️ | L | **只有 `line-height`** 接受（`1.5`） |
-| `em` | ⏳ | L | `不支持的长度 '1.2em'（只支持 px 与 %）` |
-| `rem` | ⏳ | L | 同上；需要"根字号"这个概念 |
-| `vw` `vh` `vmin` `vmax` | ⏳ | L | 根元素的 `%` 已等价，语法糖而已 |
+| `em` | ✅ | L | 相对**元素自己的字号**；构建期就折成 px（字号那时已确定），运行期零成本 |
+| `rem` | ✅ | L | 相对**根元素字号**；整棵树走完才折（根的 `font-size` 自己也可能是 em/px） |
+| `vw` `vh` | ✅ | L | 相对视口；只有布局期才知道视口多大，所以在 `resolve_length()` 里解析（窗口缩放自动跟着变） |
+| `vmin` `vmax` | ⏳ | L | 取视口长边走短边，加两个分支即可，暂时没做 |
 | `s` / `ms` | ✅ | T | `transition-duration` / `animation-duration` |
 | `deg` | ⚠️ | L | 只在渐变方向里（`90deg` / `180deg`），不进 `transform` |
 | `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而旋转本身还没做 |
@@ -188,9 +189,9 @@
 | `min-height` | ⏳ | L | |
 | `max-height` | ⏳ | L | |
 | `aspect-ratio` | ⏳ | L | 用于图片位、卡片缩略图 |
-| `margin` + `-top/right/bottom/left` | ✅ | L | **只支持 px**；负值可用 |
-| `margin: … auto` | ⏳ | L | `margin/padding 只支持 px`；是布局概念，不是值解析 |
-| `padding` + 四方向 | ✅ | L | **只支持 px**（百分比报错） |
+| `margin` + `-top/right/bottom/left` | ✅ | L | px / em / rem（构建期折 px）；`auto` 见下一行；负值可用 |
+| `margin: … auto` | ✅ | L | **横向**把剩余空间分掉（`margin: 0 auto` 居中）；纵向 auto 按 0 处理（本库还不做外边距合并） |
+| `padding` + 四方向 | ✅ | L | px / em / rem；`%` 与 `vw/vh` 报错（边距的百分比相对包含块宽度，算边距时还没有基准） |
 | `box-sizing` | ✅ | L | 表单控件 UA 默认 `border-box` |
 | `overflow` | ⚠️ | L | `visible` / `hidden` / `auto` / `scroll`；**没有分轴** |
 | `overflow-x` / `overflow-y` | ⏳ | L | `不支持的属性 'overflow-x'` |
@@ -740,7 +741,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 | 批 | 内容（对应上面各节） | 归属能力包 | 收益 | 风险 | 动 `QLUIStyle` | 验收 |
 |---|---|---|---|---|---|---|
-| **B1 值与尺寸** | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
+| **B1 值与尺寸**（进行中：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`、`margin: auto` **已完成**；剩 `calc()`/`min()`/`max()`、`border-radius` 四角、`aspect-ratio`） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
 | **B2 选择器** | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | 新 `test_selectors` + golden |
 | **B3 文本细节** | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v16 | 扩 `test_text_wrap` / `test_white_space` / `test_textarea` |
 | **B4 绘制细节** | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |

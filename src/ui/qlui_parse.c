@@ -498,7 +498,49 @@ static int parse_length(const char *text, const char *where, int allow_percent,
         return 1;
     }
 
-    set_error("%s: 不支持的长度 '%s'（只支持 px 与 %%）", where, text);
+    /* 相对单位：em / rem 存"百分之一 em"，vw / vh 存整数百分比 */
+    if (n > 2 && (strcmp(t + n - 2u, "em") == 0)) {
+        char num[128];
+        memcpy(num, t, n - 2u);
+        num[n - 2u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *end == '\0') {
+            *unit = QL_UI_UNIT_EM;
+            *value = (int)py_round(v * 100.0);
+            return 1;
+        }
+    }
+    if (n > 3 && strcmp(t + n - 3u, "rem") == 0) {
+        char num[128];
+        memcpy(num, t, n - 3u);
+        num[n - 3u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *end == '\0') {
+            *unit = QL_UI_UNIT_REM;
+            *value = (int)py_round(v * 100.0);
+            return 1;
+        }
+    }
+    if (n > 2 && (strcmp(t + n - 2u, "vw") == 0 || strcmp(t + n - 2u, "vh") == 0)) {
+        char num[128];
+        memcpy(num, t, n - 2u);
+        num[n - 2u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *end == '\0') {
+            if (!allow_percent) {
+                set_error("%s: 此处不支持视口单位 '%s'", where, text);
+                return 0;
+            }
+            *unit = (t[n - 1u] == 'w') ? QL_UI_UNIT_VW : QL_UI_UNIT_VH;
+            *value = (int)py_round(v);
+            return 1;
+        }
+    }
+
+    set_error("%s: 不支持的长度 '%s'（支持 px / %% / em / rem / vw / vh）", where, text);
     return 0;
 }
 
@@ -560,12 +602,16 @@ static int parse_number(const char *text, const char *where, int allow_percent,
 }
 
 /*
- * margin/padding 的 1/2/4 值语法。values 写 (上,右,下,左)。
- * `where` 只用于报错；错误信息与 Python 侧保持同一语义（不逐字相同）。
+ * margin/padding 的 1/2/4 值语法。输出顺序写 (上,右,下,左)。
+ *
+ * 接受 px / em / rem；`auto` 只对 margin 有效（CSS 里 padding 不能 auto）。
+ * `%` 与 `vw/vh` 在这里被拒绝：边距的百分比相对的是**包含块宽度**，而本库的
+ * 布局在算边距时还没有那个基准 —— 与其算个大概，不如明确报错。
  */
-static int parse_edges(const char *text, const char *where, int out[4])
+static int parse_edges(const char *text, const char *where, int allow_auto,
+                       QLUILength out[4])
 {
-    double vals[4] = { 0, 0, 0, 0 };
+    QLUILength vals[4];
     int n = 0;
     const char *p = text;
     while (*p != '\0' && n < 4) {
@@ -584,29 +630,110 @@ static int parse_edges(const char *text, const char *where, int out[4])
         }
         memcpy(tok, start, len);
         tok[len] = '\0';
-        uint8_t unit;
-        int v;
+        uint8_t unit = QL_UI_UNIT_PX;
+        int v = 0;
         if (!parse_length(tok, where, 0, &unit, &v))
             return 0;
-        if (unit != QL_UI_UNIT_PX) {
-            set_error("%s: margin/padding 只支持 px", where);
+        if (unit == QL_UI_UNIT_AUTO && !allow_auto) {
+            set_error("%s: padding 不支持 auto", where);
             return 0;
         }
-        vals[n++] = (double)v;
+        if (unit == QL_UI_UNIT_PERCENT || unit == QL_UI_UNIT_VW ||
+            unit == QL_UI_UNIT_VH) {
+            set_error("%s: margin/padding 暂不支持 %% / vw / vh（用 px / em / rem）",
+                      where);
+            return 0;
+        }
+        vals[n].value = (int16_t)v;
+        vals[n].unit = unit;
+        vals[n].reserved = 0;
+        n++;
     }
     if (n == 1) {
-        out[0] = out[1] = out[2] = out[3] = (int)vals[0];
+        for (int i = 0; i < 4; i++)
+            out[i] = vals[0];
     } else if (n == 2) {
-        out[0] = out[2] = (int)vals[0];
-        out[1] = out[3] = (int)vals[1];
+        out[0] = vals[0];
+        out[2] = vals[0];
+        out[1] = vals[1];
+        out[3] = vals[1];
     } else if (n == 4) {
         for (int i = 0; i < 4; i++)
-            out[i] = (int)vals[i];
+            out[i] = vals[i];
     } else {
         set_error("%s: margin/padding 需要 1/2/4 个值", where);
         return 0;
     }
     return 1;
+}
+
+/* 2 位/边：0=px 1=em 2=rem 3=auto */
+static uint8_t edges_unit_bits(const QLUILength e[4])
+{
+    uint8_t bits = 0;
+    for (int i = 0; i < 4; i++) {
+        uint8_t u = 0;
+        if (e[i].unit == QL_UI_UNIT_EM)
+            u = 1;
+        else if (e[i].unit == QL_UI_UNIT_REM)
+            u = 2;
+        else if (e[i].unit == QL_UI_UNIT_AUTO)
+            u = 3;
+        bits = (uint8_t)(bits | (uint8_t)(u << (2 * i)));
+    }
+    return bits;
+}
+
+/*
+ * 边距里的 em / rem 折成 px（值存的是百分之一 em）。`auto` 原样留着，
+ * 由布局按"剩余空间"分配。
+ */
+static void resolve_edge_units(QLUIEdges *e, uint8_t *bits, int font_px, int root_px)
+{
+    int16_t *v[4] = { &e->top, &e->right, &e->bottom, &e->left };
+    for (int i = 0; i < 4; i++) {
+        const uint8_t u = (uint8_t)((*bits >> (2 * i)) & 0x3u);
+        if (u == 1 && font_px > 0) {
+            *v[i] = (int16_t)(((int32_t)*v[i] * font_px) / 100);
+            *bits = (uint8_t)(*bits & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
+        } else if (u == 2 && root_px > 0) {
+            *v[i] = (int16_t)(((int32_t)*v[i] * root_px) / 100);
+            *bits = (uint8_t)(*bits & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
+        }
+    }
+}
+
+/*
+ * 把 `em` / `rem` 折成 px（就地改，单位换成 PX）。
+ *
+ * `em` 相对**元素自己的字号**，`rem` 相对**根元素**字号 —— 与 CSS 一致。
+ * `value` 存的是百分之一 em，所以这里除以 100。
+ *
+ * 两趟是刻意的：`em` 在编译每个样式时就能折（字号已知）；`rem` 要等整棵树走完
+ * 才知道根元素用的是哪个字号（根的 `font-size` 本身也可能是 em/px），所以留到
+ * 最后统一折一遍。已经是 px 的字段直接跳过，零成本。
+ */
+static void resolve_length_units(QLUIStyle *s, int font_px, int root_px)
+{
+    QLUILength *all[10];
+    all[0] = &s->width;
+    all[1] = &s->height;
+    all[2] = &s->min_width;
+    all[3] = &s->max_width;
+    all[4] = &s->min_height;
+    all[5] = &s->max_height;
+    for (int i = 0; i < 4; i++)
+        all[6 + i] = &s->inset[i];
+    for (int i = 0; i < 10; i++) {
+        QLUILength *l = all[i];
+        if (l->unit == QL_UI_UNIT_EM && font_px > 0) {
+            l->value = (int16_t)(((int32_t)l->value * font_px) / 100);
+            l->unit = QL_UI_UNIT_PX;
+        } else if (l->unit == QL_UI_UNIT_REM && root_px > 0) {
+            l->value = (int16_t)(((int32_t)l->value * root_px) / 100);
+            l->unit = QL_UI_UNIT_PX;
+        }
+    }
 }
 
 /* 渐变方向：返回 bg_grad_dir 的值（1 垂直 / 2 水平 / 3 径向） */
@@ -6132,10 +6259,18 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         return 0;
     }
 
-    int margin[4] = { 0, 0, 0, 0 }, padding[4] = { 0, 0, 0, 0 };
-    if ((v = decls_get(st, "margin")) != NULL && !parse_edges(v, where, margin))
+    QLUILength margin_e[4], padding_e[4];
+    for (int i = 0; i < 4; i++) {
+        margin_e[i].value = 0;
+        margin_e[i].unit = QL_UI_UNIT_PX;
+        margin_e[i].reserved = 0;
+        padding_e[i] = margin_e[i];
+    }
+    if ((v = decls_get(st, "margin")) != NULL &&
+        !parse_edges(v, where, 1, margin_e))
         return 0;
-    if ((v = decls_get(st, "padding")) != NULL && !parse_edges(v, where, padding))
+    if ((v = decls_get(st, "padding")) != NULL &&
+        !parse_edges(v, where, 0, padding_e))
         return 0;
     {
         static const char *const sides[4] = { "top", "right", "bottom", "left" };
@@ -6143,27 +6278,18 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             char key[32];
             snprintf(key, sizeof(key), "margin-%s", sides[i]);
             if ((v = decls_get(st, key)) != NULL) {
-                uint8_t unit;
-                int num;
-                if (!parse_length(v, where, 0, &unit, &num))
+                /* css-key* 单独给一条边：借 parse_edges 的语法，只取第 0 条 */
+                QLUILength one[4];
+                if (!parse_edges(v, where, 1, one))
                     return 0;
-                if (unit != QL_UI_UNIT_PX) {
-                    set_error("%s: %s 只支持 px", where, key);
-                    return 0;
-                }
-                margin[i] = num;
+                margin_e[i] = one[0];
             }
             snprintf(key, sizeof(key), "padding-%s", sides[i]);
             if ((v = decls_get(st, key)) != NULL) {
-                uint8_t unit;
-                int num;
-                if (!parse_length(v, where, 0, &unit, &num))
+                QLUILength one[4];
+                if (!parse_edges(v, where, 0, one))
                     return 0;
-                if (unit != QL_UI_UNIT_PX) {
-                    set_error("%s: %s 只支持 px", where, key);
-                    return 0;
-                }
-                padding[i] = num;
+                padding_e[i] = one[0];
             }
         }
     }
@@ -6192,6 +6318,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     int font_id = intlist_add(fonts, font_px);
     if (font_id < 0)
         return 0;
+
+    /*
+     * `em` / `rem` 在这里就折成 px —— 此刻 `font_px` 已经是这个元素的**最终字号**
+     * （`font-size` 的继承值也在 decls 里），`rem` 用根元素字号。
+     * 折完就只剩 px / % / vw / vh，布局期不必再关心字号。
+     */
 
     /*
      * `vertical-align`：只支持 baseline / sub / super 三个值
@@ -6561,23 +6693,16 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
 
     QLUILength inset[4];
     {
+        /* 与 width/height 同一套长度语法（px / % / em / rem / vw / vh / auto） */
         static const char *const sides[4] = { "top", "right", "bottom", "left" };
         for (int i = 0; i < 4; i++) {
-            int kind = 0;
-            double num = 0;
-            if (!parse_number((v = decls_get(st, sides[i])) != NULL ? v : "auto", where,
-                              1, 1, &kind, &num))
+            uint8_t unit = QL_UI_UNIT_AUTO;
+            int val = 0;
+            v = decls_get(st, sides[i]);
+            if (v != NULL && !parse_length(v, where, 1, &unit, &val))
                 return 0;
-            if (kind == NUM_AUTO) {
-                inset[i].value = 0;
-                inset[i].unit = QL_UI_UNIT_AUTO;
-            } else if (kind == NUM_PCT) {
-                inset[i].value = (int16_t)((num > 0) ? num : 0);
-                inset[i].unit = QL_UI_UNIT_PERCENT;
-            } else {
-                inset[i].value = (int16_t)num;
-                inset[i].unit = QL_UI_UNIT_PX;
-            }
+            inset[i].value = (int16_t)val;
+            inset[i].unit = unit;
             inset[i].reserved = 0;
         }
     }
@@ -6723,14 +6848,17 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->max_height.value = (int16_t)mxhv;
     out->max_height.unit = mxhu;
     out->opacity = (uint8_t)opacity;
-    out->margin.top = (int16_t)margin[0];
-    out->margin.right = (int16_t)margin[1];
-    out->margin.bottom = (int16_t)margin[2];
-    out->margin.left = (int16_t)margin[3];
-    out->padding.top = (int16_t)padding[0];
-    out->padding.right = (int16_t)padding[1];
-    out->padding.bottom = (int16_t)padding[2];
-    out->padding.left = (int16_t)padding[3];
+
+    out->margin.top = margin_e[0].value;
+    out->margin.right = margin_e[1].value;
+    out->margin.bottom = margin_e[2].value;
+    out->margin.left = margin_e[3].value;
+    out->margin_unit = edges_unit_bits(margin_e);
+    out->padding.top = padding_e[0].value;
+    out->padding.right = padding_e[1].value;
+    out->padding.bottom = padding_e[2].value;
+    out->padding.left = padding_e[3].value;
+    out->padding_unit = edges_unit_bits(padding_e);
     out->shadow_dx = (int16_t)sh_dx;
     out->shadow_dy = (int16_t)sh_dy;
     out->display = (uint8_t)disp;
@@ -6768,6 +6896,15 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->sc_x = (int16_t)sc_x;
     out->sc_y = (int16_t)sc_y;
     out->anim = (uint16_t)anim_idx;
+
+    /*
+     * `em` 折成 px：必须放在**所有字段都写进 out 之后**（inset/margin/padding
+     * 就排在前面几条赋值里）。此刻 `font_px` 已经是这个元素的最终字号
+     * （`font-size` 的继承值也在 decls 里）；`rem` 要等整棵树走完才知道根字号。
+     */
+    resolve_length_units(out, font_px, 0);
+    resolve_edge_units(&out->margin, &out->margin_unit, font_px, 0);
+    resolve_edge_units(&out->padding, &out->padding_unit, font_px, 0);
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
@@ -7245,6 +7382,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     assign_sibling_pos(root);
 
     /* 逐节点算样式（DFS 顺序天然父先子后，继承直接取父的最终声明） */
+    int root_style_idx = -1;
     for (int i = 0; i < nflat; i++) {
         Flat *e = &flat[i];
         const PNode *n = e->node;
@@ -7284,6 +7422,8 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                            &fonts, &idx))
             goto done;
         e->style_index = idx;
+        if (i == 0)
+            root_style_idx = (int)idx;
 
         /* 状态变体：只在真的不同时才建（没写 :hover 的节点省 3 个下标） */
         char *base_sig = NULL;
@@ -7401,6 +7541,22 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                 goto done;
         }
         e->text_index = tidx;
+    }
+
+    /*
+     * `rem` 统一折一遍：走完整棵树才知道根元素最终用哪个字号
+     * （根自己的 `font-size` 也可能是 em/px）。`em` 已经在 compile_style 里折过了。
+     */
+    if (root_style_idx >= 0 && root_style_idx < styles.n) {
+        const uint8_t rfid = styles.e[root_style_idx].st.font_id;
+        const int root_px = (rfid < fonts.n) ? fonts.v[rfid] : 16;
+        for (int i = 0; i < styles.n; i++) {
+            QLUIStyle *st = &styles.e[i].st;
+            resolve_length_units(st, 0, root_px);
+            const int fp = (st->font_id < fonts.n) ? fonts.v[st->font_id] : 16;
+            resolve_edge_units(&st->margin, &st->margin_unit, fp, root_px);
+            resolve_edge_units(&st->padding, &st->padding_unit, fp, root_px);
+        }
     }
 
     /* 热区要在文本池定稿之前收（href / alt 也要进池） */

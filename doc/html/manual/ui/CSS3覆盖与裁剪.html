@@ -734,21 +734,27 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>em</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>不支持的长度 '1.2em'（只支持 px 与 %）</code></td>
+<td>相对<strong>元素自己的字号</strong>；构建期就折成 px（字号那时已确定），运行期零成本</td>
 </tr>
 <tr>
 <td><code>rem</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>同上；需要"根字号"这个概念</td>
+<td>相对<strong>根元素字号</strong>；整棵树走完才折（根的 <code>font-size</code> 自己也可能是 em/px）</td>
 </tr>
 <tr>
-<td><code>vw</code> <code>vh</code> <code>vmin</code> <code>vmax</code></td>
+<td><code>vw</code> <code>vh</code></td>
+<td>✅</td>
+<td>L</td>
+<td>相对视口；只有布局期才知道视口多大，所以在 <code>resolve_length()</code> 里解析（窗口缩放自动跟着变）</td>
+</tr>
+<tr>
+<td><code>vmin</code> <code>vmax</code></td>
 <td>⏳</td>
 <td>L</td>
-<td>根元素的 <code>%</code> 已等价，语法糖而已</td>
+<td>取视口长边走短边，加两个分支即可，暂时没做</td>
 </tr>
 <tr>
 <td><code>s</code> / <code>ms</code></td>
@@ -924,19 +930,19 @@ main img.shot { max-width: 100%; }
 <td><code>margin</code> + <code>-top/right/bottom/left</code></td>
 <td>✅</td>
 <td>L</td>
-<td><strong>只支持 px</strong>；负值可用</td>
+<td>px / em / rem（构建期折 px）；<code>auto</code> 见下一行；负值可用</td>
 </tr>
 <tr>
 <td><code>margin: … auto</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>margin/padding 只支持 px</code>；是布局概念，不是值解析</td>
+<td><strong>横向</strong>把剩余空间分掉（<code>margin: 0 auto</code> 居中）；纵向 auto 按 0 处理（本库还不做外边距合并）</td>
 </tr>
 <tr>
 <td><code>padding</code> + 四方向</td>
 <td>✅</td>
 <td>L</td>
-<td><strong>只支持 px</strong>（百分比报错）</td>
+<td>px / em / rem；<code>%</code> 与 <code>vw/vh</code> 报错（边距的百分比相对包含块宽度，算边距时还没有基准）</td>
 </tr>
 <tr>
 <td><code>box-sizing</code></td>
@@ -2855,7 +2861,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </thead>
 <tbody>
 <tr>
-<td><strong>B1 值与尺寸</strong></td>
+<td><strong>B1 值与尺寸</strong>（进行中：<code>min/max-*</code>、<code>!important</code>、<code>hsl()</code>、<code>#rrggbbaa</code>、<code>currentColor/inherit/initial</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>、<code>margin: auto</code> <strong>已完成</strong>；剩 <code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>border-radius</code> 四角、<code>aspect-ratio</code>）</td>
 <td><code>min/max-*</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>、<code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>margin: auto</code>、<code>inherit</code>/<code>initial</code>/<code>currentColor</code>、<code>!important</code>、<code>border-radius</code> 四角、<code>aspect-ratio</code>、<code>hsl()</code>、<code>#rrggbbaa</code></td>
 <td>BASE（少量进 RADIUS）</td>
 <td>真实页面的<strong>基础语法</strong></td>

@@ -661,7 +661,7 @@ backdrop-filter 的 blur() 以外的函数
 
 ```
 qlui: 错误：index.css:27: 不支持的属性 'position'
-qlui: 错误：index.css:12: 不支持的长度 '1.5em'（只支持 px 与 %）
+qlui: 错误：index.css:12: 不支持的长度 '1.5ch'（支持 px / % / em / rem / vw / vh）
 qlui: 错误：index.html:5: <p> 同时包含文本和子元素（混合内容）——v0 不支持，请把文本放进独立的 <span>/<p>
 ```
 
@@ -679,10 +679,16 @@ typedef enum {
 typedef enum { QL_UI_DISPLAY_BLOCK, QL_UI_DISPLAY_INLINE,
                QL_UI_DISPLAY_INLINE_BLOCK, QL_UI_DISPLAY_NONE } QLUIDisplay;
 
-typedef enum { QL_UI_UNIT_AUTO, QL_UI_UNIT_PX, QL_UI_UNIT_PERCENT } QLUIUnit;
+/*
+ * 长度单位。EM / REM 的 value 是**百分之一 em**（1.5em → 150），
+ * VW / VH 的 value 是整数百分比（10vw → 10）。
+ * EM/REM 在构建期就折成 PX；只有 VW/VH 活到布局期（那时才知道视口多大）。
+ */
+typedef enum { QL_UI_UNIT_AUTO, QL_UI_UNIT_PX, QL_UI_UNIT_PERCENT,
+               QL_UI_UNIT_EM, QL_UI_UNIT_REM, QL_UI_UNIT_VW, QL_UI_UNIT_VH } QLUIUnit;
 
 typedef struct { int16_t top, right, bottom, left; } QLUIEdges;
-typedef struct { uint16_t value; uint8_t unit; uint8_t reserved; } QLUILength;
+typedef struct { int16_t value; uint8_t unit; uint8_t reserved; } QLUILength;
 
 typedef struct {
     uint32_t bg_color, text_color, border_color;
@@ -695,12 +701,12 @@ typedef struct {
        line-height 是 int16_t line_h（0 = normal），
        white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），
        font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */
-} QLUIStyle;  /* sizeof == 120（blob v12） */
+} QLUIStyle;  /* sizeof == 144（blob v18） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;
     uint8_t  flags, reserved;      /* QL_UI_NODE_PASSWORD 等 */
-} QLUINode;  /* sizeof == 20（blob v12） */
+} QLUINode;  /* sizeof == 20（blob v18） */
 
 typedef struct {
     const char *name;

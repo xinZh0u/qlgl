@@ -1311,7 +1311,7 @@ backdrop-filter 的 blur() 以外的函数
 
 <p>报错示例：</p>
 <div class="highlight"><pre><span></span><code>qlui: 错误：index.css:27: 不支持的属性 &#39;position&#39;
-qlui: 错误：index.css:12: 不支持的长度 &#39;1.5em&#39;（只支持 px 与 %）
+qlui: 错误：index.css:12: 不支持的长度 &#39;1.5ch&#39;（支持 px / % / em / rem / vw / vh）
 qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合内容）——v0 不支持，请把文本放进独立的 &lt;span&gt;/&lt;p&gt;
 </code></pre></div>
 
@@ -1326,10 +1326,16 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_INLINE</span><span class="p">,</span>
 <span class="w">               </span><span class="n">QL_UI_DISPLAY_INLINE_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_NONE</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIDisplay</span><span class="p">;</span>
 
-<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_UNIT_AUTO</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_PX</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_PERCENT</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIUnit</span><span class="p">;</span>
+<span class="cm">/*</span>
+<span class="cm"> * 长度单位。EM / REM 的 value 是**百分之一 em**（1.5em → 150），</span>
+<span class="cm"> * VW / VH 的 value 是整数百分比（10vw → 10）。</span>
+<span class="cm"> * EM/REM 在构建期就折成 PX；只有 VW/VH 活到布局期（那时才知道视口多大）。</span>
+<span class="cm"> */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_UNIT_AUTO</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_PX</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_PERCENT</span><span class="p">,</span>
+<span class="w">               </span><span class="n">QL_UI_UNIT_EM</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_REM</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_VW</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_UNIT_VH</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIUnit</span><span class="p">;</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">top</span><span class="p">,</span><span class="w"> </span><span class="n">right</span><span class="p">,</span><span class="w"> </span><span class="n">bottom</span><span class="p">,</span><span class="w"> </span><span class="n">left</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIEdges</span><span class="p">;</span>
-<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">value</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">unit</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUILength</span><span class="p">;</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">int16_t</span><span class="w"> </span><span class="n">value</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">unit</span><span class="p">;</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUILength</span><span class="p">;</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">bg_color</span><span class="p">,</span><span class="w"> </span><span class="n">text_color</span><span class="p">,</span><span class="w"> </span><span class="n">border_color</span><span class="p">;</span>
@@ -1342,12 +1348,12 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <span class="cm">       line-height 是 int16_t line_h（0 = normal），</span>
 <span class="cm">       white-space 是 uint8_t white_space（0 = nowrap 默认，1 = normal 折行），</span>
 <span class="cm">       font_flags 是 uint8_t，见 QL_UI_FONT_*（合成加粗/斜体/下划线/删除线） */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 120（blob v12） */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 144（blob v18） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">,</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">;</span>
 <span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">flags</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w">      </span><span class="cm">/* QL_UI_NODE_PASSWORD 等 */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 20（blob v12） */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 20（blob v18） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>

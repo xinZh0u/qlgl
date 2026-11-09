@@ -412,6 +412,57 @@ main img.shot { max-width: 100%; }
 <li><a href="../手册/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> —— 按模块穷举 + 五批计划 + CSS 能力包</li>
 <li><a href="../手册/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> —— 标签侧的同一套口径</li>
 </ul>
+<hr />
+<h2 id="em-rem-vw-vh-margin-auto">单位与居中：<code>em</code> / <code>rem</code> / <code>vw</code> / <code>vh</code> / <code>margin: auto</code></h2>
+<p>照搬真实页面时最常撞的两件事，现在都支持了。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">em</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* 相对**元素自己的**字号 */</span>
+<span class="p">.</span><span class="nc">page</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">max-width</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="kt">rem</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">          </span><span class="c">/* 相对**根元素**字号 */</span>
+<span class="p">.</span><span class="nc">hero</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="kt">vh</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* 相对视口高度，窗口缩放自动跟着变 */</span>
+<span class="p">.</span><span class="nc">box</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">320</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">margin</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 横向居中 */</span>
+
+<span class="c">/* 单条边也可以写 auto */</span>
+<span class="p">.</span><span class="nc">sidebar-right</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">margin-left</span><span class="p">:</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 靠右 */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>单位</th>
+<th>何时解析</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>em</code></td>
+<td><strong>构建期</strong>折成 px</td>
+<td>相对元素自己的 <code>font-size</code>（继承来的也算）</td>
+</tr>
+<tr>
+<td><code>rem</code></td>
+<td>整棵树走完后折成 px</td>
+<td>相对根元素字号 —— 根的 <code>font-size</code> 自己也可能是 em，所以留到最后一趟</td>
+</tr>
+<tr>
+<td><code>vw</code> / <code>vh</code></td>
+<td><strong>布局期</strong></td>
+<td>视口尺寸只有布局时才知道；窗口缩放会自动重算</td>
+</tr>
+<tr>
+<td><code>%</code></td>
+<td>布局期</td>
+<td>相对父容器内容宽（<code>margin</code> / <code>padding</code> 的百分比不支持）</td>
+</tr>
+</tbody>
+</table>
+<p><code>margin: auto</code> 是<strong>布局概念</strong>：横向把剩余空间分掉（两边都 auto 就平分，
+只剩一边 auto 就全给它）。所以它只对块级盒有效 —— 行内盒的宽度由内容决定，
+没有"剩余"可分配。纵向 auto 按 0 处理：本库还不做外边距合并，单独实现一套
+纵向居中容易和它打架，宁可明确不做。</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;page&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;box&quot;</span><span class="p">&gt;</span>320px 宽，水平居中<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
 <div class='pager'>
 <a href='../tutorial/13_form.html'><span class='dir'>上一页</span>多行输入与表单</a>
 <a class='next' href='../tutorial/15_backdrop.html'><span class='dir'>下一页</span>毛玻璃叠在动的背景上</a>

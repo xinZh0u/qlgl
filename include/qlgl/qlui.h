@@ -244,6 +244,17 @@ typedef enum {
     QL_UI_UNIT_AUTO = 0,   /* 由布局决定 */
     QL_UI_UNIT_PX,
     QL_UI_UNIT_PERCENT,    /* 相对父元素内容宽度 */
+    /*
+     * 相对单位。`EM` / `REM` 的 `value` 是**百分之一 em**（`1.5em` → 150），
+     * 因为要表达小数；`VW` / `VH` 的 `value` 是整数百分比（`10vw` → 10）。
+     *
+     * `EM` / `REM` 在 `compile_style` 里就折成 px（那时字号已确定），
+     * 只有 `VW` / `VH` 活到布局期 —— 视口尺寸只有布局时才知道。
+     */
+    QL_UI_UNIT_EM,
+    QL_UI_UNIT_REM,
+    QL_UI_UNIT_VW,
+    QL_UI_UNIT_VH,
 } QLUIUnit;
 
 /* 一条边的四个值，顺序固定为 上右下左 */
@@ -415,6 +426,18 @@ typedef struct {
      * 要做到严格一致需要离屏图层（见《CSS3 覆盖与裁剪》§20.1）。
      */
     uint8_t     opacity;
+
+    /*
+     * `margin` / `padding` 每一边的"单位"（每边 2 位，顺序 上右下左）：
+     *   0 = px、1 = em、2 = rem、3 = auto（只对 margin 有效）。
+     *
+     * 为什么单独放字节而不是让 QLUIEdges 带单位：Edges 有 60 处直接读
+     * `.left` / `.top`，改成带单位的结构会逼着所有布局代码跟着改；而 em/rem 在
+     * **构建期**就折成 px 了（`resolve_length_units()`），运行期只剩 px 与 auto，
+     * 所以值仍然是一个 int16。auto 用这两位标出来，值为 0。
+     */
+    uint8_t     margin_unit;
+    uint8_t     padding_unit;
 } QLUIStyle;
 
 /*
@@ -1136,7 +1159,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    17u  /* 17: QLUIStyle += opacity */
+#define QL_UI_BLOB_VERSION    18u  /* 18: + margin/padding 的单位位（em/rem/auto） */
 
 typedef struct {
     uint32_t magic;

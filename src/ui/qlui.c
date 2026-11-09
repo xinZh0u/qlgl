@@ -543,6 +543,14 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
         return (ql_coord_t)len.value;
     case QL_UI_UNIT_PERCENT:
         return (ql_coord_t)(((int32_t)basis * (int32_t)len.value) / 100);
+    /*
+     * 视口单位：只有布局期才知道视口多大，所以留到这里解析
+     * （`em` / `rem` 已经在构建期折成 px 了）。
+     */
+    case QL_UI_UNIT_VW:
+        return (ql_coord_t)(((int32_t)s_viewport_w * (int32_t)len.value) / 100);
+    case QL_UI_UNIT_VH:
+        return (ql_coord_t)(((int32_t)s_viewport_h * (int32_t)len.value) / 100);
     default:
         return fallback;
     }
@@ -557,7 +565,8 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
  */
 static int height_is_definite(const QLUIStyle *s, ql_coord_t basis_h)
 {
-    if (s->height.unit == QL_UI_UNIT_PX)
+    if (s->height.unit == QL_UI_UNIT_PX || s->height.unit == QL_UI_UNIT_VW ||
+        s->height.unit == QL_UI_UNIT_VH)
         return 1;
     if (s->height.unit == QL_UI_UNIT_PERCENT)
         return basis_h >= 0;
@@ -792,11 +801,18 @@ static void translate_subtree(QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy)
 /* 解析一条 inset，auto 时返回 fallback */
 static ql_coord_t resolve_inset(QLUILength len, ql_coord_t basis, ql_coord_t fallback)
 {
-    if (len.unit == QL_UI_UNIT_PX)
+    switch (len.unit) {
+    case QL_UI_UNIT_PX:
         return (ql_coord_t)len.value;
-    if (len.unit == QL_UI_UNIT_PERCENT)
+    case QL_UI_UNIT_PERCENT:      /* 相对包含块 */
         return (ql_coord_t)(((int32_t)basis * (int32_t)len.value) / 100);
-    return fallback;
+    case QL_UI_UNIT_VW:
+        return (ql_coord_t)(((int32_t)s_viewport_w * (int32_t)len.value) / 100);
+    case QL_UI_UNIT_VH:
+        return (ql_coord_t)(((int32_t)s_viewport_h * (int32_t)len.value) / 100);
+    default:
+        return fallback;
+    }
 }
 
 /*
@@ -1770,7 +1786,37 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     const QLFont *font = font_of_style(node, s);
     ql_coord_t border_w = border_width_of(node, avail_w);
 
-    ql_coord_t box_x = x + s->margin.left;
+    /*
+     * `margin: auto`：横向把**剩余空间**分掉（`margin: 0 auto` 就是最常用的居中）。
+     * 只在块级盒上有意义（行内盒宽度由内容决定，没有剩余可分配）。
+     * 纵向 auto 按 0 处理 —— 那是"块级外边距合并"的领域，本库还不做外边距合并，
+     * 单独实现一套纵向居中容易与它打架，宁可明确不做。
+     */
+    ql_coord_t m_left = s->margin.left;
+    ql_coord_t m_right = s->margin.right;
+    {
+        const uint8_t lu = (uint8_t)((s->margin_unit >> 6) & 0x3u);   /* left */
+        const uint8_t ru = (uint8_t)((s->margin_unit >> 2) & 0x3u);   /* right */
+        const int auto_l = (lu == 3);
+        const int auto_r = (ru == 3);
+        if ((auto_l || auto_r) && s->display == QL_UI_DISPLAY_BLOCK) {
+            ql_coord_t used = border_w + (auto_l ? 0 : m_left) +
+                              (auto_r ? 0 : m_right);
+            ql_coord_t rest = avail_w - used;
+            if (rest < 0)
+                rest = 0;
+            if (auto_l && auto_r) {
+                m_left = rest / 2;
+                m_right = rest - m_left;      /* 奇数像素落在右边，总宽不差 1 */
+            } else if (auto_l) {
+                m_left = rest;
+            } else {
+                m_right = rest;
+            }
+        }
+    }
+
+    ql_coord_t box_x = x + m_left;
     ql_coord_t box_y = y + s->margin.top;
 
     ql_coord_t content_x = box_x + s->border_width + s->padding.left;
