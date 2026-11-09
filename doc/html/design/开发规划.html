@@ -181,6 +181,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2923,7 +2924,14 @@ blob v10 → <strong>v11</strong>。</p>
 <p>配套：<code>test_pct_height</code>（6 组）、<code>test_blur_dirty</code>（脏区 vs 整屏逐像素）、
 <code>test_opacity</code>（CPU + GPU，25 项）；blob v17（<code>QLUIStyle</code> 的 2 字节尾部填充改成 <code>opacity</code>，
 结构体仍是 140）。</p>
-<h3 id="m8-css3-2026-11-09">M8 · CSS3 补全（五批）—— <strong>计划（2026-11-09 定案）</strong></h3>
+<h3 id="m8-css3-2026-11-10">M8 · CSS3 补全（五批）—— <strong>已完成（2026-11-10）</strong></h3>
+<blockquote>
+<p>结果：B1–B5 全部落地（B1/B3/B4/B5 见各节，B2 与 B3/B4 的最后几项见
+<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §18.7</a>）。
+例程 <code>26_css_states</code> / <code>27_css_text2</code> / <code>28_bg_image</code>，教程 <code>18_css3_more.md</code>，
+测试 <code>test_m8</code>（61 项）。<strong>唯一没做的是 <code>filter</code></strong>（<code>blur()</code> 要离屏图层，
+与 <code>transform: rotate()</code> 同级，留作单独立项）。</p>
+</blockquote>
 <p>HTML5 标签覆盖已到 114/114（含占位），接下来补 CSS。逐条覆盖与批次见
 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>。</p>
 <p><strong>现状实测</strong>（23 份真实 CSS、5391 条声明，去掉 CSS 变量与厂商前缀）：

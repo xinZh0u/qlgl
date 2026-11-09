@@ -61,4 +61,4 @@
        color: #D8E3F0; border: 1px solid #35485C; border-radius: 6px; }
 .inp:focus { outline: 2px solid #4ADE80; outline-offset: 2px; }
 
-.note { margin-top: 16px; font-size: 10px; color: #7E8FA1; line-height: 17px; }
+.note { white-space: normal; margin-top: 16px; font-size: 10px; color: #7E8FA1; line-height: 17px; }

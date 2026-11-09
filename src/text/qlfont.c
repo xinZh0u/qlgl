@@ -216,6 +216,39 @@ ql_coord_t ql_font_line_width_ls(const QLFont *font, const char *text, int32_t l
     return width;
 }
 
+ql_coord_t ql_font_line_width_ls2(const QLFont *font, const char *text, int32_t len,
+                                  ql_coord_t letter_spacing, ql_coord_t word_spacing,
+                                  uint8_t tab_size)
+{
+    if (font == NULL || text == NULL)
+        return 0;
+
+    ql_coord_t width = 0;
+    int32_t i = 0;
+    const QLGlyph *space = (word_spacing != 0 || tab_size != 0)
+                               ? ql_font_find_glyph(font, ' ')
+                               : NULL;
+    while ((len < 0 ? text[i] != '\0' : i < len) && text[i] != '\0') {
+        uint32_t cp = 0;
+        int32_t used = ql_utf8_decode(text + i, &cp);
+        if (used <= 0)
+            break;
+        if (cp == (uint32_t)'\t' && tab_size != 0) {
+            const ql_coord_t sw = (space != NULL) ? space->adv_w : 0;
+            width += sw * (ql_coord_t)tab_size + letter_spacing;
+            i += used;
+            continue;
+        }
+        const QLGlyph *glyph = ql_font_find_glyph(font, cp);
+        width += (glyph != NULL) ? glyph->adv_w : 0;
+        width += letter_spacing;
+        if (cp == (uint32_t)' ')
+            width += word_spacing;
+        i += used;
+    }
+    return width;
+}
+
 ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len)
 {
     return ql_font_line_width_ls(font, text, len, 0);

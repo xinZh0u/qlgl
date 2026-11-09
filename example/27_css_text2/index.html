@@ -1,0 +1,53 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">B3 文本细节：word-spacing / tab-size / text-decoration-*</div>
+    <div class="badge">三样都只影响绘制</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. word-spacing：只加在**空格之后**（字母之间不变）</div>
+    <div class="line ws0">The quick brown fox jumps</div>
+    <div class="line ws6">The quick brown fox jumps（word-spacing: 6px）</div>
+    <div class="line wsn">The quick brown fox jumps（word-spacing: -2px）</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. tab-size：同样是 '\t'，2 / 8 个空格宽</div>
+    <div class="line pre tab2">A&#9;B&#9;C</div>
+    <div class="line pre tab8">A&#9;B&#9;C</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. text-decoration-line：underline / overline / line-through / 组合</div>
+    <div class="row">
+      <div class="box u">下划线</div>
+      <div class="box o">上划线</div>
+      <div class="box lt">删除线</div>
+      <div class="box uo">上下都有</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. text-decoration-style：solid / double / dotted / dashed</div>
+    <div class="row">
+      <div class="box s0">solid</div>
+      <div class="box s1">double</div>
+      <div class="box s2">dotted</div>
+      <div class="box s3">dashed</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. text-decoration-thickness / -color / text-underline-offset</div>
+    <div class="row">
+      <div class="box thin">2px 红线</div>
+      <div class="box thick">4px 绿线</div>
+      <div class="box off">下移 6px</div>
+    </div>
+  </div>
+
+  <div class="note">
+    装饰线也是"用 fill_rect 拼"的：double 两条、dotted 一点一点、dashed 段+缝，
+    所以 CPU 与 GPU 逐像素一致，MCU 上也不需要新图元。
+  </div>
+</div>

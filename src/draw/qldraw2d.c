@@ -201,6 +201,40 @@ static int ellipsis_is_dots(const QLFont *font)
     return ql_font_find_glyph(font, QL_ELLIPSIS_CP) == NULL;
 }
 
+/*
+ * 画一条装饰线的各种样式。
+ *
+ * 全部用 `fill_rect` 拼出来（不引入新的后端入口），所以 CPU / GL 天然一致：
+ *   solid  : 一条 th 高的矩形
+ *   double : 两条 th 高、间隔 th
+ *   dotted : th 见方的点，间隔 th
+ *   dashed : 段 3th、缝 2th（与 border-style 的图案比例一致）
+ */
+static void deco_line(QLDraw2D *self, ql_coord_t x, ql_coord_t y, ql_coord_t w,
+                      ql_coord_t th, uint8_t style, ql_color_t color, uint8_t alpha)
+{
+    if (w <= 0 || th <= 0)
+        return;
+    if (style == 1) {          /* double */
+        const ql_coord_t t2 = (th > 1) ? (th / 2) : 1;
+        self->fill_rect(self, ql_rect_make(x, y, w, t2), color, alpha);
+        self->fill_rect(self, ql_rect_make(x, y + t2 + t2, w, t2), color, alpha);
+        return;
+    }
+    if (style == 2 || style == 3) {   /* dotted / dashed */
+        const ql_coord_t dash = (style == 2) ? th : 3 * th;
+        const ql_coord_t gap = (style == 2) ? th : 2 * th;
+        for (ql_coord_t p = 0; p < w; p += dash + gap) {
+            ql_coord_t d = w - p;
+            if (d > dash)
+                d = dash;
+            self->fill_rect(self, ql_rect_make(x + p, y, d, th), color, alpha);
+        }
+        return;
+    }
+    self->fill_rect(self, ql_rect_make(x, y, w, th), color, alpha);
+}
+
 static ql_coord_t ellipsis_width(const QLFont *font, ql_coord_t letter_spacing)
 {
     if (ellipsis_is_dots(font)) {
@@ -270,8 +304,10 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
     QLTextWrapOpt opt;
     opt.letter_spacing = ts->letter_spacing;
+    opt.word_spacing = ts->word_spacing;
     opt.indent = ts->indent;
     opt.break_any = ts->break_any;
+    opt.tab_size = ts->tab_size;
 
     QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
     const int max_lines = (int)(sizeof(lines) / sizeof(lines[0]));
@@ -287,7 +323,8 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
         int32_t llen = lines[li].len;
         /* 首行缩进：只影响第一行的起点（折行那边同时按缩进减了可用宽度） */
         const ql_coord_t x_indent = (li == 0) ? ts->indent : 0;
-        ql_coord_t line_w = ql_font_line_width_ls(font, lt, llen, ts->letter_spacing);
+        ql_coord_t line_w = ql_font_line_width_ls2(font, lt, llen, ts->letter_spacing,
+                                                   ts->word_spacing, ts->tab_size);
 
         /*
          * `text-overflow: ellipsis`：一行比盒子宽时，末尾一个省略号。
@@ -304,8 +341,17 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
                 int32_t used = ql_utf8_decode(lt + k, &cp);
                 if (used <= 0)
                     break;
-                const QLGlyph *g = ql_font_find_glyph(font, cp);
-                const ql_coord_t adv = ((g != NULL) ? g->adv_w : 0) + ts->letter_spacing;
+                ql_coord_t adv;
+                if (cp == (uint32_t)'\t' && ts->tab_size != 0) {
+                    const QLGlyph *sp = ql_font_find_glyph(font, ' ');
+                    adv = ((sp != NULL) ? sp->adv_w : 0) * (ql_coord_t)ts->tab_size +
+                          ts->letter_spacing;
+                } else {
+                    const QLGlyph *g = ql_font_find_glyph(font, cp);
+                    adv = ((g != NULL) ? g->adv_w : 0) + ts->letter_spacing;
+                    if (cp == (uint32_t)' ')
+                        adv += ts->word_spacing;
+                }
                 if (acc + adv > cap)
                     break;
                 acc += adv;
@@ -331,10 +377,21 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
             if (used <= 0)
                 break;
             const QLGlyph *glyph = ql_font_find_glyph(font, cp);
+            if (cp == (uint32_t)'\t' && ts->tab_size != 0) {
+                /* 制表符：按 N 个空格的宽度推进，不画字形 */
+                const QLGlyph *sp = ql_font_find_glyph(font, ' ');
+                pen_x += ((sp != NULL) ? sp->adv_w : 0) * (ql_coord_t)ts->tab_size +
+                         ts->letter_spacing;
+                j += used;
+                continue;
+            }
             if (glyph != NULL && glyph->box_w > 0)
                 emit_glyph(self, font, glyph, pen_x, baseline, ts);
-            if (glyph != NULL)
+            if (glyph != NULL) {
                 pen_x += glyph->adv_w + ts->letter_spacing;
+                if (cp == (uint32_t)' ')
+                    pen_x += ts->word_spacing;
+            }
             j += used;
         }
         if (draw_ellipsis)
@@ -347,15 +404,28 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
         if (ts->deco != 0 && llen > 0 && self->fill_rect != NULL) {
             const ql_coord_t x0 = line_x0;
             const ql_coord_t w = line_w;
+            const uint8_t dstyle = (uint8_t)(ts->deco_style & QL_UI_DECO_LINE_MASK);
+            const ql_coord_t th =
+                (ts->deco_thickness > 0) ? (ql_coord_t)ts->deco_thickness : 1;
+            const ql_color_t dcol =
+                (ts->deco_alpha > 0) ? ts->deco_color : ts->color;
+            const uint8_t dalpha = (ts->deco_alpha > 0) ? ts->deco_alpha : 255;
+
+            /* 一条线（按 style 展开成实线 / 双线 / 点线 / 虚线） */
             if ((ts->deco & QL_TEXT_DECO_UNDERLINE) != 0) {
-                /* 基线下方 2px：再低会碰到下一行的字，再高会压住下伸部 */
-                QLRect r = ql_rect_make(x0, baseline + 2, w, 1);
-                self->fill_rect(self, r, ts->color, 255);
+                /* 基线下方 2px + `text-underline-offset`：再低会碰到下一行的字 */
+                const ql_coord_t y = baseline + 2 + (ql_coord_t)ts->deco_offset;
+                deco_line(self, x0, y, w, th, dstyle, dcol, dalpha);
             }
             if ((ts->deco & QL_TEXT_DECO_LINE_THROUGH) != 0) {
                 /* 大约在 x-height 的一半处（ascent 的一半偏上一点） */
-                QLRect r = ql_rect_make(x0, baseline - font->ascent / 2, w, 1);
-                self->fill_rect(self, r, ts->color, 255);
+                const ql_coord_t y = baseline - font->ascent / 2;
+                deco_line(self, x0, y, w, th, dstyle, dcol, dalpha);
+            }
+            if ((ts->deco & QL_TEXT_DECO_OVERLINE) != 0) {
+                /* 上划线画在 ascent 顶上方 1px */
+                const ql_coord_t y = baseline - font->ascent - (ql_coord_t)ts->deco_offset;
+                deco_line(self, x0, y, w, th, dstyle, dcol, dalpha);
             }
         }
 

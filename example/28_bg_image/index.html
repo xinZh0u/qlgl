@@ -1,0 +1,45 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">B4 收尾：background-image 与 size / position / repeat</div>
+    <div class="badge">图片用同一套资源表</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. 默认（auto + repeat）：原尺寸平铺</div>
+    <div class="row">
+      <div class="tile rep"></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. background-size: cover / contain / 具体尺寸</div>
+    <div class="row">
+      <div class="tile cover">cover</div>
+      <div class="tile contain">contain</div>
+      <div class="tile px">24px 24px</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. background-position + no-repeat：left top / center / right bottom</div>
+    <div class="row">
+      <div class="tile pl">left top</div>
+      <div class="tile pc">center</div>
+      <div class="tile pr">right bottom</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. 圆角 / 边框与背景图共存（图被 border-radius 裁掉）</div>
+    <div class="row">
+      <div class="tile round"></div>
+      <div class="tile bordered"></div>
+    </div>
+  </div>
+
+  <div class="note">
+    背景图与 &lt;img&gt; 共用一套资源表：构建期记下名字，运行期
+    ql_ui_register_image() 按名字填像素。所以"一张图既当 &lt;img&gt; 又当背景"
+    只解码一次。
+  </div>
+</div>

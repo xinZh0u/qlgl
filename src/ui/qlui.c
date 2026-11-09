@@ -17,6 +17,7 @@
  *      **没有剩余空间可分**，此时 flex-grow 无效（与浏览器一致）。
  */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -153,7 +154,8 @@ struct QLUIProgress {
  * owned=0）或运行期注册时解码出来的内存（owned=1，ql_ui_free 负责释放）。
  */
 struct QLUIImageRT {
-    QLUINodeRT *node;
+    QLUINodeRT *node;        /* NULL = 只是背景图资源（B4），不对应节点 */
+    const char *name;        /* 资源名（指向 doc 的文本池或节点的 text） */
     QLImage     img;
     uint8_t     failed;      /* 解码失败过：不要每帧重试 */
 };
@@ -172,6 +174,8 @@ static void dialog_center(QLUIRoot *ui);
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d);
 /* 子节点分两趟画（普通流 → sticky），见 render_children 的说明 */
 static void render_children(QLUINodeRT *node, QLDraw2D *d2d);
+static const QLImage *image_by_name(const QLUIRoot *ui, const char *name);
+static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -208,6 +212,11 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
         rt->m_hover = 0xFFFF;
         rt->m_active = 0xFFFF;
         rt->m_focus = 0xFFFF;
+        /* B2：初始状态位（disabled / checked 都是构建期定下来的静态初值） */
+        if ((src->flags & QL_UI_NODE_CHECKED) != 0)
+            rt->flags |= QL_UI_RT_CHECKED;
+        if ((src->flags & QL_UI_NODE_DISABLED) != 0)
+            rt->flags |= QL_UI_RT_DISABLED;
         if (src->text != 0xFFFFu && doc->text_pool != NULL && doc->text_offsets != NULL)
             rt->text = doc->text_pool + doc->text_offsets[src->text];
 
@@ -235,8 +244,12 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
      */
     uint16_t n_ta = 0;
     for (uint16_t i = 0; i < doc->node_count; i++) {
-        if (doc->nodes[i].tag == QL_UI_TAG_INPUT)
+        if (doc->nodes[i].tag == QL_UI_TAG_INPUT) {
+            /* 复选框/单选钮没有文本编辑，不占输入框池（B2） */
+            if ((doc->nodes[i].flags & QL_UI_NODE_CHECKBOX) != 0)
+                continue;
             ui->input_count = (uint16_t)(ui->input_count + 1u);
+        }
         else if (doc->nodes[i].tag == QL_UI_TAG_TEXTAREA)
             n_ta = (uint16_t)(n_ta + 1u);
     }
@@ -268,6 +281,8 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
             QLUINodeRT *rt = &ui->nodes[i];
             const int is_ta = (rt->src->tag == QL_UI_TAG_TEXTAREA);
             if (rt->src->tag != QL_UI_TAG_INPUT && !is_ta)
+                continue;
+            if ((rt->src->flags & QL_UI_NODE_CHECKBOX) != 0)
                 continue;
             struct QLUIInput *in = &ui->inputs[k++];
             in->node = rt;
@@ -393,6 +408,24 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
     for (uint16_t i = 0; i < doc->node_count; i++)
         if (doc->nodes[i].tag == QL_UI_TAG_IMG)
             ui->image_count = (uint16_t)(ui->image_count + 1u);
+    /* 背景图（`background-image: url()`）也要占一个资源槽；同名只占一个 */
+    uint16_t bg_slots = 0;
+    for (uint16_t i = 0; i < doc->style_count; i++) {
+        if (doc->styles[i].bg_image == QL_UI_NO_IMAGE)
+            continue;
+        const char *nm = doc->text_pool + doc->text_offsets[doc->styles[i].bg_image];
+        int dup = 0;
+        for (uint16_t j = 0; j < i && !dup; j++) {
+            if (doc->styles[j].bg_image == QL_UI_NO_IMAGE)
+                continue;
+            const char *o = doc->text_pool + doc->text_offsets[doc->styles[j].bg_image];
+            if (strcmp(nm, o) == 0)
+                dup = 1;
+        }
+        if (!dup)
+            bg_slots++;
+    }
+    ui->image_count = (uint16_t)(ui->image_count + bg_slots);
     if (ui->image_count > 0) {
         if (ui->image_count > QL_CFG_UI_IMAGE_MAX)
             ui->image_count = (uint16_t)QL_CFG_UI_IMAGE_MAX;
@@ -409,11 +442,45 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
                 continue;
             struct QLUIImageRT *ir = &ui->images[k++];
             ir->node = rt;
+            ir->name = rt->text;
             /* 在 doc 的资源表里按名字找（线性扫，只在 build 时做一次） */
             for (uint16_t j = 0; j < doc->image_count; j++) {
                 const QLUIImageSrc *src = &doc->images[j];
                 const char *nm = doc->text_pool + doc->text_offsets[src->name];
                 if (rt->text == NULL || strcmp(nm, rt->text) != 0)
+                    continue;
+                QLImageDecodeReq req;
+                memset(&req, 0, sizeof(req));
+                req.data = doc->image_data + src->off;
+                req.len = src->len;
+                req.src_format = src->format;
+                req.pixel_format = src->pixel_format;
+                req.w = src->w;
+                req.h = src->h;
+                if (ql_image_decode(&req, &ir->img) != QL_OK)
+                    ir->failed = 1;
+                break;
+            }
+        }
+
+        /* 背景图资源（node == NULL，只按名字索引） */
+        for (uint16_t i = 0; i < doc->style_count && k < ui->image_count; i++) {
+            if (doc->styles[i].bg_image == QL_UI_NO_IMAGE)
+                continue;
+            const char *nm = doc->text_pool + doc->text_offsets[doc->styles[i].bg_image];
+            int dup = 0;
+            for (uint16_t j = 0; j < k && !dup; j++)
+                if (ui->images[j].name != NULL && strcmp(ui->images[j].name, nm) == 0)
+                    dup = 1;
+            if (dup)
+                continue;
+            struct QLUIImageRT *ir = &ui->images[k++];
+            ir->node = NULL;
+            ir->name = nm;
+            for (uint16_t j = 0; j < doc->image_count; j++) {
+                const QLUIImageSrc *src = &doc->images[j];
+                const char *srcname = doc->text_pool + doc->text_offsets[src->name];
+                if (strcmp(srcname, nm) != 0)
                     continue;
                 QLImageDecodeReq req;
                 memset(&req, 0, sizeof(req));
@@ -755,8 +822,10 @@ static QLTextWrapOpt wrap_opt_of(const QLUIStyle *s)
 {
     QLTextWrapOpt o;
     o.letter_spacing = (ql_coord_t)s->letter_spacing;
+    o.word_spacing = (ql_coord_t)s->word_spacing;
     o.indent = (ql_coord_t)s->text_indent;
     o.break_any = (uint8_t)(s->word_break == QL_UI_WORDBREAK_ALL);
+    o.tab_size = s->tab_size;
     return o;
 }
 
@@ -811,7 +880,9 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
                      has_shown_text(node) && node->first_child == NULL;
 
     if (text_sized)
-        return ql_font_line_width_ls(font, node->text, -1, (ql_coord_t)s->letter_spacing) +
+        return ql_font_line_width_ls2(font, node->text, -1,
+                                      (ql_coord_t)s->letter_spacing,
+                                      (ql_coord_t)s->word_spacing, s->tab_size) +
                s->padding.left + s->padding.right + ql_ui_border_h(s);
 
     if (s->width.unit == QL_UI_UNIT_AUTO) {
@@ -1014,8 +1085,10 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
     } else {
         const QLFont *font = font_of_style(child, s);
         if (has_shown_text(child) && child->first_child == NULL && font != NULL) {
-            ql_coord_t tw = ql_font_line_width_ls(font, child->text, -1,
-                                                  (ql_coord_t)s->letter_spacing) +
+            ql_coord_t tw = ql_font_line_width_ls2(font, child->text, -1,
+                                                   (ql_coord_t)s->letter_spacing,
+                                                   (ql_coord_t)s->word_spacing,
+                                                   s->tab_size) +
                             ql_ui_border_h(s) + s->padding.left + s->padding.right;
             ql_coord_t cap = cb.w - l - r;
             if (cap > 0 && tw > cap)
@@ -1701,6 +1774,8 @@ static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x,
     struct QLUIInput *in = input_of(ui, node);
     if (in == NULL)
         return 0;
+    if ((node->flags & QL_UI_RT_DISABLED) != 0)
+        return 1;              /* 禁用：吃掉点击，但不动光标 */
     ql_ui_set_focus_node(ui, node);
     const QLFont *font = font_of_style(node, node->style);
     const QLRect cb = node->content_box;
@@ -2377,8 +2452,10 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
             if (row) {
                 /* 主轴水平：max-content 就是把文本摊平不折行的宽度 */
                 own = (font != NULL)
-                          ? ql_font_line_width_ls(font, node->text, -1,
-                                                  (ql_coord_t)s->letter_spacing)
+                          ? ql_font_line_width_ls2(font, node->text, -1,
+                                                   (ql_coord_t)s->letter_spacing,
+                                                   (ql_coord_t)s->word_spacing,
+                                                   s->tab_size)
                           : 0;
             } else {
                 /*
@@ -3058,7 +3135,7 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
  */
 
 /* 取本节点可能用到的全部样式（基础 + 三个状态变体），最多 4 份 */
-static int collect_node_styles(const QLUINodeRT *node, const QLUIStyle *out[4])
+static int collect_node_styles(const QLUINodeRT *node, const QLUIStyle *out[6])
 {
     out[0] = node->style;
     int n = (node->style != NULL) ? 1 : 0;
@@ -3068,13 +3145,16 @@ static int collect_node_styles(const QLUINodeRT *node, const QLUIStyle *out[4])
     if (doc == NULL || src == NULL)
         return n;
 
-    const uint16_t idx[3] = {
+    /* 五份变体：hover / active / focus / disabled / checked（后两个是 B2 加的） */
+    const uint16_t idx[5] = {
         (node->m_hover != 0xFFFF) ? node->m_hover : src->style_hover,
         (node->m_active != 0xFFFF) ? node->m_active : src->style_active,
         (node->m_focus != 0xFFFF) ? node->m_focus : src->style_focus,
+        src->style_disabled,
+        src->style_checked,
     };
-    for (int i = 0; i < 3; i++) {
-        if (idx[i] != 0xFFFF && idx[i] < doc->style_count)
+    for (int i = 0; i < 5; i++) {
+        if (idx[i] != 0xFFFF && idx[i] < doc->style_count && n < 6)
             out[n++] = &doc->styles[idx[i]];
     }
     return n;
@@ -3113,7 +3193,7 @@ static void move_extent(const QLUINodeRT *node, ql_coord_t *lo_x, ql_coord_t *lo
     *hi_x = 0;
     *hi_y = 0;
 
-    const QLUIStyle *styles[4];
+    const QLUIStyle *styles[6];
     const int n = collect_node_styles(node, styles);
     if (n <= 0 || styles[0] == NULL)
         return;
@@ -3213,7 +3293,7 @@ static void scale_max(const QLUINodeRT *node, int32_t *mx, int32_t *my)
     *mx = 1000;
     *my = 1000;
 
-    const QLUIStyle *styles[4];
+    const QLUIStyle *styles[6];
     const int n = collect_node_styles(node, styles);
     for (int i = 0; i < n; i++) {
         if (styles[i] == NULL)
@@ -3294,7 +3374,7 @@ static QLRect paint_box_own(const QLUINodeRT *node, QLRect box)
 
 static QLRect compute_paint_box(QLUINodeRT *node)
 {
-    const QLUIStyle *styles[4];
+    const QLUIStyle *styles[6];
     int nstyle = collect_node_styles(node, styles);
 
     int any_visible = 0;
@@ -3497,10 +3577,21 @@ static const QLUIStyle *style_for_state(const QLUINodeRT *node)
         const uint16_t m_focus = (node->m_focus != 0xFFFF) ? node->m_focus
                                                           : src->style_focus;
         uint16_t idx = 0xFFFF;
-        if ((node->flags & QL_UI_RT_ACTIVE) != 0)
+        /*
+         * 优先级：disabled > active > focus > checked > hover。
+         * 禁用元素不该再"悬停高亮"，所以让它排最前；
+         * checked 排在 hover 之前 —— 勾选状态比悬停更"实"（与浏览器观感一致）。
+         */
+        const uint16_t m_dis = src->style_disabled;
+        const uint16_t m_chk = src->style_checked;
+        if ((node->flags & QL_UI_RT_DISABLED) != 0 && m_dis != 0xFFFF)
+            idx = m_dis;
+        if (idx == 0xFFFF && (node->flags & QL_UI_RT_ACTIVE) != 0)
             idx = m_active;
         if (idx == 0xFFFF && (node->flags & QL_UI_RT_FOCUS) != 0)
             idx = m_focus;
+        if (idx == 0xFFFF && (node->flags & QL_UI_RT_CHECKED) != 0 && m_chk != 0xFFFF)
+            idx = m_chk;
         if (idx == 0xFFFF && (node->flags & QL_UI_RT_HOVER) != 0)
             idx = m_hover;
         if (idx != 0xFFFF && node->owner != NULL && node->owner->doc != NULL)
@@ -4036,6 +4127,20 @@ static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node)
     return NULL;
 }
 
+/* 按资源名找（背景图用；B4） */
+static const QLImage *image_by_name(const QLUIRoot *ui, const char *name)
+{
+    if (ui == NULL || name == NULL || ui->images == NULL)
+        return NULL;
+    for (uint16_t i = 0; i < ui->image_count; i++) {
+        const struct QLUIImageRT *ir = &ui->images[i];
+        const char *nm = (ir->node != NULL) ? ir->node->text : ir->name;
+        if (nm != NULL && strcmp(nm, name) == 0 && ir->img.px != NULL)
+            return &ir->img;
+    }
+    return NULL;
+}
+
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
 {
     const struct QLUIImageRT *ir = image_of(ui, node);
@@ -4287,7 +4392,8 @@ ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
     ql_err_t first_err = QL_OK;
     for (uint16_t i = 0; i < ui->image_count; i++) {
         struct QLUIImageRT *ir = &ui->images[i];
-        if (ir->node->text == NULL || strcmp(ir->node->text, in->name) != 0)
+        const char *nm = (ir->node != NULL) ? ir->node->text : ir->name;
+        if (nm == NULL || strcmp(nm, in->name) != 0)
             continue;
         hit = 1;
 
@@ -4313,7 +4419,11 @@ ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
             ql_mem_free((void *)ir->img.px);
         ir->img = img;
         ir->failed = 0;
-        ir->node->flags |= QL_UI_RT_DIRTY;
+        /* 背景图资源没有对应节点（node == NULL）：整屏标脏就够了 */
+        if (ir->node != NULL)
+            ir->node->flags |= QL_UI_RT_DIRTY;
+        else if (ui->node_count > 0)
+            ui->nodes[0].flags |= QL_UI_RT_DIRTY;
     }
     if (!hit)
         return QL_ERR_INVAL;           /* 名字对不上任何 <img src> */
@@ -4451,6 +4561,137 @@ static void draw_embed_placeholder(QLUINodeRT *node, QLDraw2D *d2d)
     ts.line_h = s->line_h;
     ts.align = s->text_align;
     d2d->draw_text(d2d, font_of(node), name, -1, tb, &ts);
+}
+
+/*
+ * `background-image: url(...)` 的绘制（B4 收尾）。
+ *
+ * `object-fit` 的同一套几何计算拿来用：
+ *   - `background-size: cover/contain` → 分别对应 QL_UI_FIT_COVER / CONTAIN
+ *   - `background-size: <w> <h>`       → 先把目标矩形按给定尺寸算出来，再用 fill 语义
+ *   - `background-position`            → 在"多出来的余量"里摆（与 object-position 同式）
+ * `background-repeat` 则把目标矩形按平铺的步长复制，**裁剪到边框盒**（含圆角由 blit 处理）。
+ */
+static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d)
+{
+    const QLUIStyle *s = ql_ui_node_style(node);
+    if (s == NULL || s->bg_image == QL_UI_NO_IMAGE || d2d->blit_image == NULL)
+        return;
+    const QLUIRoot *ui = node->owner;
+    if (ui == NULL || ui->doc == NULL || ui->doc->text_pool == NULL ||
+        ui->doc->text_offsets == NULL)
+        return;
+    const char *nm = ui->doc->text_pool + ui->doc->text_offsets[s->bg_image];
+    const QLImage *img = image_by_name(ui, nm);
+    if (img == NULL || ql_rect_is_empty(box))
+        return;
+
+    const ql_coord_t iw = (ql_coord_t)img->w;
+    const ql_coord_t ih = (ql_coord_t)img->h;
+    if (iw <= 0 || ih <= 0)
+        return;
+
+    /* 目标尺寸 */
+    ql_coord_t dw = iw, dh = ih;
+    if (s->bg_size_mode == 1 || s->bg_size_mode == 2) {
+        /* cover：等比放大到盖满；contain：等比缩到装进去 */
+        const int64_t bw = (int64_t)box.w * ih;
+        const int64_t bh = (int64_t)box.h * iw;
+        const int cover_wins = (s->bg_size_mode == 1) ? (bw >= bh) : (bw <= bh);
+        if (cover_wins) {
+            dw = box.w;
+            dh = (ql_coord_t)((int64_t)box.w * ih / iw);
+        } else {
+            dh = box.h;
+            dw = (ql_coord_t)((int64_t)box.h * iw / ih);
+        }
+        if (dw <= 0)
+            dw = 1;
+        if (dh <= 0)
+            dh = 1;
+    } else {
+        const int w_set = (s->bg_size[0].unit != QL_UI_UNIT_AUTO);
+        const int h_set = (s->bg_size[1].unit != QL_UI_UNIT_AUTO);
+        if (w_set && h_set) {
+            dw = resolve_length(s->bg_size[0], box.w, iw);
+            dh = resolve_length(s->bg_size[1], box.h, ih);
+        } else if (w_set) {
+            dw = resolve_length(s->bg_size[0], box.w, iw);
+            dh = (ql_coord_t)((int64_t)dw * ih / iw);
+        } else if (h_set) {
+            dh = resolve_length(s->bg_size[1], box.h, ih);
+            dw = (ql_coord_t)((int64_t)dh * iw / ih);
+        }
+        if (dw <= 0)
+            dw = iw;
+        if (dh <= 0)
+            dh = ih;
+    }
+
+    /* 起始位置：默认居中；`background-position` 按余量摆 */
+    ql_coord_t ox = (box.w - dw) / 2;
+    ql_coord_t oy = (box.h - dh) / 2;
+    const QLUILength *px = &s->bg_pos[0];
+    const QLUILength *py = &s->bg_pos[1];
+    if (px->unit != 0 || px->value != 500)
+        ox = (px->unit == QL_UI_UNIT_PERCENT)
+                 ? (ql_coord_t)((int32_t)(box.w - dw) * px->value / 1000)
+                 : (ql_coord_t)px->value;
+    if (py->unit != 0 || py->value != 500)
+        oy = (py->unit == QL_UI_UNIT_PERCENT)
+                 ? (ql_coord_t)((int32_t)(box.h - dh) * py->value / 1000)
+                 : (ql_coord_t)py->value;
+
+    const QLRect src = ql_rect_make(0, 0, iw, ih);
+    const ql_coord_t rad = ql_ui_radius_max(s);
+    d2d->image_pixelated = (s->image_rendering != 0);
+
+    const int rep_x = (s->bg_repeat == 0 || s->bg_repeat == 2);
+    const int rep_y = (s->bg_repeat == 0 || s->bg_repeat == 3);
+
+    /*
+     * 平铺：先把起点挪到"第一个完全/部分可见的瓦片"，再逐块 blit。
+     * 不做这一步的话，`no-repeat` 之外的图会从盒子外开始画（多画一堆看不见的）。
+     */
+    ql_coord_t start_x = box.x + ox;
+    ql_coord_t start_y = box.y + oy;
+    if (rep_x && dw > 0) {
+        const ql_coord_t rel = ((start_x - box.x) % dw + dw) % dw;
+        start_x = box.x + rel - ((rel > 0) ? dw : 0);
+    }
+    if (rep_y && dh > 0) {
+        const ql_coord_t rel = ((start_y - box.y) % dh + dh) % dh;
+        start_y = box.y + rel - ((rel > 0) ? dh : 0);
+    }
+
+    const QLRect saved_clip = node->owner->clip;
+    int clipped = 0;
+    if ((rep_x || rep_y) && d2d->set_clip != NULL) {
+        /* 平铺必须裁到盒子，否则会画到兄弟节点上去 */
+        const QLRect c = ql_rect_intersect(box, saved_clip);
+        if (!ql_rect_is_empty(c)) {
+            d2d->set_clip(d2d, c);
+            node->owner->clip = c;
+            clipped = 1;
+        }
+    }
+
+    for (ql_coord_t ty = start_y; ty < ql_rect_bottom(box); ty += dh) {
+        for (ql_coord_t tx = start_x; tx < ql_rect_right(box); tx += dw) {
+            const QLRect dst = ql_rect_make(tx, ty, dw, dh);
+            d2d->blit_image(d2d, img, dst, &src, rad, 255);
+            if (!rep_x)
+                break;
+        }
+        if (!rep_y)
+            break;
+    }
+
+    if (clipped) {
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, saved_clip);
+        node->owner->clip = saved_clip;
+    }
 }
 
 static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
@@ -5087,6 +5328,10 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         }
     }
 
+    /* 背景图铺在背景色之上、边框之下（CSS 的绘制顺序） */
+    if (!inv && !ql_rect_is_empty(box) && s->bg_image != QL_UI_NO_IMAGE)
+        draw_bg_image(node, box, d2d);
+
     if (!inv && !ql_rect_is_empty(box) && ql_ui_has_border(s)) {
         /*
          * 各边颜色/宽度不同时，paint_border 会临时改裁剪（每条边裁一次）。
@@ -5131,6 +5376,19 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
     if (!inv && node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||
                               node->src->tag == QL_UI_TAG_METER))
         draw_progress(node, d2d);
+
+    /* 复选框（B2）：勾选时画一个 √（两条线，不引入新图元） */
+    if (!inv && node->src != NULL && (node->src->flags & QL_UI_NODE_CHECKBOX) != 0 &&
+        (node->flags & QL_UI_RT_CHECKED) != 0 && d2d->draw_line != NULL) {
+        const QLRect cb = node->content_box;
+        const ql_color_t tick = (s->text_color != 0) ? s->text_color : 0xFFFFFF;
+        const ql_coord_t th = (cb.w >= 14) ? 2 : 1;
+        const ql_coord_t x0 = cb.x + cb.w / 4;
+        const ql_coord_t y0 = cb.y + cb.h / 2;
+        d2d->draw_line(d2d, x0, y0, cb.x + cb.w / 2 - 1, cb.y + cb.h * 3 / 4, th, tick);
+        d2d->draw_line(d2d, cb.x + cb.w / 2 - 1, cb.y + cb.h * 3 / 4,
+                       ql_rect_right(cb) - cb.w / 4, cb.y + cb.h / 4, th, tick);
+    }
 
     /*
      * <img> 的 `node->text` 是**资源名**（"logo.png"），不是要显示的文字 ——
@@ -5186,7 +5444,9 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
                                                                    : 0u) |
                             ((s->font_flags & QL_UI_FONT_LINE_THROUGH)
                                  ? QL_TEXT_DECO_LINE_THROUGH
-                                 : 0u));
+                                 : 0u) |
+                            ((s->deco_style & QL_UI_DECO_OVERLINE) ? QL_TEXT_DECO_OVERLINE
+                                                                  : 0u));
         /* 输入框的行尾空格要占宽（和 input_visual_lines 保持一致） */
         ts.keep_trailing = (uint8_t)(in != NULL);
         /*
@@ -5194,8 +5454,46 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
          * `ql_font_line_width` 算的（见 input_visual_lines），多一个字距就会
          * 和字形错位。普通文本才吃这三项 + `text-overflow: ellipsis`。
          */
+        /*
+         * `::placeholder`（B2）：输入框为空时用占位样式画那句提示。
+         * 样式来自 `style_placeholder`（构建期把 `input::placeholder` 的声明
+         * 合并进宿主样式算出来的），所以字号/颜色都能单独写。
+         */
+        if (in != NULL && in->len == 0 && node->src != NULL &&
+            node->src->placeholder != 0xFFFF && node->owner != NULL &&
+            node->owner->doc != NULL && node->owner->doc->text_pool != NULL &&
+            node->owner->doc->text_offsets != NULL) {
+            const QLUIDoc *phdoc = node->owner->doc;
+            const char *phtext =
+                phdoc->text_pool + phdoc->text_offsets[node->src->placeholder];
+            const QLUIStyle *phstyle = s;
+            if (node->src->style_placeholder != 0xFFFF &&
+                node->src->style_placeholder < phdoc->style_count)
+                phstyle = &phdoc->styles[node->src->style_placeholder];
+            QLTextStyle pts = ts;
+            pts.color = phstyle->text_color;
+            pts.deco = (uint8_t)(((phstyle->font_flags & QL_UI_FONT_UNDERLINE)
+                                      ? QL_TEXT_DECO_UNDERLINE
+                                      : 0u) |
+                                 ((phstyle->font_flags & QL_UI_FONT_LINE_THROUGH)
+                                      ? QL_TEXT_DECO_LINE_THROUGH
+                                      : 0u));
+            pts.bold = (uint8_t)((phstyle->font_flags & QL_UI_FONT_BOLD) != 0);
+            pts.italic = (uint8_t)((phstyle->font_flags & QL_UI_FONT_ITALIC) != 0);
+            const QLFont *phfont = font_of_style(node, phstyle);
+            if (phtext[0] != '\0' && phfont != NULL)
+                d2d->draw_text(d2d, phfont, phtext, -1, tbox, &pts);
+        }
+
         if (in == NULL) {
             ts.letter_spacing = (ql_coord_t)s->letter_spacing;
+            ts.word_spacing = (ql_coord_t)s->word_spacing;
+            ts.tab_size = s->tab_size;
+            ts.deco_style = (uint8_t)(s->deco_style & QL_UI_DECO_LINE_MASK);
+            ts.deco_thickness = s->deco_thickness;
+            ts.deco_offset = s->deco_offset;
+            ts.deco_alpha = s->deco_alpha;
+            ts.deco_color = s->deco_color;
             ts.indent = (ql_coord_t)s->text_indent;
             ts.break_any = (uint8_t)(s->word_break == QL_UI_WORDBREAK_ALL);
             ts.ellipsis = (uint8_t)(s->text_overflow == QL_UI_OVERFLOW_ELLIPSIS);
@@ -6435,6 +6733,21 @@ int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     if (details_pointer_down(ui, hit, x, y))
         return 1;
 
+    /*
+     * 复选框（B2）：按下就切换勾选 —— 与浏览器一致（不等抬起）。
+     * 切换会改 :checked 变体，所以要标脏重绘。
+     */
+    if (hit != NULL && hit->src != NULL &&
+        (hit->src->flags & QL_UI_NODE_CHECKBOX) != 0) {
+        if ((hit->flags & QL_UI_RT_DISABLED) != 0)
+            return 1;                    /* 禁用：什么都不做 */
+        hit->flags ^= QL_UI_RT_CHECKED;
+        hit->flags |= QL_UI_RT_DIRTY;
+        if (ui->click_cb != NULL)
+            ui->click_cb(ui, hit, ui->click_user_data);
+        return 1;
+    }
+
     QLUINodeRT *node = hit;
     if (node == NULL)
         return 0;
@@ -6539,6 +6852,9 @@ int ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 void ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node)
 {
     if (ui == NULL || ui->focus == node)
+        return;
+    /* 禁用元素拿不到焦点（B2：与浏览器一致） */
+    if (node != NULL && (node->flags & QL_UI_RT_DISABLED) != 0)
         return;
     if (ui->focus != NULL)
         set_state_chain(ui->focus, QL_UI_RT_FOCUS, 0);

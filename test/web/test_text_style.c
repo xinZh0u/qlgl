@@ -225,8 +225,8 @@ QL_TEST_BEGIN("test_text_style")
         const char *bad[] = { "#r { font-weight: heavy }",
                               "#r { font-weight: 2000 }",
                               "#r { font-style: uppercase }",
-                              "#r { text-decoration: overline }",
-                              "#r { text-decoration: blink }" };
+                              "#r { text-decoration: wavy }",
+                              "#r { text-decoration: underline bogus }" };
         for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
             QLUIDoc *doc = ql_ui_load_text(html, bad[i]);
             QL_CHECK(doc == NULL);

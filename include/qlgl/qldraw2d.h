@@ -22,6 +22,7 @@ typedef struct QLDraw2D QLDraw2D;
 /* 装饰线（`text-decoration`）：两条都是 1px，画在基线附近 */
 #define QL_TEXT_DECO_UNDERLINE    0x01u
 #define QL_TEXT_DECO_LINE_THROUGH 0x02u
+#define QL_TEXT_DECO_OVERLINE     0x04u
 
 /*
  * 一次文本绘制的全部参数。
@@ -54,9 +55,21 @@ typedef struct {
      * 全部零初始化即为"不生效"，所以老代码 memset 之后的语义不变。
      */
     ql_coord_t letter_spacing;  /* 字间距（px，可为负），加在**每个字符之后** */
+    ql_coord_t word_spacing;    /* 词间距（px）：只加在空格之后（B3） */
     ql_coord_t indent;          /* 首行缩进（px） */
+    uint8_t    tab_size;        /* '\t' 折算成几个空格；0 = 不折算（B3） */
     uint8_t    break_any;       /* 1 = 任意字符之间都能断行（`word-break: break-all`） */
     uint8_t    ellipsis;        /* 1 = 一行放不下时末尾换省略号（`text-overflow: ellipsis`） */
+
+    /*
+     * `text-decoration-*`（B3）：线长什么样。
+     * `deco` 决定画哪几条，下面这些决定形态；全零 = 1px 实线、用文字色。
+     */
+    uint8_t    deco_style;      /* 0 solid、1 double、2 dotted、3 dashed */
+    int8_t     deco_thickness;  /* 线宽 px（0 = 1px） */
+    int8_t     deco_offset;     /* 下划线额外下移 px（可为负） */
+    uint8_t    deco_alpha;      /* 0 = 用 ts->color */
+    ql_color_t deco_color;
 } QLTextStyle;
 
 struct QLDraw2D {
@@ -254,8 +267,10 @@ int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
  */
 typedef struct {
     ql_coord_t letter_spacing;   /* 字间距（px，可为负） */
+    ql_coord_t word_spacing;     /* 词间距（px），只在空格之后（B3） */
     ql_coord_t indent;           /* 首行缩进（px），只作用在整段的第一行 */
     uint8_t    break_any;        /* 1 = 任意字符间断行（`word-break: break-all`） */
+    uint8_t    tab_size;         /* '\t' 折算成几个空格（B3） */
 } QLTextWrapOpt;
 
 /* `opt` 可以为 NULL（等于全零） */

@@ -3277,6 +3277,7 @@ static const char *const k_supported_props[] = {
     "scrollbar-width", "scrollbar-color",
     "outline", "outline-width", "outline-color", "outline-style", "outline-offset",
     "background", "background-color", "color",
+    "background-size", "background-position", "background-repeat",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
     "vertical-align", "font-family",
     "object-fit",
@@ -3297,7 +3298,10 @@ static const char *const k_supported_props[] = {
     "min-width", "max-width", "min-height", "max-height",
     "opacity",
     "aspect-ratio",
-    "letter-spacing", "text-indent", "text-transform", "text-overflow", "word-break",
+    "letter-spacing", "word-spacing", "tab-size", "text-indent", "text-transform",
+    "text-overflow", "word-break",
+    "text-decoration-line", "text-decoration-style", "text-decoration-color",
+    "text-decoration-thickness", "text-underline-offset",
     "overflow-wrap",
     "visibility", "pointer-events", "align-self", "order", "flex-flow",
     "align-content", "overflow-x", "overflow-y", "inset",
@@ -3512,7 +3516,7 @@ struct SelPart {
     SelAttr *attrs;       /* `[attr]` 系列 */
     int      nattrs;
     SelPart *not_p;       /* `:not(<简单选择器>)`；不支持嵌套 */
-    int      pseudo_elem; /* 0 = 无；1 = ::before；2 = ::after */
+    int      pseudo_elem; /* 0 = 无；1 = ::before；2 = ::after；3 = ::placeholder */
     int      allow_pseudo; /* 1 = 这条内部规则可以匹配合成节点 */
 };
 
@@ -3853,8 +3857,11 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
                 p->pseudo_elem = 1;
             else if (strcmp(pe, "after") == 0)
                 p->pseudo_elem = 2;
+            else if (strcmp(pe, "placeholder") == 0)
+                p->pseudo_elem = 3;   /* B2：输入框占位文字 */
             else {
-                set_error("不支持的伪元素 '::%s'（只支持 ::before / ::after）", pe);
+                set_error("不支持的伪元素 '::%s'"
+                          "（只支持 ::before / ::after / ::placeholder）", pe);
                 return 0;
             }
             (*spec_tags)++;      /* 规范里伪元素记在"元素"那一档 */
@@ -3884,6 +3891,14 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
             p->states |= 2;
         } else if (strcmp(name, "focus") == 0) {
             p->states |= 4;
+        } else if (strcmp(name, "disabled") == 0) {
+            p->states |= 8;
+        } else if (strcmp(name, "checked") == 0) {
+            p->states |= 16;
+        } else if (strcmp(name, "enabled") == 0) {
+            /* `:enabled` = 没有 disabled；本库不支持 `:not(:disabled)` 之外的组合，
+             * 直接映射成"非禁用"的语义位（构建期按节点是否有 disabled 决定） */
+            p->states |= 32;
         } else if (strcmp(name, "root") == 0) {
             p->pseudo |= SELP_ROOT;
         } else if (strcmp(name, "first-child") == 0) {
@@ -3972,6 +3987,7 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
             }
         } else {
             set_error("不支持的伪类 ':%s'（支持 :root :hover :active :focus "
+                      ":disabled :enabled :checked "
                       ":first-child :last-child :only-child :nth-child() "
                       ":nth-last-child() :first-of-type :last-of-type :only-of-type "
                       ":nth-of-type() :nth-last-of-type() :not()）", name);
@@ -4675,6 +4691,16 @@ struct PNode {
     int    capitems;
 };
 
+/* 查一条 HTML 属性（布尔属性返回 ""，没有返回 NULL） */
+static const char *pnode_attr(const PNode *n, const char *name)
+{
+    for (int i = 0; i < n->nattrs; i++) {
+        if (n->attrs[i].name != NULL && strcmp(n->attrs[i].name, name) == 0)
+            return (n->attrs[i].value != NULL) ? n->attrs[i].value : "";
+    }
+    return NULL;
+}
+
 /* 不是"元素"的节点：伪元素合成节点、包裹宿主文本的匿名 span */
 static int not_an_element(const PNode *n)
 {
@@ -5097,18 +5123,19 @@ static char *collapse_ws_keep_nl(const char *chunk)
  * 与浏览器一致（浏览器也是按字符格数，不是按实际度量）。
  * 不做这一步的话 `\t` 会落到字体查不到的字形上，宽度 0，整块代码缩进消失。
  */
-static char *preserve_ws_expand_tabs(const char *chunk)
+static char *preserve_ws_expand_tabs(const char *chunk, uint8_t tab_size)
 {
     size_t len = strlen(chunk);
-    /* 最坏情况：每个字节都变 8 个空格 */
-    char *out = (char *)xalloc(len * 8u + 1u);
+    const int tw = (tab_size >= 1 && tab_size <= 32) ? (int)tab_size : 8;
+    /* 最坏情况：每个字节都变 tw 个空格 */
+    char *out = (char *)xalloc(len * (size_t)tw + 1u);
     if (out == NULL)
         return NULL;
     size_t k = 0;
     int col = 0;
     for (size_t i = 0; i < len;) {
         if (chunk[i] == '\t') {
-            int n = 8 - (col % 8);
+            int n = tw - (col % tw);
             for (int j = 0; j < n; j++)
                 out[k++] = ' ';
             col += n;
@@ -6030,10 +6057,12 @@ static PNode *parse_html(const char *html)
                     t[tn] = '\0';
                     if (strcmp(t, "password") == 0) {
                         n->flags |= QL_UI_NODE_PASSWORD;
+                    } else if (strcmp(t, "checkbox") == 0 || strcmp(t, "radio") == 0) {
+                        n->flags |= QL_UI_NODE_CHECKBOX;
                     } else if (strcmp(t, "text") != 0 && strcmp(t, "search") != 0 &&
                                strcmp(t, "email") != 0 && strcmp(t, "number") != 0) {
                         set_error("HTML: 不支持的 <input type=\"%s\">"
-                                  "（只支持 text / password）", at.type);
+                                  "（只支持 text / password / checkbox / radio）", at.type);
                         attrs_free(&at);
                         pnode_free(n);
                         pnode_free(root);
@@ -6441,6 +6470,22 @@ static int ua_defaults(const char *tag, Decls *out)
      * <input>：单行输入框。默认高度 + 内边距给足可点面积；宽度 auto 时按
      * max-content 走（和文本节点一样），想固定就自己写 width。
      */
+    if (strcmp(tag, "#cb") == 0) {
+        /*
+         * 复选框（B2）：16×16 的方框、无内边距。
+         * 用内部标签名 `#cb` 而不是给 `input` 写属性选择器 —— UA 默认是按标签
+         * 取的，属性选择器要等到用户样式那一层，来不及。
+         */
+        return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "box-sizing", "border-box") &&
+               decls_set(out, "width", "16px") &&
+               decls_set(out, "height", "16px") &&
+               decls_set(out, "padding", "0") &&
+               decls_set(out, "border-width", "1px") &&
+               decls_set(out, "border-radius", "3px") &&
+               decls_set(out, "border-color", "#555555") &&
+               decls_set(out, "background-color", "#FFFFFF");
+    }
     if (strcmp(tag, "input") == 0) {
         /*
      * `height` 是**边框盒**高度（UA 默认 box-sizing: border-box），
@@ -6926,6 +6971,12 @@ static int expand_pseudo(PNode *root, Rules *rs)
         Rule *r = &rs->r[i];
         if (r->nparts <= 0)
             continue;
+        /*
+         * `::placeholder` 不生成节点，也不是宿主自己的样式：
+         * 它在建表期被单独收集成"占位文字用的样式"，只挂在输入框上（B2）。
+         */
+        if (r->parts[r->nparts - 1].pseudo_elem == 3)
+            continue;
         if (r->parts[r->nparts - 1].pseudo_elem == 0) {
             /* `content` 只在伪元素上合法 —— 元素上用它是常见的误写，必须报错 */
             if (decls_get(&r->decls, "content") != NULL) {
@@ -7005,7 +7056,12 @@ static int matchref_cmp(const void *a, const void *b)
 static int collect_decls(const PNode *n, const Rules *rs, int states_active,
                          Decls *out)
 {
-    if (!ua_defaults(n->tag, out))
+    const char *ua_tag = n->tag;
+    if (n->tag != NULL && strcmp(n->tag, "input") == 0 &&
+        (n->flags & QL_UI_NODE_CHECKBOX) != 0)
+        ua_tag = "#cb";     /* 复选框有自己的 UA 默认（16×16 方框） */
+
+    if (!ua_defaults(ua_tag, out))
         return 0;
 
     MatchRef *refs = (MatchRef *)xalloc((size_t)(rs->n > 0 ? rs->n : 1) *
@@ -7920,9 +7976,11 @@ static int parse_border_style_kw(const char *text, const char *where, uint8_t *o
 /* 把一份声明集合编译成 QLUIStyle。检查顺序与 Python 侧一致（第一个错就停） */
 static int compile_style(const Decls *st, const char *where, const KfRanges *ranges,
                          const KfTable *kftab, AnimTable *anims, IntList *fonts,
-                         CalcPool *calc, QLUIStyle *out)
+                         CalcPool *calc, QLUIStyle *out, char **out_bg_url)
 {
     memset(out, 0, sizeof(*out));
+    if (out_bg_url != NULL)
+        *out_bg_url = NULL;
 
     uint32_t bg = 0, fg = 0, bd = 0;
     uint8_t bg_a = 0, a = 0;
@@ -7939,14 +7997,145 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
 
     uint32_t bg2 = bg;
     int grad_dir = 0;
+    /*
+     * `background-image`：渐变**或** `url(...)`。
+     * url 的资源和 `<img src>` 走同一张表（按名字查找），所以构建期只要
+     * 把名字记进文本池，像素由 `ql_ui_register_image()` 在运行期填。
+     */
+    char *bg_url = NULL;
     if ((v = decls_get(st, "background-image")) != NULL) {
-        uint32_t g0 = 0, g1 = 0;
-        if (!parse_gradient(v, where, &g0, &g1, &grad_dir))
-            return 0;
-        bg = g0;
-        bg2 = g1;
-        if (bg_a == 0)
-            bg_a = 255;
+        const char *u = strstr(v, "url(");
+        if (u != NULL) {
+            u += 4;
+            while (*u == ' ' || *u == '"' || *u == '\'')
+                u++;
+            const char *e = u;
+            while (*e != '\0' && *e != ')' && *e != '"' && *e != '\'')
+                e++;
+            if (e == u) {
+                set_error("%s: background-image 的 url() 里没有文件名", where);
+                return 0;
+            }
+            bg_url = (char *)ql_mem_calloc(1, (size_t)(e - u) + 1u);
+            if (bg_url != NULL)
+                memcpy(bg_url, u, (size_t)(e - u));
+            if (bg_url == NULL)
+                return 0;
+        } else {
+            uint32_t g0 = 0, g1 = 0;
+            if (!parse_gradient(v, where, &g0, &g1, &grad_dir)) {
+                ql_mem_free(bg_url);
+                return 0;
+            }
+            bg = g0;
+            bg2 = g1;
+            if (bg_a == 0)
+                bg_a = 255;
+        }
+    }
+
+    /*
+     * `background-size` / `background-position` / `background-repeat`。
+     * 没有 url 的 `background-image` 时这些属性照样记录（写错了也不静默）。
+     */
+    uint8_t bg_size_mode = 0;
+    uint8_t bg_repeat = 0;
+    QLUILength bg_size[2];
+    QLUILength bg_pos[2];
+    bg_size[0].value = 0;
+    bg_size[0].unit = QL_UI_UNIT_AUTO;
+    bg_size[0].reserved = 0;
+    bg_size[1] = bg_size[0];
+    bg_pos[0].value = 500;
+    bg_pos[0].unit = QL_UI_UNIT_PERCENT;
+    bg_pos[0].reserved = 0;
+    bg_pos[1] = bg_pos[0];
+    {
+        if ((v = decls_get(st, "background-size")) != NULL) {
+            char t[96];
+            trim_lower(v, t, sizeof(t));
+            if (strcmp(t, "cover") == 0)
+                bg_size_mode = 1;
+            else if (strcmp(t, "contain") == 0)
+                bg_size_mode = 2;
+            else if (strcmp(t, "auto") == 0)
+                bg_size_mode = 0;
+            else {
+                char seg[4][64];
+                const int n = split_top_spaces(t, where, seg, 2);
+                if (n < 0 || n == 0) {
+                    set_error("%s: background-size 需要一个或两个长度", where);
+                    return 0;
+                }
+                for (int i = 0; i < n; i++) {
+                    uint8_t unit;
+                    int num;
+                    if (strcmp(seg[i], "auto") == 0) {
+                        bg_size[i].unit = QL_UI_UNIT_AUTO;
+                        bg_size[i].value = 0;
+                        continue;
+                    }
+                    if (!parse_length(seg[i], where, 1, calc, &unit, &num))
+                        return 0;
+                    if (!length_wants_const(unit, where, "background-size"))
+                        return 0;
+                    bg_size[i].value = (int16_t)num;
+                    bg_size[i].unit = unit;
+                }
+                if (n == 1)
+                    bg_size[1].unit = QL_UI_UNIT_AUTO;   /* 单值 = 只给宽 */
+            }
+        }
+        if ((v = decls_get(st, "background-position")) != NULL) {
+            char seg[2][64];
+            const int n = split_top_spaces(v, where, seg, 2);
+            if (n < 0 || n == 0) {
+                set_error("%s: background-position 需要一个或两个值", where);
+                return 0;
+            }
+            for (int i = 0; i < n; i++) {
+                char low[64];
+                trim_lower(seg[i], low, sizeof(low));
+                if (strcmp(low, "center") == 0) {
+                    bg_pos[i].value = 500;
+                    bg_pos[i].unit = QL_UI_UNIT_PERCENT;
+                } else if (strcmp(low, "left") == 0 || strcmp(low, "top") == 0) {
+                    bg_pos[i].value = 0;
+                    bg_pos[i].unit = QL_UI_UNIT_PERCENT;
+                } else if (strcmp(low, "right") == 0 || strcmp(low, "bottom") == 0) {
+                    bg_pos[i].value = 1000;
+                    bg_pos[i].unit = QL_UI_UNIT_PERCENT;
+                } else {
+                    uint8_t unit;
+                    int num;
+                    if (!parse_length(low, where, 1, calc, &unit, &num))
+                        return 0;
+                    if (unit == QL_UI_UNIT_PERCENT)
+                        num *= 10;      /* 百分比按千分比存 */
+                    bg_pos[i].value = (int16_t)num;
+                    bg_pos[i].unit = unit;
+                }
+            }
+            if (n == 1)
+                bg_pos[1] = bg_pos[0];
+        }
+        if ((v = decls_get(st, "background-repeat")) != NULL) {
+            char t[32];
+            trim_lower(v, t, sizeof(t));
+            if (strcmp(t, "repeat") == 0)
+                bg_repeat = 0;
+            else if (strcmp(t, "no-repeat") == 0)
+                bg_repeat = 1;
+            else if (strcmp(t, "repeat-x") == 0)
+                bg_repeat = 2;
+            else if (strcmp(t, "repeat-y") == 0)
+                bg_repeat = 3;
+            else {
+                set_error("%s: 不支持的 background-repeat '%s'"
+                          "（repeat / no-repeat / repeat-x / repeat-y）", where, v);
+                return 0;
+            }
+        }
     }
 
     /* 阴影：`box-shadow` 最多两层（先写的画在下面），`text-shadow` 一层 */
@@ -8297,6 +8486,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
      * text-decoration：none / underline / line-through（combo 用空格分隔）。
      */
     uint8_t font_flags = 0;
+    /* 装饰线的形态（简写与长写共用；见下面 text-decoration* 的解析） */
+    uint8_t deco_style = 0;
+    int8_t deco_thickness = 0;
+    int8_t deco_offset = 0;
+    uint8_t deco_alpha = 0;
+    uint32_t deco_color = 0;
     {
         const char *fv = decls_get(st, "font-weight");
         if (fv != NULL) {
@@ -8356,9 +8551,43 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                     } else if (strcmp(word, "line-through") == 0) {
                         font_flags |= QL_UI_FONT_LINE_THROUGH;
                     } else if (strcmp(word, "overline") == 0) {
-                        set_error("%s: text-decoration 暂不支持 overline（本库没有上划线）",
-                                  where);
+                        /* overline 存在 deco_style 的高位（B3） */
+                        deco_style |= QL_UI_DECO_OVERLINE;
+                    } else if (strcmp(word, "solid") == 0 ||
+                               strcmp(word, "double") == 0 ||
+                               strcmp(word, "dotted") == 0 ||
+                               strcmp(word, "dashed") == 0) {
+                        /* 简写里的线型 */
+                        uint8_t st2 = (uint8_t)(deco_style & QL_UI_DECO_OVERLINE);
+                        if (strcmp(word, "double") == 0)
+                            st2 |= 1;
+                        else if (strcmp(word, "dotted") == 0)
+                            st2 |= 2;
+                        else if (strcmp(word, "dashed") == 0)
+                            st2 |= 3;
+                        deco_style = st2;
+                    } else if (strcmp(word, "wavy") == 0 ||
+                               strcmp(word, "blink") == 0) {
+                        /* wavy 要波浪线路径（同 rotate 一类），明确拒绝 */
+                        set_error("%s: text-decoration 不支持 '%s'", where, word);
                         return 0;
+                    } else if (word[0] == '#' || word[0] == 'r' || word[0] == 'b' ||
+                               word[0] == 'h' || word[0] == 'g' || word[0] == 'w' ||
+                               word[0] == 'c' || word[0] == 'y' || word[0] == 'm' ||
+                               word[0] == 'o' || word[0] == 't' || word[0] == 'p' ||
+                               word[0] == 'n' || word[0] == 'l' || word[0] == 'd' ||
+                               word[0] == 's' || word[0] == 'a') {
+                        /*
+                         * 简写里的颜色：交给 parse_color 判，认不出就报错。
+                         * （`solid` 之类的关键字已经在上面的分支里吃掉了）
+                         */
+                        uint8_t ca = 0;
+                        if (!parse_color(word, where, &deco_color, &ca)) {
+                            set_error("%s: text-decoration 里无法识别的 '%s'", where,
+                                      word);
+                            return 0;
+                        }
+                        deco_alpha = (ca == 0) ? 1 : ca;
                     } else {
                         set_error("%s: 不支持的 text-decoration '%s'"
                                   "（none / underline / line-through）", where, word);
@@ -8426,6 +8655,145 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                           "（fill / contain / cover / none / scale-down）", where, of);
                 return 0;
             }
+        }
+    }
+
+    /*
+     * `word-spacing`：只加在空格之后。px / em / rem 都行（em 在建表期折成 px）。
+     */
+    int16_t word_spacing = 0;
+    {
+        char t[64];
+        (void)t;
+        if ((v = decls_get(st, "word-spacing")) != NULL) {
+            uint8_t unit;
+            int num;
+            if (!parse_length(v, where, 0, calc, &unit, &num))
+                return 0;
+            if (!length_wants_const(unit, where, "word-spacing"))
+                return 0;
+            if (num < -256 || num > 256) {
+                set_error("%s: word-spacing 超出 -256~256px（收到 '%s'）", where, v);
+                return 0;
+            }
+            word_spacing = (int16_t)num;
+        }
+    }
+
+    /*
+     * `tab-size`：只认"空格个数"（1~32）。px 写法要量字体宽度，收益低，直接报错。
+     */
+    uint8_t tab_size = 0;
+    if ((v = decls_get(st, "tab-size")) != NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "normal") == 0 || strcmp(t, "8") == 0) {
+            tab_size = 8;
+        } else {
+            const char *end = NULL;
+            double n = 0;
+            if (!match_number(t, &end, &n) || *end != '\0' || n < 1 || n > 32) {
+                set_error("%s: tab-size 只支持 1~32 个空格（收到 '%s'）", where, v);
+                return 0;
+            }
+            tab_size = (uint8_t)(int)n;
+        }
+    }
+
+    /*
+     * `text-decoration-line` / `-style` / `-color` / `-thickness` / `text-underline-offset`。
+     * 行位（画哪几条线）与 `font_flags` 共用位图；风格/粗细/颜色/偏移在这里。
+     */
+    {
+        if ((v = decls_get(st, "text-decoration-line")) != NULL) {
+            /*
+             * 与 `text-decoration` 简写同一套词表，但**只改线位**：
+             * 先清掉三条线的位，再按写进来的词置位。
+             */
+            font_flags &= (uint8_t)~(QL_UI_FONT_UNDERLINE | QL_UI_FONT_LINE_THROUGH);
+            char td[64];
+            trim_lower(v, td, sizeof(td));
+            const char *p = td;
+            while (*p != '\0') {
+                while (*p == ' ')
+                    p++;
+                const char *b = p;
+                while (*p != '\0' && *p != ' ')
+                    p++;
+                char word[32];
+                size_t wl = (size_t)(p - b);
+                if (wl >= sizeof(word))
+                    wl = sizeof(word) - 1u;
+                memcpy(word, b, wl);
+                word[wl] = '\0';
+                if (wl == 0 || strcmp(word, "none") == 0)
+                    continue;
+                if (strcmp(word, "underline") == 0)
+                    font_flags |= QL_UI_FONT_UNDERLINE;
+                else if (strcmp(word, "line-through") == 0)
+                    font_flags |= QL_UI_FONT_LINE_THROUGH;
+                else if (strcmp(word, "overline") == 0)
+                    deco_style |= QL_UI_DECO_OVERLINE;
+                else if (strcmp(word, "blink") == 0) {
+                    /* blink：CSS 早就废弃了，忽略而不是报错 */
+                } else {
+                    set_error("%s: 不支持的 text-decoration-line '%s'"
+                              "（none / underline / line-through / overline）",
+                              where, word);
+                    return 0;
+                }
+            }
+        }
+        if ((v = decls_get(st, "text-decoration-style")) != NULL) {
+            char t[32];
+            trim_lower(v, t, sizeof(t));
+            if (strcmp(t, "solid") == 0)
+                deco_style = (uint8_t)((deco_style & QL_UI_DECO_OVERLINE) | 0);
+            else if (strcmp(t, "double") == 0)
+                deco_style = (uint8_t)((deco_style & QL_UI_DECO_OVERLINE) | 1);
+            else if (strcmp(t, "dotted") == 0)
+                deco_style = (uint8_t)((deco_style & QL_UI_DECO_OVERLINE) | 2);
+            else if (strcmp(t, "dashed") == 0)
+                deco_style = (uint8_t)((deco_style & QL_UI_DECO_OVERLINE) | 3);
+            else {
+                set_error("%s: 不支持的 text-decoration-style '%s'"
+                          "（solid / double / dotted / dashed）", where, v);
+                return 0;
+            }
+        }
+        if ((v = decls_get(st, "text-decoration-color")) != NULL) {
+            uint8_t ca = 0;
+            if (!parse_color(v, where, &deco_color, &ca))
+                return 0;
+            deco_alpha = (ca == 0) ? 1 : ca;   /* 全透明也保留 1，避免"没效果" */
+        }
+        if ((v = decls_get(st, "text-decoration-thickness")) != NULL) {
+            uint8_t unit;
+            int num;
+            if (!parse_length(v, where, 0, calc, &unit, &num))
+                return 0;
+            if (!length_wants_const(unit, where, "text-decoration-thickness"))
+                return 0;
+            if (num < 1 || num > 16) {
+                set_error("%s: text-decoration-thickness 必须在 1~16px（收到 '%s'）",
+                          where, v);
+                return 0;
+            }
+            deco_thickness = (int8_t)num;
+        }
+        if ((v = decls_get(st, "text-underline-offset")) != NULL) {
+            uint8_t unit;
+            int num;
+            if (!parse_length(v, where, 0, calc, &unit, &num))
+                return 0;
+            if (!length_wants_const(unit, where, "text-underline-offset"))
+                return 0;
+            if (num < -16 || num > 64) {
+                set_error("%s: text-underline-offset 必须在 -16~64px（收到 '%s'）", where,
+                          v);
+                return 0;
+            }
+            deco_offset = (int8_t)num;
         }
     }
 
@@ -9272,6 +9640,26 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->font_id = (uint8_t)font_id;
     out->box_sizing = (uint8_t)box_sizing;
     out->bg_grad_dir = (uint8_t)grad_dir;
+    out->bg_image = QL_UI_NO_IMAGE;
+    if (bg_url != NULL) {
+        if (out_bg_url != NULL)
+            *out_bg_url = bg_url;      /* 调用方负责入池并回填下标 */
+        else
+            ql_mem_free(bg_url);
+    }
+    out->bg_size_mode = bg_size_mode;
+    out->bg_repeat = bg_repeat;
+    out->bg_size[0] = bg_size[0];
+    out->bg_size[1] = bg_size[1];
+    out->bg_pos[0] = bg_pos[0];
+    out->bg_pos[1] = bg_pos[1];
+    out->word_spacing = word_spacing;
+    out->tab_size = tab_size;
+    out->deco_style = deco_style;
+    out->deco_thickness = deco_thickness;
+    out->deco_offset = deco_offset;
+    out->deco_alpha = deco_alpha;
+    out->deco_color = deco_color;
     out->image_rendering = image_rendering;
     out->scrollbar_width = scrollbar_width;
     out->scrollbar_alpha = scrollbar_alpha;
@@ -9414,6 +9802,15 @@ typedef struct {
 } TextPool;
 
 /* 样式表：按 (属性, 值) 集合去重。首次出现的顺序即下标 */
+/*
+ * 样式里出现的资源名（`background-image: url(...)`）要进文本池，
+ * 但 `style_tab_add` 拿不到池子，所以用一个文件内的指针：`ql_ui_load_text`
+ * 在整个构建期间设好，返回前清掉。
+ */
+static TextPool *s_styles_pool;
+
+static int text_pool_intern(TextPool *tp, const char *text, uint16_t *out);
+
 static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
                          const KfRanges *ranges, const KfTable *kftab,
                          AnimTable *anims, IntList *fonts, CalcPool *calc,
@@ -9449,9 +9846,23 @@ static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
     }
     StyleEnt *e = &tab->e[tab->n];
     memset(e, 0, sizeof(*e));
-    if (!compile_style(decls, where, ranges, kftab, anims, fonts, calc, &e->st)) {
+    char *bg_url = NULL;
+    if (!compile_style(decls, where, ranges, kftab, anims, fonts, calc, &e->st,
+                       &bg_url)) {
         ql_mem_free(sig);
         return 0;
+    }
+    if (bg_url != NULL) {
+        uint16_t uidx = 0xFFFF;
+        const int ok = (s_styles_pool != NULL)
+                           ? text_pool_intern(s_styles_pool, bg_url, &uidx)
+                           : ((uidx = 0xFFFF), 1);
+        ql_mem_free(bg_url);
+        if (!ok) {
+            ql_mem_free(sig);
+            return 0;
+        }
+        e->st.bg_image = uidx;
     }
     e->sig = sig;
     e->siglen = siglen;
@@ -9552,6 +9963,57 @@ static int text_pool_intern(TextPool *tp, const char *text, uint16_t *out)
     return 1;
 }
 
+/*
+ * 收集 `input::placeholder` 的声明（B2）。
+ *
+ * 与 `collect_decls` 同构，只是**只取**最后一段伪元素是 ::placeholder 的规则：
+ * 那些规则对宿主基础样式不生效（collect_decls 会跳过），所以必须单独走一趟。
+ */
+static int collect_placeholder_decls(const PNode *n, const Rules *rs, Decls *out)
+{
+    if (out == NULL)
+        return 1;
+    MatchRef *refs = (MatchRef *)xalloc((size_t)(rs->n > 0 ? rs->n : 1) *
+                                        sizeof(MatchRef));
+    if (refs == NULL)
+        return 0;
+    int nm = 0;
+    for (int i = 0; i < rs->n; i++) {
+        const Rule *r = &rs->r[i];
+        if (r->nparts <= 0 || r->parts[r->nparts - 1].pseudo_elem != 3)
+            continue;
+        if (r->media >= 0 && (s_media_on == NULL || s_media_on[r->media] == 0))
+            continue;
+        if ((r->states & ~(1 | 2 | 4 | 8 | 16 | 32)) != 0)
+            continue;
+        if (!rule_matches(n, r))
+            continue;
+        refs[nm].r = r;
+        refs[nm].ids = r->spec_ids;
+        refs[nm].cls = r->spec_cls;
+        refs[nm].tags = r->spec_tags;
+        refs[nm].order = r->order;
+        nm++;
+    }
+    if (nm > 1)
+        qsort(refs, (size_t)nm, sizeof(MatchRef), matchref_cmp);
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < nm; i++) {
+            const Decls *d = &refs[i].r->decls;
+            for (int j = 0; j < d->n; j++) {
+                if ((d->d[j].important != 0) != (pass == 1))
+                    continue;
+                if (!decls_set(out, d->d[j].key, d->d[j].val)) {
+                    ql_mem_free(refs);
+                    return 0;
+                }
+            }
+        }
+    }
+    ql_mem_free(refs);
+    return 1;
+}
+
 /* 扁平化后的一项 */
 typedef struct {
     const PNode *node;
@@ -9560,6 +10022,10 @@ typedef struct {
     int          next_sibling;
     int          style_index;
     int          state[3];        /* hover / active / focus */
+    int          state_dis;       /* :disabled（B2） */
+    int          state_chk;       /* :checked（B2） */
+    int          state_ph;        /* ::placeholder 的样式（B2） */
+    uint16_t     placeholder;     /* placeholder 文案的池下标（B2） */
     int          text_index;
     Decls        final_decls;     /* 供子节点继承 */
 } Flat;
@@ -9603,6 +10069,7 @@ static int walk_flat(FlatVec *fv, const PNode *n, int parent)
     fv->v[my].style_index = -1;
     fv->v[my].state[0] = fv->v[my].state[1] = fv->v[my].state[2] = -1;
     fv->v[my].text_index = -1;
+    fv->v[my].placeholder = 0xFFFF;
 
     int prev = -1;
     for (const PNode *c = n->first_child; c != NULL; c = c->next_sibling) {
@@ -9899,6 +10366,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     memset(&anims, 0, sizeof(anims));
     memset(&styles, 0, sizeof(styles));
     memset(&pool, 0, sizeof(pool));
+    s_styles_pool = &pool;      /* 样式里的 url() 要写进这个池子 */
     memset(&fonts, 0, sizeof(fonts));
     memset(&medias, 0, sizeof(medias));
     memset(&calc, 0, sizeof(calc));
@@ -9997,9 +10465,16 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             goto done;
         }
 
+        /*
+         * `:enabled` 的语义位：没有 `disabled` 属性的元素才算 enabled，
+         * 所以基础样式按"这个节点是不是禁用"决定要不要把 32 位打开。
+         */
+        const int node_disabled = (pnode_attr(n, "disabled") != NULL);
+        const int base_bits = node_disabled ? 0 : 32;
+
         Decls base;
         memset(&base, 0, sizeof(base));
-        if (!collect_decls(n, &rules, 0, &base)) {
+        if (!collect_decls(n, &rules, base_bits, &base)) {
 
             decls_free(&base);
             decls_free(&inherited);
@@ -10062,7 +10537,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                 ql_mem_free(base_sig);
                 goto done;
             }
-            if (!collect_decls(n, &rules, bits[bi], &vbase)) {
+            if (!collect_decls(n, &rules, bits[bi] | base_bits, &vbase)) {
                 decls_free(&vbase);
                 decls_free(&vinherited);
                 ql_mem_free(base_sig);
@@ -10129,6 +10604,107 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             decls_free(&vfinal);
             (void)vdecl;
         }
+
+        /*
+         * `:disabled` / `:checked` 两个变体（B2）。
+         *
+         * 做法与 :hover 完全一致：用一个额外的状态位再算一遍声明，
+         * 与基础值不同才建一份新样式；相同就记 0xFFFF（省下标、也省 ROM）。
+         * 这两个状态是**按节点属性**取的：`disabled` 在构建期就定了（静态），
+         * `checked` 用运行期标志（点一下就变），初始值来自 `checked` / `selected` 属性。
+         */
+        {
+            static const int extra_bits[2] = { 8, 16 };
+            int *dst[2] = { &e->state_dis, &e->state_chk };
+            for (int xi = 0; xi < 2; xi++) {
+                *dst[xi] = 0xFFFF;
+                Decls xvbase;
+                memset(&xvbase, 0, sizeof(xvbase));
+                Decls xvinh;
+                memset(&xvinh, 0, sizeof(xvinh));
+                Decls xvfinal;
+                memset(&xvfinal, 0, sizeof(xvfinal));
+                int bad = 0;
+
+                if (e->parent >= 0 &&
+                    !collect_inherited(&flat[e->parent].final_decls, &xvinh))
+                    bad = 1;
+                if (!bad && !collect_decls(n, &rules, extra_bits[xi] | base_bits,
+                                          &xvbase))
+                    bad = 1;
+                if (!bad && !finalize_style(&xvbase, n, &xvinh, &xvfinal))
+                    bad = 1;
+                if (!bad) {
+                    size_t xlen = 0;
+                    char *xsig = style_signature(&xvfinal, &xlen);
+                    if (xsig == NULL)
+                        bad = 1;
+                    else {
+                        if (xlen == base_siglen && memcmp(xsig, base_sig, xlen) == 0) {
+                            if (b == 0)
+                                *dst[xi] = 0xFFFF;
+
+                        } else {
+                            uint16_t vidx = 0xFFFF;
+                            if (!style_tab_add(&styles, &xvfinal, where, &kfranges,
+                                               &kftab, &anims, &fonts, &calc, &vidx))
+                                bad = 1;
+                            else {
+                                if (b == 0)
+                                    *dst[xi] = vidx;
+
+                            }
+                        }
+                        ql_mem_free(xsig);
+                    }
+                }
+                decls_free(&xvbase);
+                decls_free(&xvinh);
+                decls_free(&xvfinal);
+                if (bad) {
+                    ql_mem_free(base_sig);
+                    goto done;
+                }
+            }
+        }
+
+        /* `::placeholder` 的样式：只对写了 placeholder 属性的元素建 */
+        e->state_ph = 0xFFFF;
+        if (pnode_attr(n, "placeholder") != NULL) {
+            Decls ph;
+            memset(&ph, 0, sizeof(ph));
+            Decls phinh;
+            memset(&phinh, 0, sizeof(phinh));
+            Decls phfinal;
+            memset(&phfinal, 0, sizeof(phfinal));
+            int bad = 0;
+            /* 占位文字**继承**宿主的一切，再被 ::placeholder 规则覆盖 */
+            if (!decls_copy(&ph, &e->final_decls))
+                bad = 1;
+            if (!bad && e->parent >= 0 &&
+                !collect_inherited(&flat[e->parent].final_decls, &phinh))
+                bad = 1;
+            (void)phinh;
+            if (!bad && !collect_placeholder_decls(n, &rules, &ph))
+                bad = 1;
+            if (!bad && !finalize_style(&ph, n, &phinh, &phfinal))
+                bad = 1;
+            if (!bad) {
+                uint16_t pidx = 0xFFFF;
+                if (!style_tab_add(&styles, &phfinal, where, &kfranges, &kftab, &anims,
+                                   &fonts, &calc, &pidx))
+                    bad = 1;
+                else if (b == 0)
+                    e->state_ph = pidx;
+            }
+            decls_free(&ph);
+            decls_free(&phinh);
+            decls_free(&phfinal);
+            if (bad) {
+                ql_mem_free(base_sig);
+                goto done;
+            }
+        }
         ql_mem_free(base_sig);
 
         uint16_t tidx = 0xFFFF;
@@ -10147,8 +10723,17 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             if (src != NULL) {
                 if (ws == QL_UI_WS_PRE_LINE)
                     conv = collapse_ws_keep_nl(src);
-                else if (QL_UI_WS_PRESERVES(ws))
-                    conv = preserve_ws_expand_tabs(src);
+                else if (QL_UI_WS_PRESERVES(ws)) {
+                    /*
+                     * `tab-size` 在这里结算：把 `\t` 展开成 N 个空格。
+                     * 放构建期做，运行期就不用每个字符都判断一次 tab。
+                     */
+                    uint8_t ts = 8;
+                    if (e->style_index >= 0 && e->style_index < styles.n &&
+                        styles.e[e->style_index].st.tab_size != 0)
+                        ts = styles.e[e->style_index].st.tab_size;
+                    conv = preserve_ws_expand_tabs(src, ts);
+                }
                 else
                     conv = collapse_ws(src);
                 if (conv == NULL)
@@ -10178,6 +10763,31 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                 goto done;
         }
         e->text_index = tidx;
+
+        /*
+         * `placeholder` 属性的文案（B2）：与正文共用文本池，所以不额外占段。
+         * 只在 b == 0（基础断点）存一次。
+         */
+        if (b == 0) {
+            const char *ph = pnode_attr(n, "placeholder");
+            if (ph != NULL && ph[0] != '\0') {
+                uint16_t pidx = 0xFFFF;
+                if (!text_pool_intern(&pool, ph, &pidx))
+                    goto done;
+                e->placeholder = pidx;
+            }
+        }
+
+        /* 三个属性 → 节点标志位（构建期定，运行期只读） */
+        if (b == 0) {
+            const char *ty = pnode_attr(n, "type");
+            if (ty != NULL && (strcmp(ty, "checkbox") == 0 || strcmp(ty, "radio") == 0))
+                ((PNode *)n)->flags |= QL_UI_NODE_CHECKBOX;
+            if (pnode_attr(n, "checked") != NULL || pnode_attr(n, "selected") != NULL)
+                ((PNode *)n)->flags |= QL_UI_NODE_CHECKED;
+            if (pnode_attr(n, "disabled") != NULL)
+                ((PNode *)n)->flags |= QL_UI_NODE_DISABLED;
+        }
     }
     }           /* for (b) 断点区间 */
     s_media_on = NULL;
@@ -10314,6 +10924,10 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             nd->style_hover = (uint16_t)flat[i].state[0];
             nd->style_active = (uint16_t)flat[i].state[1];
             nd->style_focus = (uint16_t)flat[i].state[2];
+            nd->style_disabled = (uint16_t)flat[i].state_dis;
+            nd->style_checked = (uint16_t)flat[i].state_chk;
+            nd->style_placeholder = (uint16_t)flat[i].state_ph;
+            nd->placeholder = flat[i].placeholder;
             nd->flags = flat[i].node->flags;
         }
 
@@ -10409,6 +11023,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     }
 
 done:
+    s_styles_pool = NULL;
     ql_mem_free(medias.v);
     ql_mem_free(calc.ops);
     ql_mem_free(node_media_ofs);

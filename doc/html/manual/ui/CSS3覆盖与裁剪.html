@@ -181,6 +181,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -281,18 +282,21 @@ main img.shot { max-width: 100%; }
 <td>blob v26（见 §18.6）</td>
 </tr>
 <tr>
+<td><code>word-spacing</code> / <code>tab-size</code> / <code>text-decoration-*</code> / <code>:disabled</code> / <code>:enabled</code> / <code>:checked</code> / <code>::placeholder</code> / <code>background-image: url()</code></td>
+<td>blob v27（见 §18.7）</td>
+</tr>
+<tr>
 <td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
 <td>编译成<strong>后缀字节码</strong>存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉</td>
 </tr>
 </tbody>
 </table>
-<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>background-size/position</code>（等 <code>background-image: url()</code>）、
-<code>transform: rotate()</code> / <code>skew()</code>、<code>word-spacing</code>、<code>text-align: justify</code>、
-阴影的 <code>spread</code> 展开半径、椭圆 <code>border-radius</code>（斜杠写法）。</p>
-<blockquote>
-<p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
-逐行状态在下一次整理时同步。</p>
-</blockquote>
+<p><strong>还没做</strong>（下表仍标 ⏳ / ❌ 的就是全部）：<code>filter</code>（颜色矩阵 + <code>blur()</code> 离屏）、
+<code>transform: rotate()</code> / <code>skew()</code>、<code>text-align: justify</code>、
+阴影的 <code>spread</code> 展开半径、椭圆 <code>border-radius</code>（斜杠写法）、<code>font</code> 简写、
+<code>word-wrap</code> 别名、<code>::first-line</code> / <code>::first-letter</code>。
+五批（B1–B5）至此除上列各项外全部落地，见 §18.5 / §18.6 / §18.7。
+下表已逐行对齐当前实现（<code>qltext check</code> 实测）。</p>
 <hr />
 <h2 id="1">1. 状态记号</h2>
 <table>
@@ -424,27 +428,27 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>*</code>（通配）</td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>加一条规则就能支持；暂未实现，写了报错</td>
+<td>构建期展开</td>
 </tr>
 <tr>
 <td><code>[attr]</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td><code>不支持的简单选择器：'[data-x]'</code></td>
+<td></td>
 </tr>
 <tr>
 <td><code>[attr=v]</code> <code>[attr~=v]</code> <code>[attr\|=v]</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>同上</td>
+<td></td>
 </tr>
 <tr>
 <td><code>[attr^=v]</code> <code>[attr$=v]</code> <code>[attr*=v]</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>同上</td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -515,10 +519,10 @@ main img.shot { max-width: 100%; }
 <td>同上</td>
 </tr>
 <tr>
-<td><code>:disabled</code> / <code>:checked</code></td>
-<td>⏳</td>
+<td><code>:disabled</code> / <code>:enabled</code> / <code>:checked</code></td>
+<td>✅</td>
 <td>B</td>
-<td>状态位机制已就绪，但要先有能表达"禁用 / 勾选"的控件（<code>&lt;input type=checkbox&gt;</code> 还没有）</td>
+<td>三份变体样式（§18.7）；<code>&lt;input type=checkbox&gt;</code> 已就位，<code>:checked</code> 可直接用</td>
 </tr>
 <tr>
 <td><code>:first-child</code></td>
@@ -613,13 +617,13 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>::before</code> + <code>content: "文本"</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td><strong>收益最高的一项</strong>：图标、装饰、前缀全靠它。构建期生成真节点</td>
+<td>构建期生成真节点</td>
 </tr>
 <tr>
 <td><code>::after</code> + <code>content: "文本"</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
 <td>同上</td>
 </tr>
@@ -637,9 +641,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>::placeholder</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td><code>placeholder</code> 属性本身也还没解析，两者一起做</td>
+<td><code>placeholder</code> 属性 + 一份独立占位样式（§18.7）</td>
 </tr>
 <tr>
 <td><code>::marker</code></td>
@@ -844,39 +848,51 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>#rrggbbaa</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>加一个分支</td>
+<td></td>
 </tr>
 <tr>
-<td><code>hsl()</code> / <code>hsla()</code> / <code>hwb()</code> / <code>lab()</code> / <code>oklch()</code></td>
+<td><code>hsl()</code> / <code>hsla()</code></td>
+<td>✅</td>
+<td>R</td>
+<td></td>
+</tr>
+<tr>
+<td><code>hwb()</code> / <code>lab()</code> / <code>oklch()</code> / <code>color()</code></td>
 <td>⏳</td>
 <td>R</td>
-<td>纯换算，无副作用；<code>hsl</code> 优先级高于其余</td>
+<td>纯换算，无副作用；上屏是 8 位色，宽色域没有意义</td>
 </tr>
 <tr>
 <td><code>inherit</code></td>
-<td>⏳</td>
-<td>L</td>
-<td>现在是 <code>不支持的颜色写法 'inherit'</code></td>
+<td>✅</td>
+<td>R</td>
+<td></td>
 </tr>
 <tr>
-<td><code>initial</code> / <code>unset</code> / <code>revert</code></td>
+<td><code>initial</code> / <code>unset</code></td>
+<td>✅</td>
+<td>R</td>
+<td>回到 UA 默认值</td>
+</tr>
+<tr>
+<td><code>revert</code></td>
 <td>⏳</td>
-<td>L</td>
-<td>需要"UA 默认值"可达</td>
+<td>R</td>
+<td>层级语义差别很小，暂报错</td>
 </tr>
 <tr>
 <td><code>currentColor</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>解析期替换成 <code>color</code> 的值即可</td>
+<td>解析期替换成 <code>color</code> 的值</td>
 </tr>
 <tr>
 <td><code>!important</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>声明层多存 1 bit、比较函数多一级；与 B1 一起做</td>
+<td>级联两趟：普通先应用，important 再应用</td>
 </tr>
 <tr>
 <td>转义 / CSS 注释</td>
@@ -918,25 +934,25 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>min-width</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>不支持的属性 'min-width'</code> —— 响应式的刚需</td>
+<td>px / <code>%</code>（blob v16）</td>
 </tr>
 <tr>
 <td><code>max-width</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
 <td>同上</td>
 </tr>
 <tr>
 <td><code>min-height</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
 <td></td>
 </tr>
 <tr>
 <td><code>max-height</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
 <td></td>
 </tr>
@@ -1069,12 +1085,6 @@ main img.shot { max-width: 100%; }
 <td></td>
 </tr>
 <tr>
-<td><code>inset</code>（简写）</td>
-<td>⏳</td>
-<td>L</td>
-<td>等价四条，加解析即可</td>
-</tr>
-<tr>
 <td><code>z-index</code></td>
 <td>✅</td>
 <td>L</td>
@@ -1120,27 +1130,33 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>background-image: url(...)</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>M</td>
-<td><code>只支持 linear-gradient() / radial-gradient()</code>；图片请用 <code>&lt;img&gt;</code>（图像管线是独立子系统）</td>
+<td>与 <code>&lt;img src&gt;</code> 共用资源表，按名字注册（§18.7）</td>
 </tr>
 <tr>
 <td><code>background-size</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>等 <code>background-image: url()</code> 落地（渐变的尺寸就是元素尺寸）</td>
+<td><code>cover</code> / <code>contain</code> / <code>&lt;w&gt; &lt;h&gt;</code>；渐变不受影响（渐变的尺寸就是元素尺寸）</td>
 </tr>
 <tr>
 <td><code>background-position</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>同上</td>
+<td><code>left/center/right + top/center/bottom</code> 与 px 混写</td>
 </tr>
 <tr>
-<td><code>background-repeat</code> / <code>-attachment</code> / <code>-clip</code> / <code>-origin</code></td>
+<td><code>background-repeat</code></td>
+<td>✅</td>
+<td>R</td>
+<td><code>repeat</code> / <code>no-repeat</code> / <code>repeat-x</code> / <code>repeat-y</code></td>
+</tr>
+<tr>
+<td><code>background-attachment</code> / <code>-clip</code> / <code>-origin</code></td>
 <td>❌</td>
 <td>N</td>
-<td>在"界面元素"上用不到（整页背景用渐变更省）</td>
+<td>在"界面元素"上用不到</td>
 </tr>
 <tr>
 <td><code>border</code>（简写）</td>
@@ -1390,15 +1406,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>text-decoration</code></td>
-<td>⚠️</td>
+<td>✅</td>
 <td>R</td>
-<td><code>underline</code> / <code>line-through</code> / <code>none</code>；<strong>没有 <code>overline</code></strong>（本库没有上划线概念）</td>
+<td><code>underline</code> / <code>overline</code> / <code>line-through</code> / <code>none</code>（可叠加）；<code>wavy</code> 报错</td>
 </tr>
 <tr>
 <td><code>text-decoration-color/-style/-thickness</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>装饰线颜色现在固定跟文字色</td>
+<td>形态 <code>solid</code> / <code>double</code> / <code>dotted</code> / <code>dashed</code>；不写颜色/粗细就跟文字色、跟字号</td>
 </tr>
 <tr>
 <td><code>letter-spacing</code></td>
@@ -1408,9 +1424,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>word-spacing</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>与 <code>letter-spacing</code> 同一条路，只差"加在哪些字符之后"</td>
+<td>只加在空格之后；量宽与绘制共用一份推进</td>
 </tr>
 <tr>
 <td><code>text-indent</code></td>
@@ -1450,7 +1466,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>text-shadow</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
 <td>复用 <code>box-shadow</code> 的 SDF 路径（字形级）</td>
 </tr>
@@ -1480,12 +1496,18 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>tab-size</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>white-space: pre</code> 下制表宽度现在固定</td>
+<td>1~32；<strong>建表期</strong>把 <code>\t</code> 展开成 N 个空格</td>
 </tr>
 <tr>
-<td><code>text-decoration-skip-ink</code> / <code>text-underline-offset</code></td>
+<td><code>text-underline-offset</code></td>
+<td>✅</td>
+<td>R</td>
+<td>px / em / rem，可负</td>
+</tr>
+<tr>
+<td><code>text-decoration-skip-ink</code></td>
 <td>❌</td>
 <td>N</td>
 <td>微观排版，收益极低</td>
@@ -1511,9 +1533,9 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>content</code>（纯文本）</td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>与 <code>::before/::after</code> 一起做（构建期生成真节点）</td>
+<td>只能写在 <code>::before</code> / <code>::after</code> 上，构建期生成真节点</td>
 </tr>
 <tr>
 <td><code>content: attr()</code> / <code>counter()</code> / <code>url()</code></td>
@@ -2352,6 +2374,41 @@ CSS 的"四边宽度不同"就是这样影响内容盒的。</p>
 <code>object-position</code>（<code>object-fit</code> 之后在余量里摆位，<code>cover</code> 时改的是源矩形）。</p>
 <p>验收：<code>test/web/test_b4.c</code>（104 项）、golden 的 <code>b4</code> 页（CPU vs GPU 0.05%）、
 例程 <code>example/25_b4</code>（九节，含滚动条与 focus 环）。</p>
+<h3 id="187-b2-b3-blob-v27">18.7 B2 / B3 尾巴与背景图（blob v27）</h3>
+<p>这一节收掉五批里最后三项。它们共同的思路是：<strong>能在构建期算清的一律不算在运行期</strong>。</p>
+<p><strong>状态选择器</strong>（<code>QLUINode</code> 20 → 28 字节）：</p>
+<div class="highlight"><pre><span></span><code>style_disabled / style_checked / style_placeholder   /* 各一份变体样式下标 */
+placeholder                                          /* 文案在文本池里的下标 */
+flags: QL_UI_NODE_CHECKBOX / _CHECKED / _DISABLED
+</code></pre></div>
+
+<ul>
+<li>与 <code>:hover</code> 完全同构：多带一个状态位再跑一遍级联，与基础样式不同才建一份新样式；</li>
+<li>运行期优先级 <code>disabled &gt; active &gt; focus &gt; checked &gt; hover</code>；</li>
+<li><code>:enabled</code> 是"没有 disabled"，所以<strong>基础样式</strong>按节点属性决定要不要打开这个位；</li>
+<li>复选框有自己的 UA 默认（内部标签名 <code>#cb</code> → 16×16、无内边距），
+  并且<strong>不进输入框池</strong>（它没有文本）；</li>
+<li><code>::placeholder</code> 在构建期把 <code>input::placeholder</code> 的声明<strong>合并进宿主样式</strong>，
+  单独存一份"占位样式"，输入框为空时用它画。</li>
+</ul>
+<p><strong>文本细节</strong>（<code>QLUIStyle</code> 240 → 272 字节）：</p>
+<ul>
+<li><code>word-spacing</code> 只加在空格之后（量宽与绘制走同一个 <code>adv_of</code>）；</li>
+<li><code>tab-size</code> 在<strong>建表期</strong>把 <code>\t</code> 展开成 N 个空格 —— 运行期一个字符判断都没有；</li>
+<li><code>text-decoration-*</code> 的形态用 <code>fill_rect</code> 拼（double 两条、dotted 点、dashed 段+缝），
+  不需要新图元，CPU / GPU 天然一致；<code>overline</code> 占 <code>deco_style</code> 的高位。</li>
+</ul>
+<p><strong>背景图</strong>：与 <code>&lt;img src&gt;</code> 共用资源表。</p>
+<div class="highlight"><pre><span></span><code>background-image: url(checker)  → 名字进文本池，样式里存 QL_UI_NO_IMAGE 之外的下标
+运行期 ql_ui_register_image(&quot;checker&quot;, ...) 按名字填像素（同一张图只解码一次）
+绘制：object-fit 的同一套几何（cover / contain / &lt;w&gt; &lt;h&gt;）+ position + repeat
+</code></pre></div>
+
+<p>平铺时先把起点对齐到可见瓦片、再把裁剪设成边框盒 —— 不设裁剪会画到兄弟节点上
+（与"四边不同色"那次裁剪没恢复是同一类错误，这次提前防住了）。</p>
+<p><strong>没做的：<code>filter</code></strong>。颜色矩阵类（brightness/grayscale/...）技术上可行，
+但 <code>blur()</code> / <code>drop-shadow()</code> 需要<strong>离屏图层</strong>（子树先合成到一张图再整体模糊），
+成本与 <code>transform: rotate()</code> 同级，所以一起留作单独立项 —— 覆盖表里如实标 ⏳。</p>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -2806,8 +2863,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </tr>
 <tr>
 <td><code>text-decoration</code></td>
-<td><code>underline</code> / <code>line-through</code></td>
-<td>没有 <code>overline</code>；颜色固定跟文字色</td>
+<td><code>underline</code> / <code>overline</code> / <code>line-through</code></td>
+<td>没有 <code>wavy</code> 线型</td>
 </tr>
 <tr>
 <td><code>vertical-align</code></td>
@@ -3257,7 +3314,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>新 <code>test_css_units</code> + golden</td>
 </tr>
 <tr>
-<td><strong>B2 选择器</strong>（已完成：结构伪类 / <code>[attr]</code> 系列 / <code>:not()</code> / <code>*</code> / <code>::before</code>+<code>::after</code>+<code>content</code>；<strong>剩 <code>:disabled/:checked</code>、<code>::placeholder</code> —— 它们要先有能表达"禁用/勾选"的控件</strong>，见 B5）</td>
+<td><strong>B2 选择器</strong>（✅ 已完成：结构伪类 / <code>[attr]</code> 系列 / <code>:not()</code> / <code>*</code> / <code>::before</code>+<code>::after</code>+<code>content</code> / <code>:disabled</code> / <code>:enabled</code> / <code>:checked</code> / <code>::placeholder</code>（含复选框控件），见 §18.7）</td>
 <td><code>:first/last/nth-child(an+b)/only-child/of-type</code>、<code>:not()</code>、<code>[attr]</code> 系列、<code>*</code>、<code>::before/::after</code>+<code>content</code>、<code>:disabled/:checked</code>、<code>::placeholder</code></td>
 <td><code>CSS_SELECTOR_ADV</code></td>
 <td><strong>兼容性收益最大</strong>（12.5% 声明 + 25% 选择器）</td>
@@ -3266,7 +3323,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td><code>test_pseudo_text</code> / <code>test_selectors</code> + golden</td>
 </tr>
 <tr>
-<td><strong>B3 文本细节</strong>（第一批已完成：<code>letter-spacing</code> / <code>text-indent</code> / <code>text-transform</code> / <code>text-overflow: ellipsis</code> / <code>word-break</code> <strong>已落地</strong> → blob v20；剩 <code>word-spacing</code> / <code>tab-size</code> / <code>text-decoration-*</code>）</td>
+<td><strong>B3 文本细节</strong>（✅ 已完成：<code>letter-spacing</code> / <code>text-indent</code> / <code>text-transform</code> / <code>text-overflow: ellipsis</code> / <code>word-break</code>（v20）、<code>word-spacing</code> / <code>tab-size</code> / <code>text-decoration-*</code>（v27，见 §18.7））</td>
 <td><code>letter-spacing</code>、<code>word-spacing</code>、<code>text-indent</code>、<code>text-transform</code>、<code>text-overflow: ellipsis</code>、<code>word-break</code>/<code>overflow-wrap</code>、<code>tab-size</code>、<code>text-decoration-*</code></td>
 <td><code>CSS_TEXT_ADV</code></td>
 <td>列表、标题、长 URL</td>
@@ -3275,7 +3332,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>新 <code>test_text_adv</code>（25 项，含像素层）+ golden</td>
 </tr>
 <tr>
-<td><strong>B4 绘制细节</strong>（✅ 已完成：<code>border-style: dashed/dotted</code> + <code>outline</code>（§18.5）、四边独立 <code>border-*</code>、四角 <code>border-*-radius</code>、两层 + <code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>、<code>object-position</code>（§18.6）。<strong>只剩</strong> <code>background-size/position</code> —— 它们要等 <code>background-image: url()</code> 那个子系统）</td>
+<td><strong>B4 绘制细节</strong>（✅ 已完成：<code>border-style: dashed/dotted</code> + <code>outline</code>（§18.5）、四边独立 <code>border-*</code>、四角 <code>border-*-radius</code>、两层 + <code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>、<code>object-position</code>（§18.6）、<code>background-image: url()</code> + <code>size/position/repeat</code>（§18.7）。<strong>只剩 <code>filter</code></strong>（颜色矩阵可做，<code>blur()</code> 需离屏图层 —— 与 <code>rotate</code> 同级，单独立项）</td>
 <td><code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>outline</code>、<code>background-size/position</code>、<code>object-position</code>、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code></td>
 <td><code>CSS_BORDER_STYLE</code> + <code>CSS_SHADOW</code> / <code>CSS_GRADIENT</code></td>
 <td>视觉还原度</td>

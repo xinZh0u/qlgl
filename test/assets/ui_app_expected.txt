@@ -4,10 +4,10 @@
 #include "ui_app.h"
 
 static const QLUINode ui_app_nodes[] = {
-    /* tag                     parent first  next   style  text   hover  active focus  flags */
-    { QL_UI_TAG_DIV         , 0xFFFF,     1, 0xFFFF,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
-    { QL_UI_TAG_IMG         ,     0, 0xFFFF,     2,     1,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
-    { QL_UI_TAG_SPAN        ,     0, 0xFFFF, 0xFFFF,     2,     1, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+    /* tag                     parent first  next   style  text   hover  active focus  disabled checked placeholder ph-text flags */
+    { QL_UI_TAG_DIV         , 0xFFFF,     1, 0xFFFF,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+    { QL_UI_TAG_IMG         ,     0, 0xFFFF,     2,     1,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+    { QL_UI_TAG_SPAN        ,     0, 0xFFFF, 0xFFFF,     2,     1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
 };
 
 static const uint16_t ui_app_font_sizes[] = { 16 };
@@ -36,7 +36,8 @@ static const QLUIStyle ui_app_styles[] = {
       .clip_kind = 0, .clip_r = 0, .opacity = 255,
       .margin_unit = 0x00, .padding_unit = 0x00,
       .aspect_w = 0, .aspect_h = 0,
-      .letter_spacing = 0, .text_indent = 0, .text_transform = 0, .text_overflow = 0, .word_break = 0,
+      .letter_spacing = 0, .word_spacing = 0, .tab_size = 0, .text_indent = 0, .text_transform = 0, .text_overflow = 0, .word_break = 0,
+      .deco_style = 0x00, .deco_thickness = 0, .deco_offset = 0, .deco_alpha = 0, .deco_color = 0x000000,
       .tf_x = 0, .tf_y = 0, .sc_x = 1000, .sc_y = 1000,
       .visibility = 0, .pointer_events = 0,
       .align_self = QL_UI_ALIGN_SELF_AUTO, .order = 0,
@@ -46,6 +47,9 @@ static const QLUIStyle ui_app_styles[] = {
       .outline_color = 0x000000, .outline_width = 0, .outline_offset = 0, .outline_style = QL_UI_BORDER_NONE,
       .image_rendering = 0, .scrollbar_width = 0, .scrollbar_alpha = 0, .scrollbar_color = 0x000000,
       .object_position = { { 500, QL_UI_UNIT_PERCENT }, { 500, QL_UI_UNIT_PERCENT } },
+      .bg_image = QL_UI_NO_IMAGE, .bg_size_mode = 0, .bg_repeat = 0,
+      .bg_size = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
+      .bg_pos = { { 500, QL_UI_UNIT_PERCENT }, { 500, QL_UI_UNIT_PERCENT } },
       .anim = 0xFFFF,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
     { .bg_color = 0x000000, .text_color = 0x000000,
@@ -71,7 +75,8 @@ static const QLUIStyle ui_app_styles[] = {
       .clip_kind = 0, .clip_r = 0, .opacity = 255,
       .margin_unit = 0x00, .padding_unit = 0x00,
       .aspect_w = 0, .aspect_h = 0,
-      .letter_spacing = 0, .text_indent = 0, .text_transform = 0, .text_overflow = 0, .word_break = 0,
+      .letter_spacing = 0, .word_spacing = 0, .tab_size = 0, .text_indent = 0, .text_transform = 0, .text_overflow = 0, .word_break = 0,
+      .deco_style = 0x00, .deco_thickness = 0, .deco_offset = 0, .deco_alpha = 0, .deco_color = 0x000000,
       .tf_x = 0, .tf_y = 0, .sc_x = 1000, .sc_y = 1000,
       .visibility = 0, .pointer_events = 0,
       .align_self = QL_UI_ALIGN_SELF_AUTO, .order = 0,
@@ -81,6 +86,9 @@ static const QLUIStyle ui_app_styles[] = {
       .outline_color = 0x000000, .outline_width = 0, .outline_offset = 0, .outline_style = QL_UI_BORDER_NONE,
       .image_rendering = 0, .scrollbar_width = 0, .scrollbar_alpha = 0, .scrollbar_color = 0x000000,
       .object_position = { { 500, QL_UI_UNIT_PERCENT }, { 500, QL_UI_UNIT_PERCENT } },
+      .bg_image = QL_UI_NO_IMAGE, .bg_size_mode = 0, .bg_repeat = 0,
+      .bg_size = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
+      .bg_pos = { { 500, QL_UI_UNIT_PERCENT }, { 500, QL_UI_UNIT_PERCENT } },
       .anim = 0xFFFF,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
     { .bg_color = 0x000000, .text_color = 0x000000,
@@ -106,7 +114,8 @@ static const QLUIStyle ui_app_styles[] = {
       .clip_kind = 0, .clip_r = 0, .opacity = 255,
       .margin_unit = 0x00, .padding_unit = 0x00,
       .aspect_w = 0, .aspect_h = 0,
-      .letter_spacing = 0, .text_indent = 0, .text_transform = 0, .text_overflow = 0, .word_break = 0,
+      .letter_spacing = 0, .word_spacing = 0, .tab_size = 0, .text_indent = 0, .text_transform = 0, .text_overflow = 0, .word_break = 0,
+      .deco_style = 0x00, .deco_thickness = 0, .deco_offset = 0, .deco_alpha = 0, .deco_color = 0x000000,
       .tf_x = 0, .tf_y = 0, .sc_x = 1000, .sc_y = 1000,
       .visibility = 0, .pointer_events = 0,
       .align_self = QL_UI_ALIGN_SELF_AUTO, .order = 0,
@@ -116,6 +125,9 @@ static const QLUIStyle ui_app_styles[] = {
       .outline_color = 0x000000, .outline_width = 0, .outline_offset = 0, .outline_style = QL_UI_BORDER_NONE,
       .image_rendering = 0, .scrollbar_width = 0, .scrollbar_alpha = 0, .scrollbar_color = 0x000000,
       .object_position = { { 500, QL_UI_UNIT_PERCENT }, { 500, QL_UI_UNIT_PERCENT } },
+      .bg_image = QL_UI_NO_IMAGE, .bg_size_mode = 0, .bg_repeat = 0,
+      .bg_size = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
+      .bg_pos = { { 500, QL_UI_UNIT_PERCENT }, { 500, QL_UI_UNIT_PERCENT } },
       .anim = 0xFFFF,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
 };

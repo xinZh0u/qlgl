@@ -181,6 +181,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：九个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -663,7 +664,42 @@ main img.shot { max-width: 100%; }
 <li><strong><code>box-shadow</code> 最多两层</strong>，多写的会<strong>报错</strong>而不是静默丢弃 —— 少一层阴影
   在界面上很难发现，宁可构建期就炸。</li>
 </ul>
-<h2 id="11">11. 这几个例程查出了什么</h2>
+<h2 id="11-26_css_states">11. <code>26_css_states</code>：状态选择器</h2>
+<p><img src="../img/26-css-states.png" alt="禁用按钮变灰、输入框 disabled 外观、复选框勾选/禁用、enabled 高亮、占位文字斜体灰" width="420"></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">disabled</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2A3442</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#6C7783</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">inp</span><span class="p">:</span><span class="nd">disabled</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#141B24</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#66707C</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">cb</span><span class="p">:</span><span class="nd">checked</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2E6BE6</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">chip</span><span class="p">:</span><span class="nd">enabled</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#7CE0FF</span><span class="p">;</span><span class="w"> </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2E6BE6</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">inp</span><span class="p">::</span><span class="nd">placeholder</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#5E6B7A</span><span class="p">;</span><span class="w"> </span><span class="k">font-style</span><span class="p">:</span><span class="w"> </span><span class="kc">italic</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>点一下复选框，<code>:checked</code> 立刻生效；禁用的输入框点了不出光标（也拿不到焦点）。</p>
+<h2 id="12-27_css_text2">12. <code>27_css_text2</code>：词间距 / 制表符 / 装饰线</h2>
+<p><img src="../img/27-css-text2.png" alt="word-spacing 三种取值、tab-size 2 与 8、下划线/上划线/删除线、solid/double/dotted/dashed、粗细颜色与偏移" width="420"></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">p</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">word-spacing</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">pre</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">tab-size</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">u</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="p">;</span><span class="w"> </span><span class="k">text-decoration-thickness</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">      </span><span class="k">text-decoration-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#38BDF8</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">s2</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">underline</span><span class="p">;</span><span class="w"> </span><span class="k">text-decoration-style</span><span class="p">:</span><span class="w"> </span><span class="kc">dotted</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">o</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">text-decoration</span><span class="p">:</span><span class="w"> </span><span class="kc">overline</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">d</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">text-underline-offset</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>装饰线的四种形态都是 <code>fill_rect</code> 拼出来的，所以两条后端逐像素一致。</p>
+<h2 id="13-28_bg_image-size-position-repeat">13. <code>28_bg_image</code>：背景图与 size / position / repeat</h2>
+<p><img src="../img/28-bg-image.png" alt="平铺、cover、contain、24px 尺寸、三种 background-position、圆角与边框下的背景图" width="420"></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">tile</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">background-image</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">checker</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">cover</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-size</span><span class="p">:</span><span class="w"> </span><span class="kc">cover</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">contain</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-size</span><span class="p">:</span><span class="w"> </span><span class="kc">contain</span><span class="p">;</span><span class="w"> </span><span class="k">background-repeat</span><span class="p">:</span><span class="w"> </span><span class="kc">no-repeat</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">px</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">background-size</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">pr</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">background-size</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">background-repeat</span><span class="p">:</span><span class="w"> </span><span class="kc">no-repeat</span><span class="p">;</span>
+<span class="w">           </span><span class="k">background-position</span><span class="p">:</span><span class="w"> </span><span class="kc">right</span><span class="w"> </span><span class="kc">bottom</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">round</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-size</span><span class="p">:</span><span class="w"> </span><span class="kc">cover</span><span class="p">;</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">38</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>资源与 <code>&lt;img src&gt;</code> 共用一张表：<code>ql_ui_register_image("checker", ...)</code> 填一次像素，
+背景与 <code>&lt;img&gt;</code> 都能用。</p>
+<h2 id="14">14. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

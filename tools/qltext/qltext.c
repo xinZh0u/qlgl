@@ -308,7 +308,7 @@ static void fput_shadow(FILE *f, const QLUIShadow *sh)
 
 static void fput_style(FILE *f, const QLUIStyle *s)
 {
-    char bs_name[4][24];
+    char bs_name[4][48];
     for (int i = 0; i < 4; i++)
         snprintf(bs_name[i], sizeof(bs_name[i]), "%s",
                  enum_name(BORDER_STYLE_NAMES, COUNT_OF(BORDER_STYLE_NAMES),
@@ -356,8 +356,11 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .clip_kind = %u, .clip_r = %u, .opacity = %u,\n"
             "      .margin_unit = 0x%02X, .padding_unit = 0x%02X,\n"
             "      .aspect_w = %u, .aspect_h = %u,\n"
-            "      .letter_spacing = %d, .text_indent = %d, .text_transform = %u,"
+            "      .letter_spacing = %d, .word_spacing = %d, .tab_size = %u,"
+            " .text_indent = %d, .text_transform = %u,"
             " .text_overflow = %u, .word_break = %u,\n"
+            "      .deco_style = 0x%02X, .deco_thickness = %d, .deco_offset = %d,"
+            " .deco_alpha = %u, .deco_color = 0x%06X,\n"
             "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
             "      .visibility = %u, .pointer_events = %u,\n"
             "      .align_self = %s, .order = %d,\n"
@@ -369,6 +372,9 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .image_rendering = %u, .scrollbar_width = %u,"
             " .scrollbar_alpha = %u, .scrollbar_color = 0x%06X,\n"
             "      .object_position = { { %d, %s }, { %d, %s } },\n"
+            "      .bg_image = %s, .bg_size_mode = %u, .bg_repeat = %u,\n"
+            "      .bg_size = { { %d, %s }, { %d, %s } },\n"
+            "      .bg_pos = { { %d, %s }, { %d, %s } },\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
                       "QLUIDisplay"),
@@ -402,7 +408,10 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->clip_kind, (unsigned)s->clip_r, (unsigned)s->opacity,
             (unsigned)s->margin_unit, (unsigned)s->padding_unit,
             (unsigned)s->aspect_w, (unsigned)s->aspect_h,
-            (int)s->letter_spacing, (int)s->text_indent,
+            (int)s->letter_spacing, (int)s->word_spacing, (unsigned)s->tab_size,
+            (int)s->text_indent,
+            (unsigned)s->deco_style, (int)s->deco_thickness, (int)s->deco_offset,
+            (unsigned)s->deco_alpha, (unsigned)(s->deco_color & 0xFFFFFFu),
             (unsigned)s->text_transform, (unsigned)s->text_overflow,
             (unsigned)s->word_break,
             (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y,
@@ -432,7 +441,17 @@ static void fput_style(FILE *f, const QLUIStyle *s)
                       "QLUIUnit"),
             (int)s->object_position[1].value,
             enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->object_position[1].unit,
-                      "QLUIUnit"));
+                      "QLUIUnit"),
+            (s->bg_image == QL_UI_NO_IMAGE) ? "QL_UI_NO_IMAGE" : "(uint16_t)0",
+            (unsigned)s->bg_size_mode, (unsigned)s->bg_repeat,
+            (int)s->bg_size[0].value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_size[0].unit, "QLUIUnit"),
+            (int)s->bg_size[1].value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_size[1].unit, "QLUIUnit"),
+            (int)s->bg_pos[0].value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_pos[0].unit, "QLUIUnit"),
+            (int)s->bg_pos[1].value,
+            enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_pos[1].unit, "QLUIUnit"));
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);
     fputs(",\n      .inset = { ", f);
@@ -749,7 +768,7 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
     fprintf(f,
             "static const QLUINode %s_nodes[] = {\n"
             "    /* tag                     parent first  next   style  text   hover"
-            "  active focus  flags */\n",
+            "  active focus  disabled checked placeholder ph-text flags */\n",
             ident);
     for (uint16_t i = 0; i < doc->node_count; i++) {
         const QLUINode *n = &doc->nodes[i];
@@ -763,6 +782,10 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         idx_ofs(f, n->style_hover, 0);
         idx_ofs(f, n->style_active, 0);
         idx_ofs(f, n->style_focus, 0);
+        idx_ofs(f, n->style_disabled, 0);
+        idx_ofs(f, n->style_checked, 0);
+        idx_ofs(f, n->style_placeholder, 0);
+        idx_ofs(f, n->placeholder, 0);
         fprintf(f, ", 0x%02X, 0x00 },\n", (unsigned)n->flags);
     }
     fputs("};\n\n", f);

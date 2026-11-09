@@ -31,14 +31,15 @@
 | `visibility` / `pointer-events` / `align-self` / `order` / `flex-flow` | blob v23（见 §18.4） |
 | `border-style` / `outline` | blob v25（见 §18.5） |
 | 四边 `border-*` / 四角 `border-*-radius` / 两层 + inset 阴影 / `text-shadow` / `image-rendering` / `scrollbar-*` / `object-position` | blob v26（见 §18.6） |
+| `word-spacing` / `tab-size` / `text-decoration-*` / `:disabled` / `:enabled` / `:checked` / `::placeholder` / `background-image: url()` | blob v27（见 §18.7） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
-**还没做**（下表里仍标 ⏳ 的）：`background-size/position`（等 `background-image: url()`）、
-`transform: rotate()` / `skew()`、`word-spacing`、`text-align: justify`、
-阴影的 `spread` 展开半径、椭圆 `border-radius`（斜杠写法）。
-
-> 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
-> 逐行状态在下一次整理时同步。
+**还没做**（下表仍标 ⏳ / ❌ 的就是全部）：`filter`（颜色矩阵 + `blur()` 离屏）、
+`transform: rotate()` / `skew()`、`text-align: justify`、
+阴影的 `spread` 展开半径、椭圆 `border-radius`（斜杠写法）、`font` 简写、
+`word-wrap` 别名、`::first-line` / `::first-letter`。
+五批（B1–B5）至此除上列各项外全部落地，见 §18.5 / §18.6 / §18.7。
+下表已逐行对齐当前实现（`qltext check` 实测）。
 
 ---
 
@@ -85,10 +86,10 @@
 | `tag` | ✅ | B | |
 | `.class`（可重复 `.a.b`） | ✅ | B | |
 | `#id` | ✅ | B | |
-| `*`（通配） | ⏳ | B | 加一条规则就能支持；暂未实现，写了报错 |
-| `[attr]` | ⏳ | B | `不支持的简单选择器：'[data-x]'` |
-| `[attr=v]` `[attr~=v]` `[attr\|=v]` | ⏳ | B | 同上 |
-| `[attr^=v]` `[attr$=v]` `[attr*=v]` | ⏳ | B | 同上 |
+| `*`（通配） | ✅ | B | 构建期展开 |
+| `[attr]` | ✅ | B | |
+| `[attr=v]` `[attr~=v]` `[attr\|=v]` | ✅ | B | |
+| `[attr^=v]` `[attr$=v]` `[attr*=v]` | ✅ | B | |
 
 ### 3.2 组合器
 
@@ -106,7 +107,7 @@
 | `:hover` | ✅ | B | 构建期编译成状态变体样式表，运行期只切下标 |
 | `:active` | ✅ | B | 同上 |
 | `:focus` | ✅ | B | 同上 |
-| `:disabled` / `:checked` | ⏳ | B | 状态位机制已就绪，但要先有能表达"禁用 / 勾选"的控件（`<input type=checkbox>` 还没有） |
+| `:disabled` / `:enabled` / `:checked` | ✅ | B | 三份变体样式（§18.7）；`<input type=checkbox>` 已就位，`:checked` 可直接用 |
 | `:first-child` | ✅ | B | 构建期算好兄弟位置（`sib_idx`），运行期零成本 |
 | `:last-child` | ✅ | B | |
 | `:only-child` | ✅ | B | |
@@ -125,11 +126,11 @@
 
 | 伪元素 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `::before` + `content: "文本"` | ⏳ | B | **收益最高的一项**：图标、装饰、前缀全靠它。构建期生成真节点 |
-| `::after` + `content: "文本"` | ⏳ | B | 同上 |
+| `::before` + `content: "文本"` | ✅ | B | 构建期生成真节点 |
+| `::after` + `content: "文本"` | ✅ | B | 同上 |
 | `::first-line` `::first-letter` | ❌ | F | 要"改变行盒内字形"的能力，与逐行排版冲突 |
 | `::selection` | ❌ | P | 选区颜色是运行期状态；输入框选区已经硬编码为 `text_color @ 0x50` |
-| `::placeholder` | ⏳ | B | `placeholder` 属性本身也还没解析，两者一起做 |
+| `::placeholder` | ✅ | B | `placeholder` 属性 + 一份独立占位样式（§18.7） |
 | `::marker` | ❌ | P | 没有生成内容机制，符号请自己写字符 |
 | `content: counter()` / `attr()` / `url()` | ❌ | P | 需要计数器/属性求值，等于引入一个小运行期 |
 
@@ -171,12 +172,14 @@
 | 命名色 | ✅ | R | `k_named[]`（CSS 常用色 + `transparent`） |
 | `#rgb` / `#rrggbb` | ✅ | R | |
 | `rgb()` / `rgba()` | ✅ | R | |
-| `#rrggbbaa` | ⏳ | R | 加一个分支 |
-| `hsl()` / `hsla()` / `hwb()` / `lab()` / `oklch()` | ⏳ | R | 纯换算，无副作用；`hsl` 优先级高于其余 |
-| `inherit` | ⏳ | L | 现在是 `不支持的颜色写法 'inherit'` |
-| `initial` / `unset` / `revert` | ⏳ | L | 需要"UA 默认值"可达 |
-| `currentColor` | ⏳ | R | 解析期替换成 `color` 的值即可 |
-| `!important` | ⏳ | L | 声明层多存 1 bit、比较函数多一级；与 B1 一起做 |
+| `#rrggbbaa` | ✅ | R | |
+| `hsl()` / `hsla()` | ✅ | R | |
+| `hwb()` / `lab()` / `oklch()` / `color()` | ⏳ | R | 纯换算，无副作用；上屏是 8 位色，宽色域没有意义 |
+| `inherit` | ✅ | R | |
+| `initial` / `unset` | ✅ | R | 回到 UA 默认值 |
+| `revert` | ⏳ | R | 层级语义差别很小，暂报错 |
+| `currentColor` | ✅ | R | 解析期替换成 `color` 的值 |
+| `!important` | ✅ | L | 级联两趟：普通先应用，important 再应用 |
 | 转义 / CSS 注释 | ✅ | B | `/* … */` 已支持 |
 
 ---
@@ -188,10 +191,10 @@
 | `display` | ⚠️ | L | 支持 `block` `inline` `inline-block` `flex` `inline-flex` `none`；不支持 `grid` `table` |
 | `width` | ✅ | L | |
 | `height` | ✅ | L | |
-| `min-width` | ⏳ | L | `不支持的属性 'min-width'` —— 响应式的刚需 |
-| `max-width` | ⏳ | L | 同上 |
-| `min-height` | ⏳ | L | |
-| `max-height` | ⏳ | L | |
+| `min-width` | ✅ | L | px / `%`（blob v16） |
+| `max-width` | ✅ | L | 同上 |
+| `min-height` | ✅ | L | |
+| `max-height` | ✅ | L | |
 | `aspect-ratio` | ✅ | L | `宽 / 高` 或单个数字；只补"缺的那一边"（高确定推宽、宽度撑满推高），两边都写了以具体值为准 |
 | `margin` + `-top/right/bottom/left` | ✅ | L | px / em / rem（构建期折 px）；`auto` 见下一行；负值可用 |
 | `margin: … auto` | ✅ | L | **横向**把剩余空间分掉（`margin: 0 auto` 居中）；纵向 auto 按 0 处理（本库还不做外边距合并） |
@@ -218,7 +221,6 @@
 | `position: sticky` | ✅ | L | 布局末尾的一次补偿平移（`top/right/bottom/left` 哪个给了贴哪边），约束在包含块里 |
 | `inset`（简写） | ✅ | L | `inset: <t> <r> <b> <l>`（1/2/4 值），展开成四条长写 |
 | `top` / `right` / `bottom` / `left` | ✅ | L | |
-| `inset`（简写） | ⏳ | L | 等价四条，加解析即可 |
 | `z-index` | ✅ | L | |
 
 ---
@@ -231,10 +233,11 @@
 | `background`（简写） | ⚠️ | R | 只认**纯色或单个渐变**；写成 `background: #fff url(a.png)` 会报错 |
 | `background-image: linear-gradient()` | ⚠️ | R | **必须写方向**（`to right` / `to bottom` / `90deg` / `180deg`）；`to bottom right` 报错 |
 | `background-image: radial-gradient()` | ✅ | R | 需要 3 个参数（位置, 起色, 止色） |
-| `background-image: url(...)` | ⏳ | M | `只支持 linear-gradient() / radial-gradient()`；图片请用 `<img>`（图像管线是独立子系统） |
-| `background-size` | ⏳ | R | 等 `background-image: url()` 落地（渐变的尺寸就是元素尺寸） |
-| `background-position` | ⏳ | R | 同上 |
-| `background-repeat` / `-attachment` / `-clip` / `-origin` | ❌ | N | 在"界面元素"上用不到（整页背景用渐变更省） |
+| `background-image: url(...)` | ✅ | M | 与 `<img src>` 共用资源表，按名字注册（§18.7） |
+| `background-size` | ✅ | R | `cover` / `contain` / `<w> <h>`；渐变不受影响（渐变的尺寸就是元素尺寸） |
+| `background-position` | ✅ | R | `left/center/right + top/center/bottom` 与 px 混写 |
+| `background-repeat` | ✅ | R | `repeat` / `no-repeat` / `repeat-x` / `repeat-y` |
+| `background-attachment` / `-clip` / `-origin` | ❌ | N | 在"界面元素"上用不到 |
 | `border`（简写） | ✅ | R | `<width>px <style> <color>`，三段任意顺序 |
 | `border-width` | ✅ | R | 1 / 2 / 4 个值（上右下左） |
 | `border-color` | ✅ | R | 1 / 2 / 4 个颜色（上右下左） |
@@ -290,30 +293,31 @@
 | `line-height` | ✅ | L | `normal` / `px` / 无单位倍数 |
 | `white-space` | ✅ | L | `normal` / `nowrap` / `pre` / `pre-wrap` / `pre-line` |
 | `vertical-align` | ⚠️ | L | **只有 `baseline` / `sub` / `super`**；`middle` / `text-top` / 长度值都报错（`<sub>`/`<sup>` 够用） |
-| `text-decoration` | ⚠️ | R | `underline` / `line-through` / `none`；**没有 `overline`**（本库没有上划线概念） |
-| `text-decoration-color/-style/-thickness` | ⏳ | R | 装饰线颜色现在固定跟文字色 |
+| `text-decoration` | ✅ | R | `underline` / `overline` / `line-through` / `none`（可叠加）；`wavy` 报错 |
+| `text-decoration-color/-style/-thickness` | ✅ | R | 形态 `solid` / `double` / `dotted` / `dashed`；不写颜色/粗细就跟文字色、跟字号 |
 | `letter-spacing` | ✅ | L | 加在**每个字符之后**（含最后一个，与 CSS 一致）；只吃 px / em / rem，`%` 与 `vw/vh` 报错 |
-| `word-spacing` | ⏳ | L | 与 `letter-spacing` 同一条路，只差"加在哪些字符之后" |
+| `word-spacing` | ✅ | L | 只加在空格之后；量宽与绘制共用一份推进 |
 | `text-indent` | ✅ | L | 只作用在**整段第一行**（可用宽度减一截，绘制起点右移）；px / em / rem |
 | `text-transform` | ✅ | B | `uppercase` / `lowercase` / `capitalize`；**建表期**改文本（与空白折叠同一处）。输入框/多行输入跳过（值是运行期的） |
 | `text-overflow: ellipsis` | ✅ | L | 一行比盒子宽时末尾换 `…`（字体没有 U+2026 时退回三个点）；**没有裁切盒也成立** —— 它只是"少画几个字"，不像浏览器必须配 `overflow: hidden` |
 | `word-break: break-all` / `overflow-wrap: break-word` | ✅ | L | 与原来的"只在空格/CJK 处断"共用一份折行；`keep-all` 目前等同 `normal` |
 | `word-wrap` | ⏳ | L | 就是 `overflow-wrap` 的旧名字，加个别名即可 |
 | `hyphens` | ❌ | X | 要连字词典（各语言各一份） |
-| `text-shadow` | ⏳ | R | 复用 `box-shadow` 的 SDF 路径（字形级） |
+| `text-shadow` | ✅ | R | 复用 `box-shadow` 的 SDF 路径（字形级） |
 | `text-justify` / `text-align-last` | ❌ | X | 见 `justify` |
 | `direction` / `unicode-bidi` | ❌ | X | RTL 需要 bidi 算法 + 整形（HarfBuzz/SheenBidi），是独立立项 |
 | `writing-mode` / `text-orientation` | ❌ | X | 竖排同样要重整排版引擎 |
 | `text-emphasis` / `ruby-align` / `ruby-position` | ❌ | X | 注音排版；`<ruby>` 标签本身也还没做 |
-| `tab-size` | ⏳ | L | `white-space: pre` 下制表宽度现在固定 |
-| `text-decoration-skip-ink` / `text-underline-offset` | ❌ | N | 微观排版，收益极低 |
+| `tab-size` | ✅ | L | 1~32；**建表期**把 `\t` 展开成 N 个空格 |
+| `text-underline-offset` | ✅ | R | px / em / rem，可负 |
+| `text-decoration-skip-ink` | ❌ | N | 微观排版，收益极低 |
 | `-webkit-line-clamp` | ❌ | N | 非标准；多行截断可以用固定高度 + `overflow: hidden` 近似 |
 
 ### 9.3 生成内容
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `content`（纯文本） | ⏳ | B | 与 `::before/::after` 一起做（构建期生成真节点） |
+| `content`（纯文本） | ✅ | B | 只能写在 `::before` / `::after` 上，构建期生成真节点 |
 | `content: attr()` / `counter()` / `url()` | ❌ | P | 需要运行期/计数器求值 |
 | `quotes` | ❌ | N | 无生成内容 |
 | `counter-reset` / `counter-increment` | ❌ | P | 同上 |
@@ -684,6 +688,48 @@ CSS 的"四边宽度不同"就是这样影响内容盒的。
 验收：`test/web/test_b4.c`（104 项）、golden 的 `b4` 页（CPU vs GPU 0.05%）、
 例程 `example/25_b4`（九节，含滚动条与 focus 环）。
 
+### 18.7 B2 / B3 尾巴与背景图（blob v27）
+
+这一节收掉五批里最后三项。它们共同的思路是：**能在构建期算清的一律不算在运行期**。
+
+**状态选择器**（`QLUINode` 20 → 28 字节）：
+
+```
+style_disabled / style_checked / style_placeholder   /* 各一份变体样式下标 */
+placeholder                                          /* 文案在文本池里的下标 */
+flags: QL_UI_NODE_CHECKBOX / _CHECKED / _DISABLED
+```
+
+- 与 `:hover` 完全同构：多带一个状态位再跑一遍级联，与基础样式不同才建一份新样式；
+- 运行期优先级 `disabled > active > focus > checked > hover`；
+- `:enabled` 是"没有 disabled"，所以**基础样式**按节点属性决定要不要打开这个位；
+- 复选框有自己的 UA 默认（内部标签名 `#cb` → 16×16、无内边距），
+  并且**不进输入框池**（它没有文本）；
+- `::placeholder` 在构建期把 `input::placeholder` 的声明**合并进宿主样式**，
+  单独存一份"占位样式"，输入框为空时用它画。
+
+**文本细节**（`QLUIStyle` 240 → 272 字节）：
+
+- `word-spacing` 只加在空格之后（量宽与绘制走同一个 `adv_of`）；
+- `tab-size` 在**建表期**把 `\t` 展开成 N 个空格 —— 运行期一个字符判断都没有；
+- `text-decoration-*` 的形态用 `fill_rect` 拼（double 两条、dotted 点、dashed 段+缝），
+  不需要新图元，CPU / GPU 天然一致；`overline` 占 `deco_style` 的高位。
+
+**背景图**：与 `<img src>` 共用资源表。
+
+```
+background-image: url(checker)  → 名字进文本池，样式里存 QL_UI_NO_IMAGE 之外的下标
+运行期 ql_ui_register_image("checker", ...) 按名字填像素（同一张图只解码一次）
+绘制：object-fit 的同一套几何（cover / contain / <w> <h>）+ position + repeat
+```
+
+平铺时先把起点对齐到可见瓦片、再把裁剪设成边框盒 —— 不设裁剪会画到兄弟节点上
+（与"四边不同色"那次裁剪没恢复是同一类错误，这次提前防住了）。
+
+**没做的：`filter`**。颜色矩阵类（brightness/grayscale/...）技术上可行，
+但 `blur()` / `drop-shadow()` 需要**离屏图层**（子树先合成到一张图再整体模糊），
+成本与 `transform: rotate()` 同级，所以一起留作单独立项 —— 覆盖表里如实标 ⏳。
+
 ---
 
 ## 19. 覆盖率：两份实测 + 一份规范口径
@@ -821,7 +867,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `transition-delay` | 没实现 | |
 | `font-family` | 只有 `DEFAULT` / `MONO` | 不是自由字体列表；字体文件由宿主提供 |
 | `font-weight` / `font-style` | **合成**（画两遍 / 按行剪切） | 不加载第二份字体文件 |
-| `text-decoration` | `underline` / `line-through` | 没有 `overline`；颜色固定跟文字色 |
+| `text-decoration` | `underline` / `overline` / `line-through` | 没有 `wavy` 线型 |
 | `vertical-align` | `baseline` / `sub` / `super` | 没有 `middle` / 长度值 |
 | `text-align` | `left` / `center` / `right` | 没有 `justify` |
 | `overflow` | 一个值管两轴 | 没有 `overflow-x/y` |
@@ -990,9 +1036,9 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | 批 | 内容（对应上面各节） | 归属能力包 | 收益 | 风险 | 动 `QLUIStyle` | 验收 |
 |---|---|---|---|---|---|---|
 | **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
-| **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
-| **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
-| **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）。**只剩** `background-size/position` —— 它们要等 `background-image: url()` 那个子系统） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
+| **B2 选择器**（✅ 已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content` / `:disabled` / `:enabled` / `:checked` / `::placeholder`（含复选框控件），见 §18.7） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
+| **B3 文本细节**（✅ 已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break`（v20）、`word-spacing` / `tab-size` / `text-decoration-*`（v27，见 §18.7）） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
+| **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）、`background-image: url()` + `size/position/repeat`（§18.7）。**只剩 `filter`**（颜色矩阵可做，`blur()` 需离屏图层 —— 与 `rotate` 同级，单独立项） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
 | **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
 **另外两项单独立项**（成本与一批相当，但语义是"新子系统"）：

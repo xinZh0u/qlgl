@@ -125,6 +125,16 @@ ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len)
 ql_coord_t ql_font_line_width_ls(const QLFont *font, const char *text, int32_t len,
                                  ql_coord_t letter_spacing);
 
+/*
+ * 再加两样（B3 的 `word-spacing` / `tab-size`）：
+ *   - `word_spacing` 只加在**空格之后**（CSS 的 word-spacing 就是这么算的）；
+ *   - `tab_size` != 0 时，'\t' 按 `tab_size` 个空格计宽（而不是当作 0 宽字形）。
+ * 两样都为零时与 `ql_font_line_width_ls` 逐像素一致。
+ */
+ql_coord_t ql_font_line_width_ls2(const QLFont *font, const char *text, int32_t len,
+                                  ql_coord_t letter_spacing, ql_coord_t word_spacing,
+                                  uint8_t tab_size);
+
 /* 行数：'\n' 分隔，空串算 1 行 */
 uint32_t ql_font_line_count(const char *text, int32_t len);
 

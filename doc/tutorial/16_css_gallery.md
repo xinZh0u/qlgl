@@ -320,7 +320,54 @@ calc 字节码 35 条（每条 4 字节）
 - **`box-shadow` 最多两层**，多写的会**报错**而不是静默丢弃 —— 少一层阴影
   在界面上很难发现，宁可构建期就炸。
 
-## 11. 这几个例程查出了什么
+## 11. `26_css_states`：状态选择器
+
+<img src="../img/26-css-states.png" alt="禁用按钮变灰、输入框 disabled 外观、复选框勾选/禁用、enabled 高亮、占位文字斜体灰" width="420">
+
+```css
+.btn:disabled { background-color: #2A3442; color: #6C7783; }
+.inp:disabled { background-color: #141B24; color: #66707C; }
+.cb:checked   { background-color: #2E6BE6; }
+.chip:enabled { color: #7CE0FF; border-color: #2E6BE6; }
+.inp::placeholder { color: #5E6B7A; font-style: italic; }
+```
+
+点一下复选框，`:checked` 立刻生效；禁用的输入框点了不出光标（也拿不到焦点）。
+
+## 12. `27_css_text2`：词间距 / 制表符 / 装饰线
+
+<img src="../img/27-css-text2.png" alt="word-spacing 三种取值、tab-size 2 与 8、下划线/上划线/删除线、solid/double/dotted/dashed、粗细颜色与偏移" width="420">
+
+```css
+.p  { word-spacing: 6px; }
+pre { tab-size: 4; }
+.u  { text-decoration: underline; text-decoration-thickness: 2px;
+      text-decoration-color: #38BDF8; }
+.s2 { text-decoration: underline; text-decoration-style: dotted; }
+.o  { text-decoration: overline; }
+.d  { text-underline-offset: 6px; }
+```
+
+装饰线的四种形态都是 `fill_rect` 拼出来的，所以两条后端逐像素一致。
+
+## 13. `28_bg_image`：背景图与 size / position / repeat
+
+<img src="../img/28-bg-image.png" alt="平铺、cover、contain、24px 尺寸、三种 background-position、圆角与边框下的背景图" width="420">
+
+```css
+.tile    { background-image: url(checker); }
+.cover   { background-size: cover; }
+.contain { background-size: contain; background-repeat: no-repeat; }
+.px      { background-size: 24px 24px; }
+.pr      { background-size: 24px 24px; background-repeat: no-repeat;
+           background-position: right bottom; }
+.round   { background-size: cover; border-radius: 38px; }
+```
+
+资源与 `<img src>` 共用一张表：`ql_ui_register_image("checker", ...)` 填一次像素，
+背景与 `<img>` 都能用。
+
+## 14. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

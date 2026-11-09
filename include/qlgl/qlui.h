@@ -519,7 +519,13 @@ typedef struct {
      * 后三个是枚举，见下面 QL_UI_TEXT_* / QL_UI_OVERFLOW_* / QL_UI_WORDBREAK_*。
      */
     int16_t     letter_spacing;  /* 字间距（px，可为负） */
+    int16_t     word_spacing;    /* 词间距（px，可为负）：加在**空格之后**（B3） */
     int16_t     text_indent;     /* 首行缩进（px） */
+    /*
+     * `tab-size`（B3）：制表符折算成几个空格。0 = 按 8 个空格（CSS 初值），
+     * 支持 1..32。只认"空格个数"写法；`tab-size: 20px` 报错（要量字体，不值得）。
+     */
+    uint8_t     tab_size;
     uint8_t     text_transform;  /* QL_UI_TEXT_* */
     uint8_t     text_overflow;   /* QL_UI_OVERFLOW_* */
     uint8_t     word_break;      /* QL_UI_WORDBREAK_* */
@@ -548,6 +554,19 @@ typedef struct {
     uint8_t     align_content;   /* QLUIAlignContent */
     /* `cursor`：命中测试时算出来的指针形状提示（见 ql_ui_cursor） */
     uint8_t     cursor;          /* QLUICursor */
+    /*
+     * `text-decoration-*`（B3）。`font_flags` 里的 UNDERLINE / LINE_THROUGH /
+     * OVERLINE 是"画哪几条线"，这里决定**线长什么样**：
+     *   deco_style     : 0 solid、1 double、2 dotted、3 dashed（QLUIBorderStyle 同序）
+     *   deco_thickness : 线宽 px（0 = 1px）
+     *   deco_offset    : 下划线额外下移 px（可为负，`text-underline-offset`）
+     *   deco_alpha     : 0 = 用文字色；>0 = 用 deco_color 且按这个 alpha
+     */
+    uint8_t     deco_style;
+    int8_t      deco_thickness;
+    int8_t      deco_offset;
+    uint8_t     deco_alpha;
+    uint32_t    deco_color;
     /* `user-select: none` → 1：这一块里的文字不可被选中 */
     uint8_t     user_select_none;
     /* `scroll-behavior: smooth` → 1：程序化滚动用动画过渡（宿主逐帧驱动） */
@@ -593,6 +612,17 @@ typedef struct {
      * 单位与其它长度一致（px / 百分比，百分比相对于"多出来的余量"）。
      */
     QLUILength  object_position[2];
+
+    /* ----- `background-image: url()`（B4 收尾，blob v27） ----- */
+    /*
+     * 资源名在**文本池**里的下标（0xFFFF = 没有背景图）。
+     * 与 `<img src>` 共用同一套资源表：`ql_ui_register_image()` 按名字填像素。
+     */
+    uint16_t    bg_image;
+    uint8_t     bg_size_mode;   /* 0 = 用 bg_size、1 = cover、2 = contain */
+    uint8_t     bg_repeat;      /* 0 repeat、1 no-repeat、2 repeat-x、3 repeat-y */
+    QLUILength  bg_size[2];     /* 宽 / 高（auto = 保持比例） */
+    QLUILength  bg_pos[2];      /* 百分比（千分比）或 px */
 } QLUIStyle;
 
 /*
@@ -767,6 +797,15 @@ static inline uint8_t ql_ui_style_overflow_y(const QLUIStyle *s)
 #define QL_UI_FONT_ITALIC         0x02u   /* font-style: italic：合成斜体 */
 #define QL_UI_FONT_UNDERLINE      0x04u   /* text-decoration: underline */
 #define QL_UI_FONT_LINE_THROUGH   0x08u   /* text-decoration: line-through */
+/*
+ * `text-decoration: overline`（B3）：
+ * 单独占一个宏、存在 deco_style 的高位（font_flags 的低 4 位已经满了）。
+ */
+#define QL_UI_DECO_OVERLINE       0x80u   /* deco_style 的高位 */
+#define QL_UI_DECO_LINE_MASK      0x7Fu
+
+/* `background-image` 缺省：没有背景图 */
+#define QL_UI_NO_IMAGE            0xFFFFu
 
 /*
  * `object-fit`（只有 `<img>` 有意义）。为了**不撑大 QLUIStyle**（120 字节的预算），
@@ -883,6 +922,9 @@ typedef struct {
 /* QLUINode.flags 的位 */
 #define QL_UI_NODE_PASSWORD  0x01u   /* <input type="password">：显示成圆点 */
 #define QL_UI_NODE_OPEN      0x02u   /* <details open>：展开状态 */
+#define QL_UI_NODE_CHECKBOX  0x04u   /* <input type="checkbox">（B2） */
+#define QL_UI_NODE_CHECKED   0x08u   /* 初始勾选：checked / selected 属性（B2） */
+#define QL_UI_NODE_DISABLED  0x10u   /* disabled 属性（B2） */
 
 typedef struct {
     uint16_t tag;          /* QLUITag */
@@ -895,6 +937,12 @@ typedef struct {
     uint16_t style_hover;
     uint16_t style_active;
     uint16_t style_focus;
+    /* B2：`:disabled` / `:checked` 的变体，以及 `::placeholder` 的样式 */
+    uint16_t style_disabled;
+    uint16_t style_checked;
+    uint16_t style_placeholder;
+    /* `placeholder` 属性的文案（文本池下标，0xFFFF = 没有） */
+    uint16_t placeholder;
     uint8_t  flags;        /* QL_UI_NODE_* */
     uint8_t  reserved;
 } QLUINode;
@@ -1075,6 +1123,8 @@ enum {
     QL_UI_RT_DIRTY   = 1u << 2,
     QL_UI_RT_FOCUS   = 1u << 3,
     QL_UI_RT_OPEN    = 1u << 4,   /* <details> 当前的展开状态（从 QL_UI_NODE_OPEN 初始化） */
+    QL_UI_RT_CHECKED = 1u << 5,   /* 复选/单选/选项当前的勾选状态（B2） */
+    QL_UI_RT_DISABLED = 1u << 6,  /* 禁用：不接焦点、不接输入（B2） */
 };
 
 /*
@@ -1513,12 +1563,14 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
 /*
+ * 27: + word-spacing / tab-size / text-decoration-*（B3）、
+ *     :disabled / :checked / ::placeholder（B2），QLUINode 20 → 28
  * 26: 四边独立 border-*（宽/样式/色）、四角 radius、box-shadow 两层 + inset、
  *     text-shadow、image-rendering、scrollbar-width/color、object-position
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    26u
+#define QL_UI_BLOB_VERSION    27u
 
 typedef struct {
     uint32_t magic;

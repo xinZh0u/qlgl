@@ -1,0 +1,54 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">B2 状态选择器：:disabled / :checked / ::placeholder</div>
+    <div class="badge">纯 CSS</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. :disabled —— 同样的按钮，禁用态自动变灰、不再响应</div>
+    <div class="row">
+      <button class="btn">可用的按钮</button>
+      <button class="btn" disabled>禁用的按钮</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. 输入框：可编辑 / disabled / readonly 外观</div>
+    <div class="row col">
+      <input id="n1" class="inp" type="text" placeholder="点我，占位文字会消失">
+      <input id="n2" class="inp" type="text" value="disabled 状态" disabled>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. :checked —— 点一下复选框，勾选样式立刻生效</div>
+    <div class="row">
+      <input id="c1" class="cb" type="checkbox">
+      <label class="lbl">点左边的方框</label>
+      <input id="c2" class="cb" type="checkbox" checked>
+      <label class="lbl">默认勾选</label>
+      <input id="c3" class="cb" type="checkbox" checked disabled>
+      <label class="lbl">勾选但禁用</label>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. :enabled —— 只有可用的那一个高亮</div>
+    <div class="row">
+      <input id="e1" class="chip" type="text" value="enabled">
+      <input id="e2" class="chip" type="text" value="disabled" disabled>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. ::placeholder —— 占位文字用独立样式（灰、斜体）</div>
+    <div class="row">
+      <input id="p1" class="inp wide" type="text" placeholder="搜索关键字…">
+    </div>
+  </div>
+
+  <div class="note">
+    这一页所有变化都由 CSS 完成：`:disabled` / `:checked` 在构建期各编出一份样式变体，
+    运行期只切换一个状态位。::placeholder 也是构建期把声明合并进"占位样式"。
+  </div>
+</div>

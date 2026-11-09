@@ -82,6 +82,9 @@ cmake --build build -j
 | `23_calc` | `calc()` / `min()` / `max()` / `clamp()`：三等分、随视口伸缩的条、绝对定位居中（编译成字节码，布局期求值） |
 | `24_b5` | B5 十二件：`visibility` / `pointer-events` / `align-self` / `order` / `flex-flow` / `align-content` / `overflow-x/y` / `sticky` / `inset` / `cursor` / `user-select` / `scroll-behavior` |
 | `25_b4` | B4 绘制细节：`border-style` sol/dash/dot、四边独立 `border-*`、四角 `radius`、两层 + `inset` 阴影、`text-shadow`、`outline`、`scrollbar-*` |
+| `26_css_states` | B2：`:disabled` / `:enabled` / `:checked` / `::placeholder`（含复选框控件，纯 CSS 状态） |
+| `27_css_text2` | B3：`word-spacing` / `tab-size` / `text-decoration-*`（line/style/color/thickness/underline-offset） |
+| `28_bg_image` | B4：`background-image: url()` + `background-size/-position/-repeat`（与 `<img>` 共用资源表） |
 
 ## 构建与测试
 

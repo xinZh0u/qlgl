@@ -49,6 +49,9 @@ set(QL_EXAMPLES
     23_calc
     24_b5
     25_b4
+    26_css_states
+    27_css_text2
+    28_bg_image
 )
 
 foreach(e ${QL_EXAMPLES})

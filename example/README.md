@@ -82,6 +82,9 @@ python3 tools/qltext/qltext.py cc \
 | `23_calc` | `calc()` / `min()` / `max()` / `clamp()`：三等分、clamp 条、绝对定位居中（后缀字节码 + 布局期求值） |
 | `24_b5` | B5 十二件：占位隐藏、装饰层不挡点击、单项/多行对齐、视觉重排、sticky 表头、分轴裁剪 |
 | `25_b4` | B4 绘制细节：边框样式、四边/四角、两层与 inset 阴影、text-shadow、outline 偏移、滚动条宽度与颜色 |
+| `26_css_states` | B2 状态：禁用变灰、复选框勾选、占位文字样式（`:disabled` / `:checked` / `::placeholder`） |
+| `27_css_text2` | B3 文本：词间距、制表符宽度、装饰线的形态/粗细/颜色/偏移 |
+| `28_bg_image` | B4 背景图：cover/contain/具体尺寸、九宫位置、平铺与圆角裁切 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 
