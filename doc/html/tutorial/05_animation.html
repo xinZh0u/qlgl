@@ -372,16 +372,22 @@ t=100ms  在动 3 个  脏区 3 块
 <span class="p">}</span>
 </code></pre></div>
 
-<h3 id="3d">假 3D 翻转</h3>
+<h3 id="3d-2d-scalex-360">3D 翻转（用 2D 的 scaleX 做的 360°）</h3>
 <div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">keyframes</span><span class="w"> </span><span class="nt">flip-x</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nt">0</span><span class="o">%</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
-<span class="w">  </span><span class="nt">50</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 压到零宽 = 看不见 */</span>
+<span class="w">  </span><span class="nt">25</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">      </span><span class="c">/* 压到零宽 = 侧面对着你 */</span>
+<span class="w">  </span><span class="nt">50</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">-1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 负值 = **水平镜像**（背面） */</span>
+<span class="w">  </span><span class="nt">75</span><span class="o">%</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
 <span class="w">  </span><span class="nt">100</span><span class="o">%</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">scaleX</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 
-<p>这是真的"翻面"观感，但完全没有 3D 变换。想做"正面翻到背面"（换一张脸），
-用两个元素错开 <code>animation-delay</code>：</p>
+<p>关键是<strong>负值</strong>：<code>scaleX(-1)</code> 不是"缩到 0 再缩回来"，而是镜像 —— 文字反着写，
+就是背面的样子。整段动画高度<strong>全程不变</strong>，只有宽度在变（这就是真实翻转的视觉）。</p>
+<p><code>scaleX</code> 的语义是<strong>几何压扁</strong>：字形的宽度按比例压，高度一个像素都不动。
+（顺带一提：<code>scale(0.5)</code> 那种等比缩放，接了矢量字体会换一个更小的字号重新光栅化，
+所以放大时依然清晰；位图字体只能几何缩放。）</p>
+<p>想做"正面翻到背面"（换一张脸），用两个元素错开 <code>animation-delay</code>：</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">front</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">flip</span><span class="o">-</span><span class="n">x</span><span class="w"> </span><span class="mi">900</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">back</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">flip</span><span class="o">-</span><span class="n">x</span><span class="w"> </span><span class="mi">900</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="w"> </span><span class="kc">infinite</span><span class="p">;</span><span class="w"> </span><span class="k">animation-delay</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>

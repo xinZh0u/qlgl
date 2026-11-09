@@ -87,9 +87,21 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
          * 忘了这一句的表现是"窗口能开、能滚、就是点不动也打不了字"。
          */
         ql_ui_attach_input(ui);
+        /* Ctrl+C / Ctrl+V 走 X11 剪贴板（协议是异步的，内容下一帧才到） */
+        ql_gfx_gl_attach_clipboard(gfx, ui);
         QLDraw2D *d2d = ql_gfx_gl_draw(gfx);
         long frame = 0;
         while (ql_gfx_gl_poll(gfx)) {
+            /*
+             * 窗口被拖动缩放：重新按新尺寸布局。
+             * 后端只报告"画布变了"，重排是界面层的事。
+             */
+            if (ql_gfx_gl_resize_pending(gfx)) {
+                ql_coord_t cw = w, ch = h;
+                ql_gfx_gl_size(gfx, &cw, &ch);
+                if (cw > 0 && ch > 0)
+                    ql_ui_layout(ui, cw, ch);
+            }
             ql_input_dispatch();
             (void)ql_ui_anim_tick(ui, ql_anim_now_ms());
             ql_gfx_gl_begin(gfx, 0x0B0E13);

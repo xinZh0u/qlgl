@@ -252,6 +252,21 @@ void ql_canvas_draw_glyph_ex(QLCanvas *canvas, const QLFont *font, const QLGlyph
                              ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
                              int italic, int bold);
 
+/*
+ * 带**水平 affine** 的字形绘制：`transform: scaleX(sx)` 用这个。
+ *
+ *   dst_x = pivot_x + (src_x - pivot_x) * x_fx / QL_SCALE_ONE
+ *
+ * `x_fx` 有符号（26.6 定点）：负值就是**水平镜像**（翻转动画的后半程）。
+ * 字形高度完全不变 —— 这就是"压扁"而不是"缩小"的关键。
+ * 采样是最近邻（目的列反查源列），所以压扁时会有横向抽样，与真实缩放一样会略糊。
+ */
+void ql_canvas_draw_glyph_xf2(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                              ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
+                              int italic, int bold,
+                              ql_coord_t x_fx, ql_coord_t y_fx,
+                              ql_coord_t pivot_x, ql_coord_t pivot_y);
+
 /* 颜色按目标格式量化后的实际值（测试用：RGB565 会有精度损失） */
 ql_color_t ql_canvas_quantize(QLCanvas *canvas, ql_color_t color);
 

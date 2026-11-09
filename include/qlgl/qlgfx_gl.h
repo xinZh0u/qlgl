@@ -32,6 +32,17 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 void     ql_gfx_gl_destroy(QLGfxGL *gfx);
 
 /* 窗口模式：处理事件，返回 1=继续 0=窗口已关闭 */
+/*
+ * 窗口尺寸变化查询：`ql_gfx_gl_poll()` 里收到 ConfigureNotify 就置位。
+ * 取一次即清零；返回 1 时调用方应该按 `ql_gfx_gl_size()` 给的**CSS px** 重新
+ * `ql_ui_layout()` —— 重排是界面层的事，后端只负责报告"画布变了"。
+ */
+int  ql_gfx_gl_resize_pending(QLGfxGL *gfx);
+void ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
+
+/* 把 X11 剪贴板接到这个界面（Ctrl+C/X/V 生效）。可在窗口建好之后调一次。 */
+void ql_gfx_gl_attach_clipboard(QLGfxGL *gfx, QLUIRoot *ui);
+
 int      ql_gfx_gl_poll(QLGfxGL *gfx);
 
 /* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */

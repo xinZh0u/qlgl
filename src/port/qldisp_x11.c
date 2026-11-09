@@ -303,7 +303,7 @@ int ql_disp_x11_poll(QLDispDriver *driver)
 
         default:
             /* 其余输入事件交给输入系统；Esc/关闭改由应用决定 */
-            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx);
+            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx, NULL);
             break;
         }
     }

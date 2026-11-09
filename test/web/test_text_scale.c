@@ -81,6 +81,13 @@ QL_TEST_BEGIN("test_text_scale")
             (void)ql_ui_anim_tick(ui, k_ts[i]);
             if (!ink_y_range(ui, d, &ymin, &ymax))
               continue;   /* 极窄的那几帧可能一个像素都不剩，跳过 */
+            /*
+             * 压到只剩一两个像素宽时，墨迹的竖直范围就只反映"幸存的那几列"
+             * （横画没了 → bbox 变矮），那是几何重采样的正常结果，不是上下漂。
+             * 只在"还看得出是一行字"的帧上比竖直中心。
+             */
+            if (ymax - ymin < 6)
+              continue;
             printf("    t=%-5u 文字 y = [%d, %d]\n", k_ts[i], ymin, ymax);
             /*
              * 只要求"垂直中心不漂"：等比缩小会让墨迹范围整体变窄，

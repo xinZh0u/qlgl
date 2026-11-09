@@ -705,7 +705,7 @@ ql_ui_scroll_by() → node->scroll_y → ql_ui_layout() → 布局末尾 transla
 | 可滚范围 | `apply_scroll()` 末尾 | `ext - content`，`ext` 由子节点 `border_box` 外沿 + margin 求出 |
 | 夹紧 | 同上 | 范围变化（窗口缩放、内容变长）时自动夹回，不会卡在越界位置 |
 | 滚动条 | `draw_scrollbar()` | 覆盖式 4px 滑块，不占布局；`hidden` 不画 |
-| 滚轮 | `ql_ui_input_event` 的 `QL_INPUT_WHEEL` | 命中 → 往上找最近可滚祖先 |
+| 滚轮 | `ql_ui_input_event` 的 `QL_INPUT_WHEEL` | 命中 → 往上找最近可滚祖先；**一格 = `QL_CFG_UI_WHEEL_STEP_PX`（默认 50px ≈ 3 行）**，滚到底继续交给父级 |
 | 拖滚动条 | `ql_ui_pointer_down/move/up` | 右侧 10px 热区；拖动**不算点击**（`scroll_drag` 非空直接吞掉） |
 
 **两个坑**

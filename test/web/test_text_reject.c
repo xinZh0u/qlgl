@@ -44,7 +44,7 @@ static const RejectCase k_cases[] = {
     { 0, "<div id='a'></div>",
       "#a { transform: rotate(30deg) }", "t:style[0]: transform 只支持 translate()/scale()/scaleX()/scaleY()（收到 'ro" },
     { 0, "<div id='a'></div>",
-      "#a { transform: scale(-1) }", "t:style[0]: scale 倍数必须在 0~32.767（收到 'scale(-1)'）" },
+      "#a { transform: scale(40) }", "t:style[0]: scale 倍数必须在 -32.767~32.767（收到 'scale(40)'）" },
     { 0, "<div id='a'></div>",
       "#a { backdrop-filter: blur(0px) }", "t:style[0]: backdrop-filter: blur 半径必须在 1~64px" },
     { 0, "<div id='a'></div>",

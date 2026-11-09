@@ -49,6 +49,10 @@ static QLUIRoot *mk(const char *css, QLUIDoc **out_doc)
     return ui;
 }
 
+/* 一格滚多少像素（与 qlui.c 用同一个宏） */
+#define STEP QL_CFG_UI_WHEEL_STEP_PX
+
+/* dx/dy 是**格数**（X11 Button4/5 一次一格），不是像素 */
 static void wheel(QLUIRoot *ui, int x, int y, int dx, int dy)
 {
     QLInputEvent ev;
@@ -97,7 +101,7 @@ QL_TEST_BEGIN("test_scroll")
             QL_CHECK_EQ((int)ui->nodes[1].scroll_max_y, 0);
             /* 滚轮不起作用：内容位置不变 */
             const int y0 = (int)ql_ui_node_rect(&ui->nodes[2]).y;
-            wheel(ui, 50, 50, 0, 30);
+            wheel(ui, 50, 50, 0, 3);
             QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[2]).y, y0);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
@@ -111,12 +115,13 @@ QL_TEST_BEGIN("test_scroll")
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
             QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[2]).y, 0);
-            wheel(ui, 50, 50, 0, 20);
-            QL_CHECK_EQ((int)ui->nodes[1].scroll_y, 20);
-            QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[2]).y, -20);
-            /* 滚轮往上 = 往回滚 */
-            wheel(ui, 50, 50, 0, -5);
-            QL_CHECK_EQ((int)ui->nodes[1].scroll_y, 15);
+            /* 一格 = STEP 像素（浏览器一个量级）；之前把格数当像素用，一格只走 1px */
+            wheel(ui, 50, 50, 0, 1);
+            QL_CHECK_EQ((int)ui->nodes[1].scroll_y, STEP);
+            QL_CHECK_EQ((int)ql_ui_node_rect(&ui->nodes[2]).y, -STEP);
+            /* 往回滚一格：回到 0，并夹紧不出现负数 */
+            wheel(ui, 50, 50, 0, -1);
+            QL_CHECK_EQ((int)ui->nodes[1].scroll_y, 0);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
@@ -195,8 +200,9 @@ QL_TEST_BEGIN("test_scroll")
             ql_ui_layout(ui, W, H);
             QL_CHECK(ql_ui_scrollable(&ui->nodes[1]));
             QL_CHECK_EQ((int)ui->nodes[1].scroll_max_x, 300 - 120);
-            wheel(ui, 50, 50, 60, 0);
-            QL_CHECK_EQ((int)ui->nodes[1].scroll_x, 60);
+            /* 横向滚轮同样是"格"：1 格 = 60px（这里 max_x 正好 180，够滚） */
+            wheel(ui, 50, 50, 1, 0);
+            QL_CHECK_EQ((int)ui->nodes[1].scroll_x, STEP);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
@@ -262,9 +268,9 @@ QL_TEST_BEGIN("test_scroll")
         if (doc != NULL) {
             QLUIRoot *ui = ql_ui_build(doc);
             ql_ui_layout(ui, W, H);
-            wheel(ui, 50, 20, 0, 10);
+            wheel(ui, 50, 20, 0, 1);
             /* 指针落在 inner 上 → 滚 inner（它也在视口内且可滚） */
-            QL_CHECK(ui->nodes[2].scroll_y == 10 || ui->nodes[1].scroll_y == 10);
+            QL_CHECK(ui->nodes[2].scroll_y == STEP || ui->nodes[1].scroll_y == STEP);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }

@@ -139,6 +139,19 @@
 #ifndef QL_CFG_UI_TEXTAREA_MAX
 #define QL_CFG_UI_TEXTAREA_MAX      2
 #endif
+/*
+ * 滚轮"一格"滚多少像素。
+ *
+ * `QLInputEvent.dy` 是**格数**（X11 的 Button4/5 一次就是一格），不是像素 ——
+ * 以前直接当成像素用了，于是转一格才动 1px，得把滚轮转飞才看得见一行。
+ *
+ * 默认 50 ≈ 3 行（16px 行高），与 Firefox 的 "3 lines per notch" 同量级；
+ * Chrome 是 100px。想要更快/更慢改这一个数就行。
+ */
+#ifndef QL_CFG_UI_WHEEL_STEP_PX
+#define QL_CFG_UI_WHEEL_STEP_PX      50
+#endif
+
 #ifndef QL_CFG_UI_TEXTAREA_LEN
 #define QL_CFG_UI_TEXTAREA_LEN      512
 #endif

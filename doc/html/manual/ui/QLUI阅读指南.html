@@ -1164,7 +1164,7 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <tr>
 <td>滚轮</td>
 <td><code>ql_ui_input_event</code> 的 <code>QL_INPUT_WHEEL</code></td>
-<td>命中 → 往上找最近可滚祖先</td>
+<td>命中 → 往上找最近可滚祖先；<strong>一格 = <code>QL_CFG_UI_WHEEL_STEP_PX</code>（默认 50px ≈ 3 行）</strong>，滚到底继续交给父级</td>
 </tr>
 <tr>
 <td>拖滚动条</td>

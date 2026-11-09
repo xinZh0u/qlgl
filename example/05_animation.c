@@ -19,7 +19,7 @@ static const char *k_html =
     "  <div class=\"slide\">滑入</div>"
     "  <div class=\"pulse\">脉冲</div>"
     "  <div class=\"flip\">翻转</div>"
-    "  <div class=\"hint\">平移 · 颜色循环 · scaleX 假翻转</div>"
+    "  <div class=\"hint\">平移 · 颜色循环 · scaleX 360° 翻转</div>"
     "</div>";
 
 static const char *k_css =
@@ -34,7 +34,7 @@ static const char *k_css =
     ".pulse { left: 112px; background-color: #2FB8A6;"
     "         animation: pulse 1400ms ease-in-out infinite; }"
     ".flip  { left: 208px; background-color: #7A5AF8;"
-    "         animation: flip-x 1400ms ease-in-out infinite; }"
+    "         animation: flip-x 2800ms linear infinite; }"
 
     ".hint { position: absolute; left: 16px; top: 112px; font-size: 11px;"
     "        color: #6C7783; }"
@@ -48,9 +48,15 @@ static const char *k_css =
     "  50%  { background-color: #E6C34A; }"
     "  100% { background-color: #2FB8A6; }"
     "}"
+    /*
+     * 真正的 360° 翻转：1 → 0 → -1 → 0 → 1。
+     * 负值的半程是**镜像**（字反着写），高度全程不变。
+     */
     "@keyframes flip-x {"
     "  0%   { transform: scaleX(1); }"
-    "  50%  { transform: scaleX(0); }"
+    "  25%  { transform: scaleX(0); }"
+    "  50%  { transform: scaleX(-1); }"
+    "  75%  { transform: scaleX(0); }"
     "  100% { transform: scaleX(1); }"
     "}";
 

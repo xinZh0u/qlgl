@@ -822,8 +822,12 @@ static int tf_scale(const char *token, const char *where, const char *fn, int *o
         return 0;
     }
     long sc = py_round(v * 1000.0);
-    if (sc < 0 || sc > 32767) {
-        set_error("%s: scale 倍数必须在 0~32.767（收到 '%s'）", where, fn);
+    /*
+     * 允许**负值**：`scaleX(-1)` 就是水平镜像，翻转动画的后半程靠它。
+     * 0 也合法（压成一条线）。范围按 int16 卡在 ±32.767。
+     */
+    if (sc < -32767 || sc > 32767) {
+        set_error("%s: scale 倍数必须在 -32.767~32.767（收到 '%s'）", where, fn);
         return 0;
     }
     *out = (int)sc;
@@ -4745,8 +4749,8 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
             k->offset = 0;
             k->ease = QL_UI_KF_EASE_INHERIT;
             k->props = (uint8_t)(props | KF_BASE);
-            k->sc_x = -1;
-            k->sc_y = -1;
+            k->sc_x = QL_UI_KF_UNSET;
+            k->sc_y = QL_UI_KF_UNSET;
             k->radius = -1;
             k->clip_r = -1;
             count++;
@@ -4916,8 +4920,8 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
             k->offset = 1000;
             k->ease = QL_UI_KF_EASE_INHERIT;
             k->props = (uint8_t)(props | KF_BASE);
-            k->sc_x = -1;
-            k->sc_y = -1;
+            k->sc_x = QL_UI_KF_UNSET;
+            k->sc_y = QL_UI_KF_UNSET;
             k->radius = -1;
             k->clip_r = -1;
             count++;

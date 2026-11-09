@@ -151,6 +151,16 @@ struct QLDraw2D {
     ql_coord_t elem_y_fx;   /* 垂直缩放（26.6）；与 x 不同 = 非等比（假翻转） */
     ql_coord_t elem_px;     /* 缩放中心（CSS px） */
     ql_coord_t elem_py;
+    /*
+     * 文本要不要走**几何变换**（逐字形缩放/镜像）。
+     *
+     * 由 `draw_text` 在排版前决定，emit 时读：
+     *   · 等比正缩放且**拿到了重取字号的字体**（矢量字体）→ 0，走"换字号"，清晰；
+     *   · 其余（非等比、镜像、或位图字体无法重取字号）→ 1，逐字形做 affine。
+     * 位图字体必须走几何路径，否则 `scale(0.5)` 只会缩盒子、字一个像素都不缩。
+     */
+    int        text_geo;
+    ql_coord_t text_px, text_py;   /* 几何变换的中心（设备像素） */
 
     void *user;   /* 后端私有数据 */
 };
@@ -265,9 +275,12 @@ static inline void ql_draw2d_set_elem_scale_xy(QLDraw2D *d2d, ql_coord_t fx,
 {
     if (d2d == NULL)
         return;
-    /* 0 是合法值：翻转动画的中间帧就是把元素压到零宽 */
-    d2d->elem_x_fx = (fx >= 0) ? fx : QL_SCALE_ONE;
-    d2d->elem_y_fx = (fy >= 0) ? fy : QL_SCALE_ONE;
+    /*
+     * 0 是合法值（压到零宽）；**负值也是**（镜像，翻转动画的第二半程）。
+     * 这里只挡"非法"，不挡符号 —— 符号就是翻转的方向。
+     */
+    d2d->elem_x_fx = fx;
+    d2d->elem_y_fx = fy;
     d2d->elem_px = px;
     d2d->elem_py = py;
 }

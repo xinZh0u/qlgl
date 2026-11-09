@@ -423,6 +423,9 @@ typedef struct {
 #define QL_UI_WS_WRAPS(v)       ((v) == QL_UI_WS_NORMAL || (v) == QL_UI_WS_PRE_WRAP || \
                                  (v) == QL_UI_WS_PRE_LINE)
 
+/* QLUIKeyframe 里"这个关键帧没设置该属性"的哨兵（不能与合法值撞车） */
+#define QL_UI_KF_UNSET   ((int16_t)-32768)
+
 /* 字体变体与装饰线：QLUIStyle.font_flags 的位 */
 #define QL_UI_FONT_BOLD           0x01u   /* font-weight >= 600：合成加粗 */
 #define QL_UI_FONT_ITALIC         0x02u   /* font-style: italic：合成斜体 */
@@ -502,7 +505,14 @@ typedef struct {
     uint32_t border_color;
     int16_t  tf_x;        /* transform: translate 的像素偏移 */
     int16_t  tf_y;
-    int16_t  sc_x;        /* transform: scale，千分比（负 = 用基础值） */
+    /*
+     * transform: scale，千分比。`QL_UI_KF_UNSET` = 这个关键帧没写、用基础值。
+     *
+     * **曾经用 -1 当"未设置"**，但负缩放自 P4c 之后是合法值（`scaleX(-1)` =
+     * 水平镜像，翻转动画靠它），两者撞车 —— 表现就是镜像那一帧被当成"没写"。
+     * 所以哨兵值换成 int16 的最小值（-32768），它不在合法范围（±32767）里。
+     */
+    int16_t  sc_x;
     int16_t  sc_y;
     int16_t  radius;      /* border-radius（负 = 用基础值） */
     int16_t  clip_r;      /* clip-path 千分比（负 = 用基础值） */
@@ -796,6 +806,26 @@ typedef void (*ql_ui_area_cb)(QLUIRoot *ui, int index, void *user);
 typedef void (*ql_ui_input_cb)(QLUIRoot *ui, QLUINodeRT *node, const char *value,
                                void *user);
 
+/*
+ * 剪贴板：**平台后端接口**，和图像后端同一个形状。
+ *
+ * X11 的剪贴板是点对点的异步协议（粘贴要等对方回 SelectionNotify），
+ * 所以 `get_text` 返回 0 表示"还没到，下一帧再问" —— 界面层会记住这次粘贴，
+ * 在 `ql_ui_anim_tick()` 里重试。没装后端时 Ctrl+C/V 什么也不做（不报错）。
+ */
+typedef struct {
+    void (*set_text)(const char *utf8, void *user);
+    /* 1 = 内容已就绪（写进 buf）；0 = 还没到（内部已发请求，稍后再问） */
+    int  (*get_text)(char *buf, size_t cap, void *user);
+} QLUIClipboard;
+
+void        ql_ui_set_clipboard(QLUIRoot *ui, const QLUIClipboard *cb, void *user);
+
+/* 复制 / 剪切 / 粘贴（操作的是当前焦点输入框的选区；没有选区时复制全文） */
+ql_err_t    ql_ui_clipboard_copy(QLUIRoot *ui);
+ql_err_t    ql_ui_clipboard_cut(QLUIRoot *ui);
+ql_err_t    ql_ui_clipboard_paste(QLUIRoot *ui);
+
 struct QLUIRoot {
     const QLUIDoc *doc;
     uint8_t        owns_doc;     /* 1 = ql_ui_free 时一并释放 doc（ql_ui_load_file 用） */
@@ -841,6 +871,10 @@ struct QLUIRoot {
     int            input_drag;       /* 正在拖动选字 */
     ql_ui_input_cb input_cb;
     void          *input_user;
+    /* 剪贴板后端（可为 NULL：Ctrl+C/V 就什么也不做） */
+    const QLUIClipboard *clipboard;
+    void          *clipboard_user;
+    uint8_t        paste_pending;    /* 已发出粘贴请求，等内容到（异步） */
     ql_ui_area_cb  area_cb;          /* 热区点击回调（可为 NULL） */
     void          *area_user;
 };

@@ -8,6 +8,8 @@
 #ifndef QLGL_PORT_QLINPUT_X11_H
 #define QLGL_PORT_QLINPUT_X11_H
 
+#include <string.h>
+
 static uint32_t ql_x11_key_from_keysym(KeySym sym)
 {
     /* 可打印字符直接用 ASCII；X11 的 keysym 对 ASCII 区间就是 ASCII 值 */
@@ -75,7 +77,44 @@ static inline int32_t ql_x11_css(ql_coord_t v, ql_coord_t scale_fx)
     return (scale_fx > 0 && scale_fx != QL_SCALE_ONE) ? ql_unscale_len(v, scale_fx) : v;
 }
 
-static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t scale_fx)
+/*
+ * 把一段 UTF-8 文本推成若干条 QL_INPUT_TEXT。
+ *
+ * `QLInputEvent.text` 只有 8 字节（含结尾 0），而输入法一次"提交"可能是
+ * 一串汉字（"你好世界" = 12 字节）。所以按**码点边界**切片，别把一个汉字劈成两半。
+ */
+static void ql_x11_push_text_utf8(const char *s)
+{
+    if (s == NULL)
+        return;
+    size_t i = 0;
+    while (s[i] != '\0') {
+        char piece[8];
+        size_t n = 0;
+        while (s[i] != '\0' && n + 4 < sizeof(piece)) {
+            const unsigned char c = (unsigned char)s[i];
+            size_t clen = (c < 0x80u) ? 1u : ((c >= 0xF0u) ? 4u
+                                              : ((c >= 0xE0u) ? 3u : 2u));
+            if (n + clen >= sizeof(piece))
+                break;
+            size_t k = 0;
+            while (k < clen && s[i + k] != '\0')
+                k++;
+            if (k < clen)
+                break;
+            memcpy(piece + n, s + i, clen);
+            n += clen;
+            i += clen;
+        }
+        if (n == 0)
+            break;
+        piece[n] = '\0';
+        (void)ql_input_push_text(piece);
+    }
+}
+
+static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t scale_fx,
+                                     XIC xic)
 {
     int is_wheel;
     int32_t wheel;
@@ -144,14 +183,31 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
              * XLookupString 给的是 Latin-1；CJK 需要 XIM（本库还没接）。
              */
             if ((mods & (QL_MOD_CTRL | QL_MOD_ALT)) == 0) {
-                char buf[8];
+                char buf[64];
                 KeySym dummy = NoSymbol;
-                const int n = XLookupString(&ev->xkey, buf, (int)sizeof(buf) - 1,
-                                            &dummy, NULL);
+                int n = 0;
+                if (xic != NULL) {
+                    /*
+                     * XIM 路径：走 Xutf8LookupString 才能拿到输入法提交的
+                     * 中文/日文（例如 fcitx5 的"nihao → 你好"）。
+                     * status 告诉我们这次是按键、是字符、还是两者都有。
+                     */
+                    Status st = 0;
+                    n = Xutf8LookupString(xic, &ev->xkey, buf, (int)sizeof(buf) - 1,
+                                          &dummy, &st);
+                    if (st != XLookupChars && st != XLookupBoth &&
+                        st != XLookupKeySym)
+                        n = 0;
+                    if (st == XBufferOverflow)
+                        n = 0;   /* 一次提交超过 63 字节：宁可丢，也不截半个字 */
+                } else {
+                    n = XLookupString(&ev->xkey, buf, (int)sizeof(buf) - 1,
+                                      &dummy, NULL);
+                }
                 if (n > 0 && (unsigned char)buf[0] >= 0x20u &&
                     (unsigned char)buf[0] != 0x7Fu) {
                     buf[n] = '\0';
-                    ql_input_push_text(buf);
+                    ql_x11_push_text_utf8(buf);
                 }
             }
             if (key != QL_KEY_NONE)

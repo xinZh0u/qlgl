@@ -986,6 +986,13 @@ int      ql_ui_scrollable(const QLUINodeRT *node);
 
 `scroll_to` 只设状态（**需要自己再调一次 `ql_ui_layout`**），`scroll_by` 内部重排并标脏。
 
+**滚轮的单位是"格"，不是像素。** `QLInputEvent.dy` 是格数（X11 的 Button4/5 一次一格），
+`ql_ui_input_event` 会乘上 `QL_CFG_UI_WHEEL_STEP_PX`（默认 **50px**，约 3 行，
+与 Firefox 同量级；Chrome 是 100px）。想更快/更慢改这一个宏。
+
+滚到头之后**继续往上滚父级容器**（最多 8 层），与浏览器一致：
+内层列表到底了，整页接着滚。
+
 ### 焦点
 
 ```c
@@ -995,6 +1002,29 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 
 `Tab` / `Shift+Tab` 在 `input` / `textarea` / `select` / `button` 之间按树序循环。
 焦点只点亮 `QL_UI_RT_FOCUS`（`:focus` 样式靠它），**不影响布局**。
+
+### 剪贴板
+
+```c
+typedef struct {
+    void (*set_text)(const char *utf8, void *user);
+    int  (*get_text)(char *buf, size_t cap, void *user);  /* 0 = 还没到 */
+} QLUIClipboard;
+
+void     ql_ui_set_clipboard(QLUIRoot *ui, const QLUIClipboard *cb, void *user);
+ql_err_t ql_ui_clipboard_copy(QLUIRoot *ui);    /* 焦点输入框的选区；无选区复制全文 */
+ql_err_t ql_ui_clipboard_cut(QLUIRoot *ui);
+ql_err_t ql_ui_clipboard_paste(QLUIRoot *ui);
+```
+
+`Ctrl+C` / `Ctrl+X` / `Ctrl+V` 在 `ql_input` 层就映射到这���个函数（X11 那边带 Ctrl 的
+组合**不产生文本事件**，所以不会打架）。没装后端时它们返回 `QL_ERR_UNSUPPORTED` 并**什么也不做**。
+
+**`get_text` 可以是异步的**：X11 的剪贴板是点对点协议（要等对方的 `SelectionNotify`），
+所以第一次可能返回 0 —— 界面层会记住这次粘贴，在下一帧的 `ql_ui_anim_tick()` 里重试。
+主循环只要照常每帧调 `ql_ui_anim_tick()` 就行。
+
+X11 的后端已经接好：`ql_gfx_gl_attach_clipboard(gfx, ui)`（拿到 GL 窗口之后调一次）。
 
 ### 接上输入系统
 
@@ -1007,10 +1037,29 @@ void ql_ui_detach_input(void);
 找不到事件汇就会**静默丢掉** —— 表现是"窗口能开、能滚，但点不动、hover 不亮、
 也打不了字"。同一时刻只支持一个 `QLUIRoot`，析构前记得 `ql_ui_detach_input()`。
 
-**Linux 上的键盘**：X11 后端把可打印字符翻成 `QL_INPUT_TEXT`（界面层靠它插入字符），
+**Linux 上的键盘 / 输入法**：X11 后端把字符翻成 `QL_INPUT_TEXT`（界面层靠它插入字符），
 控制键翻成 `QLKey`；`Ctrl` / `Alt` 组合**不产生文本**（Ctrl+A 不该插入 `a`）。
-字符来自 `XLookupString`，只覆盖 Latin-1 —— **CJK 输入需要接 XIM 输入法，本库还没接**，
-所以中文只能由程序 `ql_ui_input_set_value()` 写入，不能从键盘打进去。
+
+中文/日文走 **XIM**：窗口创建时会 `XOpenIM` + `XCreateIC`，键事件先过 `XFilterEvent`
+（输入法正在组字时按键归 IME），字符用 `Xutf8LookupString` 取 UTF-8。
+这让 fcitx5 / ibus 的 XIM 服务能直接用。**两个前提**：
+
+1. 进程里要调过 `setlocale(LC_ALL, "")`（XIM 靠它选 locale 对应的输入法）；
+2. 系统装了 fcitx / ibus 且它们的 XIM 模块是开着的。
+
+拿不到 XIM 时不是错误，会静默降级成"只能打 Latin-1"（ASCII）。
+输入法一次提交超过 63 字节会被丢弃（不截半个汉字）—— 正常的词不会这么长。
+
+**窗口缩放**：`ql_gfx_gl_poll()` 收到 `ConfigureNotify` 会更新画布尺寸并置位，
+主循环里检查一次即可：
+
+```c
+if (ql_gfx_gl_resize_pending(gfx)) {
+    ql_coord_t cw, ch;
+    ql_gfx_gl_size(gfx, &cw, &ch);     /* CSS px */
+    ql_ui_layout(ui, cw, ch);          /* 重排是界面层的事 */
+}
+```
 
 ---
 

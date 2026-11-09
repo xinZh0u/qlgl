@@ -1791,6 +1791,11 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 </code></pre></div>
 
 <p><code>scroll_to</code> 只设状态（<strong>需要自己再调一次 <code>ql_ui_layout</code></strong>），<code>scroll_by</code> 内部重排并标脏。</p>
+<p><strong>滚轮的单位是"格"，不是像素。</strong> <code>QLInputEvent.dy</code> 是格数（X11 的 Button4/5 一次一格），
+<code>ql_ui_input_event</code> 会乘上 <code>QL_CFG_UI_WHEEL_STEP_PX</code>（默认 <strong>50px</strong>，约 3 行，
+与 Firefox 同量级；Chrome 是 100px）。想更快/更慢改这一个宏。</p>
+<p>滚到头之后<strong>继续往上滚父级容器</strong>（最多 8 层），与浏览器一致：
+内层列表到底了，整页接着滚。</p>
 <h3 id="_9">焦点</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">        </span><span class="nf">ql_ui_set_focus_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_focus_node</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
@@ -1798,7 +1803,25 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 
 <p><code>Tab</code> / <code>Shift+Tab</code> 在 <code>input</code> / <code>textarea</code> / <code>select</code> / <code>button</code> 之间按树序循环。
 焦点只点亮 <code>QL_UI_RT_FOCUS</code>（<code>:focus</code> 样式靠它），<strong>不影响布局</strong>。</p>
-<h3 id="_10">接上输入系统</h3>
+<h3 id="_10">剪贴板</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_text</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">utf8</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">get_text</span><span class="p">)(</span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">cap</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 0 = 还没到 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIClipboard</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_ui_set_clipboard</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUIClipboard</span><span class="w"> </span><span class="o">*</span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_clipboard_copy</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 焦点输入框的选区；无选区复制全文 */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_clipboard_cut</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_clipboard_paste</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>Ctrl+C</code> / <code>Ctrl+X</code> / <code>Ctrl+V</code> 在 <code>ql_input</code> 层就映射到这���个函数（X11 那边带 Ctrl 的
+组合<strong>不产生文本事件</strong>，所以不会打架）。没装后端时它们返回 <code>QL_ERR_UNSUPPORTED</code> 并<strong>什么也不做</strong>。</p>
+<p><strong><code>get_text</code> 可以是异步的</strong>：X11 的剪贴板是点对点协议（要等对方的 <code>SelectionNotify</code>），
+所以第一次可能返回 0 —— 界面层会记住这次粘贴，在下一帧的 <code>ql_ui_anim_tick()</code> 里重试。
+主循环只要照常每帧调 <code>ql_ui_anim_tick()</code> 就行。</p>
+<p>X11 的后端已经接好：<code>ql_gfx_gl_attach_clipboard(gfx, ui)</code>（拿到 GL 窗口之后调一次）。</p>
+<h3 id="_11">接上输入系统</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_attach_input</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 主循环里只调 ql_input_dispatch() 即可 */</span>
 <span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_detach_input</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
 </code></pre></div>
@@ -1806,10 +1829,26 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <p><strong>必须先接这一步。</strong> 平台层只负责把窗口事件塞进队列，<code>ql_input_dispatch()</code> 派发时
 找不到事件汇就会<strong>静默丢掉</strong> —— 表现是"窗口能开、能滚，但点不动、hover 不亮、
 也打不了字"。同一时刻只支持一个 <code>QLUIRoot</code>，析构前记得 <code>ql_ui_detach_input()</code>。</p>
-<p><strong>Linux 上的键盘</strong>：X11 后端把可打印字符翻成 <code>QL_INPUT_TEXT</code>（界面层靠它插入字符），
-控制键翻成 <code>QLKey</code>；<code>Ctrl</code> / <code>Alt</code> 组合<strong>不产生文本</strong>（Ctrl+A 不该插入 <code>a</code>）。
-字符来自 <code>XLookupString</code>，只覆盖 Latin-1 —— <strong>CJK 输入需要接 XIM 输入法，本库还没接</strong>，
-所以中文只能由程序 <code>ql_ui_input_set_value()</code> 写入，不能从键盘打进去。</p>
+<p><strong>Linux 上的键盘 / 输入法</strong>：X11 后端把字符翻成 <code>QL_INPUT_TEXT</code>（界面层靠它插入字符），
+控制键翻成 <code>QLKey</code>；<code>Ctrl</code> / <code>Alt</code> 组合<strong>不产生文本</strong>（Ctrl+A 不该插入 <code>a</code>）。</p>
+<p>中文/日文走 <strong>XIM</strong>：窗口创建时会 <code>XOpenIM</code> + <code>XCreateIC</code>，键事件先过 <code>XFilterEvent</code>
+（输入法正在组字时按键归 IME），字符用 <code>Xutf8LookupString</code> 取 UTF-8。
+这让 fcitx5 / ibus 的 XIM 服务能直接用。<strong>两个前提</strong>：</p>
+<ol>
+<li>进程里要调过 <code>setlocale(LC_ALL, "")</code>（XIM 靠它选 locale 对应的输入法）；</li>
+<li>系统装了 fcitx / ibus 且它们的 XIM 模块是开着的。</li>
+</ol>
+<p>拿不到 XIM 时不是错误，会静默降级成"只能打 Latin-1"（ASCII）。
+输入法一次提交超过 63 字节会被丢弃（不截半个汉字）—— 正常的词不会这么长。</p>
+<p><strong>窗口缩放</strong>：<code>ql_gfx_gl_poll()</code> 收到 <code>ConfigureNotify</code> 会更新画布尺寸并置位，
+主循环里检查一次即可：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_gfx_gl_resize_pending</span><span class="p">(</span><span class="n">gfx</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">cw</span><span class="p">,</span><span class="w"> </span><span class="n">ch</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ql_gfx_gl_size</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cw</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ch</span><span class="p">);</span><span class="w">     </span><span class="cm">/* CSS px */</span>
+<span class="w">    </span><span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">cw</span><span class="p">,</span><span class="w"> </span><span class="n">ch</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 重排是界面层的事 */</span>
+<span class="p">}</span>
+</code></pre></div>
+
 <hr />
 <h2 id="6">6. 完整示例</h2>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>

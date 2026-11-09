@@ -147,18 +147,26 @@ t=100ms  在动 3 个  脏区 3 块
 }
 ```
 
-### 假 3D 翻转
+### 3D 翻转（用 2D 的 scaleX 做的 360°）
 
 ```css
 @keyframes flip-x {
   0%   { transform: scaleX(1); }
-  50%  { transform: scaleX(0); }     /* 压到零宽 = 看不见 */
+  25%  { transform: scaleX(0); }      /* 压到零宽 = 侧面对着你 */
+  50%  { transform: scaleX(-1); }     /* 负值 = **水平镜像**（背面） */
+  75%  { transform: scaleX(0); }
   100% { transform: scaleX(1); }
 }
 ```
 
-这是真的"翻面"观感，但完全没有 3D 变换。想做"正面翻到背面"（换一张脸），
-用两个元素错开 `animation-delay`：
+关键是**负值**：`scaleX(-1)` 不是"缩到 0 再缩回来"，而是镜像 —— 文字反着写，
+就是背面的样子。整段动画高度**全程不变**，只有宽度在变（这就是真实翻转的视觉）。
+
+`scaleX` 的语义是**几何压扁**：字形的宽度按比例压，高度一个像素都不动。
+（顺带一提：`scale(0.5)` 那种等比缩放，接了矢量字体会换一个更小的字号重新光栅化，
+所以放大时依然清晰；位图字体只能几何缩放。）
+
+想做"正面翻到背面"（换一张脸），用两个元素错开 `animation-delay`：
 
 ```css
 .front { animation: flip-x 900ms ease-in-out infinite; }

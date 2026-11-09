@@ -1133,6 +1133,132 @@ static void input_scroll_to_caret(struct QLUIInput *in)
         in->scroll_x = 0;
 }
 
+/* ------------------------------ 剪贴板 ------------------------------ */
+
+void ql_ui_set_clipboard(QLUIRoot *ui, const QLUIClipboard *cb, void *user)
+{
+    if (ui == NULL)
+        return;
+    ui->clipboard = cb;
+    ui->clipboard_user = user;
+}
+
+/* 焦点输入框的选区文本；没有选区就取全文（"整个框复制走"更符合直觉） */
+static const char *input_selection_text(struct QLUIInput *in, uint16_t *out_len)
+{
+    if (in == NULL) {
+        *out_len = 0;
+        return NULL;
+    }
+    uint16_t a = in->sel, b = in->caret;
+    if (a == b) {         /* 没有选区：全文 */
+        a = 0;
+        b = in->len;
+    }
+    if (a > b) {
+        const uint16_t t = a;
+        a = b;
+        b = t;
+    }
+    *out_len = (uint16_t)(b - a);
+    return (const char *)((in->buf != NULL) ? in->buf + a : NULL);
+}
+
+static struct QLUIInput *focused_input(QLUIRoot *ui)
+{
+    return (ui->focus != NULL) ? input_of(ui, ui->focus) : NULL;
+}
+
+ql_err_t ql_ui_clipboard_copy(QLUIRoot *ui)
+{
+    if (ui == NULL)
+        return QL_ERR_INVAL;
+    struct QLUIInput *in = focused_input(ui);
+    if (in == NULL)
+        return QL_ERR_INVAL;
+    if (ui->clipboard == NULL || ui->clipboard->set_text == NULL)
+        return QL_ERR_UNSUPPORTED;
+
+    uint16_t n = 0;
+    const char *src = input_selection_text(in, &n);
+    if (src == NULL || n == 0)
+        return QL_ERR_INVAL;
+
+    /* 先复制到栈上：后端可能要求 NUL 结尾 */
+    char buf[QL_CFG_UI_TEXTAREA_LEN];
+    const size_t k = (n < (uint16_t)sizeof(buf) - 1u) ? (size_t)n
+                                                     : sizeof(buf) - 1u;
+    memcpy(buf, src, k);
+    buf[k] = '\0';
+    ui->clipboard->set_text(buf, ui->clipboard_user);
+    return QL_OK;
+}
+
+ql_err_t ql_ui_clipboard_cut(QLUIRoot *ui)
+{
+    if (ui == NULL)
+        return QL_ERR_INVAL;
+    struct QLUIInput *in = focused_input(ui);
+    if (in == NULL)
+        return QL_ERR_INVAL;
+    const ql_err_t rc = ql_ui_clipboard_copy(ui);
+    if (rc != QL_OK)
+        return rc;
+    if (in->sel != in->caret) {
+        (void)input_drop_selection(in);
+        input_emit(ui, in);
+    }
+    return QL_OK;
+}
+
+/* 已经有内容就插进去；返回 1 = 处理完了 */
+static int paste_apply(QLUIRoot *ui, const char *text)
+{
+    struct QLUIInput *in = focused_input(ui);
+    if (in == NULL || text == NULL)
+        return 1;
+    if (text[0] == '\0')
+        return 1;
+    (void)input_insert(ui, in, text);
+    return 1;
+}
+
+ql_err_t ql_ui_clipboard_paste(QLUIRoot *ui)
+{
+    if (ui == NULL)
+        return QL_ERR_INVAL;
+    if (focused_input(ui) == NULL)
+        return QL_ERR_INVAL;
+    if (ui->clipboard == NULL || ui->clipboard->get_text == NULL)
+        return QL_ERR_UNSUPPORTED;
+
+    char buf[QL_CFG_UI_TEXTAREA_LEN];
+    buf[0] = '\0';
+    if (ui->clipboard->get_text(buf, sizeof(buf), ui->clipboard_user))
+        return (paste_apply(ui, buf) == 1) ? QL_OK : QL_ERR_INVAL;
+
+    /* 异步：内容还没到（X11 要等 SelectionNotify），下一帧再试 */
+    ui->paste_pending = 1;
+    return QL_OK;
+}
+
+/* 每帧重试未完成的粘贴（由 ql_ui_anim_tick 调用） */
+static void clipboard_retry_paste(QLUIRoot *ui)
+{
+    if (!ui->paste_pending)
+        return;
+    if (ui->clipboard == NULL || ui->clipboard->get_text == NULL) {
+        ui->paste_pending = 0;
+        return;
+    }
+    char buf[QL_CFG_UI_TEXTAREA_LEN];
+    buf[0] = '\0';
+    if (ui->clipboard->get_text(buf, sizeof(buf), ui->clipboard_user)) {
+        ui->paste_pending = 0;
+        (void)paste_apply(ui, buf);
+    }
+}
+
 static void input_set_caret(QLUIRoot *ui, struct QLUIInput *in, uint16_t pos, int extend)
 {
     if (pos > in->len)
@@ -2309,10 +2435,14 @@ static void scale_max(const QLUINodeRT *node, int32_t *mx, int32_t *my)
     for (int i = 0; i < n; i++) {
         if (styles[i] == NULL)
             continue;
-        if (styles[i]->sc_x > *mx)
-            *mx = styles[i]->sc_x;
-        if (styles[i]->sc_y > *my)
-            *my = styles[i]->sc_y;
+        {
+            const int ax = (styles[i]->sc_x < 0) ? -styles[i]->sc_x : styles[i]->sc_x;
+            const int ay = (styles[i]->sc_y < 0) ? -styles[i]->sc_y : styles[i]->sc_y;
+            if (ax > *mx)
+                *mx = ax;
+            if (ay > *my)
+                *my = ay;
+        }
     }
 
     const QLUIDoc *doc = (node->owner != NULL) ? node->owner->doc : NULL;
@@ -2330,10 +2460,16 @@ static void scale_max(const QLUINodeRT *node, int32_t *mx, int32_t *my)
         const QLUIKeyframe *f = &doc->keyframes[first + k];
         if ((f->props & QL_UI_KF_MOVE) == 0)
             continue;
-        if (f->sc_x > *mx)
-            *mx = f->sc_x;
-        if (f->sc_y > *my)
-            *my = f->sc_y;
+        {
+            const int ax = (f->sc_x < 0) ? ((f->sc_x == QL_UI_KF_UNSET) ? 0 : -f->sc_x)
+                                         : f->sc_x;
+            const int ay = (f->sc_y < 0) ? ((f->sc_y == QL_UI_KF_UNSET) ? 0 : -f->sc_y)
+                                         : f->sc_y;
+            if (ax > *mx)
+                *mx = ax;
+            if (ay > *my)
+                *my = ay;
+        }
     }
 }
 
@@ -3904,7 +4040,8 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      */
     ql_coord_t hx = x, hy = y;
     if (s->sc_x != 1000 || s->sc_y != 1000) {
-        if (s->sc_x <= 0 || s->sc_y <= 0)
+        /* 0 = 面积为零（假翻转的中间帧），任何点都点不中 */
+        if (s->sc_x == 0 || s->sc_y == 0)
             return NULL;
         ql_coord_t cx0 = box.x + box.w / 2;
         ql_coord_t cy0 = box.y + box.h / 2;
@@ -3914,14 +4051,17 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
 
     /* 视觉范围：放大时比布局盒大，overflow 的裁剪区得跟着它走（绘制侧也是按缩放后的矩形裁） */
     QLRect vis = box;
-    if (s->sc_x > 1000 || s->sc_y > 1000) {
+    /* 用绝对值：负缩放（镜像）的可见范围同样可能超出布局盒 */
+    const int absx = (s->sc_x < 0) ? -(int)s->sc_x : (int)s->sc_x;
+    const int absy = (s->sc_y < 0) ? -(int)s->sc_y : (int)s->sc_y;
+    if (absx > 1000 || absy > 1000) {
         ql_coord_t cx0 = box.x + box.w / 2;
         ql_coord_t cy0 = box.y + box.h / 2;
-        ql_coord_t hw = (s->sc_x > 1000)
-                            ? (ql_coord_t)((int64_t)box.w * s->sc_x / 2000)
+        ql_coord_t hw = (absx > 1000)
+                            ? (ql_coord_t)((int64_t)box.w * absx / 2000)
                             : box.w / 2;
-        ql_coord_t hh = (s->sc_y > 1000)
-                            ? (ql_coord_t)((int64_t)box.h * s->sc_y / 2000)
+        ql_coord_t hh = (absy > 1000)
+                            ? (ql_coord_t)((int64_t)box.h * absy / 2000)
                             : box.h / 2;
         vis = ql_rect_make(cx0 - hw, cy0 - hh, hw * 2, hh * 2);
     }
@@ -4319,8 +4459,8 @@ static void kf_read(const QLUIAnimRun *run, const QLUIKeyframe *f, QLUIKfValue *
     if (!all_base && (f->props & QL_UI_KF_MOVE) != 0) {
         out->tx = (float)f->tf_x;
         out->ty = (float)f->tf_y;
-        out->sc_x = (float)((f->sc_x < 0) ? base->sc_x : f->sc_x);
-        out->sc_y = (float)((f->sc_y < 0) ? base->sc_y : f->sc_y);
+        out->sc_x = (float)((f->sc_x == QL_UI_KF_UNSET) ? base->sc_x : f->sc_x);
+        out->sc_y = (float)((f->sc_y == QL_UI_KF_UNSET) ? base->sc_y : f->sc_y);
     } else {
         out->tx = (float)base->tf_x;
         out->ty = (float)base->tf_y;
@@ -4598,6 +4738,9 @@ static uint32_t anim_tick_runs(QLUIRoot *ui, uint32_t now_ms)
 
 uint32_t ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms)
 {
+    if (ui != NULL)
+        clipboard_retry_paste(ui);
+
     if (ui == NULL)
         return 0;
 
@@ -4971,13 +5114,33 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
         break;
     case QL_INPUT_WHEEL: {
         /*
-         * 滚轮：命中测试找到指针下的节点，往上找最近的可滚动容器。
-         * 滚不到就交给父级 —— 与浏览器一致（列表滚到底以后整页继续滚）。
+         * 滚轮：`ev->dy` 是**格数**（X11 的 Button4/5 一次一格），不是像素。
+         * 乘上 QL_CFG_UI_WHEEL_STEP_PX 才是要滚的距离 —— 一格 ≈ 3 行，
+         * 与浏览器一个量级。之前直接当像素用，一格只动 1px（"转飞了才下来一行"）。
+         *
+         * 滚到底之后继续往上找父级容器 —— 与浏览器一致（列表到底了整页接着滚）。
          */
+        const ql_coord_t step = (ql_coord_t)QL_CFG_UI_WHEEL_STEP_PX;
+        ql_coord_t dx = (ql_coord_t)ev->dx * step;
+        ql_coord_t dy = (ql_coord_t)ev->dy * step;
+
         QLUINodeRT *hit = ql_ui_hit_test(ui, ev->x, ev->y);
         QLUINodeRT *target = nearest_scrollable(hit);
-        if (target != NULL)
-            (void)ql_ui_scroll_by(ui, target, ev->dx, ev->dy);
+        for (int guard = 0; target != NULL && (dy != 0 || dx != 0) && guard < 8;
+             guard++) {
+            const ql_coord_t old_y = target->scroll_y;
+            const ql_coord_t old_x = target->scroll_x;
+            (void)ql_ui_scroll_by(ui, target, dx, dy);
+            /* 真的动了多少？没动说明这个容器在这个方向已经到边界 */
+            const ql_coord_t used_y = target->scroll_y - old_y;
+            const ql_coord_t used_x = target->scroll_x - old_x;
+            dy -= used_y;
+            dx -= used_x;
+            if (used_y == 0 && used_x == 0)
+                target = nearest_scrollable(target->parent);
+            else
+                break;
+        }
         break;
     }
     case QL_INPUT_TEXT: {
@@ -4991,6 +5154,24 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
         /* Esc 先关浮层（别让输入框先吃掉它） */
         if (ev->key == QL_KEY_ESCAPE && ql_ui_dialog_close_top(ui))
             break;
+
+        /*
+         * 剪贴板快捷键。X11 那边带 Ctrl 的组合**不产生文本事件**，
+         * 所以这里不会和"插入字符"打架。
+         */
+        if ((ev->mods & QL_MOD_CTRL) != 0 && ql_ui_focus_node(ui) != NULL) {
+            int done = 1;
+            if (ev->key == 'c')
+                (void)ql_ui_clipboard_copy(ui);
+            else if (ev->key == 'x')
+                (void)ql_ui_clipboard_cut(ui);
+            else if (ev->key == 'v')
+                (void)ql_ui_clipboard_paste(ui);
+            else
+                done = 0;
+            if (done)
+                break;
+        }
 
         /* Tab / Shift+Tab 先走：它要在可聚焦控件之间跳，和控件自身无关 */
         if (ev->key == QL_KEY_TAB) {

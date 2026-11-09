@@ -274,9 +274,17 @@ static inline int elem_is_identity(const QLDraw2D *self)
 }
 
 /* 圆角/描边这类"长度"用 min(sx, sy)：非等比时按小的来，宁可方一点也别越界 */
+static inline ql_coord_t elem_abs(ql_coord_t v)
+{
+    return (v < 0) ? (ql_coord_t)-v : v;
+}
+
 static inline ql_coord_t elem_len_fx(const QLDraw2D *self)
 {
-    return (self->elem_x_fx < self->elem_y_fx) ? self->elem_x_fx : self->elem_y_fx;
+    /* 取**绝对值**里小的那个：负缩放（镜像）时长度不能被符号污染 */
+    const ql_coord_t ax = elem_abs(self->elem_x_fx);
+    const ql_coord_t ay = elem_abs(self->elem_y_fx);
+    return (ax < ay) ? ax : ay;
 }
 
 static inline QLRect elem_rect(QLDraw2D *self, QLRect r)
@@ -294,6 +302,17 @@ static inline QLRect elem_rect(QLDraw2D *self, QLRect r)
     ql_coord_t y1 = self->elem_py +
                     (ql_coord_t)((int64_t)(ql_rect_bottom(r) - self->elem_py) * fy /
                                  QL_SCALE_ONE);
+    /* 负缩放（镜像）会让两端交换顺序：先归一化成合法矩形 */
+    if (x1 < x0) {
+        const ql_coord_t t = x0;
+        x0 = x1;
+        x1 = t;
+    }
+    if (y1 < y0) {
+        const ql_coord_t t = y0;
+        y0 = y1;
+        y1 = t;
+    }
     return ql_rect_make(x0, y0, x1 - x0, y1 - y0);
 }
 
@@ -451,8 +470,19 @@ static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gl
                            const QLTextStyle *ts)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_draw_glyph_ex(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
-                            ts->italic != 0, ts->bold != 0);
+    /*
+     * 只有"不是等比正缩放"时才需要逐字形做水平 affine（压扁 / 镜像）。
+     * 等比时字形已经换过字号，这里保持恒等 —— 那条路必须逐像素不变。
+     */
+    if (!self->text_geo) {
+        ql_canvas_draw_glyph_ex(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+                                ts->italic != 0, ts->bold != 0);
+        return;
+    }
+    ql_canvas_draw_glyph_xf2(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+                             ts->italic != 0, ts->bold != 0,
+                             self->elem_x_fx, self->elem_y_fx,
+                             self->text_px, self->text_py);
 }
 
 /*
@@ -483,9 +513,36 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
      */
     if (elem_len_fx(self) == 0)
         return;         /* 压到零宽：字一个都不画，否则会挤成一条墨线 */
+
+    /*
+     * 两条完全不同的路：
+     *
+     *  · **等比正缩放**（sx == sy > 0）：换一个更大的设备字号，再按盒子缩放。
+     *    这样放大时字是重新光栅化的、清晰。
+     *  · **非等比 / 镜像**（scaleX、负值）：字形的**高度必须不变**，
+     *    只做几何变换。这时候绝不能让字号跟着 min(sx,sy) 缩小 —— 那会把
+     *    `scaleX(0.5)` 画成"字小了一半"，而不是"压扁"。
+     *    具体做法：按原始字号排版，emit 每个字形时把 x 过一遍 affine。
+     */
     const ql_coord_t font_fx =
         (ql_coord_t)((int64_t)self->scale_fx * elem_len_fx(self) / QL_SCALE_ONE);
-    const QLFont *dev = ql_draw2d_device_font(font, font_fx);
+    const int uniform_pos = (self->elem_x_fx > 0 &&
+                             self->elem_x_fx == self->elem_y_fx);
+    const QLFont *scaled = ql_draw2d_device_font(font, font_fx);
+    /*
+     * 只有"等比 + 正 + 真的拿到了另一个字号的字体"才算清晰路径。
+     * 位图字体（MCU 默认）根本没有别的字号可换，只能靠几何变换缩放。
+     */
+    const int crisp = uniform_pos && scaled != font;
+    const QLFont *dev = crisp ? scaled : font;
+    self->text_geo = (!crisp && (self->elem_x_fx != QL_SCALE_ONE ||
+                                 self->elem_y_fx != QL_SCALE_ONE));
+    self->text_px = (self->scale_fx != QL_SCALE_ONE)
+                        ? ql_scale_len(self->elem_px, self->scale_fx)
+                        : self->elem_px;
+    self->text_py = (self->scale_fx != QL_SCALE_ONE)
+                        ? ql_scale_len(self->elem_py, self->scale_fx)
+                        : self->elem_py;
     /* 文本取偏移的整数部分：亚像素平移会让字形糊掉 */
     /*
      * 行高与装饰线厚度都是 CSS px，到后端要按同样的比例放大（否则 HiDPI 下
@@ -500,11 +557,14 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
      * 盒子顶部整体上移，看起来就是"文字在翻转时上下跑"。
      */
     const ql_coord_t vert_fx =
-        (ql_coord_t)((int64_t)self->scale_fx * self->elem_y_fx / QL_SCALE_ONE);
+        (crisp) ? (ql_coord_t)((int64_t)self->scale_fx * self->elem_y_fx / QL_SCALE_ONE)
+                : self->scale_fx;
     if (local.line_h > 0)
         local.line_h = ql_scale_len(local.line_h, vert_fx);
-    ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
-                          &local, cpu_emit_glyph);
+
+    QLRect tb = crisp ? sx(self, shift_rect_rounded(self, box))
+                      : ql_scale_rect(shift_rect_rounded(self, box), self->scale_fx);
+    ql_draw2d_text_layout(self, dev, text, len, tb, &local, cpu_emit_glyph);
 }
 
 static void cpu_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
@@ -542,6 +602,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->offset_y_fx = 0;
     out->mask_r = -1;
     out->elem_x_fx = QL_SCALE_ONE;
+    out->text_geo = 0;
     out->elem_y_fx = QL_SCALE_ONE;
     out->elem_px = 0;
     out->elem_py = 0;

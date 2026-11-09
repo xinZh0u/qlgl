@@ -20,6 +20,7 @@
 #include <X11/keysym.h>
 
 #include "qlinput_x11.h"
+#include "qlclipboard_x11.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -85,6 +86,15 @@ struct QLGfxGL {
     int              offscreen;
     int              closed;
     uint8_t          buttons;      /* 当前按住的鼠标按钮位图 */
+
+    /*
+     * XIM 输入上下文。NULL = 没有输入法（只吃得下 Latin-1）。
+     * 中文/日文这些必须走 XIM —— 字符不来自键盘映射，而是输入法"提交"出来的，
+     * 普通 XLookupString 拿不到。
+     */
+    XIM              xim;
+    XIC              xic;
+    int              resize_pending;   /* 窗口尺寸变过，调用方需要重新 layout */
 
     ql_coord_t       width, height;   /* 设备像素（framebuffer 尺寸） */
     ql_coord_t       scale_fx;        /* CSS px → 设备像素，26.6 定点 */
@@ -1023,8 +1033,11 @@ static inline int elem_identity_gl(const QLGfxGL *g)
 
 static inline ql_coord_t elem_len_fx_gl(const QLGfxGL *g)
 {
-    return (g->draw.elem_x_fx < g->draw.elem_y_fx) ? g->draw.elem_x_fx
-                                                   : g->draw.elem_y_fx;
+    const ql_coord_t ax = (g->draw.elem_x_fx < 0) ? -g->draw.elem_x_fx
+                                                  : g->draw.elem_x_fx;
+    const ql_coord_t ay = (g->draw.elem_y_fx < 0) ? -g->draw.elem_y_fx
+                                                  : g->draw.elem_y_fx;
+    return (ax < ay) ? ax : ay;
 }
 
 static inline QLRect elem_rect_gl(QLGfxGL *g, QLRect r)
@@ -1040,6 +1053,17 @@ static inline QLRect elem_rect_gl(QLGfxGL *g, QLRect r)
     ql_coord_t y0 = py + (ql_coord_t)((int64_t)(r.y - py) * fy / QL_SCALE_ONE);
     ql_coord_t y1 = py + (ql_coord_t)((int64_t)(ql_rect_bottom(r) - py) * fy /
                                       QL_SCALE_ONE);
+    /* 负缩放（镜像）会让两端交换顺序：先归一化 */
+    if (x1 < x0) {
+        const ql_coord_t t = x0;
+        x0 = x1;
+        x1 = t;
+    }
+    if (y1 < y0) {
+        const ql_coord_t t = y0;
+        y0 = y1;
+        y1 = t;
+    }
     return ql_rect_make(x0, y0, x1 - x0, y1 - y0);
 }
 
@@ -1470,12 +1494,50 @@ static void gl_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gly
     if (ts->italic != 0 && glyph->box_h > 1)
         shear = (float)glyph->box_h * 0.21f;
 
+    /*
+     * 非等比 / 镜像：字形**高度不变**，只把 quad 的水平区间过一遍 affine。
+     * 等比正缩放时字形已经换过字号，这里保持原样（那条路必须逐像素不变）。
+     */
+    const ql_coord_t x_fx = g->draw.elem_x_fx;
+    const ql_coord_t y_fx = g->draw.elem_y_fx;
+    const ql_coord_t px = g->draw.text_px;
+    const ql_coord_t py = g->draw.text_py;
+
     const int passes = (ts->bold != 0) ? 2 : 1;
     for (int i = 0; i < passes; i++) {
         QLRect r = ql_rect_make(pen_x + glyph->ofs_x + i, baseline_y + glyph->ofs_y,
                                 glyph->box_w, glyph->box_h);
-        emit_quad_shear(g, r, 0, -1, ts->color, 255, uv.u0, uv.v0, uv.u1, uv.v1, 1,
-                        shear);
+        float u0 = uv.u0, u1 = uv.u1, v0 = uv.v0, v1 = uv.v1;
+        if (g->draw.text_geo) {
+            /* 两轴 affine（含镜像）；镜像时纹理也要翻 */
+            const ql_coord_t x0 = px + (ql_coord_t)((int64_t)(r.x - px) * x_fx /
+                                                    QL_SCALE_ONE);
+            const ql_coord_t x1 = px +
+                                  (ql_coord_t)((int64_t)(ql_rect_right(r) - px) * x_fx /
+                                               QL_SCALE_ONE);
+            const ql_coord_t y0 = py + (ql_coord_t)((int64_t)(r.y - py) * y_fx /
+                                                    QL_SCALE_ONE);
+            const ql_coord_t y1 = py +
+                                  (ql_coord_t)((int64_t)(ql_rect_bottom(r) - py) * y_fx /
+                                               QL_SCALE_ONE);
+            r.x = (x0 < x1) ? x0 : x1;
+            r.w = (x0 < x1) ? (x1 - x0) : (x0 - x1);
+            r.y = (y0 < y1) ? y0 : y1;
+            r.h = (y0 < y1) ? (y1 - y0) : (y0 - y1);
+            if (r.w <= 0 || r.h <= 0)
+                continue;
+            if (x_fx < 0) {
+                const float t = u0;
+                u0 = u1;
+                u1 = t;
+            }
+            if (y_fx < 0) {
+                const float t = v0;
+                v0 = v1;
+                v1 = t;
+            }
+        }
+        emit_quad_shear(g, r, 0, -1, ts->color, 255, u0, v0, u1, v1, 1, shear);
     }
 }
 
@@ -1485,18 +1547,40 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (elem_len_fx_gl(g) == 0)
         return;         /* 压到零宽：同 CPU，字一个都不画 */
+
+    /*
+     * 与 CPU 侧同一套判定（见 qldraw2d.c 的 cpu_draw_text）：
+     * 只有"等比 + 正 + 真拿到了另一个字号的字体"才走换字号，否则逐字形几何变换。
+     */
     const ql_coord_t font_fx =
         (ql_coord_t)((int64_t)g->scale_fx * elem_len_fx_gl(g) / QL_SCALE_ONE);
-    const QLFont *dev = ql_draw2d_device_font(font, font_fx);
+    const int uniform_pos = (g->draw.elem_x_fx > 0 &&
+                             g->draw.elem_x_fx == g->draw.elem_y_fx);
+    const QLFont *scaled = ql_draw2d_device_font(font, font_fx);
+    const int crisp = uniform_pos && scaled != font;
+    const QLFont *dev = crisp ? scaled : font;
+    g->draw.text_geo = (!crisp && (g->draw.elem_x_fx != QL_SCALE_ONE ||
+                                   g->draw.elem_y_fx != QL_SCALE_ONE));
+    g->draw.text_px = (g->scale_fx != QL_SCALE_ONE)
+                          ? ql_scale_len(g->draw.elem_px, g->scale_fx)
+                          : g->draw.elem_px;
+    g->draw.text_py = (g->scale_fx != QL_SCALE_ONE)
+                          ? ql_scale_len(g->draw.elem_py, g->scale_fx)
+                          : g->draw.elem_py;
     /* 排版在设备像素里进行：字形位图与 quad 是一一对应的，不能再缩放 */
     /* 行高是 CSS px；排版在设备像素里做，所以按同样的比例换算 */
     QLTextStyle local = *ts;
     /* 行高按**垂直轴**缩放，理由见 qldraw2d.c 的 cpu_draw_text */
     const ql_coord_t vert_fx =
-        (ql_coord_t)((int64_t)g->scale_fx * g->draw.elem_y_fx / QL_SCALE_ONE);
+        (crisp) ? (ql_coord_t)((int64_t)g->scale_fx * g->draw.elem_y_fx / QL_SCALE_ONE)
+                : g->scale_fx;
     if (local.line_h > 0)
         local.line_h = ql_scale_len(local.line_h, vert_fx);
-    ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), &local, gl_emit_glyph);
+
+    QLRect tb = crisp ? gsx(g, box)
+                      : ((g->scale_fx == QL_SCALE_ONE) ? box
+                                                       : ql_scale_rect(box, g->scale_fx));
+    ql_draw2d_text_layout(self, dev, text, len, tb, &local, gl_emit_glyph);
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */
@@ -1622,6 +1706,25 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         g->wm_delete = XInternAtom(g->dpy, "WM_DELETE_WINDOW", False);
         XSetWMProtocols(g->dpy, g->win, &g->wm_delete, 1);
         XMapWindow(g->dpy, g->win);
+
+        /*
+         * 输入法（fcitx5 / ibus 都提供 XIM 服务）。
+         *
+         * 拿不到就静默降级成"只能打 Latin-1" —— 很多精简环境根本没装输入法，
+         * 那不是错误。要中文就必须：
+         *   1. 进程里调过 setlocale(LC_ALL, "")（XIM 靠它找 locale 对应的输入法）；
+         *   2. 系统有 fcitx/ibus（且它们的 XIM 模块是开着的）。
+         */
+        g->xim = XOpenIM(g->dpy, NULL, NULL, NULL);
+        if (g->xim != NULL) {
+            g->xic = XCreateIC(g->xim,
+                               XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                               XNClientWindow, g->win,
+                               XNFocusWindow, g->win,
+                               NULL);
+        }
+        if (g->xic == NULL)
+            QL_LOGI("gl: 没有可用的 XIM 输入法，只能输入 Latin-1（中文请装 fcitx/ibus 并 setlocale）");
 
         g->surface = eglCreateWindowSurface(g->egdpy, cfg, (EGLNativeWindowType)g->win, NULL);
     }
@@ -2003,6 +2106,14 @@ int ql_gfx_gl_poll(QLGfxGL *g)
     while (XPending(g->dpy) > 0) {
         XEvent ev;
         XNextEvent(g->dpy, &ev);
+
+        /*
+         * 输入法必须**先过一遍**：正在组字时（拼音还没选词）按键要交给 IME，
+         * 不能让界面层看到。返回 True 表示这条事件被吃掉。
+         */
+        if (g->xic != NULL && XFilterEvent(&ev, None))
+            continue;
+
         switch (ev.type) {
         case ClientMessage:
             if ((Atom)ev.xclient.data.l[0] == g->wm_delete)
@@ -2011,12 +2122,87 @@ int ql_gfx_gl_poll(QLGfxGL *g)
         case DestroyNotify:
             g->closed = 1;
             break;
+        case ConfigureNotify: {
+            /*
+             * 窗口被拖动缩放。这里只更新"画布多大"，
+             * 真正的重排交给调用方（它知道界面该按哪个逻辑尺寸布局）。
+             */
+            const int nw = ev.xconfigure.width;
+            const int nh = ev.xconfigure.height;
+            if (nw > 0 && nh > 0 && (nw != g->width || nh != g->height)) {
+                g->width = (ql_coord_t)nw;
+                g->height = (ql_coord_t)nh;
+                g->fbo_fresh = 1;      /* 保留模式的旧内容已经作废 */
+                g->resize_pending = 1;
+            }
+            break;
+        }
+        case FocusIn:
+            if (g->xic != NULL)
+                XSetICFocus(g->xic);
+            break;
+        case FocusOut:
+            if (g->xic != NULL)
+                XUnsetICFocus(g->xic);
+            break;
         default:
-            ql_x11_push_input_scaled(&ev, &g->buttons, g->scale_fx);
+            if (ql_x11_clip_handle_event(&ev))
+                break;                 /* 剪贴板协议事件 */
+            ql_x11_push_input_scaled(&ev, &g->buttons, g->scale_fx, g->xic);
             break;
         }
     }
     return g->closed ? 0 : 1;
+}
+
+/* --- 剪贴板：把 X11 实现接到界面层（QLUIClipboard 接口） --- */
+static void gl_clip_set(const char *utf8, void *user)
+{
+    (void)user;
+    ql_x11_clip_set_text(utf8);
+}
+
+static int gl_clip_get(char *buf, size_t cap, void *user)
+{
+    (void)user;
+    return ql_x11_clip_get_text(buf, cap);
+}
+
+static const QLUIClipboard s_gl_clip = { gl_clip_set, gl_clip_get };
+
+void ql_gfx_gl_attach_clipboard(QLGfxGL *g, QLUIRoot *ui)
+{
+    if (g == NULL || g->dpy == NULL || g->win == 0 || ui == NULL)
+        return;
+    ql_x11_clip_attach(g->dpy, g->win);
+    ql_ui_set_clipboard(ui, &s_gl_clip, NULL);
+}
+
+int ql_gfx_gl_resize_pending(QLGfxGL *g)
+{
+    if (g == NULL)
+        return 0;
+    const int p = g->resize_pending;
+    g->resize_pending = 0;
+    return p;
+}
+
+void ql_gfx_gl_size(const QLGfxGL *g, ql_coord_t *out_w, ql_coord_t *out_h)
+{
+    ql_coord_t w = 0, h = 0;
+    if (g != NULL)
+    {
+        w = (g->scale_fx > 0 && g->scale_fx != QL_SCALE_ONE)
+                ? ql_unscale_len(g->width, g->scale_fx)
+                : g->width;
+        h = (g->scale_fx > 0 && g->scale_fx != QL_SCALE_ONE)
+                ? ql_unscale_len(g->height, g->scale_fx)
+                : g->height;
+    }
+    if (out_w != NULL)
+        *out_w = w;
+    if (out_h != NULL)
+        *out_h = h;
 }
 
 void ql_gfx_gl_close(QLGfxGL *g)
@@ -2029,6 +2215,16 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
 {
     if (g == NULL)
         return;
+
+    ql_x11_clip_detach();
+    if (g->xic != NULL) {
+        XDestroyIC(g->xic);
+        g->xic = NULL;
+    }
+    if (g->xim != NULL) {
+        XCloseIM(g->xim);
+        g->xim = NULL;
+    }
 
     if (g->egdpy != EGL_NO_DISPLAY && g->egdpy != NULL) {
         eglMakeCurrent(g->egdpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);

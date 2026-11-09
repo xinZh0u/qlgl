@@ -1714,6 +1714,162 @@ static void glyph_blit(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyp
     }
 }
 
+/*
+ * 水平 affine 版的字形绘制：**逐个目的像素反查源列**。
+ *
+ * 为什么不复用 glyph_blit：那条路径是"遍历源列往目的写"，只适用于恒等变换。
+ * 压扁/镜像时一个目的列对应多个源列（或反过来），必须从目的端遍历，
+ * 否则会出现空隙（放大）或锯齿空洞（压扁）。
+ */
+static void glyph_blit_xf(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                          ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
+                          ql_coord_t shear, ql_coord_t strike,
+                          ql_coord_t x_fx, ql_coord_t y_fx,
+                          ql_coord_t pivot_x, ql_coord_t pivot_y)
+{
+    if (canvas == NULL || font == NULL || glyph == NULL)
+        return;
+    if (glyph->box_w == 0 || glyph->box_h == 0 || x_fx == 0 || y_fx == 0)
+        return;
+
+    const ql_coord_t origin_x = pen_x + glyph->ofs_x + strike;
+    const ql_coord_t origin_y = baseline_y + glyph->ofs_y;
+
+    /* 源区间的两端映射到目的端，再归一化（镜像时顺序会反） */
+    ql_coord_t dx0 = pivot_x + (ql_coord_t)((int64_t)(origin_x - pivot_x) * x_fx /
+                                            QL_SCALE_ONE);
+    ql_coord_t dx1 = pivot_x + (ql_coord_t)((int64_t)(origin_x + (ql_coord_t)glyph->box_w -
+                                                      pivot_x) * x_fx / QL_SCALE_ONE);
+    if (dx1 < dx0) {
+        const ql_coord_t t = dx0;
+        dx0 = dx1;
+        dx1 = t;
+    }
+    if (dx1 <= dx0)
+        dx1 = dx0 + 1;
+
+    const ql_coord_t x_lo = (canvas->clip.x > 0) ? canvas->clip.x : 0;
+    const ql_coord_t x_hi = ql_rect_right(canvas->clip) - 1;
+    const ql_coord_t y_lo = (canvas->clip.y > 0) ? canvas->clip.y : 0;
+    const ql_coord_t y_hi = ql_rect_bottom(canvas->clip) - 1;
+    const ql_coord_t cw = canvas->width - 1;
+    const ql_coord_t ch = canvas->height - 1;
+
+    const uint8_t fmt = canvas->format;
+    const uint32_t cr = QL_COLOR_GET_R(color);
+    const uint32_t cg = QL_COLOR_GET_G(color);
+    const uint32_t cb = QL_COLOR_GET_B(color);
+    const ql_coord_t hh = (ql_coord_t)glyph->box_h - 1;
+
+    /* 竖向同理：源行区间 → 目的行区间，再归一化 */
+    ql_coord_t dy0 = pivot_y + (ql_coord_t)((int64_t)(origin_y - pivot_y) * y_fx /
+                                            QL_SCALE_ONE);
+    ql_coord_t dy1 = pivot_y + (ql_coord_t)((int64_t)(origin_y + (ql_coord_t)glyph->box_h -
+                                                      pivot_y) * y_fx / QL_SCALE_ONE);
+    if (dy1 < dy0) {
+        const ql_coord_t ty = dy0;
+        dy0 = dy1;
+        dy1 = ty;
+    }
+    if (dy1 <= dy0)
+        dy1 = dy0 + 1;
+
+    for (ql_coord_t dy = dy0; dy < dy1; dy++) {
+        const ql_coord_t y = dy;
+        if (y < y_lo || y > y_hi || y > ch || y < 0)
+            continue;
+        /* 反查源行区间，取最大 alpha（理由同横向） */
+        const ql_coord_t r_lo = pivot_y +
+                                (ql_coord_t)(((int64_t)(dy - pivot_y) * QL_SCALE_ONE) / y_fx);
+        const ql_coord_t r_hi = pivot_y +
+                                (ql_coord_t)(((int64_t)(dy + 1 - pivot_y) * QL_SCALE_ONE) /
+                                             y_fx);
+        ql_coord_t r0 = ((r_lo < r_hi) ? r_lo : r_hi) - origin_y;
+        ql_coord_t r1 = ((r_lo < r_hi) ? r_hi : r_lo) - origin_y;
+        if (r1 <= r0)
+            r1 = r0 + 1;
+        if (r0 < 0)
+            r0 = 0;
+        if (r1 > (ql_coord_t)glyph->box_h)
+            r1 = (ql_coord_t)glyph->box_h;
+        if (r0 >= r1)
+            continue;
+        const ql_coord_t gy = r0;   /* 斜体分摊只用行号，取段首即可 */
+        uint8_t *row = canvas->buffer + (uint32_t)y * canvas->stride;
+
+        /* 斜体：越靠上右移越多（与 glyph_blit 同一套分摊） */
+        ql_coord_t row_shear = 0;
+        if (shear > 0 && hh > 0) {
+            const int64_t num = (int64_t)shear * (int64_t)(hh - gy);
+            const int64_t den = (int64_t)hh * QL_GLYPH_SHEAR_SUB;
+            row_shear = (ql_coord_t)((num + den / 2) / den);
+        }
+
+        for (ql_coord_t dx = dx0; dx < dx1; dx++) {
+            const ql_coord_t x = dx + row_shear;
+            if (x < x_lo || x > x_hi || x > cw || x < 0)
+                continue;
+            /*
+             * 一个目的列对应源上的一段（压扁时有好几个源列）。
+             * 取这段的**最大** alpha 而不是抽样一个：
+             * 抽样会把细笔画整条丢掉（"翻"字的横画在 scaleX(0.5) 下消失，
+             * 视觉上像字被咬掉了）。取最大值保证笔画不会凭空不见。
+             */
+            const ql_coord_t s_lo = pivot_x +
+                                    (ql_coord_t)(((int64_t)(dx - pivot_x) * QL_SCALE_ONE) /
+                                                 x_fx);
+            const ql_coord_t s_hi = pivot_x +
+                                    (ql_coord_t)(((int64_t)(dx + 1 - pivot_x) *
+                                                  QL_SCALE_ONE) / x_fx);
+            ql_coord_t c0 = ((s_lo < s_hi) ? s_lo : s_hi) - origin_x;
+            ql_coord_t c1 = ((s_lo < s_hi) ? s_hi : s_lo) - origin_x;
+            if (c1 <= c0)
+                c1 = c0 + 1;
+            if (c0 < 0)
+                c0 = 0;
+            if (c1 > (ql_coord_t)glyph->box_w)
+                c1 = (ql_coord_t)glyph->box_w;
+            if (c0 >= c1)
+                continue;
+
+            uint32_t a = 0;
+            for (ql_coord_t sr = r0; sr < r1 && a < 255u; sr++)
+                for (ql_coord_t col = c0; col < c1; col++) {
+                    const uint32_t v = ql_font_glyph_alpha(font, glyph, col, sr);
+                    if (v > a)
+                        a = v;
+                }
+            if (a == 0)
+                continue;
+            blend_px_masked(canvas, row, x, y, fmt, cr, cg, cb, color, a);
+        }
+    }
+}
+
+void ql_canvas_draw_glyph_xf2(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
+                              ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
+                              int italic, int bold,
+                              ql_coord_t x_fx, ql_coord_t y_fx,
+                              ql_coord_t pivot_x, ql_coord_t pivot_y)
+{
+    if (glyph == NULL)
+        return;
+    if (x_fx == QL_SCALE_ONE && y_fx == QL_SCALE_ONE) {
+        ql_canvas_draw_glyph_ex(canvas, font, glyph, pen_x, baseline_y, color, italic,
+                                bold);
+        return;
+    }
+    ql_coord_t shear = 0;
+    if (italic && glyph->box_h > 1)
+        shear = (ql_coord_t)((int64_t)glyph->box_h * QL_GLYPH_SLANT_NUM *
+                             QL_GLYPH_SHEAR_SUB / QL_GLYPH_SLANT_DEN);
+    glyph_blit_xf(canvas, font, glyph, pen_x, baseline_y, color, shear, 0, x_fx, y_fx,
+                  pivot_x, pivot_y);
+    if (bold)
+        glyph_blit_xf(canvas, font, glyph, pen_x, baseline_y, color, shear, 1, x_fx, y_fx,
+                      pivot_x, pivot_y);
+}
+
 void ql_canvas_draw_glyph_ex(QLCanvas *canvas, const QLFont *font, const QLGlyph *glyph,
                              ql_coord_t pen_x, ql_coord_t baseline_y, ql_color_t color,
                              int italic, int bold)
