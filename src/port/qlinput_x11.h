@@ -127,11 +127,40 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
 
     case KeyPress:
     case KeyRelease: {
+        const uint8_t mods = ql_x11_mods(ev->xkey.state);
         KeySym sym = XLookupKeysym(&ev->xkey, 0);
-        uint32_t key = ql_x11_key_from_keysym(sym);
-        if (key == QL_KEY_NONE)
+        const uint32_t key = ql_x11_key_from_keysym(sym);
+
+        if (ev->type == KeyPress) {
+            /*
+             * **可打印字符要单独变成文本事件。**
+             *
+             * `QLKey` 只表达"按了哪个键"，界面层插入字符走的是
+             * `QL_INPUT_TEXT`（见 ql_ui_input_event）。所以忘了这一步的表现是
+             * "方向键能动光标、退格能删，但打字一个字都进不去" —— 因为
+             * `ql_x11_key_from_keysym` 对字母数字返回的是 QL_KEY_NONE。
+             *
+             * 带 Ctrl/Alt 的组合键不产生文本（Ctrl+A 不该插入 'a'）。
+             * XLookupString 给的是 Latin-1；CJK 需要 XIM（本库还没接）。
+             */
+            if ((mods & (QL_MOD_CTRL | QL_MOD_ALT)) == 0) {
+                char buf[8];
+                KeySym dummy = NoSymbol;
+                const int n = XLookupString(&ev->xkey, buf, (int)sizeof(buf) - 1,
+                                            &dummy, NULL);
+                if (n > 0 && (unsigned char)buf[0] >= 0x20u &&
+                    (unsigned char)buf[0] != 0x7Fu) {
+                    buf[n] = '\0';
+                    ql_input_push_text(buf);
+                }
+            }
+            if (key != QL_KEY_NONE)
+                ql_input_push_key(key, 1, mods);
             break;
-        ql_input_push_key(key, ev->type == KeyPress, ql_x11_mods(ev->xkey.state));
+        }
+
+        if (key != QL_KEY_NONE)
+            ql_input_push_key(key, 0, mods);
         break;
     }
 

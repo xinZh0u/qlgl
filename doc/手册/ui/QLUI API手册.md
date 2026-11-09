@@ -993,8 +993,24 @@ void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 ```
 
-`Tab` / `Shift+Tab` 在 `input` / `select` / `button` 之间按树序循环。
+`Tab` / `Shift+Tab` 在 `input` / `textarea` / `select` / `button` 之间按树序循环。
 焦点只点亮 `QL_UI_RT_FOCUS`（`:focus` 样式靠它），**不影响布局**。
+
+### 接上输入系统
+
+```c
+void ql_ui_attach_input(QLUIRoot *ui);   /* 主循环里只调 ql_input_dispatch() 即可 */
+void ql_ui_detach_input(void);
+```
+
+**必须先接这一步。** 平台层只负责把窗口事件塞进队列，`ql_input_dispatch()` 派发时
+找不到事件汇就会**静默丢掉** —— 表现是"窗口能开、能滚，但点不动、hover 不亮、
+也打不了字"。同一时刻只支持一个 `QLUIRoot`，析构前记得 `ql_ui_detach_input()`。
+
+**Linux 上的键盘**：X11 后端把可打印字符翻成 `QL_INPUT_TEXT`（界面层靠它插入字符），
+控制键翻成 `QLKey`；`Ctrl` / `Alt` 组合**不产生文本**（Ctrl+A 不该插入 `a`）。
+字符来自 `XLookupString`，只覆盖 Latin-1 —— **CJK 输入需要接 XIM 输入法，本库还没接**，
+所以中文只能由程序 `ql_ui_input_set_value()` 写入，不能从键盘打进去。
 
 ---
 

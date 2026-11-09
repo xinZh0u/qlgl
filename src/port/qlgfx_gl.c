@@ -1491,8 +1491,11 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
     /* 排版在设备像素里进行：字形位图与 quad 是一一对应的，不能再缩放 */
     /* 行高是 CSS px；排版在设备像素里做，所以按同样的比例换算 */
     QLTextStyle local = *ts;
+    /* 行高按**垂直轴**缩放，理由见 qldraw2d.c 的 cpu_draw_text */
+    const ql_coord_t vert_fx =
+        (ql_coord_t)((int64_t)g->scale_fx * g->draw.elem_y_fx / QL_SCALE_ONE);
     if (local.line_h > 0)
-        local.line_h = ql_scale_len(local.line_h, font_fx);
+        local.line_h = ql_scale_len(local.line_h, vert_fx);
     ql_draw2d_text_layout(self, dev, text, len, gsx(g, box), &local, gl_emit_glyph);
 }
 

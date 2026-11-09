@@ -492,8 +492,17 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
      * 1px 的下划线会变成半根）。这里只换算，不改语义。
      */
     QLTextStyle local = *ts;
+    /*
+     * 行高是**垂直**方向的长度，只能按垂直轴缩放。
+     *
+     * 之前按 font_fx（= min(sx, sy)）缩：`scaleX(0.5)` 的假翻转时 sy 明明是 1，
+     * 行高却跟着减半 → 半行距 (line_h − ascent − descent) / 2 变小 → 基线相对
+     * 盒子顶部整体上移，看起来就是"文字在翻转时上下跑"。
+     */
+    const ql_coord_t vert_fx =
+        (ql_coord_t)((int64_t)self->scale_fx * self->elem_y_fx / QL_SCALE_ONE);
     if (local.line_h > 0)
-        local.line_h = ql_scale_len(local.line_h, font_fx);
+        local.line_h = ql_scale_len(local.line_h, vert_fx);
     ql_draw2d_text_layout(self, dev, text, len, sx(self, shift_rect_rounded(self, box)),
                           &local, cpu_emit_glyph);
 }

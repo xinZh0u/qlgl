@@ -126,6 +126,10 @@ ql_ui_set_input_cb(ui, on_input, NULL);
 
 没有剪贴板、没有 IME、光标不闪 —— 三条限制与单行输入框完全一致（见第 10 章）。
 
+> **Linux 上能打 ASCII，打不了中文**：X11 后端用 `XLookupString` 取字符，
+> 只覆盖 Latin-1；CJK 要走 XIM 输入法，本库还没接。中文只能用
+> `ql_ui_input_set_value()` 从程序里填进去。
+
 ## 与浏览器不同的地方
 
 1. **`rows` / `cols` 属性不解析**，用 CSS 定尺寸（UA 默认 200×60）。

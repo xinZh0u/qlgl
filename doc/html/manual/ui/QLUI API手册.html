@@ -1796,8 +1796,20 @@ qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合�
 <span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_focus_node</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
 </code></pre></div>
 
-<p><code>Tab</code> / <code>Shift+Tab</code> 在 <code>input</code> / <code>select</code> / <code>button</code> 之间按树序循环。
+<p><code>Tab</code> / <code>Shift+Tab</code> 在 <code>input</code> / <code>textarea</code> / <code>select</code> / <code>button</code> 之间按树序循环。
 焦点只点亮 <code>QL_UI_RT_FOCUS</code>（<code>:focus</code> 样式靠它），<strong>不影响布局</strong>。</p>
+<h3 id="_10">接上输入系统</h3>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_attach_input</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 主循环里只调 ql_input_dispatch() 即可 */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_detach_input</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<p><strong>必须先接这一步。</strong> 平台层只负责把窗口事件塞进队列，<code>ql_input_dispatch()</code> 派发时
+找不到事件汇就会<strong>静默丢掉</strong> —— 表现是"窗口能开、能滚，但点不动、hover 不亮、
+也打不了字"。同一时刻只支持一个 <code>QLUIRoot</code>，析构前记得 <code>ql_ui_detach_input()</code>。</p>
+<p><strong>Linux 上的键盘</strong>：X11 后端把可打印字符翻成 <code>QL_INPUT_TEXT</code>（界面层靠它插入字符），
+控制键翻成 <code>QLKey</code>；<code>Ctrl</code> / <code>Alt</code> 组合<strong>不产生文本</strong>（Ctrl+A 不该插入 <code>a</code>）。
+字符来自 <code>XLookupString</code>，只覆盖 Latin-1 —— <strong>CJK 输入需要接 XIM 输入法，本库还没接</strong>，
+所以中文只能由程序 <code>ql_ui_input_set_value()</code> 写入，不能从键盘打进去。</p>
 <hr />
 <h2 id="6">6. 完整示例</h2>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
