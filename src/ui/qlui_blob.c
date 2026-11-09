@@ -76,6 +76,7 @@ typedef struct {
     size_t media;
     size_t node_media;
     size_t media_styles;
+    size_t calc_ops;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -90,7 +91,7 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t image_count, size_t image_data_size,
                            uint16_t area_count, uint16_t area_coord_count,
                            uint16_t media_count, uint32_t media_pool_count,
-                           size_t pool_size, size_t name_len,
+                           uint16_t calc_op_count, size_t pool_size, size_t name_len,
                            QLUIBlobLayout *out)
 {
     memset(out, 0, sizeof(*out));
@@ -144,6 +145,11 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     if (media_count > 0)
         off = QL_UI_ALIGN8(off + (size_t)media_pool_count * sizeof(uint16_t));
 
+    /* calc() 池同样只在用到时才占空间 */
+    out->calc_ops = off;
+    if (calc_op_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)calc_op_count * sizeof(QLUICalcOp));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -189,12 +195,14 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
             }
     }
 
+    const uint16_t calc_op_count = (doc->calc_ops != NULL) ? doc->calc_op_count : 0;
+
     QLUIBlobLayout lay;
     compute_layout(doc->node_count, doc->style_count, doc->text_count,
                    doc->font_size_count, doc->anim_count, doc->keyframe_count,
                    doc->image_count, image_data_size, doc->area_count,
-                   doc->area_coord_count, media_count, media_pool_count, pool_size,
-                   name_len, &lay);
+                   doc->area_coord_count, media_count, media_pool_count,
+                   calc_op_count, pool_size, name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
         return lay.total;
@@ -240,6 +248,8 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.off_node_media = (uint32_t)lay.node_media;
     head.off_media_styles = (uint32_t)lay.media_styles;
     head.media_pool_count = media_pool_count;
+    head.calc_op_count = calc_op_count;
+    head.off_calc_ops = (uint32_t)lay.calc_ops;
 
     if (doc->node_count > 0)
         memcpy(base + lay.nodes, doc->nodes,
@@ -282,6 +292,9 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
             memcpy(base + lay.media_styles, doc->media_styles,
                    (size_t)media_pool_count * sizeof(uint16_t));
     }
+    if (calc_op_count > 0)
+        memcpy(base + lay.calc_ops, doc->calc_ops,
+               (size_t)calc_op_count * sizeof(QLUICalcOp));
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -458,13 +471,17 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         set_error_str("media style pool too large");
         return NULL;
     }
+    if (head.calc_op_count > QL_CFG_UI_MAX_CALC_OPS) {
+        set_error_str("too many calc() instructions (see QL_CFG_UI_MAX_CALC_OPS)");
+        return NULL;
+    }
 
     QLUIBlobLayout lay;
     compute_layout(head.node_count, head.style_count, head.text_count,
                    head.font_size_count, head.anim_count, head.keyframe_count,
                    head.image_count, head.image_data_size, head.area_count,
                    head.area_coord_count, head.media_count, head.media_pool_count,
-                   pool_size, head.name_len, &lay);
+                   head.calc_op_count, pool_size, head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
@@ -475,7 +492,8 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         head.off_images != lay.images || head.off_image_data != lay.image_data ||
         head.off_areas != lay.areas || head.off_area_coords != lay.area_coords ||
         head.off_media != lay.media || head.off_node_media != lay.node_media ||
-        head.off_media_styles != lay.media_styles || head.off_name != lay.name) {
+        head.off_media_styles != lay.media_styles ||
+        head.off_calc_ops != lay.calc_ops || head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
     }
@@ -535,6 +553,9 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         (head.media_count > 0) ? (const uint16_t *)(p + lay.node_media) : NULL;
     doc->media_styles =
         (head.media_count > 0) ? (const uint16_t *)(p + lay.media_styles) : NULL;
+    doc->calc_op_count = head.calc_op_count;
+    doc->calc_ops =
+        (head.calc_op_count > 0) ? (const QLUICalcOp *)(p + lay.calc_ops) : NULL;
 
     /* 热区：img 必须真的是 <img>，坐标区间必须落在 coords 段内 */
     for (uint16_t i = 0; i < doc->area_count; i++) {

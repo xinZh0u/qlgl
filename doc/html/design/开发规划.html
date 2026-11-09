@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：八个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2939,9 +2939,9 @@ blob v10 → <strong>v11</strong>。</p>
 <tbody>
 <tr>
 <td><strong>B1</strong></td>
-<td><code>min/max-width/height</code>、<code>em/rem</code>、<code>margin: auto</code>、<code>inherit</code>/<code>currentColor</code>、<code>!important</code>、<code>border-radius</code> 四角</td>
-<td>76.5%</td>
-<td>是 → blob v16</td>
+<td><code>min/max-width/height</code>、<code>em/rem</code>、<code>margin: auto</code>、<code>inherit</code>/<code>currentColor</code>、<code>!important</code>、<code>calc()</code>/<code>min()</code>/<code>max()</code>/<code>clamp()</code>（<strong>已完成</strong>）；剩 <code>border-radius</code> 四角</td>
+<td>77.7%</td>
+<td>是 → blob v16 / v22</td>
 </tr>
 <tr>
 <td><strong>B2</strong></td>
@@ -2971,9 +2971,11 @@ blob v10 → <strong>v11</strong>。</p>
 </table>
 <p><strong>单独立项</strong>（成本与一批相当，但属"新子系统"）：
 <code>transform: rotate()</code>（要旋转光栅路径）、真 group <code>opacity</code>（要离屏图层）。</p>
-<p><strong>仍明确不做</strong>：grid、float、CSS 变量 <code>var()</code>、<code>@media</code>、<code>list-style</code>/<code>::marker</code>、
-<code>mix-blend-mode</code>。注意这三道墙会限制"直接搬框架"的上限（Bootstrap 的 <code>var()</code> 537 条、
-<code>@media</code> 191 块），详见覆盖表 §19.5。</p>
+<p><strong>已经推翻了"不做"的结论</strong>（原因都是"构建期能算清"）：CSS 变量 <code>var()</code>（§18.1）、
+<code>@media</code> 宽度断点（§18.2）、<code>calc()</code>/<code>min()</code>/<code>max()</code>/<code>clamp()</code>（§18.3）——
+三者都不进运行期样式表，只在编译产物里多几段静态数据。</p>
+<p><strong>仍明确不做</strong>：grid、float、<code>list-style</code>/<code>::marker</code>、<code>mix-blend-mode</code>。
+这几道墙会限制"直接搬框架"的上限，详见覆盖表 §19.5。</p>
 <h4 id="css">CSS 能力包（与标签同构）—— <strong>计划</strong></h4>
 <p>CSS 侧同样按"包"裁剪，原则与 <a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 §3</a> 一致：
 <strong>字段与枚举永远全量，裁的是绘制/布局代码路径</strong>；关掉之后写该属性必须

@@ -190,6 +190,7 @@ static const char *const UNIT_NAMES[] = {
     "QL_UI_UNIT_AUTO", "QL_UI_UNIT_PX",   "QL_UI_UNIT_PERCENT",
     "QL_UI_UNIT_EM",   "QL_UI_UNIT_REM",  "QL_UI_UNIT_VW",
     "QL_UI_UNIT_VH",   "QL_UI_UNIT_VMIN", "QL_UI_UNIT_VMAX",
+    "QL_UI_UNIT_CALC",
 };
 
 static const char *const EASE_NAMES[] = {
@@ -834,6 +835,19 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fputs("};\n\n", f);
     }
 
+    /* ---- calc() 字节码池（有才输出） ---- */
+    if (doc->calc_op_count > 0 && doc->calc_ops != NULL) {
+        fprintf(f,
+                "/* calc()/min()/max()/clamp() 的后缀字节码（unit 对 TERM 是单位，"
+                "对 MIN/MAX/CLAMP 是参数个数） */\n");
+        fprintf(f, "static const QLUICalcOp %s_calc_ops[%u] = {\n", ident,
+                (unsigned)doc->calc_op_count);
+        for (uint16_t i = 0; i < doc->calc_op_count; i++)
+            fprintf(f, "    { %6d, %u, %3u },\n", (int)doc->calc_ops[i].value,
+                    (unsigned)doc->calc_ops[i].op, (unsigned)doc->calc_ops[i].unit);
+        fputs("};\n\n", f);
+    }
+
     /* ---- @media 断点（有才输出） ---- */
     if (doc->media_count > 0 && doc->media != NULL) {
         fprintf(f, "/* @media 断点区间（视口宽，闭区间；hi = 0xFFFF 表示无上界） */\n");
@@ -907,6 +921,14 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                 "    .node_media    = %s_node_media,\n"
                 "    .media_styles  = %s_media_styles,\n",
                 (unsigned)doc->media_count, ident, ident, ident);
+    }
+
+    /* calc() 池：没用 calc 时一个字都不多 */
+    if (doc->calc_op_count > 0 && doc->calc_ops != NULL) {
+        fprintf(f,
+                "    .calc_op_count = %u,\n"
+                "    .calc_ops      = %s_calc_ops,\n",
+                (unsigned)doc->calc_op_count, ident);
     }
 
     /* 热区接在 doc 字面量里：没有 <area> 时一个字都不多 */

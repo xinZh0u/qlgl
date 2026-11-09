@@ -1,0 +1,138 @@
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 10px;
+  background-color: #EAF2FF;
+  color: #0969DA;
+  font-size: 10px;
+}
+
+.sec {
+  margin-bottom: 14px;
+}
+
+.cap {
+  color: #57606A;
+  font-size: 10px;
+  margin-bottom: 6px;
+}
+
+/* ---- 1. calc() 分栏：三等分，间距从总宽里减掉 ---- */
+.trio {
+  display: flex;
+}
+
+.trio > .cell {
+  /* 除号只能对纯数字，所以整段括号一起除 */
+  width: calc((100% - 16px) / 3);
+  height: 34px;
+  margin-right: 8px;
+  border-radius: 8px;
+  background-color: #0969DA;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 34px;
+}
+
+.trio > .cell:last-child {
+  margin-right: 0;
+  background-color: #1F6FEB;
+}
+
+/* ---- 2. clamp()：随视口伸缩但有上下限 ---- */
+.bar {
+  height: 12px;
+  margin-bottom: 5px;
+  border-radius: 6px;
+}
+
+.b1 {
+  width: clamp(60px, 15vw, 200px);
+  background-color: #2DA44E;
+}
+
+.b2 {
+  width: clamp(60px, 25vw, 200px);
+  background-color: #BF8700;
+}
+
+.b3 {
+  width: clamp(60px, 35vw, 200px);
+  background-color: #B42318;
+}
+
+/* ---- 3. min() / max() ---- */
+.cards {
+  display: flex;
+}
+
+.card {
+  width: min(160px, 30%);
+  height: 34px;
+  margin-right: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #E4E8ED;
+  background-color: #F6F8FA;
+  color: #57606A;
+  text-align: center;
+  line-height: 16px;
+}
+
+.card.wide {
+  width: max(160px, 30%);
+  margin-right: 0;
+}
+
+/* ---- 4. 绝对定位居中 ---- */
+.stage {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  border-radius: 8px;
+  background-color: #F6F8FA;
+  border: 1px solid #E4E8ED;
+}
+
+.mid {
+  position: absolute;
+  top: 12px;
+  left: calc(50% - 90px);
+  width: 180px;
+  height: 34px;
+  border-radius: 8px;
+  background-color: #8250DF;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 34px;
+}
+
+.note {
+  color: #57606A;
+  line-height: 17px;
+  white-space: normal;
+}

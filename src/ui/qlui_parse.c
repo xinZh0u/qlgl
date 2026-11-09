@@ -453,12 +453,694 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
     return 0;
 }
 
+/* ===================== calc() / min() / max() / clamp() ===================== */
+
+/*
+ * 产出是一段**后缀字节码**（见 `QLUICalcOp`）。不在构建期直接把值算出来的原因
+ * 很简单：表达式里可能有 `%` / `vw` / `vh`，这些只有在布局期才知道基准。
+ *
+ * 构建期做的是**常量折叠**：标量乘除、纯数字加减、`min(1,2)` 这类全数字子式都
+ * 在编译时折掉，所以字节码里剩下的操作数永远是"带单位的长度"。
+ */
+
+typedef struct {
+    QLUICalcOp *ops;
+    int         n;
+    int         cap;
+} CalcPool;
+
+#define QL_CALC_MAX_NODES 48   /* 一条表达式最多几个节点 */
+#define QL_CALC_MAX_ARGS  8    /* min()/max() 最多几个参数 */
+#define QL_CALC_MAX_DEPTH 16   /* 求值栈深度上限（与 qlui.c 的 QL_CALC_STACK_MAX 一致） */
+
+enum {
+    CN_LEN = 0,   /* 操作数：`unit` + `v`（与 QLUILength 的存储约定一致） */
+    CN_NUM,       /* 纯数字（只在构建期存在，不进字节码） */
+    CN_ADD,
+    CN_SUB,
+    CN_MUL,
+    CN_DIV,
+    CN_MIN,
+    CN_MAX,
+    CN_CLAMP,
+};
+
+typedef struct {
+    uint8_t kind;
+    uint8_t unit;
+    int16_t v;      /* CN_LEN：px / % / em*100 … */
+    double  num;    /* CN_NUM */
+    int     a, b;   /* 二元运算的子节点 */
+    int     args[QL_CALC_MAX_ARGS];
+    int     nargs;
+} CNode;
+
+typedef struct {
+    const char *p;
+    const char *where;
+    const char *src;   /* 原始文本，报错时回显 */
+    int         allow_percent;
+    CNode       nodes[QL_CALC_MAX_NODES];
+    int         nn;
+} CalcParse;
+
+static int calc_fail(CalcParse *cp, const char *msg)
+{
+    set_error("%s: %s — '%s'", cp->where, msg, cp->src);
+    return 0;
+}
+
+static int calc_new_node(CalcParse *cp, uint8_t kind)
+{
+    if (cp->nn >= QL_CALC_MAX_NODES)
+        return -1;
+    CNode *n = &cp->nodes[cp->nn];
+    memset(n, 0, sizeof(*n));
+    n->kind = kind;
+    n->a = n->b = -1;
+    return cp->nn++;
+}
+
+/* 读一个操作数：<number><unit>；没写单位就是纯数字 */
+static int calc_parse_operand(CalcParse *cp, int *out)
+{
+    const char *p = skip_space(cp->p);
+    const char *end = NULL;
+    double num = 0;
+    if (!match_number(p, &end, &num)) {
+        calc_fail(cp, "这里需要一个数字");
+        return 0;
+    }
+    const char *u = end;
+    while ((*u >= 'a' && *u <= 'z') || *u == '%')
+        u++;
+    const size_t ulen = (size_t)(u - end);
+    int unit = -1;              /* -1 = 纯数字 */
+    int16_t v = 0;
+
+    if (ulen == 0) {
+        unit = -1;
+    } else if (ulen == 2 && memcmp(end, "px", 2) == 0) {
+        unit = QL_UI_UNIT_PX;
+    } else if (ulen == 1 && end[0] == '%') {
+        unit = QL_UI_UNIT_PERCENT;
+    } else if (ulen == 2 && memcmp(end, "em", 2) == 0) {
+        unit = QL_UI_UNIT_EM;
+    } else if (ulen == 3 && memcmp(end, "rem", 3) == 0) {
+        unit = QL_UI_UNIT_REM;
+    } else if (ulen == 2 && memcmp(end, "vw", 2) == 0) {
+        unit = QL_UI_UNIT_VW;
+    } else if (ulen == 2 && memcmp(end, "vh", 2) == 0) {
+        unit = QL_UI_UNIT_VH;
+    } else if (ulen == 4 && memcmp(end, "vmin", 4) == 0) {
+        unit = QL_UI_UNIT_VMIN;
+    } else if (ulen == 4 && memcmp(end, "vmax", 4) == 0) {
+        unit = QL_UI_UNIT_VMAX;
+    } else {
+        calc_fail(cp, "calc() 里不支持这个单位（支持 px / % / em / rem / vw / vh / vmin / vmax）");
+        return 0;
+    }
+
+    if (unit != -1 && unit != QL_UI_UNIT_PX && unit != QL_UI_UNIT_EM &&
+        unit != QL_UI_UNIT_REM && !cp->allow_percent) {
+        calc_fail(cp, "此处不支持百分比 / 视口单位");
+        return 0;
+    }
+    /* em / rem 存百分之一 em（与 parse_length 同一套约定） */
+    if (unit == QL_UI_UNIT_EM || unit == QL_UI_UNIT_REM)
+        v = (int16_t)py_round(num * 100.0);
+    else if (unit != -1)
+        v = (int16_t)py_round(num);
+
+    const int idx = calc_new_node(cp, (uint8_t)((unit < 0) ? CN_NUM : CN_LEN));
+    if (idx < 0) {
+        calc_fail(cp, "calc() 表达式太长");
+        return 0;
+    }
+    cp->nodes[idx].unit = (uint8_t)((unit < 0) ? 0 : (unsigned)unit);
+    cp->nodes[idx].v = v;
+    cp->nodes[idx].num = num;
+    cp->p = u;
+    *out = idx;
+    return 1;
+}
+
+static int calc_parse_expr(CalcParse *cp, int *out);
+
+/* 括号、嵌套函数、操作数 */
+static int calc_parse_primary(CalcParse *cp, int *out)
+{
+    const char *p = skip_space(cp->p);
+    if (*p == '(') {
+        cp->p = p + 1;
+        if (!calc_parse_expr(cp, out))
+            return 0;
+        cp->p = skip_space(cp->p);
+        if (*cp->p != ')') {
+            calc_fail(cp, "缺少 ')'");
+            return 0;
+        }
+        cp->p++;
+        return 1;
+    }
+    if (strncmp(p, "calc(", 5) == 0) {
+        cp->p = p + 5;
+        if (!calc_parse_expr(cp, out))
+            return 0;
+        cp->p = skip_space(cp->p);
+        if (*cp->p != ')') {
+            calc_fail(cp, "缺少 ')'");
+            return 0;
+        }
+        cp->p++;
+        return 1;
+    }
+
+    uint8_t kind = 0xFF;
+    if (strncmp(p, "min(", 4) == 0) {
+        kind = CN_MIN;
+        cp->p = p + 4;
+    } else if (strncmp(p, "max(", 4) == 0) {
+        kind = CN_MAX;
+        cp->p = p + 4;
+    } else if (strncmp(p, "clamp(", 6) == 0) {
+        kind = CN_CLAMP;
+        cp->p = p + 6;
+    }
+    if (kind != 0xFF) {
+        const int idx = calc_new_node(cp, kind);
+        if (idx < 0) {
+            calc_fail(cp, "calc() 表达式太长");
+            return 0;
+        }
+        for (;;) {
+            if (cp->nodes[idx].nargs >= QL_CALC_MAX_ARGS) {
+                calc_fail(cp, "min()/max() 的参数太多");
+                return 0;
+            }
+            int arg = -1;
+            if (!calc_parse_expr(cp, &arg))
+                return 0;
+            cp->nodes[idx].args[cp->nodes[idx].nargs++] = arg;
+            cp->p = skip_space(cp->p);
+            if (*cp->p != ',')
+                break;
+            cp->p++;
+        }
+        if (*cp->p != ')') {
+            calc_fail(cp, "缺少 ')'");
+            return 0;
+        }
+        cp->p++;
+        if (kind == CN_CLAMP && cp->nodes[idx].nargs != 3) {
+            calc_fail(cp, "clamp() 需要 3 个参数");
+            return 0;
+        }
+        *out = idx;
+        return 1;
+    }
+
+    return calc_parse_operand(cp, out);
+}
+
+/* 乘除 */
+static int calc_parse_term(CalcParse *cp, int *out)
+{
+    int left = -1;
+    if (!calc_parse_primary(cp, &left))
+        return 0;
+    for (;;) {
+        const char *p = skip_space(cp->p);
+        if (*p != '*' && *p != '/')
+            break;
+        const uint8_t kind = (*p == '*') ? CN_MUL : CN_DIV;
+        cp->p = p + 1;
+        int right = -1;
+        if (!calc_parse_primary(cp, &right))
+            return 0;
+        const int idx = calc_new_node(cp, kind);
+        if (idx < 0) {
+            calc_fail(cp, "calc() 表达式太长");
+            return 0;
+        }
+        cp->nodes[idx].a = left;
+        cp->nodes[idx].b = right;
+        left = idx;
+    }
+    *out = left;
+    return 1;
+}
+
+/* 加减 */
+static int calc_parse_expr(CalcParse *cp, int *out)
+{
+    int left = -1;
+    if (!calc_parse_term(cp, &left))
+        return 0;
+    for (;;) {
+        const char *p = skip_space(cp->p);
+        if (*p != '+' && *p != '-')
+            break;
+        const uint8_t kind = (*p == '+') ? CN_ADD : CN_SUB;
+        cp->p = p + 1;
+        int right = -1;
+        if (!calc_parse_term(cp, &right))
+            return 0;
+        const int idx = calc_new_node(cp, kind);
+        if (idx < 0) {
+            calc_fail(cp, "calc() 表达式太长");
+            return 0;
+        }
+        cp->nodes[idx].a = left;
+        cp->nodes[idx].b = right;
+        left = idx;
+    }
+    *out = left;
+    return 1;
+}
+
+/* 标量乘除的构建期折叠：把 num/den 乘进子树里的每个操作数 */
+static int calc_scale(CalcParse *cp, int i, double num, double den)
+{
+    CNode *n = &cp->nodes[i];
+    if (n->kind == CN_NUM) {
+        n->num = n->num * num / den;
+        return 1;
+    }
+    if (n->kind == CN_LEN) {
+        const double v = (double)n->v * num / den;
+        if (v > 32767.0 || v < -32768.0) {
+            calc_fail(cp, "calc() 的操作数超出范围");
+            return 0;
+        }
+        n->v = (int16_t)py_round(v);
+        return 1;
+    }
+    if (n->kind == CN_MIN || n->kind == CN_MAX || n->kind == CN_CLAMP) {
+        if (num < 0) {
+            calc_fail(cp, "负数只能乘单个操作数（min()/max()/clamp() 的大小关系会被翻转）");
+            return 0;
+        }
+        for (int k = 0; k < n->nargs; k++)
+            if (!calc_scale(cp, n->args[k], num, den))
+                return 0;
+        return 1;
+    }
+    if (!calc_scale(cp, n->a, num, den))
+        return 0;
+    return calc_scale(cp, n->b, num, den);
+}
+
+/* 把一个节点变成纯数字（折叠掉） */
+static void calc_as_num(CalcParse *cp, int i, double v)
+{
+    CNode *n = &cp->nodes[i];
+    n->kind = CN_NUM;
+    n->num = v;
+    n->nargs = 0;
+    n->a = n->b = -1;
+}
+
+/*
+ * 常量折叠。返回 1 表示这棵子树是**纯数字**（值写进 `*num`），0 表示它是长度表达式。
+ * 失败时返回 -1（错误已设）。
+ */
+static int calc_fold(CalcParse *cp, int i, double *num)
+{
+    CNode *n = &cp->nodes[i];
+    switch (n->kind) {
+    case CN_NUM:
+        *num = n->num;
+        return 1;
+    case CN_LEN:
+        return 0;
+    case CN_ADD:
+    case CN_SUB: {
+        const uint8_t kind = n->kind;
+        double a = 0, b = 0;
+        const int fa = calc_fold(cp, n->a, &a);
+        if (fa < 0)
+            return -1;
+        const int fb = calc_fold(cp, n->b, &b);
+        if (fb < 0)
+            return -1;
+        if (fa && fb) {
+            calc_as_num(cp, i, (kind == CN_ADD) ? (a + b) : (a - b));
+            *num = cp->nodes[i].num;
+            return 1;
+        }
+        if (fa || fb) {
+            calc_fail(cp, "calc() 不能把纯数字与长度相加减");
+            return -1;
+        }
+        /* 同单位的两个操作数直接折成一个（`calc(10px + 6px)` → 16px），
+         * 这样"只放得下 px 的字段"（font-size / border-*）也能用 calc() */
+        {
+            const CNode *la = &cp->nodes[n->a];
+            const CNode *lb = &cp->nodes[n->b];
+            if (la->kind == CN_LEN && lb->kind == CN_LEN && la->unit == lb->unit) {
+                const int v = (kind == CN_ADD) ? ((int)la->v + (int)lb->v)
+                                               : ((int)la->v - (int)lb->v);
+                if (v > 32767 || v < -32768) {
+                    calc_fail(cp, "calc() 的操作数超出范围");
+                    return -1;
+                }
+                cp->nodes[i].kind = CN_LEN;
+                cp->nodes[i].unit = la->unit;
+                cp->nodes[i].v = (int16_t)v;
+                cp->nodes[i].nargs = 0;
+                return 0;
+            }
+        }
+        return 0;
+    }
+    case CN_MUL:
+    case CN_DIV: {
+        const uint8_t kind = n->kind;
+        double a = 0, b = 0;
+        const int fa = calc_fold(cp, n->a, &a);
+        if (fa < 0)
+            return -1;
+        const int fb = calc_fold(cp, n->b, &b);
+        if (fb < 0)
+            return -1;
+        if (fa && fb) {
+            if (kind == CN_DIV) {
+                if (b == 0) {
+                    calc_fail(cp, "calc() 里除以 0");
+                    return -1;
+                }
+                calc_as_num(cp, i, a / b);
+            } else {
+                calc_as_num(cp, i, a * b);
+            }
+            *num = cp->nodes[i].num;
+            return 1;
+        }
+        /* 长度 ×/÷ 长度 没有意义 */
+        if (!fa && !fb) {
+            calc_fail(cp, "calc() 不支持长度相乘/相除（只能乘除纯数字）");
+            return -1;
+        }
+        const int lhs = fa ? n->b : n->a;     /* 长度那一侧 */
+        const double s = fa ? a : b;
+        if (kind == CN_DIV && fa) {
+            calc_fail(cp, "calc() 不支持用长度去除纯数字");
+            return -1;
+        }
+        const double mul = (kind == CN_MUL) ? s : 1.0;
+        const double div = (kind == CN_DIV) ? s : 1.0;
+        if (div == 0) {
+            calc_fail(cp, "calc() 里除以 0");
+            return -1;
+        }
+        if (!calc_scale(cp, lhs, mul, div))
+            return -1;
+        /* 结果就是被缩放的那棵子树：把父节点"变成"它 */
+        const CNode sub = cp->nodes[lhs];
+        cp->nodes[i] = sub;
+        return 0;
+    }
+    case CN_MIN:
+    case CN_MAX:
+    case CN_CLAMP: {
+        double vals[QL_CALC_MAX_ARGS];
+        int nlen = 0, nnum = 0;
+        for (int k = 0; k < n->nargs; k++) {
+            double v = 0;
+            const int r = calc_fold(cp, n->args[k], &v);
+            if (r < 0)
+                return -1;
+            if (r)
+                nnum++;
+            else
+                nlen++;
+            vals[k] = v;
+        }
+        if (nnum > 0 && nlen > 0) {
+            calc_fail(cp, "min()/max()/clamp() 的参数必须都是长度（不能混纯数字）");
+            return -1;
+        }
+        if (nnum > 0) {
+            double v = vals[0];
+            for (int k = 1; k < n->nargs; k++) {
+                if (n->kind == CN_CLAMP) {
+                    if (k == 1) {
+                        v = vals[0];
+                        continue;
+                    }
+                }
+                if (n->kind == CN_MIN)
+                    v = (vals[k] < v) ? vals[k] : v;
+                else if (n->kind == CN_MAX)
+                    v = (vals[k] > v) ? vals[k] : v;
+            }
+            if (n->kind == CN_CLAMP) {
+                v = vals[1];
+                if (v < vals[0])
+                    v = vals[0];
+                if (v > vals[2])
+                    v = vals[2];
+            }
+            calc_as_num(cp, i, v);
+            *num = v;
+            return 1;
+        }
+        /* 参数全是同单位的操作数 → 直接折成一个（`min(10px, 4px)` → 4px） */
+        {
+            const uint8_t u0 = cp->nodes[n->args[0]].unit;
+            int all_same = 1;
+            for (int k = 0; k < n->nargs; k++) {
+                const CNode *a = &cp->nodes[n->args[k]];
+                if (a->kind != CN_LEN || a->unit != u0) {
+                    all_same = 0;
+                    break;
+                }
+            }
+            if (all_same) {
+                int v = cp->nodes[n->args[0]].v;
+                for (int k = 1; k < n->nargs; k++) {
+                    const int c = cp->nodes[n->args[k]].v;
+                    if (n->kind == CN_MIN)
+                        v = (c < v) ? c : v;
+                    else if (n->kind == CN_MAX)
+                        v = (c > v) ? c : v;
+                }
+                if (n->kind == CN_CLAMP) {
+                    const int lo = cp->nodes[n->args[0]].v;
+                    const int val = cp->nodes[n->args[1]].v;
+                    const int hi = cp->nodes[n->args[2]].v;
+                    v = (val < lo) ? lo : ((val > hi) ? hi : val);
+                }
+                cp->nodes[i].kind = CN_LEN;
+                cp->nodes[i].unit = u0;
+                cp->nodes[i].v = (int16_t)v;
+                cp->nodes[i].nargs = 0;
+                return 0;
+            }
+        }
+        return 0;
+    }
+    default:
+        break;
+    }
+    calc_fail(cp, "calc() 表达式非法");
+    return -1;
+}
+
+/* 把折叠后的树写成后缀字节码；返回新的栈深度，-1 表示出错 */
+static int calc_emit(CalcParse *cp, int i, CalcPool *pool, int depth)
+{
+    const CNode *n = &cp->nodes[i];
+    switch (n->kind) {
+    case CN_LEN: {
+        if (depth >= QL_CALC_MAX_DEPTH) {
+            calc_fail(cp, "calc() 嵌套太深");
+            return -1;
+        }
+        if (pool->n >= pool->cap) {
+            calc_fail(cp, "calc() 指令池已满（QL_CFG_UI_MAX_CALC_OPS）");
+            return -1;
+        }
+        QLUICalcOp *op = &pool->ops[pool->n++];
+        op->op = QL_UI_CALC_TERM;
+        op->unit = n->unit;
+        op->value = n->v;
+        return depth + 1;
+    }
+    case CN_ADD:
+    case CN_SUB: {
+        int d = calc_emit(cp, n->a, pool, depth);
+        if (d < 0)
+            return -1;
+        d = calc_emit(cp, n->b, pool, d);
+        if (d < 0)
+            return -1;
+        if (pool->n >= pool->cap) {
+            calc_fail(cp, "calc() 指令池已满（QL_CFG_UI_MAX_CALC_OPS）");
+            return -1;
+        }
+        QLUICalcOp *op = &pool->ops[pool->n++];
+        op->op = (n->kind == CN_ADD) ? QL_UI_CALC_ADD : QL_UI_CALC_SUB;
+        op->unit = 0;
+        op->value = 0;
+        return d - 1;
+    }
+    case CN_MIN:
+    case CN_MAX:
+    case CN_CLAMP: {
+        int d = depth;
+        for (int k = 0; k < n->nargs; k++) {
+            d = calc_emit(cp, n->args[k], pool, d);
+            if (d < 0)
+                return -1;
+        }
+        if (pool->n >= pool->cap) {
+            calc_fail(cp, "calc() 指令池已满（QL_CFG_UI_MAX_CALC_OPS）");
+            return -1;
+        }
+        QLUICalcOp *op = &pool->ops[pool->n++];
+        op->op = (n->kind == CN_MIN) ? QL_UI_CALC_MIN
+                 : (n->kind == CN_MAX) ? QL_UI_CALC_MAX
+                                       : QL_UI_CALC_CLAMP;
+        op->unit = (uint8_t)n->nargs;
+        op->value = 0;
+        return d - (n->nargs - 1);
+    }
+    default:
+        break;
+    }
+    calc_fail(cp, "calc() 表达式里还残留构建期节点");
+    return -1;
+}
+
+/*
+ * 入口：`text` 必须是**已转小写**的整段声明值（`calc(...)` / `min(...)` / …）。
+ * 成功时写 `*unit`（`QL_UI_UNIT_CALC` 或退化成 `QL_UI_UNIT_PX`）与 `*value`
+ * （池下标）。
+ */
+static int calc_compile(const char *text, const char *where, int allow_percent,
+                        CalcPool *pool, uint8_t *unit, int *value)
+{
+    CalcParse cp;
+    memset(&cp, 0, sizeof(cp));
+    cp.where = where;
+    cp.src = text;
+    cp.allow_percent = allow_percent;
+
+    if (pool == NULL || QL_CFG_UI_MAX_CALC_OPS == 0) {
+        set_error("%s: calc()/min()/max()/clamp() 已被裁掉（QL_CFG_UI_MAX_CALC_OPS = 0）",
+                  where);
+        return 0;
+    }
+
+    const char *p = skip_space(text);
+    int root = -1;
+    const int is_calc = (strncmp(p, "calc(", 5) == 0);
+    if (is_calc) {
+        cp.p = p + 5;
+        if (!calc_parse_expr(&cp, &root))
+            return 0;
+    } else if (strncmp(p, "min(", 4) == 0 || strncmp(p, "max(", 4) == 0 ||
+               strncmp(p, "clamp(", 6) == 0) {
+        /* 顶层就是 min()/max()/clamp()：primary 只管到函数自己的 ')' */
+        cp.p = p;
+        if (!calc_parse_primary(&cp, &root))
+            return 0;
+    } else {
+        calc_fail(&cp, "不是 calc()/min()/max()/clamp() 表达式");
+        return 0;
+    }
+    cp.p = skip_space(cp.p);
+    if (is_calc) {
+        if (*cp.p != ')') {
+            calc_fail(&cp, "缺少 ')'");
+            return 0;
+        }
+        cp.p++;
+        cp.p = skip_space(cp.p);
+    }
+    if (*cp.p != '\0') {
+        calc_fail(&cp, "表达式后面还有多余内容");
+        return 0;
+    }
+
+    double v = 0;
+    const int scalar = calc_fold(&cp, root, &v);
+    if (scalar < 0)
+        return 0;
+    if (scalar == 0 && cp.nodes[root].kind == CN_LEN &&
+        cp.nodes[root].unit == QL_UI_UNIT_PX) {
+        /* 折到只剩一个 px 操作数（`calc(10px + 6px)`）：不占池 */
+        *unit = QL_UI_UNIT_PX;
+        *value = cp.nodes[root].v;
+        return 1;
+    }
+    if (scalar) {
+        /* 全常量的表达式（`calc(2 * 3)`）：直接折成 px，不占池 */
+        if (v > 32767.0 || v < -32768.0) {
+            calc_fail(&cp, "calc() 的结果超出范围");
+            return 0;
+        }
+        *unit = QL_UI_UNIT_PX;
+        *value = (int)py_round(v);
+        return 1;
+    }
+
+    /* 先在临时缓冲里生成，成功后才并进池（失败不能留下半条表达式） */
+    QLUICalcOp tmp[64];
+    CalcPool scratch;
+    scratch.ops = tmp;
+    scratch.n = 0;
+    scratch.cap = (int)(sizeof(tmp) / sizeof(tmp[0]));
+    if (calc_emit(&cp, root, &scratch, 0) != 1) {
+        if (s_error[0] == '\0')
+            calc_fail(&cp, "calc() 表达式非法");
+        return 0;
+    }
+    tmp[scratch.n].op = QL_UI_CALC_END;
+    tmp[scratch.n].unit = 0;
+    tmp[scratch.n].value = 0;
+    const int need = scratch.n + 1;
+
+    if (pool->n + need > (int)QL_CFG_UI_MAX_CALC_OPS) {
+        set_error("%s: calc() 指令池超过上限 %d 条（QL_CFG_UI_MAX_CALC_OPS）", where,
+                  (int)QL_CFG_UI_MAX_CALC_OPS);
+        return 0;
+    }
+    if (pool->n + need > pool->cap) {
+        int cap = (pool->cap > 0) ? pool->cap : 32;
+        while (cap < pool->n + need)
+            cap *= 2;
+        if (cap > (int)QL_CFG_UI_MAX_CALC_OPS)
+            cap = (int)QL_CFG_UI_MAX_CALC_OPS;
+        QLUICalcOp *np = (QLUICalcOp *)ql_mem_realloc(
+            pool->ops, (size_t)cap * sizeof(QLUICalcOp));
+        if (np == NULL) {
+            set_error("%s: out of memory", where);
+            return 0;
+        }
+        pool->ops = np;
+        pool->cap = cap;
+    }
+    const int start = pool->n;
+    for (int k = 0; k < need; k++)
+        pool->ops[pool->n++] = tmp[k];
+    *unit = QL_UI_UNIT_CALC;
+    *value = start;
+    return 1;
+}
+
 /* 长度：auto / <num>px / <num>%。unit 用 QL_UI_UNIT_* */
 static int parse_length(const char *text, const char *where, int allow_percent,
-                        uint8_t *unit, int *value)
+                        CalcPool *calc, uint8_t *unit, int *value)
 {
     char t[128];
     trim_lower(text, t, sizeof(t));
+
+    if (strncmp(t, "calc(", 5) == 0 || strncmp(t, "min(", 4) == 0 ||
+        strncmp(t, "max(", 4) == 0 || strncmp(t, "clamp(", 6) == 0)
+        return calc_compile(t, where, allow_percent, calc, unit, value);
 
     if (strcmp(t, "auto") == 0) {
         *unit = QL_UI_UNIT_AUTO;
@@ -561,6 +1243,19 @@ static int parse_length(const char *text, const char *where, int allow_percent,
     return 0;
 }
 
+/*
+ * 有些字段只放得下 int16 数值（font-size / border-* / letter-spacing …），
+ * 没有位置存表达式下标 —— 这类字段只接受**构建期就能折成 px** 的 calc()。
+ */
+static int length_wants_const(uint8_t unit, const char *where, const char *prop)
+{
+    if (unit != QL_UI_UNIT_CALC)
+        return 1;
+    set_error("%s: %s 只接受构建期就能算成 px 的值（calc() 里不能带 %%/em/rem/vw/vh）",
+              where, prop);
+    return 0;
+}
+
 /* parse_number：px / % / 纯数字 / auto */
 enum { NUM_PX, NUM_PCT, NUM_NUM, NUM_AUTO };
 
@@ -626,7 +1321,7 @@ static int parse_number(const char *text, const char *where, int allow_percent,
  * 布局在算边距时还没有那个基准 —— 与其算个大概，不如明确报错。
  */
 static int parse_edges(const char *text, const char *where, int allow_auto,
-                       QLUILength out[4])
+                       CalcPool *calc, QLUILength out[4])
 {
     QLUILength vals[4];
     int n = 0;
@@ -649,7 +1344,9 @@ static int parse_edges(const char *text, const char *where, int allow_auto,
         tok[len] = '\0';
         uint8_t unit = QL_UI_UNIT_PX;
         int v = 0;
-        if (!parse_length(tok, where, 0, &unit, &v))
+        if (!parse_length(tok, where, 0, calc, &unit, &v))
+            return 0;
+        if (!length_wants_const(unit, where, "margin/padding"))
             return 0;
         if (unit == QL_UI_UNIT_AUTO && !allow_auto) {
             set_error("%s: padding 不支持 auto", where);
@@ -732,7 +1429,8 @@ static void resolve_edge_units(QLUIEdges *e, uint8_t *bits, int font_px, int roo
  * 才知道根元素用的是哪个字号（根的 `font-size` 本身也可能是 em/px），所以留到
  * 最后统一折一遍。已经是 px 的字段直接跳过，零成本。
  */
-static void resolve_length_units(QLUIStyle *s, int font_px, int root_px)
+static void resolve_length_units(QLUIStyle *s, int font_px, int root_px,
+                                 CalcPool *calc)
 {
     QLUILength *all[10];
     all[0] = &s->width;
@@ -751,6 +1449,24 @@ static void resolve_length_units(QLUIStyle *s, int font_px, int root_px)
         } else if (l->unit == QL_UI_UNIT_REM && root_px > 0) {
             l->value = (int16_t)(((int32_t)l->value * root_px) / 100);
             l->unit = QL_UI_UNIT_PX;
+        } else if (l->unit == QL_UI_UNIT_CALC) {
+            /* 表达式里的 em / rem 也要折 —— 池是文档级共享的，就地改 */
+            if (calc != NULL && calc->ops != NULL) {
+                for (int k = l->value; k >= 0 && k < calc->n; k++) {
+                    QLUICalcOp *op = &calc->ops[k];
+                    if (op->op == QL_UI_CALC_END)
+                        break;
+                    if (op->op != QL_UI_CALC_TERM)
+                        continue;
+                    if (op->unit == QL_UI_UNIT_EM && font_px > 0) {
+                        op->value = (int16_t)(((int32_t)op->value * font_px) / 100);
+                        op->unit = QL_UI_UNIT_PX;
+                    } else if (op->unit == QL_UI_UNIT_REM && root_px > 0) {
+                        op->value = (int16_t)(((int32_t)op->value * root_px) / 100);
+                        op->unit = QL_UI_UNIT_PX;
+                    }
+                }
+            }
         }
     }
 }
@@ -6455,7 +7171,7 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
             if ((props & KF_RADIUS) != 0) {
                 uint8_t unit;
                 int v;
-                if (!parse_length(decls_get(d, "border-radius"), where, 1, &unit, &v)) {
+                if (!parse_length(decls_get(d, "border-radius"), where, 1, NULL, &unit, &v)) {
                     ql_mem_free(idx);
                     return 0;
                 }
@@ -6809,7 +7525,7 @@ static int anim_index_of(const Decls *st, const char *where, const KfRanges *ran
 /* 把一份声明集合编译成 QLUIStyle。检查顺序与 Python 侧一致（第一个错就停） */
 static int compile_style(const Decls *st, const char *where, const KfRanges *ranges,
                          const KfTable *kftab, AnimTable *anims, IntList *fonts,
-                         QLUIStyle *out)
+                         CalcPool *calc, QLUIStyle *out)
 {
     memset(out, 0, sizeof(*out));
 
@@ -6847,9 +7563,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
 
     uint8_t wu = QL_UI_UNIT_AUTO, hu = QL_UI_UNIT_AUTO;
     int wv = 0, hv = 0;
-    if ((v = decls_get(st, "width")) != NULL && !parse_length(v, where, 1, &wu, &wv))
+    if ((v = decls_get(st, "width")) != NULL && !parse_length(v, where, 1, calc, &wu, &wv))
         return 0;
-    if ((v = decls_get(st, "height")) != NULL && !parse_length(v, where, 1, &hu, &hv))
+    if ((v = decls_get(st, "height")) != NULL && !parse_length(v, where, 1, calc, &hu, &hv))
         return 0;
 
     /* min/max：`auto` = 没设；只接受 px / %（与 width/height 同一套） */
@@ -6866,7 +7582,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     if ((v = decls_get(st, "letter-spacing")) != NULL) {
         uint8_t lu = 0;
         int lval = 0;
-        if (!parse_length(v, where, 0, &lu, &lval))
+        if (!parse_length(v, where, 0, calc, &lu, &lval))
+            return 0;
+        if (!length_wants_const(lu, where, "letter-spacing"))
             return 0;
         if (lu == QL_UI_UNIT_PERCENT || lu == QL_UI_UNIT_VW ||
             lu == QL_UI_UNIT_VH || lu == QL_UI_UNIT_VMIN ||
@@ -6880,7 +7598,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     if ((v = decls_get(st, "text-indent")) != NULL) {
         uint8_t lu = 0;
         int lval = 0;
-        if (!parse_length(v, where, 0, &lu, &lval))
+        if (!parse_length(v, where, 0, calc, &lu, &lval))
+            return 0;
+        if (!length_wants_const(lu, where, "letter-spacing"))
             return 0;
         if (lu == QL_UI_UNIT_PERCENT || lu == QL_UI_UNIT_VW ||
             lu == QL_UI_UNIT_VH || lu == QL_UI_UNIT_VMIN ||
@@ -7017,19 +7737,19 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         opacity = (int)py_round(ov * 255.0);
     }
     if ((v = decls_get(st, "min-width")) != NULL) {
-        if (!parse_length(v, where, 1, &mnwu, &mnwv))
+        if (!parse_length(v, where, 1, calc, &mnwu, &mnwv))
             return 0;
         if (mnwu == QL_UI_UNIT_AUTO)
             mnwu = QL_UI_UNIT_AUTO;
     }
     if ((v = decls_get(st, "max-width")) != NULL &&
-        !parse_length(v, where, 1, &mxwu, &mxwv))
+        !parse_length(v, where, 1, calc, &mxwu, &mxwv))
         return 0;
     if ((v = decls_get(st, "min-height")) != NULL &&
-        !parse_length(v, where, 1, &mnhu, &mnhv))
+        !parse_length(v, where, 1, calc, &mnhu, &mnhv))
         return 0;
     if ((v = decls_get(st, "max-height")) != NULL &&
-        !parse_length(v, where, 1, &mxhu, &mxhv))
+        !parse_length(v, where, 1, calc, &mxhu, &mxhv))
         return 0;
     if (mnwu == QL_UI_UNIT_PX && mxwu == QL_UI_UNIT_PX && mxwv < mnwv) {
         set_error("%s: max-width(%dpx) 小于 min-width(%dpx)", where, mxwv, mnwv);
@@ -7044,10 +7764,10 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         padding_e[i] = margin_e[i];
     }
     if ((v = decls_get(st, "margin")) != NULL &&
-        !parse_edges(v, where, 1, margin_e))
+        !parse_edges(v, where, 1, calc, margin_e))
         return 0;
     if ((v = decls_get(st, "padding")) != NULL &&
-        !parse_edges(v, where, 0, padding_e))
+        !parse_edges(v, where, 0, calc, padding_e))
         return 0;
     {
         static const char *const sides[4] = { "top", "right", "bottom", "left" };
@@ -7057,14 +7777,14 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             if ((v = decls_get(st, key)) != NULL) {
                 /* css-key* 单独给一条边：借 parse_edges 的语法，只取第 0 条 */
                 QLUILength one[4];
-                if (!parse_edges(v, where, 1, one))
+                if (!parse_edges(v, where, 1, calc, one))
                     return 0;
                 margin_e[i] = one[0];
             }
             snprintf(key, sizeof(key), "padding-%s", sides[i]);
             if ((v = decls_get(st, key)) != NULL) {
                 QLUILength one[4];
-                if (!parse_edges(v, where, 0, one))
+                if (!parse_edges(v, where, 0, calc, one))
                     return 0;
                 padding_e[i] = one[0];
             }
@@ -7088,7 +7808,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         uint8_t unit;
         int num;
         if (!parse_length((v = decls_get(st, "font-size")) != NULL ? v : "16px", where,
-                          1, &unit, &num))
+                          1, calc, &unit, &num))
+            return 0;
+        if (!length_wants_const(unit, where, "font-size"))
             return 0;
         font_px = num;
     }
@@ -7327,11 +8049,15 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         uint8_t unit;
         int num;
         if (!parse_length((v = decls_get(st, "border-width")) != NULL ? v : "0", where,
-                          1, &unit, &num))
+                          1, calc, &unit, &num))
+            return 0;
+        if (!length_wants_const(unit, where, "border-width"))
             return 0;
         bw = num;
         if (!parse_length((v = decls_get(st, "border-radius")) != NULL ? v : "0", where,
-                          1, &unit, &num))
+                          1, calc, &unit, &num))
+            return 0;
+        if (!length_wants_const(unit, where, "border-radius"))
             return 0;
         radius = num;
     }
@@ -7476,7 +8202,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             uint8_t unit = QL_UI_UNIT_AUTO;
             int val = 0;
             v = decls_get(st, sides[i]);
-            if (v != NULL && !parse_length(v, where, 1, &unit, &val))
+            if (v != NULL && !parse_length(v, where, 1, calc, &unit, &val))
                 return 0;
             inset[i].value = (int16_t)val;
             inset[i].unit = unit;
@@ -7700,7 +8426,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
      * 就排在前面几条赋值里）。此刻 `font_px` 已经是这个元素的最终字号
      * （`font-size` 的继承值也在 decls 里）；`rem` 要等整棵树走完才知道根字号。
      */
-    resolve_length_units(out, font_px, 0);
+    resolve_length_units(out, font_px, 0, calc);
     resolve_edge_units(&out->margin, &out->margin_unit, font_px, 0);
     resolve_edge_units(&out->padding, &out->padding_unit, font_px, 0);
     /* letter-spacing / text-indent 共用同一套 em/rem 折算（1 位 em、2 位 rem） */
@@ -7750,7 +8476,8 @@ typedef struct {
 /* 样式表：按 (属性, 值) 集合去重。首次出现的顺序即下标 */
 static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
                          const KfRanges *ranges, const KfTable *kftab,
-                         AnimTable *anims, IntList *fonts, uint16_t *out)
+                         AnimTable *anims, IntList *fonts, CalcPool *calc,
+                         uint16_t *out)
 {
     size_t siglen = 0;
     char *sig = style_signature(decls, &siglen);
@@ -7782,7 +8509,7 @@ static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
     }
     StyleEnt *e = &tab->e[tab->n];
     memset(e, 0, sizeof(*e));
-    if (!compile_style(decls, where, ranges, kftab, anims, fonts, &e->st)) {
+    if (!compile_style(decls, where, ranges, kftab, anims, fonts, calc, &e->st)) {
         ql_mem_free(sig);
         return 0;
     }
@@ -8205,6 +8932,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     TextPool pool;
     IntList fonts;
     MediaConds medias;
+    CalcPool calc;
     AreaOut areas;
     Flat *flat = NULL;
     int nflat = 0;
@@ -8229,6 +8957,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     memset(&pool, 0, sizeof(pool));
     memset(&fonts, 0, sizeof(fonts));
     memset(&medias, 0, sizeof(medias));
+    memset(&calc, 0, sizeof(calc));
     memset(&areas, 0, sizeof(areas));
 
     root = parse_html(html);
@@ -8354,7 +9083,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
 
         uint16_t idx = 0xFFFF;
         if (!style_tab_add(&styles, &e->final_decls, where, &kfranges, &kftab, &anims,
-                           &fonts, &idx))
+                           &fonts, &calc, &idx))
             goto done;
         if (b == 0) {
             e->style_index = idx;
@@ -8436,7 +9165,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             } else {
                 uint16_t vidx = 0xFFFF;
                 if (!style_tab_add(&styles, &vfinal, where, &kfranges, &kftab, &anims,
-                                   &fonts, &vidx)) {
+                                   &fonts, &calc, &vidx)) {
                     ql_mem_free(vsig);
                     decls_free(&vbase);
                     decls_free(&vinherited);
@@ -8551,7 +9280,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const int root_px = (rfid < fonts.n) ? fonts.v[rfid] : 16;
         for (int i = 0; i < styles.n; i++) {
             QLUIStyle *st = &styles.e[i].st;
-            resolve_length_units(st, 0, root_px);
+            resolve_length_units(st, 0, root_px, &calc);
             const int fp = (st->font_id < fonts.n) ? fonts.v[st->font_id] : 16;
             resolve_edge_units(&st->margin, &st->margin_unit, fp, root_px);
             resolve_edge_units(&st->padding, &st->padding_unit, fp, root_px);
@@ -8604,6 +9333,9 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const size_t off_media_styles = off;
         if (nrange > 0)
             off += QL_UI_ALIGN8((size_t)media_pool_n * sizeof(uint16_t));
+        const size_t off_calc = off;
+        if (calc.n > 0)
+            off += QL_UI_ALIGN8((size_t)calc.n * sizeof(QLUICalcOp));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -8685,6 +9417,10 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                 mst[i] = media_pool[i];
         }
 
+        QLUICalcOp *cop = (QLUICalcOp *)(void *)(base + off_calc);
+        for (int i = 0; i < calc.n; i++)
+            cop[i] = calc.ops[i];
+
         char *nmd = (char *)(base + off_name);
         memcpy(nmd, nm, name_len);
 
@@ -8722,12 +9458,15 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         /* 没有 @media 时不分配这两个数组（blob 头里计数为 0，两边一致） */
         doc->node_media = (nrange > 0) ? nmd_ofs : NULL;
         doc->media_styles = (nrange > 0) ? mst : NULL;
+        doc->calc_op_count = (uint16_t)calc.n;
+        doc->calc_ops = (calc.n > 0) ? cop : NULL;
         doc->arena = arena;
         arena = NULL;         /* 所有权交给 doc */
     }
 
 done:
     ql_mem_free(medias.v);
+    ql_mem_free(calc.ops);
     ql_mem_free(node_media_ofs);
     ql_mem_free(media_pool);
     ql_mem_free(bucket_idx);

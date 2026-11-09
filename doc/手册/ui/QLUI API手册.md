@@ -348,6 +348,40 @@ box-shadow: none;
 > 一个实践提醒：flex 子项请写 `box-sizing: border-box`。content-box 时主轴尺寸会
 > 少算 padding + border（见 [CSS3 覆盖与裁剪](CSS3覆盖与裁剪.html) §19.1）。
 
+### 3.6.2 `calc()` / `min()` / `max()` / `clamp()`
+
+```css
+.side  { width: calc(100% - 260px); }        /* 主区：右边留 260px 给侧栏 */
+.col   { width: calc((100% - 16px) / 3); }   /* 三等分（括号一起除） */
+.box   { width: min(160px, 30%); }           /* 取小 */
+.panel { width: clamp(240px, 40vw, 480px); } /* 有上下限的伸缩 */
+.mid   { position: absolute; left: calc(50% - 90px); }   /* 绝对定位居中 */
+```
+
+| 项 | 支持 |
+|---|---|
+| `+` `-` `*` `/`、括号、嵌套 `calc()` | ✅ |
+| `min()` / `max()`（2..8 个参数）、`clamp(lo, val, hi)` | ✅ 参数可以是长度表达式 |
+| 单位 | `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` |
+| 用在 | `width` / `height` / `min-*` / `max-*` / `top` / `right` / `bottom` / `left` |
+| `font-size` / `border-*` / `letter-spacing` / `text-indent` / `margin` / `padding` | 只接受**构建期能折成 px** 的 `calc()`（如 `calc(10px + 6px)`）；带 `%`/`em`/`vw` 报错 |
+| 长度相乘 / 除以 0 / 括号不配对 / 未知单位 | ❌ 构建期报错 |
+
+**它是怎么做到的**：公式里可能有 `%` / `vw` / `vh`，基准只有布局时才知道，所以构建期
+把公式编译成一段**后缀字节码**存进文档（`doc->calc_ops[]`，每条 4 字节），样式字段只留
+一个 16 位下标（`QLUILength.unit == QL_UI_UNIT_CALC`）；布局时用一个 16 深的栈求值，
+**没有递归、没有分配**。
+
+- 标量乘除在构建期折进每个操作数（`calc(2 * 10px)` → `20px`，不占池）；
+- 百分比按整数存，所以 `calc(100% / 3)` 是 33%（不是 33.33%）；
+- 池上限 `QL_CFG_UI_MAX_CALC_OPS`（默认 256 条，**设成 0 就整套裁掉**，写 `calc()` 报错）；
+- 没用 `calc()` 的文档，这一段的长度为 0，blob 与以前一样紧凑（blob v22）。
+
+```c
+/* 宿主想知道一个 doc 用了多少字节码：直接读字段即可 */
+printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
+```
+
 ### 3.7 Flexbox
 
 ```css

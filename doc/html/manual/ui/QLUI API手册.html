@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：八个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -851,6 +851,62 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <p>一个实践提醒：flex 子项请写 <code>box-sizing: border-box</code>。content-box 时主轴尺寸会
 少算 padding + border（见 <a href="CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> §19.1）。</p>
 </blockquote>
+<h3 id="362-calc-min-max-clamp">3.6.2 <code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">side</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nb">calc</span><span class="p">(</span><span class="mi">100</span><span class="kt">%</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">260</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 主区：右边留 260px 给侧栏 */</span>
+<span class="p">.</span><span class="nc">col</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nb">calc</span><span class="p">(</span><span class="err">(</span><span class="mi">100</span><span class="kt">%</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 三等分（括号一起除） */</span>
+<span class="p">.</span><span class="nc">box</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nf">min</span><span class="p">(</span><span class="mi">160</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">           </span><span class="c">/* 取小 */</span>
+<span class="p">.</span><span class="nc">panel</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nf">clamp</span><span class="p">(</span><span class="mi">240</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">40</span><span class="kt">vw</span><span class="p">,</span><span class="w"> </span><span class="mi">480</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="c">/* 有上下限的伸缩 */</span>
+<span class="p">.</span><span class="nc">mid</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">left</span><span class="p">:</span><span class="w"> </span><span class="nb">calc</span><span class="p">(</span><span class="mi">50</span><span class="kt">%</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">90</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 绝对定位居中 */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>+</code> <code>-</code> <code>*</code> <code>/</code>、括号、嵌套 <code>calc()</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>min()</code> / <code>max()</code>（2..8 个参数）、<code>clamp(lo, val, hi)</code></td>
+<td>✅ 参数可以是长度表达式</td>
+</tr>
+<tr>
+<td>单位</td>
+<td><code>px</code> / <code>%</code> / <code>em</code> / <code>rem</code> / <code>vw</code> / <code>vh</code> / <code>vmin</code> / <code>vmax</code></td>
+</tr>
+<tr>
+<td>用在</td>
+<td><code>width</code> / <code>height</code> / <code>min-*</code> / <code>max-*</code> / <code>top</code> / <code>right</code> / <code>bottom</code> / <code>left</code></td>
+</tr>
+<tr>
+<td><code>font-size</code> / <code>border-*</code> / <code>letter-spacing</code> / <code>text-indent</code> / <code>margin</code> / <code>padding</code></td>
+<td>只接受<strong>构建期能折成 px</strong> 的 <code>calc()</code>（如 <code>calc(10px + 6px)</code>）；带 <code>%</code>/<code>em</code>/<code>vw</code> 报错</td>
+</tr>
+<tr>
+<td>长度相乘 / 除以 0 / 括号不配对 / 未知单位</td>
+<td>❌ 构建期报错</td>
+</tr>
+</tbody>
+</table>
+<p><strong>它是怎么做到的</strong>：公式里可能有 <code>%</code> / <code>vw</code> / <code>vh</code>，基准只有布局时才知道，所以构建期
+把公式编译成一段<strong>后缀字节码</strong>存进文档（<code>doc-&gt;calc_ops[]</code>，每条 4 字节），样式字段只留
+一个 16 位下标（<code>QLUILength.unit == QL_UI_UNIT_CALC</code>）；布局时用一个 16 深的栈求值，
+<strong>没有递归、没有分配</strong>。</p>
+<ul>
+<li>标量乘除在构建期折进每个操作数（<code>calc(2 * 10px)</code> → <code>20px</code>，不占池）；</li>
+<li>百分比按整数存，所以 <code>calc(100% / 3)</code> 是 33%（不是 33.33%）；</li>
+<li>池上限 <code>QL_CFG_UI_MAX_CALC_OPS</code>（默认 256 条，<strong>设成 0 就整套裁掉</strong>，写 <code>calc()</code> 报错）；</li>
+<li>没用 <code>calc()</code> 的文档，这一段的长度为 0，blob 与以前一样紧凑（blob v22）。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 宿主想知道一个 doc 用了多少字节码：直接读字段即可 */</span>
+<span class="n">printf</span><span class="p">(</span><span class="s">&quot;calc 指令 %u 条</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">unsigned</span><span class="p">)</span><span class="n">doc</span><span class="o">-&gt;</span><span class="n">calc_op_count</span><span class="p">);</span>
+</code></pre></div>
+
 <h3 id="37-flexbox">3.7 Flexbox</h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">row</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span><span class="w"> </span><span class="k">flex-direction</span><span class="p">:</span><span class="w"> </span><span class="kc">row</span><span class="p">;</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">align-items</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* 等分 */</span>

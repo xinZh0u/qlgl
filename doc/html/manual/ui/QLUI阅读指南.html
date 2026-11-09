@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：八个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -476,8 +476,8 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </thead>
 <tbody>
 <tr>
-<td>不支持的标签</td>
-<td><code>&lt;table&gt;</code> / <code>&lt;img&gt;</code> / <code>&lt;input&gt;</code>（提示会告诉你替代做法）</td>
+<td>不认识的标签</td>
+<td>自定义标签、obsolete 元素（<code>marquee</code> / <code>center</code> / <code>font</code> 等）；<code>&lt;iframe&gt;</code> 之类则是<strong>占位盒</strong>，不是错误</td>
 </tr>
 <tr>
 <td>HTML 结构错</td>
@@ -493,7 +493,7 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </tr>
 <tr>
 <td>单位</td>
-<td><code>1.5em</code> / <code>rem</code> / <code>vh</code>（只支持 <code>px</code> 与 <code>%</code>）</td>
+<td><code>ch</code> / <code>ex</code> / <code>lh</code>（支持 <code>px</code> / <code>%</code> / <code>em</code> / <code>rem</code> / <code>vw</code> / <code>vh</code> / <code>vmin</code> / <code>vmax</code> / <code>calc()</code>）</td>
 </tr>
 <tr>
 <td>颜色</td>
@@ -501,11 +501,11 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </tr>
 <tr>
 <td>at-rule</td>
-<td><code>@media</code> / <code>@supports</code>（只认 <code>@keyframes</code>）</td>
+<td><code>@supports</code> / <code>@font-face</code>（认 <code>@keyframes</code>，<code>@media</code> 只认宽度断点）</td>
 </tr>
 <tr>
 <td>选择器</td>
-<td><code>+</code> / <code>~</code> 兄弟选择器、<code>::before</code> 伪元素</td>
+<td><code>:has()</code>、属性选择器的复杂匹配（<code>+</code> / <code>~</code> / <code>::before</code> 已支持）</td>
 </tr>
 <tr>
 <td>简写值个数</td>
@@ -513,7 +513,7 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </tr>
 <tr>
 <td>transform</td>
-<td><code>rotate()</code> / <code>matrix()</code>；<code>scale</code> 超出 <code>0~32.767</code></td>
+<td><code>rotate()</code> / <code>skew()</code> / <code>matrix()</code>；<code>scale</code> 超出 <code>0~32.767</code></td>
 </tr>
 <tr>
 <td>关键帧</td>
@@ -525,7 +525,7 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </tr>
 <tr>
 <td>transition</td>
-<td>写了两段时间（延迟）</td>
+<td>延迟（<code>transition-delay</code>）仍不支持；<code>transition</code> 简写里各段的时长/缓动必须一致</td>
 </tr>
 <tr>
 <td>状态规则</td>
@@ -539,8 +539,9 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </table>
 <blockquote>
 <p><strong>已经不再是错误的东西</strong>（M3/M5.5 之后）：<code>position</code> / <code>flex-*</code> / <code>box-shadow</code> /
-<code>linear-gradient</code> / <code>transform</code> / <code>clip-path</code> / 混合内容（<code>&lt;p&gt;文字&lt;b&gt;粗&lt;/b&gt;&lt;/p&gt;</code>）
-全都支持了。本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。</p>
+<code>linear-gradient</code> / <code>transform</code> / <code>clip-path</code> / <code>&lt;img&gt;</code> / <code>&lt;input&gt;</code> / <code>@media</code>（宽度断点）/
+<code>calc()</code> / CSS 变量 <code>/</code>+<code>与</code>~<code>兄弟选择器 /</code>::before` 全都支持了。
+本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。</p>
 </blockquote>
 <p><strong>唯一一个"结构上"的限制</strong>：元素级 doc 不能混用（跨 doc 的 <code>uint16</code> 下标无法引用），
 混用单位锁死在<strong>面板</strong>（一个 <code>QLUIRoot</code> ↔ 一份 doc）。</p>

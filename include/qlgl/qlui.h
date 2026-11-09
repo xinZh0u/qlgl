@@ -257,7 +257,33 @@ typedef enum {
     QL_UI_UNIT_VH,
     QL_UI_UNIT_VMIN,       /* 视口长边/短边里**较小**的那个 */
     QL_UI_UNIT_VMAX,
+    /*
+     * `calc()` / `min()` / `max()` / `clamp()` 编译成的**后缀字节码**。
+     * `value` 是 `QLUIDoc.calc_ops[]` 里的起始下标；表达式自带 `QL_UI_CALC_END`
+     * 结尾，所以多个字段可以指向同一段。求值在布局期做 —— 只有那时才知道
+     * 百分比基准和视口尺寸。
+     */
+    QL_UI_UNIT_CALC,
 } QLUIUnit;
+
+/* `calc()` 字节码的一条指令（4 字节，blob 里顺序存放） */
+typedef enum {
+    QL_UI_CALC_TERM = 0,   /* 压入操作数：`value` + `unit`（QLUIUnit） */
+    QL_UI_CALC_ADD,
+    QL_UI_CALC_SUB,
+    QL_UI_CALC_MIN,        /* `unit` = 参数个数（2..8） */
+    QL_UI_CALC_MAX,
+    QL_UI_CALC_CLAMP,      /* 3 个参数：lo / val / hi */
+    QL_UI_CALC_END,        /* 表达式结束 */
+} QLUICalcOpKind;
+
+typedef struct {
+    int16_t value;         /* TERM：按 `unit` 解释的操作数；其余指令不用 */
+    uint8_t op;            /* QLUICalcOpKind */
+    uint8_t unit;          /* TERM：QLUIUnit；MIN/MAX/CLAMP：参数个数 */
+} QLUICalcOp;
+
+_Static_assert(sizeof(QLUICalcOp) == 4, "calc 指令必须是 4 字节（blob 里顺序存放）");
 
 /* 一条边的四个值，顺序固定为 上右下左 */
 typedef struct {
@@ -705,6 +731,13 @@ typedef struct {
     const QLUIMedia  *media;
     const uint16_t   *node_media;
     const uint16_t   *media_styles;
+    /*
+     * `calc()` / `min()` / `max()` / `clamp()` 的字节码池。样式里
+     * `unit == QL_UI_UNIT_CALC` 的字段用 `value` 指向这里。
+     * 没用 calc 的文档长度为 0，不占 blob 空间。
+     */
+    uint16_t          calc_op_count;
+    const QLUICalcOp *calc_ops;
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
@@ -1206,7 +1239,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 /*
  * 格式（little-endian，各段按 8 字节对齐）：
  *
- *   [ QLUIDocBlobHeader 116 字节 ]
+ *   [ QLUIDocBlobHeader 124 字节 ]
  *   [ nodes      ] node_count      * sizeof(QLUINode)
  *   [ styles     ] style_count     * sizeof(QLUIStyle)
  *   [ text_pool  ] 以 '\0' 分隔的 UTF-8 字节
@@ -1221,6 +1254,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ media      ] media_count     * sizeof(QLUIMedia)        （v21）
  *   [ node_media ] node_count      * uint16                   （v21）
  *   [ media_styles] media_pool_count * uint16                 （v21）
+ *   [ calc_ops   ] calc_op_count    * sizeof(QLUICalcOp)      （v22）
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -1228,12 +1262,12 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    21u  /* 21: + @media 断点区间（media / node_media / media_styles） */
+#define QL_UI_BLOB_VERSION    22u  /* 22: + calc() 字节码池（calc_ops） */
 
 typedef struct {
     uint32_t magic;
     uint16_t version;
-    uint16_t header_size;         /* 固定 96 */
+    uint16_t header_size;         /* 固定 124 */
     uint16_t node_count;
     uint16_t style_count;
     uint16_t text_count;
@@ -1269,9 +1303,12 @@ typedef struct {
     uint32_t off_node_media;      /* uint16[node_count] */
     uint32_t off_media_styles;    /* uint16[media_pool_count] */
     uint32_t media_pool_count;
+    uint16_t calc_op_count;       /* calc() 字节码条数（0 = 没用 calc） */
+    uint16_t reserved_calc;       /* 对齐填充 */
+    uint32_t off_calc_ops;        /* QLUICalcOp[calc_op_count] */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 116, "blob 头必须是 116 字节（v21）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 124, "blob 头必须是 124 字节（v22）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

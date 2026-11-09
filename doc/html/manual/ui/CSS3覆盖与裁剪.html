@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：三个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：八个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -266,11 +266,14 @@ main img.shot { max-width: 100%; }
 <td><code>currentColor</code> / <code>inherit</code> / <code>initial</code> / <code>unset</code></td>
 <td>颜色位置识别成特殊值</td>
 </tr>
+<tr>
+<td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
+<td>编译成<strong>后缀字节码</strong>存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉</td>
+</tr>
 </tbody>
 </table>
-<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>em</code>/<code>rem</code>/<code>calc()</code>、<code>margin: auto</code>、
-<code>border-radius</code> 四角、<code>letter-spacing</code> / <code>text-overflow</code>（B3）、
-<code>border-style: dashed</code>（B4）、<code>align-self</code> / <code>order</code>（B5）、<code>transform: rotate()</code>。</p>
+<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、<code>text-overflow</code>（B3）、
+<code>border-*-style: dashed</code>（B4）、<code>align-self</code> / <code>order</code>（B5）、<code>transform: rotate()</code>。</p>
 <blockquote>
 <p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
 逐行状态在下一次整理时同步。</p>
@@ -790,15 +793,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>calc()</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>需要一个小表达式求值器；B1 里和 <code>min/max</code> 一起做</td>
+<td><code>+ - * /</code> 与括号；标量乘除在构建期折进每个操作数（见 §18.3）</td>
 </tr>
 <tr>
 <td><code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>同上</td>
+<td>参数是长度表达式，可嵌套 <code>calc()</code></td>
 </tr>
 <tr>
 <td><code>fit-content</code> / <code>max-content</code> / <code>min-content</code></td>
@@ -2093,6 +2096,66 @@ out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面
 | <code>image-orientation</code> | ❌ | <strong>N</strong> | EXIF 旋转由解码器负责 |</li>
 </ol>
 <hr />
+<h3 id="183-calc">18.3 <code>calc()</code>：为什么不能算成一个数</h3>
+<p><code>calc()</code> 里可以有 <code>%</code>、<code>vw</code>、<code>vh</code> —— 它们的基准（父内容盒、视口）<strong>只有布局时才知道</strong>。
+所以不能像 <code>em</code> 那样在构建期折成一个 px 数（<code>em</code> 能折，是因为那时字号已定）。</p>
+<p>做法：把公式编译成一段<strong>后缀字节码</strong>，与样式分开存放。</p>
+<div class="highlight"><pre><span></span><code>calc((100% - 16px) / 3)
+  ↓ 构建期：先做常量折叠（/3 折进每个操作数）
+TERM(33, %)  TERM(5, px)  SUB  END        ← doc-&gt;calc_ops[]（每条 4 字节）
+  ↓ 样式里只留一个下标
+#a { width: 148 }                          ← QLUILength{ .value = 下标, .unit = CALC }
+  ↓ 运行期：ql_ui_layout 里求值（一份 16 深的栈，没有递归、没有分配）
+33% × 基准 - 5
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>+</code> <code>-</code> <code>*</code> <code>/</code>、括号、嵌套 <code>calc()</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>min()</code> / <code>max()</code>（2..8 个参数）、<code>clamp(lo, val, hi)</code></td>
+<td>✅ 参数可以是长度表达式</td>
+</tr>
+<tr>
+<td>单位</td>
+<td><code>px</code> / <code>%</code> / <code>em</code> / <code>rem</code> / <code>vw</code> / <code>vh</code> / <code>vmin</code> / <code>vmax</code></td>
+</tr>
+<tr>
+<td>能用在哪</td>
+<td><code>width</code> / <code>height</code> / <code>min-width</code> / <code>max-width</code> / <code>min-height</code> / <code>max-height</code> / <code>top</code> / <code>right</code> / <code>bottom</code> / <code>left</code></td>
+</tr>
+<tr>
+<td>只能"常量"的字段</td>
+<td><code>font-size</code> / <code>border-width</code> / <code>border-radius</code> / <code>letter-spacing</code> / <code>text-indent</code> / <code>margin</code> / <code>padding</code>：只接受构建期能折成 px 的 <code>calc()</code>（如 <code>calc(10px + 6px)</code>），带 <code>%</code>/<code>em</code>/<code>vw</code> 的报错 —— 这些字段存的是 <code>int16</code> 数值，没有放表达式下标的地方</td>
+</tr>
+<tr>
+<td>上限</td>
+<td><code>QL_CFG_UI_MAX_CALC_OPS</code>（默认 256 条，0 = 整套裁掉）</td>
+</tr>
+</tbody>
+</table>
+<p>四条实现注意：</p>
+<ol>
+<li><strong>标量乘除只能对纯数字</strong>：<code>calc(10px * 2)</code> 可以（构建期折成 20px），<code>calc(10px * 2px)</code> 报错。
+   折进操作数是"逐项乘"，所以 <code>calc(2 * (100% - 10px))</code> = <code>200% - 20px</code>；</li>
+<li><strong>精度按存储单位走</strong>：百分比存整数，所以 <code>calc(100% / 3)</code> 是 33%（不是 33.33%）。
+   一个像素级别的偏差，比"支持不了"更可接受；</li>
+<li><strong>百分比高度仍然守父级确定的规矩</strong>：父级高度 auto 时，<code>height: calc(50% - 5px)</code>
+   按 <code>auto</code> 处理（与 <code>height: 50%</code> 一致），不会算出一个负高度；</li>
+<li><strong>flex 项主轴上的 <code>%</code> / <code>calc()</code> 会先折成 px</strong>：<code>measure</code> 与真正的 <code>layout_node</code>
+   各解析一遍的话，<code>calc(100% - 40px)</code> 会被减两次（<code>width: 50%</code> 也会变成四分之一 ——
+   这是本轮顺带修掉的老 bug）。</li>
+</ol>
+<hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
 <h3 id="191">19.1 语料实测（最可靠，推荐引用这一份）</h3>
@@ -2214,7 +2277,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>calc()</code></td>
 <td>65</td>
 <td>1.2%</td>
-<td><strong>B1</strong></td>
+<td><strong>✅ 已支持</strong>（§18.3）</td>
 </tr>
 </tbody>
 </table>
@@ -2228,8 +2291,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </thead>
 <tbody>
 <tr>
-<td>现在（含 <code>var()</code>）</td>
-<td><strong>≈ 83.6%</strong>（73.6% + 变量那 10.0% 的绝大多数）</td>
+<td>现在（含 <code>var()</code> / <code>calc()</code>）</td>
+<td><strong>≈ 84.8%</strong>（73.6% + 变量 10.0% + calc 1.2%）</td>
 </tr>
 <tr>
 <td><code>var()</code> 支持之前</td>
@@ -2580,14 +2643,29 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>padding: 5%</code> 报错</td>
 </tr>
 <tr>
+<td>混排（文本 + 行内子元素）</td>
+<td>单行混排正常（<code>&lt;p&gt;文字&lt;b&gt;粗&lt;/b&gt;结尾&lt;/p&gt;</code>）</td>
+<td><strong>行内子元素后面的那段文本不会自动折行</strong>（超长会溢出）；长段落请拆成块级元素</td>
+</tr>
+<tr>
 <td>长度单位</td>
-<td><code>px</code> / <code>%</code></td>
-<td><code>em</code> / <code>rem</code> / <code>vw</code> / <code>vh</code> / <code>calc()</code> 都报错</td>
+<td><code>px</code> / <code>%</code> / <code>em</code> / <code>rem</code> / <code>vw</code> / <code>vh</code> / <code>vmin</code> / <code>vmax</code> / <code>calc()</code></td>
+<td>没有 <code>ch</code> / <code>ex</code> / <code>lh</code></td>
+</tr>
+<tr>
+<td><code>calc()</code> 能用在哪些属性</td>
+<td><code>width</code> / <code>height</code> / <code>min-*</code> / <code>max-*</code> / <code>top</code> / <code>right</code> / <code>bottom</code> / <code>left</code></td>
+<td><code>font-size</code> / <code>border-*</code> / <code>letter-spacing</code> / <code>text-indent</code> / <code>margin</code> / <code>padding</code> 只接受<strong>构建期就能折成 px</strong> 的 <code>calc()</code>（其余报错）</td>
+</tr>
+<tr>
+<td><code>calc()</code> 的标量乘除</td>
+<td>构建期折进每个操作数</td>
+<td>百分点精度会掉（<code>calc(100% / 3)</code> 是 33%，不是 33.33%）；长度 × 长度报错</td>
 </tr>
 <tr>
 <td><code>!important</code></td>
-<td>没实现</td>
-<td>写在声明尾部会被当成值的一部分</td>
+<td>两趟级联</td>
+<td>支持</td>
 </tr>
 </tbody>
 </table>
@@ -2953,7 +3031,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </thead>
 <tbody>
 <tr>
-<td><strong>B1 值与尺寸</strong>（已完成：<code>min/max-*</code>、<code>!important</code>、<code>hsl()</code>、<code>#rrggbbaa</code>、<code>currentColor/inherit/initial</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>/<code>vmin</code>/<code>vmax</code>、<code>margin: auto</code>、<code>aspect-ratio</code>；<strong>剩 <code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>border-radius</code> 四角</strong>）</td>
+<td><strong>B1 值与尺寸</strong>（已完成：<code>min/max-*</code>、<code>!important</code>、<code>hsl()</code>、<code>#rrggbbaa</code>、<code>currentColor/inherit/initial</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>/<code>vmin</code>/<code>vmax</code>、<code>margin: auto</code>、<code>aspect-ratio</code>；<strong>剩 <code>border-radius</code> 四角</strong>）</td>
 <td><code>min/max-*</code>、<code>em</code>/<code>rem</code>/<code>vw</code>/<code>vh</code>、<code>calc()</code>/<code>min()</code>/<code>max()</code>、<code>margin: auto</code>、<code>inherit</code>/<code>initial</code>/<code>currentColor</code>、<code>!important</code>、<code>border-radius</code> 四角、<code>aspect-ratio</code>、<code>hsl()</code>、<code>#rrggbbaa</code></td>
 <td>BASE（少量进 RADIUS）</td>
 <td>真实页面的<strong>基础语法</strong></td>

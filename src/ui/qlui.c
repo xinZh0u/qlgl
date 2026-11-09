@@ -539,6 +539,121 @@ QLUINodeRT *ql_ui_root_node(QLUIRoot *ui)
 static ql_coord_t s_viewport_w;
 static ql_coord_t s_viewport_h;
 
+/*
+ * `calc()` 的字节码池：布局期间有效（与 `s_viewport_w/h` 同一个生命周期）。
+ * 样式里只存下标，所以求值必须能拿到当前文档的池。
+ */
+static const QLUICalcOp *s_calc_ops;
+static uint16_t s_calc_op_count;
+
+#define QL_CALC_STACK_MAX 16
+
+static ql_coord_t calc_term_px(const QLUICalcOp *op, ql_coord_t basis,
+                               ql_coord_t fallback)
+{
+    switch (op->unit) {
+    case QL_UI_UNIT_PX:
+        return (ql_coord_t)op->value;
+    case QL_UI_UNIT_PERCENT:
+        return (ql_coord_t)(((int32_t)basis * (int32_t)op->value) / 100);
+    case QL_UI_UNIT_VW:
+        return (ql_coord_t)(((int32_t)s_viewport_w * (int32_t)op->value) / 100);
+    case QL_UI_UNIT_VH:
+        return (ql_coord_t)(((int32_t)s_viewport_h * (int32_t)op->value) / 100);
+    case QL_UI_UNIT_VMIN: {
+        const ql_coord_t m = (s_viewport_w < s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)op->value) / 100);
+    }
+    case QL_UI_UNIT_VMAX: {
+        const ql_coord_t m = (s_viewport_w > s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)op->value) / 100);
+    }
+    default:
+        return fallback;
+    }
+}
+
+/* 求值 `QL_UI_UNIT_CALC`：后缀字节码，成功时结果压栈到 1 个元素 */
+static ql_coord_t calc_eval(uint16_t start, ql_coord_t basis, ql_coord_t fallback)
+{
+    ql_coord_t st[QL_CALC_STACK_MAX];
+    int sp = 0;
+    if (s_calc_ops == NULL || start >= s_calc_op_count)
+        return fallback;
+    for (uint16_t i = start; i < s_calc_op_count; i++) {
+        const QLUICalcOp *op = &s_calc_ops[i];
+        switch (op->op) {
+        case QL_UI_CALC_TERM:
+            if (sp >= QL_CALC_STACK_MAX)
+                return fallback;
+            st[sp++] = calc_term_px(op, basis, fallback);
+            break;
+        case QL_UI_CALC_ADD:
+        case QL_UI_CALC_SUB:
+            if (sp < 2)
+                return fallback;
+            st[sp - 2] = (op->op == QL_UI_CALC_ADD) ? (st[sp - 2] + st[sp - 1])
+                                                    : (st[sp - 2] - st[sp - 1]);
+            sp--;
+            break;
+        case QL_UI_CALC_MIN:
+        case QL_UI_CALC_MAX: {
+            const int n = (int)op->unit;
+            if (n < 1 || sp < n)
+                return fallback;
+            ql_coord_t v = st[sp - n];
+            for (int k = 1; k < n; k++) {
+                const ql_coord_t c = st[sp - n + k];
+                if (op->op == QL_UI_CALC_MIN) {
+                    if (c < v)
+                        v = c;
+                } else if (c > v) {
+                    v = c;
+                }
+            }
+            sp -= n;
+            st[sp++] = v;
+            break;
+        }
+        case QL_UI_CALC_CLAMP:
+            if (sp < 3)
+                return fallback;
+            {
+                ql_coord_t v = st[sp - 2];
+                if (v < st[sp - 3])
+                    v = st[sp - 3];
+                if (v > st[sp - 1])
+                    v = st[sp - 1];
+                sp -= 3;
+                st[sp++] = v;
+            }
+            break;
+        case QL_UI_CALC_END:
+            return (sp == 1) ? st[0] : fallback;
+        default:
+            return fallback;
+        }
+    }
+    return fallback;
+}
+
+/* 表达式里是否用到百分比（百分比高度在父级高度不定时要退成 auto） */
+static int calc_len_uses_percent(QLUILength len)
+{
+    if (len.unit != QL_UI_UNIT_CALC)
+        return 0;
+    if (s_calc_ops == NULL || len.value < 0 || len.value >= s_calc_op_count)
+        return 0;
+    for (uint16_t i = (uint16_t)len.value; i < s_calc_op_count; i++) {
+        const QLUICalcOp *op = &s_calc_ops[i];
+        if (op->op == QL_UI_CALC_END)
+            break;
+        if (op->op == QL_UI_CALC_TERM && op->unit == QL_UI_UNIT_PERCENT)
+            return 1;
+    }
+    return 0;
+}
+
 static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fallback)
 {
     switch (len.unit) {
@@ -562,6 +677,8 @@ static ql_coord_t resolve_length(QLUILength len, ql_coord_t basis, ql_coord_t fa
         const ql_coord_t m = (s_viewport_w > s_viewport_h) ? s_viewport_w : s_viewport_h;
         return (ql_coord_t)(((int32_t)m * (int32_t)len.value) / 100);
     }
+    case QL_UI_UNIT_CALC:
+        return calc_eval((uint16_t)len.value, basis, fallback);
     default:
         return fallback;
     }
@@ -582,6 +699,8 @@ static int height_is_definite(const QLUIStyle *s, ql_coord_t basis_h)
         return 1;
     if (s->height.unit == QL_UI_UNIT_PERCENT)
         return basis_h >= 0;
+    if (s->height.unit == QL_UI_UNIT_CALC)
+        return !calc_len_uses_percent(s->height) || basis_h >= 0;
     return 0;
 }
 
@@ -590,6 +709,9 @@ static ql_coord_t height_of_style(const QLUIStyle *s, ql_coord_t basis_h,
                                   ql_coord_t fallback)
 {
     if (s->height.unit == QL_UI_UNIT_PERCENT && basis_h < 0)
+        return fallback;
+    if (s->height.unit == QL_UI_UNIT_CALC && basis_h < 0 &&
+        calc_len_uses_percent(s->height))
         return fallback;
     return resolve_length(s->height, basis_h > 0 ? basis_h : 0, fallback);
 }
@@ -840,6 +962,8 @@ static ql_coord_t resolve_inset(QLUILength len, ql_coord_t basis, ql_coord_t fal
         const ql_coord_t m = (s_viewport_w > s_viewport_h) ? s_viewport_w : s_viewport_h;
         return (ql_coord_t)(((int32_t)m * (int32_t)len.value) / 100);
     }
+    case QL_UI_UNIT_CALC:
+        return calc_eval((uint16_t)len.value, basis, fallback);
     default:
         return fallback;
     }
@@ -2311,6 +2435,37 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             }
         }
 
+        /*
+         * 主轴上的百分比 / `calc()` 尺寸先按**容器的内容尺寸**折成 px 存回去。
+         *
+         * 不折的话会被解析两遍：`measure` 一遍（基准 = 容器内容宽），真正的
+         * `layout_node(c, …, inner_sz, …)` 又拿"这一项自己的尺寸"当基准解析一遍 ——
+         * 表现是 `width: 50%` 变成四分之一、`calc(100% - 40px)` 被减两次。
+         * 交叉轴的百分比不动（它的基准是行宽，语义还在处理中）。
+         */
+        else if (len->unit == QL_UI_UNIT_PERCENT || len->unit == QL_UI_UNIT_CALC) {
+            const int row_axis = flex_is_row(node->style);
+            if (row_axis) {
+                const ql_coord_t pad_border =
+                    (ql_coord_t)(c->style->padding.left + c->style->padding.right +
+                                 2 * (ql_coord_t)c->style->border_width);
+                ql_coord_t v = resolve_length(*len, content_w, content_w);
+                if (c->style->box_sizing == 0)
+                    v -= pad_border;
+                if (v < 0)
+                    v = 0;
+                if (v > 32767)
+                    v = 32767;
+                if (!c->used_copy) {
+                    c->style_copy = *c->style;
+                    c->style = &c->style_copy;
+                    c->used_copy = 1;
+                }
+                c->style_copy.width.value = (int16_t)v;
+                c->style_copy.width.unit = QL_UI_UNIT_PX;
+            }
+        }
+
         (void)layout_node(c, 0, 0, content_w, -1);  /* 位置无关紧要，只取尺寸 */
     }
 }
@@ -2915,6 +3070,8 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
     ui->height = height;
     s_viewport_w = width;
     s_viewport_h = height;
+    s_calc_ops = ui->doc->calc_ops;
+    s_calc_op_count = ui->doc->calc_op_count;
 
     /*
      * 清掉上一轮遗留的 style_copy：flex 分配和绝对定位都会往 style_copy 里写尺寸，

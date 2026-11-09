@@ -69,6 +69,14 @@
 #ifndef QL_CFG_UI_MAX_MEDIA
 #define QL_CFG_UI_MAX_MEDIA         6       /* @media 断点数（每个断点一套样式变体） */
 #endif
+/*
+ * `calc()` / `min()` / `max()` / `clamp()` 的字节码池总条数（每条 4 字节）。
+ * 0 = 整套裁掉（写 calc() 会在构建期明确报错）。只有用到 calc 的文档才占空间，
+ * 但池上限是**每份文档**的静态上界，MCU 上可以按实际页面调小。
+ */
+#ifndef QL_CFG_UI_MAX_CALC_OPS
+#define QL_CFG_UI_MAX_CALC_OPS      256
+#endif
 
 #ifndef QL_CFG_UI_MAX_ANIMS
 #define QL_CFG_UI_MAX_ANIMS         256     /* @keyframes 段数 */

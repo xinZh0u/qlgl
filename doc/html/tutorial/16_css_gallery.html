@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>CSS 效果检阅：三个例程 · QLGL</title>
+<title>CSS 效果检阅：八个例程 · QLGL</title>
 <style>
 :root {
   --bg: #ffffff;
@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：三个例程</a>
+<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：八个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -213,9 +213,9 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
 </aside>
 <main>
-<h1 id="css">CSS 效果检阅：三个例程</h1>
+<h1 id="css">CSS 效果检阅：八个例程</h1>
 <p><img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480"></p>
-<p>完整程序：<code>example/16_css_units/</code>、<code>example/17_css_selectors/</code>、<code>example/18_css_paint/</code></p>
+<p>完整程序：<code>example/16_css_units/</code> … <code>example/23_calc/</code>（每个例程一个文件夹）</p>
 <p>前几章是按"补了什么"讲的（<a href="14_css3.md">CSS3 补全</a>、<a href="15_backdrop.md">毛玻璃</a>）。
 这一章反过来：<strong>按"能看出效果的最小样本"讲</strong> —— 每一个已支持的 CSS 效果都摆成
 一格，旁边写着它该是什么值。跑起来一眼就能看出哪一格不对。</p>
@@ -551,7 +551,40 @@ main img.shot { max-width: 100%; }
 <li><strong>列方向的最大内容高度要"求和"而不是"取最大"</strong> —— 一个带 padding、里面两行文字
    的卡片，在 column 布局里高度被算成一行，后面的兄弟直接压上来。</li>
 </ol>
-<h2 id="8">8. 这几个例程查出了什么</h2>
+<h2 id="8-23_calc">8. <code>23_calc</code>：布局期的算术</h2>
+<p><img src="../img/23-calc-wide.png" alt="760 宽：三等分、clamp 三条、min/max 两张卡" width="420">
+<img src="../img/23-calc-narrow.png" alt="420 宽：全都跟着缩" width="240"></p>
+<p>完整程序：<code>example/23_calc/</code></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">trio</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="p">.</span><span class="nc">cell</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nb">calc</span><span class="p">(</span><span class="err">(</span><span class="mi">100</span><span class="kt">%</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span><span class="w"> </span><span class="k">margin-right</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* 三等分 */</span>
+<span class="p">.</span><span class="nc">b1</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nf">clamp</span><span class="p">(</span><span class="mi">60</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">15</span><span class="kt">vw</span><span class="p">,</span><span class="w"> </span><span class="mi">200</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">                             </span><span class="c">/* 伸缩但有上下限 */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nf">min</span><span class="p">(</span><span class="mi">160</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="p">.</span><span class="nc">wide</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="nf">max</span><span class="p">(</span><span class="mi">160</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">mid</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">left</span><span class="p">:</span><span class="w"> </span><span class="nb">calc</span><span class="p">(</span><span class="mi">50</span><span class="kt">%</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">90</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* 居中 */</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>./build/example/example_23_calc<span class="w"> </span>--size<span class="w"> </span>760x430<span class="w"> </span>--dump<span class="w"> </span>wide.ppm
+./build/example/example_23_calc<span class="w"> </span>--size<span class="w"> </span>420x560<span class="w"> </span>--dump<span class="w"> </span>narrow.ppm
+</code></pre></div>
+
+<p>例程启动时会把文档里的字节码打出来，可以直接看到 <code>calc((100% - 16px) / 3)</code> 的形状：</p>
+<div class="highlight"><pre><span></span><code>calc 字节码 35 条（每条 4 字节）
+  [ 0] TERM  value=33 unit=2      ← 33%   （除以 3 已折进操作数）
+  [ 1] TERM  value=5  unit=1      ← 5px
+  [ 2] SUB   n=0
+  [ 3] END   n=0
+</code></pre></div>
+
+<p><strong>为什么不能算成数字</strong>：<code>%</code> 的基准是父内容盒、<code>vw</code> 的基准是视口，都只有布局时才知道。
+所以公式编译成后缀字节码（每条 4 字节）存在文档里，样式字段只留一个 16 位下标；
+布局时用一个 16 深的栈求值 —— 没有递归，也没有分配。</p>
+<p>写这一节时又查出一个<strong>老 bug</strong>（与 <code>calc</code> 无关，是它把问题放大了）：</p>
+<ul>
+<li>flex 项的 <code>width: 50%</code> 被解析<strong>两遍</strong> —— <code>measure</code> 一遍（基准 = 容器内容宽），
+  真正 <code>layout_node</code> 时又拿"这一项自己的尺寸"当基准来一遍，于是 50% 变成四分之一。
+  带 <code>25% + 10px</code> 的 <code>calc()</code> 会让它更明显（px 项被减两次）。
+  修法：主轴上的 <code>%</code> / <code>calc()</code> 在 <code>measure</code> 阶段就折成 px 写回 <code>style_copy</code>。</li>
+</ul>
+<h2 id="9">9. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

@@ -1,0 +1,39 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">calc() / min() / max() / clamp()：布局期的算术</div>
+    <div class="badge">拖边缘缩放</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. calc((100% - 16px) / 3) 三等分</div>
+    <div class="trio">
+      <div class="cell">1/3</div>
+      <div class="cell">1/3</div>
+      <div class="cell">1/3</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. clamp(60px, 15vw / 25vw / 35vw, 200px)：伸缩但有上下限</div>
+    <div class="bar b1"></div>
+    <div class="bar b2"></div>
+    <div class="bar b3"></div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. min(160px, 30%) 与 max(160px, 30%) 的差别</div>
+    <div class="cards">
+      <div class="card">min(160px, 30%)</div>
+      <div class="card wide">max(160px, 30%)</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. left: calc(50% - 90px) 绝对定位居中</div>
+    <div class="stage">
+      <div class="mid">180px 居中</div>
+    </div>
+  </div>
+
+  <div class="note">公式不在构建期变成数字：% 与 vw/vh 只有布局时才知道基准。qlgl 把它编译成后缀字节码存进文档，样式里只留一个 16 位下标。</div>
+</div>

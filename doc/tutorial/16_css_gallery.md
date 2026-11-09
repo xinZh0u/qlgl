@@ -1,8 +1,8 @@
-# CSS 效果检阅：三个例程
+# CSS 效果检阅：八个例程
 
 <img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480">
 
-完整程序：`example/16_css_units/`、`example/17_css_selectors/`、`example/18_css_paint/`
+完整程序：`example/16_css_units/` … `example/23_calc/`（每个例程一个文件夹）
 
 前几章是按"补了什么"讲的（[CSS3 补全](14_css3.md)、[毛玻璃](15_backdrop.md)）。
 这一章反过来：**按"能看出效果的最小样本"讲** —— 每一个已支持的 CSS 效果都摆成
@@ -190,7 +190,48 @@ cmake --build build -j
 2. **列方向的最大内容高度要"求和"而不是"取最大"** —— 一个带 padding、里面两行文字
    的卡片，在 column 布局里高度被算成一行，后面的兄弟直接压上来。
 
-## 8. 这几个例程查出了什么
+## 8. `23_calc`：布局期的算术
+
+<img src="../img/23-calc-wide.png" alt="760 宽：三等分、clamp 三条、min/max 两张卡" width="420">
+<img src="../img/23-calc-narrow.png" alt="420 宽：全都跟着缩" width="240">
+
+完整程序：`example/23_calc/`
+
+```css
+.trio > .cell { width: calc((100% - 16px) / 3); margin-right: 8px; }  /* 三等分 */
+.b1 { width: clamp(60px, 15vw, 200px); }                             /* 伸缩但有上下限 */
+.card      { width: min(160px, 30%); }
+.card.wide { width: max(160px, 30%); }
+.mid { position: absolute; left: calc(50% - 90px); }                  /* 居中 */
+```
+
+```bash
+./build/example/example_23_calc --size 760x430 --dump wide.ppm
+./build/example/example_23_calc --size 420x560 --dump narrow.ppm
+```
+
+例程启动时会把文档里的字节码打出来，可以直接看到 `calc((100% - 16px) / 3)` 的形状：
+
+```
+calc 字节码 35 条（每条 4 字节）
+  [ 0] TERM  value=33 unit=2      ← 33%   （除以 3 已折进操作数）
+  [ 1] TERM  value=5  unit=1      ← 5px
+  [ 2] SUB   n=0
+  [ 3] END   n=0
+```
+
+**为什么不能算成数字**：`%` 的基准是父内容盒、`vw` 的基准是视口，都只有布局时才知道。
+所以公式编译成后缀字节码（每条 4 字节）存在文档里，样式字段只留一个 16 位下标；
+布局时用一个 16 深的栈求值 —— 没有递归，也没有分配。
+
+写这一节时又查出一个**老 bug**（与 `calc` 无关，是它把问题放大了）：
+
+- flex 项的 `width: 50%` 被解析**两遍** —— `measure` 一遍（基准 = 容器内容宽），
+  真正 `layout_node` 时又拿"这一项自己的尺寸"当基准来一遍，于是 50% 变成四分之一。
+  带 `25% + 10px` 的 `calc()` 会让它更明显（px 项被减两次）。
+  修法：主轴上的 `%` / `calc()` 在 `measure` 阶段就折成 px 写回 `style_copy`。
+
+## 9. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

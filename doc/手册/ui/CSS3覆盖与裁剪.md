@@ -28,10 +28,10 @@
 | `!important` | 级联两趟：普通先应用，important 再应用 |
 | `hsl()` / `hsla()`、`#rrggbbaa` | |
 | `currentColor` / `inherit` / `initial` / `unset` | 颜色位置识别成特殊值 |
+| `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
-**还没做**（下表里仍标 ⏳ 的）：`em`/`rem`/`calc()`、`margin: auto`、
-`border-radius` 四角、`letter-spacing` / `text-overflow`（B3）、
-`border-style: dashed`（B4）、`align-self` / `order`（B5）、`transform: rotate()`。
+**还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、`text-overflow`（B3）、
+`border-*-style: dashed`（B4）、`align-self` / `order`（B5）、`transform: rotate()`。
 
 > 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
 > 逐行状态在下一次整理时同步。
@@ -161,8 +161,8 @@
 | `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而旋转本身还没做 |
 | `fr` | ❌ | M | Grid 专用 |
 | `ch` / `ex` / `lh` / `rlh` / `cap` | ❌ | N | 都要"字体度量 × 系数"，收益极低 |
-| `calc()` | ⏳ | L | 需要一个小表达式求值器；B1 里和 `min/max` 一起做 |
-| `min()` / `max()` / `clamp()` | ⏳ | L | 同上 |
+| `calc()` | ✅ | L | `+ - * /` 与括号；标量乘除在构建期折进每个操作数（见 §18.3） |
+| `min()` / `max()` / `clamp()` | ✅ | L | 参数是长度表达式，可嵌套 `calc()` |
 | `fit-content` / `max-content` / `min-content` | ⏳ | L | 布局内部已有 max-content 计算，只是没暴露成关键字 |
 | 命名色 | ✅ | R | `k_named[]`（CSS 常用色 + `transparent`） |
 | `#rgb` / `#rrggbb` | ✅ | R | |
@@ -507,6 +507,46 @@ out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面
 
 ---
 
+### 18.3 `calc()`：为什么不能算成一个数
+
+`calc()` 里可以有 `%`、`vw`、`vh` —— 它们的基准（父内容盒、视口）**只有布局时才知道**。
+所以不能像 `em` 那样在构建期折成一个 px 数（`em` 能折，是因为那时字号已定）。
+
+做法：把公式编译成一段**后缀字节码**，与样式分开存放。
+
+```
+calc((100% - 16px) / 3)
+  ↓ 构建期：先做常量折叠（/3 折进每个操作数）
+TERM(33, %)  TERM(5, px)  SUB  END        ← doc->calc_ops[]（每条 4 字节）
+  ↓ 样式里只留一个下标
+#a { width: 148 }                          ← QLUILength{ .value = 下标, .unit = CALC }
+  ↓ 运行期：ql_ui_layout 里求值（一份 16 深的栈，没有递归、没有分配）
+33% × 基准 - 5
+```
+
+| 项 | 支持 |
+|---|---|
+| `+` `-` `*` `/`、括号、嵌套 `calc()` | ✅ |
+| `min()` / `max()`（2..8 个参数）、`clamp(lo, val, hi)` | ✅ 参数可以是长度表达式 |
+| 单位 | `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` |
+| 能用在哪 | `width` / `height` / `min-width` / `max-width` / `min-height` / `max-height` / `top` / `right` / `bottom` / `left` |
+| 只能"常量"的字段 | `font-size` / `border-width` / `border-radius` / `letter-spacing` / `text-indent` / `margin` / `padding`：只接受构建期能折成 px 的 `calc()`（如 `calc(10px + 6px)`），带 `%`/`em`/`vw` 的报错 —— 这些字段存的是 `int16` 数值，没有放表达式下标的地方 |
+| 上限 | `QL_CFG_UI_MAX_CALC_OPS`（默认 256 条，0 = 整套裁掉） |
+
+四条实现注意：
+
+1. **标量乘除只能对纯数字**：`calc(10px * 2)` 可以（构建期折成 20px），`calc(10px * 2px)` 报错。
+   折进操作数是"逐项乘"，所以 `calc(2 * (100% - 10px))` = `200% - 20px`；
+2. **精度按存储单位走**：百分比存整数，所以 `calc(100% / 3)` 是 33%（不是 33.33%）。
+   一个像素级别的偏差，比"支持不了"更可接受；
+3. **百分比高度仍然守父级确定的规矩**：父级高度 auto 时，`height: calc(50% - 5px)`
+   按 `auto` 处理（与 `height: 50%` 一致），不会算出一个负高度；
+4. **flex 项主轴上的 `%` / `calc()` 会先折成 px**：`measure` 与真正的 `layout_node`
+   各解析一遍的话，`calc(100% - 40px)` 会被减两次（`width: 50%` 也会变成四分之一 ——
+   这是本轮顺带修掉的老 bug）。
+
+---
+
 ## 19. 覆盖率：两份实测 + 一份规范口径
 
 三个数回答三个不同的问题，别混着用。
@@ -548,13 +588,13 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `border-*-radius`（四角） | 94 | 1.7% | **B1** |
 | `!important`（出现在**已支持**的属性里） | 293 | 5.4% | ✅ 已支持 |
 | `var(--x)`（CSS 变量） | 537 | 10.0% | **✅ 已支持**（§18.1，构建期替换） |
-| `calc()` | 65 | 1.2% | **B1** |
+| `calc()` | 65 | 1.2% | **✅ 已支持**（§18.3） |
 
 ### 19.3 补完之后能到多少（模拟同一份语料）
 
 | 阶段 | 声明级覆盖 |
 |---|---|
-| 现在（含 `var()`） | **≈ 83.6%**（73.6% + 变量那 10.0% 的绝大多数） |
+| 现在（含 `var()` / `calc()`） | **≈ 84.8%**（73.6% + 变量 10.0% + calc 1.2%） |
 | `var()` 支持之前 | 73.6% |
 | + B1 值与尺寸 | 76.5% |
 | + B2 选择器（`content` / `::before`） | **89.6%** |
@@ -649,8 +689,11 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `flex-wrap` | `nowrap` / `wrap` | 没有 `wrap-reverse` |
 | `display` | `block` / `inline` / `inline-block` / `flex` / `inline-flex` / `none` | 没有 `grid` / `table` / `contents` |
 | `%` 长度 | 根元素按视口；子元素主用于 `width/height` | `padding: 5%` 报错 |
-| 长度单位 | `px` / `%` | `em` / `rem` / `vw` / `vh` / `calc()` 都报错 |
-| `!important` | 没实现 | 写在声明尾部会被当成值的一部分 |
+| 混排（文本 + 行内子元素） | 单行混排正常（`<p>文字<b>粗</b>结尾</p>`） | **行内子元素后面的那段文本不会自动折行**（超长会溢出）；长段落请拆成块级元素 |
+| 长度单位 | `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `calc()` | 没有 `ch` / `ex` / `lh` |
+| `calc()` 能用在哪些属性 | `width` / `height` / `min-*` / `max-*` / `top` / `right` / `bottom` / `left` | `font-size` / `border-*` / `letter-spacing` / `text-indent` / `margin` / `padding` 只接受**构建期就能折成 px** 的 `calc()`（其余报错） |
+| `calc()` 的标量乘除 | 构建期折进每个操作数 | 百分点精度会掉（`calc(100% / 3)` 是 33%，不是 33.33%）；长度 × 长度报错 |
+| `!important` | 两趟级联 | 支持 |
 
 ---
 
@@ -803,7 +846,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 | 批 | 内容（对应上面各节） | 归属能力包 | 收益 | 风险 | 动 `QLUIStyle` | 验收 |
 |---|---|---|---|---|---|---|
-| **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `calc()`/`min()`/`max()`、`border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
+| **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
 | **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
 | **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
 | **B4 绘制细节** | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |

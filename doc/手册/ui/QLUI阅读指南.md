@@ -166,25 +166,26 @@ UA 默认样式（UA_DEFAULTS）
 
 | 类别 | 例子 |
 |---|---|
-| 不支持的标签 | `<table>` / `<img>` / `<input>`（提示会告诉你替代做法） |
+| 不认识的标签 | 自定义标签、obsolete 元素（`marquee` / `center` / `font` 等）；`<iframe>` 之类则是**占位盒**，不是错误 |
 | HTML 结构错 | 结束标签不匹配、标签未闭合、根元素不是恰好 1 个 |
 | 属性名不认识 | `inset` / 任意拼错的属性 |
 | 属性值不认识 | `position: sticky`、`display: grid`、`border: 2px dashed` |
-| 单位 | `1.5em` / `rem` / `vh`（只支持 `px` 与 `%`） |
+| 单位 | `ch` / `ex` / `lh`（支持 `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `calc()`） |
 | 颜色 | `#12345`、拼错的命名色 |
-| at-rule | `@media` / `@supports`（只认 `@keyframes`） |
-| 选择器 | `+` / `~` 兄弟选择器、`::before` 伪元素 |
+| at-rule | `@supports` / `@font-face`（认 `@keyframes`，`@media` 只认宽度断点） |
+| 选择器 | `:has()`、属性选择器的复杂匹配（`+` / `~` / `::before` 已支持） |
 | 简写值个数 | `margin: 1px 2px 3px`（只接受 1/2/4 个） |
-| transform | `rotate()` / `matrix()`；`scale` 超出 `0~32.767` |
+| transform | `rotate()` / `skew()` / `matrix()`；`scale` 超出 `0~32.767` |
 | 关键帧 | 百分比重复/越界、各帧属性不一致、帧里写了不支持的属性 |
 | animation | 没写 `duration`、`duration: 0`、`steps()`/`cubic-bezier()`、`paused`、三处时长 |
-| transition | 写了两段时间（延迟） |
+| transition | 延迟（`transition-delay`）仍不支持；`transition` 简写里各段的时长/缓动必须一致 |
 | 状态规则 | `:hover` 里写 `animation`（动画只按基础样式起播，写了会静默失效） |
 | backdrop-filter / clip-path | `blur` 半径不在 `1~64px`、`clip-path` 不是 `circle()` |
 
 > **已经不再是错误的东西**（M3/M5.5 之后）：`position` / `flex-*` / `box-shadow` /
-> `linear-gradient` / `transform` / `clip-path` / 混合内容（`<p>文字<b>粗</b></p>`）
-> 全都支持了。本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。
+> `linear-gradient` / `transform` / `clip-path` / `<img>` / `<input>` / `@media`（宽度断点）/
+> `calc()` / CSS 变量 `/ `+` 与 `~` 兄弟选择器 / `::before` 全都支持了。
+> 本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。
 
 **唯一一个"结构上"的限制**：元素级 doc 不能混用（跨 doc 的 `uint16` 下标无法引用），
 混用单位锁死在**面板**（一个 `QLUIRoot` ↔ 一份 doc）。
