@@ -15,6 +15,29 @@
 
 ---
 
+## 0. 已完成 vs 待做（2026-11-09 更新）
+
+**已完成（B2 全部 + B1 第一片）**：
+
+| 能力 | 说明 |
+|---|---|
+| `*`、`[attr]` 系列、`:first/last/only-child`、`:nth-child(an+b)`、`:*-of-type`、`:not()` | 全部构建期求值 |
+| `::before` / `::after` + `content: "文本"` | **构建期展开成真节点**（内部 tag `#pe`） |
+| `+` / `~` 兄弟组合符 | 之前直接报错，文档却写着支持 —— 现在真的支持了 |
+| `min-width/max-width/min-height/max-height`（px / %） | blob v16；border-box / content-box 各自正确 |
+| `!important` | 级联两趟：普通先应用，important 再应用 |
+| `hsl()` / `hsla()`、`#rrggbbaa` | |
+| `currentColor` / `inherit` / `initial` / `unset` | 颜色位置识别成特殊值 |
+
+**还没做**（下表里仍标 ⏳ 的）：`em`/`rem`/`calc()`、`margin: auto`、
+`border-radius` 四角、`letter-spacing` / `text-overflow`（B3）、
+`border-style: dashed`（B4）、`align-self` / `order`（B5）、`transform: rotate()`。
+
+> 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
+> 逐行状态在下一次整理时同步。
+
+---
+
 ## 1. 状态记号
 
 | 记号 | 含义 |

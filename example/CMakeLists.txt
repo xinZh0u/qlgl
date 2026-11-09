@@ -25,6 +25,7 @@ set(QL_EXAMPLES
     11_semantic
     12_text_block
     13_form
+    14_css3
 )
 
 foreach(e ${QL_EXAMPLES})

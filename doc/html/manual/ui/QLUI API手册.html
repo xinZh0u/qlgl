@@ -177,11 +177,12 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/11_input.html'>输入控件</a>
 <a href='../../tutorial/12_text.html'>空白与上下标</a>
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
 <a class='sub-item' href='../../design/bench.html'>性能基线（bench.md）</a>
 <h4>QLObject</h4>
@@ -216,7 +217,7 @@ main img.shot { max-width: 100%; }
 - <strong>MCU</strong>：本模块就是唯一路径。想省 Flash 就裁能力包（<code>QL_FEAT_UI_*</code>），
   或者干脆用构建期编译出来的静态 doc（见 <a href="./QLUI阅读指南.md">QLUI 阅读指南</a> 的 blob 一节）。
 - <strong>MPU / 嵌入式 Linux</strong>：用本模块，把 HTML+CSS 编译成 C。
-- <strong>PC 要高兼容</strong>：用系统 WebView（WebView2 / WKWebView / WebKitGTK），不用本模块。</p>
+- <strong>要跑任意网页</strong>：本模块不做，也不提供回退方案 —— 任何平台都自己绘制，不嵌 WebView。</p>
 </blockquote>
 <hr />
 <h2 id="1">1. 工作流</h2>
@@ -2101,7 +2102,7 @@ MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
 </tr>
 </tbody>
 </table>
-<p>需要更高兼容度 → 用 PC + WebView（<a href="../../Web兼容设计.md">设计文档 §7.3</a>）。</p>
+<p>需要不在子集内的特性 → 构建期报错并给替代写法；<strong>没有 WebView 回退路径</strong>（<a href="../../Web兼容设计.md">设计文档 §7.3</a>）。</p>
 <div class='pager'>
 <a href='../../manual/ui/HTML5标签覆盖与裁剪.html'><span class='dir'>上一页</span>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='next' href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>下一页</span>QLUI / HTML+CSS 编译 阅读指南</a>

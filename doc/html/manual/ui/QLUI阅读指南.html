@@ -177,11 +177,12 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/11_input.html'>输入控件</a>
 <a href='../../tutorial/12_text.html'>空白与上下标</a>
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
 <a class='sub-item' href='../../design/bench.html'>性能基线（bench.md）</a>
 <h4>QLObject</h4>
@@ -213,7 +214,7 @@ main img.shot { max-width: 100%; }
 <blockquote>
 <p>本部分的定位见 <a href="../../Web兼容设计.md">Web 兼容设计</a> §7：
 <strong>MCU 不追求 Web 兼容（纯 C API）</strong>；HTML/CSS 编译成 C 是给 <strong>MPU/嵌入式 Linux</strong> 用的中间档；
-<strong>PC 要高兼容请直接用系统 WebView</strong>。</p>
+<strong>要跑任意网页</strong>：本库不做，也不提供 WebView 回退 —— 任何平台都自己绘制。</p>
 <p>本部分实现的是"构建期把 HTML+CSS 翻译成静态 C 数据"，运行时零解析。
 目标读者：要改 <code>tools/qlui/</code> 或布局算法的人。只想用，请看 <a href="./QLUI%20API手册.md">QLUI API手册</a>。</p>
 </blockquote>
@@ -1583,7 +1584,7 @@ index.html + index.css ──qltext cc──┤
 </table>
 <blockquote>
 <p>这些差距是<strong>刻意的</strong>：MPU 档的目标是"设计师给的静态页面能渲染"，不是"跑任意网页"。
-需要高兼容请走 PC + WebView（见设计文档 §7.3）。</p>
+子集外的东西构建期报错并给替代写法；没有换个引擎这条路（设计文档 §7.3）。</p>
 </blockquote>
 <hr />
 <h2 id="7">7. 常见坑</h2>

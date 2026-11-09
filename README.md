@@ -6,11 +6,12 @@
 当前进度：
 
 - **对象系统（object）已完成** —— 类型、对象生命周期、属性、事件、内存与对象树；
-- **绘制系统 + 控件基类（widget）已完成** —— 显示驱动、画布原语、脏矩形渲染、QLWidget 及自定义控件；
+- **绘制系统已完成** —— 显示驱动、画布原语、脏矩形渲染，CPU 光栅与 GPU 双后端；
+  **没有控件类**：界面只由 HTML 元素 + CSS 描述（`QLWidget` 那套体系已删除）；
 - **字体/文本系统已完成** —— 内置 4bpp 位图字体（MCU）+ FreeType 动态字体（任意字号 / 中文）、
-  UTF-8 解码、文本度量、`QLLabel` 控件；
+  UTF-8 解码、文本度量；
 - **交互闭环已完成** —— 命中测试、hover/pressed/focus 状态、点击合成、键盘焦点，
-  事件沿控件树冒泡；HTML/CSS 的 `:hover/:active/:focus` 在构建期编译成状态样式；
+  事件沿元素树派发；HTML/CSS 的 `:hover/:active/:focus` 在构建期编译成状态样式；
 - **布局表达力（M3）已完成** —— flexbox（row/column × nowrap/wrap、grow/shrink/basis、gap、
   justify-content、align-items）、`position: relative/absolute/fixed`、`z-index`、`overflow` 裁剪、
   文本与行内元素混排（生成期消解成匿名节点）；
@@ -32,7 +33,7 @@
   X11 自动读 `Xft.dpi`，`example_gl_window --dpr 2` 可直接看效果；
 - **性能与脏区（M4）** —— CPU 光栅 1080p **2.19 ms**、320×240 **0.30 ms**（比 M4 之前快 2.3~2.7×）；
   每个节点带 `paint_box`，`ql_ui_render_rect()` 只重绘脏区（局部刷新是全量的 4.5%）；
-  控件层的绘制函数也走 `QLDraw2D`，同一棵控件树可以直接上 GPU（`ql_render_draw2d()`）；
+  界面层直接吃 `QLDraw2D`，同一棵树可以直接上 GPU；
 - **`.qlui` blob 已完成** —— 同一份 doc 可导出成二进制，运行时 `ql_ui_load_file()` 加载
   （改 UI **不用重编译**，实测热重载）；序列化只在 C 侧实现一次，与静态路径逐字节一致；
 - **GPU 后端已完成（v0.1）** —— `QLDraw2D` 绘制接口 + GLES3/EGL 后端（SDF 圆角、字形图集、单 draw call），
@@ -51,7 +52,7 @@ cmake --build build -j
 ```
 
 **想系统学？读 [教程](doc/html/index.html)**（`doc/tutorial/`，10 章，每章配一个
-可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十一个自包含的 `.c`。
+可编译运行的完整程序）。也可以直接看 [`example/`](example/)：十三个自包含的 `.c`。
 
 | 例程 | 讲什么 |
 |---|---|
@@ -66,6 +67,8 @@ cmake --build build -j
 | `09_scroll` | 滚动容器：`overflow: auto` + 滚轮 / 拖滚动条 / PageDown |
 | `10_input` | 输入控件：`<input>`（含密码框）+ `<select>` 下拉面板 + Tab 切换焦点 |
 | `11_semantic` | 纯语义标签：`dl` / `del` / `ins` / `cite` / `fieldset`，整段真实 HTML 贴进来就能画 |
+| `12_text_block` | `white-space: pre` 系列 / `<pre>` / `<sub>` `<sup>` |
+| `13_form` | `<textarea>` 多行编辑 + 整张表单（Tab 跳、Ctrl+A/C/V、中文输入） |
 
 ## 构建与测试
 
@@ -80,14 +83,13 @@ cmake --build build --target doc_html      # 重新生成 doc/html/（需要 pyt
 示例程序：
 
 ```bash
-./build/example_object                    # 对象系统演示
-./build/example_widget /tmp/out.ppm       # 渲染一个界面并输出 PPM 图片
-./build/example_text /tmp/text.ppm        # 文本样张：字号/对齐/多行/缺字
-./build/example_gl_window                 # GPU 窗口：HTML/CSS 编译出的界面 + 动画
-./build/example_gl_window --dpr 2         # 同上，2x 设备像素比
-./build/example_anim_window               # 动效演示：@keyframes + transform（空格重播，只重绘脏区）
-./build/example_widget --frames 120       # 控件示例，默认打开窗口
-./build/example_text --frames 120         # 文本示例，默认打开窗口
+./build/example/example_01_window          # 最小窗口
+./build/example/example_13_form            # 表单：input + textarea + 按钮
+./build/example/example_09_scroll          # 滚动容器
+./build/example/example_01_window --dump /tmp/a.ppm    # 无显示器也能出图
+./build/example/example_01_window --size 900x600       # 换窗口尺寸看自适应
+./build/benchmark/bench                    # 可视化性能基准（8 个维度 × CPU/GL）
+./build/example/example_gl_window --dpr 2  # GPU 窗口，2x 设备像素比
 ./build/test_web_ui                       # HTML+CSS 编译成 C 后的布局/绘制断言
 ./build/test_render                       # 脏区重绘与全量重绘的逐像素一致性
 ./build/test_dpr                          # DPR=1 与 DPR=2 的一致性（CPU 与 GPU）
@@ -144,9 +146,16 @@ QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 
 | 平台 | 界面写法 | 说明 |
 |---|---|---|
-| MCU | 纯 C（`QLWidget`/`QLLabel`） | 不追求 Web 兼容，追求小体积 |
-| MPU / 嵌入式 Linux | HTML+CSS，构建期编译成 C（`qltext`） | Web 子集，未支持特性构建期报错 |
-| PC / 移动 | HTML+CSS+JS，配系统 WebView | 高兼容；详见 [Web 兼容设计](doc/Web兼容设计.md) |
+| MCU | HTML+CSS（`qltext` 构建期编译成 C）+ 编译期裁能力包 | 同一套写法，裁的是能力不是语言 |
+| MPU / 嵌入式 Linux | HTML+CSS，构建期编译成 C 或运行期解析 | 未支持的特性**构建期报错** |
+| PC / 移动（含 Linux 手机） | HTML+CSS，同一套 | 全量能力包；**不接 WebView、不嵌浏览器、不做 JS** |
+
+> 三条不变的红线，任何平台都一样：
+> 1. **不做 JS 引擎**（没有 `script` 执行、没有 DOM API）；
+> 2. **不嵌系统 WebView / 浏览器引擎** —— 即使在 PC / 手机上，绘制也是本库自己的；
+> 3. 不支持的东西**构建期报错**，绝不静默降级。
+>
+> 详见 [Web 兼容设计](doc/Web兼容设计.md)。
 
 ## 目录
 
@@ -163,24 +172,25 @@ include/qlgl/      对外头文件（唯一安装目录）
   qlgeom.h         坐标、颜色、矩形
   qldisp.h         显示驱动接口 + 内存显示驱动
   qlcanvas.h       画布与绘制原语
-  qlwidget.h       控件基类
-  qlrender.h       脏矩形渲染器
+  qlcanvas.h       画布与绘制原语（同上）
+  qldraw2d.h       绘制接口（CPU / GPU 后端共用）
   qlfont.h         字体（位图/动态）、字形查找、UTF-8、文本度量
   qlfont_ft.h      FreeType 后端（可选）
   qlstr.h          自管理字符串（compact / amortized 双策略）
-  qllabel.h        文本控件
+  qlinput.h        输入事件与派发
+  qlimage.h        图片解码管线（BMP / QOI / PNG / GIF / JPEG 各一个开关）
+  qlclipboard 由 port 层提供（`src/port/qlclipboard_x11.h`）
   qldisp_x11.h     Linux X11 窗口后端（可选）
   qldisp_wayland.h Linux Wayland 窗口后端（可选）
   qlui.h           HTML+CSS 编译产物格式与运行期布局/绘制
-  qldraw2d.h       绘制接口（CPU / GPU 后端共用）
+  qluitext.h       运行期 HTML/CSS 解析入口（`ql_ui_load_text`）
   qlgfx_gl.h       GLES3 + EGL GPU 后端（可选）
   qlanim.h         帧时钟、缓动曲线、补间动画池
   qltype_gen.h     自动生成的类型 id（勿手改）
 src/core/          对象系统实现
 src/draw/          几何、显示、画布、渲染器
-src/widget/        控件基类与 QLLabel
 src/text/          字体实现、FreeType 后端、自动生成的字形数据
-src/ui/            HTML+CSS 编译结果的物化/布局/绘制
+src/ui/            运行期解析、物化、布局、绘制、blob 序列化
 src/port/          平台后端（X11 / Wayland 窗口）
 src/generated/     自动生成的类注册表（勿手改）
 tools/qlgen/       扫描源码生成类型 id 表
@@ -189,7 +199,7 @@ tools/qltext/      把 HTML+CSS 编译成 C / .qlui（相当于 Qt 的 uic，链
 tools/qlui/        兼容壳：只剩"找 qltext + 转发参数"（语义在 src/ui/qlui_parse.c）
 tools/qlblob/      把生成的 doc 导出成 .qlui blob（宿主工具）
 test/object/       对象系统示例与测试
-test/widget/       绘制系统示例与测试
+test/draw/         绘制系统示例与测试
 test/text/         字体/文本示例与测试
 test/web/          HTML+CSS 编译示例与测试
 test/input/        交互（命中/悬停/点击/焦点）示例与测试
@@ -227,11 +237,12 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 模块手册：
 
 - 对象系统：[QLObject 阅读指南](doc/手册/object/QLObject阅读指南.md) / [QLObject API 手册](doc/手册/object/QLObject%20API手册.md)
-- 绘制与控件：[QLWidget 阅读指南](doc/手册/widget/QLWidget阅读指南.md) / [QLWidget API 手册](doc/手册/widget/QLWidget%20API手册.md)
+- 绘制后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - 交互与输入：[QLInput 阅读指南](doc/手册/input/QLInput阅读指南.md) / [QLInput API 手册](doc/手册/input/QLInput%20API手册.md)
 - 字体与文本：[QLText 阅读指南](doc/手册/text/QLText阅读指南.md) / [QLText API 手册](doc/手册/text/QLText%20API手册.md)
 - HTML+CSS 编译：[QLUI 阅读指南](doc/手册/ui/QLUI阅读指南.md) / [QLUI API 手册](doc/手册/ui/QLUI%20API手册.md)
 - HTML5 覆盖度：[HTML5 标签覆盖与裁剪](doc/手册/ui/HTML5标签覆盖与裁剪.md)（114 个元素逐条状态 + MCU 能力包裁剪）
+- CSS 覆盖度：[CSS3 覆盖与裁剪](doc/手册/ui/CSS3覆盖与裁剪.md)（按模块穷举 + 原因码 + CSS 能力包）
 - 图像：[图像管线设计](doc/图像管线设计.md)（解码分工 / `<img>` 布局 / 两个后端的 blit）
 - 动效：[QLAnim 阅读指南](doc/手册/anim/QLAnim阅读指南.md) / [QLAnim API 手册](doc/手册/anim/QLAnim%20API手册.md)
 - 运行期解析：[QLUIText 阅读指南](doc/手册/uitext/QLUIText阅读指南.md) / [QLUIText API 手册](doc/手册/uitext/QLUIText%20API手册.md)

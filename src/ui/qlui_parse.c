@@ -2287,41 +2287,45 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
         anything = 1;
     }
 
-    /* 伪元素：`::before` / `::after`（只允许出现在最后一段） */
-    if (s[0] == ':' && s[1] == ':') {
-        s += 2;
-        const char *start = s;
-        while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z'))
-            s++;
-        char pe[16];
-        size_t plen = (size_t)(s - start);
-        if (plen == 0 || plen >= sizeof(pe))
-            return 0;
-        for (size_t i = 0; i < plen; i++) {
-            char c = start[i];
-            pe[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
-        }
-        pe[plen] = '\0';
-        if (strcmp(pe, "before") == 0)
-            p->pseudo_elem = 1;
-        else if (strcmp(pe, "after") == 0)
-            p->pseudo_elem = 2;
-        else {
-            set_error("不支持的伪元素 '::%s'（只支持 ::before / ::after）", pe);
-            return 0;
-        }
-        (*spec_tags)++;      /* 规范里伪元素记在"元素"那一档 */
-        anything = 1;
-    }
-
-    /* 伪类：可重复 */
+    /* 伪类 / 伪元素：可重复，顺序任意（`:first-child::before` 两种都行） */
     while (*s == ':') {
+        if (s[1] == ':') {
+            /* 伪元素 */
+            s += 2;
+            const char *pstart = s;
+            while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z'))
+                s++;
+            char pe[16];
+            size_t plen = (size_t)(s - pstart);
+            if (plen == 0 || plen >= sizeof(pe)) {
+                set_error("伪元素名非法：'%s'", tok);
+                return 0;
+            }
+            for (size_t i = 0; i < plen; i++) {
+                char c = pstart[i];
+                pe[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+            }
+            pe[plen] = '\0';
+            if (strcmp(pe, "before") == 0)
+                p->pseudo_elem = 1;
+            else if (strcmp(pe, "after") == 0)
+                p->pseudo_elem = 2;
+            else {
+                set_error("不支持的伪元素 '::%s'（只支持 ::before / ::after）", pe);
+                return 0;
+            }
+            (*spec_tags)++;      /* 规范里伪元素记在"元素"那一档 */
+            anything = 1;
+            continue;
+        }
         s++;
         const char *start = s;
         while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || *s == '-')
             s++;
-        if (s == start)
+        if (s == start) {
+            set_error("伪类名缺失：'%s'", tok);
             return 0;
+        }
         char name[32];
         size_t len = (size_t)(s - start);
         if (len >= sizeof(name))
@@ -5222,6 +5226,9 @@ static int collect_decls(const PNode *n, const Rules *rs, int states_active,
         const Rule *r = &rs->r[i];
         if ((r->states & ~states_active) != 0)
             continue;
+        /* `::before` / `::after` 的规则只作用于合成节点，不能落到真元素上 */
+        if (r->nparts > 0 && r->parts[r->nparts - 1].pseudo_elem != 0)
+            continue;
         if (!rule_matches(n, r))
             continue;
         refs[nm].r = r;
@@ -7207,7 +7214,11 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         goto done;
     if (!parse_css(css, &rules, &kfs))
         goto done;
-    /* `::before` / `::after` 在这里变成真节点（构建期一次到位，运行期零成本） */
+    /*
+     * `::before` / `::after` 在这里变成真节点（构建期一次到位，运行期零成本）。
+     * 先算兄弟位置 —— 选择器里可能同时写 `:first-child::before`。
+     */
+    assign_sibling_pos(root);
     if (!expand_pseudo(root, &rules))
         goto done;
     if (!kf_compile(&kfs, &kftab, &kfranges))
@@ -7232,6 +7243,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         Decls base;
         memset(&base, 0, sizeof(base));
         if (!collect_decls(n, &rules, 0, &base)) {
+
             decls_free(&base);
             decls_free(&inherited);
             goto done;
@@ -7242,6 +7254,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         snprintf(where, sizeof(where), "<%s #%d>",
                  n->tag != NULL ? n->tag : "?", i);
         if (!finalize_style(&base, n, &inherited, &e->final_decls)) {
+
             decls_free(&base);
             decls_free(&inherited);
             goto done;

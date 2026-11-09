@@ -177,11 +177,12 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/11_input.html'>输入控件</a>
 <a href='../tutorial/12_text.html'>空白与上下标</a>
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item active' href='../design/开发规划.html'>QLGL 开发规划</a>
 <a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
 <h4>QLObject</h4>
@@ -3091,7 +3092,7 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 </tr>
 <tr>
 <td><strong>不做 DOM API / JS 引擎</strong></td>
-<td>PC 高兼容用系统 WebView，不在本项目范围内</td>
+<td>任何平台都不做，也<strong>不嵌 WebView</strong> —— 全平台同一套自绘（Web兼容设计 §6/§7.3）</td>
 </tr>
 <tr>
 <td><strong>不与 Qt/GTK 比功能广度</strong></td>
@@ -3379,7 +3380,7 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 </tbody>
 </table>
 <div class='pager'>
-<a href='../design/Web兼容设计.html'><span class='dir'>上一页</span>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a href='../design/Web兼容设计.html'><span class='dir'>上一页</span>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='next' href='../design/bench.html'><span class='dir'>下一页</span>性能基线（bench.md）</a>
 </div>
 </main>

@@ -177,11 +177,12 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/11_input.html'>输入控件</a>
 <a href='../../tutorial/12_text.html'>空白与上下标</a>
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
 <a class='sub-item' href='../../design/bench.html'>性能基线（bench.md）</a>
 <h4>QLObject</h4>
@@ -222,6 +223,54 @@ main img.shot { max-width: 100%; }
 缺的是<strong>真实页面天天用的细节</strong>（<code>min/max-*</code>、<code>em/rem</code>、<code>:nth-child</code>、<code>::before</code>、
 <code>letter-spacing</code>、<code>text-overflow</code>、<code>border-style</code>、<code>cursor</code>…）。
 加这些是"补细节"，不是"补架构"。</p>
+</blockquote>
+<hr />
+<h2 id="0-vs-2026-11-09">0. 已完成 vs 待做（2026-11-09 更新）</h2>
+<p><strong>已完成（B2 全部 + B1 第一片）</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>*</code>、<code>[attr]</code> 系列、<code>:first/last/only-child</code>、<code>:nth-child(an+b)</code>、<code>:*-of-type</code>、<code>:not()</code></td>
+<td>全部构建期求值</td>
+</tr>
+<tr>
+<td><code>::before</code> / <code>::after</code> + <code>content: "文本"</code></td>
+<td><strong>构建期展开成真节点</strong>（内部 tag <code>#pe</code>）</td>
+</tr>
+<tr>
+<td><code>+</code> / <code>~</code> 兄弟组合符</td>
+<td>之前直接报错，文档却写着支持 —— 现在真的支持了</td>
+</tr>
+<tr>
+<td><code>min-width/max-width/min-height/max-height</code>（px / %）</td>
+<td>blob v16；border-box / content-box 各自正确</td>
+</tr>
+<tr>
+<td><code>!important</code></td>
+<td>级联两趟：普通先应用，important 再应用</td>
+</tr>
+<tr>
+<td><code>hsl()</code> / <code>hsla()</code>、<code>#rrggbbaa</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>currentColor</code> / <code>inherit</code> / <code>initial</code> / <code>unset</code></td>
+<td>颜色位置识别成特殊值</td>
+</tr>
+</tbody>
+</table>
+<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>em</code>/<code>rem</code>/<code>calc()</code>、<code>margin: auto</code>、
+<code>border-radius</code> 四角、<code>letter-spacing</code> / <code>text-overflow</code>（B3）、
+<code>border-style: dashed</code>（B4）、<code>align-self</code> / <code>order</code>（B5）、<code>transform: rotate()</code>。</p>
+<blockquote>
+<p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
+逐行状态在下一次整理时同步。</p>
 </blockquote>
 <hr />
 <h2 id="1">1. 状态记号</h2>

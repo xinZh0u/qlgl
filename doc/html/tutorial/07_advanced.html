@@ -177,11 +177,12 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/11_input.html'>输入控件</a>
 <a href='../tutorial/12_text.html'>空白与上下标</a>
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
 <a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
 <h4>QLObject</h4>
@@ -349,8 +350,12 @@ test_golden         27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
 </tr>
 </tbody>
 </table>
-<p>日常写界面用第三层。第一、二层在需要"用 C 组装"或者做自定义控件时用。
-第四、五层在写自定义绘制时用。</p>
+<p>日常写界面用第二层。第一层是"用 C 组装对象"时才碰的（对象/属性/事件那一套），
+第三、四层在写自定义绘制时用。</p>
+<blockquote>
+<p><strong>没有"控件类"这一层</strong>：<code>QLWidget</code> / <code>QLLabel</code> 那套已经删掉了。想做一个"新控件"，
+做法是写 UA CSS + 用现有标签组合，而不是继承一个 C 类。</p>
+</blockquote>
 <h2 id="_6">明确不做的事</h2>
 <p>这些不是"还没做"，是<strong>已经决定不做</strong>：</p>
 <table>
@@ -371,11 +376,11 @@ test_golden         27 个 CSS 用例 × (blob 逐字节 + 基准图容差)
 </tr>
 <tr>
 <td>DOM API / JS 引擎</td>
-<td>需要高兼容就嵌系统 WebView，不在本项目范围</td>
+<td><strong>不做</strong>（任何平台，也不靠 WebView 兜底）—— 交互用状态样式 + 宿主 C 回调</td>
 </tr>
 <tr>
-<td>可访问性 / IME / 多媒体</td>
-<td>只做 UI</td>
+<td>可访问性 / 多媒体</td>
+<td>只做 UI（IME 已接 XIM，见 11 章）</td>
 </tr>
 <tr>
 <td>静默降级</td>
