@@ -387,4 +387,39 @@ QL_TEST_BEGIN("test_textarea")
         }
     }
 
+    /* ---------- 13. 内容比盒子高时**裁在框内**（不能画到框外去） ---------- */
+    {
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            QLUIRoot *ui = NULL;
+            /* 红底：溢出的黑字在红底上肉眼可见，才好断言 */
+            QLUIDoc *doc = mk("<div id=r><textarea>1\n2\n3\n4\n5\n6\n7\n8\n9</textarea>"
+                              "</div>",
+                              "#r { width: 240px; background-color: #FF0000 }"
+                              "textarea { width: 200px; height: 48px; padding: 4px;"
+                              " background-color: #FFFFFF; color: #000000;"
+                              " line-height: 16px }", &ui);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFF0000);
+                ql_ui_render_canvas(ui, &cv);
+
+                const QLRect b = ql_ui_node_rect(find_tag(ui, "textarea", 0));
+                int leak = 0;
+                for (int y = (int)(b.y + b.h) + 1; y < (int)(b.y + b.h) + 8 && y < H; y++)
+                    for (int x = (int)b.x; x < (int)(b.x + b.w); x++)
+                        if (px(x, y) != 0xFF0000)
+                            leak++;
+                printf("    框外泄露像素 = %d（应 0）\n", leak);
+                QL_CHECK_EQ(leak, 0);
+                ql_ui_free(ui);
+            }
+            ql_ui_doc_free(doc);
+            ql_disp_mem_destroy(s_disp);
+        }
+    }
+
 QL_TEST_END()

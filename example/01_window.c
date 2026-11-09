@@ -20,13 +20,14 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 240px; height: 120px; background-color: #101820; }"
-    ".hello { margin: 40px 0 0 24px; font-size: 20px; color: #7CE0FF; }";
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
+    ".hello { margin: 40px 0 0 24px; font-size: 20px; color: #0969DA; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     /* ① 编译界面。失败时 last_error 里有 "css:行号: 原因" */

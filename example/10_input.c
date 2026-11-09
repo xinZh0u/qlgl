@@ -33,20 +33,20 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 300px; height: 260px; background-color: #0B0E14;"
-    "        padding: 14px; font-size: 12px; color: #C8D2DE; }"
-    ".title { font-size: 15px; color: #7CE0FF; margin-bottom: 8px; }"
-    ".label { font-size: 10px; color: #6C7783; margin-top: 8px; margin-bottom: 3px; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+    "        padding: 14px; font-size: 12px; color: #1F2328; }"
+    ".title { font-size: 15px; color: #0969DA; margin-bottom: 8px; }"
+    ".label { font-size: 10px; color: #6E7781; margin-top: 8px; margin-bottom: 3px; }"
 
     /* 输入框与下拉框共用一套"框"的样式：宽高给足、内边距给足，
        不然光标会贴在边框上 */
     "input { width: 256px; height: 26px; padding-left: 8px; padding-right: 8px;"
-    "        background-color: #101725; border-radius: 6px; }"
-    "input:focus { background-color: #16202F; }"
+    "        background-color: #F6F8FA; border-radius: 6px; }"
+    "input:focus { background-color: #F0F6FF; }"
     "select { width: 256px; height: 26px; padding-left: 8px;"
-    "         background-color: #101725; border-radius: 6px; }"
+    "         background-color: #F6F8FA; border-radius: 6px; }"
 
-    ".hint { margin-top: 12px; font-size: 10px; color: #566270; }";
+    ".hint { margin-top: 12px; font-size: 10px; color: #6E7781; }";
 
 /* 回调里能拿到值：回车或点选后打印一行，方便在终端里看 */
 static void on_change(QLUIRoot *ui, QLUINodeRT *node, const char *value, void *user)
@@ -70,6 +70,7 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

@@ -2580,6 +2580,33 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
     }
 
     QLUINodeRT *root = &ui->nodes[0];
+
+    /*
+     * 根元素的 `width: 100%` / `height: 100%` 按**视口**解析。
+     *
+     * 根节点的包含块就是视口（CSS 语义），但下面的百分比解析只认"父内容宽度"，
+     * 根没有父，所以百分比会落到 0。这里在排版前把它换成确定的像素值。
+     * 这是"窗口缩放后页面跟着变"的前提：页面根写成 100%×100% 就自适应了。
+     */
+    if (root->style->width.unit == QL_UI_UNIT_PERCENT ||
+        root->style->height.unit == QL_UI_UNIT_PERCENT) {
+        if (!root->used_copy) {
+            root->style_copy = *root->style;
+            root->style = &root->style_copy;
+            root->used_copy = 1;
+        }
+        if (root->style_copy.width.unit == QL_UI_UNIT_PERCENT) {
+            root->style_copy.width.value =
+                (int16_t)((int32_t)width * root->style_copy.width.value / 100);
+            root->style_copy.width.unit = QL_UI_UNIT_PX;
+        }
+        if (root->style_copy.height.unit == QL_UI_UNIT_PERCENT) {
+            root->style_copy.height.value =
+                (int16_t)((int32_t)height * root->style_copy.height.value / 100);
+            root->style_copy.height.unit = QL_UI_UNIT_PX;
+        }
+    }
+
     root->abs_cb = ql_rect_make(0, 0, width, height);
     layout_node(root, 0, 0, width);
 
@@ -3859,12 +3886,25 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
         char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
         const char *shown = node->text;
         QLRect tbox = node->content_box;
+        QLRect input_saved_clip = clip;
+        int input_clipped = 0;
         if (in != NULL) {
             shown = input_display_text(in, (node->src->flags & QL_UI_NODE_PASSWORD) != 0,
                                        dots, sizeof(dots));
             tbox.x -= in->scroll_x;
             tbox.y -= in->scroll_y;      /* 多行：纵向滚动（单行恒 0） */
-            tbox.h += in->scroll_y;      /* 文本整体上移后不再被内容盒高度截断 */
+            /*
+             * **必须裁到内容盒**：多行输入框的内容通常比盒子高（那正是要滚的原因），
+             * 不裁的话文字会画到框外去（截图里那种"文字溢出输入框"）。
+             * 以前这里是 tbox.h += scroll_y 让文字不被高度截断 —— 方向反了：
+             * 该裁的是绘制，不是把盒子撑高。
+             */
+            if (d2d->set_clip != NULL && !ql_rect_is_empty(node->content_box)) {
+                const QLRect c = ql_rect_intersect(clip, node->content_box);
+                node->owner->clip = c;
+                d2d->set_clip(d2d, c);
+                input_clipped = 1;
+            }
         }
 
         QLTextStyle ts;
@@ -3882,6 +3922,10 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
                                  ? QL_TEXT_DECO_LINE_THROUGH
                                  : 0u));
         d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
+        if (input_clipped) {
+            node->owner->clip = input_saved_clip;
+            d2d->set_clip(d2d, input_saved_clip);
+        }
         draw_input_decor(node, d2d);
     }
 

@@ -42,32 +42,33 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 340px; height: 400px; background-color: #0B0E14;"
-    "        padding: 14px; font-size: 12px; color: #C8D2DE; }"
-    "h2 { font-size: 16px; color: #7CE0FF; margin: 0 0 10px 0; }"
-    "label { display: block; color: #7A8794; font-size: 11px; margin: 8px 0 4px 0; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+    "        padding: 14px; font-size: 12px; color: #1F2328; }"
+    "h2 { font-size: 16px; color: #0969DA; margin: 0 0 10px 0; }"
+    "label { display: block; color: #57606A; font-size: 11px; margin: 8px 0 4px 0; }"
     /* 单行与多行共用同一套外观，读起来才像同一个表单 */
     "input { display: block; width: 300px; height: 22px; padding: 3px 6px;"
-    "        border-width: 1px; border-color: #2A3646; border-radius: 4px;"
-    "        background-color: #11161F; color: #E6EDF3; }"
+    "        border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
+    "        background-color: #F6F8FA; color: #1F2328; }"
     "textarea { display: block; width: 300px; height: 96px; padding: 6px;"
-    "           border-width: 1px; border-color: #2A3646; border-radius: 4px;"
-    "           background-color: #11161F; color: #E6EDF3;"
+    "           border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
+    "           background-color: #F6F8FA; color: #1F2328;"
     "           font-size: 11px; line-height: 16px; }"
     /* 聚焦态用过渡描边，能直接看出焦点在哪个控件上 */
-    "input:focus { border-color: #7CE0FF; }"
-    "textarea:focus { border-color: #7CE0FF; }"
+    "input:focus { border-color: #0969DA; }"
+    "textarea:focus { border-color: #0969DA; }"
     "#bar { margin-top: 14px; }"
     "button { display: inline-block; padding: 5px 14px; border-radius: 4px;"
-    "         border-width: 1px; border-color: #7CE0FF;"
-    "         background-color: #10202C; color: #7CE0FF; }"
-    "#hint { display: inline-block; margin-left: 10px; color: #566270;"
+    "         border-width: 1px; border-color: #0969DA;"
+    "         background-color: #EDF3FF; color: #0969DA; }"
+    "#hint { display: inline-block; margin-left: 10px; color: #6E7781;"
     "        font-size: 10px; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

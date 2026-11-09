@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <locale.h>
+
 #include <qlgl/qlgl.h>
 
 #if !defined(QLGL_ENABLE_GL)
@@ -20,6 +22,15 @@
 #endif
 
 /* 找一个能显示中文的字体；找不到就退回内置位图字体（只有 ASCII） */
+/*
+ * 进程的 locale 影响 XIM：`XOpenIM` 靠它挑输入法（fcitx/ibus）。
+ * 不调这一句时中文通常打不进来 —— 而这不是库能代劳的（改全局状态是应用的事）。
+ */
+static void ex_setup_locale(void)
+{
+    setlocale(LC_ALL, "");
+}
+
 static void ex_load_font(void)
 {
     const char *env = getenv("QLGL_FONT");

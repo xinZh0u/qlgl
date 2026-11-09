@@ -47,25 +47,26 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 260px; background-color: #0B0E14; color: #C8D2DE;"
+    "#root { width: 100%; background-color: #FFFFFF; color: #1F2328;"
     "        font-size: 12px; padding: 12px; }"
 
     /* 只给"这个库特有的观感"，不给结构性东西（display / margin 都留空） */
     ".box { width: 140px; height: 28px; border-radius: 4px;"
     "       background-color: #2E6BE6; }"
-    ".brdemo { margin: 8px 0; color: #7CE0FF; }"
+    ".brdemo { margin: 8px 0; color: #0969DA; }"
 
     /* 第二部分：同样的标签换个颜色就够了 */
     ".themed { margin-top: 14px; padding: 10px; border-radius: 8px;"
-    "          background-color: #141A22; }"
+    "          background-color: #FFFFFF; }"
     ".themed header { color: #E6C34A; }"
-    ".themed hr { background-color: #2A3546; }"
+    ".themed hr { background-color: #D0D7DE; }"
     ".themed blockquote { color: #E6C34A; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

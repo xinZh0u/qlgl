@@ -46,28 +46,29 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 320px; height: 348px; background-color: #0B0E14;"
-    "        padding: 14px; font-size: 12px; color: #C8D2DE; }"
-    "h2 { font-size: 16px; color: #7CE0FF; margin: 0 0 8px 0; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+    "        padding: 14px; font-size: 12px; color: #1F2328; }"
+    "h2 { font-size: 16px; color: #0969DA; margin: 0 0 8px 0; }"
     ".lead { line-height: 20px; margin: 0 0 10px 0; }"
-    "code { color: #7CE0FF; }"
-    "cite { color: #9AA7B4; }"
+    "code { color: #0969DA; }"
+    "cite { color: #57606A; }"
     "dl { margin: 0 0 10px 0; }"
-    "dt { color: #566270; }"
+    "dt { color: #6E7781; }"
     "dd { line-height: 18px; }"
-    "ins { color: #4ADE80; }"
-    "del { color: #F87171; }"
+    "ins { color: #1A7F37; }"
+    "del { color: #CF222E; }"
     "blockquote { margin: 0 0 10px 0; padding-left: 10px;"
-    "             border-width: 2px; border-color: #2A3646; color: #9AA7B4; }"
+    "             border-width: 2px; border-color: #D0D7DE; color: #57606A; }"
     "fieldset { margin: 0 0 10px 0; }"
-    "legend { color: #7CE0FF; }"
-    ".note { line-height: 18px; margin: 0; color: #C8D2DE; }"
-    "address { font-size: 10px; color: #566270; }";
+    "legend { color: #0969DA; }"
+    ".note { line-height: 18px; margin: 0; color: #1F2328; }"
+    "address { font-size: 10px; color: #6E7781; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

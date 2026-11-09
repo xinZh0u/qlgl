@@ -23,7 +23,7 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 300px; height: 160px; background-color: #0B0E14; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
     ".slide, .pulse, .flip { position: absolute; top: 40px; width: 76px;"
     "  height: 56px; border-radius: 8px; font-size: 13px; text-align: center;"
     "  line-height: 56px;"
@@ -37,7 +37,7 @@ static const char *k_css =
     "         animation: flip-x 2800ms linear infinite; }"
 
     ".hint { position: absolute; left: 16px; top: 112px; font-size: 11px;"
-    "        color: #6C7783; }"
+    "        color: #6E7781; }"
 
     "@keyframes slide-in {"
     "  from { transform: translate(-24px, 0px); }"
@@ -64,6 +64,7 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

@@ -23,17 +23,17 @@ static const char *k_html =
 
 /* 三套主题只差 CSS —— 结构一个字都没改 */
 static const char *k_dark =
-    "#root { width: 260px; height: 140px; background-color: #0E1116; }"
-    ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #E6EDF3; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #0E1116; }"
+    ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #7CE0FF; }"
     ".row { display: flex; gap: 8px; margin: 0 14px; }"
     ".chip { width: 68px; height: 26px; border-radius: 13px; font-size: 12px;"
     "        text-align: center; line-height: 26px;"
     "        background-color: #1B222C; color: #8B949E; }"
     ".on { background-color: #2E6BE6; color: #FFFFFF; }"
-    ".body { margin: 10px 14px; font-size: 12px; color: #7A8794; }";
+    ".body { margin: 10px 14px; font-size: 12px; color: #C8D2DE; }";
 
 static const char *k_light =
-    "#root { width: 260px; height: 140px; background-color: #FAFAFA; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FAFAFA; }"
     ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #1F2328; }"
     ".row { display: flex; gap: 8px; margin: 0 14px; }"
     ".chip { width: 68px; height: 26px; border-radius: 13px; font-size: 12px;"
@@ -43,15 +43,15 @@ static const char *k_light =
     ".body { margin: 10px 14px; font-size: 12px; color: #57606A; }";
 
 static const char *k_warm =
-    "#root { width: 260px; height: 140px; background-color: #241A12;"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFF8F0;"
     "        border-radius: 12px; }"
-    ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #FFE0B2; }"
+    ".title { margin: 10px 0 6px 14px; font-size: 15px; color: #8A5A20; }"
     ".row { display: flex; gap: 8px; margin: 0 14px; }"
     ".chip { width: 68px; height: 26px; border-radius: 13px; font-size: 12px;"
     "        text-align: center; line-height: 26px;"
-    "        background-color: #3A2A1C; color: #C9A882; }"
-    ".on { background-color: #E8743B; color: #1A0E06; }"
-    ".body { margin: 10px 14px; font-size: 12px; color: #A98A6A; }";
+    "        background-color: #E8DCCB; color: #B08A5E; }"
+    ".on { background-color: #E8743B; color: #FFFDF9; }"
+    ".body { margin: 10px 14px; font-size: 12px; color: #8A6A45; }";
 
 /* 编译 + 渲染一张图；返回 0 表示成功 */
 static int shot(const char *css, int index, int argc, char **argv)
@@ -95,6 +95,7 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     int rc = 0;

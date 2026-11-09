@@ -36,24 +36,30 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 260px; height: 220px; background-color: #0B0E14;"
-    "        padding: 12px; font-size: 12px; color: #C8D2DE; }"
-    ".title { font-size: 14px; color: #7CE0FF; margin-bottom: 6px; }"
+    /*
+     * 页面铺满窗口（width/height 的百分比按视口解析），窗口拉大背景跟着变大。
+     * 注意：列表仍是固定高度 —— 本库还不支持 `height: %`，
+     * 所以"子元素跟着窗口长高"暂时做不到（见教程 §与 Web 的差别）。
+     */
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+    "        padding: 12px; font-size: 12px; color: #1F2328; }"
+    ".title { font-size: 14px; color: #0969DA; margin-bottom: 6px; }"
 
     /* 关键：overflow: auto + 固定高度 → 内容超出就能滚 */
-    ".list { width: 236px; height: 140px; overflow: auto;"
-    "        background-color: #101725; border-radius: 8px; }"
+    ".list { width: 100%; height: 140px; overflow: auto;"
+    "        background-color: #F6F8FA; border-radius: 8px; }"
     ".row { display: flex; gap: 8px; height: 28px; padding-left: 8px;"
     "       align-items: center; }"
-    ".row:hover { background-color: #1B2431; }"
-    ".n { width: 22px; color: #5A6674; }"
-    ".t { color: #C8D2DE; }"
-    ".hint { margin-top: 8px; font-size: 10px; color: #6C7783; }";
+    ".row:hover { background-color: #EEF1F4; }"
+    ".n { width: 22px; color: #6E7781; }"
+    ".t { color: #1F2328; }"
+    ".hint { margin-top: 8px; font-size: 10px; color: #6E7781; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

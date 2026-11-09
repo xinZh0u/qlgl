@@ -44,7 +44,7 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 300px; height: 316px; background-color: #0B0E14;"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
     "        display: flex; flex-direction: column; gap: 10px;"
     "        padding: 16px; }"
 
@@ -54,33 +54,33 @@ static const char *k_css =
     "         background-image: linear-gradient(to right, #2E6BE6, #7A5AF8); }"
     ".disc { position: absolute; left: 106px; top: 30px;"
     "        width: 56px; height: 56px; border-radius: 28px;"
-    "        background-color: #101725; }"
+    "        background-color: #F6F8FA; }"
 
     ".meta { display: flex; flex-direction: column; gap: 2px; }"
-    ".title { font-size: 17px; color: #E6EDF3; }"
-    ".artist { font-size: 12px; color: #7A8794; }"
+    ".title { font-size: 17px; color: #1F2328; }"
+    ".artist { font-size: 12px; color: #57606A; }"
 
     /* 进度条：底轨 + 按百分比填充 */
     ".track { width: 268px; height: 4px; border-radius: 2px;"
-    "         background-color: #1B222C; }"
+    "         background-color: #EEF1F4; }"
     ".track-fill { width: 36%; height: 4px; border-radius: 2px;"
     "              background-color: #2E6BE6; }"
     ".times { width: 268px; display: flex; justify-content: space-between;"
-    "         font-size: 10px; color: #6C7783; }"
+    "         font-size: 10px; color: #6E7781; }"
 
     /* 简介：默认不折行；显式开 white-space: normal 才会按宽度断行 */
     ".desc { width: 268px; font-size: 11px; line-height: 18px;"
-    "        color: #7A8794; white-space: normal; }"
+    "        color: #57606A; white-space: normal; }"
 
     ".row { width: 268px; display: flex; gap: 10px; justify-content: center;"
     "       margin-top: 2px; }"
     /* text-align 管水平、line-height 管竖直：两个都写才是"居中" */
     ".btn { width: 76px; height: 30px; border-radius: 15px; font-size: 12px;"
     "       text-align: center; line-height: 30px;"
-    "       background-color: #1B222C; color: #C8D2DE;"
+    "       background-color: #EEF1F4; color: #1F2328;"
     "       transition: 140ms ease-out; }"
-    ".btn:hover { background-color: #2A3546; color: #FFFFFF; }"
-    ".btn:active { background-color: #3A475C; }"
+    ".btn:hover { background-color: #D0D7DE; color: #FFFFFF; }"
+    ".btn:active { background-color: #BFC8D2; }"
     ".play { background-color: #2E6BE6; color: #FFFFFF; }"
     ".play:hover { background-color: #3D7BF6; }";
 
@@ -88,6 +88,7 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

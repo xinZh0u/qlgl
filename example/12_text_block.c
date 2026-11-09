@@ -48,27 +48,28 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 340px; height: 470px; background-color: #0B0E14;"
-    "        padding: 14px; font-size: 12px; color: #C8D2DE; }"
-    "h2 { font-size: 13px; color: #7CE0FF; margin: 10px 0 6px 0; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+    "        padding: 14px; font-size: 12px; color: #1F2328; }"
+    "h2 { font-size: 13px; color: #0969DA; margin: 10px 0 6px 0; }"
     /* 代码块：pre 已经给了 block / 空白保留，这里只补外观 */
-    "pre { background-color: #11161F; padding: 8px; border-radius: 6px;"
-    "      border-width: 1px; border-color: #1E2836; color: #9AE6B4;"
+    "pre { background-color: #F6F8FA; padding: 8px; border-radius: 6px;"
+    "      border-width: 1px; border-color: #D0D7DE; color: #1A7F37;"
     "      font-size: 11px; line-height: 15px; margin: 0 0 8px 0; }"
     /* pre-line：折叠多余空格、保留换行 —— 适合诗句/地址这类"按行写"的文本 */
-    ".poem { white-space: pre-line; line-height: 19px; color: #C8D2DE;"
+    ".poem { white-space: pre-line; line-height: 19px; color: #1F2328;"
     "        margin: 0 0 8px 0; }"
     "p { line-height: 19px; margin: 0 0 6px 0; }"
     ".big { font-size: 18px; }"
     /* 上下标不用写样式：UA 默认已经给了 vertical-align 与 smaller 字号 */
-    "sub { color: #F6C177; }"
-    "sup { color: #F6C177; }"
-    "code { color: #7CE0FF; }";
+    "sub { color: #9A6700; }"
+    "sup { color: #9A6700; }"
+    "code { color: #0969DA; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

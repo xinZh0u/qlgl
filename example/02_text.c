@@ -23,20 +23,21 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 260px; height: 220px; background-color: #0F1218; }"
-    ".h1  { margin: 12px 0 8px 14px; font-size: 13px; color: #6C7783; }"
-    ".s12 { margin: 2px 14px; font-size: 12px; color: #C8D2DE; }"
-    ".s16 { margin: 2px 14px; font-size: 16px; color: #C8D2DE; }"
-    ".s24 { margin: 2px 14px; font-size: 24px; color: #7CE0FF; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
+    ".h1  { margin: 12px 0 8px 14px; font-size: 13px; color: #6E7781; }"
+    ".s12 { margin: 2px 14px; font-size: 12px; color: #1F2328; }"
+    ".s16 { margin: 2px 14px; font-size: 16px; color: #1F2328; }"
+    ".s24 { margin: 2px 14px; font-size: 24px; color: #0969DA; }"
     ".c   { margin: 12px 14px 4px 14px; font-size: 14px; color: #E6C34A;"
     "       text-align: center; }"
-    ".dim { margin: 2px 14px; font-size: 12px; color: #7A8794;"
+    ".dim { margin: 2px 14px; font-size: 12px; color: #57606A;"
     "       text-align: right; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

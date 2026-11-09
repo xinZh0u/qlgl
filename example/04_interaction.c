@@ -20,16 +20,16 @@ static const char *k_html =
 
 /* 注意 transition：状态变化时颜色/位置在 160ms 内插值过去 */
 static const char *k_css =
-    "#root { width: 260px; height: 140px; background-color: #0E1116; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
     ".btn { position: absolute; left: 24px; top: 26px; width: 120px; height: 44px;"
-    "       border-radius: 10px; background-color: #22415F; color: #C8D2DE;"
+    "       border-radius: 10px; background-color: #D0D7DE; color: #1F2328;"
     "       font-size: 15px; text-align: center; line-height: 44px;"
     "       transition: 160ms ease-out; }"
     ".btn:hover { background-color: #2E6BE6; color: #FFFFFF;"
     "             transform: translate(0px, -2px); }"
     ".btn:active { background-color: #1B4CA8; transform: translate(0px, 1px); }"
     ".log { position: absolute; left: 24px; top: 92px; font-size: 13px;"
-    "       color: #7A8794; }";
+    "       color: #57606A; }";
 
 static QLUIRoot *s_ui;
 static QLUINodeRT *s_log;
@@ -52,6 +52,7 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);

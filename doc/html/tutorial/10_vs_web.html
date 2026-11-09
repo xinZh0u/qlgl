@@ -512,6 +512,18 @@ main img.shot { max-width: 100%; }
 </tbody>
 </table>
 <p>百分比<strong>只相对父容器的内容宽</strong>（不是所有属性都用百分比，比如 margin 不行）。</p>
+<p><strong>三条例外要记牢</strong>：</p>
+<ol>
+<li><strong>根元素的 <code>width/height: %</code> 按视口解析</strong> —— 这是让页面自适应窗口的做法。
+   想让整页铺满窗口就写：</li>
+</ol>
+<p><code>css
+   #root { width: 100%; height: 100%; box-sizing: border-box; }</code></p>
+<p><code>box-sizing: border-box</code> 很重要：<code>width: 100%</code> 是<strong>内容盒</strong>宽度，再加上
+   padding 就会超出视口（和浏览器一样）。
+2. <strong><code>height</code> 上的百分比仍然不支持</strong>（只有根元素例外）。所以"子元素跟着窗口长高"
+   目前做不到 —— 列表/文本框的高度得写死，或者按内容自动撑。
+3. <code>margin</code> 的百分比不支持。</p>
 <hr />
 <h2 id="5">5. 属性白名单：写错就报错</h2>
 <p>所有属性都过一张白名单，不在表里直接报错并给出行号：</p>
@@ -703,7 +715,11 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>滚到底后外层跟着滚（链式滚动）</td>
-<td>❌ 内层到头就停住</td>
+<td>✅ 内层到头后继续滚最近的可滚祖先（最多 8 层）</td>
+</tr>
+<tr>
+<td>一格滚多远</td>
+<td>一格 = <code>QL_CFG_UI_WHEEL_STEP_PX</code>（默认 50px ≈ 3 行）</td>
 </tr>
 <tr>
 <td>自定义滚动条样式</td>

@@ -31,12 +31,12 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 300px; height: 220px; background-color: #0C1017; }"
+    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF; }"
 
     /* 顶栏：横向 flex，spacer 用 flex-grow 把按钮顶到右边 */
     ".bar { display: flex; align-items: center; gap: 8px;"
     "       margin: 10px 10px 0 10px; height: 32px; }"
-    ".logo { font-size: 15px; color: #7CE0FF; }"
+    ".logo { font-size: 15px; color: #0969DA; }"
     ".spacer { flex-grow: 1; }"
     /* text-align 管水平，line-height 管垂直：两者都写上才算"居中" */
     ".btn { width: 56px; height: 26px; border-radius: 13px;"
@@ -57,13 +57,14 @@ static const char *k_css =
     /* 绝对定位：相对最近的 relative/absolute/fixed 祖先（这里是 #root） */
     ".badge { position: absolute; left: 200px; top: 170px;"
     "         width: 86px; height: 24px; border-radius: 12px;"
-    "         background-color: #1E2A3A; color: #C8D2DE; font-size: 11px;"
+    "         background-color: #D0D7DE; color: #1F2328; font-size: 11px;"
     "         text-align: center; line-height: 24px; }";
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
+    ex_setup_locale();
     ex_load_font();
 
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);
