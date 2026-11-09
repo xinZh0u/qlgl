@@ -1072,6 +1072,8 @@ static uint16_t input_cap(const struct QLUIInput *in)
                          : (uint16_t)QL_CFG_UI_INPUT_LEN;
 }
 
+static void input_scroll_to_caret(struct QLUIInput *in);
+
 static int input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
 {
     size_t add = strlen(s);
@@ -1091,6 +1093,9 @@ static int input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
     in->len = (uint16_t)(in->len + add);
     in->caret = (uint16_t)(in->caret + add);
     in->sel = in->caret;
+    in->want_x = -1;
+    /* 打字打到底要自动滚：否则光标/新字会落到框外（多行尤其明显） */
+    input_scroll_to_caret(in);
     input_emit(ui, in);
     return 1;
 }
@@ -1348,6 +1353,8 @@ static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
             in->len = (uint16_t)(in->len - (in->caret - from));
             in->caret = from;
             in->sel = from;
+            in->want_x = -1;
+            input_scroll_to_caret(in);
             input_emit(ui, in);
         }
         return 1;
@@ -1361,6 +1368,8 @@ static int input_key(QLUIRoot *ui, struct QLUIInput *in, const QLInputEvent *ev)
                     (size_t)(in->len - to) + 1u);
             in->len = (uint16_t)(in->len - (to - in->caret));
             in->sel = in->caret;
+            in->want_x = -1;
+            input_scroll_to_caret(in);
             input_emit(ui, in);
         }
         return 1;
@@ -3693,6 +3702,21 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
     const QLRect cb = node->content_box;
     const ql_coord_t base_x = cb.x - in->scroll_x;
 
+    /*
+     * 光标与选区也要裁到内容盒：多行输入框滚出可见区之后，
+     * 光标会画到框下面去（截图里"竖线跑出文本框"就是这个）。
+     */
+    QLRect deco_saved = cb;
+    int deco_clipped = 0;
+    if (d2d->fill_rect != NULL && !ql_rect_is_empty(cb)) {
+        deco_saved = node->owner->clip;
+        const QLRect c = ql_rect_intersect(deco_saved, cb);
+        node->owner->clip = c;
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, c);
+        deco_clipped = 1;
+    }
+
     /* 密码框显示成圆点，所以宽度必须按**显示文本**量，否则光标会飘 */
     char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
     const int pw = (node->src->flags & QL_UI_NODE_PASSWORD) != 0;
@@ -3751,6 +3775,12 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
                 d2d->fill_rect(d2d, r, node->style->text_color, 255);
             }
         }
+        /* 提前返回前**必须**恢复裁剪：否则后面所有节点都被裁在输入框里 */
+        if (deco_clipped) {
+            node->owner->clip = deco_saved;
+            if (d2d->set_clip != NULL)
+                d2d->set_clip(d2d, deco_saved);
+        }
         return;
     }
 
@@ -3772,6 +3802,12 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
         d2d->fill_rect(d2d, r, node->style->text_color, 255);
     }
     #undef DISP_OFF
+
+    if (deco_clipped) {
+        node->owner->clip = deco_saved;
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, deco_saved);
+    }
 }
 
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
@@ -5205,7 +5241,15 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
          */
         if ((ev->mods & QL_MOD_CTRL) != 0 && ql_ui_focus_node(ui) != NULL) {
             int done = 1;
-            if (ev->key == 'c')
+            if (ev->key == 'a') {
+                /* 全选：光标放到末尾、选区锚点放到开头（与浏览器一致） */
+                struct QLUIInput *in = focused_input(ui);
+                if (in != NULL) {
+                    in->sel = 0;
+                    in->caret = in->len;
+                    in->node->flags |= QL_UI_RT_DIRTY;
+                }
+            } else if (ev->key == 'c')
                 (void)ql_ui_clipboard_copy(ui);
             else if (ev->key == 'x')
                 (void)ql_ui_clipboard_cut(ui);

@@ -42,15 +42,24 @@ static const char *k_html =
     "</div>";
 
 static const char *k_css =
-    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+        /*
+     * 页面铺满窗口 + 竖向 flex：多行输入框用 `flex: 1 1 0px` 吃掉剩余高度，
+     * 窗口拉大它就变高。
+     *
+     * 注意是 `1 1 0px` 而不是 `1`：`flex: 1` 的 basis 是 auto（= 内容高度），
+     * 内容一高就撑爆容器；basis 写成 0 才是"从零开始分配剩余空间"。
+     */
+    "#root { width: 100%; height: 100%; box-sizing: border-box;"
+    "        display: flex; flex-direction: column;"
+    "        background-color: #FFFFFF;"
     "        padding: 14px; font-size: 12px; color: #1F2328; }"
     "h2 { font-size: 16px; color: #0969DA; margin: 0 0 10px 0; }"
     "label { display: block; color: #57606A; font-size: 11px; margin: 8px 0 4px 0; }"
     /* 单行与多行共用同一套外观，读起来才像同一个表单 */
-    "input { display: block; width: 300px; height: 22px; padding: 3px 6px;"
+    "input { display: block; width: 100%; height: 22px; padding: 3px 6px;"
     "        border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
     "        background-color: #F6F8FA; color: #1F2328; }"
-    "textarea { display: block; width: 300px; height: 96px; padding: 6px;"
+    "textarea { display: block; width: 100%; flex: 1 1 0px; padding: 6px;"
     "           border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
     "           background-color: #F6F8FA; color: #1F2328;"
     "           font-size: 11px; line-height: 16px; }"

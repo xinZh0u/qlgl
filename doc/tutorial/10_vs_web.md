@@ -157,8 +157,17 @@ div { }              /* 标签 */
 
    `box-sizing: border-box` 很重要：`width: 100%` 是**内容盒**宽度，再加上
    padding 就会超出视口（和浏览器一样）。
-2. **`height` 上的百分比仍然不支持**（只有根元素例外）。所以"子元素跟着窗口长高"
-   目前做不到 —— 列表/文本框的高度得写死，或者按内容自动撑。
+2. **`height` 上的百分比仍然不支持**（只有根元素例外）。
+   要让"子元素跟着窗口长高"，用**竖向 flex + `flex: 1 1 0px`**：
+
+   ```css
+   #root { width: 100%; height: 100%; box-sizing: border-box;
+           display: flex; flex-direction: column; }
+   .list { flex: 1 1 0px; overflow: auto; }   /* 吃掉剩余高度 */
+   ```
+
+   ⚠️ 必须是 `1 1 0px`，不能只写 `flex: 1` —— `flex: 1` 的 basis 是 `auto`
+   （= 内容高度），内容一多就把容器撑爆、后面兄弟节点被挤出视口。
 3. `margin` 的百分比不支持。
 
 ---

@@ -83,6 +83,14 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
             max_frames = strtol(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
             dump = argv[++i];
+        else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
+            /* `--size 600x700`：换窗口尺寸（顺便看页面是不是真自适应） */
+            int sw = 0, sh = 0;
+            if (sscanf(argv[++i], "%dx%d", &sw, &sh) == 2 && sw > 0 && sh > 0) {
+                w = sw;
+                h = sh;
+            }
+        }
     }
     /* 截图模式下别等着人关窗口 */
     if (dump != NULL && max_frames == 0)

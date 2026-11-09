@@ -207,9 +207,14 @@ QL_TEST_BEGIN("test_textarea")
             key(ui, QL_KEY_DOWN, 0);
             type(ui, "?");
             const char *v = ql_ui_input_value(ui, ta);
-            QL_CHECK(v != NULL && strcmp(v, "abcdef\nxyz!\n123?456") == 0);
             if (v != NULL)
                 printf("    再下移后 = %s\n", v);
+            /*
+             * 注意这里回不到"点下去时那一列"：打过一个字符之后，
+             * sticky 列会被**清掉**（浏览器的行为 —— 打字的瞬间，
+             * "想去的列"就是当前列了）。所以这里落在第 4 列。
+             */
+            QL_CHECK(v != NULL && strcmp(v, "abcdef\nxyz!\n1234?56") == 0);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
@@ -419,6 +424,73 @@ QL_TEST_BEGIN("test_textarea")
             }
             ql_ui_doc_free(doc);
             ql_disp_mem_destroy(s_disp);
+        }
+    }
+
+    /* ---------- 14. 打字打到框底要自动滚（光标不能跑到框外） ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea></textarea></div>",
+                          "#r { width: 240px } textarea { height: 48px;"
+                          " line-height: 16px; padding: 4px }", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            click(ui, ta->content_box.x + 2, ta->content_box.y + 2);
+            /* 打 10 行：内容远超 48px 高，视图必须跟着滚 */
+            for (int i = 0; i < 10; i++) {
+                if (i > 0)
+                    key(ui, QL_KEY_ENTER, 0);
+                type(ui, "abc");
+            }
+            const char *v = ql_ui_input_value(ui, ta);
+            QL_CHECK(v != NULL && strchr(v, '\n') != NULL);
+
+            /*
+             * 断言"最后一行在可见范围内"：把光标位置换算成 y，
+             * 必须落在内容盒里（这正是 auto-scroll 的目的）。
+             */
+            s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+            QL_CHECK(s_disp != NULL);
+            if (s_disp != NULL) {
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+                /* 框下方的红区不该有光标竖线（用红底更好判断，这里退一步：
+                 * 直接比对内容盒下沿外 1px 处没有非白像素之外的东西） */
+                /* 从**边框盒**下沿往外看：content_box 下面还有 padding 和边框，
+                 * 拿 content_box 量会把边框本身当成"越界" */
+                const QLRect bb = ql_ui_node_rect(ta);
+                int outside = 0;
+                for (int y = (int)(bb.y + bb.h) + 1; y < (int)(bb.y + bb.h) + 6; y++)
+                    for (int x = (int)bb.x; x < (int)(bb.x + bb.w); x++)
+                        if (px(x, y) != 0xFFFFFF)
+                            outside++;
+                printf("    光标/文字越界像素 = %d（应 0）\n", outside);
+                QL_CHECK_EQ(outside, 0);
+                ql_disp_mem_destroy(s_disp);
+            }
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 15. Ctrl+A 全选 ---------- */
+    {
+        QLUIRoot *ui = NULL;
+        QLUIDoc *doc = mk("<div id=r><textarea>hello world</textarea></div>", "", &ui);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+            click(ui, ta->content_box.x + 2, ta->content_box.y + 2);
+            key(ui, 'a', QL_MOD_CTRL);
+            type(ui, "X");       /* 全选之后打字应该整串替换 */
+            QL_CHECK(strcmp(ql_ui_input_value(ui, ta), "X") == 0);
+            if (ql_ui_input_value(ui, ta) != NULL)
+                printf("    全选后输入 = [%s]\n", ql_ui_input_value(ui, ta));
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
         }
     }
 

@@ -521,8 +521,14 @@ main img.shot { max-width: 100%; }
    #root { width: 100%; height: 100%; box-sizing: border-box; }</code></p>
 <p><code>box-sizing: border-box</code> 很重要：<code>width: 100%</code> 是<strong>内容盒</strong>宽度，再加上
    padding 就会超出视口（和浏览器一样）。
-2. <strong><code>height</code> 上的百分比仍然不支持</strong>（只有根元素例外）。所以"子元素跟着窗口长高"
-   目前做不到 —— 列表/文本框的高度得写死，或者按内容自动撑。
+2. <strong><code>height</code> 上的百分比仍然不支持</strong>（只有根元素例外）。
+   要让"子元素跟着窗口长高"，用<strong>竖向 flex + <code>flex: 1 1 0px</code></strong>：</p>
+<p><code>css
+   #root { width: 100%; height: 100%; box-sizing: border-box;
+           display: flex; flex-direction: column; }
+   .list { flex: 1 1 0px; overflow: auto; }   /* 吃掉剩余高度 */</code></p>
+<p>⚠️ 必须是 <code>1 1 0px</code>，不能只写 <code>flex: 1</code> —— <code>flex: 1</code> 的 basis 是 <code>auto</code>
+   （= 内容高度），内容一多就把容器撑爆、后面兄弟节点被挤出视口。
 3. <code>margin</code> 的百分比不支持。</p>
 <hr />
 <h2 id="5">5. 属性白名单：写错就报错</h2>

@@ -37,16 +37,19 @@ static const char *k_html =
 
 static const char *k_css =
     /*
-     * 页面铺满窗口（width/height 的百分比按视口解析），窗口拉大背景跟着变大。
-     * 注意：列表仍是固定高度 —— 本库还不支持 `height: %`，
-     * 所以"子元素跟着窗口长高"暂时做不到（见教程 §与 Web 的差别）。
+     * 页面铺满窗口（百分比按视口解析）+ 竖向 flex：列表用 `flex: 1 1 0px`
+     * 吃掉剩余高度，窗口拉高列表就变高。
+     *
+     * 是 `1 1 0px` 不是 `1`：`flex: 1` 的 basis 是 auto（= 内容高度），
+     * 内容一多就撑爆容器；basis 写 0 才是"按剩余空间分配"。
      */
-    "#root { width: 100%; height: 100%; box-sizing: border-box; background-color: #FFFFFF;"
+    "#root { width: 100%; height: 100%; box-sizing: border-box;"
+    "        display: flex; flex-direction: column; background-color: #FFFFFF;"
     "        padding: 12px; font-size: 12px; color: #1F2328; }"
     ".title { font-size: 14px; color: #0969DA; margin-bottom: 6px; }"
 
     /* 关键：overflow: auto + 固定高度 → 内容超出就能滚 */
-    ".list { width: 100%; height: 140px; overflow: auto;"
+    ".list { width: 100%; flex: 1 1 0px; overflow: auto;"
     "        background-color: #F6F8FA; border-radius: 8px; }"
     ".row { display: flex; gap: 8px; height: 28px; padding-left: 8px;"
     "       align-items: center; }"
