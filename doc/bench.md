@@ -3,6 +3,10 @@
 > 规则：**没有数字的优化不算优化**。每次改动后重跑本文命令，超标即视为回归。
 > 机器：Linux / Mesa / x86-64；会话 Wayland（GL 走 XWayland）。
 
+> **卡顿/掉帧怎么查**：这份文档是"吞吐基线"，不带诊断。
+> 定位"为什么卡"用 [性能诊断](./性能诊断.html)（`qlperf` + `--stats`），
+> 跟着做一遍看 [教程 17](./tutorial/17_perf.html)；MCU 数字在 `test/mcu`。
+
 ## 复现命令
 
 ```bash
@@ -12,6 +16,15 @@ cmake -B build-rel -DCMAKE_BUILD_TYPE=Release && cmake --build build-rel -j
 ./build-rel/example_bench_fps 300      # 多分辨率 × GL/CPU
 ./build/example_gl_window --bench 600  # 窗口无 vsync 上限
 ./build/example_gl_window --frames 180 # 窗口 vsync 模式
+
+# 帧时间分布（p50/p95/max + 其中等 swap 的时间）
+./build-rel/example/example_22_media --seconds 5 --stats
+
+# 进程 CPU/GPU + 主动缩放窗口复现掉帧
+./build-rel/qlperf run --seconds 6 --resize "22 media" -- ./build-rel/example/example_22_media
+
+# MCU（QEMU Cortex-M4）：布局 / 整屏光栅 / 脏区重绘
+./test/mcu/build.sh
 ```
 
 ## 单帧开销（780 顶点，1 draw call，**Release 构建**）

@@ -180,6 +180,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -288,6 +289,9 @@ main img.shot { max-width: 100%; }
 
 <ul>
 <li>默认 <code>clock_gettime(CLOCK_MONOTONIC)</code>，精度毫秒，<code>uint32_t</code> 装（约 49.7 天回绕）。</li>
+<li><strong>裸机（<code>-ffreestanding</code>）没有默认值</strong>：编译期按 <code>__STDC_HOSTED__</code> 分流，
+  默认时间源是 <code>NULL</code>，宿主<strong>必须</strong>调 <code>ql_anim_set_time_source()</code>（SysTick / DWT
+  换算成毫秒）。不静默给 0 —— 那样所有动画都会停在第一帧，比编译不过更难查。</li>
 <li>测试用假时钟：<code>ql_anim_set_time_source(fake_now)</code>，把"当前时间"变成全局变量。
   <strong>踩过的坑</strong>：交互前必须把假时钟设成当前时刻，否则 <code>ql_anim_start</code> 记下的 t0 与
   测试随后 tick 的时间不同步，过渡会立刻被判定为"已结束"。</li>

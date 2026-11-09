@@ -68,6 +68,9 @@ void     ql_anim_set_time_source(ql_anim_time_fn fn);
 ```
 
 - 默认 `clock_gettime(CLOCK_MONOTONIC)`，精度毫秒，`uint32_t` 装（约 49.7 天回绕）。
+- **裸机（`-ffreestanding`）没有默认值**：编译期按 `__STDC_HOSTED__` 分流，
+  默认时间源是 `NULL`，宿主**必须**调 `ql_anim_set_time_source()`（SysTick / DWT
+  换算成毫秒）。不静默给 0 —— 那样所有动画都会停在第一帧，比编译不过更难查。
 - 测试用假时钟：`ql_anim_set_time_source(fake_now)`，把"当前时间"变成全局变量。
   **踩过的坑**：交互前必须把假时钟设成当前时刻，否则 `ql_anim_start` 记下的 t0 与
   测试随后 tick 的时间不同步，过渡会立刻被判定为"已结束"。

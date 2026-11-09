@@ -158,7 +158,7 @@ QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 
 | 平台 | 界面写法 | 说明 |
 |---|---|---|
-| MCU | HTML+CSS（`qltext` 构建期编译成 C）+ 编译期裁能力包 | 同一套写法，裁的是能力不是语言 |
+| MCU | HTML+CSS（`qltext` 构建期编译成 C）+ 编译期裁能力包 | 同一套写法，裁的是能力不是语言；实测见 [test/mcu](test/mcu/README.md)（QEMU Cortex-M4） |
 | MPU / 嵌入式 Linux | HTML+CSS，构建期编译成 C 或运行期解析 | 未支持的特性**构建期报错** |
 | PC / 移动（含 Linux 手机） | HTML+CSS，同一套 | 全量能力包；**不接 WebView、不嵌浏览器、不做 JS** |
 
@@ -213,12 +213,14 @@ tools/qlfontgen/   从 TTF 生成内置位图字体
 tools/qltext/      把 HTML+CSS 编译成 C / .qlui（相当于 Qt 的 uic，链库自己的解析器）
 tools/qlui/        兼容壳：只剩"找 qltext + 转发参数"（语义在 src/ui/qlui_parse.c）
 tools/qlblob/      把生成的 doc 导出成 .qlui blob（宿主工具）
+tools/qlperf/      性能探针：进程 CPU / GPU / RSS + 窗口缩放复现（调掉帧用）
 test/object/       对象系统示例与测试
 test/draw/         绘制系统示例与测试
 test/text/         字体/文本示例与测试
 test/web/          HTML+CSS 编译示例与测试
 test/input/        交互（命中/悬停/点击/焦点）示例与测试
 test/uitext/       运行期 HTML/CSS 解析的示例
+test/mcu/          裸机基准：QEMU 的 Cortex-M4 上量布局/光栅周期（自己的 build.sh）
 example/           基本例程（一个例程一个文件夹：main.c + index.html + style.css）
 tools/doc/         文档生成：Markdown → doc/html/（静态站点）
 doc/tutorial/      入门教程（Markdown 源，配 example/）
@@ -250,7 +252,8 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [输入控件](doc/tutorial/11_input.md) → [空白与上下标](doc/tutorial/12_text.md) →
 [多行输入与表单](doc/tutorial/13_form.md) → [CSS3 补全](doc/tutorial/14_css3.md) →
 [毛玻璃叠在动的背景上](doc/tutorial/15_backdrop.md) →
-**[CSS 效果检阅：三个例程](doc/tutorial/16_css_gallery.md)**。
+[CSS 效果检阅：九个例程](doc/tutorial/16_css_gallery.md) →
+**[性能诊断与 MCU 基准](doc/tutorial/17_perf.md)**。
 
 模块手册：
 
@@ -269,6 +272,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 - 横向对比（vs Electron / Flutter / GTK4 / Qt / LVGL）：[对比与取舍](doc/对比与取舍.md)
 - 开发规划（里程碑与验收）：[开发规划](doc/开发规划.md)
 - 性能基线：[bench.md](doc/bench.md)
+- 性能诊断（工具参数、口径、判读清单、掉帧案例）：[性能诊断](doc/性能诊断.md)
 - 想看整体设计：[底层实现设计](doc/底层实现设计.md)
 - 编码规范：[代码规范](doc/代码规范.txt)
 

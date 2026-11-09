@@ -180,6 +180,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -218,6 +219,9 @@ main img.shot { max-width: 100%; }
 <blockquote>
 <p>规则：<strong>没有数字的优化不算优化</strong>。每次改动后重跑本文命令，超标即视为回归。
 机器：Linux / Mesa / x86-64；会话 Wayland（GL 走 XWayland）。</p>
+<p><strong>卡顿/掉帧怎么查</strong>：这份文档是"吞吐基线"，不带诊断。
+定位"为什么卡"用 <a href="./性能诊断.html">性能诊断</a>（<code>qlperf</code> + <code>--stats</code>），
+跟着做一遍看 <a href="./tutorial/17_perf.html">教程 17</a>；MCU 数字在 <code>test/mcu</code>。</p>
 </blockquote>
 <h2 id="_1">复现命令</h2>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>-j
@@ -226,6 +230,15 @@ cmake<span class="w"> </span>-B<span class="w"> </span>build-rel<span class="w">
 ./build-rel/example_bench_fps<span class="w"> </span><span class="m">300</span><span class="w">      </span><span class="c1"># 多分辨率 × GL/CPU</span>
 ./build/example_gl_window<span class="w"> </span>--bench<span class="w"> </span><span class="m">600</span><span class="w">  </span><span class="c1"># 窗口无 vsync 上限</span>
 ./build/example_gl_window<span class="w"> </span>--frames<span class="w"> </span><span class="m">180</span><span class="w"> </span><span class="c1"># 窗口 vsync 模式</span>
+
+<span class="c1"># 帧时间分布（p50/p95/max + 其中等 swap 的时间）</span>
+./build-rel/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">5</span><span class="w"> </span>--stats
+
+<span class="c1"># 进程 CPU/GPU + 主动缩放窗口复现掉帧</span>
+./build-rel/qlperf<span class="w"> </span>run<span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span>--<span class="w"> </span>./build-rel/example/example_22_media
+
+<span class="c1"># MCU（QEMU Cortex-M4）：布局 / 整屏光栅 / 脏区重绘</span>
+./test/mcu/build.sh
 </code></pre></div>
 
 <h2 id="780-1-draw-callrelease">单帧开销（780 顶点，1 draw call，<strong>Release 构建</strong>）</h2>

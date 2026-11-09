@@ -180,6 +180,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2515,6 +2516,50 @@ MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
 <strong>doc 之间不能互相引用合成一棵树</strong>；跨面板的 CSS 继承也不存在（每个面板独立闭合）。
 需要"某块热改"就重建那个 <code>QLUIRoot</code>（几十微秒），不要尝试做元素级混合。</p>
 <hr />
+<h2 id="66-mcu">6.6 跑到 MCU 上：只需要接两样东西</h2>
+<p><code>src/</code> 一行都不用改，但裸机没有操作系统，有两件事必须宿主提供：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 1) 内存：换成静态池（或者像 test/mcu 那样用 _sbrk 从静态数组切） */</span>
+<span class="k">static</span><span class="w"> </span><span class="n">ql_alloc_fn</span><span class="w"> </span><span class="p">...</span>
+<span class="n">ql_mem_set_allocator</span><span class="p">(</span><span class="o">&amp;</span><span class="n">my_alloc</span><span class="p">);</span>
+
+<span class="cm">/* 2) 时间：裸机没有 clock_gettime，动画的默认时间源是 NULL */</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">my_now_ms</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="kt">uint32_t</span><span class="p">)(</span><span class="n">tick_ms</span><span class="p">());</span><span class="w"> </span><span class="p">}</span>
+<span class="n">ql_anim_set_time_source</span><span class="p">(</span><span class="n">my_now_ms</span><span class="p">);</span>
+</code></pre></div>
+
+<p>拿界面数据也有两种：构建期 <code>qltext cc</code> 出静态 C（推荐，运行期零解析），
+或者把 <code>.qlui</code> blob 放进只读区用 <code>ql_ui_doc_load_mem()</code>。</p>
+<p><strong>实测数字</strong>（QEMU 的 Cortex-M4，240×160 RGB565，21 节点）：</p>
+<table>
+<thead>
+<tr>
+<th>动作</th>
+<th>M4@200MHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全树重排</td>
+<td>0.32 ms</td>
+</tr>
+<tr>
+<td>整屏光栅</td>
+<td>6.0 ms</td>
+</tr>
+<tr>
+<td>1×1 脏区重绘</td>
+<td>0.024 ms</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>./test/mcu/build.sh<span class="w">      </span><span class="c1"># 交叉编译 + 在 QEMU 里跑（口径见 test/mcu/README.md）</span>
+</code></pre></div>
+
+<blockquote>
+<p>结论很直接：<strong>MCU 上必须走脏区重绘</strong>（局部更新比整屏快两个数量级），
+而且 60fps 的 16.7ms 预算里整屏光栅已占 36%。
+详见 <a href="../../tutorial/17_perf.html">教程 17 · 性能诊断与 MCU 基准</a>。</p>
+</blockquote>
 <h2 id="7">7. 限制一览</h2>
 <table>
 <thead>

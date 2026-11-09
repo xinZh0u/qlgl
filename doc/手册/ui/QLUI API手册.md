@@ -1541,6 +1541,39 @@ ql_ui_layout(panel, 120, 480);
 
 ---
 
+## 6.6 跑到 MCU 上：只需要接两样东西
+
+`src/` 一行都不用改，但裸机没有操作系统，有两件事必须宿主提供：
+
+```c
+/* 1) 内存：换成静态池（或者像 test/mcu 那样用 _sbrk 从静态数组切） */
+static ql_alloc_fn ...
+ql_mem_set_allocator(&my_alloc);
+
+/* 2) 时间：裸机没有 clock_gettime，动画的默认时间源是 NULL */
+static uint32_t my_now_ms(void) { return (uint32_t)(tick_ms()); }
+ql_anim_set_time_source(my_now_ms);
+```
+
+拿界面数据也有两种：构建期 `qltext cc` 出静态 C（推荐，运行期零解析），
+或者把 `.qlui` blob 放进只读区用 `ql_ui_doc_load_mem()`。
+
+**实测数字**（QEMU 的 Cortex-M4，240×160 RGB565，21 节点）：
+
+| 动作 | M4@200MHz |
+|---|---|
+| 全树重排 | 0.32 ms |
+| 整屏光栅 | 6.0 ms |
+| 1×1 脏区重绘 | 0.024 ms |
+
+```bash
+./test/mcu/build.sh      # 交叉编译 + 在 QEMU 里跑（口径见 test/mcu/README.md）
+```
+
+> 结论很直接：**MCU 上必须走脏区重绘**（局部更新比整屏快两个数量级），
+> 而且 60fps 的 16.7ms 预算里整屏光栅已占 36%。
+> 详见 [教程 17 · 性能诊断与 MCU 基准](../../tutorial/17_perf.html)。
+
 ## 7. 限制一览
 
 | 项 | 现状 |

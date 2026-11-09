@@ -180,6 +180,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
 <a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -347,11 +348,17 @@ main img.shot { max-width: 100%; }
 <span class="w">                                </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">rects</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">);</span>
 
 <span class="kt">int</span><span class="w">       </span><span class="nf">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 窗口：1 继续 / 0 关闭 */</span>
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_gfx_gl_wait</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">timeout_ms</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 阻塞等事件（事件驱动用） */</span>
+
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_gfx_gl_set_vsync</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">on</span><span class="p">);</span><span class="w">     </span><span class="cm">/* 默认开 */</span>
+<span class="kt">int</span><span class="w">       </span><span class="nf">ql_gfx_gl_resize_pending</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 取一次即清零 */</span>
+<span class="kt">void</span><span class="w">      </span><span class="nf">ql_gfx_gl_size</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_h</span><span class="p">);</span>
 
 <span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_frame_count</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
 <span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_draw_calls</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
 <span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_vertex_count</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
-<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_frame_us</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 上一帧 begin→end 的 CPU 侧耗时 */</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_frame_us</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 上一帧 begin→end 的墙钟耗时 */</span>
+<span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_swap_us</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 其中 eglSwapBuffers 占多久 */</span>
 <span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_read_pixels</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">rgba</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride_bytes</span><span class="p">);</span>
 </code></pre></div>
 
@@ -360,15 +367,47 @@ main img.shot { max-width: 100%; }
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">gfx</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* 无 EGL/GLES3 → 落回 CPU 后端 */</span><span class="w"> </span><span class="p">}</span>
 
 <span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">d2d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_draw</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
-<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">gfx</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">ql_gfx_gl_begin</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0x08</span><span class="p">,</span><span class="w"> </span><span class="mh">0x0A</span><span class="p">,</span><span class="w"> </span><span class="mh">0x10</span><span class="p">));</span>
-<span class="w">    </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span><span class="w">                </span><span class="cm">/* 界面 */</span>
+<span class="n">ql_gfx_gl_set_retained</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span><span class="w">           </span><span class="cm">/* 保留式画布（见 §3.4） */</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(;;)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">gfx</span><span class="p">))</span><span class="w"> </span><span class="k">break</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 处理事件；关窗返回 0 */</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_gfx_gl_resize_pending</span><span class="p">(</span><span class="n">gfx</span><span class="p">))</span><span class="w"> </span><span class="p">{</span><span class="w">  </span><span class="cm">/* 拖动缩放：重新布局 */</span>
+<span class="w">        </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">cw</span><span class="p">,</span><span class="w"> </span><span class="n">ch</span><span class="p">;</span>
+<span class="w">        </span><span class="n">ql_gfx_gl_size</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cw</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ch</span><span class="p">);</span>
+<span class="w">        </span><span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">cw</span><span class="p">,</span><span class="w"> </span><span class="n">ch</span><span class="p">);</span>
+<span class="w">        </span><span class="n">need_full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">ql_input_dispatch</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">moving</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_anim_tick</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_now_ms</span><span class="p">());</span>
+
+<span class="w">    </span><span class="n">QLRect</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="mi">16</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_consume_dirty</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">);</span>
+
+<span class="w">    </span><span class="cm">/* 没有脏区也没有动画 → 什么都不做，阻塞等事件（静止时 0 帧、0% CPU） */</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">need_full</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">moving</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">ql_gfx_gl_wait</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="mi">32</span><span class="p">))</span><span class="w"> </span><span class="k">break</span><span class="p">;</span>
+<span class="w">        </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">BG</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">full</span><span class="p">)</span><span class="w"> </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">ql_ui_render_rect</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+<span class="w">    </span><span class="n">need_full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+
 <span class="w">    </span><span class="n">d2d</span><span class="o">-&gt;</span><span class="n">fill_round_rect</span><span class="p">(</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">bar</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB</span><span class="p">(</span><span class="mh">0xF0</span><span class="p">,</span><span class="mh">0xB0</span><span class="p">,</span><span class="mh">0x30</span><span class="p">),</span><span class="w"> </span><span class="mi">255</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span><span class="w">                   </span><span class="cm">/* 上传 + 1 次 draw + swap */</span>
+<span class="w">    </span><span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
 <span class="p">}</span>
 <span class="n">ql_gfx_gl_destroy</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
 </code></pre></div>
 
+<blockquote>
+<p><strong>为什么要"事件驱动 + 阻塞等待"</strong>：以前每帧都 <code>begin → render → swap</code>，
+静止的界面也会以刷新率（如 144Hz）不停交换。拖动窗口时合成器还要重配窗口，
+这些多余的帧会和它抢，表现就是"卡顿掉帧"。
+<code>ql_gfx_gl_wait()</code> 内部是 <code>poll(2)</code> X11 连接，没事件就睡着。
+完整案例与实测数字见 <a href="../../design/性能诊断.html">性能诊断</a> 与
+<a href="../../tutorial/17_perf.html">教程 17</a>。</p>
+</blockquote>
 <h3 id="32">3.2 约束</h3>
 <table>
 <thead>
@@ -426,6 +465,16 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
+<p><strong>帧耗时怎么读</strong>：<code>ql_gfx_gl_frame_us()</code> 是 <code>begin → end</code> 的墙钟时间，
+<code>ql_gfx_gl_swap_us()</code> 是其中 <code>eglSwapBuffers</code> 的部分。两者相减才是"我们花的"：</p>
+<div class="highlight"><pre><span></span><code>frame_us - swap_us  ≈ 提交 + 光栅
+swap_us             ≈ 等垂直同步 + 合成器取帧
+</code></pre></div>
+
+<p>另外：收到 <code>ConfigureNotify</code> 后 <strong>200ms 内后端自动把 <code>eglSwapInterval</code> 设为 0</strong>
+（拖动期间优先"跟手"，结束后恢复垂直同步）。原因是合成器忙于重配窗口时不会及时
+送 frame callback，Mesa 的 Present/XCB 会一直等，实测最坏单帧卡 <strong>1000ms</strong>。
+<code>ql_gfx_gl_set_vsync()</code> 改的是用户的意图，这个临时关闭是内建的、不需要宿主处理。</p>
 <p>日志会打印 <code>GL_RENDERER</code> / <code>GL_VERSION</code> / <code>GLSL</code> 版本，便于区分是 llvmpipe 还是真 GPU。</p>
 <hr />
 <h3 id="34-ql_gfx_gl_begin_rects">3.4 保留式脏区（<code>ql_gfx_gl_begin_rects</code>）</h3>

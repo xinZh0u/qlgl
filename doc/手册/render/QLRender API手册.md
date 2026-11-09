@@ -129,11 +129,17 @@ int       ql_gfx_gl_begin_rects(QLGfxGL *gfx, ql_color_t clear_color,
                                 const QLRect *rects, int count);
 
 int       ql_gfx_gl_poll(QLGfxGL *gfx);          /* 窗口：1 继续 / 0 关闭 */
+int       ql_gfx_gl_wait(QLGfxGL *gfx, int timeout_ms);  /* 阻塞等事件（事件驱动用） */
+
+void      ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on);     /* 默认开 */
+int       ql_gfx_gl_resize_pending(QLGfxGL *gfx);        /* 取一次即清零 */
+void      ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
 
 uint32_t  ql_gfx_gl_frame_count(QLGfxGL *gfx);
 uint32_t  ql_gfx_gl_draw_calls(QLGfxGL *gfx);
 uint32_t  ql_gfx_gl_vertex_count(QLGfxGL *gfx);
-uint32_t  ql_gfx_gl_frame_us(QLGfxGL *gfx);      /* 上一帧 begin→end 的 CPU 侧耗时 */
+uint32_t  ql_gfx_gl_frame_us(QLGfxGL *gfx);      /* 上一帧 begin→end 的墙钟耗时 */
+uint32_t  ql_gfx_gl_swap_us(QLGfxGL *gfx);       /* 其中 eglSwapBuffers 占多久 */
 ql_err_t  ql_gfx_gl_read_pixels(QLGfxGL *gfx, uint8_t *rgba, uint32_t stride_bytes);
 ```
 
@@ -144,14 +150,45 @@ QLGfxGL *gfx = ql_gfx_gl_create("QLGL", 320, 240, QL_GFX_GL_WINDOW);
 if (gfx == NULL) { /* 无 EGL/GLES3 → 落回 CPU 后端 */ }
 
 QLDraw2D *d2d = ql_gfx_gl_draw(gfx);
-while (ql_gfx_gl_poll(gfx)) {
-    ql_gfx_gl_begin(gfx, QL_COLOR_RGB(0x08, 0x0A, 0x10));
-    ql_ui_render(ui, d2d);                /* 界面 */
+ql_gfx_gl_set_retained(gfx, 1);           /* 保留式画布（见 §3.4） */
+
+for (;;) {
+    if (!ql_gfx_gl_poll(gfx)) break;      /* 处理事件；关窗返回 0 */
+    if (ql_gfx_gl_resize_pending(gfx)) {  /* 拖动缩放：重新布局 */
+        ql_coord_t cw, ch;
+        ql_gfx_gl_size(gfx, &cw, &ch);
+        ql_ui_layout(ui, cw, ch);
+        need_full = 1;
+    }
+    ql_input_dispatch();
+    uint32_t moving = ql_ui_anim_tick(ui, ql_anim_now_ms());
+
+    QLRect areas[16];
+    int n = ql_ui_consume_dirty(ui, areas, 16);
+
+    /* 没有脏区也没有动画 → 什么都不做，阻塞等事件（静止时 0 帧、0% CPU） */
+    if (!need_full && n == 0 && moving == 0) {
+        if (!ql_gfx_gl_wait(gfx, 32)) break;
+        continue;
+    }
+
+    int full = ql_gfx_gl_begin_rects(gfx, BG, areas, n);
+    if (full) ql_ui_render(ui, d2d);
+    else for (int i = 0; i < n; i++) ql_ui_render_rect(ui, d2d, areas[i]);
+    need_full = 0;
+
     d2d->fill_round_rect(d2d, bar, 4, QL_COLOR_RGB(0xF0,0xB0,0x30), 255);
-    ql_gfx_gl_end(gfx);                   /* 上传 + 1 次 draw + swap */
+    ql_gfx_gl_end(gfx);
 }
 ql_gfx_gl_destroy(gfx);
 ```
+
+> **为什么要"事件驱动 + 阻塞等待"**：以前每帧都 `begin → render → swap`，
+> 静止的界面也会以刷新率（如 144Hz）不停交换。拖动窗口时合成器还要重配窗口，
+> 这些多余的帧会和它抢，表现就是"卡顿掉帧"。
+> `ql_gfx_gl_wait()` 内部是 `poll(2)` X11 连接，没事件就睡着。
+> 完整案例与实测数字见 [性能诊断](../../design/性能诊断.html) 与
+> [教程 17](../../tutorial/17_perf.html)。
 
 ### 3.2 约束
 
@@ -172,6 +209,19 @@ ql_gfx_gl_destroy(gfx);
 | 环境变量 | 作用 |
 |---|---|
 | `QLGL_GL_DUMP_ATLAS=1` | 把字形图集导出到 `/tmp/qlgl_atlas.pgm` |
+
+**帧耗时怎么读**：`ql_gfx_gl_frame_us()` 是 `begin → end` 的墙钟时间，
+`ql_gfx_gl_swap_us()` 是其中 `eglSwapBuffers` 的部分。两者相减才是"我们花的"：
+
+```
+frame_us - swap_us  ≈ 提交 + 光栅
+swap_us             ≈ 等垂直同步 + 合成器取帧
+```
+
+另外：收到 `ConfigureNotify` 后 **200ms 内后端自动把 `eglSwapInterval` 设为 0**
+（拖动期间优先"跟手"，结束后恢复垂直同步）。原因是合成器忙于重配窗口时不会及时
+送 frame callback，Mesa 的 Present/XCB 会一直等，实测最坏单帧卡 **1000ms**。
+`ql_gfx_gl_set_vsync()` 改的是用户的意图，这个临时关闭是内建的、不需要宿主处理。
 
 日志会打印 `GL_RENDERER` / `GL_VERSION` / `GLSL` 版本，便于区分是 llvmpipe 还是真 GPU。
 
