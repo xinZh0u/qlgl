@@ -507,7 +507,24 @@ main img.shot { max-width: 100%; }
 <p>原理只有一句：界面是可以在运行期编译的（<code>ql_ui_load_text</code>），所以热重载 = 重新读文件 +
 重新建树。新文件写坏了会<strong>保留旧界面</strong>并打印原因（"明确失败优于半个正确"）。
 这件事和"设计工具"是同一套东西，见 <a href="../design/对比与取舍.html">对比与取舍 §12</a>。</p>
-<h2 id="6">6. 这几个例程查出了什么</h2>
+<h2 id="6-21_css_vars">6. <code>21_css_vars</code>：一处定义，处处引用</h2>
+<p><img src="../img/21-css-vars.png" alt="CSS 变量：调色板只写一次，规则里只引用" width="480"></p>
+<p>完整程序：<code>example/21_css_vars/</code></p>
+<div class="highlight"><pre><span></span><code><span class="p">#</span><span class="nn">root</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nv">--brand</span><span class="p">:</span><span class="w"> </span><span class="mh">#0969DA</span><span class="p">;</span><span class="w"> </span><span class="nv">--line</span><span class="p">:</span><span class="w"> </span><span class="mh">#E4E8ED</span><span class="p">;</span><span class="w"> </span><span class="nv">--radius</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">title</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--brand</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">btn</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--brand</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--line</span><span class="p">);</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--radius</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">.</span><span class="nc">promo</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nv">--brand</span><span class="p">:</span><span class="w"> </span><span class="mh">#8250DF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 局部换肤：只影响这棵子树 */</span>
+</code></pre></div>
+
+<p>例程里有两张卡片：第二张在自己身上改了 <code>--brand</code>，于是它的按钮和标题变紫，
+第一张不受影响 —— 这就是"变量参与级联"的意思。</p>
+<p><strong>为什么在 qlgl 里特别便宜</strong>：变量在<strong>构建期</strong>就被换成了字面量
+（级联之后、属性解析之前），所以 <code>QLUIStyle</code> 和 blob 格式一个字节都没变，
+<code>compile_style()</code> 根本不知道有变量这回事。代价是<strong>不能运行期改变量</strong> ——
+换肤请换一份 CSS，或者用上一节的 <code>20_live_reload</code> 直接热重载。</p>
+<h2 id="7">7. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

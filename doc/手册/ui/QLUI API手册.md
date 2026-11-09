@@ -160,6 +160,49 @@ target_include_directories(app PRIVATE ${UI_OUT})
 
 `#rgb`、`#rrggbb`、`rgb(r,g,b)`、`rgba(r,g,b,a)`、命名色（`black`/`white`/`red`/`green`/`lime`/`blue`/`gray`/`silver`/`yellow`/`orange`/`purple`/`navy`/`teal`/`transparent`）。
 
+### 3.3.1 CSS 变量（`--x` / `var()`）
+
+```css
+#root {
+  --brand: #0969DA;
+  --line: #E4E8ED;
+  --radius: 10px;
+  --pad: 14px;
+}
+.card   { background-color: #FFFFFF; border: 1px solid var(--line);
+          border-radius: var(--radius); padding: var(--pad); }
+.title  { color: var(--brand); }
+.btn    { background-color: var(--brand); color: #FFFFFF; }
+
+/* 局部换肤：只影响这棵子树，兄弟不受影响 */
+.promo  { --brand: #8250DF; }          /* 里面的 .btn / .title 自动变紫 */
+```
+
+| 项 | 支持 |
+|---|---|
+| `--x: <任意值>` | ✅ 定义（会**继承**，后代可覆盖） |
+| `var(--x)` | ✅ 构建期替换成字面量 |
+| `var(--x, <fallback>)` | ✅ fallback 里可再套 `var()` |
+| 嵌套 `--a: var(--b)` | ✅ |
+| 简写里用（`border: 1px solid var(--c)`、`margin: var(--g)`、`background: var(--bg)`） | ✅ 简写先展开成长属性，再替换 |
+| 找不到且无 fallback / 循环引用 | ❌ **构建期报错** |
+| `content: var(--x)` | ❌ 报错（伪元素在级联之前展开） |
+| 运行期改变量（换肤） | ❌ 没有这条路 —— 换主题请换一份 CSS 或走热重载 |
+
+**它是怎么做到的**：替换发生在**级联之后、属性解析之前** ——
+
+```
+UA 默认 + 级联 + 行内 + 继承  →  out
+out 里先解析 `--x` 自己的值     →  再把所有 var() 换成字面量
+```
+
+所以 `QLUIStyle`、blob 格式、渲染路径**一个字节都没变**；`compile_style()` 根本不知道
+有变量这回事。代价只有一条：自定义属性名按**小写**归一（CSS 是大小写敏感的）。
+
+> 换肤的推荐写法：调色板只写一次，规则里只引用变量。配合
+> [`example/20_live_reload`](../../../example/20_live_reload) 的热重载，
+> 改一行 `--brand` 保存，整个界面立刻换色。
+
 ### 3.4 混合内容
 
 支持 `<p>`/`<div>` 里文本与行内元素混排：

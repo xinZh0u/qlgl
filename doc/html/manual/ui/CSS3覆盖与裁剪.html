@@ -497,70 +497,64 @@ main img.shot { max-width: 100%; }
 <td>同上</td>
 </tr>
 <tr>
-<td><code>:disabled</code></td>
+<td><code>:disabled</code> / <code>:checked</code></td>
 <td>⏳</td>
 <td>B</td>
-<td>状态位机制已就绪，差"变体样式 + 判定"</td>
-</tr>
-<tr>
-<td><code>:checked</code></td>
-<td>⏳</td>
-<td>B</td>
-<td>同上</td>
+<td>状态位机制已就绪，但要先有能表达"禁用 / 勾选"的控件（<code>&lt;input type=checkbox&gt;</code> 还没有）</td>
 </tr>
 <tr>
 <td><code>:first-child</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td><code>不支持的伪类 ':first-child'（只支持 :hover :active :focus）</code></td>
+<td>构建期算好兄弟位置（<code>sib_idx</code>），运行期零成本</td>
 </tr>
 <tr>
 <td><code>:last-child</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
 <td></td>
 </tr>
 <tr>
 <td><code>:only-child</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
 <td></td>
 </tr>
 <tr>
 <td><code>:nth-child(an+b)</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>斑马纹的刚需</td>
+<td>支持 <code>N</code> / <code>odd</code> / <code>even</code> / <code>an+b</code> / <code>-n+b</code>；斑马纹的刚需</td>
 </tr>
 <tr>
 <td><code>:nth-last-child()</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
 <td></td>
 </tr>
 <tr>
-<td><code>:first-of-type</code> … <code>:nth-of-type()</code></td>
-<td>⏳</td>
+<td><code>:first-of-type</code> / <code>:last-of-type</code> / <code>:only-of-type</code> / <code>:nth-of-type()</code> / <code>:nth-last-of-type()</code></td>
+<td>✅</td>
 <td>B</td>
-<td></td>
+<td>只数<strong>同标签</strong>的兄弟</td>
 </tr>
 <tr>
 <td><code>:not(&lt;简单选择器&gt;)</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>不支持嵌套</td>
+<td>不支持嵌套 <code>:not()</code></td>
+</tr>
+<tr>
+<td><code>:root</code></td>
+<td>✅</td>
+<td>B</td>
+<td>= 元素树最外层第一个元素；变量常写在这里（Bootstrap 的 <code>:root { --bs-*: … }</code>）</td>
 </tr>
 <tr>
 <td><code>:empty</code></td>
 <td>⏳</td>
 <td>B</td>
-<td></td>
-</tr>
-<tr>
-<td><code>:root</code></td>
-<td>⏳</td>
-<td>B</td>
-<td>现在用 <code>#root</code> 或标签选择器代替</td>
+<td>判据明确（没有文本也没有子节点），便宜</td>
 </tr>
 <tr>
 <td><code>:link</code> <code>:visited</code></td>
@@ -1964,63 +1958,113 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td>CSS 变量 <code>--x</code> / <code>var()</code></td>
-<td>❌</td>
-<td><strong>P</strong>：会让"运行期样式"变复杂，破坏构建期预计算的收益（本库最核心的取舍）</td>
+<td>✅</td>
+<td>构建期替换（见 §18.1）：级联之后再查一次表，<code>QLUIStyle</code> 一个字节没变</td>
 </tr>
 <tr>
 <td><code>all</code>（重置简写）</td>
 <td>❌</td>
-<td><strong>P</strong>：同上，它是"运行期整套样式重置"</td>
+<td><strong>P</strong>：它是"整套样式重置"，与构建期逐属性编译的结构冲突</td>
+</tr>
+</tbody>
+</table>
+<h3 id="181-css">18.1 CSS 变量为什么能便宜地支持</h3>
+<p>早期结论是"❌ 明确不做：会让运行期样式变复杂"。<strong>这个理由站不住</strong> —— 本库根本没有
+运行期样式表（没有 JS、没有动态改样式的入口），所以变量天然只可能是<strong>编译期</strong>的值：</p>
+<div class="highlight"><pre><span></span><code>UA 默认 + 级联 + 行内 + 继承  →  out（这个元素最终可见的声明）
+out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面量
+</code></pre></div>
+
+<p>替换完，<code>compile_style()</code> 看到的就是字面量，<code>QLUIStyle</code> 与 blob 版本都不用动。
+语料里 <code>var()</code> 占 <strong>10.0%</strong> 的声明（537 条，Bootstrap 5 一半样式靠它），
+是整个"补细节"清单里收益最高的一条。</p>
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--x</code> 继承</td>
+<td><code>collect_inherited()</code> 把父级所有 <code>--*</code> 带下来</td>
+</tr>
+<tr>
+<td>后代覆盖</td>
+<td>就是普通级联（<code>decls_set</code> 语义）</td>
+</tr>
+<tr>
+<td><code>var(--x, &lt;fallback&gt;)</code></td>
+<td>有定义用定义值，否则用 fallback；fallback 里可再套 <code>var()</code></td>
+</tr>
+<tr>
+<td>嵌套 <code>--a: var(--b)</code></td>
+<td>先解析 <code>--x</code> 自己的值，再解析普通属性</td>
+</tr>
+<tr>
+<td>循环引用</td>
+<td>深度上限 8，超了报错（不会挂死）</td>
+</tr>
+<tr>
+<td>找不到且无 fallback</td>
+<td><strong>构建期报错</strong>（不静默留成字面量）</td>
+</tr>
+<tr>
+<td>简写里用（<code>border: 1px solid var(--c)</code>）</td>
+<td>简写先按 token 形态展开成长属性，值是 <code>var(...)</code> 字符串 → 之后统一替换</td>
+</tr>
+<tr>
+<td>名字大小写</td>
+<td>属性名统一折小写，所以 <code>--Brand</code> 与 <code>--brand</code> 是同一个（与 CSS 的"大小写敏感"不同，写进限制）</td>
+</tr>
+<tr>
+<td><code>content: var(--x)</code></td>
+<td><strong>报错</strong>：伪元素在级联之前就展开了，那时还没有自定义属性</td>
+</tr>
+<tr>
+<td>运行期改主题</td>
+<td>不支持 —— 换肤走"换一份 CSS / 热重载"（见 <a href="../../对比与取舍.html">对比与取舍 §12</a>）</td>
 </tr>
 <tr>
 <td><code>writing-mode</code> / <code>text-orientation</code></td>
 <td>❌</td>
-<td><strong>X</strong>：竖排要重整排版引擎</td>
 </tr>
 <tr>
 <td><code>direction</code> / <code>unicode-bidi</code></td>
 <td>❌</td>
-<td><strong>X</strong>：RTL 需要 bidi 算法 + 文本整形</td>
 </tr>
 <tr>
 <td><code>will-change</code> / <code>contain</code> / <code>backface-visibility</code></td>
 <td>❌</td>
-<td><strong>N</strong>：GPU 优化提示，自有渲染器不消费</td>
 </tr>
 <tr>
 <td>Speech（<code>speak</code> / <code>volume</code> / <code>pause</code>…）</td>
 <td>—</td>
-<td><strong>N</strong>：与 GUI 无关</td>
 </tr>
 <tr>
 <td><code>scrollbar-*</code> / <code>scrollbar-width</code> / <code>scrollbar-color</code></td>
 <td>⏳</td>
-<td><strong>R</strong>：滚动条现在是内置样式（<code>SCROLLBAR_W</code> / <code>0x808080 @ 0x96</code>），暴露成属性很便宜</td>
 </tr>
 <tr>
 <td><code>scroll-snap-*</code></td>
 <td>❌</td>
-<td><strong>T</strong>：要持续重绘 + 吸附动画</td>
 </tr>
 <tr>
 <td><code>image-rendering</code></td>
 <td>⏳</td>
-<td><strong>R</strong>：CPU 已是最近邻放大；GL 用的是 <code>GL_NEAREST</code>，做成属性很便宜</td>
 </tr>
 <tr>
 <td><code>object-fit</code></td>
 <td>✅</td>
-<td><strong>R</strong></td>
 </tr>
 <tr>
 <td><code>object-position</code></td>
 <td>⏳</td>
-<td><strong>R</strong></td>
 </tr>
 <tr>
 <td><code>image-orientation</code></td>
 <td>❌</td>
-<td><strong>N</strong></td>
 </tr>
 </tbody>
 </table>
@@ -2134,13 +2178,13 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>!important</code>（出现在<strong>已支持</strong>的属性里）</td>
 <td>293</td>
 <td>5.4%</td>
-<td><strong>B1</strong></td>
+<td>✅ 已支持</td>
 </tr>
 <tr>
 <td><code>var(--x)</code>（CSS 变量）</td>
 <td>537</td>
 <td>10.0%</td>
-<td>❌ 明确不做</td>
+<td><strong>✅ 已支持</strong>（§18.1，构建期替换）</td>
 </tr>
 <tr>
 <td><code>calc()</code></td>
@@ -2160,8 +2204,12 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </thead>
 <tbody>
 <tr>
-<td>现在</td>
-<td><strong>73.6%</strong></td>
+<td>现在（含 <code>var()</code>）</td>
+<td><strong>≈ 83.6%</strong>（73.6% + 变量那 10.0% 的绝大多数）</td>
+</tr>
+<tr>
+<td><code>var()</code> 支持之前</td>
+<td>73.6%</td>
 </tr>
 <tr>
 <td>+ B1 值与尺寸</td>
@@ -2235,8 +2283,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <tbody>
 <tr>
 <td><code>var(--x)</code></td>
-<td>537 条声明</td>
-<td>写 <code>var()</code> 就报错。Bootstrap 5 一半样式靠它</td>
+<td>~~537 条声明~~</td>
+<td><strong>已解决</strong>（构建期替换）</td>
 </tr>
 <tr>
 <td><code>@media</code></td>
@@ -2267,8 +2315,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </tr>
 <tr>
 <td>直接搬 Bootstrap 这类框架</td>
-<td>~80% 声明能过（要改写 <code>var()</code>/<code>@media</code>）</td>
-<td>~92%</td>
+<td>~90% 声明能过（<code>var()</code> 已支持，<code>@media</code> 仍要改写）</td>
+<td>~95%</td>
 </tr>
 <tr>
 <td>搬图标字体库</td>

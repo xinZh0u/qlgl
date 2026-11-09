@@ -134,7 +134,30 @@ cmake --build build -j
 重新建树。新文件写坏了会**保留旧界面**并打印原因（"明确失败优于半个正确"）。
 这件事和"设计工具"是同一套东西，见 [对比与取舍 §12](../design/对比与取舍.html)。
 
-## 6. 这几个例程查出了什么
+## 6. `21_css_vars`：一处定义，处处引用
+
+<img src="../img/21-css-vars.png" alt="CSS 变量：调色板只写一次，规则里只引用" width="480">
+
+完整程序：`example/21_css_vars/`
+
+```css
+#root { --brand: #0969DA; --line: #E4E8ED; --radius: 10px; }
+.title { color: var(--brand); }
+.btn   { background-color: var(--brand); }
+.card  { border: 1px solid var(--line); border-radius: var(--radius); }
+
+.promo { --brand: #8250DF; }   /* 局部换肤：只影响这棵子树 */
+```
+
+例程里有两张卡片：第二张在自己身上改了 `--brand`，于是它的按钮和标题变紫，
+第一张不受影响 —— 这就是"变量参与级联"的意思。
+
+**为什么在 qlgl 里特别便宜**：变量在**构建期**就被换成了字面量
+（级联之后、属性解析之前），所以 `QLUIStyle` 和 blob 格式一个字节都没变，
+`compile_style()` 根本不知道有变量这回事。代价是**不能运行期改变量** ——
+换肤请换一份 CSS，或者用上一节的 `20_live_reload` 直接热重载。
+
+## 7. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

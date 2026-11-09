@@ -1548,6 +1548,196 @@ static int decls_set(Decls *ds, const char *key, const char *val)
     return 1;
 }
 
+/* ---------------------- CSS 变量（`--x` / `var()`） ---------------------- */
+
+/*
+ * 构建期替换 `var()`。
+ *
+ * 为什么能在构建期做干净：本库的样式本来就是**编译产物**，`--x` 没有"运行期改值"
+ * 这条路（也没有 JS），所以整个替换只是"级联之后再查一次表"。做完这一步，
+ * 每个元素手里的声明值都是字面量，`compile_style()` 完全不知道变量的存在。
+ *
+ * 三条规则：
+ *   - `--x` **继承**（已由 collect_inherited 带下来）；
+ *   - `var(--x)` 找不到且没有 fallback → **报错**（不静默留成字面量）；
+ *   - 允许嵌套与 `var(--x, <fallback>)`；靠深度上限挡环（`--a: var(--b); --b: var(--a)`）。
+ */
+#define QL_VAR_MAX_DEPTH 8
+
+/* 在 [s, s+len) 里找 `var(` 的位置；找不到返回 NULL */
+static const char *find_var_call(const char *s)
+{
+    const char *p = s;
+    while ((p = strstr(p, "var(")) != NULL) {
+        /* 必须是"独立的" var(：前一个字符不能是标识符的一部分 */
+        if (p == s)
+            return p;
+        const char c = p[-1];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            return p;
+        p += 4;
+    }
+    return NULL;
+}
+
+/*
+ * 把一段值里的 `var()` 全部替换掉，返回新分配的字符串。
+ * `scope` 里放的是这个元素最终可见的声明（含继承来的 `--x`）。
+ * 出错时 set_error 并返回 NULL。
+ */
+static char *subst_vars(const char *val, const Decls *scope, const char *where,
+                        int depth)
+{
+    if (val == NULL)
+        return NULL;
+    const char *hit = find_var_call(val);
+    if (hit == NULL)
+        return xstrdup(val);
+    if (depth > QL_VAR_MAX_DEPTH) {
+        set_error("%s: var() 嵌套太深或出现循环引用（'%s'）", where, val);
+        return NULL;
+    }
+
+    /* 解析 `var(` 之后的内容：名字到 ',' 或 ')'，可选 fallback */
+    const char *p = hit + 4;
+    while (is_space(*p))
+        p++;
+    const char *name_start = p;
+    while (*p != '\0' && *p != ',' && *p != ')')
+        p++;
+    const char *name_end = p;
+    while (name_end > name_start && is_space(name_end[-1]))
+        name_end--;
+
+    char name[64];
+    const size_t nlen = (size_t)(name_end - name_start);
+    if (nlen == 0 || nlen >= sizeof(name)) {
+        set_error("%s: var() 里的变量名不合法（'%s'）", where, val);
+        return NULL;
+    }
+    for (size_t i = 0; i < nlen; i++) {
+        const char c = name_start[i];
+        name[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+    }
+    name[nlen] = '\0';
+    if (name[0] != '-' || name[1] != '-') {
+        set_error("%s: var() 里必须是自定义属性名（形如 `--x`，收到 '%s'）", where,
+                  name);
+        return NULL;
+    }
+
+    /* 找 fallback（可能含括号，要配对） */
+    const char *fallback = NULL;
+    const char *call_end = p;
+    if (*p == ',') {
+        fallback = p + 1;
+        int nest = 1;
+        const char *q = p;
+        while (*q != '\0' && nest > 0) {
+            if (*q == '(')
+                nest++;
+            else if (*q == ')')
+                nest--;
+            q++;
+        }
+        if (nest != 0) {
+            set_error("%s: var() 的括号没配对（'%s'）", where, val);
+            return NULL;
+        }
+        call_end = q;                    /* 指向 ')' 之后 */
+        while (fallback < call_end - 1 && is_space(*fallback))
+            fallback++;
+        const char *fb_end = call_end - 1;      /* ')' 的位置 */
+        while (fb_end > fallback && is_space(fb_end[-1]))
+            fb_end--;
+        /* 记进临时缓冲，下面统一替换 */
+        char *fb = xstrndup(fallback, (size_t)(fb_end - fallback));
+        if (fb == NULL)
+            return NULL;
+        char *repl = (decls_get(scope, name) != NULL)
+                         ? subst_vars(decls_get(scope, name), scope, where, depth + 1)
+                         : subst_vars(fb, scope, where, depth + 1);
+        ql_mem_free(fb);
+        if (repl == NULL)
+            return NULL;
+        /* 拼：前半 + repl + 后半 */
+        const size_t before = (size_t)(hit - val);
+        const size_t after = strlen(call_end);
+        char *out = (char *)xalloc(before + strlen(repl) + after + 1u);
+        if (out == NULL) {
+            ql_mem_free(repl);
+            return NULL;
+        }
+        memcpy(out, val, before);
+        memcpy(out + before, repl, strlen(repl));
+        memcpy(out + before + strlen(repl), call_end, after + 1u);
+        ql_mem_free(repl);
+        char *again = subst_vars(out, scope, where, depth + 1);
+        ql_mem_free(out);
+        return again;
+    }
+
+    if (*p != ')') {
+        set_error("%s: var() 写法不对（'%s'）", where, val);
+        return NULL;
+    }
+    call_end = p + 1;
+
+    const char *raw = decls_get(scope, name);
+    if (raw == NULL) {
+        set_error("%s: var(%s) 没有定义（也没有 fallback）", where, name);
+        return NULL;
+    }
+    char *repl = subst_vars(raw, scope, where, depth + 1);
+    if (repl == NULL)
+        return NULL;
+    const size_t before = (size_t)(hit - val);
+    const size_t after = strlen(call_end);
+    char *out = (char *)xalloc(before + strlen(repl) + after + 1u);
+    if (out == NULL) {
+        ql_mem_free(repl);
+        return NULL;
+    }
+    memcpy(out, val, before);
+    memcpy(out + before, repl, strlen(repl));
+    memcpy(out + before + strlen(repl), call_end, after + 1u);
+    ql_mem_free(repl);
+    char *again = subst_vars(out, scope, where, depth + 1);
+    ql_mem_free(out);
+    return again;
+}
+
+/*
+ * 把一个元素的最终声明表里所有 `var()` 替换成字面量（就地改）。
+ * 顺序：先解析 `--x` 自己的值（它可能引用别的 `--x`），再替换普通属性。
+ */
+static int resolve_custom_props(Decls *ds, const char *where)
+{
+    int has_var = 0;
+    for (int i = 0; i < ds->n && !has_var; i++)
+        if (strstr(ds->d[i].val, "var(") != NULL)
+            has_var = 1;
+    if (!has_var)
+        return 1;                        /* 常见情况：一个变量都没有，零成本 */
+
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < ds->n; i++) {
+            const int is_custom = (ds->d[i].key[0] == '-');
+            if (is_custom != (pass == 0))
+                continue;                /* 第一趟只处理 `--x`，第二趟处理其余 */
+            if (strstr(ds->d[i].val, "var(") == NULL)
+                continue;
+            char *nv = subst_vars(ds->d[i].val, ds, where, 0);
+            if (nv == NULL)
+                return 0;
+            ql_mem_free(ds->d[i].val);
+            ds->d[i].val = nv;
+        }
+    }
+    return 1;
+}
+
 /* 带 `!important` 的版本：其余逻辑与 decls_set 完全一致 */
 static int decls_set_imp(Decls *ds, const char *key, const char *val, int important)
 {
@@ -2202,7 +2392,11 @@ static int parse_decls(const char *body, size_t len, const char *where,
                 }
                 ok = decls_set_imp(out, prop, vs, important);
             } else {
-                if (!in_supported_props(prop)) {
+                /*
+                 * `--x` 是**自定义属性**（CSS 变量），构建期在级联之后替换掉
+                 * `var(--x)`。它不是真属性，所以不查 `k_supported_props`。
+                 */
+                if (prop[0] != '-' && !in_supported_props(prop)) {
                     set_error("%s: 不支持的属性 '%s'", where, prop);
                     ql_mem_free(vs);
                     return 0;
@@ -2240,6 +2434,7 @@ static int parse_decls(const char *body, size_t len, const char *where,
 #define SELP_ONLY_OF_TYPE     0x0080
 #define SELP_NTH_OF_TYPE      0x0100
 #define SELP_NTH_LAST_OF_TYPE 0x0200
+#define SELP_ROOT             0x0400   /* `:root`：元素树最外层第一个元素 */
 
 #define SEL_ATTR_EXISTS  0
 #define SEL_ATTR_EQ      1
@@ -2620,6 +2815,8 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
             p->states |= 2;
         } else if (strcmp(name, "focus") == 0) {
             p->states |= 4;
+        } else if (strcmp(name, "root") == 0) {
+            p->pseudo |= SELP_ROOT;
         } else if (strcmp(name, "first-child") == 0) {
             p->pseudo |= SELP_FIRST_CHILD;
         } else if (strcmp(name, "last-child") == 0) {
@@ -2705,10 +2902,10 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
                 return 0;
             }
         } else {
-            set_error("不支持的伪类 ':%s'（支持 :hover :active :focus :first-child "
-                      ":last-child :only-child :nth-child() :nth-last-child() "
-                      ":first-of-type :last-of-type :only-of-type :nth-of-type() "
-                      ":nth-last-of-type() :not()）", name);
+            set_error("不支持的伪类 ':%s'（支持 :root :hover :active :focus "
+                      ":first-child :last-child :only-child :nth-child() "
+                      ":nth-last-child() :first-of-type :last-of-type :only-of-type "
+                      ":nth-of-type() :nth-last-of-type() :not()）", name);
             return 0;
         }
         (*spec_cls)++;
@@ -4842,6 +5039,16 @@ static int simple_matches(const PNode *n, const SelPart *sp)
     if (sp->pseudo != 0) {
         if (n->is_anon_text)
             return 0;
+        /*
+         * `:root` = 元素树最外层第一个元素（`#document` 的第一个元素孩子）。
+         * 变量通常就写在这里（Bootstrap 的 `:root { --bs-*: … }`），
+         * 它继承给整棵树，所以这条必须能匹配上。
+         */
+        if ((sp->pseudo & SELP_ROOT) != 0) {
+            if (n->parent == NULL || n->parent->tag == NULL ||
+                strcmp(n->parent->tag, "#document") != 0 || n->sib_idx != 0)
+                return 0;
+        }
         const int pos = n->sib_idx + 1;
         const int tpos = n->type_idx + 1;
         if ((sp->pseudo & SELP_FIRST_CHILD) && pos != 1)
@@ -5314,6 +5521,10 @@ static char *pseudo_content_text(const Rule *r)
     const char *v = decls_get(&r->decls, "content");
     if (v == NULL)
         return NULL;
+    if (strstr(v, "var(") != NULL) {
+        set_error("content 不支持 var()（伪元素在级联之前展开，那时还没有自定义属性）");
+        return NULL;
+    }
     const char *p = skip_space(v);
     if (*p != '"' && *p != '\'')
         return NULL;                   /* `content: none` 之类：当作不生成 */
@@ -5484,9 +5695,15 @@ static int expand_pseudo(PNode *root, Rules *rs)
             }
             continue;
         }
-        if (decls_get(&r->decls, "content") == NULL) {
+        const char *cval = decls_get(&r->decls, "content");
+        if (cval == NULL) {
             set_error("%s 规则缺少 'content'：::before / ::after 只有写了 content 才生成内容",
                       r->parts[r->nparts - 1].pseudo_elem == 1 ? "::before" : "::after");
+            return 0;
+        }
+        /* 伪元素在级联**之前**展开，那时还没有自定义属性 —— 明确报错，别留成字面量 */
+        if (strstr(cval, "var(") != NULL) {
+            set_error("content 不支持 var()（伪元素在级联之前展开，那时还没有自定义属性）");
             return 0;
         }
         if (!expand_pseudo_rec(root, r, rs))
@@ -5723,6 +5940,19 @@ static int finalize_style(Decls *decls, const PNode *n, const Decls *inherited,
             if (!decls_set(out, "font-size", buf))
                 return 0;
         }
+    }
+
+    /*
+     * CSS 变量：到这一步 out 里已经是"这个元素最终可见的声明"
+     * （默认 UA 样式 + 级联 + 行内 + 继承）。在这里把 `var()` 换成字面量，
+     * 下游（`compile_style`）就完全不需要知道变量存在。
+     */
+    {
+        const char *tag = (n->tag != NULL) ? n->tag : "?";
+        char where[64];
+        snprintf(where, sizeof(where), "<%s>", tag);
+        if (!resolve_custom_props(out, where))
+            return 0;
     }
     return 1;
 }
@@ -7749,6 +7979,13 @@ static int collect_inherited(const Decls *parent, Decls *out)
     for (size_t i = 0; i < sizeof(k_inherited) / sizeof(k_inherited[0]); i++) {
         const char *v = decls_get(parent, k_inherited[i]);
         if (v != NULL && !decls_set(out, k_inherited[i], v))
+            return 0;
+    }
+    /* `--x` 自定义属性默认**继承**（与 CSS 一致），所以整条带过去 */
+    for (int i = 0; i < parent->n; i++) {
+        if (parent->d[i].key[0] != '-')
+            continue;
+        if (!decls_set(out, parent->d[i].key, parent->d[i].val))
             return 0;
     }
     return 1;

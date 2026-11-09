@@ -569,6 +569,76 @@ tools/qltext/qltext.c ┘
 被 strip 掉了（strip 是结构性的，必须在解析期做）。</p>
 <h3 id="33">3.3 颜色写法</h3>
 <p><code>#rgb</code>、<code>#rrggbb</code>、<code>rgb(r,g,b)</code>、<code>rgba(r,g,b,a)</code>、命名色（<code>black</code>/<code>white</code>/<code>red</code>/<code>green</code>/<code>lime</code>/<code>blue</code>/<code>gray</code>/<code>silver</code>/<code>yellow</code>/<code>orange</code>/<code>purple</code>/<code>navy</code>/<code>teal</code>/<code>transparent</code>）。</p>
+<h3 id="331-css-x-var">3.3.1 CSS 变量（<code>--x</code> / <code>var()</code>）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">#</span><span class="nn">root</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nv">--brand</span><span class="p">:</span><span class="w"> </span><span class="mh">#0969DA</span><span class="p">;</span>
+<span class="w">  </span><span class="nv">--line</span><span class="p">:</span><span class="w"> </span><span class="mh">#E4E8ED</span><span class="p">;</span>
+<span class="w">  </span><span class="nv">--radius</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="nv">--pad</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="kt">px</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">;</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--line</span><span class="p">);</span>
+<span class="w">          </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--radius</span><span class="p">);</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--pad</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">title</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--brand</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">btn</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--brand</span><span class="p">);</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="c">/* 局部换肤：只影响这棵子树，兄弟不受影响 */</span>
+<span class="p">.</span><span class="nc">promo</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nv">--brand</span><span class="p">:</span><span class="w"> </span><span class="mh">#8250DF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">          </span><span class="c">/* 里面的 .btn / .title 自动变紫 */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--x: &lt;任意值&gt;</code></td>
+<td>✅ 定义（会<strong>继承</strong>，后代可覆盖）</td>
+</tr>
+<tr>
+<td><code>var(--x)</code></td>
+<td>✅ 构建期替换成字面量</td>
+</tr>
+<tr>
+<td><code>var(--x, &lt;fallback&gt;)</code></td>
+<td>✅ fallback 里可再套 <code>var()</code></td>
+</tr>
+<tr>
+<td>嵌套 <code>--a: var(--b)</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>简写里用（<code>border: 1px solid var(--c)</code>、<code>margin: var(--g)</code>、<code>background: var(--bg)</code>）</td>
+<td>✅ 简写先展开成长属性，再替换</td>
+</tr>
+<tr>
+<td>找不到且无 fallback / 循环引用</td>
+<td>❌ <strong>构建期报错</strong></td>
+</tr>
+<tr>
+<td><code>content: var(--x)</code></td>
+<td>❌ 报错（伪元素在级联之前展开）</td>
+</tr>
+<tr>
+<td>运行期改变量（换肤）</td>
+<td>❌ 没有这条路 —— 换主题请换一份 CSS 或走热重载</td>
+</tr>
+</tbody>
+</table>
+<p><strong>它是怎么做到的</strong>：替换发生在<strong>级联之后、属性解析之前</strong> ——</p>
+<div class="highlight"><pre><span></span><code>UA 默认 + 级联 + 行内 + 继承  →  out
+out 里先解析 `--x` 自己的值     →  再把所有 var() 换成字面量
+</code></pre></div>
+
+<p>所以 <code>QLUIStyle</code>、blob 格式、渲染路径<strong>一个字节都没变</strong>；<code>compile_style()</code> 根本不知道
+有变量这回事。代价只有一条：自定义属性名按<strong>小写</strong>归一（CSS 是大小写敏感的）。</p>
+<blockquote>
+<p>换肤的推荐写法：调色板只写一次，规则里只引用变量。配合
+<a href="../../../example/20_live_reload"><code>example/20_live_reload</code></a> 的热重载，
+改一行 <code>--brand</code> 保存，整个界面立刻换色。</p>
+</blockquote>
 <h3 id="34">3.4 混合内容</h3>
 <p>支持 <code>&lt;p&gt;</code>/<code>&lt;div&gt;</code> 里文本与行内元素混排：</p>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;m&quot;</span><span class="p">&gt;</span>Hello <span class="p">&lt;</span><span class="nt">b</span><span class="p">&gt;</span>bold<span class="p">&lt;/</span><span class="nt">b</span><span class="p">&gt;</span> and <span class="p">&lt;</span><span class="nt">i</span><span class="p">&gt;</span>it<span class="p">&lt;/</span><span class="nt">i</span><span class="p">&gt;</span>!<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>

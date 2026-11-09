@@ -1,0 +1,128 @@
+/*
+ * 一条调色板 + 一套尺寸，只在 #root 写一次。
+ * 下面所有规则都只引用变量 —— 换肤时改这里就够了（配合 20_live_reload 的
+ * 热重载，保存即生效）。
+ */
+#root {
+  --brand: #0969DA;
+  --brand-ink: #FFFFFF;
+  --line: #E4E8ED;
+  --surface: #F6F8FA;
+  --ink: #1F2328;
+  --dim: #6E7781;
+  --radius: 10px;
+  --gap: 10px;
+  --pad: 14px;
+
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  background-color: #FFFFFF;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: var(--brand);
+  margin-bottom: var(--pad);
+  letter-spacing: 0.4px;
+}
+
+.panel {
+  width: 340px;
+  padding: var(--pad);
+  margin-bottom: var(--pad);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0px 6px 18px #0969DA18;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--ink);
+  margin-bottom: var(--gap);
+}
+
+/* 注：四边独立的 border-* 还没做（B4），这里用整圈边框当分隔线 */
+.row {
+  display: flex;
+  justify-content: space-between;
+  line-height: 22px;
+  margin-bottom: 4px;
+  background-color: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+}
+
+.k {
+  color: var(--dim);
+}
+
+.v {
+  color: var(--ink);
+}
+
+.brand {
+  color: var(--brand);
+}
+
+.btn {
+  margin-top: var(--gap);
+  margin-right: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background-color: var(--brand);
+  color: var(--brand-ink);
+  border-width: 0px;
+}
+
+.ghost {
+  background-color: var(--surface);
+  color: var(--brand);
+  border: 1px solid var(--brand);
+}
+
+.note {
+  width: 340px;
+  color: var(--dim);
+  line-height: 18px;
+  white-space: normal;
+  margin-bottom: var(--pad);
+}
+
+code {
+  font-family: monospace;
+  color: var(--brand);
+  background-color: var(--surface);
+  padding: 0 3px;
+  border-radius: 4px;
+}
+
+/* 局部覆盖：只影响这棵子树 */
+.mini {
+  --brand: #8250DF;
+  --surface: #F4EFFF;
+  width: 340px;
+  padding: var(--pad);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.mini-title {
+  font-weight: bold;
+  color: var(--brand);
+  margin-bottom: 6px;
+}
+
+.mini-body {
+  color: var(--ink);
+  line-height: 18px;
+  white-space: normal;
+  margin-bottom: var(--gap);
+}

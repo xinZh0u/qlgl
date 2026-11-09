@@ -1,0 +1,34 @@
+<div id="root">
+  <div class="h1">CSS 变量：一处定义，处处引用</div>
+
+  <!-- 面板里的每个颜色、圆角、间距都来自 --x -->
+  <div class="panel">
+    <div class="panel-title">账户设置</div>
+    <div class="row">
+      <span class="k">主题色</span>
+      <span class="v brand">--brand</span>
+    </div>
+    <div class="row">
+      <span class="k">分隔线</span>
+      <span class="v">--line</span>
+    </div>
+    <div class="row">
+      <span class="k">圆角</span>
+      <span class="v">--radius</span>
+    </div>
+    <button class="btn">主按钮（--brand）</button>
+    <button class="btn ghost">次要按钮（--brand 描边）</button>
+  </div>
+
+  <div class="note">
+    改 <code>#root</code> 里 <code>--brand</code> 一行，标题、按钮、强调文字、描边
+    <b>一起</b>变。也可在某个元素上局部覆盖：下面这张小卡把 <code>--brand</code>
+    改成了紫色，兄弟卡片不受影响。
+  </div>
+
+  <div class="mini">
+    <div class="mini-title">局部覆盖 --brand</div>
+    <div class="mini-body">这张卡片自己定义了 <code>--brand</code>，所以按钮和强调色是紫的。</div>
+    <button class="btn">紫色按钮</button>
+  </div>
+</div>

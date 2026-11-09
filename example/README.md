@@ -77,5 +77,6 @@ python3 tools/qltext/qltext.py cc \
 | `18_css_paint` | 绘制效果：渐变 / 圆角边框阴影 / `opacity` / `clip-path` / `transform` / 毛玻璃 / `transition` / `@keyframes` / 文本样式 |
 | `19_css_text` | 文本细节：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` |
 | `20_live_reload` | 热重载：改 `style.css` → 运行期重编译整份 doc（1 ms），失败保留旧界面 |
+| `21_css_vars` | CSS 变量 `--x` / `var()`：构建期替换，`QLUIStyle` 不变；局部覆盖做换肤 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
