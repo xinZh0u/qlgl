@@ -1,6 +1,6 @@
 # QLInput / 交互 API 手册（v0.1）
 
-配套阅读：[QLInput 阅读指南](./QLInput阅读指南.md) · 界面与命中测试：[QLUI API手册](../ui/QLUI%20API%20手册.md)
+配套阅读：[QLInput 阅读指南](./QLInput阅读指南.md) · 界面与命中测试：[QLUI API手册](../ui/QLUI%20API手册.md)
 
 - 头文件：`#include <qlgl/qlgl.h>`（已包含 `qlinput.h`）
 - 链接：`target_link_libraries(xxx PRIVATE qlgl)`

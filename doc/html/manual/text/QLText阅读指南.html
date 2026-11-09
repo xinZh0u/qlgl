@@ -219,9 +219,9 @@ main img.shot { max-width: 100%; }
 <blockquote>
 <p>本部分包含三层：<strong>字体</strong>（qlfont，静态位图 / FreeType 动态）→ <strong>字符串</strong>（qlstr）→
 <strong>画布文本原语</strong>（<code>ql_canvas_draw_text</code>）；界面层的文本样式（<code>font-size</code> 等）见
-<a href="../ui/QLUI阅读指南.md">QLUI 阅读指南</a>。
+<a href="../ui/QLUI阅读指南.html">QLUI 阅读指南</a>。
 目标读者：要读懂或修改 <code>src/text/</code>、<code>src/core/qlstr.c</code>、文本绘制相关代码的人。
-只想用 API，请看 <a href="./QLText%20API手册.md">QLText API手册</a>。</p>
+只想用 API，请看 <a href="QLText API手册.html">QLText API手册</a>。</p>
 </blockquote>
 <hr />
 <h2 id="1">1. 文件地图</h2>
@@ -490,7 +490,7 @@ alpha 就是字形的覆盖率，因此<strong>抗锯齿是天然支持的</stro
 <h3 id="_5">多行</h3>
 <p><code>ql_canvas_draw_text()</code> 只处理 <code>'\n'</code>，<strong>不自动折行</strong>。界面层额外支持
 <code>white-space: pre</code>（保留 <code>\n</code> 与空格）与 <code>nowrap</code>；自动折行由布局完成，
-见 <a href="../ui/QLUI阅读指南.md">QLUI 阅读指南</a> 的文本测量一节。</p>
+见 <a href="../ui/QLUI阅读指南.html">QLUI 阅读指南</a> 的文本测量一节。</p>
 <hr />
 <h2 id="9">9. 常见坑</h2>
 <table>

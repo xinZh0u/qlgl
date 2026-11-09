@@ -216,11 +216,11 @@ main img.shot { max-width: 100%; }
 </aside>
 <main>
 <h1 id="qlui-htmlcss-api-v01">QLUI / HTML+CSS 编译 API 手册（v0.1）</h1>
-<p>配套阅读：<a href="./QLUI阅读指南.md">QLUI 阅读指南</a> · 定位：<a href="../../Web兼容设计.md">Web 兼容设计</a> §7</p>
+<p>配套阅读：<a href="QLUI阅读指南.html">QLUI 阅读指南</a> · 定位：<a href="../../design/Web兼容设计.html">Web 兼容设计</a> §7</p>
 <blockquote>
 <p><strong>先明确适用场景</strong>
 - <strong>MCU</strong>：本模块就是唯一路径。想省 Flash 就裁能力包（<code>QL_FEAT_UI_*</code>），
-  或者干脆用构建期编译出来的静态 doc（见 <a href="./QLUI阅读指南.md">QLUI 阅读指南</a> 的 blob 一节）。
+  或者干脆用构建期编译出来的静态 doc（见 <a href="QLUI阅读指南.html">QLUI 阅读指南</a> 的 blob 一节）。
 - <strong>MPU / 嵌入式 Linux</strong>：用本模块，把 HTML+CSS 编译成 C。
 - <strong>要跑任意网页</strong>：本模块不做，也不提供回退方案 —— 任何平台都自己绘制，不嵌 WebView。</p>
 </blockquote>
@@ -2607,7 +2607,7 @@ MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
 </tr>
 </tbody>
 </table>
-<p>需要不在子集内的特性 → 构建期报错并给替代写法；<strong>没有 WebView 回退路径</strong>（<a href="../../Web兼容设计.md">设计文档 §7.3</a>）。</p>
+<p>需要不在子集内的特性 → 构建期报错并给替代写法；<strong>没有 WebView 回退路径</strong>（<a href="../../design/Web兼容设计.html">设计文档 §7.3</a>）。</p>
 <div class='pager'>
 <a href='../../manual/ui/HTML5标签覆盖与裁剪.html'><span class='dir'>上一页</span>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='next' href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>下一页</span>QLUI / HTML+CSS 编译 阅读指南</a>

@@ -1,6 +1,6 @@
 # QLText / 字体 API 手册（v0.1）
 
-配套阅读：[QLText 阅读指南](./QLText阅读指南.md) · 相关：[QLUI API手册](../ui/QLUI%20API%20手册.md)（界面里的文本样式）
+配套阅读：[QLText 阅读指南](./QLText阅读指南.md) · 相关：[QLUI API手册](../ui/QLUI%20API手册.md)（界面里的文本样式）
 
 - 头文件：`#include <qlgl/qlgl.h>`（已包含 `qlfont.h` / `qlstr.h`）
 - **文本最终由谁画**：界面层的 `QLUI` 引擎（HTML/CSS 的 `font-size` / `font-weight` … 编译成样式），
@@ -338,7 +338,7 @@ QLGL 没有 `QLLabel` 这样的控件类 —— 文本是 **HTML 元素**，样�
 | 换行 | 放 `<br>`，或写 `white-space: pre` 并在文本里留 `\n` |
 | 不折行 | `white-space: nowrap` |
 
-**运行期改文本**（唯一允许的结构改动，见 [QLUI API手册](../ui/QLUI%20API%20手册.md)）：
+**运行期改文本**（唯一允许的结构改动，见 [QLUI API手册](../ui/QLUI%20API手册.md)）：
 
 ```c
 ql_ui_set_text(ui, node, "新内容");

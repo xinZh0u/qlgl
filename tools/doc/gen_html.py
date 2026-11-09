@@ -21,6 +21,7 @@ import argparse
 import html
 import os
 import re
+import urllib.parse
 import sys
 
 try:
@@ -217,6 +218,35 @@ def md_to_html(text):
     )
 
 
+def rewrite_page_links(body, page, out_map):
+    """把指向别的文档的链接改写成站点里能点开的相对路径。
+
+    源码里常见的两种写法在生成的站点上都点不开：
+      - 带 `.md`（源目录里能点，站点里没有 .md）
+      - 相对 `doc/` 根写（如 `手册/ui/QLUI阅读指南.md`），而站点里手册在 `manual/` 下
+    这里按"源文件相对"和"doc/ 根相对"两种解释去查页面表，查到就换成相对当前页的路径。
+    """
+    src_dir = os.path.dirname(page.src)
+    out_dir = os.path.dirname(page.out)
+
+    def fix(m):
+        attr, href = m.group(1), m.group(2)
+        if re.match(r"^(https?:|mailto:|data:|#|/)", href):
+            return m.group(0)
+        raw, sep, frag = href.partition("#")
+        if not raw:
+            return m.group(0)
+        stem = os.path.splitext(urllib.parse.unquote(raw))[0]
+        for base in (src_dir, os.path.join(ROOT, "doc")):
+            key = os.path.normpath(os.path.join(base, stem))
+            if key in out_map:
+                rel = os.path.relpath(out_map[key], out_dir or ".")
+                return '%s"%s%s%s"' % (attr, rel, sep, frag)
+        return m.group(0)
+
+    return re.sub(r'(href=)"([^"]*)"', fix, body)
+
+
 def add_anchors(body):
     """给 h2/h3 生成 id（中文标题也能锚）+ 收集目录。"""
     toc = []
@@ -381,9 +411,12 @@ def build(pages, out_dir):
 
     # 每个页面：正文 + 翻页
     order = [p.out for p in pages]
+    # 源文件（去掉扩展名）→ 站点里的相对路径，给 rewrite_page_links 用
+    out_map = {os.path.normpath(os.path.splitext(p.src)[0]): p.out for p in pages}
     for p in pages:
         text = open(p.src, encoding="utf-8").read()
         body = md_to_html(text)
+        body = rewrite_page_links(body, p, out_map)
         body, p.toc = add_anchors(body)
 
         depth = p.out.count("/")

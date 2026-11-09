@@ -724,7 +724,7 @@ qlgl 都没有。qlgl 的战场是"这块屏幕上只有我自己画的界面"�
 <p><strong>qlgl 在 MCU 上的现状（不吹）</strong></p>
 <ul>
 <li>能力包（<code>QL_FEAT_*</code>）目前<strong>只有图像那几个真的在代码里生效</strong>；
-  <code>QL_FEAT_CSS_*</code> / <code>QL_FEAT_UI_*</code> 还只有名字（见 <a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> §21）；</li>
+  <code>QL_FEAT_CSS_*</code> / <code>QL_FEAT_UI_*</code> 还只有名字（见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> §21）；</li>
 <li>没有移植样板、没有 RTOS 集成示例、没有 DMA/双缓冲的板级文档；</li>
 <li>219 KB 比 LVGL 的典型配置重 —— 因为这里带着完整 HTML/CSS 编译器产物结构、
   flex 求解器、文本折行与输入框编辑。</li>
@@ -1162,7 +1162,7 @@ PC 上想要中文与 GL，就得付这两笔账（Electron 也一样要付，�
 <p>其他实测：1080p CPU 全屏 <strong>2.19 ms</strong>、320×240 <strong>0.30 ms</strong>；局部刷新耗时为全量的 <strong>4.5%</strong>；
 5 段动画同时跑 <strong>0.0052 ms/帧</strong>（动画只改绘制期属性，零重排）。</p>
 <h3 id="114-web">11.4 Web 兼容度</h3>
-<p>口径见 <a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> §19：本机 23 份真实 CSS
+<p>口径见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> §19：本机 23 份真实 CSS
 （Bootstrap 5、mkdocs、Mercurial、Font Awesome、jQuery UI 皮肤…）共 <strong>5391 条声明</strong>。</p>
 <table>
 <thead>
@@ -1237,7 +1237,7 @@ PC 上想要中文与 GL，就得付这两笔账（Electron 也一样要付，�
 </table>
 <p>另一种形态（不重新编译应用、也不改 C）：把界面编译成 <code>.qlui</code> blob，
 窗口 <code>--watch</code> 监视文件变化，<code>qltext</code> + <code>qlblob</code> 在另一个终端生成新 blob
-（见 <a href="手册/ui/QLUI阅读指南.md">QLUI 阅读指南</a> §8）。两条路都<strong>不需要重新编译应用二进制</strong>。</p>
+（见 <a href="../manual/ui/QLUI阅读指南.html">QLUI 阅读指南</a> §8）。两条路都<strong>不需要重新编译应用二进制</strong>。</p>
 <h3 id="122">12.2 设计工具要补什么</h3>
 <p>现在缺的不是机制，是<strong>工具</strong>。要做的是一个"活的设计器"：</p>
 <table>
@@ -1291,11 +1291,11 @@ PC 上想要中文与 GL，就得付这两笔账（Electron 也一样要付，�
 </blockquote>
 <h2 id="13">13. 相关文档</h2>
 <ul>
-<li><a href="Web兼容设计.md">Web 兼容设计</a> —— 子集的边界与三条红线（不做 JS/DOM、不嵌 WebView、不支持就报错）</li>
-<li><a href="手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a> —— 逐模块状态 + 覆盖率 + 能力包 + 五批计划</li>
-<li><a href="手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a> —— 114 个元素逐条状态</li>
-<li><a href="开发规划.md">开发规划</a> —— 分期与验收，以及"不做清单"</li>
-<li><a href="bench.md">bench</a> —— 基准方法与数字</li>
+<li><a href="Web兼容设计.html">Web 兼容设计</a> —— 子集的边界与三条红线（不做 JS/DOM、不嵌 WebView、不支持就报错）</li>
+<li><a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> —— 逐模块状态 + 覆盖率 + 能力包 + 五批计划</li>
+<li><a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> —— 114 个元素逐条状态</li>
+<li><a href="开发规划.html">开发规划</a> —— 分期与验收，以及"不做清单"</li>
+<li><a href="bench.html">bench</a> —— 基准方法与数字</li>
 </ul>
 <div class='pager'>
 <a href='../design/Web兼容设计.html'><span class='dir'>上一页</span>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>

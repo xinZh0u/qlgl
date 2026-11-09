@@ -197,4 +197,4 @@ ql_ui_set_input_cb(ui, on_input, NULL);
 
 能力包 `TEXT`（6 个）与 `CONTROL`（补齐 `textarea`）都完成了。
 剩下的是 `TABLE` 包 —— 10 个标签、唯一要从零写一套布局算法的一期，
-见 [开发规划](../../design/开发规划.html)。
+见 [开发规划](../design/开发规划.html)。

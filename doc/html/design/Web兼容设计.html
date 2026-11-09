@@ -260,7 +260,7 @@ main img.shot { max-width: 100%; }
 超出子集的部分在构建期报错并给出替代写法。</strong></p>
 </blockquote>
 <p>覆盖率现状按真实语料实测（23 份 CSS / 5391 条声明）：<strong>属性名级 38%、声明级 73.6%</strong>，
-细节与批次见 <a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a>。</p>
+细节与批次见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>。</p>
 <hr />
 <h2 id="1">1. 现行模型：只有"标签 + 样式"，没有"控件类"</h2>
 <p>这一条曾经是"要放弃什么"，现在<strong>已经是既成事实</strong> —— 不用再讨论。</p>
@@ -328,7 +328,7 @@ QLGL 现在就是照这个模型长的：</p>
 
 <hr />
 <h2 id="3-css">3. CSS：能做到什么程度</h2>
-<p><strong>逐条清单搬到了独立文档</strong>：<a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a>
+<p><strong>逐条清单搬到了独立文档</strong>：<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>
 （按模块穷举、每条给原因码、并给出 5 批计划与 CSS 能力包）。这里只留结论：</p>
 <table>
 <thead>
@@ -544,7 +544,7 @@ QLGL 现在就是照这个模型长的：</p>
 </tbody>
 </table>
 <p>全量 114 个元素的现状（哪些已支持、哪些靠哪个能力包、MCU 怎么裁）见
-<a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a>。</p>
+<a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>。</p>
 <blockquote>
 <p>这样新增"控件"的方式变成了<strong>写 UA CSS + 可能的 tag handler</strong>，与 Web 一致；
 不再需要 <code>QL_DEFINE_WITH_PRIVATE</code> 一套类注册。</p>
@@ -625,7 +625,7 @@ bubble 阶段（目标父 → 根）
 </table>
 <p>所以：</p>
 <ul>
-<li><code>&lt;script&gt;</code> 标签<strong>整段跳过</strong>（内容不进树、不执行），见 <a href="./EMBED后端设计.md">EMBED 后端设计 §script</a>；</li>
+<li><code>&lt;script&gt;</code> 标签<strong>整段跳过</strong>（内容不进树、不执行），见 <a href="EMBED后端设计.html">EMBED 后端设计 §script</a>；</li>
 <li>没有 DOM API，也没有 <code>addEventListener</code>；</li>
 <li>交互靠<strong>声明式</strong>：<code>:hover</code> / <code>:active</code> / <code>:focus</code> 状态样式、<code>transition</code> / <code>@keyframes</code>、
   以及宿主 C 侧的几个回调（点击、输入、进度）。</li>
@@ -675,7 +675,7 @@ bubble 阶段（目标父 → 根）
 <h3 id="71-mcu-htmlcss">7.1 MCU：同一份 HTML/CSS，裁的是能力不是语言</h3>
 <blockquote>
 <p>早期结论"MCU 用纯 C 写界面"<strong>已推翻</strong>。原因见
-<a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a> §3：两套语言 = 两套界面、
+<a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> §3：两套语言 = 两套界面、
 两份教程、两倍回归，"设计师出图"在 MCU 上直接消失。</p>
 </blockquote>
 <ul>
@@ -683,7 +683,7 @@ bubble 阶段（目标父 → 根）
 <li>裁的是<strong>代码路径</strong>：<code>QL_FEAT_UI_TABLE=0</code> 就把表格布局整段摘掉，<code>&lt;table&gt;</code> 构建期报错；</li>
 <li>界面在开发机上用 <code>qltext cc</code> 编译成静态 doc，MCU 侧零解析、零 CSS 匹配；
   图片默认转成目标像素格式的 <code>RAW</code>（图片 RAM 为 0）；</li>
-<li>CSS 侧同理：<code>QL_FEAT_CSS_*</code> 一组包，见 <a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪 §21</a>。</li>
+<li>CSS 侧同理：<code>QL_FEAT_CSS_*</code> 一组包，见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §21</a>。</li>
 </ul>
 <h3 id="72-mpu-c">7.2 MPU：构建期编译成 C</h3>
 <p>同一份页面在构建期被 <code>qltext</code> 翻译成静态 C 数据（节点表 + 样式表 + 文本池 + 资源段），
@@ -859,7 +859,7 @@ bubble 阶段（目标父 → 根）
 </tbody>
 </table>
 <p><strong>剩余工作不再是"搭骨架"，而是"补细节"</strong> —— 逐条见
-<a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪 §22</a> 的五批计划。</p>
+<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §22</a> 的五批计划。</p>
 <p>对比参考：
 - 现有已完成的四层（对象/绘制/文本/后端）约 <strong>6.3k 行</strong>，用了约 1 天（含文档与测试）。
 - LiteHTML（HTML/CSS 子集渲染器）约 2 万行 C++；Yoga（flexbox）约 1 万行 C++。
@@ -910,7 +910,7 @@ bubble 阶段（目标父 → 根）
 </tr>
 <tr>
 <td>CSS 能力包</td>
-<td>与标签包同构，14 个包 × 三档预设（<a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪 §21</a>）</td>
+<td>与标签包同构，14 个包 × 三档预设（<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §21</a>）</td>
 </tr>
 </tbody>
 </table>

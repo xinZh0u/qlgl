@@ -219,7 +219,7 @@ main img.shot { max-width: 100%; }
 <blockquote>
 <p>定位：<strong>CSS+HTML 的"GTK"</strong> —— 界面用 HTML/CSS 写，构建期编译成 C；绘制层 CPU/GPU 双后端；
 PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏 CPU 光栅场景结构性轻于 GTK。</p>
-<p>本文是<strong>排期与验收依据</strong>。每完成一个里程碑，必须同时更新 <a href="./bench.md">bench.md</a> 与相关手册。</p>
+<p>本文是<strong>排期与验收依据</strong>。每完成一个里程碑，必须同时更新 <a href="bench.html">bench.md</a> 与相关手册。</p>
 </blockquote>
 <hr />
 <h2 id="1">1. 现状快照（已完成并可验证）</h2>
@@ -1425,7 +1425,7 @@ GL 侧是 <code>QLGfxGL.scale_fx</code>。上层代码<strong>一行都不用改
 <strong>状态标志只能通过 <code>set_state_chain</code> 改，禁止直接写 <code>flags</code>。</strong></p>
 <p><strong>验收</strong>：<code>test_anim</code>（64 项）+ <code>test_transition</code>（41 项）全绿；<code>test_web_ui</code> 63 项在
 demo CSS 带 <code>transition: 180ms ease-out</code> 的前提下仍全部通过（断言前用 <code>settle()</code> 推进到静止）。
-文档：<a href="./手册/anim/QLAnim阅读指南.md">QLAnim 阅读指南</a> · <a href="./手册/anim/QLAnim%20API手册.md">QLAnim API手册</a>，
+文档：<a href="../manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a> · <a href="../manual/anim/QLAnim API手册.html">QLAnim API手册</a>，
 <code>QLUI</code> 两本手册补 transition 小节。</p>
 <h5 id="3-keyframes">③ <code>@keyframes</code> —— <strong>已完成</strong></h5>
 <p>关键帧在<strong>构建期编译成静态表</strong>，运行期零解析、零分配：</p>
@@ -1475,7 +1475,7 @@ demo CSS 带 <code>transition: 180ms ease-out</code> 的前提下仍全部通过
 <p><strong>验收</strong>：<code>test_keyframes</code>（86 项）覆盖构建期落 0% 帧、线性/alternate/reverse、
 隐式关键帧、<code>fill: forwards</code> 停留与 <code>fill: none</code> 回落、无限循环、重播、
 脏区覆盖、blob 往返逐字节一致、无 <code>@keyframes</code> 时零成本。
-文档：<a href="./手册/anim/QLAnim阅读指南.md">QLAnim 阅读指南</a> §9 · <a href="./手册/ui/QLUI%20API手册.md">QLUI API手册</a> §3.10。</p>
+文档：<a href="../manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a> §9 · <a href="../manual/ui/QLUI API手册.html">QLUI API手册</a> §3.10。</p>
 <h5 id="4-transform-translate-scalerotate">④ transform —— <strong><code>translate</code> 已完成；<code>scale</code>/<code>rotate</code> 待做</strong></h5>
 <p><code>transform</code> 是<strong>绘制期属性</strong>（与 CSS 一致），所以移动元素<strong>零重排</strong>：</p>
 <table>
@@ -1915,7 +1915,7 @@ golden 只有 <code>mixed</code>（用了 <code>b</code>/<code>i</code>）与 <c
 <p>例程：<code>example/09_scroll/main.c</code>（播放列表，滚轮/拖滚动条/PageDown）；教程第 9 章。</p>
 <p><strong>已知缺口</strong>：没有滚动惯性（触屏会"硬"）；滚轮滚到底<strong>不传给父级</strong>（浏览器是链式滚动）。</p>
 <h5 id="18-img-2026-11-09">⑱ 图像管线（<code>&lt;img&gt;</code>）—— <strong>设计定案（2026-11-09）</strong></h5>
-<p>完整设计见 <a href="./图像管线设计.md">图像管线设计</a>。三条与"调库还是自己写"直接相关的决定：</p>
+<p>完整设计见 <a href="图像管线设计.html">图像管线设计</a>。三条与"调库还是自己写"直接相关的决定：</p>
 <ol>
 <li><strong>自有解码器做 BMP / QOI / PNG / GIF（首帧），JPEG 交给平台后端</strong>。PNG 的难点只有 DEFLATE 一处，而它是无状态
    纯算法（32KB 固定窗口、输出直接喂反滤波），可完全有界、可 fuzz；JPEG 是"一整套
@@ -1955,7 +1955,7 @@ blob 升到 <strong>v14</strong>（<code>areas</code> / <code>area_coords</code>
 <h5 id="17-html5-2026-11-08">⑰ HTML5 全覆盖 + 能力包裁剪 —— <strong>计划（2026-11-08 定案）</strong></h5>
 <p>目标改口径：不再按"缺哪个补哪个"推进，而是<strong>先把 114 个标签全部认下来</strong>，
 再按"能力包"把渲染补齐；MCU 侧编译期裁包。详见
-<a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 标签覆盖与裁剪</a>（全量清单 + 行为矩阵）。</p>
+<a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>（全量清单 + 行为矩阵）。</p>
 <p><strong>P0（已完成）</strong>：31 个纯语义标签（<code>a</code> <code>code</code> <code>kbd</code> <code>samp</code> <code>var</code> <code>q</code> <code>dfn</code> <code>cite</code>
 <code>data</code> <code>time</code> <code>small</code> <code>bdi</code> <code>bdo</code> <code>wbr</code> <code>del</code> <code>ins</code> <code>dl</code> <code>dt</code> <code>dd</code> <code>menu</code> <code>address</code>
 <code>hgroup</code> <code>search</code> <code>html</code> <code>body</code> <code>form</code> <code>label</code> <code>fieldset</code> <code>legend</code> <code>optgroup</code>）。
@@ -2925,7 +2925,7 @@ blob v10 → <strong>v11</strong>。</p>
 结构体仍是 140）。</p>
 <h3 id="m8-css3-2026-11-09">M8 · CSS3 补全（五批）—— <strong>计划（2026-11-09 定案）</strong></h3>
 <p>HTML5 标签覆盖已到 114/114（含占位），接下来补 CSS。逐条覆盖与批次见
-<a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a>。</p>
+<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>。</p>
 <p><strong>现状实测</strong>（23 份真实 CSS、5391 条声明，去掉 CSS 变量与厂商前缀）：
 属性名级 38%、<strong>声明级 73.6%</strong>、能直接照搬 61.3%。
 分模块：flexbox 99.8% / 定位 100% / 文本 98.6% / 盒模型 95.2% / 背景边框 82.7%。</p>
@@ -2979,7 +2979,7 @@ blob v10 → <strong>v11</strong>。</p>
 <p><strong>仍明确不做</strong>：grid、float、<code>list-style</code>/<code>::marker</code>、<code>mix-blend-mode</code>。
 这几道墙会限制"直接搬框架"的上限，详见覆盖表 §19.5。</p>
 <h4 id="css">CSS 能力包（与标签同构）—— <strong>计划</strong></h4>
-<p>CSS 侧同样按"包"裁剪，原则与 <a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 §3</a> 一致：
+<p>CSS 侧同样按"包"裁剪，原则与 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 §3</a> 一致：
 <strong>字段与枚举永远全量，裁的是绘制/布局代码路径</strong>；关掉之后写该属性必须
 <strong>明确报错并点名缺哪个包</strong>（<code>strict</code>）或计入 <code>degraded_props</code>（<code>lenient</code>）。</p>
 <table>
@@ -3046,7 +3046,7 @@ blob v10 → <strong>v11</strong>。</p>
 </table>
 <p>预设三档：<code>full</code>（全开）/ <code>ui-lite</code>（BASE+FLEX+RADIUS+SELECTOR_ADV）/ <code>micro</code>（BASE 而已）。</p>
 <p><strong>每个包的验收四条</strong>：关掉能编译、关掉会报错、体积真的降、两端逐像素一致。
-细节见 <a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪 §21</a>。</p>
+细节见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §21</a>。</p>
 <hr />
 <h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
 <table>
@@ -3378,32 +3378,32 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <tr>
 <td>对象/属性/事件</td>
 <td><code>src/core/</code></td>
-<td><a href="./手册/object/QLObject阅读指南.md">QLObject 手册</a></td>
+<td><a href="../manual/object/QLObject阅读指南.html">QLObject 手册</a></td>
 </tr>
 <tr>
 <td>画布/绘制原语</td>
 <td><code>src/draw/qlcanvas.c</code></td>
-<td><a href="./手册/render/QLRender阅读指南.md">QLRender 手册</a></td>
+<td><a href="../manual/render/QLRender阅读指南.html">QLRender 手册</a></td>
 </tr>
 <tr>
 <td>界面（HTML/CSS）</td>
 <td><code>src/ui/</code></td>
-<td><a href="./手册/ui/QLUI阅读指南.md">QLUI 手册</a></td>
+<td><a href="../manual/ui/QLUI阅读指南.html">QLUI 手册</a></td>
 </tr>
 <tr>
 <td>字体/文本</td>
 <td><code>src/text/</code></td>
-<td><a href="./手册/text/QLText阅读指南.md">QLText 手册</a></td>
+<td><a href="../manual/text/QLText阅读指南.html">QLText 手册</a></td>
 </tr>
 <tr>
 <td>HTML/CSS 编译</td>
 <td><code>tools/qlui</code></td>
-<td><a href="./手册/ui/QLUI阅读指南.md">QLUI 手册</a></td>
+<td><a href="../manual/ui/QLUI阅读指南.html">QLUI 手册</a></td>
 </tr>
 <tr>
 <td>绘制接口/GPU</td>
 <td><code>src/draw/qldraw2d.c</code>、<code>src/port/qlgfx_gl.c</code></td>
-<td><a href="./手册/render/QLRender阅读指南.md">QLRender 手册</a></td>
+<td><a href="../manual/render/QLRender阅读指南.html">QLRender 手册</a></td>
 </tr>
 <tr>
 <td>显示后端</td>
@@ -3413,7 +3413,7 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <tr>
 <td>Web 兼容策略</td>
 <td>—</td>
-<td><a href="./Web兼容设计.md">Web 兼容设计</a></td>
+<td><a href="Web兼容设计.html">Web 兼容设计</a></td>
 </tr>
 </tbody>
 </table>
