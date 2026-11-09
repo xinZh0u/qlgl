@@ -4019,9 +4019,14 @@ static int ua_defaults(const char *tag, Decls *out)
      * max-content 走（和文本节点一样），想固定就自己写 width。
      */
     if (strcmp(tag, "input") == 0) {
+        /*
+     * `height` 是**边框盒**高度（UA 默认 box-sizing: border-box），
+     * 所以按"内容 24 + 上下边框 2"写成 26 —— 不然内容盒只有 22px，
+     * 而 line-height 是 24px，文字上下各被切掉一截（截图里"字只显示一半"）。
+     */
         return decls_set(out, "display", "inline-block") &&
                decls_set(out, "box-sizing", "border-box") &&
-               decls_set(out, "height", "24px") &&
+               decls_set(out, "height", "26px") &&
                decls_set(out, "padding", "0 8px") &&
                decls_set(out, "line-height", "24px") &&
                decls_set(out, "border-width", "1px") &&
@@ -4036,9 +4041,14 @@ static int ua_defaults(const char *tag, Decls *out)
      * <option>：**不参与布局**（display:none），只在展开的面板里画。
      */
     if (strcmp(tag, "select") == 0) {
+        /*
+     * `height` 是**边框盒**高度（UA 默认 box-sizing: border-box），
+     * 所以按"内容 24 + 上下边框 2"写成 26 —— 不然内容盒只有 22px，
+     * 而 line-height 是 24px，文字上下各被切掉一截（截图里"字只显示一半"）。
+     */
         return decls_set(out, "display", "inline-block") &&
                decls_set(out, "box-sizing", "border-box") &&
-               decls_set(out, "height", "24px") &&
+               decls_set(out, "height", "26px") &&
                decls_set(out, "padding", "0 8px") &&
                decls_set(out, "line-height", "24px") &&
                decls_set(out, "border-width", "1px") &&

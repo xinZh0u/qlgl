@@ -100,6 +100,31 @@ else if (cy + lh - in->scroll_y > cb.h)
 
 横向同理（单行框也受益 —— 长文本时光标不再跑出框外）。
 
+## 滚动条与滚轮
+
+内容的可滚范围是"总视觉行数 × 行高 − 内容盒高"（`input_scroll_max()`）。
+**多行输入框的内容是它自己画的，没有子节点**，所以它不走容器那套
+`overflow: auto` + `node->scroll_y`，偏移存在 `QLUIInput.scroll_y` 里：
+
+- 内容超高时在内容盒右缘画一根滑块（和容器滚动条同一个 `scrollbar_thumb()`，
+  位置由 `in->scroll_y` 决定）；
+- 滚轮事件先给多行输入框吃（`input_scroll_by()`），**滚到尽头再把剩下的
+  交给父容器** —— 与浏览器一致：文本框滚完，页面接着滚。
+
+```c
+/* 滚轮处理里，找最近的 textarea 祖先，先让它滚 */
+for (QLUINodeRT *n = hit; n != NULL; n = n->parent) {
+    struct QLUIInput *in = input_of(ui, n);
+    if (in != NULL && in->multiline) {
+        dy -= input_scroll_by(in, dy);      /* 返回真正用掉的距离 */
+        break;
+    }
+}
+```
+
+> 这里有个坑：`nearest_scrollable()` 找不到 textarea（它不是可滚动容器），
+> 只靠容器那条路的话，滚轮在文本框上完全没反应。
+
 ## 拖选：按 (x, y) 定位，拖出框外会自己滚
 
 鼠标拖选和"点哪落哪"必须走同一条定位路径：

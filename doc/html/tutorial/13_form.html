@@ -339,6 +339,30 @@ main img.shot { max-width: 100%; }
 </code></pre></div>
 
 <p>横向同理（单行框也受益 —— 长文本时光标不再跑出框外）。</p>
+<h2 id="_5">滚动条与滚轮</h2>
+<p>内容的可滚范围是"总视觉行数 × 行高 − 内容盒高"（<code>input_scroll_max()</code>）。
+<strong>多行输入框的内容是它自己画的，没有子节点</strong>，所以它不走容器那套
+<code>overflow: auto</code> + <code>node-&gt;scroll_y</code>，偏移存在 <code>QLUIInput.scroll_y</code> 里：</p>
+<ul>
+<li>内容超高时在内容盒右缘画一根滑块（和容器滚动条同一个 <code>scrollbar_thumb()</code>，
+  位置由 <code>in-&gt;scroll_y</code> 决定）；</li>
+<li>滚轮事件先给多行输入框吃（<code>input_scroll_by()</code>），<strong>滚到尽头再把剩下的
+  交给父容器</strong> —— 与浏览器一致：文本框滚完，页面接着滚。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 滚轮处理里，找最近的 textarea 祖先，先让它滚 */</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">hit</span><span class="p">;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">n</span><span class="o">-&gt;</span><span class="n">parent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLUIInput</span><span class="w"> </span><span class="o">*</span><span class="n">in</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">input_of</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">in</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">in</span><span class="o">-&gt;</span><span class="n">multiline</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">dy</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="n">input_scroll_by</span><span class="p">(</span><span class="n">in</span><span class="p">,</span><span class="w"> </span><span class="n">dy</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 返回真正用掉的距离 */</span>
+<span class="w">        </span><span class="k">break</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p>这里有个坑：<code>nearest_scrollable()</code> 找不到 textarea（它不是可滚动容器），
+只靠容器那条路的话，滚轮在文本框上完全没反应。</p>
+</blockquote>
 <h2 id="x-y">拖选：按 (x, y) 定位，拖出框外会自己滚</h2>
 <p>鼠标拖选和"点哪落哪"必须走同一条定位路径：</p>
 <div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">pos</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">caret_at_xy</span><span class="p">(</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="n">in</span><span class="p">,</span><span class="w"> </span><span class="n">cb</span><span class="p">.</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">lh</span><span class="p">,</span>
@@ -351,14 +375,14 @@ main img.shot { max-width: 100%; }
 差别全在 <code>y</code> 上。</p>
 <p>指针拖到内容盒上方/下方（<code>y &lt; cb.y</code> 或 <code>y &gt; cb.y + cb.h</code>）时每帧按一次行高
 滚动，再重新定位光标，这样长文本能跨屏选。</p>
-<h2 id="_5">读值与写值</h2>
+<h2 id="_6">读值与写值</h2>
 <p>和 <code>&lt;input&gt;</code> 完全一样，不需要区分：</p>
 <div class="highlight"><pre><span></span><code><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_input_value</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ta</span><span class="p">));</span><span class="w">       </span><span class="cm">/* 多行值里带真实 &#39;\n&#39; */</span>
 <span class="n">ql_ui_input_set_value</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ta</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;重新填</span><span class="se">\n</span><span class="s">两行&quot;</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 光标移到末尾 */</span>
 </code></pre></div>
 
 <p><code>ql_ui_set_input_cb()</code> 的回调也是同一个 —— 拿到的 <code>value</code> 里含换行。</p>
-<h2 id="_6">一个完整的提交回路</h2>
+<h2 id="_7">一个完整的提交回路</h2>
 <div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_input</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">value</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">ui</span><span class="p">;</span><span class="w"> </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">node</span><span class="p">;</span>
@@ -376,7 +400,7 @@ main img.shot { max-width: 100%; }
 打中文；XIM 不可用时退回 <code>XLookupString</code>，那时只有 Latin-1。
 没有输入法环境（比如裸 X）就还是只能用 <code>ql_ui_input_set_value()</code> 从程序里填。</p>
 </blockquote>
-<h2 id="_7">与浏览器不同的地方</h2>
+<h2 id="_8">与浏览器不同的地方</h2>
 <ol>
 <li><strong><code>rows</code> / <code>cols</code> 属性不解析</strong>，用 CSS 定尺寸（UA 默认 200×60）。</li>
 <li><strong>不折行</strong>时超长的单行会横向滚动，而不是撑出盒子（<code>pre-wrap</code> 默认是折行的，
@@ -384,7 +408,7 @@ main img.shot { max-width: 100%; }
 <li><strong><code>maxlength</code> 不解析</strong>，长度上限是编译期的 <code>QL_CFG_UI_TEXTAREA_LEN</code>。</li>
 <li><strong><code>spellcheck</code> / <code>placeholder</code> 不做</strong>（<code>placeholder</code> 在 <code>&lt;input&gt;</code> 上也没做）。</li>
 </ol>
-<h2 id="_8">到这里为止</h2>
+<h2 id="_9">到这里为止</h2>
 <p>能力包 <code>TEXT</code>（6 个）与 <code>CONTROL</code>（补齐 <code>textarea</code>）都完成了。
 剩下的是 <code>TABLE</code> 包 —— 10 个标签、唯一要从零写一套布局算法的一期，
 见 <a href="../../design/开发规划.html">开发规划</a>。</p>

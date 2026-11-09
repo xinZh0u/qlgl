@@ -632,7 +632,7 @@ ql_text_wrap_ex(font, text, max_w, out, max_lines, keep_trailing)
 | 列表 | `ul` `ol` / `li` | block + `margin: 8px 0` / block；`padding-left: 18px` |
 | 空元素 | `hr` / `br` | 1px 细线 + margin / 高度 0 的块 |
 | 控件 | `button` | inline-block + **`box-sizing: border-box`** + 内边距 + 边框 + 圆角 |
-| 输入 | `input` | inline-block + **`box-sizing: border-box`** + 内边距 + 边框 + 圆角（`type=password` 额外置位） |
+| 输入 | `input` | inline-block + **`box-sizing: border-box`** + 内边距 + 边框 + 圆角（`height: 26px` = 内容 24 + 上下边框；`type=password` 额外置位） |
 | 多行输入 | `textarea` | inline-block + **`box-sizing: border-box`** + 200×60 + **`white-space: pre-wrap`** + 等宽 + 边框 |
 | 下拉 | `select` / `option` / `optgroup` | 与 `input` 同形（同样 `border-box`）/ **`display: none`** |
 | 位图 | `img` | 固有尺寸来自 doc 的资源条目（不看解码是否成功）；`text` 存**资源名** |

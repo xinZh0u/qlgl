@@ -704,4 +704,118 @@ QL_TEST_BEGIN("test_textarea")
         }
     }
 
+    /* ---------- 20. 内容超高：有滚动条，滚轮能滚 ---------- */
+    {
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            char html[512];
+            snprintf(html, sizeof(html),
+                     "<div id=r><textarea>l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\n"
+                     "l8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\n"
+                     "l18\nl19</textarea></div>");
+            QLUIRoot *ui = NULL;
+            QLUIDoc *doc = mk(html,
+                              "#r { width: 200px } textarea { width: 200px; height: 60px;"
+                              " padding: 4px; color: #000000;"
+                              " background-color: #FFFFFF; line-height: 16px }", &ui);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+                const QLRect cb = ta->content_box;
+
+                /*
+                 * 观测手段两条：
+                 *   - 内容盒像素哈希：滚轮真的改画面；
+                 *   - 右侧滑块的最上一行：它随滚动位置往下走，而且到末尾就不动了。
+                 */
+                #define SIGNATURE(out_hash, out_top)                                   \
+                    do {                                                               \
+                        unsigned h_ = 2166136261u;                                     \
+                        int top_ = -1;                                                 \
+                        for (int y_ = cb.y; y_ < cb.y + cb.h; y_++)                    \
+                            for (int x_ = cb.x; x_ < cb.x + cb.w; x_++) {              \
+                                const ql_color_t c_ = px(x_, y_);                      \
+                                h_ = (h_ ^ (unsigned)c_) * 16777619u;                  \
+                                if (top_ < 0 && x_ >= cb.x + cb.w - 4 &&             \
+                                    c_ != 0xFFFFFF && c_ != 0xF6F8FA)                  \
+                                    top_ = y_;                                         \
+                            }                                                          \
+                        *(out_hash) = h_;                                              \
+                        *(out_top) = top_;                                             \
+                    } while (0)
+
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+
+                unsigned h0 = 0;
+                int top0 = -1;
+                SIGNATURE(&h0, &top0);
+                printf("    超高 textarea：滑块顶 %d\n", top0);
+                QL_CHECK(top0 >= cb.y);          /* 有滑块 */
+
+                QLInputEvent ev;
+                memset(&ev, 0, sizeof(ev));
+                ev.type = QL_INPUT_WHEEL;
+                ev.x = cb.x + 10;
+                ev.y = cb.y + 10;
+                ev.dy = 1;
+                ql_ui_input_event(ui, &ev);
+
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+                unsigned h1 = 0;
+                int top1 = -1;
+                SIGNATURE(&h1, &top1);
+                printf("    滚一格：滑块顶 %d → %d\n", top0, top1);
+                QL_CHECK(h1 != h0);              /* 滚轮真的动了画面 */
+                QL_CHECK(top1 > top0);           /* 滑块往下走了 */
+
+                /* 滚到底：继续滚不应该再动（不能滚进空白） */
+                for (int i = 0; i < 30; i++) {
+                    memset(&ev, 0, sizeof(ev));
+                    ev.type = QL_INPUT_WHEEL;
+                    ev.x = cb.x + 10;
+                    ev.y = cb.y + 10;
+                    ev.dy = 1;
+                    ql_ui_input_event(ui, &ev);
+                }
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+                unsigned h2 = 0;
+                int top2 = -1;
+                SIGNATURE(&h2, &top2);
+
+                memset(&ev, 0, sizeof(ev));
+                ev.type = QL_INPUT_WHEEL;
+                ev.x = cb.x + 10;
+                ev.y = cb.y + 10;
+                ev.dy = 1;
+                ql_ui_input_event(ui, &ev);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+                unsigned h3 = 0;
+                int top3 = -1;
+                SIGNATURE(&h3, &top3);
+                QL_CHECK(h3 == h2);              /* 到底就停住 */
+                QL_CHECK(top2 > top1);
+
+                /* 末行看得见（滚到底不该是空白） */
+                int bottom_ink = 0;
+                for (int y = cb.y + cb.h - 16; y < cb.y + cb.h; y++)
+                    for (int x = cb.x; x < cb.x + cb.w; x++)
+                        if (px(x, y) != 0xFFFFFF)
+                            bottom_ink++;
+                QL_CHECK(bottom_ink > 0);
+                #undef SIGNATURE
+
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+            ql_disp_mem_destroy(s_disp);
+        }
+    }
+
 QL_TEST_END()

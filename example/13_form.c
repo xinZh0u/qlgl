@@ -62,7 +62,9 @@ static const char *k_css =
      * 不加它的话 padding + border 会加在 100% 外面，控件会比父容器更宽、
      * 右边直接顶到窗口边缘（截图里"输入框和窗口贴住了"就是这个）。
      */
-    "input { display: block; width: 100%; height: 22px; padding: 3px 6px;"
+    /* `height` 是边框盒：22(内容) + 3×2(内边距) + 1×2(边框) = 30px；
+       写成 22px 的话内容盒只剩 14px，比行高还矮，字上下都会被切掉。 */
+    "input { display: block; width: 100%; height: 30px; padding: 3px 6px;"
     "        box-sizing: border-box;"
     "        border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
     "        background-color: #F6F8FA; color: #1F2328; }"

@@ -1313,6 +1313,52 @@ static uint16_t caret_at_xy(const QLFont *font, const struct QLUIInput *in,
     return (uint16_t)(ls + within);
 }
 
+/*
+ * 多行输入框的内容可滚范围（像素）= 总视觉行数 × 行高 - 内容盒高。
+ * 和容器滚动（node->scroll_y）不是一回事：输入框的内容是它自己画的，
+ * 所以偏移存在 QLUIInput.scroll_y 里，不走 overflow 那套重排。
+ */
+static ql_coord_t input_scroll_max(const struct QLUIInput *in)
+{
+    if (in == NULL || in->node == NULL || !in->multiline)
+        return 0;
+    const QLFont *font = font_of_style(in->node, in->node->style);
+    if (font == NULL)
+        return 0;
+    const QLRect cb = in->node->content_box;
+    const ql_coord_t lh = line_height_of(font);
+    if (lh <= 0)
+        return 0;
+
+    QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+    int count = input_visual_lines(font, in, cb.w, lines, QL_CFG_TEXT_MAX_LINES);
+    if (count > QL_CFG_TEXT_MAX_LINES)
+        count = QL_CFG_TEXT_MAX_LINES;
+    if (count <= 0)
+        return 0;
+
+    const ql_coord_t total = (ql_coord_t)count * lh;
+    return (total > cb.h) ? (total - cb.h) : 0;
+}
+
+/* 滚多行文本；返回**真正用掉**的距离（到边界就是 0，调用方好接着往父级滚） */
+static ql_coord_t input_scroll_by(struct QLUIInput *in, ql_coord_t dy)
+{
+    if (in == NULL || in->node == NULL)
+        return 0;
+    const ql_coord_t max_y = input_scroll_max(in);
+    const ql_coord_t old = in->scroll_y;
+    ql_coord_t want = old + dy;
+    if (want < 0)
+        want = 0;
+    if (want > max_y)
+        want = max_y;
+    in->scroll_y = want;
+    if (want != old)
+        in->node->flags |= QL_UI_RT_DIRTY;
+    return want - old;
+}
+
 static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x,
                               ql_coord_t y)
 {
@@ -1377,15 +1423,9 @@ static void input_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
         if (dy != 0) {
             const ql_coord_t step = (dy > 0) ? ((dy < lh) ? dy : lh)
                                              : ((-dy < lh) ? dy : -lh);
-            ql_coord_t want = in->scroll_y + step;
             /* 夹到内容末尾：不然拖到框外会一直滚进空白 */
-            QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
-            int count = input_visual_lines(font, in, cb.w, lines, QL_CFG_TEXT_MAX_LINES);
-            if (count > QL_CFG_TEXT_MAX_LINES)
-                count = QL_CFG_TEXT_MAX_LINES;
-            ql_coord_t max_y = (count > 0) ? (count * lh - cb.h) : 0;
-            if (max_y < 0)
-                max_y = 0;          /* 内容比盒子矮：不能滚 */
+            const ql_coord_t max_y = input_scroll_max(in);
+            ql_coord_t want = in->scroll_y + step;
             if (want < 0)
                 want = 0;
             if (want > max_y)
@@ -3837,6 +3877,21 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
                                         (lh > 4) ? lh - 4 : lh);
                 d2d->fill_rect(d2d, r, node->style->text_color, 255);
             }
+
+            /*
+             * 内容比盒子高就画一根滑块。它跟容器滚动条长得一样，但位置由
+             * `in->scroll_y` 决定 —— 多行输入框的内容是自己画的，没有子节点。
+             */
+            const ql_coord_t content_h = (ql_coord_t)count * lh;
+            if (content_h > cb.h && d2d->fill_round_rect != NULL) {
+                ql_coord_t th = 0, ty = 0;
+                scrollbar_thumb(cb.h, content_h - cb.h, in->scroll_y, &th, &ty);
+                if (th > 0) {
+                    QLRect bar = ql_rect_make(ql_rect_right(cb) - SCROLLBAR_INSET - SCROLLBAR_W,
+                                              cb.y + ty, SCROLLBAR_W, th);
+                    d2d->fill_round_rect(d2d, bar, SCROLLBAR_W / 2, 0x808080, 0x96);
+                }
+            }
         }
         /* 提前返回前**必须**恢复裁剪：否则后面所有节点都被裁在输入框里 */
         if (deco_clipped) {
@@ -5277,6 +5332,21 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
         ql_coord_t dy = (ql_coord_t)ev->dy * step;
 
         QLUINodeRT *hit = ql_ui_hit_test(ui, ev->x, ev->y);
+
+        /*
+         * 多行输入框先吃滚轮：它的内容是**自己画的**，不在 overflow 那套里，
+         * `nearest_scrollable()` 找不到它。滚到尽头再把剩下的交给父容器。
+         */
+        if (dy != 0) {
+            for (QLUINodeRT *n = hit; n != NULL; n = n->parent) {
+                struct QLUIInput *tin = input_of(ui, n);
+                if (tin != NULL && tin->multiline) {
+                    dy -= input_scroll_by(tin, dy);
+                    break;
+                }
+            }
+        }
+
         QLUINodeRT *target = nearest_scrollable(hit);
         for (int guard = 0; target != NULL && (dy != 0 || dx != 0) && guard < 8;
              guard++) {
