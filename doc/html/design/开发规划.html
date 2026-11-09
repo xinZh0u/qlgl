@@ -192,7 +192,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
 <h4>QLUI</h4>
 <a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS3 覆盖与裁剪</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
 <a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
 <h4>QLUIText</h4>
@@ -2938,7 +2938,76 @@ blob v10 → <strong>v11</strong>。</p>
 <code>transform: rotate()</code>（要旋转光栅路径）、真 group <code>opacity</code>（要离屏图层）。</p>
 <p><strong>仍明确不做</strong>：grid、float、CSS 变量 <code>var()</code>、<code>@media</code>、<code>list-style</code>/<code>::marker</code>、
 <code>mix-blend-mode</code>。注意这三道墙会限制"直接搬框架"的上限（Bootstrap 的 <code>var()</code> 537 条、
-<code>@media</code> 191 块），详见覆盖表 §2.9。</p>
+<code>@media</code> 191 块），详见覆盖表 §19.5。</p>
+<h4 id="css">CSS 能力包（与标签同构）—— <strong>计划</strong></h4>
+<p>CSS 侧同样按"包"裁剪，原则与 <a href="./手册/ui/HTML5标签覆盖与裁剪.md">HTML5 §3</a> 一致：
+<strong>字段与枚举永远全量，裁的是绘制/布局代码路径</strong>；关掉之后写该属性必须
+<strong>明确报错并点名缺哪个包</strong>（<code>strict</code>）或计入 <code>degraded_props</code>（<code>lenient</code>）。</p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>宏</th>
+<th>PC</th>
+<th>MCU</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CSS_BASE</code></td>
+<td>恒开</td>
+<td>✅</td>
+<td>✅</td>
+<td>盒模型 + display + 颜色 + 基础文本</td>
+</tr>
+<tr>
+<td><code>CSS_FLEX</code></td>
+<td><code>QL_FEAT_CSS_FLEX</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>MCU 单列布局够用</td>
+</tr>
+<tr>
+<td><code>CSS_RADIUS</code> / <code>CSS_SHADOW</code> / <code>CSS_GRADIENT</code></td>
+<td>各自一个</td>
+<td>✅</td>
+<td>❌</td>
+<td>三个都走 SDF/插值，正交可单开</td>
+</tr>
+<tr>
+<td><code>CSS_BLUR</code></td>
+<td><code>QL_FEAT_CSS_BLUR</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>独立着色器 + 两趟 FBO</td>
+</tr>
+<tr>
+<td><code>CSS_CLIP</code> / <code>CSS_TRANSFORM</code> / <code>CSS_ANIM</code></td>
+<td>各自一个</td>
+<td>✅</td>
+<td>❌</td>
+<td>关 <code>CSS_ANIM</code> 等于"强制静止界面"，省电</td>
+</tr>
+<tr>
+<td><code>CSS_TEXT_ADV</code> / <code>CSS_BORDER_STYLE</code> / <code>CSS_UI</code></td>
+<td>各自一个</td>
+<td>✅</td>
+<td>❌</td>
+<td>随 B3 / B4 / B5 落地</td>
+</tr>
+<tr>
+<td><code>CSS_SELECTOR_ADV</code></td>
+<td><code>QL_FEAT_CSS_SELECTOR_ADV</code></td>
+<td>✅</td>
+<td><strong>✅（建议保留）</strong></td>
+<td>纯构建期展开，裁了只省解析器几 KB，却让"一份 HTML 两端跑"失效</td>
+</tr>
+</tbody>
+</table>
+<p>预设三档：<code>full</code>（全开）/ <code>ui-lite</code>（BASE+FLEX+RADIUS+SELECTOR_ADV）/ <code>micro</code>（BASE 而已）。</p>
+<p><strong>每个包的验收四条</strong>：关掉能编译、关掉会报错、体积真的降、两端逐像素一致。
+细节见 <a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪 §21</a>。</p>
 <hr />
 <h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
 <table>
