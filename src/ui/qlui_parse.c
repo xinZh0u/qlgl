@@ -1669,68 +1669,197 @@ static void fmt_g(char *out, size_t cap, double v)
  * 合并后 animation-name 已是 other，这时再展开 shorthand 会把它改回 pulse ——
  * 10 张卡片全部退化成同一段关键帧（真踩过）。所以只在 parse_decls 里展开。
  */
-static int expand_shorthands(Decls *ds)
+/*
+ * 可过渡属性的名字 → 位图。`all` 单独处理（= 全开）。
+ * 简写和长写都查这张表，避免两处各写一份字符串比较。
+ */
+static const struct {
+    const char *name;
+    unsigned    bit;
+} k_trans_props[] = {
+    { "background-color", QL_UI_TRANS_BG },
+    { "opacity",          QL_UI_TRANS_ALPHA },
+    { "color",            QL_UI_TRANS_TEXT },
+    { "border-color",     QL_UI_TRANS_BORDER },
+    { "border-radius",    QL_UI_TRANS_RADIUS },
+    { "transform",        QL_UI_TRANS_XFORM },
+    { "clip-path",        QL_UI_TRANS_CLIP },
+};
+#define K_TRANS_PROPS_N (sizeof(k_trans_props) / sizeof(k_trans_props[0]))
+
+/* 名字 → 位；`all` → QL_UI_TRANS_ALL；不认识返回 -1 */
+static int trans_prop_bit(const char *name)
 {
-    const char *v = NULL;
+    if (strcmp(name, "all") == 0)
+        return (int)QL_UI_TRANS_ALL;
+    for (size_t i = 0; i < K_TRANS_PROPS_N; i++)
+        if (strcmp(name, k_trans_props[i].name) == 0)
+            return (int)k_trans_props[i].bit;
+    return -1;
+}
 
-    if ((v = decls_get(ds, "transition")) != NULL) {
-        /* 时长；两个时长 = 第二个是 delay（不支持 → 报错） */
-        char buf[192];
-        size_t n = strlen(v);
-        if (n >= sizeof(buf))
-            n = sizeof(buf) - 1u;
-        memcpy(buf, v, n);
-        buf[n] = '\0';
-        for (size_t i = 0; i < n; i++)
-            if (buf[i] == ',')
-                buf[i] = ' ';
+/* 位图 → 逗号分隔的名字表（`all` 直接写 all） */
+static int trans_props_to_names(unsigned bits, char *out, size_t cap)
+{
+    if ((bits & QL_UI_TRANS_ALL) == QL_UI_TRANS_ALL)
+        return snprintf(out, cap, "all") > 0;
+    size_t k = 0;
+    out[0] = '\0';
+    for (size_t i = 0; i < K_TRANS_PROPS_N; i++) {
+        if ((bits & k_trans_props[i].bit) == 0)
+            continue;
+        const int n = snprintf(out + k, cap - k, "%s%s", (k > 0) ? ", " : "",
+                               k_trans_props[i].name);
+        if (n < 0 || (size_t)n >= cap - k)
+            return 0;
+        k += (size_t)n;
+    }
+    return 1;
+}
 
-        char dur[128] = "";
-        char tf[128] = "";
-        const char *p = buf;
-        while (*p != '\0') {
-            while (is_space(*p))
-                p++;
-            if (*p == '\0')
+/* ======================= 简写展开（**必须在单条规则内**做） ======================= */
+/*
+ * 级联合并之后再展开会覆盖后出现的长写：
+ *   `.a { animation: pulse 1s }` 与 `.b { animation-name: other }` 是两条规则，
+ * 合并后 animation-name 已是 other，这时再展开 shorthand 会把它改回 pulse ——
+ * 10 张卡片全部退化成同一段关键帧（真踩过）。所以只在 parse_decls 里展开。
+ *
+ * `transition` 的逗号写法（`background-color 200ms, opacity 200ms`）是**多组**，
+ * 每组各写一遍属性/时长/缓动。库里只有一组过渡参数
+ * （`QLUIStyle.trans_ms` / `trans_ease` 各一个），所以：
+ *   - 属性取并集（位图本来就能存多个）；
+ *   - 时长与缓动各组必须一致，不一致就报错 —— 不静默取其中一个。
+ */
+static int expand_transition(Decls *ds)
+{
+    const char *v = decls_get(ds, "transition");
+    if (v == NULL)
+        return 1;
+
+    unsigned props = 0;
+    char dur[128] = "";        /* 各组合并后的时长（各组必须相同） */
+    char tf[128] = "";         /* 同上：缓动 */
+    const char *p = v;
+
+    for (int gi = 0;; gi++) {
+        while (is_space(*p))
+            p++;
+        const char *gstart = p;
+        while (*p != '\0' && *p != ',')
+            p++;
+        const char *gend = p;
+        while (gend > gstart && is_space(gend[-1]))
+            gend--;
+        const int had_comma = (*p == ',');
+        const char *next = had_comma ? p + 1 : p;
+
+        if (gend == gstart) {
+            set_error("transition: 第 %d 项是空的（多余的逗号？）", gi + 1);
+            return 0;
+        }
+
+        /* 一组：属性 / 时长 / 缓动，顺序任意、各最多一个 */
+        char gdur[128] = "";
+        char gtf[128] = "";
+        int group_has_prop = 0;
+        const char *q = gstart;
+        while (q < gend) {
+            while (q < gend && is_space(*q))
+                q++;
+            if (q >= gend)
                 break;
-            const char *start = p;
-            while (*p != '\0' && !is_space(*p))
-                p++;
-            char tok[128];
-            size_t len = (size_t)(p - start);
+            const char *ts = q;
+            while (q < gend && !is_space(*q))
+                q++;
+            char tok[128], low[128];
+            size_t len = (size_t)(q - ts);
             if (len >= sizeof(tok))
                 len = sizeof(tok) - 1u;
-            memcpy(tok, start, len);
+            memcpy(tok, ts, len);
             tok[len] = '\0';
-            char low[128];
             trim_lower(tok, low, sizeof(low));
 
-            if (strcmp(low, "all") == 0 || strcmp(low, "background-color") == 0 ||
-                strcmp(low, "opacity") == 0 || strcmp(low, "color") == 0 ||
-                strcmp(low, "border-color") == 0 || strcmp(low, "border-radius") == 0 ||
-                strcmp(low, "transform") == 0 || strcmp(low, "clip-path") == 0) {
-                if (!decls_set(ds, "transition-property", low))
-                    return 0;
+            const int bit = trans_prop_bit(low);
+            if (bit >= 0) {
+                props |= (unsigned)bit;
+                group_has_prop = 1;
             } else if (str_in(low, k_easings, 5)) {
-                snprintf(tf, sizeof(tf), "%s", low);
+                snprintf(gtf, sizeof(gtf), "%s", low);
             } else if (looks_like_duration(low)) {
-                if (dur[0] == '\0')
-                    snprintf(dur, sizeof(dur), "%s", low);
-                else {
+                if (gdur[0] != '\0') {
+                    /* CSS 里第二个时长是 delay —— 本库不实现，别静默忽略 */
                     set_error("transition: 暂不支持 delay（'%s'）", tok);
                     return 0;
                 }
+                snprintf(gdur, sizeof(gdur), "%s", low);
             } else {
                 set_error("transition: 无法识别的部分 '%s'", tok);
                 return 0;
             }
         }
-        if (dur[0] != '\0' && !decls_set(ds, "transition-duration", dur))
-            return 0;
-        if (tf[0] != '\0' && !decls_set(ds, "transition-timing-function", tf))
-            return 0;
-        (void)decls_remove(ds, "transition");
+
+        /*
+         * 跨组合并。`transition: background-color 200ms, opacity 400ms` 这种
+         * "每个属性一个时长"的写法本库表达不了 —— 只有一组 trans_ms。
+         * 报错并给出解法，比悄悄按第一个时长插值所有属性好。
+         */
+        if (gdur[0] != '\0') {
+            if (dur[0] == '\0')
+                snprintf(dur, sizeof(dur), "%s", gdur);
+            else if (strcmp(dur, gdur) != 0) {
+                set_error("transition: 各段的时长必须相同（'%s' 与 '%s'）—— "
+                          "本库只有一组过渡参数；要不同时长请拆成两层元素",
+                          dur, gdur);
+                return 0;
+            }
+        }
+        if (gtf[0] != '\0') {
+            if (tf[0] == '\0')
+                snprintf(tf, sizeof(tf), "%s", gtf);
+            else if (strcmp(tf, gtf) != 0) {
+                set_error("transition: 各段的缓动必须相同（'%s' 与 '%s'）—— "
+                          "本库只有一组过渡参数", tf, gtf);
+                return 0;
+            }
+        }
+
+        /* 没写属性的那一组等于 `all`（与 CSS 一致） */
+        if (!group_has_prop)
+            props |= QL_UI_TRANS_ALL;
+
+        p = next;
+        if (*p == '\0') {
+            if (had_comma) {                 /* 末尾多一个逗号 = 空项 */
+                set_error("transition: 第 %d 项是空的（多余的逗号？）", gi + 2);
+                return 0;
+            }
+            break;
+        }
     }
+
+    if (props != 0) {
+        char plist[192];
+        if (!trans_props_to_names(props, plist, sizeof(plist))) {
+            set_error("transition: 可过渡属性太多，写不下");
+            return 0;
+        }
+        if (!decls_set(ds, "transition-property", plist))
+            return 0;
+    }
+    if (dur[0] != '\0' && !decls_set(ds, "transition-duration", dur))
+        return 0;
+    if (tf[0] != '\0' && !decls_set(ds, "transition-timing-function", tf))
+        return 0;
+    (void)decls_remove(ds, "transition");
+    return 1;
+}
+
+static int expand_shorthands(Decls *ds)
+{
+    const char *v = NULL;
+
+    if (!expand_transition(ds))
+        return 0;
 
     if ((v = decls_get(ds, "animation")) != NULL) {
         if (strstr(v, "steps(") != NULL || strstr(v, "cubic-bezier") != NULL) {
@@ -6836,29 +6965,40 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     if ((v = decls_get(st, "transition-duration")) != NULL) {
         if (!parse_duration(v, where, "transition-duration", &trans_ms))
             return 0;
+        /*
+         * `transition-property` 可以写多个（逗号或空格分隔）：
+         * 位图本来就能存，只是以前只解析单个名字。
+         */
         const char *tp = decls_get(st, "transition-property");
-        char low[32] = "all";
-        if (tp != NULL)
-            trim_lower(tp, low, sizeof(low));
-        if (strcmp(low, "all") == 0)
-            trans_props = 127;
-        else if (strcmp(low, "background-color") == 0)
-            trans_props = 1;
-        else if (strcmp(low, "opacity") == 0)
-            trans_props = 2;
-        else if (strcmp(low, "color") == 0)
-            trans_props = 4;
-        else if (strcmp(low, "border-color") == 0)
-            trans_props = 8;
-        else if (strcmp(low, "border-radius") == 0)
-            trans_props = 16;
-        else if (strcmp(low, "transform") == 0)
-            trans_props = 32;
-        else if (strcmp(low, "clip-path") == 0)
-            trans_props = 64;
-        else {
-            set_error("%s: 暂不支持的 transition-property '%s'", where, low);
-            return 0;
+        trans_props = (int)QL_UI_TRANS_ALL;      /* 不写 = all（与 CSS 一致） */
+        if (tp != NULL) {
+            trans_props = 0;
+            for (const char *q = tp;;) {
+                while (is_space(*q) || *q == ',')
+                    q++;
+                if (*q == '\0')
+                    break;
+                const char *ts = q;
+                while (*q != '\0' && *q != ',' && !is_space(*q))
+                    q++;
+                char tok[64], low[64];
+                size_t len = (size_t)(q - ts);
+                if (len >= sizeof(tok))
+                    len = sizeof(tok) - 1u;
+                memcpy(tok, ts, len);
+                tok[len] = '\0';
+                trim_lower(tok, low, sizeof(low));
+                const int bit = trans_prop_bit(low);
+                if (bit < 0) {
+                    set_error("%s: 暂不支持的 transition-property '%s'", where, low);
+                    return 0;
+                }
+                trans_props |= bit;
+            }
+            if (trans_props == 0) {
+                set_error("%s: transition-property 是空的", where);
+                return 0;
+            }
         }
         const char *ttf = decls_get(st, "transition-timing-function");
         char tlow[32] = "ease";

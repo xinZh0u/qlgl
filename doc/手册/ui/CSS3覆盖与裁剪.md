@@ -366,8 +366,8 @@
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `transition`（简写） | ✅ | T | 可过渡：`background-color` `opacity` `color` `border-color` `border-radius` `transform` `clip-path` |
-| `transition-property` | ✅ | T | `all` 或上面那批 |
+| `transition`（简写） | ⚠️ | T | 可过渡：`background-color` `opacity` `color` `border-color` `border-radius` `transform` `clip-path`。逗号分组支持，但**各段必须共用同一组时长/缓动**（库里只有一份 `trans_ms`/`trans_ease`），不同时长报错 |
+| `transition-property` | ✅ | T | `all` 或上面那批，可列多个（位图） |
 | `transition-duration` | ✅ | T | |
 | `transition-timing-function` | ⚠️ | T | 只有具名缓动：`linear` / `ease` / `ease-in` / `ease-out` / `ease-in-out`；`cubic-bezier()` 报错（要一条三阶贝塞尔求值 + 反解，收益低） |
 | `transition-delay` | ⏳ | T | |

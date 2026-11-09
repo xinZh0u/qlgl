@@ -1702,15 +1702,15 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>transition</code>（简写）</td>
-<td>✅</td>
+<td>⚠️</td>
 <td>T</td>
-<td>可过渡：<code>background-color</code> <code>opacity</code> <code>color</code> <code>border-color</code> <code>border-radius</code> <code>transform</code> <code>clip-path</code></td>
+<td>可过渡：<code>background-color</code> <code>opacity</code> <code>color</code> <code>border-color</code> <code>border-radius</code> <code>transform</code> <code>clip-path</code>。逗号分组支持，但<strong>各段必须共用同一组时长/缓动</strong>（库里只有一份 <code>trans_ms</code>/<code>trans_ease</code>），不同时长报错</td>
 </tr>
 <tr>
 <td><code>transition-property</code></td>
 <td>✅</td>
 <td>T</td>
-<td><code>all</code> 或上面那批</td>
+<td><code>all</code> 或上面那批，可列多个（位图）</td>
 </tr>
 <tr>
 <td><code>transition-duration</code></td>

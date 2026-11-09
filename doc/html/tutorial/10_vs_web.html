@@ -631,7 +631,9 @@ main img.shot { max-width: 100%; }
 </tbody>
 </table>
 <p><code>transition</code> 能过渡的属性是固定的七类：<code>background-color</code> / <code>opacity</code> / <code>color</code> /
-<code>border-color</code> / <code>border-radius</code> / <code>transform</code> / <code>clip-path</code>，而且<strong>不支持 <code>delay</code></strong>。</p>
+<code>border-color</code> / <code>border-radius</code> / <code>transform</code> / <code>clip-path</code>，而且<strong>不支持 <code>delay</code></strong>。
+逗号写法（<code>transition: a 200ms, b 200ms</code>）可以，但<strong>各段必须共用同一组时长与缓动</strong> ——
+库里只有一份 <code>trans_ms</code> / <code>trans_ease</code>；想要不同时长就把两层拆开写。</p>
 <hr />
 <h2 id="6-flex">6. 布局：flex 是子集，没有完整的行内排版引擎</h2>
 <table>

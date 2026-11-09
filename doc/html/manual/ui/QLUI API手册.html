@@ -813,7 +813,7 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                 </span><span class="c">/* 简写：全部可过渡属性 */</span>
 <span class="p">.</span><span class="nc">btn</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#204060</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#ff8000</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* 180ms 内渐变过去 */</span>
-<span class="p">.</span><span class="nc">card</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">background-color</span><span class="w"> </span><span class="mi">300</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="p">,</span><span class="w"> </span><span class="k">opacity</span><span class="w"> </span><span class="mi">120</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">background-color</span><span class="w"> </span><span class="mi">300</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="p">,</span><span class="w"> </span><span class="kc">color</span><span class="w"> </span><span class="mi">300</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-in-out</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 
 <table>
@@ -827,7 +827,7 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <tbody>
 <tr>
 <td><code>transition-property</code></td>
-<td><code>background-color</code> / <code>opacity</code> / <code>color</code> / <code>border-color</code> / <code>border-radius</code> / <code>transform</code> / <code>clip-path</code> / <code>all</code></td>
+<td><code>background-color</code> / <code>opacity</code> / <code>color</code> / <code>border-color</code> / <code>border-radius</code> / <code>transform</code> / <code>clip-path</code> / <code>all</code>；<strong>可以列多个</strong>（逗号或空格分隔）</td>
 <td><code>all</code></td>
 </tr>
 <tr>
@@ -865,6 +865,9 @@ z-index 相同则保持文档顺序（稳定）。</p>
 
 <p><strong>不支持</strong>：<code>transition-delay</code>、<code>box-shadow</code>（构建期报错，不静默降级）。</p>
 <blockquote>
+<p><strong>逗号写法只允许"共用一组参数"</strong>：<code>trans_ms</code> / <code>trans_ease</code> 各只有一份，
+所以 <code>transition: a 200ms, b 200ms</code> 可以，<code>transition: a 200ms, b 400ms</code>
+会明确报错（不同时长请拆成两层元素）。这一条和浏览器不同，是数据模型决定的。</p>
 <p><strong><code>transition: opacity</code> 与 <code>opacity</code> 不是同一件事</strong>：<code>transition: opacity</code> 插值的是
 <strong>背景 alpha</strong>（<code>background-color</code> 的 a 通道，关键帧 <code>opacity</code> 也落到这里）；
 而普通规则里的 <code>opacity: 0.5</code> 是<strong>整体不透明度</strong>（见下面 3.11.2），两者互不干扰。

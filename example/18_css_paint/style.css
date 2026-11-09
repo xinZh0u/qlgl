@@ -167,10 +167,7 @@
   border-radius: 4px;
   background-color: #F0F2F5;
   color: #57606A;
-  /* 简写只支持单个属性；要过渡多个属性用长写的 transition-property */
-  transition-property: background-color;
-  transition-duration: 200ms;
-  transition-timing-function: ease-out;
+  transition: background-color 200ms ease-out, color 200ms ease-out;
 }
 
 .trans:hover {

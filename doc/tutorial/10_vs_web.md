@@ -209,6 +209,8 @@ css:12: 不支持的属性 'outline'
 
 `transition` 能过渡的属性是固定的七类：`background-color` / `opacity` / `color` /
 `border-color` / `border-radius` / `transform` / `clip-path`，而且**不支持 `delay`**。
+逗号写法（`transition: a 200ms, b 200ms`）可以，但**各段必须共用同一组时长与缓动** ——
+库里只有一份 `trans_ms` / `trans_ease`；想要不同时长就把两层拆开写。
 
 ---
 

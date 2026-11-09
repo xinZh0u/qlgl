@@ -313,12 +313,12 @@ z-index 相同则保持文档顺序（稳定）。
 .btn       { transition: 180ms ease-out; }                 /* 简写：全部可过渡属性 */
 .btn       { background-color: #204060; }
 .btn:hover { background-color: #ff8000; }                  /* 180ms 内渐变过去 */
-.card      { transition: background-color 300ms ease-in-out, opacity 120ms; }
+.card      { transition: background-color 300ms ease-in-out, color 300ms ease-in-out; }
 ```
 
 | 部分 | 允许值 | 默认 |
 |---|---|---|
-| `transition-property` | `background-color` / `opacity` / `color` / `border-color` / `border-radius` / `transform` / `clip-path` / `all` | `all` |
+| `transition-property` | `background-color` / `opacity` / `color` / `border-color` / `border-radius` / `transform` / `clip-path` / `all`；**可以列多个**（逗号或空格分隔） | `all` |
 | `transition-duration` | `Nms` 或 `Ns` | `0s`（等于不写） |
 | `transition-timing-function` | `linear` `ease` `ease-in` `ease-out` `ease-in-out` `steps(n)` `cubic-bezier(a,b,c,d)` | `ease` |
 | `transition-delay` | ❌ 报错 | — |
@@ -343,6 +343,10 @@ z-index 相同则保持文档顺序（稳定）。
 ```
 
 **不支持**：`transition-delay`、`box-shadow`（构建期报错，不静默降级）。
+
+> **逗号写法只允许"共用一组参数"**：`trans_ms` / `trans_ease` 各只有一份，
+> 所以 `transition: a 200ms, b 200ms` 可以，`transition: a 200ms, b 400ms`
+> 会明确报错（不同时长请拆成两层元素）。这一条和浏览器不同，是数据模型决定的。
 
 > **`transition: opacity` 与 `opacity` 不是同一件事**：`transition: opacity` 插值的是
 > **背景 alpha**（`background-color` 的 a 通道，关键帧 `opacity` 也落到这里）；
