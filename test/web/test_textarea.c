@@ -653,4 +653,55 @@ QL_TEST_BEGIN("test_textarea")
         }
     }
 
+    /* ---------- 19. 末尾敲空格：光标要跟着走 ---------- */
+    {
+        /*
+         * 尾随空格以前被 ql_text_wrap 的 trim_line_end 吃掉 → 值插进去了，
+         * 但屏幕上什么都不动，看起来像"空格没打上"。
+         * 判据：每敲一个空格，光标像素列就往右挪一个空格宽。
+         */
+        s_disp = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+        QL_CHECK(s_disp != NULL);
+        if (s_disp != NULL) {
+            QLUIRoot *ui = NULL;
+            QLUIDoc *doc = mk("<div id=r><textarea>ab</textarea></div>",
+                              "#r { width: 200px } textarea { color: #000000;"
+                              " background-color: #FFFFFF }", &ui);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                QLUINodeRT *ta = find_tag(ui, "textarea", 0);
+                const QLRect cb = ta->content_box;
+                click(ui, cb.x + cb.w - 2, cb.y + 2);   /* 聚焦并把光标放到行尾 */
+
+                QLCanvas cv;
+                QL_CHECK_EQ(ql_canvas_from_disp(&cv, s_disp), QL_OK);
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+
+                /* 该行最右的墨迹就是光标 */
+                int prev = -1;
+                for (int x = cb.x; x < cb.x + cb.w; x++)
+                    if (px(x, cb.y + 8) != 0xFFFFFF)
+                        prev = x;
+
+                type(ui, " ");
+                ql_canvas_clear(&cv, 0xFFFFFF);
+                ql_ui_render_canvas(ui, &cv);
+                int now = -1;
+                for (int x = cb.x; x < cb.x + cb.w; x++)
+                    if (px(x, cb.y + 8) != 0xFFFFFF)
+                        now = x;
+
+                printf("    末尾空格：光标列 %d → %d，值=[%s]\n", prev, now,
+                       ql_ui_input_value(ui, ta));
+                QL_CHECK(now > prev);                                  /* 光标挪了 */
+                QL_CHECK(strcmp(ql_ui_input_value(ui, ta), "ab ") == 0); /* 值也真的加了 */
+
+                ql_ui_free(ui);
+                ql_ui_doc_free(doc);
+            }
+            ql_disp_mem_destroy(s_disp);
+        }
+    }
+
 QL_TEST_END()

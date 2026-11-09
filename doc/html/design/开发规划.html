@@ -2781,6 +2781,92 @@ blob v10 → <strong>v11</strong>。</p>
 </table>
 <p><strong>约束</strong>：每个新后端必须通过 <code>test_gl_vs_cpu</code> 的等价测试（"该后端 vs CPU" 像素一致）。</p>
 <hr />
+<h3 id="m65-linux-wayland-2026-11-09">M6.5 · Linux 手机（Wayland 移动端）—— <strong>规划（2026-11-09 评估）</strong></h3>
+<p><strong>结论先行</strong>：Linux 手机（Phosh / Plasma Mobile / Lomiri / postmarketOS）是本库<strong>最合适的
+落地场景</strong>——平台只有 Wayland（一个后端就够）、设备 CPU 弱内存小（静态 blob + 脏区是硬优势）、
+而且生态里没有成熟的"HTML/CSS 写 UI + 无 JS 引擎"的声明式栈。</p>
+<p>和 M6 的关系：M6 第 1 项（Wayland GPU）是这条路的前置；本里程碑只补<strong>移动端特有的部分</strong>。
+<strong>不涉及 Android/iOS</strong>（那两个是另一条线，见 M6 第 3/4 项）。</p>
+<h4 id="2026-11-09">现状盘点（2026-11-09）</h4>
+<p>已有：<code>wl_shm</code> 双缓冲 + <code>wl_surface_damage_buffer</code> 脏区提交 + xdg-shell
+（title / app_id / configure / close）+ <code>wl_seat</code> 的 keyboard / pointer。
+<strong>没有</strong>：<code>wl_touch</code>、<code>wl_output.scale</code> / fractional-scale、<code>wl_egl_window</code>、
+<code>zwp_text_input_v3</code> / <code>zwp_input_method_v2</code>、<code>wl_data_device</code>、<code>wl_callback</code> 帧回调。</p>
+<h4 id="_5">步骤与验收</h4>
+<table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>内容</th>
+<th>为什么必须</th>
+<th>验收</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>aarch64 交叉编译，<code>wl_shm</code> 路径跑 <code>example_13_form</code></td>
+<td>零代码验证"能显示、脏区提交对不对"</td>
+<td>PinePhone / Librem 5 上肉眼可见、无撕裂</td>
+</tr>
+<tr>
+<td>2</td>
+<td>HiDPI：<code>wl_output.scale</code> + <code>ql_gfx_gl_set_scale()</code>（<strong>新 API</strong>，现在 <code>scale_fx</code> 恒为 1）</td>
+<td>移动端基本都是 2x-3x；桌面 2x 屏也受益</td>
+<td><code>example_02_text</code> 在 1x/2x 下字号视觉一致，<code>test_scale</code> 覆盖事件坐标反算</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>触摸</strong>：<code>wl_touch</code> → 复用点事件；点击 slop；滚动改"拖动 + 惯性"</td>
+<td>没有触摸就不是手机 UI</td>
+<td><code>example_09_scroll</code> 手指拖动能滚，松手有惯性</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>软键盘 / 中文输入</strong>：<code>zwp_text_input_v3</code> + <code>zwp_input_method_v2</code>（Phosh 的 squeekboard 走这套）</td>
+<td><strong>手机能不能用的总开关</strong>：不接就不会弹键盘</td>
+<td>点输入框弹键盘、能打中文、密码框提示 opaque、候选窗跟随光标</td>
+</tr>
+<tr>
+<td>5</td>
+<td>GPU：<code>wl_egl_window</code> + EGL + <code>wl_callback</code> 帧回调</td>
+<td>手机分辨率下 CPU 全屏重绘撑不住动画；帧回调同时是省电关键</td>
+<td><code>test_gl_vs_cpu</code> 等价断言；静止时不 commit</td>
+</tr>
+<tr>
+<td>6</td>
+<td>剪贴板：<code>wl_data_device</code></td>
+<td>复制粘贴</td>
+<td>复用 <code>QLUIClipboard</code> 的异步语义（已是异步接口）</td>
+</tr>
+<tr>
+<td>7</td>
+<td>旋转 / 安全区 / 生命周期</td>
+<td>手机常态</td>
+<td>configure 尺寸变化后重排不丢焦点</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>长列表复用范式</strong>（example + 教程，<strong>不写代码改内核</strong>）</td>
+<td><code>QL_CFG_UI_MAX_NODES = 4096</code>、节点静态；手机主界面全是列表</td>
+<td><code>example_14_list</code>：10 万条数据、一屏 20 个节点滚动复用</td>
+</tr>
+</tbody>
+</table>
+<p><strong>粗估</strong>：能干活的 Linux 手机 demo（触摸 + 软键盘 + 中文 + 一个真实界面）4~6 周，
+其中输入法协议约占 2 周。</p>
+<h4 id="_6">已知不做的（明确写下来，别被"顺便做了"带偏）</h4>
+<ul>
+<li><strong>装饰/标题栏</strong>：手机上是全屏或最大化，交给 compositor；</li>
+<li><strong>无障碍</strong>：Linux 手机生态自己也弱，后置（但语义树 API 别设计成对外封闭）；</li>
+<li><strong>复杂文字整形</strong>（阿拉伯/印度语系）与 RTL：需要 HarfBuzz/SheenBidi，体积和 MCU 目标冲突，单独立项。</li>
+</ul>
+<h4 id="_7">与"静态节点"模型的关系（<strong>最大的产品级决策，未决</strong>）</h4>
+<p><code>QL_CFG_UI_MAX_NODES = 4096</code> + 运行期不能增删节点，意味着<strong>聊天流/信息流/长列表
+必须由业务层只暴露"可见的一屏"</strong>，UI 描述跟着滚动位置复用。好处是符合本库的静态哲学、
+内存可控；代价是使用者得学一个范式。第 8 步就是为了把这件事定下来并写成文档，
+<strong>在它定案之前不要往移动端堆功能</strong>。</p>
+<hr />
 <h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
 <table>
 <thead>

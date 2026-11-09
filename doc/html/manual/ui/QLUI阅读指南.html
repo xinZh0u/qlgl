@@ -921,8 +921,14 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <div class="highlight"><pre><span></span><code>ql_text_wrap(font, text, max_w, out, max_lines)
     max_w = 0        → 只按 &#39;\n&#39; 断（nowrap）
     out   = NULL     → 只数行数（布局用，不分配内存）
+
+ql_text_wrap_ex(font, text, max_w, out, max_lines, keep_trailing)
+    keep_trailing = 1 → 每行**最后一段**的尾随空格保留宽度
 </code></pre></div>
 
+<p><code>keep_trailing</code> 只给输入框用：普通文本的行尾空格不该占宽（否则 <code>text-align: right</code>
+会凭空缩进），但输入框末尾的空格是真实内容 —— 裁掉它就会出现"在末尾敲空格，
+值插进去了、屏幕上什么都不动"。绘制侧对应 <code>QLTextStyle.keep_trailing</code>。</p>
 <p>规则：空格后断（丢弃行首行尾空白）、CJK 之间随处断、超长单词硬断、<code>'\n'</code> 强制断。</p>
 <p>绘制侧在栈上开 <code>QL_CFG_TEXT_MAX_LINES</code>（默认 64）条行记录，超出的行不画；
 <strong>行数统计不受这个上限影响</strong>（否则长文本的高度会算少）。</p>
@@ -1006,22 +1012,22 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <tr>
 <td>控件</td>
 <td><code>button</code></td>
-<td>inline-block + 内边距 + 边框 + 圆角</td>
+<td>inline-block + <strong><code>box-sizing: border-box</code></strong> + 内边距 + 边框 + 圆角</td>
 </tr>
 <tr>
 <td>输入</td>
 <td><code>input</code></td>
-<td>inline-block + 内边距 + 边框 + 圆角（<code>type=password</code> 额外置位）</td>
+<td>inline-block + <strong><code>box-sizing: border-box</code></strong> + 内边距 + 边框 + 圆角（<code>type=password</code> 额外置位）</td>
 </tr>
 <tr>
 <td>多行输入</td>
 <td><code>textarea</code></td>
-<td>inline-block + 200×60 + <strong><code>white-space: pre-wrap</code></strong> + 等宽 + 边框</td>
+<td>inline-block + <strong><code>box-sizing: border-box</code></strong> + 200×60 + <strong><code>white-space: pre-wrap</code></strong> + 等宽 + 边框</td>
 </tr>
 <tr>
 <td>下拉</td>
 <td><code>select</code> / <code>option</code> / <code>optgroup</code></td>
-<td>与 <code>input</code> 同形 / <strong><code>display: none</code></strong></td>
+<td>与 <code>input</code> 同形（同样 <code>border-box</code>）/ <strong><code>display: none</code></strong></td>
 </tr>
 <tr>
 <td>位图</td>
@@ -1069,6 +1075,9 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 <ol>
 <li><strong>字体变体是合成的</strong>：加粗 = 画两遍偏移 1px，斜体 = 按行剪切，装饰线 = 1px 横线。
    不加载第二个字体文件（MCU 上也不可能）。详见 §5.4.8。</li>
+<li><strong>表单控件默认 <code>box-sizing: border-box</code></strong>（与浏览器一致）：<code>width: 100%</code> 加上
+   <code>padding</code>/<code>border</code> 不会溢出父容器。写在选择器里的 <code>box-sizing</code> 照常覆盖它。
+   不给普通元素这个默认值 —— 那一侧 <code>content-box</code> 才是 CSS 语义。</li>
 <li><strong>列表不画项目符号</strong>：本库没有生成内容（<code>::before</code> / <code>::marker</code>），标记请自己写字符。</li>
 <li><strong><code>&lt;br&gt;</code> 是一个"高度为 0 的块"</strong>：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。</li>

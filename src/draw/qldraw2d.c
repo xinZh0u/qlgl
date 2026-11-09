@@ -125,6 +125,12 @@ static int32_t trim_line_end(const char *t, int32_t start, int32_t end)
 int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
                  QLTextLine *out, int max_lines)
 {
+    return ql_text_wrap_ex(font, text, max_w, out, max_lines, 0);
+}
+
+int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
+                    QLTextLine *out, int max_lines, int keep_trailing)
+{
     if (font == NULL || text == NULL)
         return 0;
 
@@ -142,7 +148,13 @@ int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
         int32_t p = pos;
         for (;;) {
             int32_t next = wrap_next(font, text, p, hard, max_w);
-            int32_t line_end = trim_line_end(text, p, next);
+            /*
+             * 软折行点上的空格不占宽（被断行消费掉了）；但一行的最后一段
+             * 在 `keep_trailing` 时保留尾随空格 —— 输入框靠它把光标顶过去。
+             */
+            int32_t line_end = (!keep_trailing || next < hard)
+                                   ? trim_line_end(text, p, next)
+                                   : next;
             if (out != NULL && n < max_lines) {
                 out[n].start = text + p;
                 out[n].len = line_end - p;
@@ -198,7 +210,8 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
     QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
     const int max_lines = (int)(sizeof(lines) / sizeof(lines[0]));
-    int count = ql_text_wrap(font, src, ts->wrap ? box.w : 0, lines, max_lines);
+    int count = ql_text_wrap_ex(font, src, ts->wrap ? box.w : 0, lines, max_lines,
+                               ts->keep_trailing);
     if (count > max_lines)
         count = max_lines;      /* 超出的行不画（布局统计不受此限） */
 

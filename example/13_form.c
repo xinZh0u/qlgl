@@ -55,11 +55,19 @@ static const char *k_css =
     "        padding: 14px; font-size: 12px; color: #1F2328; }"
     "h2 { font-size: 16px; color: #0969DA; margin: 0 0 10px 0; }"
     "label { display: block; color: #57606A; font-size: 11px; margin: 8px 0 4px 0; }"
-    /* 单行与多行共用同一套外观，读起来才像同一个表单 */
+    /*
+     * 单行与多行共用同一套外观，读起来才像同一个表单。
+     *
+     * `box-sizing: border-box` 不能省：`width: 100%` 是**内容盒**宽度，
+     * 不加它的话 padding + border 会加在 100% 外面，控件会比父容器更宽、
+     * 右边直接顶到窗口边缘（截图里"输入框和窗口贴住了"就是这个）。
+     */
     "input { display: block; width: 100%; height: 22px; padding: 3px 6px;"
+    "        box-sizing: border-box;"
     "        border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
     "        background-color: #F6F8FA; color: #1F2328; }"
     "textarea { display: block; width: 100%; flex: 1 1 0px; padding: 6px;"
+    "           box-sizing: border-box;"
     "           border-width: 1px; border-color: #D0D7DE; border-radius: 4px;"
     "           background-color: #F6F8FA; color: #1F2328;"
     "           font-size: 11px; line-height: 16px; }"

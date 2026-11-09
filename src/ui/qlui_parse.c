@@ -4020,6 +4020,7 @@ static int ua_defaults(const char *tag, Decls *out)
      */
     if (strcmp(tag, "input") == 0) {
         return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "box-sizing", "border-box") &&
                decls_set(out, "height", "24px") &&
                decls_set(out, "padding", "0 8px") &&
                decls_set(out, "line-height", "24px") &&
@@ -4036,6 +4037,7 @@ static int ua_defaults(const char *tag, Decls *out)
      */
     if (strcmp(tag, "select") == 0) {
         return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "box-sizing", "border-box") &&
                decls_set(out, "height", "24px") &&
                decls_set(out, "padding", "0 8px") &&
                decls_set(out, "line-height", "24px") &&
@@ -4243,6 +4245,7 @@ static int ua_defaults(const char *tag, Decls *out)
      */
     if (strcmp(tag, "textarea") == 0) {
         return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "box-sizing", "border-box") &&
                decls_set(out, "width", "200px") &&
                decls_set(out, "height", "60px") &&
                decls_set(out, "white-space", "pre-wrap") &&
@@ -4266,6 +4269,7 @@ static int ua_defaults(const char *tag, Decls *out)
     /* ---- 按钮：一行能看见的边框 + 内边距（用 line-height 撑不出来的高度） ---- */
     if (strcmp(tag, "button") == 0) {
         return decls_set(out, "display", "inline-block") &&
+               decls_set(out, "box-sizing", "border-box") &&
                decls_set(out, "padding", "4px 10px") &&
                decls_set(out, "border-width", "1px") &&
                decls_set(out, "border-radius", "4px") &&

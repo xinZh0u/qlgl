@@ -582,7 +582,14 @@ FBO/视口必须还原、纹理上下颠倒。这三条都是"错了就整块变
 ql_text_wrap(font, text, max_w, out, max_lines)
     max_w = 0        → 只按 '\n' 断（nowrap）
     out   = NULL     → 只数行数（布局用，不分配内存）
+
+ql_text_wrap_ex(font, text, max_w, out, max_lines, keep_trailing)
+    keep_trailing = 1 → 每行**最后一段**的尾随空格保留宽度
 ```
+
+`keep_trailing` 只给输入框用：普通文本的行尾空格不该占宽（否则 `text-align: right`
+会凭空缩进），但输入框末尾的空格是真实内容 —— 裁掉它就会出现"在末尾敲空格，
+值插进去了、屏幕上什么都不动"。绘制侧对应 `QLTextStyle.keep_trailing`。
 
 规则：空格后断（丢弃行首行尾空白）、CJK 之间随处断、超长单词硬断、`'\n'` 强制断。
 
@@ -624,10 +631,10 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 | 高亮 | `mark` | inline + 黄底黑字 |
 | 列表 | `ul` `ol` / `li` | block + `margin: 8px 0` / block；`padding-left: 18px` |
 | 空元素 | `hr` / `br` | 1px 细线 + margin / 高度 0 的块 |
-| 控件 | `button` | inline-block + 内边距 + 边框 + 圆角 |
-| 输入 | `input` | inline-block + 内边距 + 边框 + 圆角（`type=password` 额外置位） |
-| 多行输入 | `textarea` | inline-block + 200×60 + **`white-space: pre-wrap`** + 等宽 + 边框 |
-| 下拉 | `select` / `option` / `optgroup` | 与 `input` 同形 / **`display: none`** |
+| 控件 | `button` | inline-block + **`box-sizing: border-box`** + 内边距 + 边框 + 圆角 |
+| 输入 | `input` | inline-block + **`box-sizing: border-box`** + 内边距 + 边框 + 圆角（`type=password` 额外置位） |
+| 多行输入 | `textarea` | inline-block + **`box-sizing: border-box`** + 200×60 + **`white-space: pre-wrap`** + 等宽 + 边框 |
+| 下拉 | `select` / `option` / `optgroup` | 与 `input` 同形（同样 `border-box`）/ **`display: none`** |
 | 位图 | `img` | 固有尺寸来自 doc 的资源条目（不看解码是否成功）；`text` 存**资源名** |
 | 浮层 | `dialog` | 居中 + 遮罩；整棵树画完再画一遍（子树每帧多画一次） |
 | 折叠 | `details` / `summary` | block；收起时非 `summary` 子节点指向共享隐藏样式 |
@@ -641,13 +648,16 @@ ql_text_wrap(font, text, max_w, out, max_lines)
 
 1. **字体变体是合成的**：加粗 = 画两遍偏移 1px，斜体 = 按行剪切，装饰线 = 1px 横线。
    不加载第二个字体文件（MCU 上也不可能）。详见 §5.4.8。
-2. **列表不画项目符号**：本库没有生成内容（`::before` / `::marker`），标记请自己写字符。
-3. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
+2. **表单控件默认 `box-sizing: border-box`**（与浏览器一致）：`width: 100%` 加上
+   `padding`/`border` 不会溢出父容器。写在选择器里的 `box-sizing` 照常覆盖它。
+   不给普通元素这个默认值 —— 那一侧 `content-box` 才是 CSS 语义。
+3. **列表不画项目符号**：本库没有生成内容（`::before` / `::marker`），标记请自己写字符。
+4. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。
-4. **`<table>` / `<textarea>` 明确报错**，错误信息里给出替代做法
+5. **`<table>` / `<textarea>` 明确报错**，错误信息里给出替代做法
    （表格用嵌套 flex、多行文本用 `white-space: pre`）。`<input type="date">`
    这类没实现的 `type` 也报错，并列出支持的那几个。
-5. **空元素的结束标签被忽略**（`<br></br>` / `<embed></embed>`）：浏览器这么做，
+6. **空元素的结束标签被忽略**（`<br></br>` / `<embed></embed>`）：浏览器这么做，
    这里照做 —— 否则看着正常的写法会让整页编译不过。非空标签不匹配仍然报错。
 
 **行内元素之间的空白保留成一个空格**（`<b>a</b> <i>b</i>` 不能变成 `ab`）。

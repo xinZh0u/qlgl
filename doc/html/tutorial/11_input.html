@@ -269,6 +269,8 @@ main img.shot { max-width: 100%; }
 <blockquote>
 <p><strong>空框也有光标</strong>：光标和选区不是"文字"，是输入框的装饰，所以空值聚焦
 照样画竖线（否则清空内容后就看不见焦点在哪）。</p>
+<p><strong>末尾的空格是真的空格</strong>：普通文本的行尾空格会被裁掉（那是排版需要），
+输入框不会 —— 在末尾敲空格，值里多一个空格、光标也往右挪一格。</p>
 </blockquote>
 <p><strong>值和输入框是同一份数据</strong>：<code>node-&gt;text</code> 直接指向池里的可变缓冲，所以绘制、
 <code>text-align</code>、横向滚动这些全都不用改 —— 它们读到的就是最新值。</p>

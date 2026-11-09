@@ -988,7 +988,11 @@ static uint16_t next_boundary(const char *text, uint16_t len, uint16_t off)
 static int input_visual_lines(const QLFont *font, const struct QLUIInput *in,
                               ql_coord_t box_w, QLTextLine *lines, int max)
 {
-    return ql_text_wrap(font, in->buf, box_w, lines, max);
+    /*
+     * **尾随空格要保留**：输入框末尾的空格是真实内容，光标得跟着它走。
+     * 不保留的话在末尾敲空格看起来"什么都没发生"（值其实插进去了）。
+     */
+    return ql_text_wrap_ex(font, in->buf, box_w, lines, max, 1);
 }
 
 /* 字节偏移落在第几个视觉行（lines 的 start 指向 buf 内部） */
@@ -4022,6 +4026,8 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
                             ((s->font_flags & QL_UI_FONT_LINE_THROUGH)
                                  ? QL_TEXT_DECO_LINE_THROUGH
                                  : 0u));
+        /* 输入框的行尾空格要占宽（和 input_visual_lines 保持一致） */
+        ts.keep_trailing = (uint8_t)(in != NULL);
         if (node->text[0] != '\0')
             d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
         if (input_clipped) {

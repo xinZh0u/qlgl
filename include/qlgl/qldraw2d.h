@@ -43,6 +43,12 @@ typedef struct {
     uint8_t    bold;
     uint8_t    italic;
     uint8_t    deco;      /* QL_TEXT_DECO_* 位图 */
+    /*
+     * 1 = 每行**最后一段**的尾随空格也保留宽度。
+     * 普通文本不该留（行尾空格不占宽，对齐才好看），但输入框必须留：
+     * 否则在末尾敲空格时光标不动、屏幕上什么也没发生。
+     */
+    uint8_t    keep_trailing;
 } QLTextStyle;
 
 struct QLDraw2D {
@@ -185,6 +191,13 @@ typedef struct {
  */
 int ql_text_wrap(const QLFont *font, const char *text, ql_coord_t max_w,
                  QLTextLine *out, int max_lines);
+
+/*
+ * 同上，`keep_trailing != 0` 时保留每行最后一段的尾随空格（输入框用）。
+ * 软折行点上的空格仍然去掉 —— 那是被断行"消费"掉的，不属于任何一行。
+ */
+int ql_text_wrap_ex(const QLFont *font, const char *text, ql_coord_t max_w,
+                    QLTextLine *out, int max_lines, int keep_trailing);
 
 /* 单行绘制文字的公共实现：后端可直接复用它的排版逻辑 */
 typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,

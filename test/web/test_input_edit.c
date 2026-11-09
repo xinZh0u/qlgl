@@ -272,9 +272,10 @@ QL_TEST_BEGIN("test_input_edit")
             QL_CHECK(ink_plain > 0);
             QL_CHECK(rightmost_ink(12) > 0);
 
-            /* 聚焦并把光标放到末尾：右边应多出 1px 竖线 */
-            ql_ui_pointer_down(ui, in->content_box.x + 200, 12);
-            ql_ui_pointer_up(ui, in->content_box.x + 200, 12);
+            /* 聚焦并把光标放到末尾：右边应多出 1px 竖线（点内容盒里靠右的位置） */
+            const ql_coord_t tap = in->content_box.x + in->content_box.w - 2;
+            ql_ui_pointer_down(ui, tap, 12);
+            ql_ui_pointer_up(ui, tap, 12);
             render(ui);
             QL_CHECK(ink_count() > ink_plain);
             ql_ui_free(ui);
