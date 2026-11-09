@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>CSS3 覆盖与裁剪 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../../tutorial/01_basics.html'>基础知识</a>
+<a href='../../tutorial/02_text.html'>文本</a>
+<a href='../../tutorial/03_layout.html'>布局</a>
+<a href='../../tutorial/04_interaction.html'>交互</a>
+<a href='../../tutorial/05_animation.html'>动画</a>
+<a href='../../tutorial/06_theme.html'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html'>进阶</a>
+<a href='../../tutorial/08_tags.html'>标签与语义</a>
+<a href='../../tutorial/09_scroll.html'>滚动</a>
+<a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../../tutorial/11_input.html'>输入控件</a>
+<a href='../../tutorial/12_text.html'>空白与上下标</a>
+<a href='../../tutorial/13_form.html'>多行输入与表单</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
+<a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../../design/bench.html'>性能基线（bench.md）</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item active' href='../../manual/ui/CSS3覆盖与裁剪.html'>CSS3 覆盖与裁剪</a>
+<a class='sub-item' href='../../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="css3">CSS3 覆盖与裁剪</h1>
+<p>这份文档回答两个问题，口径与 <a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> 一致：</p>
+<ol>
+<li><strong>CSS3 本库到底支持到哪一步？</strong> —— 按模块逐条给状态，不支持的写清报错原文。</li>
+<li><strong>哪一批先做？</strong> —— 按"收益 / 风险 / 是否动 <code>QLUIStyle</code>"排成五批。</li>
+</ol>
+<p>一句话承诺：</p>
+<blockquote>
+<p><strong>布局与绘制的骨架已经齐了</strong>（盒模型、flexbox、定位、圆角、阴影、渐变、变换、过渡、动画）；
+缺的是<strong>真实页面天天用的细节</strong>（<code>min/max-*</code>、<code>em/rem</code>、<code>:nth-child</code>、<code>::before</code>、
+<code>letter-spacing</code>、<code>text-overflow: ellipsis</code>、<code>border-style</code>、<code>margin: auto</code>…）。
+加这些是"补细节"，不是"补架构"。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 记号</h2>
+<table>
+<thead>
+<tr>
+<th>记号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✅</td>
+<td>已支持（解析 + 生效）</td>
+</tr>
+<tr>
+<td>⚠️</td>
+<td>支持但有语义偏差（文档里写明差在哪）</td>
+</tr>
+<tr>
+<td>⏳</td>
+<td>计划做（本文 §5 给了批次）</td>
+</tr>
+<tr>
+<td>❌</td>
+<td>明确不做（写了就<strong>编译期报错</strong>，不静默降级）</td>
+</tr>
+</tbody>
+</table>
+<p>本库的一条红线没变：<strong>不支持的东西必须报错并给行号</strong>。下面所有 ❌/⏳ 项，
+今天的表现都是 <code>ql_ui_text_last_error()</code> 里一句能读懂的话，而不是"静默忽略、排版错位"。</p>
+<hr />
+<h2 id="2">2. 全量清单</h2>
+<h3 id="21">2.1 选择器</h3>
+<table>
+<thead>
+<tr>
+<th>选择器</th>
+<th>状态</th>
+<th>备注 / 报错</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tag</code> / <code>.class</code>（可重复）/ <code>#id</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>a b</code>（后代）、<code>a &gt; b</code>（子代）、<code>a + b</code>（相邻兄弟）</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>a ~ b</code>（一般兄弟）</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>:hover</code> <code>:active</code> <code>:focus</code></td>
+<td>✅</td>
+<td>构建期编译成状态变体样式表，运行期只切下标</td>
+</tr>
+<tr>
+<td><code>:disabled</code> <code>:checked</code></td>
+<td>⏳</td>
+<td>状态位机制已就绪，差"变体样式 + 判定"</td>
+</tr>
+<tr>
+<td><code>:first-child</code> <code>:last-child</code> <code>:nth-child(an+b)</code> <code>:only-child</code></td>
+<td>⏳</td>
+<td><code>不支持的伪类 ':first-child'（只支持 :hover :active :focus）</code></td>
+</tr>
+<tr>
+<td><code>:not(&lt;简单选择器&gt;)</code></td>
+<td>⏳</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>[attr]</code> / <code>[attr=v]</code> / <code>[attr^=]</code> <code>$=</code> <code>*=</code></td>
+<td>⏳</td>
+<td><code>不支持的简单选择器：'[data-x]'</code></td>
+</tr>
+<tr>
+<td><code>::before</code> / <code>::after</code> + <code>content: "文本"</code></td>
+<td>⏳</td>
+<td>今天是 <code>不支持的属性 'content'</code></td>
+</tr>
+<tr>
+<td><code>::first-line</code> <code>::selection</code> <code>:root</code> <code>:nth-of-type</code> 等</td>
+<td>❌</td>
+<td></td>
+</tr>
+<tr>
+<td><code>@media</code> / <code>@supports</code></td>
+<td>❌</td>
+<td>见 §6</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>选择器全部在<strong>构建期</strong>展开：<code>:nth-child</code> 结算成"给第 n 个孩子加一个内部类"，
+<code>::before</code> 直接生成一个真节点。<strong>运行期零成本</strong>，这是 B2 风险最低的原因。</p>
+</blockquote>
+<h3 id="22">2.2 盒模型与尺寸</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>状态</th>
+<th>备注 / 报错</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>width</code> <code>height</code></td>
+<td>✅</td>
+<td><code>px</code> / <code>%</code> / <code>auto</code></td>
+</tr>
+<tr>
+<td><code>margin</code> <code>padding</code>（1~4 值简写 + 四个方向）</td>
+<td>✅</td>
+<td><strong>只支持 px</strong>；负 margin 已支持</td>
+</tr>
+<tr>
+<td><code>margin: 0 auto</code>（水平居中）</td>
+<td>⏳</td>
+<td><code>margin/padding 只支持 px</code></td>
+</tr>
+<tr>
+<td><code>padding: 5%</code></td>
+<td>⏳</td>
+<td><code>此处不支持百分比 '5%'</code></td>
+</tr>
+<tr>
+<td><code>border-width</code> <code>border-color</code> <code>border-radius</code></td>
+<td>✅</td>
+<td>四边统一；<code>border-radius</code> 单值（px 或 %）</td>
+</tr>
+<tr>
+<td><code>border-top-width</code> / <code>border-left-color</code> / <code>border-bottom: none</code></td>
+<td>⏳</td>
+<td><code>不支持的属性 'border-top-width'</code></td>
+</tr>
+<tr>
+<td><code>border-radius: 4px 8px 12px 16px</code>（四角）</td>
+<td>⏳</td>
+<td><code>不支持的长度 '...'（只支持 px 与 %）</code></td>
+</tr>
+<tr>
+<td><code>min-width</code> <code>max-width</code> <code>min-height</code> <code>max-height</code></td>
+<td>⏳</td>
+<td><code>不支持的属性 'min-width'</code></td>
+</tr>
+<tr>
+<td><code>box-sizing</code></td>
+<td>✅</td>
+<td>表单控件 UA 默认 <code>border-box</code></td>
+</tr>
+<tr>
+<td><code>width: fit-content</code> / <code>min()</code> / <code>max()</code> / <code>calc()</code></td>
+<td>⏳</td>
+<td><code>不支持的长度 'fit-content'</code></td>
+</tr>
+<tr>
+<td><code>aspect-ratio</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td><code>overflow</code> <code>overflow-x</code> <code>overflow-y</code></td>
+<td>⚠️</td>
+<td><code>overflow</code> 有 <code>visible/hidden/auto/scroll</code>；<strong>没有分轴</strong>（<code>overflow-x</code> 报错）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23">2.3 值与单位</h3>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>状态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>px</code> / <code>%</code> / <code>auto</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td>无单位倍数（<code>line-height: 1.5</code>）</td>
+<td>✅</td>
+<td>仅 <code>line-height</code></td>
+</tr>
+<tr>
+<td><code>em</code> / <code>rem</code></td>
+<td>⏳</td>
+<td><code>不支持的长度 '1.2em'（只支持 px 与 %）</code></td>
+</tr>
+<tr>
+<td><code>vh</code> / <code>vw</code> / <code>vmin</code> / <code>vmax</code></td>
+<td>⏳</td>
+<td>根元素的 <code>%</code> 已按视口解析，<code>vh/vw</code> 是同一件事的语法糖</td>
+</tr>
+<tr>
+<td><code>deg</code></td>
+<td>⚠️</td>
+<td>只出现在渐变方向（<code>90deg</code>/<code>180deg</code>）</td>
+</tr>
+<tr>
+<td><code>inherit</code> / <code>initial</code> / <code>currentColor</code></td>
+<td>⏳</td>
+<td><code>不支持的颜色写法 'inherit'</code></td>
+</tr>
+<tr>
+<td><code>!important</code></td>
+<td>⏳</td>
+<td><code>不支持的 display 'block !important'</code></td>
+</tr>
+<tr>
+<td>命名色 / <code>#rgb</code> / <code>#rrggbb</code> / <code>rgb()</code> / <code>rgba()</code></td>
+<td>✅</td>
+<td>命名色见 <code>k_named[]</code>（CSS 常用色 + <code>transparent</code>）</td>
+</tr>
+<tr>
+<td><code>hsl()</code> / <code>#rrggbbaa</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="24-flexbox">2.4 flexbox</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>display: flex</code> / <code>inline-flex</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>flex-direction</code></td>
+<td>✅ <code>row</code> / <code>row-reverse</code> / <code>column</code> / <code>column-reverse</code></td>
+</tr>
+<tr>
+<td><code>flex-wrap</code></td>
+<td>✅ <code>nowrap</code> / <code>wrap</code></td>
+</tr>
+<tr>
+<td><code>flex-grow</code> <code>flex-shrink</code> <code>flex-basis</code> / <code>flex: 1 1 0px</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>justify-content</code></td>
+<td>✅ 含 <code>space-between</code> / <code>space-around</code> / <code>space-evenly</code></td>
+</tr>
+<tr>
+<td><code>align-items</code></td>
+<td>✅ 含 <code>stretch</code></td>
+</tr>
+<tr>
+<td><code>gap</code> <code>row-gap</code> <code>column-gap</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>align-self</code></td>
+<td>⏳</td>
+</tr>
+<tr>
+<td><code>align-content</code>（多行交叉轴分配）</td>
+<td>⏳</td>
+</tr>
+<tr>
+<td><code>order</code></td>
+<td>⏳</td>
+</tr>
+<tr>
+<td><code>flex-flow</code> 简写</td>
+<td>⏳</td>
+</tr>
+</tbody>
+</table>
+<h3 id="25">2.5 定位</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>状态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>position: static / relative / absolute / fixed</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>top</code> <code>right</code> <code>bottom</code> <code>left</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>z-index</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>position: sticky</code></td>
+<td>⏳</td>
+<td><code>不支持的 position 'sticky'</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="26">2.6 背景与边框绘制</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>状态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>background-color</code> / <code>background</code>（纯色）</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>linear-gradient()</code></td>
+<td>⚠️</td>
+<td><strong>必须写方向</strong>：<code>to right</code> / <code>to bottom</code> / <code>90deg</code> / <code>180deg</code>；<code>to bottom right</code> 报错</td>
+</tr>
+<tr>
+<td><code>radial-gradient()</code></td>
+<td>✅</td>
+<td>需要 3 个参数（位置, 起色, 止色）</td>
+</tr>
+<tr>
+<td><code>background-image: url(...)</code></td>
+<td>⏳</td>
+<td><code>只支持 linear-gradient() / radial-gradient()</code>；图片请用 <code>&lt;img&gt;</code></td>
+</tr>
+<tr>
+<td><code>background-size</code> / <code>position</code> / <code>repeat</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td><code>border-style: solid</code></td>
+<td>✅</td>
+<td><strong>只有 solid</strong>；<code>dashed</code> 报错</td>
+</tr>
+<tr>
+<td><code>box-shadow</code>（单条）</td>
+<td>✅</td>
+<td>CPU SDF + GPU <code>mode=2</code> 各一份实现</td>
+</tr>
+<tr>
+<td>多重 <code>box-shadow</code> / <code>inset</code></td>
+<td>⏳</td>
+<td><code>box-shadow 里无法识别 ','</code></td>
+</tr>
+<tr>
+<td><code>outline</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td><code>opacity</code>（普通属性）</td>
+<td>⏳</td>
+<td><strong>只有 <code>@keyframes</code> 里能用</strong>；见 §6 的语义说明</td>
+</tr>
+<tr>
+<td><code>filter: blur()</code></td>
+<td>⏳</td>
+<td>只有 <code>backdrop-filter: blur()</code></td>
+</tr>
+<tr>
+<td><code>mix-blend-mode</code></td>
+<td>❌</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="27">2.7 文本</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>状态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>color</code></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code>font-size</code></td>
+<td>✅</td>
+<td><code>px</code> / <code>%</code>（相对父级）/ <code>smaller</code> / <code>larger</code></td>
+</tr>
+<tr>
+<td><code>font-family</code></td>
+<td>⚠️</td>
+<td>只有 <code>DEFAULT</code> / <code>MONO</code> 两族（位图字体 + 矢量字体各一套），不是自由字体列表</td>
+</tr>
+<tr>
+<td><code>font-weight</code> <code>font-style</code></td>
+<td>⚠️</td>
+<td><strong>合成</strong>：加粗 = 画两遍右移 1px，斜体 = 按行剪切（MCU 上不加载第二份字体）</td>
+</tr>
+<tr>
+<td><code>text-decoration</code></td>
+<td>✅</td>
+<td><code>underline</code> / <code>line-through</code></td>
+</tr>
+<tr>
+<td><code>text-align</code></td>
+<td>✅</td>
+<td><code>left</code> / <code>center</code> / <code>right</code></td>
+</tr>
+<tr>
+<td><code>line-height</code></td>
+<td>✅</td>
+<td><code>normal</code> / <code>px</code> / 无单位倍数</td>
+</tr>
+<tr>
+<td><code>white-space</code></td>
+<td>✅</td>
+<td><code>normal</code> / <code>nowrap</code> / <code>pre</code> / <code>pre-wrap</code> / <code>pre-line</code></td>
+</tr>
+<tr>
+<td><code>vertical-align</code></td>
+<td>✅</td>
+<td><code>baseline</code> / <code>sub</code> / <code>super</code> 等</td>
+</tr>
+<tr>
+<td><code>letter-spacing</code> <code>word-spacing</code> <code>text-indent</code></td>
+<td>⏳</td>
+<td><code>不支持的属性</code></td>
+</tr>
+<tr>
+<td><code>text-transform</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text-overflow: ellipsis</code></td>
+<td>⏳</td>
+<td>列表里最常用的一个，配合 <code>overflow: hidden</code> + <code>white-space: nowrap</code></td>
+</tr>
+<tr>
+<td><code>word-break</code> / <code>overflow-wrap</code></td>
+<td>⏳</td>
+<td>长 URL 必须靠它</td>
+</tr>
+<tr>
+<td><code>text-shadow</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td><code>list-style</code> / <code>::marker</code></td>
+<td>❌</td>
+<td>没有生成内容，符号请自己写字符</td>
+</tr>
+</tbody>
+</table>
+<h3 id="28">2.8 变换、过渡、动画</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>状态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>transform: translate()</code> / <code>scale()</code> / <code>scaleX()</code> / <code>scaleY()</code></td>
+<td>✅</td>
+<td>支持负缩放（镜像），行高按垂直轴缩放</td>
+</tr>
+<tr>
+<td><code>transform: rotate()</code> / <code>skew()</code> / <code>matrix()</code></td>
+<td>⏳</td>
+<td><code>只支持 translate()/scale()/scaleX()/scaleY()</code>；rotate 要新的旋转光栅路径</td>
+</tr>
+<tr>
+<td><code>transition</code>（时长 / 属性 / 缓动）</td>
+<td>✅</td>
+<td>可过渡：<code>background-color</code> <code>opacity</code> <code>color</code> <code>border-color</code> <code>border-radius</code> <code>transform</code> <code>clip-path</code></td>
+</tr>
+<tr>
+<td><code>transition-delay</code></td>
+<td>⏳</td>
+<td></td>
+</tr>
+<tr>
+<td><code>@keyframes</code> + <code>animation</code> 全 8 个子属性</td>
+<td>✅</td>
+<td>关键帧在编译期摊平成静态表</td>
+</tr>
+<tr>
+<td><code>clip-path: circle(n%)</code></td>
+<td>✅</td>
+<td>只有 <code>circle()</code>，一层</td>
+</tr>
+<tr>
+<td><code>object-fit</code></td>
+<td>✅</td>
+<td><code>fill</code> / <code>contain</code> / <code>cover</code> 等</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="29-2026-11-09">2.9 覆盖率实测（2026-11-09）</h2>
+<p>口径：拿本机 23 份<strong>真实 CSS</strong>（Bootstrap 5、mkdocs 主题、Mercurial 的四套主题、
+matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
+抽出全部声明后按属性名逐条对照 <code>k_supported_props[]</code>。
+去掉 CSS 自定义属性（<code>--x</code>）与厂商前缀（<code>-webkit-</code> 等）后剩 <strong>5391 条声明</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>口径</th>
+<th>结果</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>属性名级</strong></td>
+<td><strong>57 / 150 = 38%</strong></td>
+<td>去重后的属性名，不考虑用得多不多</td>
+</tr>
+<tr>
+<td><strong>声明级（推荐口径）</strong></td>
+<td><strong>3968 / 5391 = 73.6%</strong></td>
+<td>按真实出现次数加权 —— 常用的那些基本都有</td>
+</tr>
+<tr>
+<td><strong>能直接照搬</strong></td>
+<td><strong>3305 / 5391 = 61.3%</strong></td>
+<td>属性支持 <strong>且</strong> 值里不含 <code>!important</code>/<code>var()</code>/<code>calc()</code></td>
+</tr>
+</tbody>
+</table>
+<p>分模块（同一个语料，按出现次数加权）：</p>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>flexbox</td>
+<td><strong>99.8%</strong></td>
+</tr>
+<tr>
+<td>定位 / 层叠</td>
+<td><strong>100%</strong></td>
+</tr>
+<tr>
+<td>文本</td>
+<td><strong>98.6%</strong></td>
+</tr>
+<tr>
+<td>盒模型 / 尺寸</td>
+<td><strong>95.2%</strong></td>
+</tr>
+<tr>
+<td>背景 / 边框绘制</td>
+<td><strong>82.7%</strong></td>
+</tr>
+<tr>
+<td>变换 / 动画</td>
+<td><strong>100%</strong>（语料里用得少，只有 43 条）</td>
+</tr>
+</tbody>
+</table>
+<p>按文件看：Mercurial 的四套主题 89~95%、mkdocs 主题 84%、Bootstrap 80.5%、
+<strong>Font Awesome 8.8%</strong>（整份就是 <code>content</code> + <code>::before</code>，见下）。</p>
+<h3 id="_1">缺口到底在哪</h3>
+<table>
+<thead>
+<tr>
+<th>来源</th>
+<th>声明数</th>
+<th>占比</th>
+<th>归属</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code>（图标字体）</td>
+<td>706</td>
+<td>13.1%</td>
+<td><strong>B2</strong>（<code>::before</code> + <code>content</code> 一次解决）</td>
+</tr>
+<tr>
+<td><code>max-width</code> / <code>min-width</code> / <code>max-height</code></td>
+<td>65</td>
+<td>1.2%</td>
+<td><strong>B1</strong></td>
+</tr>
+<tr>
+<td><code>border-top/right/bottom/left</code>（四边独立）</td>
+<td>106</td>
+<td>2.0%</td>
+<td><strong>B4</strong></td>
+</tr>
+<tr>
+<td><code>border-*-radius</code>（四角）</td>
+<td>94</td>
+<td>1.7%</td>
+<td><strong>B1</strong></td>
+</tr>
+<tr>
+<td><code>!important</code>（出现在<strong>已支持</strong>的属性里）</td>
+<td>293</td>
+<td>5.4%</td>
+<td><strong>B1</strong></td>
+</tr>
+<tr>
+<td><code>var(--x)</code>（CSS 变量）</td>
+<td>537</td>
+<td>10.0%</td>
+<td>❌ 明确不做</td>
+</tr>
+<tr>
+<td><code>calc()</code></td>
+<td>65</td>
+<td>1.2%</td>
+<td><strong>B1</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">补完之后能到多少（模拟）</h3>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>声明级覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>现在</td>
+<td><strong>73.6%</strong></td>
+</tr>
+<tr>
+<td>+ B1 值与尺寸</td>
+<td>76.5%</td>
+</tr>
+<tr>
+<td>+ B2 选择器（<code>content</code>/<code>::before</code>）</td>
+<td><strong>89.6%</strong></td>
+</tr>
+<tr>
+<td>+ B3 文本细节</td>
+<td>90.0%</td>
+</tr>
+<tr>
+<td>+ B4 绘制细节</td>
+<td><strong>94.0%</strong></td>
+</tr>
+<tr>
+<td>+ B5 布局细节</td>
+<td>94.5%</td>
+</tr>
+</tbody>
+</table>
+<p>剩下那 5.5% 主要是 <code>float</code>（不做）、<code>cursor</code>（鼠标形状，与本库无关）、
+<code>list-style</code>（没有生成内容）、<code>visibility</code>、<code>pointer-events</code>、<code>@font-face</code> 的 <code>src</code>。</p>
+<h3 id="_3">选择器侧</h3>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>全部语料</th>
+<th>去掉图标字体库</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>::before</code> / <code>::after</code></td>
+<td>57.4%</td>
+<td><strong>25.3%</strong></td>
+</tr>
+<tr>
+<td><code>:nth-</code> / <code>:first-</code> / <code>:last-child</code></td>
+<td>4.0%</td>
+<td><strong>7.3%</strong></td>
+</tr>
+<tr>
+<td><code>[attr]</code> 系列</td>
+<td>2.2%</td>
+<td><strong>3.9%</strong></td>
+</tr>
+<tr>
+<td><code>:hover</code> / <code>:active</code> / <code>:focus</code></td>
+<td>3.9%</td>
+<td>7.0%（已支持）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>图标字体库把 <code>::before</code> 的占比顶得很高（57%），去掉之后是 25% —— 也就是说
+<strong>B2 的 <code>::before</code>/<code>content</code> 是"用一行代码换 25% 的选择器"那一档</strong>。</p>
+</blockquote>
+<h3 id="_4">三道"属性全支持也过不去"的墙</h3>
+<p>就算属性面做到 94%，把一份手写页面直接搬进来仍然会卡在这三处（都是<strong>明确不做</strong>）：</p>
+<table>
+<thead>
+<tr>
+<th>墙</th>
+<th>语料中出现</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>var(--x)</code></td>
+<td>537 条声明</td>
+<td>写 <code>var()</code> 就报错。Bootstrap 5 一半的样式靠它</td>
+</tr>
+<tr>
+<td><code>@media</code></td>
+<td>191 个块</td>
+<td>响应式断点整段不认</td>
+</tr>
+<tr>
+<td><code>!important</code></td>
+<td>293 条声明</td>
+<td>值里带它就报错（B1 补上后消失）</td>
+</tr>
+</tbody>
+</table>
+<p>所以<strong>"CSS3 兼容度"取决于你要搬的是什么</strong>：</p>
+<ul>
+<li><strong>自己按本库能力写新页面</strong>：现在就能到 <strong>85~90% 的手感</strong>（常用属性都有，
+  只是不能写 <code>var()</code>/<code>@media</code>）；</li>
+<li><strong>直接搬 Bootstrap 这类框架</strong>：约 <strong>80% 的声明</strong>能过，剩下的要靠改写成
+  固定值（去掉 <code>var()</code> 与 <code>@media</code>）；</li>
+<li><strong>搬图标字体库</strong>：现在 9%，B2 之后接近 100%。</li>
+</ul>
+<hr />
+<h2 id="3">3. 哪些"看起来很简单"的东西其实不简单</h2>
+<p>这三处值得单独说，免得当成"漏了"：</p>
+<ol>
+<li><strong><code>opacity</code> 只能做近似</strong>。真正的 CSS <code>opacity</code> 是<strong>组不透明度</strong>：整棵子树先合成到
+   一张离屏图层，再整体混合。本库现在只有"元素自己的背景 alpha"，也就是关键帧路径的
+   做法。做真 group opacity 要在 CPU 与 GL 两端各加一层离屏合成 —— 成本和
+   <code>transform: rotate()</code> 同级，属于独立一项，不该顺手塞进"补属性"里。</li>
+<li><strong><code>margin: auto</code> 是个布局概念，不是值解析</strong>。它要求块级盒在<strong>有确定可用宽度</strong>时
+   把剩余空间分给左右 margin；flex 里的 <code>auto</code> margin 又是另一套（吸收剩余空间）。
+   改动落在 <code>layout_node()</code> 的宽度求解与 flex 求解器两处，不是加一行解析。</li>
+<li><strong><code>!important</code> 落在级联层</strong>。本库的样式在构建期就摊平了（优先级已在 §选择器里算过），
+   加 <code>!important</code> 意味着声明层要多存一个比特、比较函数要多一级。成本低但要动
+   <code>QLUIStyle</code> 的生成路径与 golden，适合和 B1 一起做。</li>
+</ol>
+<hr />
+<h2 id="4-mcu">4. 与 MCU 裁剪的关系</h2>
+<p>CSS 的处理方式与标签一致：<strong>属性名与结构体字段永远全量，裁的是"会不会去用"</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>允许</th>
+<th>禁止</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>在 <code>QLUIStyle</code> <strong>末尾追加</strong>字段</td>
+<td>重排/删除已有字段（<code>style_struct_size</code> 会变，blob 跨平台就废了）</td>
+</tr>
+<tr>
+<td>用宏裁掉<strong>绘制路径</strong>（如 <code>QL_FEAT_CSS_SHADOW</code> 关掉后阴影不画）</td>
+<td>用宏裁掉<strong>解析分支</strong>导致同一份 CSS 在两端解释不同</td>
+</tr>
+<tr>
+<td>用宏裁掉<strong>报错文案</strong></td>
+<td>让同一份 <code>.qlui</code> 在两个平台上样式不同</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>注意：解析期报错<strong>不能</strong>因为裁剪而消失。MCU 上关掉 <code>QL_FEAT_CSS_SHADOW</code> 之后，
+写 <code>box-shadow</code> 仍然要报"本构建未启用阴影"，而不是静默忽略 —— 否则
+"PC 上看着对、板子上错位"的老问题会从标签那边原样搬过来。</p>
+</blockquote>
+<hr />
+<h2 id="5">5. 五批计划</h2>
+<p>排序依据：<strong>先补"真实页面没它写不出来"的，再补"锦上添花"的</strong>；同一批内先做不动
+<code>QLUIStyle</code> 的（只动解析期），后做动结构体的（要抬 blob 版本 + 重生成 golden）。</p>
+<table>
+<thead>
+<tr>
+<th>批</th>
+<th>内容</th>
+<th>收益</th>
+<th>风险</th>
+<th>动 <code>QLUIStyle</code></th>
+<th>验收</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>B1 值与尺寸</strong></td>
+<td><code>min/max-width/height</code>（含 %）、<code>em</code>/<code>rem</code>、<code>margin: auto</code>、<code>inherit</code>/<code>initial</code>/<code>currentColor</code>、<code>!important</code>、<code>border-radius</code> 四角、<code>aspect-ratio</code></td>
+<td>真实页面的<strong>基础语法</strong>：响应式需要一个上限、居中需要 <code>auto</code></td>
+<td>中：动级联与宽度求解</td>
+<td><strong>是</strong>（min/max 四组 + radius 四角）→ blob v16</td>
+<td><code>test_css_units</code>(新) + golden</td>
+</tr>
+<tr>
+<td><strong>B2 选择器</strong></td>
+<td><code>:first/last/nth-child(an+b)/only-child</code>、<code>:not()</code>、<code>[attr]</code> 系列、<code>::before/::after</code>+<code>content</code>、<code>:disabled/:checked</code></td>
+<td>兼容性收益最大；斑马纹、图标、状态样式全靠它</td>
+<td><strong>低</strong>：全在构建期展开，运行期零成本</td>
+<td><strong>否</strong>（伪元素在构建期变成真节点）</td>
+<td><code>test_selectors</code>(新，逐选择器命中/不命中) + golden</td>
+</tr>
+<tr>
+<td><strong>B3 文本细节</strong></td>
+<td><code>letter-spacing</code>、<code>word-spacing</code>、<code>text-indent</code>、<code>text-transform</code>、<code>text-overflow: ellipsis</code>、<code>word-break</code>/<code>overflow-wrap</code></td>
+<td>列表、标题、长 URL —— 日常页面高频</td>
+<td>中：要动 <code>ql_text_wrap()</code>（布局与绘制共用同一份断行，是红线）</td>
+<td><strong>是</strong>（设位 + 字距）→ blob v16</td>
+<td>扩 <code>test_text_wrap</code> / <code>test_white_space</code></td>
+</tr>
+<tr>
+<td><strong>B4 绘制细节</strong></td>
+<td><code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>outline</code>、<code>background-size/position/repeat</code>、<code>filter: blur()</code></td>
+<td>视觉还原度</td>
+<td><strong>中高</strong>：每个都要 CPU + GL 两份实现，必须过 <code>test_gl_vs_cpu</code></td>
+<td>部分（<code>border_style</code> 位、背景参数）</td>
+<td><code>test_effects</code> 扩 + <code>test_gl_vs_cpu</code></td>
+</tr>
+<tr>
+<td><strong>B5 布局细节</strong></td>
+<td><code>align-self</code>、<code>align-content</code>、<code>order</code>、<code>overflow-x/y</code> 分轴、<code>position: sticky</code></td>
+<td>布局表达力</td>
+<td>中：动 flex 求解器与滚动容器</td>
+<td>是</td>
+<td><code>test_flex*</code> 扩</td>
+</tr>
+</tbody>
+</table>
+<p><strong>另外两项单独立项</strong>（成本与一批相当，但语义是"新子系统"）：</p>
+<ul>
+<li><strong><code>transform: rotate()</code></strong>：要一条旋转光栅路径（CPU 的逐像素仿射 + GL 的顶点变换，
+  还得处理字形与文字的旋转、裁剪盒的变换）。做完 <code>clip-path</code> 之外的变换才齐。</li>
+<li><strong>真 group <code>opacity</code></strong>：要离屏图层。</li>
+</ul>
+<h3 id="_5">建议顺序</h3>
+<p><strong>B1 + B2 一起做</strong>，一次抬 blob 版本、一次重生成 golden。
+理由：B2 纯构建期、零运行期成本、兼容性收益最大；B1 是"没有它就没法写真实页面"的地基。
+之后按 B3 → B4 → B5，中间可以随时插入 <code>rotate</code>（它对动效类页面比 B5 更实用）。</p>
+<hr />
+<h2 id="6">6. 明确不做</h2>
+<table>
+<thead>
+<tr>
+<th>不做</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>display: grid</code></td>
+<td>实现成本接近 flex 的两倍；本库的 flex 已能覆盖绝大多数卡片网格（<code>flex-wrap</code> + <code>gap</code>）</td>
+</tr>
+<tr>
+<td><code>float</code> 布局</td>
+<td>与 flex 混用行为诡异，现代页面基本不用</td>
+</tr>
+<tr>
+<td>CSS 变量 <code>--x</code> / <code>var()</code></td>
+<td>会让"运行期样式"变复杂，破坏构建期预计算的收益（这是本库最核心的取舍）</td>
+</tr>
+<tr>
+<td><code>@media</code> / <code>@supports</code></td>
+<td>目标设备尺寸在构建期已知；真需要多套布局，请用两套 doc 或由宿主切换</td>
+</tr>
+<tr>
+<td><code>list-style</code> / <code>::marker</code></td>
+<td>没有生成内容机制；符号请自己写字符（<code>•</code>）</td>
+</tr>
+<tr>
+<td><code>mix-blend-mode</code> / <code>background-clip: text</code></td>
+<td>都要离屏图层或专用着色器，收益远小于成本</td>
+</tr>
+<tr>
+<td>嵌套 <code>::before</code> / 多层 <code>clip-path</code></td>
+<td>只有一层够用，多层会引入"裁剪栈"这个新概念</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>这一节的落地方式：写到就<strong>构建期报错</strong>，文案点名"本库不做 X，替代方案是 Y"。
+静默降级是"PC 上看着对、板子上错位"的根源。</p>
+</blockquote>
+<hr />
+<h2 id="7-css">7. 怎么新增一个 CSS 属性（检查清单）</h2>
+<p>照着这个顺序走，漏一步就会留下"能解析但没生效"或"只在一个后端生效"的坑：</p>
+<ol>
+<li><strong>解析</strong>：<code>src/ui/qlui_parse.c</code>
+   - 加进 <code>k_supported_props[]</code>（否则报"不支持的属性"）；
+   - 写 <code>parse_xxx()</code>，<strong>错误文案要能定位</strong>（<code>set_error("%s: ...", where)</code>）；
+   - 若要进关键帧，再加进 <code>k_keyframe_props[]</code>。</li>
+<li><strong>字段</strong>：<code>include/qlgl/qlui.h</code> 的 <code>QLUIStyle</code>
+   - <strong>只在末尾追加</strong>；抬 <code>QL_UI_BLOB_VERSION</code>；<code>tools/qltext</code> 的 Python 侧同步。</li>
+<li><strong>生效</strong>：
+   - 布局类 → <code>layout_node()</code> / flex 求解器；
+   - 绘制类 → <code>src/ui/qlui.c</code> 的 <code>render_node()</code>，且<strong>同时</strong>改 <code>src/draw/qldraw2d.c</code>（CPU）
+     与 <code>src/port/qlgfx_gl.c</code>（GL）两条路径。</li>
+<li><strong>测试</strong>：
+   - 语义类：新建/扩一个 <code>test/web/test_*.c</code>，用<strong>命中与不命中</strong>两侧断言；
+   - 绘制类：扩 <code>test_effects</code>（CPU 像素）+ 跑 <code>test_gl_vs_cpu</code>（两后端一致）。</li>
+<li><strong>golden</strong>：<code>test_golden</code> 的基准图会变，重生成并逐张看差异（别一把 <code>cp</code> 过去）。</li>
+<li><strong>文档</strong>：本文 §2 改状态；<code>QLUI阅读指南</code> 补"实现要点/踩坑"；教程里给个最小例子。</li>
+<li><strong>裁剪</strong>：如果要能被 MCU 裁掉，加 <code>QL_FEAT_CSS_*</code> 宏，按 §4 的口径裁<strong>绘制路径</strong>。</li>
+</ol>
+<hr />
+<h2 id="8">8. 验证策略</h2>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>手段</th>
+<th>现在有没有</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解析/级联</td>
+<td>每个特性一个最小用例，<strong>命中与不命中都断言</strong></td>
+<td>部分（<code>test_web_ui</code>/<code>test_text_style</code>）</td>
+</tr>
+<tr>
+<td>布局</td>
+<td>几何断言（盒子的 x/y/w/h）</td>
+<td><code>test_flex*</code> / <code>test_layout</code></td>
+</tr>
+<tr>
+<td>CPU 绘制</td>
+<td>像素断言（<code>test_effects</code> 已有 26 项）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>GPU 绘制</td>
+<td><code>test_gl_vs_cpu</code>：同一份 doc 两后端逐像素比对</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>回归</td>
+<td><code>test_golden</code>：28 个用例 × blob 逐字节 + 基准图容差</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>真实页面</td>
+<td><code>example/01..13</code> 每加一批就挑一个例程用上新特性</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9">9. 相关文档</h2>
+<ul>
+<li><a href="HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> —— 标签侧的同口径清单</li>
+<li><a href="QLUI阅读指南.html">QLUI 阅读指南</a> —— 样式/布局/绘制的实现细节与踩坑</li>
+<li><a href="../../design/Web兼容设计.html">Web 兼容设计</a> —— 分层与"为什么不做 JS/Grid"</li>
+<li><a href="../../design/开发规划.html">开发规划</a> —— 批次排期与验收</li>
+</ul>
+<div class='pager'>
+<a href='../../manual/text/QLText阅读指南.html'><span class='dir'>上一页</span>QLText / 字体系统 阅读指南</a>
+<a class='next' href='../../manual/ui/HTML5标签覆盖与裁剪.html'><span class='dir'>下一页</span>HTML5 标签覆盖与 MCU 裁剪</a>
+</div>
+</main>
+</div>
+</body>
+</html>

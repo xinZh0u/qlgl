@@ -192,6 +192,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
 <h4>QLUI</h4>
 <a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS3 覆盖与裁剪</a>
 <a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
 <a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
 <h4>QLUIText</h4>
@@ -2884,6 +2885,60 @@ blob v10 → <strong>v11</strong>。</p>
 必须由业务层只暴露"可见的一屏"</strong>，UI 描述跟着滚动位置复用。好处是符合本库的静态哲学、
 内存可控；代价是使用者得学一个范式。第 8 步就是为了把这件事定下来并写成文档，
 <strong>在它定案之前不要往移动端堆功能</strong>。</p>
+<hr />
+<h3 id="m8-css3-2026-11-09">M8 · CSS3 补全（五批）—— <strong>计划（2026-11-09 定案）</strong></h3>
+<p>HTML5 标签覆盖已到 114/114（含占位），接下来补 CSS。逐条覆盖与批次见
+<a href="./手册/ui/CSS3覆盖与裁剪.md">CSS3 覆盖与裁剪</a>。</p>
+<p><strong>现状实测</strong>（23 份真实 CSS、5391 条声明，去掉 CSS 变量与厂商前缀）：
+属性名级 38%、<strong>声明级 73.6%</strong>、能直接照搬 61.3%。
+分模块：flexbox 99.8% / 定位 100% / 文本 98.6% / 盒模型 95.2% / 背景边框 82.7%。</p>
+<table>
+<thead>
+<tr>
+<th>批</th>
+<th>内容</th>
+<th>完成后声明级</th>
+<th>动 <code>QLUIStyle</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>B1</strong></td>
+<td><code>min/max-width/height</code>、<code>em/rem</code>、<code>margin: auto</code>、<code>inherit</code>/<code>currentColor</code>、<code>!important</code>、<code>border-radius</code> 四角</td>
+<td>76.5%</td>
+<td>是 → blob v16</td>
+</tr>
+<tr>
+<td><strong>B2</strong></td>
+<td><code>:first/last/nth-child</code>、<code>:not</code>、<code>[attr]</code>、<code>::before/::after</code> + <code>content</code>、<code>:disabled/:checked</code></td>
+<td><strong>89.6%</strong></td>
+<td><strong>否</strong>（构建期展开）</td>
+</tr>
+<tr>
+<td><strong>B3</strong></td>
+<td><code>letter-spacing</code>/<code>word-spacing</code>/<code>text-indent</code>/<code>text-transform</code>/<code>text-overflow: ellipsis</code>/<code>word-break</code></td>
+<td>90.0%</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>B4</strong></td>
+<td><code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>outline</code>、<code>background-size/position/repeat</code>、<code>filter: blur()</code></td>
+<td><strong>94.0%</strong></td>
+<td>部分</td>
+</tr>
+<tr>
+<td><strong>B5</strong></td>
+<td><code>align-self</code>/<code>align-content</code>/<code>order</code>、<code>overflow-x/y</code> 分轴、<code>position: sticky</code></td>
+<td>94.5%</td>
+<td>是</td>
+</tr>
+</tbody>
+</table>
+<p><strong>单独立项</strong>（成本与一批相当，但属"新子系统"）：
+<code>transform: rotate()</code>（要旋转光栅路径）、真 group <code>opacity</code>（要离屏图层）。</p>
+<p><strong>仍明确不做</strong>：grid、float、CSS 变量 <code>var()</code>、<code>@media</code>、<code>list-style</code>/<code>::marker</code>、
+<code>mix-blend-mode</code>。注意这三道墙会限制"直接搬框架"的上限（Bootstrap 的 <code>var()</code> 537 条、
+<code>@media</code> 191 块），详见覆盖表 §2.9。</p>
 <hr />
 <h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
 <table>
