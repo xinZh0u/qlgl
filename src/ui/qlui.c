@@ -585,6 +585,27 @@ static ql_coord_t text_line_h_of(const QLUIStyle *s, const QLFont *font)
     return (s->line_h > 0) ? s->line_h : line_height_of(font);
 }
 
+/*
+ * `min-width` / `max-width` 的夹紧。返回夹紧后的**同一个度量**
+ * （`is_border_box` 决定外面传进来的数是内容宽还是边框盒宽）。
+ * 没设时 `unit == AUTO`，直接原值返回。
+ */
+static ql_coord_t clamp_len(QLUILength lo, QLUILength hi, ql_coord_t v,
+                            ql_coord_t basis)
+{
+    if (lo.unit != QL_UI_UNIT_AUTO) {
+        const ql_coord_t m = resolve_length(lo, basis, v);
+        if (v < m)
+            v = m;
+    }
+    if (hi.unit != QL_UI_UNIT_AUTO) {
+        const ql_coord_t m = resolve_length(hi, basis, v);
+        if (m >= 0 && v > m)
+            v = m;
+    }
+    return v;
+}
+
 /* 计算节点的边框盒宽度（与 layout_node 内部逻辑保持一致） */
 static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
 {
@@ -621,7 +642,13 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
 
     ql_coord_t v = resolve_length(s->width, avail_w, avail_w);
     if (s->box_sizing == 1)
-        return v;
+        return clamp_len(s->min_width, s->max_width, v, avail_w);
+
+    /*
+     * content-box：min/max 指**内容宽**，所以先夹内容宽再加 padding/border。
+     * （border-box 时它们指边框盒，直接夹总量 —— 上面那条 return。）
+     */
+    v = clamp_len(s->min_width, s->max_width, v, avail_w);
     return v + s->padding.left + s->padding.right + 2 * (ql_coord_t)s->border_width;
 }
 
@@ -1851,6 +1878,25 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                 hv = 0;
         }
         content_h = hv;
+    }
+
+    /*
+     * `min-height` / `max-height`：与宽度同一套口径 ——
+     * border-box 时夹边框盒，content-box 时夹内容高。
+     */
+    if (s->box_sizing == 1) {
+        ql_coord_t bh = content_h + s->padding.top + s->padding.bottom +
+                        2 * (ql_coord_t)s->border_width;
+        const ql_coord_t clamped =
+            clamp_len(s->min_height, s->max_height, bh, 0);
+        if (clamped != bh) {
+            content_h = clamped - s->padding.top - s->padding.bottom -
+                        2 * (ql_coord_t)s->border_width;
+            if (content_h < 0)
+                content_h = 0;
+        }
+    } else {
+        content_h = clamp_len(s->min_height, s->max_height, content_h, 0);
     }
 
     ql_coord_t border_h = content_h + s->padding.top + s->padding.bottom +

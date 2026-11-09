@@ -289,6 +289,21 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
             *alpha = 255u;
             return 1;
         }
+        if (n == 8) {
+            for (int i = 0; i < 8; i++) {
+                if (hex_value(h[i]) < 0) {
+                    set_error("%s: 非法颜色 '%s'", where, text);
+                    return 0;
+                }
+            }
+            char rgb6[7];
+            memcpy(rgb6, h, 6);
+            rgb6[6] = '\0';
+            *rgb = (uint32_t)strtoul(rgb6, NULL, 16);
+            char a2[3] = { h[6], h[7], '\0' };
+            *alpha = (uint8_t)strtoul(a2, NULL, 16);
+            return 1;
+        }
         if (n == 6) {
             for (int i = 0; i < 6; i++) {
                 if (hex_value(h[i]) < 0) {
@@ -302,6 +317,88 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
             return 1;
         }
         set_error("%s: 非法颜色 '%s'", where, text);
+        return 0;
+    }
+
+    /* `currentColor` / `inherit` / `initial`：由调用方在解析期替换成具体值，
+       这里只把它们标成"特殊值"，用 alpha=0xFF 且 rgb=0xFFFFFFFF 表示（不可能是真色） */
+    if (strcmp(t, "currentcolor") == 0) {
+        *rgb = 0xFFFFFFFFu;
+        *alpha = 255u;
+        return 1;
+    }
+    if (strcmp(t, "inherit") == 0 || strcmp(t, "initial") == 0 ||
+        strcmp(t, "unset") == 0) {
+        /* `inherit` 对继承属性本来就是默认行为；对非继承属性等同 `initial`。
+           两种都归到 "special"，由 finalize 决定取父值还是取初值。 */
+        *rgb = (strcmp(t, "inherit") == 0) ? 0xFFFFFFFEu : 0xFFFFFFFDu;
+        *alpha = 255u;
+        return 1;
+    }
+
+    /* hsl(h, s%, l%) / hsla(h, s%, l%, a) */
+    if (strncmp(t, "hsl", 3) == 0 && (t[3] == '(' || t[3] == 'a')) {
+        int is_hsla = (t[3] == 'a');
+        const char *open = strchr(t, '(');
+        const char *close = strrchr(t, ')');
+        if (open == NULL || close == NULL || close < open)
+            goto bad_hsl;
+        double v[4] = { 0, 0, 0, 0 };
+        int nv = 0;
+        const char *p = open + 1;
+        while (p < close && nv < 4) {
+            p = skip_space(p);
+            const char *end = NULL;
+            double num = 0;
+            if (!match_number(p, &end, &num))
+                break;
+            p = skip_space(end);
+            if (*p == '%')
+                p++;                  /* s / l 的百分号 */
+            else if (*p == 'd' && p[1] == 'e' && p[2] == 'g')
+                p += 3;               /* h 的 deg */
+            v[nv++] = num;
+            p = skip_space(p);
+            if (p < close && *p == ',')
+                p++;
+            else
+                break;
+        }
+        p = skip_space(p);
+        if (nv != (is_hsla ? 4 : 3) || p != close)
+            goto bad_hsl;
+        if (is_hsla && (v[3] < 0 || v[3] > 1))
+            goto bad_hsl;
+        if (v[1] < 0 || v[1] > 100 || v[2] < 0 || v[2] > 100)
+            goto bad_hsl;
+        /* HSL → RGB（标准算法，h 取模 360） */
+        double hh = v[0];
+        while (hh < 0)
+            hh += 360.0;
+        while (hh >= 360.0)
+            hh -= 360.0;
+        const double sN = v[1] / 100.0, lN = v[2] / 100.0;
+        const double cc = (1.0 - fabs(2.0 * lN - 1.0)) * sN;
+        const double hp = hh / 60.0;
+        const double x = cc * (1.0 - fabs(fmod(hp, 2.0) - 1.0));
+        double r1 = 0, g1 = 0, b1 = 0;
+        if (hp < 1)      { r1 = cc; g1 = x; }
+        else if (hp < 2) { r1 = x;  g1 = cc; }
+        else if (hp < 3) { g1 = cc; b1 = x; }
+        else if (hp < 4) { g1 = x;  b1 = cc; }
+        else if (hp < 5) { r1 = x;  b1 = cc; }
+        else             { r1 = cc; b1 = x; }
+        const double m = lN - cc / 2.0;
+        const int ri = (int)py_round((r1 + m) * 255.0);
+        const int gi = (int)py_round((g1 + m) * 255.0);
+        const int bi = (int)py_round((b1 + m) * 255.0);
+        *rgb = ((uint32_t)(ri & 0xFF) << 16) | ((uint32_t)(gi & 0xFF) << 8) |
+               (uint32_t)(bi & 0xFF);
+        *alpha = is_hsla ? (uint8_t)py_round(v[3] * 255.0) : 255u;
+        return 1;
+    bad_hsl:
+        set_error("%s: 不支持的颜色写法 '%s'（hsl 需要 hsl(h, s%%, l%%) / hsla(h, s%%, l%%, a)）",
+                  where, text);
         return 0;
     }
 
@@ -1237,6 +1334,7 @@ static int parse_gap(const char *text, const char *where, int *gr, int *gc)
 typedef struct {
     char *key;
     char *val;
+    uint8_t important;    /* 1 = 带 !important（级联时最后覆盖） */
 } Decl;
 
 typedef struct {
@@ -1274,6 +1372,7 @@ static int decls_set(Decls *ds, const char *key, const char *val)
                 return 0;
             ql_mem_free(ds->d[i].val);
             ds->d[i].val = nv;
+            ds->d[i].important = 0;
             return 1;
         }
     }
@@ -1298,7 +1397,23 @@ static int decls_set(Decls *ds, const char *key, const char *val)
     }
     ds->d[ds->n].key = nk;
     ds->d[ds->n].val = nv;
+    ds->d[ds->n].important = 0;
     ds->n++;
+    return 1;
+}
+
+/* 带 `!important` 的版本：其余逻辑与 decls_set 完全一致 */
+static int decls_set_imp(Decls *ds, const char *key, const char *val, int important)
+{
+    if (!decls_set(ds, key, val))
+        return 0;
+    if (important) {
+        for (int i = 0; i < ds->n; i++)
+            if (strcmp(ds->d[i].key, key) == 0) {
+                ds->d[i].important = 1;
+                break;
+            }
+    }
     return 1;
 }
 
@@ -1669,6 +1784,8 @@ static const char *const k_supported_props[] = {
     "margin-top", "margin-right", "margin-bottom", "margin-left",
     "padding-top", "padding-right", "padding-bottom", "padding-left",
     "background-image",
+    "min-width", "max-width", "min-height", "max-height",
+    "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
 };
 
 /* @keyframes 里允许的属性（与 Python 的 KEYFRAME_PROPS 一致） */
@@ -1764,6 +1881,35 @@ static int parse_decls(const char *body, size_t len, const char *where,
             }
             while (vlen > 0 && is_space(val[vlen - 1]))
                 vlen--;
+
+            /*
+             * `!important`：从值尾部剥掉，记一个标记。
+             * 级联时**普通声明先全应用、important 声明再应用一遍**，
+             * 于是"带 important 的永远赢"而不必给每个声明加优先级排序。
+             */
+            int important = 0;
+            {
+                static const char k_imp[] = "!important";
+                const size_t il = sizeof(k_imp) - 1u;
+                if (vlen > il) {
+                    size_t cut = vlen - il;
+                    while (cut > 0 && is_space(val[cut - 1]))
+                        cut--;              /* `red  !important` 也认 */
+                    char tail[16];
+                    size_t tl = vlen - (vlen - il);
+                    if (tl < sizeof(tail)) {
+                        memcpy(tail, val + vlen - il, il);
+                        tail[il] = '\0';
+                        for (size_t i = 0; i < il; i++)
+                            if (tail[i] >= 'A' && tail[i] <= 'Z')
+                                tail[i] = (char)(tail[i] - 'A' + 'a');
+                        if (strcmp(tail, k_imp) == 0) {
+                            important = 1;
+                            vlen = cut;
+                        }
+                    }
+                }
+            }
             char *vs = xstrndup(val, vlen);
             if (vs == NULL)
                 return 0;
@@ -1775,14 +1921,14 @@ static int parse_decls(const char *body, size_t len, const char *where,
                     ql_mem_free(vs);
                     return 0;
                 }
-                ok = decls_set(out, prop, vs);
+                ok = decls_set_imp(out, prop, vs, important);
             } else {
                 if (!in_supported_props(prop)) {
                     set_error("%s: 不支持的属性 '%s'", where, prop);
                     ql_mem_free(vs);
                     return 0;
                 }
-                ok = decls_set(out, prop, vs);
+                ok = decls_set_imp(out, prop, vs, important);
             }
             ql_mem_free(vs);
             if (!ok)
@@ -1801,15 +1947,52 @@ static int parse_decls(const char *body, size_t len, const char *where,
 
 #define SEL_COMB_DESCENDANT 0
 #define SEL_COMB_CHILD      1
+#define SEL_COMB_ADJACENT   2   /* a + b：紧邻的前一个元素兄弟 */
+#define SEL_COMB_SIBLING    3   /* a ~ b：前面任一元素兄弟 */
+
+/* 结构伪类 / 属性选择器（构建期求值，运行期零成本） */
+#define SELP_FIRST_CHILD      0x0001
+#define SELP_LAST_CHILD       0x0002
+#define SELP_ONLY_CHILD       0x0004
+#define SELP_NTH_CHILD        0x0008
+#define SELP_NTH_LAST_CHILD   0x0010
+#define SELP_FIRST_OF_TYPE    0x0020
+#define SELP_LAST_OF_TYPE     0x0040
+#define SELP_ONLY_OF_TYPE     0x0080
+#define SELP_NTH_OF_TYPE      0x0100
+#define SELP_NTH_LAST_OF_TYPE 0x0200
+
+#define SEL_ATTR_EXISTS  0
+#define SEL_ATTR_EQ      1
+#define SEL_ATTR_PREFIX  2   /* ^= */
+#define SEL_ATTR_SUFFIX  3   /* $= */
+#define SEL_ATTR_SUBSTR  4   /* *= */
+#define SEL_ATTR_WORD    5   /* ~= */
 
 typedef struct {
+    char *name;
+    char *value;      /* NULL = 只看有没有 */
+    int   op;
+} SelAttr;
+
+typedef struct SelPart SelPart;
+
+struct SelPart {
     int    comb;          /* 与**左边**那一段的组合符 */
     char  *tag;           /* NULL = 不限定 */
     char  *id;            /* NULL = 不限定 */
     char **classes;
     int    nclasses;
     int    states;
-} SelPart;
+    int    universal;     /* `*`：显式"任意元素"（与"什么都没写"区分，用于优先级） */
+    int    pseudo;        /* SELP_* 位图 */
+    int    nth_a, nth_b;  /* `:nth-child(an+b)`；`odd` = 2n+1，`even` = 2n */
+    SelAttr *attrs;       /* `[attr]` 系列 */
+    int      nattrs;
+    SelPart *not_p;       /* `:not(<简单选择器>)`；不支持嵌套 */
+    int      pseudo_elem; /* 0 = 无；1 = ::before；2 = ::after */
+    int      allow_pseudo; /* 1 = 这条内部规则可以匹配合成节点 */
+};
 
 typedef struct {
     SelPart *parts;
@@ -1835,6 +2018,15 @@ static void selpart_free(SelPart *p)
     for (int i = 0; i < p->nclasses; i++)
         ql_mem_free(p->classes[i]);
     ql_mem_free(p->classes);
+    for (int i = 0; i < p->nattrs; i++) {
+        ql_mem_free(p->attrs[i].name);
+        ql_mem_free(p->attrs[i].value);
+    }
+    ql_mem_free(p->attrs);
+    if (p->not_p != NULL) {
+        selpart_free(p->not_p);
+        ql_mem_free(p->not_p);
+    }
     memset(p, 0, sizeof(*p));
 }
 
@@ -1873,11 +2065,102 @@ static int selpart_add_class(SelPart *p, const char *s, size_t len)
 }
 
 /* 解析一个"简单选择器"token，写进 p，并累计 specificity */
+/*
+ * `:nth-child(...)` 的式子：`N` / `odd` / `even` / `an+b` / `-n+b`。
+ * 参数是**1 基**的位置：命中条件 `idx == a*k + b`（k >= 0）。
+ */
+static int parse_nth(const char *s, size_t len, int *out_a, int *out_b)
+{
+    char buf[64];
+    if (len == 0 || len >= sizeof(buf))
+        return 0;
+    size_t w = 0;
+    int sign = 1;
+    for (size_t i = 0; i < len; i++) {
+        char c = s[i];
+        if (c == ' ' || c == '\t')
+            continue;
+        if (c >= 'A' && c <= 'Z')
+            c = (char)(c - 'A' + 'a');
+        buf[w++] = c;
+    }
+    buf[w] = '\0';
+    if (strcmp(buf, "odd") == 0) {
+        *out_a = 2;
+        *out_b = 1;
+        return 1;
+    }
+    if (strcmp(buf, "even") == 0) {
+        *out_a = 2;
+        *out_b = 0;
+        return 1;
+    }
+    /* 纯数字 */
+    const char *p = buf;
+    if (*p == '-') {
+        sign = -1;
+        p++;
+    } else if (*p == '+') {
+        p++;
+    }
+    const char *n_start = p;
+    while (*p >= '0' && *p <= '9')
+        p++;
+    const int has_num = (p != n_start);
+    int num = 0;
+    if (has_num) {
+        for (const char *q = n_start; q < p; q++)
+            num = num * 10 + (*q - '0');
+        num *= sign;
+    }
+    if (*p == '\0') {
+        if (!has_num)
+            return 0;
+        *out_a = 0;
+        *out_b = num;
+        return 1;
+    }
+    if (*p != 'n')
+        return 0;
+    p++;
+    const int a = has_num ? num : 1;
+    int b = 0;
+    if (*p != '\0') {
+        int bsign = 1;
+        if (*p == '+') {
+            p++;
+        } else if (*p == '-') {
+            bsign = -1;
+            p++;
+        } else {
+            return 0;
+        }
+        const char *b_start = p;
+        while (*p >= '0' && *p <= '9')
+            p++;
+        if (p == b_start || *p != '\0')
+            return 0;
+        for (const char *q = b_start; q < p; q++)
+            b = b * 10 + (*q - '0');
+        b *= bsign;
+    }
+    *out_a = a;
+    *out_b = b;
+    return 1;
+}
+
 static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
                                  int *spec_cls, int *spec_tags)
 {
     const char *s = tok;
     int anything = 0;
+
+    /* `*`：任意元素。与"什么都没写"不冲突 —— 单独一段时它就是"全匹配" */
+    if (*s == '*') {
+        s++;
+        p->universal = 1;
+        anything = 1;
+    }
 
     /* 标签：字母开头，后接 [A-Za-z0-9_-] */
     if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')) {
@@ -1929,6 +2212,108 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
         anything = 1;
     }
 
+    /* 属性选择器：`[a]` `[a=v]` `[a^=v]` `[a$=v]` `[a*=v]` `[a~=v]` */
+    while (*s == '[') {
+        s++;
+        const char *nstart = s;
+        while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+               (*s >= '0' && *s <= '9') || *s == '_' || *s == '-' || *s == ':')
+            s++;
+        if (s == nstart)
+            return 0;
+        char aname[64];
+        size_t alen = (size_t)(s - nstart);
+        if (alen >= sizeof(aname))
+            return 0;
+        for (size_t i = 0; i < alen; i++) {
+            char c = nstart[i];
+            aname[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+        }
+        aname[alen] = '\0';
+
+        int op = SEL_ATTR_EXISTS;
+        char *aval = NULL;
+        if (*s == ']') {
+            s++;
+        } else {
+            if (*s == '=') {
+                op = SEL_ATTR_EQ;
+                s++;
+            } else if ((*s == '^' || *s == '$' || *s == '*' || *s == '~') &&
+                       s[1] == '=') {
+                op = (*s == '^') ? SEL_ATTR_PREFIX
+                     : (*s == '$') ? SEL_ATTR_SUFFIX
+                     : (*s == '*') ? SEL_ATTR_SUBSTR : SEL_ATTR_WORD;
+                s += 2;
+            } else {
+                set_error("不支持的属性选择器写法：'%s'（支持 [a] [a=v] [a^=v] [a$=v] [a*=v] [a~=v]）", tok);
+                return 0;
+            }
+            /* 值：允许带引号，也允许裸值 */
+            char q = 0;
+            if (*s == '"' || *s == '\'') {
+                q = *s;
+                s++;
+            }
+            const char *vstart = s;
+            while (*s != '\0' && (q != 0 ? *s != q : (*s != ']')))
+                s++;
+            aval = xstrndup(vstart, (size_t)(s - vstart));
+            if (aval == NULL)
+                return 0;
+            if (q != 0 && *s == q)
+                s++;
+            if (*s != ']') {
+                ql_mem_free(aval);
+                return 0;
+            }
+            s++;
+        }
+
+        SelAttr *na = (SelAttr *)ql_mem_realloc(p->attrs,
+                                               (size_t)(p->nattrs + 1) * sizeof(SelAttr));
+        if (na == NULL) {
+            ql_mem_free(aval);
+            return 0;
+        }
+        p->attrs = na;
+        p->attrs[p->nattrs].name = xstrdup(aname);
+        p->attrs[p->nattrs].value = aval;
+        p->attrs[p->nattrs].op = op;
+        if (p->attrs[p->nattrs].name == NULL)
+            return 0;
+        p->nattrs++;
+        (*spec_cls)++;
+        anything = 1;
+    }
+
+    /* 伪元素：`::before` / `::after`（只允许出现在最后一段） */
+    if (s[0] == ':' && s[1] == ':') {
+        s += 2;
+        const char *start = s;
+        while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z'))
+            s++;
+        char pe[16];
+        size_t plen = (size_t)(s - start);
+        if (plen == 0 || plen >= sizeof(pe))
+            return 0;
+        for (size_t i = 0; i < plen; i++) {
+            char c = start[i];
+            pe[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+        }
+        pe[plen] = '\0';
+        if (strcmp(pe, "before") == 0)
+            p->pseudo_elem = 1;
+        else if (strcmp(pe, "after") == 0)
+            p->pseudo_elem = 2;
+        else {
+            set_error("不支持的伪元素 '::%s'（只支持 ::before / ::after）", pe);
+            return 0;
+        }
+        (*spec_tags)++;      /* 规范里伪元素记在"元素"那一档 */
+        anything = 1;
+    }
+
     /* 伪类：可重复 */
     while (*s == ':') {
         s++;
@@ -1946,14 +2331,101 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
             name[i] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
         }
         name[len] = '\0';
-        if (strcmp(name, "hover") == 0)
+        if (strcmp(name, "hover") == 0) {
             p->states |= 1;
-        else if (strcmp(name, "active") == 0)
+        } else if (strcmp(name, "active") == 0) {
             p->states |= 2;
-        else if (strcmp(name, "focus") == 0)
+        } else if (strcmp(name, "focus") == 0) {
             p->states |= 4;
-        else {
-            set_error("不支持的伪类 ':%s'（只支持 :hover :active :focus）", name);
+        } else if (strcmp(name, "first-child") == 0) {
+            p->pseudo |= SELP_FIRST_CHILD;
+        } else if (strcmp(name, "last-child") == 0) {
+            p->pseudo |= SELP_LAST_CHILD;
+        } else if (strcmp(name, "only-child") == 0) {
+            p->pseudo |= SELP_ONLY_CHILD;
+        } else if (strcmp(name, "first-of-type") == 0) {
+            p->pseudo |= SELP_FIRST_OF_TYPE;
+        } else if (strcmp(name, "last-of-type") == 0) {
+            p->pseudo |= SELP_LAST_OF_TYPE;
+        } else if (strcmp(name, "only-of-type") == 0) {
+            p->pseudo |= SELP_ONLY_OF_TYPE;
+        } else if (strcmp(name, "nth-child") == 0 || strcmp(name, "nth-last-child") == 0 ||
+                   strcmp(name, "nth-of-type") == 0 ||
+                   strcmp(name, "nth-last-of-type") == 0) {
+            if (*s != '(') {
+                set_error("':%s' 必须带括号，例如 :%s(2n+1)", name, name);
+                return 0;
+            }
+            s++;
+            const char *astart = s;
+            while (*s != '\0' && *s != ')')
+                s++;
+            if (*s != ')') {
+                set_error("':%s(' 缺少右括号", name);
+                return 0;
+            }
+            if (!parse_nth(astart, (size_t)(s - astart), &p->nth_a, &p->nth_b)) {
+                set_error("':%s(%.*s)' 里的式子看不懂（支持 N / odd / even / an+b / -n+b）",
+                          name, (int)(s - astart), astart);
+                return 0;
+            }
+            s++;
+            if (strcmp(name, "nth-child") == 0)
+                p->pseudo |= SELP_NTH_CHILD;
+            else if (strcmp(name, "nth-last-child") == 0)
+                p->pseudo |= SELP_NTH_LAST_CHILD;
+            else if (strcmp(name, "nth-of-type") == 0)
+                p->pseudo |= SELP_NTH_OF_TYPE;
+            else
+                p->pseudo |= SELP_NTH_LAST_OF_TYPE;
+        } else if (strcmp(name, "not") == 0) {
+            if (*s != '(') {
+                set_error("':not' 必须带括号，例如 :not(.a)");
+                return 0;
+            }
+            s++;
+            const char *nstart2 = s;
+            int depth2 = 1;
+            while (*s != '\0' && depth2 > 0) {
+                if (*s == '(')
+                    depth2++;
+                else if (*s == ')')
+                    depth2--;
+                if (depth2 > 0)
+                    s++;
+            }
+            if (depth2 != 0) {
+                set_error("':not(' 缺少右括号");
+                return 0;
+            }
+            char inner[128];
+            size_t ilen = (size_t)(s - nstart2);
+            if (ilen == 0 || ilen >= sizeof(inner)) {
+                set_error("':not()' 里要写一个简单选择器");
+                return 0;
+            }
+            memcpy(inner, nstart2, ilen);
+            inner[ilen] = '\0';
+            s++;                       /* 跳过 ')' */
+            if (p->not_p != NULL) {
+                set_error("不支持嵌套 ':not()'");
+                return 0;
+            }
+            p->not_p = (SelPart *)ql_mem_calloc(1, sizeof(SelPart));
+            if (p->not_p == NULL)
+                return 0;
+            int sc_i = 0, sc_c = 0, sc_t = 0;
+            if (!parse_simple_selector(inner, p->not_p, &sc_i, &sc_c, &sc_t) ||
+                p->not_p->pseudo != 0 || p->not_p->pseudo_elem != 0 ||
+                p->not_p->universal) {
+                set_error("':not()' 只支持 tag / .class / #id / [attr]");
+                return 0;
+            }
+        } else {
+            set_error("不支持的伪类 ':%s'（支持 :hover :active :focus :first-child "
+                      ":last-child :only-child :nth-child() :nth-last-child() "
+                      ":first-of-type :last-of-type :only-of-type :nth-of-type() "
+                      ":nth-last-of-type() :not()）", name);
             return 0;
         }
         (*spec_cls)++;
@@ -1980,23 +2452,31 @@ static int parse_selector(const char *sel, Rule *r)
         if (*p == '\0')
             break;
         if (*p == '>' || *p == '+' || *p == '~') {
-            if (*p == '+' || *p == '~') {
-                set_error("不支持相邻/兄弟选择器 '%c'", *p);
-                return 0;
-            }
             if (r->nparts == 0) {
                 set_error("选择器不能以组合符开头：'%s'", sel);
                 return 0;
             }
-            comb = SEL_COMB_CHILD;
+            comb = (*p == '>') ? SEL_COMB_CHILD
+                   : (*p == '+') ? SEL_COMB_ADJACENT : SEL_COMB_SIBLING;
             p++;
             continue;
         }
 
-        /* 一个简单选择器 token */
+        /*
+         * 一个简单选择器 token。**括号里的 `+` / `~` 不是组合符**
+         * （`:nth-child(2n+1)`、`[a="b+c"]` 里的都得原样留着）。
+         */
         const char *start = p;
-        while (*p != '\0' && !is_space(*p) && *p != '>' && *p != '+' && *p != '~')
+        int depth = 0;
+        while (*p != '\0') {
+            if (*p == '(' || *p == '[')
+                depth++;
+            else if (*p == ')' || *p == ']')
+                depth--;
+            else if (depth <= 0 && (is_space(*p) || *p == '>' || *p == '+' || *p == '~'))
+                break;
             p++;
+        }
         char tok[128];
         size_t len = (size_t)(p - start);
         if (len == 0 || len >= sizeof(tok)) {
@@ -2432,11 +2912,28 @@ typedef struct {
     PNode *node;
 } Item;
 
+/* 一条 HTML 属性（`[attr]` 选择器要用；渲染不用） */
+typedef struct {
+    char *name;    /* 已转小写 */
+    char *value;   /* NULL = 布尔属性 */
+} PAttr;
+
 struct PNode {
     char  *tag;
     char **classes;
     int    nclasses;
     char  *id;
+    PAttr *attrs;            /* 全部属性（`[attr]` 选择器用） */
+    int    nattrs;
+    /*
+     * 兄弟位置：级联期算一次，`:first-child` / `:nth-child` 直接用。
+     * 只统计**元素**兄弟 —— `::before` 生成的合成节点不是元素，不参与计数。
+     */
+    int    sib_idx;
+    int    sib_n;
+    int    type_idx;         /* 同标签兄弟里的位置 */
+    int    type_n;
+    int    is_pseudo;        /* 1 = `::before` / `::after` 生成的合成节点 */
     char  *style_attr;
     uint8_t flags;           /* QL_UI_NODE_*（<input type="password">） */
     /* 图像热区（`<map>` / `<img usemap>` / `<area>`）：解析完就地解析成 doc->areas */
@@ -2716,6 +3213,11 @@ static void pnode_free(PNode *n)
         ql_mem_free(n->classes[i]);
     ql_mem_free(n->classes);
     ql_mem_free(n->id);
+    for (int i = 0; i < n->nattrs; i++) {
+        ql_mem_free(n->attrs[i].name);
+        ql_mem_free(n->attrs[i].value);
+    }
+    ql_mem_free(n->attrs);
     ql_mem_free(n->style_attr);
     ql_mem_free(n->text);
     ql_mem_free(n->map_name);
@@ -3052,6 +3554,12 @@ typedef struct {
     char *alt;        /* <area alt> */
     char *shape;      /* <area shape="rect|circle|poly|default"> */
     uint8_t has_open; /* <details open> / <dialog open>：布尔属性，只需"有没有" */
+    /*
+     * 全部属性（含上表那些）：`[attr]` / `[attr=v]` 选择器要用。
+     * 只在下一次 parse_attrs 前有效 —— 调用方立刻转交给 PNode。
+     */
+    PAttr *all;
+    int    nall;
 } Attrs;
 
 static void attrs_free(Attrs *a)
@@ -3069,6 +3577,11 @@ static void attrs_free(Attrs *a)
     ql_mem_free(a->href);
     ql_mem_free(a->alt);
     ql_mem_free(a->shape);
+    for (int i = 0; i < a->nall; i++) {
+        ql_mem_free(a->all[i].name);
+        ql_mem_free(a->all[i].value);
+    }
+    ql_mem_free(a->all);
     memset(a, 0, sizeof(*a));
 }
 
@@ -3082,6 +3595,35 @@ static int is_name_char(char c)
  * 解析 `<div class="a b" id="x">` 里标签名之后的部分。
  * 返回指向 '>' 之后的位置；失败返回 NULL。
  */
+/*
+ * 把一条属性追加到 `a->all`。`val == NULL` = 布尔属性。
+ * 值走和 typed 字段同一套实体解码（`data-tip="a&amp;b"` 要能匹配 `[data-tip="a&b"]`）。
+ */
+static int attr_all_add(Attrs *a, const char *name, const char *val, size_t vlen)
+{
+    PAttr *na = (PAttr *)ql_mem_realloc(a->all, (size_t)(a->nall + 1) * sizeof(PAttr));
+    if (na == NULL)
+        return 0;
+    a->all = na;
+    PAttr *slot = &a->all[a->nall];
+    memset(slot, 0, sizeof(*slot));
+    slot->name = xstrdup(name);
+    if (slot->name == NULL)
+        return 0;
+    if (val != NULL) {
+        SB sb = { 0 };
+        if (!decode_entities(val, vlen, &sb)) {
+            sb_free(&sb);
+            return 0;
+        }
+        slot->value = (sb.p != NULL) ? sb.p : xstrdup("");
+        if (slot->value == NULL)
+            return 0;
+    }
+    a->nall++;
+    return 1;
+}
+
 static const char *parse_attrs(const char *p, Attrs *a)
 {
     for (;;) {
@@ -3146,6 +3688,11 @@ static const char *parse_attrs(const char *p, Attrs *a)
         /* 布尔属性：`open` 没有值也算（`<details open>` 是常见写法） */
         if (strcmp(name, "open") == 0)
             a->has_open = 1;
+
+        /* 通用收集：给 `[attr]` 选择器用（值与 typed 字段各自 decode 一次，
+           属性最多几个，这点重复不值得为了省它把逻辑绕在一起） */
+        if (!attr_all_add(a, name, val, vlen))
+            return NULL;
 
         if (val != NULL && (strcmp(name, "class") == 0 || strcmp(name, "id") == 0 ||
                             strcmp(name, "style") == 0 || strcmp(name, "value") == 0 ||
@@ -3316,8 +3863,9 @@ static int flatten_node(PNode *n)
          *  丢了 —— 想要保留请直接用 `<pre>`，这条写进了文档。）
          */
         if (n->tag != NULL &&
-            (strcmp(n->tag, "pre") == 0 || strcmp(n->tag, "textarea") == 0)) {
-            n->text = sb.p;          /* 接管所有权 */
+            (strcmp(n->tag, "pre") == 0 || strcmp(n->tag, "textarea") == 0 ||
+             strcmp(n->tag, "#pe") == 0)) {
+            n->text = sb.p;          /* 接管所有权（`#pe` 的 content 原样保留） */
         } else {
             char *body = strip_ws_ptr(sb.p);
             char *kept = xstrdup(body);
@@ -3339,7 +3887,8 @@ static int flatten_node(PNode *n)
         }
     const int preserve_tag =
         (n->tag != NULL && (strcmp(n->tag, "pre") == 0 ||
-                            strcmp(n->tag, "textarea") == 0));
+                            strcmp(n->tag, "textarea") == 0 ||
+                            strcmp(n->tag, "#pe") == 0));
 
     PNode *prev = NULL;
     for (int i = 0; i < n->nitems; i++) {
@@ -3729,6 +4278,13 @@ static PNode *parse_html(const char *html)
                     return NULL;
                 }
             }
+            /* 属性表整体转交给节点：`[attr]` 选择器要用 */
+            if (at.nall > 0) {
+                n->attrs = at.all;
+                n->nattrs = at.nall;
+                at.all = NULL;
+                at.nall = 0;
+            }
             /*
              * <input>：`value` 变成这个节点的初始文本（之后由运行期池接管），
              * `type` 只认 text / password。
@@ -3895,8 +4451,72 @@ static PNode *parse_html(const char *html)
 
 /* ============================== ⑥ 级联 ============================== */
 
+/* nth-child 的命中条件：位置 pos（1 基）能写成 a*k + b（k >= 0） */
+static int nth_hits(int a, int b, int pos)
+{
+    if (a == 0)
+        return pos == b;
+    const int d = pos - b;
+    if (a > 0)
+        return d >= 0 && (d % a) == 0;
+    /* a < 0：只匹配有限个（`-n+3` = 前三个） */
+    return d <= 0 && (d % a) == 0;
+}
+
+static const PAttr *find_attr(const PNode *n, const char *name)
+{
+    for (int i = 0; i < n->nattrs; i++)
+        if (strcmp(n->attrs[i].name, name) == 0)
+            return &n->attrs[i];
+    return NULL;
+}
+
+static int attr_matches(const PNode *n, const SelAttr *a)
+{
+    const PAttr *at = find_attr(n, a->name);
+    if (at == NULL)
+        return 0;
+    if (a->op == SEL_ATTR_EXISTS)
+        return 1;
+    const char *v = (at->value != NULL) ? at->value : "";
+    const char *want = (a->value != NULL) ? a->value : "";
+    const size_t vl = strlen(v), wl = strlen(want);
+    switch (a->op) {
+    case SEL_ATTR_EQ:
+        return strcmp(v, want) == 0;
+    case SEL_ATTR_PREFIX:
+        return wl > 0 && vl >= wl && strncmp(v, want, wl) == 0;
+    case SEL_ATTR_SUFFIX:
+        return wl > 0 && vl >= wl && strcmp(v + (vl - wl), want) == 0;
+    case SEL_ATTR_SUBSTR:
+        return wl > 0 && strstr(v, want) != NULL;
+    case SEL_ATTR_WORD: {
+        /* `~=`：按空白切成词，任一相等 */
+        if (wl == 0)
+            return 0;
+        const char *p = v;
+        while (*p != '\0') {
+            while (*p != '\0' && (*p == ' ' || *p == '\t'))
+                p++;
+            const char *w0 = p;
+            while (*p != '\0' && *p != ' ' && *p != '\t')
+                p++;
+            if ((size_t)(p - w0) == wl && strncmp(w0, want, wl) == 0)
+                return 1;
+        }
+        return 0;
+    }
+    default:
+        return 0;
+    }
+}
+
 static int simple_matches(const PNode *n, const SelPart *sp)
 {
+    /* 合成节点（`::before` / `::after`）只由它自己的那条内部规则匹配 */
+    if (n->is_pseudo && !sp->allow_pseudo)
+        return 0;
+
     if (sp->tag != NULL && strcmp(n->tag, sp->tag) != 0)
         return 0;
     if (sp->id != NULL) {
@@ -3913,6 +4533,39 @@ static int simple_matches(const PNode *n, const SelPart *sp)
         if (!found)
             return 0;
     }
+    for (int i = 0; i < sp->nattrs; i++)
+        if (!attr_matches(n, &sp->attrs[i]))
+            return 0;
+    if (sp->not_p != NULL && simple_matches(n, sp->not_p))
+        return 0;
+
+    /* 结构伪类：位置在 flatten 之后算好（1 基） */
+    if (sp->pseudo != 0) {
+        const int pos = n->sib_idx + 1;
+        const int tpos = n->type_idx + 1;
+        if ((sp->pseudo & SELP_FIRST_CHILD) && pos != 1)
+            return 0;
+        if ((sp->pseudo & SELP_LAST_CHILD) && pos != n->sib_n)
+            return 0;
+        if ((sp->pseudo & SELP_ONLY_CHILD) && n->sib_n != 1)
+            return 0;
+        if ((sp->pseudo & SELP_FIRST_OF_TYPE) && tpos != 1)
+            return 0;
+        if ((sp->pseudo & SELP_LAST_OF_TYPE) && tpos != n->type_n)
+            return 0;
+        if ((sp->pseudo & SELP_ONLY_OF_TYPE) && n->type_n != 1)
+            return 0;
+        if ((sp->pseudo & SELP_NTH_CHILD) && !nth_hits(sp->nth_a, sp->nth_b, pos))
+            return 0;
+        if ((sp->pseudo & SELP_NTH_LAST_CHILD) &&
+            !nth_hits(sp->nth_a, sp->nth_b, n->sib_n - pos + 1))
+            return 0;
+        if ((sp->pseudo & SELP_NTH_OF_TYPE) && !nth_hits(sp->nth_a, sp->nth_b, tpos))
+            return 0;
+        if ((sp->pseudo & SELP_NTH_LAST_OF_TYPE) &&
+            !nth_hits(sp->nth_a, sp->nth_b, n->type_n - tpos + 1))
+            return 0;
+    }
     return 1;
 }
 
@@ -3925,6 +4578,28 @@ static int match_rec(const PNode *n, const Rule *r, int idx)
         return 1;
 
     const int comb = r->parts[idx].comb;
+    if (comb == SEL_COMB_ADJACENT || comb == SEL_COMB_SIBLING) {
+        /* 兄弟组合符：从**前一个元素兄弟**开始往左找（合成节点不算） */
+        const PNode *p = n->parent;
+        if (p == NULL)
+            return 0;
+        const PNode *prev = NULL;
+        for (const PNode *c = p->first_child; c != NULL && c != n; c = c->next_sibling)
+            if (!c->is_pseudo)
+                prev = c;
+        if (comb == SEL_COMB_ADJACENT)
+            return prev != NULL && match_rec(prev, r, idx - 1);
+        for (const PNode *c = prev; c != NULL; c = prev) {
+            if (match_rec(c, r, idx - 1))
+                return 1;
+            prev = NULL;
+            for (const PNode *o = p->first_child; o != NULL && o != c; o = o->next_sibling)
+                if (!o->is_pseudo)
+                    prev = o;
+        }
+        return 0;
+    }
+
     const PNode *p = n->parent;
     if (comb == SEL_COMB_CHILD)
         return p != NULL && strcmp(p->tag, "#document") != 0 &&
@@ -3980,6 +4655,9 @@ static int ua_heading(Decls *out, int px, int margin)
 
 static int ua_defaults(const char *tag, Decls *out)
 {
+    /* `::before` / `::after` 生成的合成节点：行内，由内容撑开 */
+    if (strcmp(tag, "#pe") == 0)
+        return ua_set_inline(out);
     /* ---- 行内 ---- */
     if (strcmp(tag, "span") == 0)
         return ua_set_inline(out);
@@ -4317,6 +4995,197 @@ static int ua_defaults(const char *tag, Decls *out)
     return ua_set_block(out);
 }
 
+/* ---------------------- ::before / ::after 展开 ---------------------- */
+
+/*
+ * `::before` / `::after` 在**构建期**变成真节点，一次到位：
+ *   - 内容是 `content` 的字符串（只支持纯文本）；
+ *   - 样式由一条内部规则 `.__pe_N` 提供（声明从原规则拷贝，去掉 content）；
+ *   - 节点 tag 是 `#pe`：任何用户选择器都匹配不到它（标签名不可能以 # 开头），
+ *     只有带 allow_pseudo 的内部规则能命中。
+ * 这样运行期完全不知道有"伪元素"这回事 —— 零成本，与标签包裁剪也无关。
+ */
+static int pseudo_counter = 0;
+
+/* `content: "x"` / `content: 'x'` → 解出来的文本（调用方负责 free） */
+static char *pseudo_content_text(const Rule *r)
+{
+    const char *v = decls_get(&r->decls, "content");
+    if (v == NULL)
+        return NULL;
+    const char *p = skip_space(v);
+    if (*p != '"' && *p != '\'')
+        return NULL;                   /* `content: none` 之类：当作不生成 */
+    const char q = *p++;
+    const char *start = p;
+    while (*p != '\0' && *p != q)
+        p++;
+    if (*p != q)
+        return NULL;
+    return xstrndup(start, (size_t)(p - start));
+}
+
+static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
+{
+    for (PNode *c = n->first_child; c != NULL; c = c->next_sibling)
+        if (!expand_pseudo_rec(c, r, rs))
+            return 0;
+
+    /* 输入框/下拉框是叶子：往里塞节点没有意义（也会破坏值池） */
+    if (strcmp(n->tag, "input") == 0 || strcmp(n->tag, "select") == 0 ||
+        strcmp(n->tag, "textarea") == 0 || strcmp(n->tag, "#pe") == 0)
+        return 1;
+
+    if (!rule_matches(n, r))
+        return 1;
+
+    char *text = pseudo_content_text(r);
+    if (text == NULL)
+        return 1;                      /* 没有 content：不生成（与浏览器一致） */
+
+    char cls[32];
+    snprintf(cls, sizeof(cls), "__pe_%d", pseudo_counter++);
+
+    PNode *pe = pnode_new("#pe", NULL);
+    if (pe == NULL) {
+        ql_mem_free(text);
+        return 0;
+    }
+    pe->is_pseudo = 1;
+    pe->text = text;
+    if (!selpart_add_class(&(SelPart){0}, "", 0)) { /* 占位，避免未用告警 */ }
+    /* 给合成节点挂 class（直接建，不用 selpart 那套） */
+    pe->classes = (char **)ql_mem_calloc(1, sizeof(char *));
+    if (pe->classes == NULL) {
+        pnode_free(pe);
+        return 0;
+    }
+    pe->classes[0] = xstrdup(cls);
+    if (pe->classes[0] == NULL) {
+        pnode_free(pe);
+        return 0;
+    }
+    pe->nclasses = 1;
+
+    /* 内部规则：`.__pe_N` + 原规则的全部声明（去掉 content） */
+    if (rs->n >= rs->cap) {
+        int ncap = (rs->cap == 0) ? 8 : rs->cap * 2;
+        Rule *nr = (Rule *)ql_mem_realloc(rs->r, (size_t)ncap * sizeof(Rule));
+        if (nr == NULL) {
+            pnode_free(pe);
+            return 0;
+        }
+        rs->r = nr;
+        rs->cap = ncap;
+    }
+    Rule *nr = &rs->r[rs->n];
+    memset(nr, 0, sizeof(*nr));
+    nr->parts = (SelPart *)ql_mem_calloc(1, sizeof(SelPart));
+    if (nr->parts == NULL) {
+        pnode_free(pe);
+        return 0;
+    }
+    nr->nparts = 1;
+    nr->parts[0].allow_pseudo = 1;
+    nr->parts[0].classes = (char **)ql_mem_calloc(1, sizeof(char *));
+    if (nr->parts[0].classes == NULL) {
+        ql_mem_free(nr->parts);
+        pnode_free(pe);
+        return 0;
+    }
+    nr->parts[0].classes[0] = xstrdup(cls);
+    if (nr->parts[0].classes[0] == NULL) {
+        pnode_free(pe);
+        return 0;
+    }
+    nr->parts[0].nclasses = 1;
+    nr->spec_cls = r->spec_cls + 1;      /* 伪元素在规范里"比元素更强" */
+    nr->spec_tags = r->spec_tags;
+    nr->spec_ids = r->spec_ids;
+    nr->order = r->order;
+    for (int i = 0; i < r->decls.n; i++) {
+        if (strcmp(r->decls.d[i].key, "content") == 0)
+            continue;
+        if (!decls_set(&nr->decls, r->decls.d[i].key, r->decls.d[i].val)) {
+            pnode_free(pe);
+            return 0;
+        }
+    }
+    rs->n++;
+
+    /* 拼进兄弟链表：::before 当第一个孩子，::after 追加到末尾 */
+    pe->parent = n;
+    if (r->parts[r->nparts - 1].pseudo_elem == 1) {
+        pe->next_sibling = n->first_child;
+        n->first_child = pe;
+    } else if (n->first_child == NULL) {
+        n->first_child = pe;
+    } else {
+        PNode *last = n->first_child;
+        while (last->next_sibling != NULL)
+            last = last->next_sibling;
+        last->next_sibling = pe;
+    }
+    return 1;
+}
+
+/* 对每条带伪元素的规则展开一次（规则条数很少，不优化） */
+static int expand_pseudo(PNode *root, Rules *rs)
+{
+    const int base = rs->n;      /* 只遍历用户规则；新加的内部规则不再展开 */
+    for (int i = 0; i < base; i++) {
+        Rule *r = &rs->r[i];
+        if (r->nparts <= 0)
+            continue;
+        if (r->parts[r->nparts - 1].pseudo_elem == 0) {
+            /* `content` 只在伪元素上合法 —— 元素上用它是常见的误写，必须报错 */
+            if (decls_get(&r->decls, "content") != NULL) {
+                set_error("'content' 只能用在 ::before / ::after 上");
+                return 0;
+            }
+            continue;
+        }
+        if (decls_get(&r->decls, "content") == NULL) {
+            set_error("%s 规则缺少 'content'：::before / ::after 只有写了 content 才生成内容",
+                      r->parts[r->nparts - 1].pseudo_elem == 1 ? "::before" : "::after");
+            return 0;
+        }
+        if (!expand_pseudo_rec(root, r, rs))
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * 算每个元素的兄弟位置（`:first-child` / `:nth-child` 用）。
+ * 只在**元素**之间计数：`::before` 生成的合成节点不是元素，不参与。
+ * 必须在 flatten 之后调（那时 first_child / next_sibling 才连成链表）。
+ */
+static void assign_sibling_pos(PNode *n)
+{
+    int idx = 0, total = 0;
+    for (PNode *c = n->first_child; c != NULL; c = c->next_sibling)
+        if (!c->is_pseudo)
+            total++;
+    for (PNode *c = n->first_child; c != NULL; c = c->next_sibling) {
+        if (c->is_pseudo)
+            continue;
+        c->sib_idx = idx++;
+        c->sib_n = total;
+        int tidx = 0, ttotal = 0;
+        for (PNode *o = n->first_child; o != NULL; o = o->next_sibling) {
+            if (o->is_pseudo || strcmp(o->tag, c->tag) != 0)
+                continue;
+            if (o == c)
+                tidx = ttotal;
+            ttotal++;
+        }
+        c->type_idx = tidx;
+        c->type_n = ttotal;
+        assign_sibling_pos(c);
+    }
+}
+
 typedef struct {
     const Rule *r;
     int         ids, cls, tags, order;
@@ -4364,13 +5233,22 @@ static int collect_decls(const PNode *n, const Rules *rs, int states_active,
     }
     if (nm > 1)
         qsort(refs, (size_t)nm, sizeof(MatchRef), matchref_cmp);
-    for (int i = 0; i < nm; i++) {
-        const Decls *d = &refs[i].r->decls;
-        for (int j = 0; j < d->n; j++)
-            if (!decls_set(out, d->d[j].key, d->d[j].val)) {
-                ql_mem_free(refs);
-                return 0;
+    /*
+     * 两趟：先普通声明、再 `!important` 声明。
+     * 这样"important 永远赢"就成立了，不必给每条声明排优先级。
+     */
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < nm; i++) {
+            const Decls *d = &refs[i].r->decls;
+            for (int j = 0; j < d->n; j++) {
+                if ((d->d[j].important != 0) != (pass == 1))
+                    continue;
+                if (!decls_set(out, d->d[j].key, d->d[j].val)) {
+                    ql_mem_free(refs);
+                    return 0;
+                }
             }
+        }
     }
     ql_mem_free(refs);
     return 1;
@@ -5207,6 +6085,30 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     if ((v = decls_get(st, "height")) != NULL && !parse_length(v, where, 1, &hu, &hv))
         return 0;
 
+    /* min/max：`auto` = 没设；只接受 px / %（与 width/height 同一套） */
+    uint8_t mnwu = QL_UI_UNIT_AUTO, mxwu = QL_UI_UNIT_AUTO;
+    uint8_t mnhu = QL_UI_UNIT_AUTO, mxhu = QL_UI_UNIT_AUTO;
+    int mnwv = 0, mxwv = 0, mnhv = 0, mxhv = 0;
+    if ((v = decls_get(st, "min-width")) != NULL) {
+        if (!parse_length(v, where, 1, &mnwu, &mnwv))
+            return 0;
+        if (mnwu == QL_UI_UNIT_AUTO)
+            mnwu = QL_UI_UNIT_AUTO;
+    }
+    if ((v = decls_get(st, "max-width")) != NULL &&
+        !parse_length(v, where, 1, &mxwu, &mxwv))
+        return 0;
+    if ((v = decls_get(st, "min-height")) != NULL &&
+        !parse_length(v, where, 1, &mnhu, &mnhv))
+        return 0;
+    if ((v = decls_get(st, "max-height")) != NULL &&
+        !parse_length(v, where, 1, &mxhu, &mxhv))
+        return 0;
+    if (mnwu == QL_UI_UNIT_PX && mxwu == QL_UI_UNIT_PX && mxwv < mnwv) {
+        set_error("%s: max-width(%dpx) 小于 min-width(%dpx)", where, mxwv, mnwv);
+        return 0;
+    }
+
     int margin[4] = { 0, 0, 0, 0 }, padding[4] = { 0, 0, 0, 0 };
     if ((v = decls_get(st, "margin")) != NULL && !parse_edges(v, where, margin))
         return 0;
@@ -5789,6 +6691,14 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->height.value = (int16_t)hv;
     out->height.unit = hu;
     out->height.reserved = 0;
+    out->min_width.value = (int16_t)mnwv;
+    out->min_width.unit = mnwu;
+    out->max_width.value = (int16_t)mxwv;
+    out->max_width.unit = mxwu;
+    out->min_height.value = (int16_t)mnhv;
+    out->min_height.unit = mnhu;
+    out->max_height.value = (int16_t)mxhv;
+    out->max_height.unit = mxhu;
     out->margin.top = (int16_t)margin[0];
     out->margin.right = (int16_t)margin[1];
     out->margin.bottom = (int16_t)margin[2];
@@ -6297,10 +7207,14 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         goto done;
     if (!parse_css(css, &rules, &kfs))
         goto done;
+    /* `::before` / `::after` 在这里变成真节点（构建期一次到位，运行期零成本） */
+    if (!expand_pseudo(root, &rules))
+        goto done;
     if (!kf_compile(&kfs, &kftab, &kfranges))
         goto done;
     if (!flatten_tree(root, &flat, &nflat))
         goto done;
+    assign_sibling_pos(root);
 
     /* 逐节点算样式（DFS 顺序天然父先子后，继承直接取父的最终声明） */
     for (int i = 0; i < nflat; i++) {

@@ -269,6 +269,14 @@ typedef struct {
 
     QLUILength  width;
     QLUILength  height;
+    /*
+     * `min-width` / `max-width` / `min-height` / `max-height`。
+     * `unit == QL_UI_UNIT_AUTO` = 没设（不是 0）。百分比相对父元素内容盒。
+     */
+    QLUILength  min_width;
+    QLUILength  max_width;
+    QLUILength  min_height;
+    QLUILength  max_height;
 
     QLUIEdges   margin;
     QLUIEdges   padding;
@@ -1117,7 +1125,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    15u  /* 15: QLUIStyle += baseline_dy / font_family */
+#define QL_UI_BLOB_VERSION    16u  /* 16: QLUIStyle += min/max-width/height */
 
 typedef struct {
     uint32_t magic;
