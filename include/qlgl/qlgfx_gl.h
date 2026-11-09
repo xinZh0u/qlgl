@@ -44,6 +44,14 @@ void ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
 void ql_gfx_gl_attach_clipboard(QLGfxGL *gfx, QLUIRoot *ui);
 
 int      ql_gfx_gl_poll(QLGfxGL *gfx);
+/*
+ * 阻塞等到"有事件或超时"（毫秒），返回 1=继续 0=窗口已关闭。
+ *
+ * 事件驱动的循环在"这一帧没有脏区"时调它，而不是用 sleep 空转：
+ * 界面静止时既不渲染也不交换，CPU 占用归零；拖动窗口时也不和合成器抢帧
+ * （这正是"缩放掉帧"的主要来源 —— 我们每秒 swap 144 次，合成器还要重配窗口）。
+ */
+int      ql_gfx_gl_wait(QLGfxGL *gfx, int timeout_ms);
 
 /* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */
 void     ql_gfx_gl_close(QLGfxGL *gfx);
@@ -109,6 +117,13 @@ uint32_t ql_gfx_gl_draw_calls(QLGfxGL *gfx);
 uint32_t ql_gfx_gl_vertex_count(QLGfxGL *gfx);
 /* 上一帧的 begin→end 耗时（微秒；CPU 侧测量） */
 uint32_t ql_gfx_gl_frame_us(QLGfxGL *gfx);
+/*
+ * 上一帧里 `eglSwapBuffers` 占了多久（微秒）。
+ * 与 frame_us 一比就知道"这一帧是我们画的慢，还是在等 vsync / 合成器"：
+ *     frame_us - swap_us  ≈ 我们自己花的（提交 + 光栅）
+ *     swap_us             ≈ 等垂直同步 + 合成器取帧
+ */
+uint32_t ql_gfx_gl_swap_us(QLGfxGL *gfx);
 double   ql_gfx_gl_gpu_mhz(QLGfxGL *gfx);   /* 粗略信息，可能为 0 */
 
 /* 读回像素（RGBA8888，自上而下）。离屏模式必可读；窗口模式读的是后缓冲 */

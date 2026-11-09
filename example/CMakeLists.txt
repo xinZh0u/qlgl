@@ -58,7 +58,9 @@ foreach(e ${QL_EXAMPLES})
     # 例程的 HTML/CSS 在源码目录里躺着（运行期读），把它编进程序当默认目录，
     # 这样 `./build/example/example_01_window` 从任何 cwd 启动都能找到 index.html。
     target_compile_definitions(example_${e} PRIVATE
-        QL_EX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/${e}")
+        QL_EX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/${e}"
+        # common.h 用 clock_gettime 做 --seconds；宏必须在任何头文件之前生效
+        _POSIX_C_SOURCE=200809L)
     set_target_properties(example_${e} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/example)   # build/example/example_NN_xxx
 endforeach()

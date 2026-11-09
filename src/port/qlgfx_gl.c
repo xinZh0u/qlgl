@@ -4,6 +4,7 @@
  */
 /* clock_gettime 在 -std=c11 下需要 POSIX 特性宏 */
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 #include <qlgl/qlgl.h>
 
@@ -22,10 +23,12 @@
 #include "qlinput_x11.h"
 #include "qlclipboard_x11.h"
 
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define QL_GL_MAX_VERTS     65536
 #define QL_GL_ATLAS_SIZE    1024     /* 1 MB R8：够放几百个 CJK 字形 */
@@ -127,6 +130,10 @@ struct QLGfxGL {
     uint32_t         draw_calls;
     uint32_t         vertex_count;
     uint32_t         frame_us;
+    uint32_t         swap_us;      /* 其中 eglSwapBuffers 等了多久（vsync/合成器） */
+    int              vsync_user;   /* 用户要的：1 = 开（默认），0 = 关 */
+    int              vsync_eff;    /* 当前生效的 swap interval */
+    uint32_t         resize_until_ms;  /* 这个时刻之前不跟 vblank（正在拖边框） */
     struct timespec  t0;
 
     /* 保留式脏区：和窗口同尺寸的 FBO，帧末 blit 到窗口 */
@@ -1653,6 +1660,14 @@ static void now_us(struct timespec *t)
     clock_gettime(CLOCK_MONOTONIC, t);
 }
 
+/* 单调时钟的毫秒数（32 位，回绕按差值判断，与动画时钟同一套约定） */
+static uint64_t now_us_mono(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
+}
+
 QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height,
                           uint32_t flags)
 {
@@ -1814,6 +1829,8 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
      * 尺寸的画面给 compositor，看起来就是"黑一下再出来"。
      * 想要跑满帧率的基准测试可以 `ql_gfx_gl_set_vsync(gfx, 0)` 关掉。
      */
+    g->vsync_user = 1;
+    g->vsync_eff = 1;
     if (!g->offscreen)
         eglSwapInterval(g->egdpy, 1);
 
@@ -1904,7 +1921,9 @@ void ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on)
 {
     if (gfx == NULL || gfx->egdpy == EGL_NO_DISPLAY)
         return;
-    eglSwapInterval(gfx->egdpy, on ? 1 : 0);
+    gfx->vsync_user = on ? 1 : 0;
+    gfx->vsync_eff = gfx->vsync_user;
+    eglSwapInterval(gfx->egdpy, gfx->vsync_eff);
 }
 
 /* ------------------------- 保留式脏区（FBO 画布） ------------------------- */
@@ -2214,13 +2233,55 @@ void ql_gfx_gl_end(QLGfxGL *g)
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
+    /*
+     * 拖动边框时**不跟 vblank**。
+     *
+     * 原因：合成器在连续重配窗口时不会及时送 frame callback，
+     * Mesa 的 Present/XCB 路径会一直等（实测一帧卡 1000ms，肉眼就是"卡死一下"）。
+     * 不跟 vsync 的话 swap 立刻返回，界面始终跟手；拖动结束后 200ms 自动恢复。
+     * 这也是 GTK/Qt 在互动缩放期间的常见做法。
+     */
+    if (g->egdpy != EGL_NO_DISPLAY && !g->offscreen) {
+        const uint32_t now32 = (uint32_t)(now_us_mono() / 1000);
+        const int want = (g->vsync_user && (int32_t)(now32 - g->resize_until_ms) >= 0)
+                             ? g->vsync_user
+                             : 0;
+        if (want != g->vsync_eff) {
+            g->vsync_eff = want;
+            eglSwapInterval(g->egdpy, want);
+        }
+    }
+
+    struct timespec ts0, ts1;
+    now_us(&ts0);
     eglSwapBuffers(g->egdpy, g->surface);
+    now_us(&ts1);
+    g->swap_us = (uint32_t)((ts1.tv_sec - ts0.tv_sec) * 1000000 +
+                            (ts1.tv_nsec - ts0.tv_nsec) / 1000);
 
     struct timespec t1;
     now_us(&t1);
     g->frame_us = (uint32_t)((t1.tv_sec - g->t0.tv_sec) * 1000000 +
                              (t1.tv_nsec - g->t0.tv_nsec) / 1000);
     g->frame_count++;
+}
+
+int ql_gfx_gl_wait(QLGfxGL *g, int timeout_ms)
+{
+    if (g == NULL || g->closed)
+        return 0;
+    if (g->offscreen || g->dpy == NULL) {
+        /* 离屏模式没有事件源：睡一会儿就当"等到了" */
+        if (timeout_ms > 0)
+            usleep((useconds_t)timeout_ms * 1000u);
+        return 1;
+    }
+    struct pollfd pfd;
+    pfd.fd = ConnectionNumber(g->dpy);
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    (void)poll(&pfd, 1, timeout_ms);
+    return g->closed ? 0 : 1;
 }
 
 int ql_gfx_gl_poll(QLGfxGL *g)
@@ -2259,6 +2320,8 @@ int ql_gfx_gl_poll(QLGfxGL *g)
                 g->height = (ql_coord_t)nh;
                 g->fbo_fresh = 1;      /* 保留模式的旧内容已经作废 */
                 g->resize_pending = 1;
+                /* 未来 200ms 内不跟 vblank（见 ql_gfx_gl_end 里的说明） */
+                g->resize_until_ms = (uint32_t)(now_us_mono() / 1000) + 200u;
             }
             break;
         }
@@ -2394,6 +2457,7 @@ uint32_t ql_gfx_gl_frame_count(QLGfxGL *g)  { return g ? g->frame_count : 0; }
 uint32_t ql_gfx_gl_draw_calls(QLGfxGL *g)   { return g ? g->draw_calls : 0; }
 uint32_t ql_gfx_gl_vertex_count(QLGfxGL *g) { return g ? g->vertex_count : 0; }
 uint32_t ql_gfx_gl_frame_us(QLGfxGL *g)     { return g ? g->frame_us : 0; }
+uint32_t ql_gfx_gl_swap_us(QLGfxGL *g)      { return g ? g->swap_us : 0; }
 double   ql_gfx_gl_gpu_mhz(QLGfxGL *g)      { QL_UNUSED(g); return 0; }
 
 ql_err_t ql_gfx_gl_read_pixels(QLGfxGL *g, uint8_t *rgba, uint32_t stride_bytes)

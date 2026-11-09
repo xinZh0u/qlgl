@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <locale.h>
 
@@ -190,16 +191,58 @@ static ql_color_t ex_clear_color(QLUIRoot *ui)
  * 只给 `--dump` 不给 `--frames` 时按 1 帧算（截图模式，不会卡住等关窗口）；
  * 没有窗口时自动退回离屏渲染 + PPM，所以这个函数在没有显示器的机器上也能跑通。
  */
+/* 帧时间样本（`--stats` 用）：环形记录，退出时打百分位 */
+#define EX_FRAME_SAMPLES 4096
+static uint32_t s_frame_us[EX_FRAME_SAMPLES];
+static uint32_t s_swap_us[EX_FRAME_SAMPLES];
+static int      s_frame_n;
+
+static int cmp_u32(const void *a, const void *b)
+{
+    const uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return (x < y) ? -1 : (x > y) ? 1 : 0;
+}
+
+static void ex_print_stats(void)
+{
+    if (s_frame_n <= 0)
+        return;
+    qsort(s_frame_us, (size_t)s_frame_n, sizeof(uint32_t), cmp_u32);
+    const uint32_t p50 = s_frame_us[s_frame_n / 2];
+    const uint32_t p95 = s_frame_us[(int)((double)s_frame_n * 0.95)];
+    const uint32_t mx = s_frame_us[s_frame_n - 1];
+    printf("帧时间：p50 %.2fms  p95 %.2fms  max %.2fms  （%d 帧，p50 ≈ %.0f fps）\n",
+           p50 / 1000.0, p95 / 1000.0, mx / 1000.0, s_frame_n,
+           p50 > 0 ? 1000000.0 / (double)p50 : 0.0);
+    /* 等 vsync 的时间单独看：它大而 frame 也大 → 不是我们画得慢 */
+    qsort(s_swap_us, (size_t)s_frame_n, sizeof(uint32_t), cmp_u32);
+    printf("其中等 swap：p50 %.2fms  max %.2fms\n", s_swap_us[s_frame_n / 2] / 1000.0,
+           s_swap_us[s_frame_n - 1] / 1000.0);
+    s_frame_n = 0;
+}
+
 static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                   char **argv)
 {
     long max_frames = 0;
+    int want_stats = 0;
+    int want_spin = 0;   /* 每帧都渲染（基准测试用）；默认事件驱动 */
+    int run_seconds = 0; /* --seconds N：跑 N 秒后退出并打统计 */
+    int want_vsync = -1; /* --vsync 0|1；-1 = 用后端默认（开） */
     const char *dump = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
             max_frames = strtol(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
             dump = argv[++i];
+        else if (strcmp(argv[i], "--stats") == 0)
+            want_stats = 1;
+        else if (strcmp(argv[i], "--spin") == 0)
+            want_spin = 1;
+        else if (strcmp(argv[i], "--seconds") == 0 && i + 1 < argc)
+            run_seconds = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--vsync") == 0 && i + 1 < argc)
+            want_vsync = atoi(argv[++i]);
         else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
             /* `--size 600x700`：换窗口尺寸（顺便看页面是不是真自适应） */
             int sw = 0, sh = 0;
@@ -212,6 +255,12 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
     /* 截图模式下别等着人关窗口 */
     if (dump != NULL && max_frames == 0)
         max_frames = 1;
+    /*
+     * `--frames N` 的意思是"渲染 N 帧后退出"。事件驱动的循环在界面静止时
+     * 根本不渲染，所以给了 --frames 就自动切成 spin（否则永远等不到 N 帧）。
+     */
+    if (max_frames > 0)
+        want_spin = 1;
 
 #if HAS_GL
     QLGfxGL *gfx = ql_gfx_gl_create(title, w, h, QL_GFX_GL_WINDOW);
@@ -226,8 +275,25 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
         /* Ctrl+C / Ctrl+V 走 X11 剪贴板（协议是异步的，内容下一帧才到） */
         ql_gfx_gl_attach_clipboard(gfx, ui);
         QLDraw2D *d2d = ql_gfx_gl_draw(gfx);
+        /*
+         * 保留式画布 + 脏区重绘：静止的界面一个像素都不重画。
+         * 建不出来（GL 能力不足）也没关系，begin_rects 会退回整屏。
+         */
+        (void)ql_gfx_gl_set_retained(gfx, 1);
+        if (want_vsync >= 0)
+            ql_gfx_gl_set_vsync(gfx, want_vsync);
+
         long frame = 0;
+        int need_full = 1;      /* 首帧 / 改尺寸后必须整屏重画 */
+        struct timespec t_start;
+        clock_gettime(CLOCK_MONOTONIC, &t_start);
         while (ql_gfx_gl_poll(gfx)) {
+            if (run_seconds > 0) {
+                struct timespec tn;
+                clock_gettime(CLOCK_MONOTONIC, &tn);
+                if (tn.tv_sec - t_start.tv_sec >= run_seconds)
+                    break;
+            }
             /*
              * 窗口被拖动缩放：重新按新尺寸布局。
              * 后端只报告"画布变了"，重排是界面层的事。
@@ -235,17 +301,49 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
             if (ql_gfx_gl_resize_pending(gfx)) {
                 ql_coord_t cw = w, ch = h;
                 ql_gfx_gl_size(gfx, &cw, &ch);
-                if (cw > 0 && ch > 0)
+                if (cw > 0 && ch > 0) {
                     ql_ui_layout(ui, cw, ch);
+                    need_full = 1;
+                }
             }
             ql_input_dispatch();
-            (void)ql_ui_anim_tick(ui, ql_anim_now_ms());
-            ql_gfx_gl_begin(gfx, ex_clear_color(ui));
-            ql_ui_render(ui, d2d);
+            const uint32_t moving = ql_ui_anim_tick(ui, ql_anim_now_ms());
+
+            QLRect areas[16];
+            int n = ql_ui_consume_dirty(ui, areas, 16);
+
+            /*
+             * 没有脏区、没有动画、没改尺寸、也不是 spin 模式 → 什么都不做，
+             * 阻塞等事件。这是"界面静止时零占用、拖动窗口不掉帧"的关键：
+             * 之前每帧都 swap 一次（144Hz），合成器在缩放时还要处理这些多余的帧。
+             */
+            if (!want_spin && !need_full && n == 0 && moving == 0) {
+                if (!ql_gfx_gl_wait(gfx, 32))
+                    break;
+                continue;
+            }
+
+            const int full = ql_gfx_gl_begin_rects(gfx, ex_clear_color(ui), areas, n);
+            if (full || want_spin || n <= 0) {
+                ql_ui_render(ui, d2d);
+            } else {
+                for (int i = 0; i < n; i++)
+                    ql_ui_render_rect(ui, d2d, areas[i]);
+            }
             ql_gfx_gl_end(gfx);
+            need_full = 0;
+            if (want_stats && s_frame_n < EX_FRAME_SAMPLES) {
+                s_frame_us[s_frame_n] = ql_gfx_gl_frame_us(gfx);
+                s_swap_us[s_frame_n] = ql_gfx_gl_swap_us(gfx);
+                s_frame_n++;
+            }
             if (max_frames > 0 && ++frame >= max_frames)
                 break;
         }
+        if (want_stats)
+            ex_print_stats();
+        if (want_vsync == 0)
+            ql_gfx_gl_set_vsync(gfx, 1);
         if (dump != NULL) {
             /* 窗口关掉之前先抓一帧 */
             if (ex_dump_ppm(ui, w, h, dump))

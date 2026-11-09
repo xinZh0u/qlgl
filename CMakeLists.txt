@@ -127,6 +127,22 @@ if(QLGL_BUILD_TEXT_PARSER AND TARGET qlgl)
     message(STATUS "QLGL: 宿主工具 qltext 已启用（构建期 HTML/CSS 编译）")
 endif()
 
+# 宿主工具 qlperf：进程级 CPU/GPU/内存探针（调"拖动窗口掉帧"这类问题用）。
+# 它不认识 qlgl 的任何类型 —— 只读 /proc 与 /sys，所以不算运行时依赖。
+if(UNIX)
+    add_executable(qlperf ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlperf/qlperf.c)
+    if(X11_FOUND)
+        target_compile_definitions(qlperf PRIVATE HAVE_X11=1)
+        if(TARGET X11::X11)
+            target_link_libraries(qlperf PRIVATE X11::X11)
+        else()
+            target_include_directories(qlperf PRIVATE ${X11_INCLUDE_DIR})
+            target_link_libraries(qlperf PRIVATE ${X11_LIBRARIES})
+        endif()
+    endif()
+    message(STATUS "QLGL: 宿主工具 qlperf 已启用（CPU/GPU/内存探针）")
+endif()
+
 if(QLGL_BUILD_TESTS AND TARGET qltext)
     set(QL_UI_IN  ${CMAKE_CURRENT_SOURCE_DIR}/test/web)
     set(QL_UI_OUT ${CMAKE_CURRENT_BINARY_DIR}/ui)
