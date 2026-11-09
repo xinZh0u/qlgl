@@ -2840,6 +2840,50 @@ static int expand_shorthands(Decls *ds)
         (void)decls_remove(ds, "animation");
     }
 
+    if ((v = decls_get(ds, "flex-flow")) != NULL) {
+        /* `<flex-direction> || <flex-wrap>`，两个 token 任意顺序 */
+        char buf[96];
+        trim_lower(v, buf, sizeof(buf));
+        const char *p = buf;
+        int have_dir = 0, have_wrap = 0;
+        while (*p != '\0') {
+            while (is_space(*p))
+                p++;
+            if (*p == '\0')
+                break;
+            const char *start = p;
+            while (*p != '\0' && !is_space(*p))
+                p++;
+            char tok[32];
+            size_t len = (size_t)(p - start);
+            if (len >= sizeof(tok)) {
+                set_error("flex-flow: 值太长（'%s'）", v);
+                return 0;
+            }
+            memcpy(tok, start, len);
+            tok[len] = '\0';
+            if (strcmp(tok, "row") == 0 || strcmp(tok, "row-reverse") == 0 ||
+                strcmp(tok, "column") == 0 || strcmp(tok, "column-reverse") == 0) {
+                if (!decls_set(ds, "flex-direction", tok))
+                    return 0;
+                have_dir = 1;
+            } else if (strcmp(tok, "nowrap") == 0 || strcmp(tok, "wrap") == 0) {
+                if (!decls_set(ds, "flex-wrap", tok))
+                    return 0;
+                have_wrap = 1;
+            } else {
+                set_error("flex-flow: 不支持的取值 '%s'（只支持 <direction> || <wrap>）",
+                          tok);
+                return 0;
+            }
+        }
+        if (!have_dir && !have_wrap) {
+            set_error("flex-flow: 值是空的");
+            return 0;
+        }
+        (void)decls_remove(ds, "flex-flow");
+    }
+
     if ((v = decls_get(ds, "flex")) != NULL) {
         double g = 0, sh = 0, bv = 0;
         int bk = 0;
@@ -2970,6 +3014,7 @@ static const char *const k_supported_props[] = {
     "aspect-ratio",
     "letter-spacing", "text-indent", "text-transform", "text-overflow", "word-break",
     "overflow-wrap",
+    "visibility", "pointer-events", "align-self", "order", "flex-flow",
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
 };
 
@@ -8104,6 +8149,65 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             return 0;
         }
     }
+    /* flex 项：`align-self` / `order` */
+    uint8_t align_self = QL_UI_ALIGN_SELF_AUTO;
+    if ((v = decls_get(st, "align-self")) != NULL) {
+        char low[32];
+        trim_lower(v, low, sizeof(low));
+        if (strcmp(low, "auto") != 0) {
+            const int as = align_value(low);
+            if (as < 0) {
+                set_error("%s: 不支持的 align-self '%s'", where, v);
+                return 0;
+            }
+            align_self = (uint8_t)as;
+        }
+    }
+    int order = 0;
+    if ((v = decls_get(st, "order")) != NULL) {
+        char low[32];
+        trim_lower(v, low, sizeof(low));
+        const char *end = NULL;
+        double num = 0;
+        if (!match_number(low, &end, &num) || *end != '\0' || num != (double)(int)num) {
+            set_error("%s: order 只接受整数（收到 '%s'）", where, v);
+            return 0;
+        }
+        if (num < -32768.0 || num > 32767.0) {
+            set_error("%s: order 超出 -32768..32767", where);
+            return 0;
+        }
+        order = (int)num;
+    }
+
+    /* `visibility` / `pointer-events` */
+    uint8_t visibility = QL_UI_VISIBLE;
+    if ((v = decls_get(st, "visibility")) != NULL) {
+        char low[32];
+        trim_lower(v, low, sizeof(low));
+        if (strcmp(low, "visible") == 0)
+            visibility = QL_UI_VISIBLE;
+        else if (strcmp(low, "hidden") == 0 || strcmp(low, "collapse") == 0)
+            visibility = QL_UI_HIDDEN;
+        else {
+            set_error("%s: 不支持的 visibility '%s'（只支持 visible/hidden）", where, v);
+            return 0;
+        }
+    }
+    uint8_t pointer_events = QL_UI_POINTER_AUTO;
+    if ((v = decls_get(st, "pointer-events")) != NULL) {
+        char low[32];
+        trim_lower(v, low, sizeof(low));
+        if (strcmp(low, "auto") == 0)
+            pointer_events = QL_UI_POINTER_AUTO;
+        else if (strcmp(low, "none") == 0)
+            pointer_events = QL_UI_POINTER_NONE;
+        else {
+            set_error("%s: 不支持的 pointer-events '%s'（只支持 auto/none）", where, v);
+            return 0;
+        }
+    }
+
     int gap_r = 0, gap_c = 0;
     {
         int kind = 0;
@@ -8441,6 +8545,10 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 (uint8_t)(out->reserved_text & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
         }
     }
+    out->visibility = visibility;
+    out->pointer_events = pointer_events;
+    out->align_self = align_self;
+    out->order = (int16_t)order;
     out->backdrop_blur = (uint8_t)backdrop;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
@@ -8894,7 +9002,11 @@ static int build_areas(const Flat *flat, int nflat, TextPool *pool, AreaOut *out
 static const char *const k_inherited[] = { "color", "font-size", "text-align",
                                            "line-height", "white-space",
                                            "font-weight", "font-style",
-                                           "text-decoration" };
+                                           "text-decoration",
+                                           /* `visibility` 是 CSS 的继承属性：
+                                              父级 hidden 并不会"移除"子节点，
+                                              子级可以自己写 visible 重新显示 */
+                                           "visibility" };
 
 static int collect_inherited(const Decls *parent, Decls *out)
 {

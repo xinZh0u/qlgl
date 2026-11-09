@@ -485,7 +485,41 @@ typedef struct {
     uint8_t     text_overflow;   /* QL_UI_OVERFLOW_* */
     uint8_t     word_break;      /* QL_UI_WORDBREAK_* */
     uint8_t     reserved_text;   /* 对齐填充 */
+
+    /* ----- B5 小件（blob v23） ----- */
+    /*
+     * `visibility`：**占位但不可见**（与 `display: none` 的区别就在这里 ——
+     * 后者不参与布局）。它是**继承**属性：父级 hidden 时子级也 hidden，
+     * 子级可以自己写 `visibility: visible` 显示出来（CSS 语义）。
+     * 命中测试也不认它（看不见的东西不该能点）。
+     */
+    uint8_t     visibility;      /* QL_UI_VISIBLE / QL_UI_HIDDEN */
+    /*
+     * `pointer-events: none`：自己**不参与命中测试**，但子节点照常
+     * （子节点可以写 `pointer-events: auto` 重新接受点击）。
+     * 常见用法：盖在内容上的装饰层不该挡住下面的按钮。
+     */
+    uint8_t     pointer_events;  /* 0 = auto，1 = none */
+    /* `align-self`：只覆盖**自己**在容器交叉轴上的对齐；0xFF = auto */
+    uint8_t     align_self;      /* QLUIAlign，或 QL_UI_ALIGN_SELF_AUTO */
+    uint8_t     reserved_b5;     /* 对齐填充（留给后续 B5 属性） */
+    /*
+     * `order`：flex 项的排列顺序（升序，相等时保持 HTML 顺序）。
+     * 只影响**子项之间**的顺序；绘制顺序也跟着它（z-index 相同时）。
+     */
+    int16_t     order;
 } QLUIStyle;
+
+/* `visibility` */
+#define QL_UI_VISIBLE   0
+#define QL_UI_HIDDEN    1
+
+/* `pointer-events` */
+#define QL_UI_POINTER_AUTO  0
+#define QL_UI_POINTER_NONE  1
+
+/* `align-self: auto` —— 用容器的 `align-items`（QLUIAlign 的取值是 0..3） */
+#define QL_UI_ALIGN_SELF_AUTO  0xFFu
 
 /* `text-transform` */
 #define QL_UI_TEXT_NONE        0
@@ -1262,7 +1296,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    22u  /* 22: + calc() 字节码池（calc_ops） */
+#define QL_UI_BLOB_VERSION    23u  /* 23: + visibility / pointer-events / align-self / order */
 
 typedef struct {
     uint32_t magic;

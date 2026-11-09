@@ -398,7 +398,10 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 | 换行 | nowrap / wrap（按主轴尺寸断行） |
 | 剩余空间 | 正：按 `flex-grow` 比例分配；负：按 `flex-shrink × basis` 加权收缩 |
 | 主轴对齐 | justify-content 六种（`grow` 生效时 justify 不再参与分配） |
-| 交叉轴对齐 | `stretch`（默认，子项无显式交叉尺寸时拉满）或 start/center/end |
+| 交叉轴对齐 | `stretch`（默认，子项无显式交叉尺寸时拉满）或 start/center/end；**单行时行会撑满容器**，所以 center/end 真的居中 |
+| 单个子项覆盖 | `align-self: auto \| flex-start \| center \| flex-end \| stretch` |
+| 顺序 | `order: <整数>`（升序，相等时保持 HTML 顺序） |
+| 简写 | `flex-flow: <direction> \|\| <wrap>` |
 | gap | `gap` / `row-gap` / `column-gap`，px |
 | 子项上限 | 单个 flex 容器 ≤ `QL_CFG_UI_FLEX_MAX_ITEMS`（默认 256），超了降级为 block 流并告警 |
 
@@ -412,8 +415,28 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 3. `flex-basis` 支持 px 与 `%`（相对容器主轴尺寸）；
 4. 百分比 `width` 在 flex 子项上是相对**容器内容宽**，不是 flex-basis。
 
-**不支持的**：`align-self`、`align-content`、`order`、`flex-flow` 简写、
-`flex-basis: auto` 的完整语义（等同"用 width"）、多行 `align-content` 对齐。
+**不支持的**：`align-content`（多行的行间分配）、`baseline` 对齐、
+`wrap-reverse`、`flex-basis: auto` 的完整语义（等同"用 width"）。
+
+### 3.7.1 `visibility` / `pointer-events`
+
+```css
+.placeholder { visibility: hidden; }   /* 看不见，但位置还占着（display:none 才不占） */
+.tooltip     { visibility: hidden; }
+.card:hover .tooltip { visibility: visible; }   /* 子级能自己显示回来（继承属性） */
+
+.overlay { pointer-events: none; }     /* 装饰层：自己不挡点击 */
+.overlay .btn { pointer-events: auto; }/* 里面的按钮照常可点 */
+```
+
+| 属性 | 取值 | 行为 |
+|---|---|---|
+| `visibility` | `visible` / `hidden`（`collapse` 按 hidden） | 只影响"画不画自己"与命中；布局照常。**继承**：父级 hidden 时子级也 hidden，子级可写 `visible` 显示回来 |
+| `pointer-events` | `auto` / `none` | `none` = 自己不作为命中目标；**子节点照常**（可写 `auto` 重新接住） |
+
+两者都是**逐节点的开关**，不引入新状态：`visibility` 在绘制时跳过"自己"那几笔，
+`pointer-events` 在命中测试里跳过"自己"这一步。所以没有性能代价，
+也不影响 `paint_box`（`visibility: hidden` 的元素仍然占着脏区范围）。
 
 ### 3.8 定位与 z-index
 
@@ -808,24 +831,29 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 ### 3.12 不支持的写法一律报错
 
 ```
-float / grid / align-self / align-content / order / flex-flow
-rotate / skew / matrix / 3d transform（只支持 translate 与轴对齐 scale）
-filter / clip-path / var()
-min-width / max-width / min-height / max-height
-@media / em / rem / vh / vw / calc()
-transition-delay
-animation-play-state: paused
+float / grid / align-content（多行的行间分配）
+overflow-x / overflow-y（分轴）        position: sticky
+rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
+filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
+cursor / user-select / list-style / @supports / @font-face
+border-radius 四角与椭圆角              border-style: dashed / dotted
+word-spacing / text-decoration: overline / text-align: justify
+transition-delay                        animation-play-state: paused
 backface-visibility（假翻转没有背面）
-backdrop-filter 的 blur() 以外的函数
 ```
 
 报错示例：
 
 ```
-qlui: 错误：index.css:27: 不支持的属性 'position'
-qlui: 错误：index.css:12: 不支持的长度 '1.5ch'（支持 px / % / em / rem / vw / vh）
-qlui: 错误：index.html:5: <p> 同时包含文本和子元素（混合内容）——v0 不支持，请把文本放进独立的 <span>/<p>
+qlui: 错误：index.css:27: 不支持的属性 'position: sticky'
+qlui: 错误：index.css:12: 不支持的长度 '1.5ch'（支持 px / % / em / rem / vw / vh / calc()）
+qlui: 错误：index.css:31: 暂不支持分轴 overflow 'overflow-x'
+qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的值
 ```
+
+> 这份清单会随版本变化 —— `var()`、`@media`、`calc()`、`min/max-width`、
+> `em/rem/vw/vh`、`+`/`~` 选择器、`::before`、`align-self`、`order`、`flex-flow`、
+> `visibility`、`pointer-events` **都已经支持了**（早期版本把它们列在这里）。
 
 ---
 

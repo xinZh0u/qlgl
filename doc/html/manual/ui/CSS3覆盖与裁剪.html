@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：八个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -267,13 +267,17 @@ main img.shot { max-width: 100%; }
 <td>颜色位置识别成特殊值</td>
 </tr>
 <tr>
+<td><code>visibility</code> / <code>pointer-events</code> / <code>align-self</code> / <code>order</code> / <code>flex-flow</code></td>
+<td>blob v23（见 §18.4）</td>
+</tr>
+<tr>
 <td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
 <td>编译成<strong>后缀字节码</strong>存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉</td>
 </tr>
 </tbody>
 </table>
-<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、<code>text-overflow</code>（B3）、
-<code>border-*-style: dashed</code>（B4）、<code>align-self</code> / <code>order</code>（B5）、<code>transform: rotate()</code>。</p>
+<p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、<code>border-*-style: dashed</code>（B4）、
+<code>overflow-x/y</code> 分轴、<code>align-content</code>、<code>cursor</code>（B5）、<code>transform: rotate()</code>。</p>
 <blockquote>
 <p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
 逐行状态在下一次整理时同步。</p>
@@ -969,9 +973,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>visibility</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>hidden</code> 与 <code>display:none</code> 的区别（保留布局）</td>
+<td><code>visible</code> / <code>hidden</code>（<code>collapse</code> 按 hidden）；<strong>继承</strong>，子级可写 <code>visible</code> 显示回来</td>
+</tr>
+<tr>
+<td><code>pointer-events</code></td>
+<td>✅</td>
+<td>L</td>
+<td><code>auto</code> / <code>none</code>：自己不参与命中，子节点照常</td>
 </tr>
 <tr>
 <td><code>float</code> / <code>clear</code></td>
@@ -1564,27 +1574,27 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>align-self</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>单个子项覆盖交叉轴对齐</td>
+<td>覆盖自己在交叉轴上的对齐；<code>auto</code> = 跟容器的 <code>align-items</code></td>
 </tr>
 <tr>
 <td><code>align-content</code></td>
 <td>⏳</td>
 <td>L</td>
-<td>多行交叉轴分配</td>
+<td>多行交叉轴分配（单行的"行撑满容器"已实现，见 §18.4）</td>
 </tr>
 <tr>
 <td><code>order</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>重排绘制顺序（不动布局位置，改动小）</td>
+<td>就地排子链表，布局/绘制/命中一起跟着走（稳定，相等时保持 HTML 顺序）</td>
 </tr>
 <tr>
 <td><code>flex-flow</code>（简写）</td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>等价两条，加解析即可</td>
+<td><code>&lt;flex-direction&gt; \|\| &lt;flex-wrap&gt;</code>，两个 token 任意顺序</td>
 </tr>
 <tr>
 <td><code>wrap-reverse</code></td>
@@ -1911,12 +1921,6 @@ main img.shot { max-width: 100%; }
 <td>现在只有输入框能选字</td>
 </tr>
 <tr>
-<td><code>pointer-events</code></td>
-<td>⏳</td>
-<td>L</td>
-<td>命中测试跳过该节点（覆盖层常用）</td>
-</tr>
-<tr>
 <td><code>scroll-behavior: smooth</code></td>
 <td>⏳</td>
 <td>T</td>
@@ -2156,6 +2160,51 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc-&gt;calc_ops[]（每条 4 字�
    这是本轮顺带修掉的老 bug）。</li>
 </ol>
 <hr />
+<h3 id="184-b5">18.4 B5 小件：五个"只加开关"的属性</h3>
+<p>这一批的共同点是<strong>不动布局大框架</strong>，各自挂到一个已有机制上：</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>挂在哪</th>
+<th>实现要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>visibility: hidden</code></td>
+<td>绘制 + 命中</td>
+<td>只是"不画自己"，布局照常 → 与 <code>display: none</code> 的区别就在这里。它是<strong>继承</strong>属性，子级写 <code>visible</code> 能显示回来</td>
+</tr>
+<tr>
+<td><code>pointer-events: none</code></td>
+<td>命中测试</td>
+<td>自己不作为命中目标，<strong>子节点照常</strong>（子级写 <code>auto</code> 能重新接住）——盖在按钮上的装饰层用它</td>
+</tr>
+<tr>
+<td><code>align-self</code></td>
+<td>flex 交叉轴</td>
+<td><code>auto</code> = 跟容器的 <code>align-items</code>；<code>stretch</code> 只在交叉轴尺寸是 <code>auto</code> 时撑满</td>
+</tr>
+<tr>
+<td><code>order</code></td>
+<td>flex 子链表</td>
+<td>布局开头按 order <strong>稳定</strong> 排一遍子链表，之后测量/断行/摆放/绘制/命中全都自动跟着走（比"每次遍历按 order 挑下一个"少六七处改动）</td>
+</tr>
+<tr>
+<td><code>flex-flow</code></td>
+<td>简写展开</td>
+<td><code>&lt;flex-direction&gt; \|\| &lt;flex-wrap&gt;</code>，两个 token 任意顺序；展开进 <code>flex-direction</code> / <code>flex-wrap</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>顺带修掉一个真缺陷（这是本轮最重要的收获）</strong>：<code>align-items: center / flex-end</code>
+在"容器有确定高度、只有一行"这个最常见的情况下<strong>完全没有效果</strong> —— 因为单行的
+交叉尺寸取的是"各项最大值"，<code>room</code> 恒为 0。CSS 的默认 <code>align-content: stretch</code>
+要求单行撑满容器的交叉尺寸，补上之后 <code>align-items</code> 才真的能用（golden 的
+<code>align</code> 页因此变化，肉眼核对过：两个方块现在在 120px 高的容器里居中）。</p>
+<p>多行（<code>flex-wrap: wrap</code>）的 <code>align-content</code> 仍然没做，行高仍按内容最大值。</p>
+<hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
 <h3 id="191">19.1 语料实测（最可靠，推荐引用这一份）</h3>
@@ -2321,7 +2370,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </tbody>
 </table>
 <p>剩下 5.5% 主要是 <code>float</code>（不做）、<code>cursor</code>（鼠标形状）、<code>list-style</code>（没有生成内容）、
-<code>visibility</code>、<code>pointer-events</code>、<code>@font-face</code> 的 <code>src</code>。</p>
+<code>@font-face</code> 的 <code>src</code>、<code>overflow-x/y</code> 分轴、<code>align-content</code>。</p>
 <h3 id="194">19.4 选择器侧（同一份语料）</h3>
 <table>
 <thead>
@@ -2661,6 +2710,26 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>calc()</code> 的标量乘除</td>
 <td>构建期折进每个操作数</td>
 <td>百分点精度会掉（<code>calc(100% / 3)</code> 是 33%，不是 33.33%）；长度 × 长度报错</td>
+</tr>
+<tr>
+<td><code>align-items</code> / <code>align-self</code></td>
+<td>单行 + 交叉轴确定时行会撑满容器</td>
+<td>多行的 <code>align-content</code> 还没做（多行时行高仍按内容最大值）；<code>baseline</code> 不支持</td>
+</tr>
+<tr>
+<td><code>order</code></td>
+<td>就地排子链表</td>
+<td>只对 <strong>flex 容器的直接子项</strong> 生效；与 <code>z-index</code> 同时出现时先按 order、再按 z（同 z 保持 order 顺序）</td>
+</tr>
+<tr>
+<td><code>pointer-events</code></td>
+<td>只有 <code>auto</code> / <code>none</code></td>
+<td>没有 <code>all</code> / <code>visiblePainted</code> 那套 SVG 取值；光标形状（<code>cursor</code>）还没做</td>
+</tr>
+<tr>
+<td><code>visibility</code></td>
+<td><code>visible</code> / <code>hidden</code>（<code>collapse</code> 当 hidden）</td>
+<td>只影响"画不画自己"与命中；布局照常（这正是与 <code>display:none</code> 的区别）</td>
 </tr>
 <tr>
 <td><code>!important</code></td>
@@ -3067,8 +3136,8 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>扩 <code>test_effects</code> + <code>test_gl_vs_cpu</code></td>
 </tr>
 <tr>
-<td><strong>B5 布局与交互</strong></td>
-<td><code>align-self</code>、<code>align-content</code>、<code>order</code>、<code>flex-flow</code>、<code>overflow-x/y</code>、<code>position: sticky</code>、<code>inset</code>、<code>visibility</code>、<code>cursor</code>、<code>pointer-events</code>、<code>user-select</code>、<code>scroll-behavior</code></td>
+<td><strong>B5 布局与交互</strong>（部分完成：<code>visibility</code>/<code>pointer-events</code>/<code>align-self</code>/<code>order</code>/<code>flex-flow</code> 已做，见 §18.4）</td>
+<td><code>align-content</code>、<code>overflow-x/y</code>、<code>position: sticky</code>、<code>inset</code>、<code>cursor</code>、<code>user-select</code>、<code>scroll-behavior</code></td>
 <td><code>CSS_FLEX</code> 补全 + <code>CSS_UI</code></td>
 <td>表达力 + 桌面手感</td>
 <td>中：动 flex 求解器与命中测试</td>

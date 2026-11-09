@@ -1,0 +1,180 @@
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 10px;
+  background-color: #EAF2FF;
+  color: #0969DA;
+  font-size: 10px;
+}
+
+.sec {
+  margin-bottom: 14px;
+}
+
+.cap {
+  color: #57606A;
+  font-size: 10px;
+  margin-bottom: 6px;
+}
+
+.row {
+  display: flex;
+}
+
+/* ---- 1. align-self ---- */
+.align {
+  height: 76px;
+  background-color: #F6F8FA;
+  border-radius: 8px;
+  padding: 0 8px;
+  align-items: flex-start;
+}
+
+.box {
+  width: 110px;
+  height: 24px;
+  margin-right: 8px;
+  border-radius: 6px;
+  background-color: #0969DA;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 24px;
+}
+
+.box.s {
+  align-self: flex-start;
+}
+
+.box.c {
+  align-self: center;
+}
+
+.box.e {
+  align-self: flex-end;
+}
+
+/* ---- 2. order ---- */
+.ord {
+  align-items: center;
+}
+
+.card {
+  width: 64px;
+  height: 40px;
+  margin-right: 8px;
+  border-radius: 8px;
+  background-color: #F6F8FA;
+  border: 1px solid #E4E8ED;
+  color: #1F2328;
+  text-align: center;
+  line-height: 40px;
+}
+
+.oa {
+  order: 3;
+  background-color: #EAF2FF;
+}
+
+.ob {
+  order: 1;
+  background-color: #DAFBE1;
+}
+
+.oc {
+  order: 4;
+  background-color: #FFE7E4;
+}
+
+.od {
+  order: 2;
+  background-color: #FFF8C5;
+}
+
+/* ---- 3. visibility ---- */
+.cell {
+  width: calc((100% - 24px) / 4);
+  height: 34px;
+  margin-right: 8px;
+  border-radius: 8px;
+  background-color: #2DA44E;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 34px;
+}
+
+.cell.last {
+  margin-right: 0;
+}
+
+.cell.hide {
+  visibility: hidden;
+}
+
+/* ---- 4. pointer-events ---- */
+.stage {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  border-radius: 8px;
+  background-color: #F6F8FA;
+  border: 1px solid #E4E8ED;
+}
+
+.btn {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  width: 150px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: #8250DF;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 32px;
+}
+
+.deco {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 320px;
+  height: 48px;
+  border-radius: 8px;
+  border: 1px solid #B42318;
+  color: #B42318;
+  text-align: right;
+  padding-right: 12px;
+  line-height: 48px;
+  background-color: transparent;
+  pointer-events: none;
+}
+
+.note {
+  color: #57606A;
+  line-height: 17px;
+  white-space: normal;
+}

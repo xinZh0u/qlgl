@@ -1,4 +1,4 @@
-# CSS 效果检阅：八个例程
+# CSS 效果检阅：九个例程
 
 <img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480">
 
@@ -231,7 +231,36 @@ calc 字节码 35 条（每条 4 字节）
   带 `25% + 10px` 的 `calc()` 会让它更明显（px 项被减两次）。
   修法：主轴上的 `%` / `calc()` 在 `measure` 阶段就折成 px 写回 `style_copy`。
 
-## 9. 这几个例程查出了什么
+## 9. `24_b5`：五个"只加开关"的属性
+
+<img src="../img/24-b5.png" alt="align-self 三种对齐、order 重排、visibility 占位、pointer-events 穿透" width="480">
+
+完整程序：`example/24_b5/`
+
+```css
+.box.c  { align-self: center; }        /* 同一行里各自垂直对齐 */
+.oa     { order: 3; }                  /* DOM 顺序 A B C D，视觉顺序 B D A C */
+.hide   { visibility: hidden; }         /* 看不见，但位置还占着 */
+.deco   { pointer-events: none; }       /* 盖在按钮上的装饰层不挡点击 */
+.row    { flex-flow: row wrap; }        /* flex-direction + flex-wrap 的简写 */
+```
+
+```bash
+./build/example/example_24_b5 --size 720x520 --dump b5.ppm
+```
+
+点一下紫色按钮：装饰层是 `pointer-events: none`，点击**穿过**它落到按钮上
+（终端打印命中的节点）。把那一行删掉再跑，点击就只会命中装饰层。
+
+写这一节时又查出一个**真缺陷**（这一轮最有价值的发现）：
+
+- `align-items: center / flex-end` 在"容器有确定高度、只有一行"这个**最常见**的
+  情况下完全没有效果 —— 单行的交叉尺寸取的是"各项最大值"，剩余空间恒为 0。
+  CSS 的默认 `align-content: stretch` 要求单行撑满容器的交叉尺寸，补上之后
+  `align-items` 才真的能用（golden 的 `align` 页因此变化，肉眼核对过：
+  两个方块现在在 120px 高的容器里居中）。多行的 `align-content` 仍然没做。
+
+## 10. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

@@ -1,0 +1,45 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">B5 小件：visibility / pointer-events / align-self / order</div>
+    <div class="badge" id="hits">点击下面的按钮</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. align-self：同一行里各自垂直对齐（start / center / end）</div>
+    <div class="row align">
+      <div class="box s">start</div>
+      <div class="box c">center</div>
+      <div class="box e">end</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. order：DOM 顺序是 A B C D，视觉顺序是 B D A C</div>
+    <div class="row ord">
+      <div class="card oa">A</div>
+      <div class="card ob">B</div>
+      <div class="card oc">C</div>
+      <div class="card od">D</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. visibility: hidden：看不见，但位置还占着（第二格）</div>
+    <div class="row vis">
+      <div class="cell">1</div>
+      <div class="cell hide">2</div>
+      <div class="cell">3</div>
+      <div class="cell last">4</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. pointer-events: none：装饰层盖住按钮，点击仍然落到按钮上</div>
+    <div class="stage">
+      <div class="btn" id="ok">可点区域</div>
+      <div class="deco">装饰层（不挡点击）</div>
+    </div>
+  </div>
+
+  <div class="note">这五件都不改布局大框架：visibility 只是"不画自己"，order 就地排子链表，align-self 只覆盖自己在交叉轴上的对齐。</div>
+</div>

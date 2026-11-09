@@ -320,6 +320,8 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .letter_spacing = %d, .text_indent = %d, .text_transform = %u,"
             " .text_overflow = %u, .word_break = %u,\n"
             "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
+            "      .visibility = %u, .pointer_events = %u,\n"
+            "      .align_self = %s, .order = %d,\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
                       "QLUIDisplay"),
@@ -355,7 +357,13 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (int)s->letter_spacing, (int)s->text_indent,
             (unsigned)s->text_transform, (unsigned)s->text_overflow,
             (unsigned)s->word_break,
-            (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y);
+            (int)s->tf_x, (int)s->tf_y, (int)s->sc_x, (int)s->sc_y,
+            (unsigned)s->visibility, (unsigned)s->pointer_events,
+            (s->align_self == QL_UI_ALIGN_SELF_AUTO)
+                ? "QL_UI_ALIGN_SELF_AUTO"
+                : enum_name(ALIGN_NAMES, COUNT_OF(ALIGN_NAMES), s->align_self,
+                            "QLUIAlign"),
+            (int)s->order);
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);
     fputs(",\n      .inset = { ", f);

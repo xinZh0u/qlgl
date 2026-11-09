@@ -2470,6 +2470,51 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
     }
 }
 
+/*
+ * 按 `order` 稳定排序容器**直接子节点**的链表（CSS 的 flex `order`）。
+ *
+ * 为什么要就地改链表而不是"遍历时按 order 挑下一个"：布局里有六七处都在
+ * 遍历子项（测量、断行、权重、摆放），每处都实现一遍"跳过已处理的"很容易漏。
+ * 排序放到最前面，后面所有遍历自动是对的；绘制/命中测试也走同一条链表，
+ * 所以视觉顺序与布局顺序天然一致（z-index 相同时）。
+ *
+ * 稳定性靠插入排序的 `<=`：order 相等的项保持 HTML 顺序（与 CSS 一致）。
+ * 每帧布局都会重排一次，但同样的 order 序列排第二次结果不变（幂等）。
+ */
+static void sort_children_by_order(QLUINodeRT *parent)
+{
+    QLUINodeRT *cur = parent->first_child;
+    int any = 0;
+    for (; cur != NULL; cur = cur->next_sibling)
+        if (cur->style->order != 0) {
+            any = 1;
+            break;
+        }
+    if (!any)
+        return;                    /* 没人写 order：一点开销都不花 */
+
+    QLUINodeRT *sorted = NULL;
+    cur = parent->first_child;
+    while (cur != NULL) {
+        QLUINodeRT *next = cur->next_sibling;
+        const int o = cur->style->order;
+        QLUINodeRT *prev = NULL;
+        QLUINodeRT *p = sorted;
+        while (p != NULL && p->style->order <= o) {
+            prev = p;
+            p = p->next_sibling;
+        }
+        cur->next_sibling = p;
+        if (prev == NULL) {
+            sorted = cur;
+        } else {
+            prev->next_sibling = cur;
+        }
+        cur = next;
+    }
+    parent->first_child = sorted;
+}
+
 /* 项的基尺寸（含 margin）：flex-basis 优先，否则用自然主尺寸 */
 static ql_coord_t flex_base_of(const QLUINodeRT *node, int row, ql_coord_t main_size)
 {
@@ -2571,6 +2616,9 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
     const ql_coord_t gap = row ? (ql_coord_t)cs->gap_col : (ql_coord_t)cs->gap_row;
     const ql_coord_t inner_main = row ? content_w : (definite_h ? avail_h : 0);
 
+    /* `order` 先排好，后面所有遍历（测量/断行/摆放/绘制）自动跟着走 */
+    sort_children_by_order(node);
+
     if (count_flex_items(node) < 0) {
         QL_LOGW("ui: flex has more than %d children, falling back to block flow",
                 QL_CFG_UI_FLEX_MAX_ITEMS);
@@ -2639,6 +2687,18 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
             if (c == last)
                 break;
         }
+        /*
+         * 单行 + 交叉轴确定 → 行撑满容器（CSS 的 `align-content: stretch`，默认值）。
+         *
+         * 不撑的话 `align-items: center/flex-end` 在"容器有确定高度、只有一行"
+         * 这个最常见的情况下**完全没有效果**（room 恒为 0）。以前就是这样：
+         * 表现得像"垂直对齐没实现"。多行时不撑（那是 align-content 的事，还没做）。
+         */
+        if (cs->flex_wrap != 1) {
+            const ql_coord_t container_cross = row ? (definite_h ? avail_h : 0) : content_w;
+            if (container_cross > line_cross)
+                line_cross = container_cross;
+        }
 
         /* (5) justify 只在 grow 没吸收掉剩余空间时生效 */
         ql_coord_t j_start = 0, j_extra_total = 0;
@@ -2694,7 +2754,11 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
             if (inner_sz < 0)
                 inner_sz = 0;
 
-            const int stretch = (cs->align_items == QL_UI_ALIGN_STRETCH) &&
+            /* 交叉轴对齐：`align-self` 覆盖自己，没写（auto）就跟容器的 align-items */
+            const uint8_t align =
+                (is->align_self != QL_UI_ALIGN_SELF_AUTO) ? is->align_self
+                                                          : cs->align_items;
+            const int stretch = (align == QL_UI_ALIGN_STRETCH) &&
                                 (row ? is->height.unit == QL_UI_UNIT_AUTO
                                      : is->width.unit == QL_UI_UNIT_AUTO);
             ql_coord_t cross_sz = natural_cross(c, row);
@@ -2707,9 +2771,9 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
                 ql_coord_t room = line_cross - cross_sz;
                 if (room < 0)
                     room = 0;
-                if (cs->align_items == QL_UI_ALIGN_CENTER)
+                if (align == QL_UI_ALIGN_CENTER)
                     cross_pos = room / 2;
-                else if (cs->align_items == QL_UI_ALIGN_END)
+                else if (align == QL_UI_ALIGN_END)
                     cross_pos = room;
             }
 
@@ -4391,6 +4455,12 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         return;
 
     /*
+     * `visibility: hidden`：**占位但不画自己**（子节点照画 —— 它是继承属性，
+     * 子节点自己写了 `visible` 就该显示）。与 `display: none` 的区别是不重排。
+     */
+    const int inv = (s->visibility != QL_UI_VISIBLE);
+
+    /*
      * 脏区剪枝：paint_box 是整个子树可能画到的范围的上界，
      * 与当前裁剪不相交就整棵跳过——一次矩形判断替代一次子树遍历。
      */
@@ -4450,16 +4520,17 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
     /*
      * 带上 border-radius：模糊是方框运算，圆角缺口里不该渗出方形的模糊块。
      */
-    if (s->backdrop_blur > 0 && !ql_rect_is_empty(box))
+    if (!inv && s->backdrop_blur > 0 && !ql_rect_is_empty(box))
         (void)ql_draw2d_backdrop_blur_round(d2d, box, (int)s->backdrop_blur,
                                             s->border_radius);
 
     /* 阴影先画（在背景之下）；阴影轮廓取边框盒，与 CSS box-shadow 一致 */
-    if (s->shadow_alpha > 0 && d2d->fill_shadow != NULL && !ql_rect_is_empty(box))
+    if (!inv && s->shadow_alpha > 0 && d2d->fill_shadow != NULL &&
+        !ql_rect_is_empty(box))
         d2d->fill_shadow(d2d, box, s->border_radius, s->shadow_blur,
                          s->shadow_dx, s->shadow_dy, s->shadow_color, s->shadow_alpha);
 
-    if (s->bg_alpha > 0 && !ql_rect_is_empty(box)) {
+    if (!inv && s->bg_alpha > 0 && !ql_rect_is_empty(box)) {
         if (s->bg_grad_dir != 0 && d2d->fill_round_rect_gradient != NULL)
             d2d->fill_round_rect_gradient(d2d, box, s->border_radius, s->bg_color,
                                           s->bg_color2,
@@ -4468,20 +4539,20 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             d2d->fill_round_rect(d2d, box, s->border_radius, s->bg_color, s->bg_alpha);
     }
 
-    if (s->border_width > 0 && !ql_rect_is_empty(box))
+    if (!inv && s->border_width > 0 && !ql_rect_is_empty(box))
         d2d->stroke_round_rect(d2d, box, s->border_radius, s->border_width,
                                s->border_color);
 
     /* <img>：背景/边框画完之后贴图（P3a：object-fit: fill） */
-    if (node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
+    if (!inv && node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
         draw_img(node->owner, node, d2d);
 
     /* EMBED 包：画标签名当占位提示（这些节点自身没有文本） */
-    if (node->src != NULL && tag_is_embed_box(node->src->tag))
+    if (!inv && node->src != NULL && tag_is_embed_box(node->src->tag))
         draw_embed_placeholder(node, d2d);
 
     /* <progress>/<meter>：轨道就是背景（已经画完），这里补填充 */
-    if (node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||
+    if (!inv && node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||
                               node->src->tag == QL_UI_TAG_METER))
         draw_progress(node, d2d);
 
@@ -4495,7 +4566,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
      * 所以判据是"有文字" 或 "这个节点是输入框"。
      */
     struct QLUIInput *in = input_of(node->owner, node);
-    if (has_shown_text(node) && (node->text[0] != '\0' || in != NULL) &&
+    if (!inv && has_shown_text(node) && (node->text[0] != '\0' || in != NULL) &&
         !ql_rect_is_empty(node->content_box)) {
         /*
          * 输入框：显示文本可能被换成圆点（密码），而且比盒子宽时要横向滚。
@@ -4772,6 +4843,13 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
 
     /* 自己：必须在裁剪区内（被 overflow 裁掉的部分不可命中） */
     if (x < clip.x || x >= ql_rect_right(clip) || y < clip.y || y >= ql_rect_bottom(clip))
+        return NULL;
+    /*
+     * `pointer-events: none`：自己不作为命中目标（子节点仍然算过 —— 它们可能
+     * 自己写了 `auto`）。`visibility: hidden` 同样点不中（看不见的东西不该能点），
+     * 但它的子节点已经按各自的样式走过了上面的循环。
+     */
+    if (s->pointer_events == QL_UI_POINTER_NONE || s->visibility != QL_UI_VISIBLE)
         return NULL;
     if (hx >= box.x && hx < ql_rect_right(box) && hy >= box.y &&
         hy < ql_rect_bottom(box))

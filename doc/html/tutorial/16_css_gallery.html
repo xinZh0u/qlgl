@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>CSS 效果检阅：八个例程 · QLGL</title>
+<title>CSS 效果检阅：九个例程 · QLGL</title>
 <style>
 :root {
   --bg: #ffffff;
@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：八个例程</a>
+<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：九个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -213,7 +213,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
 </aside>
 <main>
-<h1 id="css">CSS 效果检阅：八个例程</h1>
+<h1 id="css">CSS 效果检阅：九个例程</h1>
 <p><img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480"></p>
 <p>完整程序：<code>example/16_css_units/</code> … <code>example/23_calc/</code>（每个例程一个文件夹）</p>
 <p>前几章是按"补了什么"讲的（<a href="14_css3.md">CSS3 补全</a>、<a href="15_backdrop.md">毛玻璃</a>）。
@@ -584,7 +584,30 @@ main img.shot { max-width: 100%; }
   带 <code>25% + 10px</code> 的 <code>calc()</code> 会让它更明显（px 项被减两次）。
   修法：主轴上的 <code>%</code> / <code>calc()</code> 在 <code>measure</code> 阶段就折成 px 写回 <code>style_copy</code>。</li>
 </ul>
-<h2 id="9">9. 这几个例程查出了什么</h2>
+<h2 id="9-24_b5">9. <code>24_b5</code>：五个"只加开关"的属性</h2>
+<p><img src="../img/24-b5.png" alt="align-self 三种对齐、order 重排、visibility 占位、pointer-events 穿透" width="480"></p>
+<p>完整程序：<code>example/24_b5/</code></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">box</span><span class="p">.</span><span class="nc">c</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">align-self</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 同一行里各自垂直对齐 */</span>
+<span class="p">.</span><span class="nc">oa</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">order</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* DOM 顺序 A B C D，视觉顺序 B D A C */</span>
+<span class="p">.</span><span class="nc">hide</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">         </span><span class="c">/* 看不见，但位置还占着 */</span>
+<span class="p">.</span><span class="nc">deco</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">       </span><span class="c">/* 盖在按钮上的装饰层不挡点击 */</span>
+<span class="p">.</span><span class="nc">row</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">flex-flow</span><span class="p">:</span><span class="w"> </span><span class="kc">row</span><span class="w"> </span><span class="kc">wrap</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* flex-direction + flex-wrap 的简写 */</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>./build/example/example_24_b5<span class="w"> </span>--size<span class="w"> </span>720x520<span class="w"> </span>--dump<span class="w"> </span>b5.ppm
+</code></pre></div>
+
+<p>点一下紫色按钮：装饰层是 <code>pointer-events: none</code>，点击<strong>穿过</strong>它落到按钮上
+（终端打印命中的节点）。把那一行删掉再跑，点击就只会命中装饰层。</p>
+<p>写这一节时又查出一个<strong>真缺陷</strong>（这一轮最有价值的发现）：</p>
+<ul>
+<li><code>align-items: center / flex-end</code> 在"容器有确定高度、只有一行"这个<strong>最常见</strong>的
+  情况下完全没有效果 —— 单行的交叉尺寸取的是"各项最大值"，剩余空间恒为 0。
+  CSS 的默认 <code>align-content: stretch</code> 要求单行撑满容器的交叉尺寸，补上之后
+  <code>align-items</code> 才真的能用（golden 的 <code>align</code> 页因此变化，肉眼核对过：
+  两个方块现在在 120px 高的容器里居中）。多行的 <code>align-content</code> 仍然没做。</li>
+</ul>
+<h2 id="10">10. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

@@ -28,10 +28,11 @@
 | `!important` | 级联两趟：普通先应用，important 再应用 |
 | `hsl()` / `hsla()`、`#rrggbbaa` | |
 | `currentColor` / `inherit` / `initial` / `unset` | 颜色位置识别成特殊值 |
+| `visibility` / `pointer-events` / `align-self` / `order` / `flex-flow` | blob v23（见 §18.4） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
-**还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、`text-overflow`（B3）、
-`border-*-style: dashed`（B4）、`align-self` / `order`（B5）、`transform: rotate()`。
+**还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、`border-*-style: dashed`（B4）、
+`overflow-x/y` 分轴、`align-content`、`cursor`（B5）、`transform: rotate()`。
 
 > 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
 > 逐行状态在下一次整理时同步。
@@ -195,7 +196,8 @@
 | `box-sizing` | ✅ | L | 表单控件 UA 默认 `border-box` |
 | `overflow` | ⚠️ | L | `visible` / `hidden` / `auto` / `scroll`；**没有分轴** |
 | `overflow-x` / `overflow-y` | ⏳ | L | `不支持的属性 'overflow-x'` |
-| `visibility` | ⏳ | L | `hidden` 与 `display:none` 的区别（保留布局） |
+| `visibility` | ✅ | L | `visible` / `hidden`（`collapse` 按 hidden）；**继承**，子级可写 `visible` 显示回来 |
+| `pointer-events` | ✅ | L | `auto` / `none`：自己不参与命中，子节点照常 |
 | `float` / `clear` | ❌ | N | 与 flex 混用行为诡异，现代页面基本不用 |
 | `contain` / `content-visibility` | ❌ | N | 性能优化类，收益在本库架构里已被脏区取代 |
 | `resize` | ❌ | N | 没有"用户拖动元素尺寸"的概念 |
@@ -325,10 +327,10 @@
 | `flex-grow` / `flex-shrink` / `flex-basis` | ✅ | L | |
 | `justify-content` | ✅ | L | 含 `space-between` / `space-around` / `space-evenly` |
 | `align-items` | ✅ | L | 含 `stretch` |
-| `align-self` | ⏳ | L | 单个子项覆盖交叉轴对齐 |
-| `align-content` | ⏳ | L | 多行交叉轴分配 |
-| `order` | ⏳ | L | 重排绘制顺序（不动布局位置，改动小） |
-| `flex-flow`（简写） | ⏳ | L | 等价两条，加解析即可 |
+| `align-self` | ✅ | L | 覆盖自己在交叉轴上的对齐；`auto` = 跟容器的 `align-items` |
+| `align-content` | ⏳ | L | 多行交叉轴分配（单行的"行撑满容器"已实现，见 §18.4） |
+| `order` | ✅ | L | 就地排子链表，布局/绘制/命中一起跟着走（稳定，相等时保持 HTML 顺序） |
+| `flex-flow`（简写） | ✅ | L | `<flex-direction> \|\| <flex-wrap>`，两个 token 任意顺序 |
 | `wrap-reverse` | ❌ | N | 用得极少，`flex-direction` 反向可近似 |
 | `gap` / `row-gap` / `column-gap` | ✅ | L | Grid 也用同一组，但本库只在 flex 里生效 |
 
@@ -422,7 +424,6 @@
 | `cursor` | ⏳ | L | **桌面上很要紧**（指针形状）；需要 `QLDispDriver` 加一个设光标的钩子 |
 | `outline` 系列 | ⏳ | R | 见 §7 |
 | `user-select` | ⏳ | L | 现在只有输入框能选字 |
-| `pointer-events` | ⏳ | L | 命中测试跳过该节点（覆盖层常用） |
 | `scroll-behavior: smooth` | ⏳ | T | 要持续重绘 |
 | `overscroll-behavior` | ❌ | N | 惯性/回弹是平台层的事 |
 | `touch-action` | ❌ | N | 触摸还没接（见开发规划 M6.5） |
@@ -547,6 +548,28 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc->calc_ops[]（每条 4 字节�
 
 ---
 
+### 18.4 B5 小件：五个"只加开关"的属性
+
+这一批的共同点是**不动布局大框架**，各自挂到一个已有机制上：
+
+| 属性 | 挂在哪 | 实现要点 |
+|---|---|---|
+| `visibility: hidden` | 绘制 + 命中 | 只是"不画自己"，布局照常 → 与 `display: none` 的区别就在这里。它是**继承**属性，子级写 `visible` 能显示回来 |
+| `pointer-events: none` | 命中测试 | 自己不作为命中目标，**子节点照常**（子级写 `auto` 能重新接住）——盖在按钮上的装饰层用它 |
+| `align-self` | flex 交叉轴 | `auto` = 跟容器的 `align-items`；`stretch` 只在交叉轴尺寸是 `auto` 时撑满 |
+| `order` | flex 子链表 | 布局开头按 order **稳定** 排一遍子链表，之后测量/断行/摆放/绘制/命中全都自动跟着走（比"每次遍历按 order 挑下一个"少六七处改动） |
+| `flex-flow` | 简写展开 | `<flex-direction> \|\| <flex-wrap>`，两个 token 任意顺序；展开进 `flex-direction` / `flex-wrap` |
+
+**顺带修掉一个真缺陷（这是本轮最重要的收获）**：`align-items: center / flex-end`
+在"容器有确定高度、只有一行"这个最常见的情况下**完全没有效果** —— 因为单行的
+交叉尺寸取的是"各项最大值"，`room` 恒为 0。CSS 的默认 `align-content: stretch`
+要求单行撑满容器的交叉尺寸，补上之后 `align-items` 才真的能用（golden 的
+`align` 页因此变化，肉眼核对过：两个方块现在在 120px 高的容器里居中）。
+
+多行（`flex-wrap: wrap`）的 `align-content` 仍然没做，行高仍按内容最大值。
+
+---
+
 ## 19. 覆盖率：两份实测 + 一份规范口径
 
 三个数回答三个不同的问题，别混着用。
@@ -603,7 +626,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | + B5 布局细节 | 94.5% |
 
 剩下 5.5% 主要是 `float`（不做）、`cursor`（鼠标形状）、`list-style`（没有生成内容）、
-`visibility`、`pointer-events`、`@font-face` 的 `src`。
+`@font-face` 的 `src`、`overflow-x/y` 分轴、`align-content`。
 
 ### 19.4 选择器侧（同一份语料）
 
@@ -693,6 +716,10 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | 长度单位 | `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `calc()` | 没有 `ch` / `ex` / `lh` |
 | `calc()` 能用在哪些属性 | `width` / `height` / `min-*` / `max-*` / `top` / `right` / `bottom` / `left` | `font-size` / `border-*` / `letter-spacing` / `text-indent` / `margin` / `padding` 只接受**构建期就能折成 px** 的 `calc()`（其余报错） |
 | `calc()` 的标量乘除 | 构建期折进每个操作数 | 百分点精度会掉（`calc(100% / 3)` 是 33%，不是 33.33%）；长度 × 长度报错 |
+| `align-items` / `align-self` | 单行 + 交叉轴确定时行会撑满容器 | 多行的 `align-content` 还没做（多行时行高仍按内容最大值）；`baseline` 不支持 |
+| `order` | 就地排子链表 | 只对 **flex 容器的直接子项** 生效；与 `z-index` 同时出现时先按 order、再按 z（同 z 保持 order 顺序） |
+| `pointer-events` | 只有 `auto` / `none` | 没有 `all` / `visiblePainted` 那套 SVG 取值；光标形状（`cursor`）还没做 |
+| `visibility` | `visible` / `hidden`（`collapse` 当 hidden） | 只影响"画不画自己"与命中；布局照常（这正是与 `display:none` 的区别） |
 | `!important` | 两趟级联 | 支持 |
 
 ---
@@ -850,7 +877,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
 | **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
 | **B4 绘制细节** | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
-| **B5 布局与交互** | `align-self`、`align-content`、`order`、`flex-flow`、`overflow-x/y`、`position: sticky`、`inset`、`visibility`、`cursor`、`pointer-events`、`user-select`、`scroll-behavior` | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` |
+| **B5 布局与交互**（部分完成：`visibility`/`pointer-events`/`align-self`/`order`/`flex-flow` 已做，见 §18.4） | `align-content`、`overflow-x/y`、`position: sticky`、`inset`、`cursor`、`user-select`、`scroll-behavior` | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` |
 
 **另外两项单独立项**（成本与一批相当，但语义是"新子系统"）：
 

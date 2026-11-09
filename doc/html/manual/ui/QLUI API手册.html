@@ -179,7 +179,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：八个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -940,7 +940,19 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 </tr>
 <tr>
 <td>交叉轴对齐</td>
-<td><code>stretch</code>（默认，子项无显式交叉尺寸时拉满）或 start/center/end</td>
+<td><code>stretch</code>（默认，子项无显式交叉尺寸时拉满）或 start/center/end；<strong>单行时行会撑满容器</strong>，所以 center/end 真的居中</td>
+</tr>
+<tr>
+<td>单个子项覆盖</td>
+<td><code>align-self: auto \| flex-start \| center \| flex-end \| stretch</code></td>
+</tr>
+<tr>
+<td>顺序</td>
+<td><code>order: &lt;整数&gt;</code>（升序，相等时保持 HTML 顺序）</td>
+</tr>
+<tr>
+<td>简写</td>
+<td><code>flex-flow: &lt;direction&gt; \|\| &lt;wrap&gt;</code></td>
 </tr>
 <tr>
 <td>gap</td>
@@ -962,8 +974,41 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <li><code>flex-basis</code> 支持 px 与 <code>%</code>（相对容器主轴尺寸）；</li>
 <li>百分比 <code>width</code> 在 flex 子项上是相对<strong>容器内容宽</strong>，不是 flex-basis。</li>
 </ol>
-<p><strong>不支持的</strong>：<code>align-self</code>、<code>align-content</code>、<code>order</code>、<code>flex-flow</code> 简写、
-<code>flex-basis: auto</code> 的完整语义（等同"用 width"）、多行 <code>align-content</code> 对齐。</p>
+<p><strong>不支持的</strong>：<code>align-content</code>（多行的行间分配）、<code>baseline</code> 对齐、
+<code>wrap-reverse</code>、<code>flex-basis: auto</code> 的完整语义（等同"用 width"）。</p>
+<h3 id="371-visibility-pointer-events">3.7.1 <code>visibility</code> / <code>pointer-events</code></h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">placeholder</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 看不见，但位置还占着（display:none 才不占） */</span>
+<span class="p">.</span><span class="nc">tooltip</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">.</span><span class="nc">tooltip</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">visible</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 子级能自己显示回来（继承属性） */</span>
+
+<span class="p">.</span><span class="nc">overlay</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 装饰层：自己不挡点击 */</span>
+<span class="p">.</span><span class="nc">overlay</span><span class="w"> </span><span class="p">.</span><span class="nc">btn</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="c">/* 里面的按钮照常可点 */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>取值</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>visibility</code></td>
+<td><code>visible</code> / <code>hidden</code>（<code>collapse</code> 按 hidden）</td>
+<td>只影响"画不画自己"与命中；布局照常。<strong>继承</strong>：父级 hidden 时子级也 hidden，子级可写 <code>visible</code> 显示回来</td>
+</tr>
+<tr>
+<td><code>pointer-events</code></td>
+<td><code>auto</code> / <code>none</code></td>
+<td><code>none</code> = 自己不作为命中目标；<strong>子节点照常</strong>（可写 <code>auto</code> 重新接住）</td>
+</tr>
+</tbody>
+</table>
+<p>两者都是<strong>逐节点的开关</strong>，不引入新状态：<code>visibility</code> 在绘制时跳过"自己"那几笔，
+<code>pointer-events</code> 在命中测试里跳过"自己"这一步。所以没有性能代价，
+也不影响 <code>paint_box</code>（<code>visibility: hidden</code> 的元素仍然占着脏区范围）。</p>
 <h3 id="38-z-index">3.8 定位与 z-index</h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">relative</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                    </span><span class="c">/* 成为绝对子项的包含块 */</span>
 <span class="p">.</span><span class="nc">badge</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">top</span><span class="p">:</span><span class="w"> </span><span class="mi">-6</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">right</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
@@ -1553,23 +1598,29 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <p><strong>构建期报错</strong>：不是 0~1 的数字（<code>opacity: abc</code>）、越界（<code>opacity: 1.5</code>）。</p>
 <hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
-<div class="highlight"><pre><span></span><code>float / grid / align-self / align-content / order / flex-flow
-rotate / skew / matrix / 3d transform（只支持 translate 与轴对齐 scale）
-filter / clip-path / var()
-min-width / max-width / min-height / max-height
-@media / em / rem / vh / vw / calc()
-transition-delay
-animation-play-state: paused
+<div class="highlight"><pre><span></span><code>float / grid / align-content（多行的行间分配）
+overflow-x / overflow-y（分轴）        position: sticky
+rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
+filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
+cursor / user-select / list-style / @supports / @font-face
+border-radius 四角与椭圆角              border-style: dashed / dotted
+word-spacing / text-decoration: overline / text-align: justify
+transition-delay                        animation-play-state: paused
 backface-visibility（假翻转没有背面）
-backdrop-filter 的 blur() 以外的函数
 </code></pre></div>
 
 <p>报错示例：</p>
-<div class="highlight"><pre><span></span><code>qlui: 错误：index.css:27: 不支持的属性 &#39;position&#39;
-qlui: 错误：index.css:12: 不支持的长度 &#39;1.5ch&#39;（支持 px / % / em / rem / vw / vh）
-qlui: 错误：index.html:5: &lt;p&gt; 同时包含文本和子元素（混合内容）——v0 不支持，请把文本放进独立的 &lt;span&gt;/&lt;p&gt;
+<div class="highlight"><pre><span></span><code>qlui: 错误：index.css:27: 不支持的属性 &#39;position: sticky&#39;
+qlui: 错误：index.css:12: 不支持的长度 &#39;1.5ch&#39;（支持 px / % / em / rem / vw / vh / calc()）
+qlui: 错误：index.css:31: 暂不支持分轴 overflow &#39;overflow-x&#39;
+qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的值
 </code></pre></div>
 
+<blockquote>
+<p>这份清单会随版本变化 —— <code>var()</code>、<code>@media</code>、<code>calc()</code>、<code>min/max-width</code>、
+<code>em/rem/vw/vh</code>、<code>+</code>/<code>~</code> 选择器、<code>::before</code>、<code>align-self</code>、<code>order</code>、<code>flex-flow</code>、
+<code>visibility</code>、<code>pointer-events</code> <strong>都已经支持了</strong>（早期版本把它们列在这里）。</p>
+</blockquote>
 <hr />
 <h2 id="4">4. 生成的数据结构</h2>
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
