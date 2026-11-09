@@ -400,6 +400,7 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 | 主轴对齐 | justify-content 六种（`grow` 生效时 justify 不再参与分配） |
 | 交叉轴对齐 | `stretch`（默认，子项无显式交叉尺寸时拉满）或 start/center/end；**单行时行会撑满容器**，所以 center/end 真的居中 |
 | 单个子项覆盖 | `align-self: auto \| flex-start \| center \| flex-end \| stretch` |
+| 多行的行间分配 | `align-content: stretch（默认）\| flex-start \| center \| flex-end \| space-between \| space-around \| space-evenly` |
 | 顺序 | `order: <整数>`（升序，相等时保持 HTML 顺序） |
 | 简写 | `flex-flow: <direction> \|\| <wrap>` |
 | gap | `gap` / `row-gap` / `column-gap`，px |
@@ -415,10 +416,10 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 3. `flex-basis` 支持 px 与 `%`（相对容器主轴尺寸）；
 4. 百分比 `width` 在 flex 子项上是相对**容器内容宽**，不是 flex-basis。
 
-**不支持的**：`align-content`（多行的行间分配）、`baseline` 对齐、
-`wrap-reverse`、`flex-basis: auto` 的完整语义（等同"用 width"）。
+**不支持的**：`baseline` 对齐、`wrap-reverse`、
+`flex-basis: auto` 的完整语义（等同"用 width"）。
 
-### 3.7.1 `visibility` / `pointer-events`
+### 3.7.1 `visibility` / `pointer-events` / `cursor` / `user-select`
 
 ```css
 .placeholder { visibility: hidden; }   /* 看不见，但位置还占着（display:none 才不占） */
@@ -433,10 +434,22 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 |---|---|---|
 | `visibility` | `visible` / `hidden`（`collapse` 按 hidden） | 只影响"画不画自己"与命中；布局照常。**继承**：父级 hidden 时子级也 hidden，子级可写 `visible` 显示回来 |
 | `pointer-events` | `auto` / `none` | `none` = 自己不作为命中目标；**子节点照常**（可写 `auto` 重新接住） |
+| `cursor` | `auto` / `default` / `pointer` / `text` / `move` / `not-allowed` / `help` / `progress` | 只算**意图**，见下面 `ql_ui_cursor_at()` |
+| `user-select` | `none` / `auto` / `text` / `all` / `contain` | `none` → 输入框仍可点（光标落点不变），但拖拽不再连选 |
 
-两者都是**逐节点的开关**，不引入新状态：`visibility` 在绘制时跳过"自己"那几笔，
-`pointer-events` 在命中测试里跳过"自己"这一步。所以没有性能代价，
-也不影响 `paint_box`（`visibility: hidden` 的元素仍然占着脏区范围）。
+```c
+/* 鼠标移动时问一句"现在该用哪个光标"，交给窗口系统 */
+uint8_t cur = ql_ui_cursor_at(ui, mx, my);   /* QLUICursor */
+/* X11: XDefineCursor(display, win, cursor_for(cur)); Wayland: wl_cursor_* */
+```
+
+`ql_ui_cursor_at()` 从命中节点往上找第一个写了 `cursor` 的祖先；都没写时输入框给
+`text`、其余给 `default`。**它只算意图，不设光标** —— 设光标要窗口系统配合，
+后端目前没有接（写在这里而不是让它悄悄失效）。
+
+三个属性都是**逐节点的开关**，不引入新状态：`visibility` 在绘制时跳过"自己"那几笔，
+`pointer-events` 在命中测试里跳过"自己"这一步，`cursor` 只是命中后往上查一层。
+所以没有性能代价，也不影响 `paint_box`（`visibility: hidden` 仍然占着脏区范围）。
 
 ### 3.8 定位与 z-index
 
@@ -452,6 +465,7 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 | `relative` | 常规流占位不变，**绘制位置**按 `top/left`（或 `right/bottom` 取负）偏移，不影响兄弟 |
 | `absolute` | 脱离文档流；相对**最近的非 static 祖先的 padding box** 定位；没有则相对根 |
 | `fixed` | 脱离文档流；相对**视口**定位 |
+| `sticky` | **在流里占位**；贴住最近的滚动容器的可视边缘，但不能推出自己的包含块 |
 
 **绝对定位的尺寸规则**
 
@@ -468,6 +482,35 @@ printf("calc 指令 %u 条\n", (unsigned)doc->calc_op_count);
 > 停在原来该在的位置）与 shrink-to-fit 的完整算法。这里都没实现，
 > 没给 inset 时贴包含块左上角。涉及这些的布局请显式写 inset。
 
+**`inset` 简写**
+
+```css
+.overlay { position: absolute; inset: 0; }             /* 铺满包含块 */
+.badge   { position: absolute; inset: 4px 8px 4px 8px; } /* 上右下左 */
+```
+
+`inset` 与 `margin` 同一套 1/2/4 值语法，构建期展开成 `top` / `right` / `bottom` / `left`
+四条长写。所以"展开后能写的东西"它都能写（`px` / `%` / `em` / `rem` / `auto`）。
+
+**`position: sticky`**
+
+```css
+.list { height: 240px; overflow-y: auto; }
+.head { position: sticky; top: 0; }     /* 列表滚动时表头钉在顶部 */
+```
+
+实现是**布局末尾的一次补偿平移**（`sticky_adjust`）：滚动已经由 `apply_scroll`
+把子树整体平移过，之后 sticky 再把自己推回可视边缘。改的是 `border_box`，
+所以绘制、命中测试、脏区、`paint_box` 全都自动正确 —— 没有第二套坐标。
+
+三条约束：
+
+| 约束 | 说明 |
+|---|---|
+| 只贴**给了 inset 的方向** | 不给 `top` 的 sticky 与 `relative` 等价（与 CSS 一致） |
+| 参照物是**最近的滚动容器** | 没有滚动容器时按视口 |
+| 不能推出**包含块** | 父内容盒的边界；这就是"跟着列表滚到头就一起走" |
+
 **z-index**：布局结束后对所有兄弟按 `z-index` **稳定排序**子链表，
 之后**绘制顺序与命中测试顺序自动一致**（链表顺序即绘制顺序）。
 z-index 相同则保持文档顺序（稳定）。
@@ -478,6 +521,13 @@ z-index 相同则保持文档顺序（稳定）。
 |---|---|
 | `visible`（默认） | 子项可以画到父盒子外 |
 | `hidden` / `auto` / `scroll` | 子树被裁到本节点边框盒；**被裁掉的部分不可命中**（命中测试同样裁剪） |
+| `overflow-x` / `overflow-y` | 分轴：只裁那个方向。另一轴沿用外层裁剪，所以"只裁横向"的容器里子项仍可以纵向画出去 |
+| `auto` 的轴 | 才有可滚范围、才画滚动条（另一轴固定不可滚） |
+
+```css
+.ticker { overflow-x: hidden; overflow-y: visible; }   /* 横向裁、纵向放行 */
+.list   { overflow-x: hidden; overflow-y: auto; }      /* 只纵向滚 */
+```
 
 > `auto`/`scroll` 目前**不产生滚动条，也不能滚动** —— 只是裁剪。
 > 滚动容器排在 M3 之后的滚动里程碑。
@@ -831,12 +881,11 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 ### 3.12 不支持的写法一律报错
 
 ```
-float / grid / align-content（多行的行间分配）
-overflow-x / overflow-y（分轴）        position: sticky
+float / grid / align-content: baseline
+border-radius 四角与椭圆角              border-style: dashed / dotted
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
 filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
-cursor / user-select / list-style / @supports / @font-face
-border-radius 四角与椭圆角              border-style: dashed / dotted
+list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
 word-spacing / text-decoration: overline / text-align: justify
 transition-delay                        animation-play-state: paused
 backface-visibility（假翻转没有背面）
@@ -845,9 +894,9 @@ backface-visibility（假翻转没有背面）
 报错示例：
 
 ```
-qlui: 错误：index.css:27: 不支持的属性 'position: sticky'
+qlui: 错误：index.css:27: 不支持的属性 'position: sticky-x'
 qlui: 错误：index.css:12: 不支持的长度 '1.5ch'（支持 px / % / em / rem / vw / vh / calc()）
-qlui: 错误：index.css:31: 暂不支持分轴 overflow 'overflow-x'
+qlui: 错误：index.css:31: 不支持的 cursor 'hand'（支持 auto/default/pointer/text/move/...）
 qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的值
 ```
 
@@ -1229,6 +1278,17 @@ int      ql_ui_scrollable(const QLUINodeRT *node);
 ```
 
 `scroll_to` 只设状态（**需要自己再调一次 `ql_ui_layout`**），`scroll_by` 内部重排并标脏。
+
+**平滑滚动**：容器写了 `scroll-behavior: smooth` 时，`scroll_to` / `scroll_by` 只记目标
+（`scroll_goal_x/y` + `scroll_goal_ms`），偏移由 `ql_ui_anim_tick(ui, now_ms)` 逐帧推进
+（160ms ease-out，内部会自己重排）。所以宿主要像驱动动画一样每帧调它：
+
+```c
+if (ql_ui_anim_tick(ui, ql_anim_now_ms()) > 0)   /* 有动画/滚动在跑 */
+    mark_dirty_and_render();
+```
+
+不写 `scroll-behavior` 就是**立即跳**（老行为）。
 
 **滚轮的单位是"格"，不是像素。** `QLInputEvent.dy` 是格数（X11 的 Button4/5 一次一格），
 `ql_ui_input_event` 会乘上 `QL_CFG_UI_WHEEL_STEP_PX`（默认 **50px**，约 3 行，

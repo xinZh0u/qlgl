@@ -1111,6 +1111,99 @@ static void sort_tree_by_z(QLUINodeRT *node)
         sort_tree_by_z(c);
 }
 
+/*
+ * `position: sticky`：布局末尾的一次**补偿平移**。
+ *
+ * 语义：元素在流里占位（像 relative），但当最近的滚动容器滚到"它要出界"时，
+ * 它贴住容器的可视边缘（`top` / `bottom` 给出贴边距离）。
+ *
+ * 为什么放在布局末尾而不是布局中：滚动是"整棵子树平移"（见 apply_scroll），
+ * 平移之后才谈得上"有没有出界"。补偿平移改的是 border_box，于是绘制、命中、
+ * 脏区、paint_box 全都自动正确 —— 与 relative 用的是同一条机制
+ * （translate_subtree），没有第二套坐标。
+ *
+ * 只在写了 inset 的方向上生效（CSS 也是这样：`position: sticky` 不给 `top`
+ * 就跟 relative 没区别）。
+ */
+static void sticky_adjust(QLUINodeRT *node, const QLUINodeRT *anc)
+{
+    const QLUIStyle *s = node->style;
+    const QLRect cb = (anc != NULL) ? anc->content_box
+                                    : ql_rect_make(0, 0, s_viewport_w, s_viewport_h);
+
+    const int has_t = s->inset[0].unit != QL_UI_UNIT_AUTO;
+    const int has_r = s->inset[1].unit != QL_UI_UNIT_AUTO;
+    const int has_b = s->inset[2].unit != QL_UI_UNIT_AUTO;
+    const int has_l = s->inset[3].unit != QL_UI_UNIT_AUTO;
+    if (!has_t && !has_r && !has_b && !has_l)
+        return;
+
+    ql_coord_t dx = 0, dy = 0;
+    if (has_t) {
+        const ql_coord_t t = resolve_inset(s->inset[0], cb.h, 0);
+        const ql_coord_t want = cb.y + t;
+        if (node->border_box.y < want)
+            dy = want - node->border_box.y;
+    }
+    if (has_b) {
+        const ql_coord_t b = resolve_inset(s->inset[2], cb.h, 0);
+        const ql_coord_t limit =
+            ql_rect_bottom(cb) - b - node->border_box.h;
+        if (node->border_box.y + dy > limit &&
+            (!has_t || limit >= cb.y + resolve_inset(s->inset[0], cb.h, 0)))
+            dy = limit - node->border_box.y;
+    }
+    if (has_l) {
+        const ql_coord_t l = resolve_inset(s->inset[3], cb.w, 0);
+        const ql_coord_t want = cb.x + l;
+        if (node->border_box.x < want)
+            dx = want - node->border_box.x;
+    }
+    if (has_r) {
+        const ql_coord_t r = resolve_inset(s->inset[1], cb.w, 0);
+        const ql_coord_t limit = ql_rect_right(cb) - r - node->border_box.w;
+        if (node->border_box.x + dx > limit &&
+            (!has_l || limit >= cb.x + resolve_inset(s->inset[3], cb.w, 0)))
+            dx = limit - node->border_box.x;
+    }
+    /*
+     * 约束在自己的**包含块**（父内容盒）里：这就是 sticky "跟到头就一起滚走" 的来源。
+     * 只在自己往正方向推的时候夹（dy > 0），否则会在父盒已经滚出视口时往回拽。
+     */
+    if (dy > 0 && node->parent != NULL) {
+        const ql_coord_t limit =
+            ql_rect_bottom(node->parent->content_box) - node->border_box.h;
+        if (node->border_box.y + dy > limit)
+            dy = limit - node->border_box.y;
+    }
+    if (dx > 0 && node->parent != NULL) {
+        const ql_coord_t limit =
+            ql_rect_right(node->parent->content_box) - node->border_box.w;
+        if (node->border_box.x + dx > limit)
+            dx = limit - node->border_box.x;
+    }
+    if (dx == 0 && dy == 0)
+        return;
+    translate_subtree(node, dx, dy);
+}
+
+static void sticky_walk(QLUINodeRT *node, QLUINodeRT *clip_anc)
+{
+    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+        const QLUIStyle *s = c->style;
+        if (s->display == QL_UI_DISPLAY_NONE)
+            continue;
+        if (s->position == QL_UI_POSITION_STICKY)
+            sticky_adjust(c, clip_anc);
+        /* 自己是滚动容器 → 成为后代的参照 */
+        QLUINodeRT *next_anc = clip_anc;
+        if (s->overflow_x != QL_UI_OVERFLOW_VISIBLE ||
+            s->overflow_y != QL_UI_OVERFLOW_VISIBLE)
+            next_anc = c;
+        sticky_walk(c, next_anc);
+    }
+}
+
 /* ------------------------------ 输入框 ------------------------------ */
 
 
@@ -1622,7 +1715,11 @@ static int input_pointer_down(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x,
         const uint16_t pos = caret_at_px(font, in->buf, in->len, rel > 0 ? rel : 0);
         input_set_caret(ui, in, pos, 0);
     }
-    ui->input_drag = 1;
+    /*
+     * `user-select: none`：仍然可以点进去、点在哪光标就在哪，
+     * 只是**拖拽不再连选**（这是 CSS 里这个属性对输入框的意义）。
+     */
+    ui->input_drag = (node->style->user_select_none == 0);
     return 1;
 }
 
@@ -1883,9 +1980,11 @@ static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
                          ql_coord_t cw, ql_coord_t ch)
 {
     const QLUIStyle *s = node->style;
+    const int auto_x = (s->overflow_x == QL_UI_OVERFLOW_AUTO);
+    const int auto_y = (s->overflow_y == QL_UI_OVERFLOW_AUTO);
 
-    if (s->overflow != QL_UI_OVERFLOW_AUTO) {
-        /* visible / hidden：不滚（hidden 只裁不滚，与 CSS 一致） */
+    if (!auto_x && !auto_y) {
+        /* 两轴都不 auto：不滚（visible / hidden 都只裁不滚，与 CSS 一致） */
         node->scroll_x = node->scroll_y = 0;
         node->scroll_max_x = node->scroll_max_y = 0;
         return;
@@ -1908,8 +2007,9 @@ static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
             ext_h = h;
     }
 
-    node->scroll_max_x = (ext_w > cw) ? (ext_w - cw) : 0;
-    node->scroll_max_y = (ext_h > ch) ? (ext_h - ch) : 0;
+    /* 只有 auto 的那个轴才有可滚范围（另一个轴固定为 0） */
+    node->scroll_max_x = (auto_x && ext_w > cw) ? (ext_w - cw) : 0;
+    node->scroll_max_y = (auto_y && ext_h > ch) ? (ext_h - ch) : 0;
 
     if (node->scroll_x < 0)
         node->scroll_x = 0;
@@ -2636,7 +2736,99 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
     measure_flex_items(node, content_w);
 
 
-    ql_coord_t cross_cursor = 0;
+    /*
+     * (0) 先量一遍"有几行、每行多高"（只累加，不存数组 —— MCU 上没有栈可用）。
+     *     这一步只为 align-content：交叉轴上怎么分配得先知道总高。
+     */
+    const ql_coord_t cross_gap = row ? (ql_coord_t)cs->gap_row
+                                     : (ql_coord_t)cs->gap_col;
+    const ql_coord_t container_cross = row ? (definite_h ? avail_h : 0) : content_w;
+    ql_coord_t total_cross = 0;
+    int nline = 0;
+    {
+        QLUINodeRT *lb = node->first_child;
+        while (lb != NULL) {
+            while (lb != NULL && lb->style->display == QL_UI_DISPLAY_NONE)
+                lb = lb->next_sibling;
+            if (lb == NULL)
+                break;
+            QLUINodeRT *last = NULL;
+            ql_coord_t used = 0, lc = 0;
+            int n = 0;
+            for (QLUINodeRT *c = lb; c != NULL; c = c->next_sibling) {
+                if (c->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                const ql_coord_t b = flex_base_of(c, row, inner_main);
+                const ql_coord_t need = b + ((n > 0) ? gap : 0);
+                if (n > 0 && cs->flex_wrap == 1 && inner_main > 0 &&
+                    used + need > inner_main)
+                    break;
+                const ql_coord_t cr = natural_cross(c, row);
+                if (cr > lc)
+                    lc = cr;
+                last = c;
+                used += need;
+                n++;
+            }
+            if (last == NULL)
+                break;
+            total_cross += lc;
+            nline++;
+            lb = last->next_sibling;
+        }
+    }
+    if (nline > 1)
+        total_cross += cross_gap * (nline - 1);
+
+    /*
+     * 交叉轴的行间分配（`align-content`）。
+     *
+     *   单行 → 行撑满容器（CSS 对单行的特例，也是 align-items 能生效的前提）
+     *   多行 → 按 align-content：stretch 把剩余空间平分给各行，其余是"起点 + 间距"
+     *
+     * 间距一律用**累计推进**，与 justify-content 同一套（余数不丢）。
+     */
+    ql_coord_t cross_start = 0;
+    ql_coord_t cross_extra_total = 0;     /* 行与行之间要摊开的总额 */
+    int cross_extra_div = 0;              /* 摊成几份（0 = 不摊） */
+    ql_coord_t cross_stretch_extra = 0;   /* 每行要拉伸的总额（stretch） */
+    if (nline == 1 && cs->flex_wrap != 1) {
+        if (container_cross > total_cross)
+            total_cross = container_cross;
+    } else if (nline > 1) {
+        const ql_coord_t free_cross =
+            (container_cross > total_cross) ? (container_cross - total_cross) : 0;
+        switch (cs->align_content) {
+        case QL_UI_ALIGN_CONTENT_CENTER:
+            cross_start = free_cross / 2;
+            break;
+        case QL_UI_ALIGN_CONTENT_END:
+            cross_start = free_cross;
+            break;
+        case QL_UI_ALIGN_CONTENT_SPACE_BETWEEN:
+            cross_extra_total = free_cross;
+            cross_extra_div = nline - 1;
+            break;
+        case QL_UI_ALIGN_CONTENT_SPACE_AROUND:
+            cross_start = free_cross / (2 * nline);
+            cross_extra_total = free_cross;
+            cross_extra_div = nline;
+            break;
+        case QL_UI_ALIGN_CONTENT_SPACE_EVENLY:
+            cross_start = free_cross / (nline + 1);
+            cross_extra_total = free_cross;
+            cross_extra_div = nline + 1;
+            break;
+        case QL_UI_ALIGN_CONTENT_STRETCH:
+        default:
+            cross_stretch_extra = free_cross;
+            break;
+        }
+    }
+
+    ql_coord_t cross_cursor = cross_start;
+    int64_t cross_num = 0;      /* 行间距的累计分子 */
+    int64_t stretch_num = 0;    /* stretch 份额的累计分子 */
     QLUINodeRT *line_begin = node->first_child;
 
     while (line_begin != NULL) {
@@ -2688,16 +2880,22 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
                 break;
         }
         /*
-         * 单行 + 交叉轴确定 → 行撑满容器（CSS 的 `align-content: stretch`，默认值）。
+         * 单行 + 交叉轴确定 → 行撑满容器（CSS 对单行的特例）。
          *
          * 不撑的话 `align-items: center/flex-end` 在"容器有确定高度、只有一行"
          * 这个最常见的情况下**完全没有效果**（room 恒为 0）。以前就是这样：
-         * 表现得像"垂直对齐没实现"。多行时不撑（那是 align-content 的事，还没做）。
+         * 表现得像"垂直对齐没实现"。
          */
-        if (cs->flex_wrap != 1) {
-            const ql_coord_t container_cross = row ? (definite_h ? avail_h : 0) : content_w;
+        if (nline == 1 && cs->flex_wrap != 1) {
             if (container_cross > line_cross)
                 line_cross = container_cross;
+        } else if (cross_stretch_extra > 0) {
+            /* 多行 + align-content: stretch：剩余空间平分给各行（累计推进） */
+            stretch_num += (int64_t)cross_stretch_extra;
+            const int n = (nline > 0) ? nline : 1;
+            const ql_coord_t add = (ql_coord_t)(stretch_num / n);
+            stretch_num -= (int64_t)add * n;
+            line_cross += add;
         }
 
         /* (5) justify 只在 grow 没吸收掉剩余空间时生效 */
@@ -2812,8 +3010,15 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
 
         cross_cursor += line_cross;
         line_begin = last->next_sibling;
-        if (line_begin != NULL)
-            cross_cursor += row ? (ql_coord_t)cs->gap_row : (ql_coord_t)cs->gap_col;
+        if (line_begin != NULL) {
+            ql_coord_t extra = 0;
+            if (cross_extra_div > 0) {
+                cross_num += (int64_t)cross_extra_total;
+                extra = (ql_coord_t)(cross_num / (int64_t)cross_extra_div);
+                cross_num -= (int64_t)extra * (int64_t)cross_extra_div;
+            }
+            cross_cursor += cross_gap + extra;
+        }
 
         if (cs->flex_wrap != 1)
             break;      /* nowrap：一行到底 */
@@ -3225,6 +3430,12 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
 
     root->abs_cb = ql_rect_make(0, 0, width, height);
     layout_node(root, 0, 0, width, height);
+
+    /*
+     * 贴边（sticky）必须在滚动平移之后、算 paint_box 之前：
+     * 它会改 border_box，后面所有消费者（绘制/命中/脏区）就都对了。
+     */
+    sticky_walk(root, NULL);
 
     /* z-index 排序放在最后：之后绘制与命中测试都自动遵循 z 序 */
     sort_tree_by_z(root);
@@ -4633,10 +4844,25 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         draw_input_decor(node, d2d);
     }
 
-    /* overflow != visible 时，子树被裁到本节点的边框盒（含圆角） */
-    if (s->overflow != QL_UI_OVERFLOW_VISIBLE && d2d->set_clip != NULL) {
+    /*
+     * 有轴不是 visible 时，子树被裁到本节点的边框盒（含圆角）。
+     * 分轴：只裁需要裁的那个方向 —— 另一轴沿用外层裁剪，
+     * 所以"只裁横向"的容器里，子元素仍可以纵向画出去。
+     */
+    if ((s->overflow_x != QL_UI_OVERFLOW_VISIBLE ||
+         s->overflow_y != QL_UI_OVERFLOW_VISIBLE) &&
+        d2d->set_clip != NULL) {
         QLRect saved = clip;
-        QLRect clipped = ql_rect_intersect(saved, box);
+        QLRect clipped = saved;
+        if (s->overflow_x != QL_UI_OVERFLOW_VISIBLE) {
+            clipped.x = box.x;
+            clipped.w = box.w;
+        }
+        if (s->overflow_y != QL_UI_OVERFLOW_VISIBLE) {
+            clipped.y = box.y;
+            clipped.h = box.h;
+        }
+        clipped = ql_rect_intersect(clipped, saved);
         /* 裁剪同时记进 ui->clip：子节点的剪枝判断必须用真实裁剪，
            否则会按外层更大的裁剪放行，白跑一遍 */
         node->owner->clip = clipped;
@@ -4814,10 +5040,21 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         vis = ql_rect_make(cx0 - hw, cy0 - hh, hw * 2, hh * 2);
     }
 
-    /* overflow 容器把子树裁到自己的边框盒 */
+    /* overflow 容器把子树裁到自己的边框盒（分轴：只裁需要的那个方向） */
     QLRect child_clip = clip;
-    if (s->overflow != QL_UI_OVERFLOW_VISIBLE)
-        child_clip = ql_rect_intersect(clip, vis);
+    if (s->overflow_x != QL_UI_OVERFLOW_VISIBLE ||
+        s->overflow_y != QL_UI_OVERFLOW_VISIBLE) {
+        QLRect c = child_clip;
+        if (s->overflow_x != QL_UI_OVERFLOW_VISIBLE) {
+            c.x = vis.x;
+            c.w = vis.w;
+        }
+        if (s->overflow_y != QL_UI_OVERFLOW_VISIBLE) {
+            c.y = vis.y;
+            c.h = vis.h;
+        }
+        child_clip = ql_rect_intersect(child_clip, c);
+    }
     if (ql_rect_is_empty(child_clip))
         return NULL;
 
@@ -4864,6 +5101,30 @@ QLUINodeRT *ql_ui_hit_test(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
     QLRect screen = ql_rect_make(0, 0, ui->width, ui->height);
     return hit_walk_ui(&ui->nodes[0], x, y, screen, 0, 0, QL_SCALE_ONE,
                        QL_SCALE_ONE, 0, 0);
+}
+
+/*
+ * 当前位置应该用哪个指针形状：命中节点开始往上找第一个写了 `cursor` 的节点。
+ *
+ * **只算意图，不设光标** —— 形状由宿主/后端交给窗口系统
+ * （X11 的 `XDefineCursor`、Wayland 的 `wl_cursor`）。这样 MCU 上也统一：
+ * 触摸屏忽略返回值即可。默认：输入框/多行输入 → text，其余 → default。
+ */
+uint8_t ql_ui_cursor_at(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
+{
+    QLUINodeRT *hit = ql_ui_hit_test(ui, x, y);
+    for (QLUINodeRT *n = hit; n != NULL; n = n->parent) {
+        const QLUIStyle *s = ql_ui_node_style(n);
+        if (s != NULL && s->cursor != QL_UI_CURSOR_AUTO)
+            return s->cursor;
+    }
+    if (hit == NULL)
+        return QL_UI_CURSOR_DEFAULT;
+    /* 没写 cursor 时的合理默认：文本域给 I 形，别的给箭头 */
+    if (hit->src != NULL && (hit->src->tag == QL_UI_TAG_INPUT ||
+                             hit->src->tag == QL_UI_TAG_TEXTAREA))
+        return QL_UI_CURSOR_TEXT;
+    return QL_UI_CURSOR_DEFAULT;
 }
 
 void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
@@ -5518,6 +5779,40 @@ static uint32_t anim_tick_runs(QLUIRoot *ui, uint32_t now_ms)
     return moving;
 }
 
+/*
+ * 平滑滚动的一帧：把所有还在滑的容器往目标推一步（ease-out 二次曲线，160ms）。
+ * 有变化就重排一次 —— 滚动偏移是烘进布局的（与 ql_ui_scroll_by 同一条路径）。
+ */
+static uint32_t scroll_smooth_tick(QLUIRoot *ui, uint32_t now_ms)
+{
+    uint32_t changed = 0;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        QLUINodeRT *n = &ui->nodes[i];
+        if (n->scroll_goal_ms == 0)
+            continue;
+        const uint32_t dur = 160u;
+        const uint32_t el = now_ms - n->scroll_goal_ms;   /* uint32 回绕天然安全 */
+        if (el >= dur) {
+            n->scroll_x = n->scroll_goal_x;
+            n->scroll_y = n->scroll_goal_y;
+            n->scroll_goal_ms = 0;
+        } else {
+            const int64_t t = (int64_t)el * 1000 / (int64_t)dur;      /* 0..999 */
+            const int64_t e = t * (2000 - t) / 1000;                  /* ease-out */
+            n->scroll_x = n->scroll_from_x +
+                          (ql_coord_t)(((int64_t)(n->scroll_goal_x - n->scroll_from_x) * e) /
+                                       1000);
+            n->scroll_y = n->scroll_from_y +
+                          (ql_coord_t)(((int64_t)(n->scroll_goal_y - n->scroll_from_y) * e) /
+                                       1000);
+        }
+        changed = 1;
+    }
+    if (changed)
+        ql_ui_layout(ui, ui->width, ui->height);
+    return changed;
+}
+
 uint32_t ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms)
 {
     if (ui != NULL)
@@ -5526,7 +5821,8 @@ uint32_t ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms)
     if (ui == NULL)
         return 0;
 
-    uint32_t moving = anim_tick_runs(ui, now_ms);
+    uint32_t moving = scroll_smooth_tick(ui, now_ms);
+    moving += anim_tick_runs(ui, now_ms);
     moving += ql_anim_tick(now_ms);            /* 状态过渡，池在 qlanim 里 */
 
     /* 事件统一在本帧末尾派发：回调里再起动画 / 改文本都是安全的 */
@@ -5884,8 +6180,10 @@ int ql_ui_scrollable(const QLUINodeRT *node)
 {
     if (node == NULL || node->style == NULL)
         return 0;
-    return node->style->overflow == QL_UI_OVERFLOW_AUTO &&
-           (node->scroll_max_x > 0 || node->scroll_max_y > 0);
+    const QLUIStyle *s = node->style;
+    const int auto_x = (s->overflow_x == QL_UI_OVERFLOW_AUTO);
+    const int auto_y = (s->overflow_y == QL_UI_OVERFLOW_AUTO);
+    return (auto_x && node->scroll_max_x > 0) || (auto_y && node->scroll_max_y > 0);
 }
 
 ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y)
@@ -5904,11 +6202,29 @@ ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_
     if (ny > node->scroll_max_y)
         ny = node->scroll_max_y;
 
-    if (nx == node->scroll_x && ny == node->scroll_y)
+    if (nx == node->scroll_x && ny == node->scroll_y) {
+        node->scroll_goal_ms = 0;      /* 已经在目标上：取消可能在滑的动画 */
         return QL_OK;
+    }
+
+    /*
+     * `scroll-behavior: smooth`：只记目标，偏移由 `ql_ui_anim_tick()` 逐帧推进。
+     * 这样"跳"和"滑"走同一条状态（scroll_x/y），绘制/命中/脏区都不用分情况。
+     */
+    if (node->style->scroll_smooth) {
+        node->scroll_from_x = node->scroll_x;
+        node->scroll_from_y = node->scroll_y;
+        node->scroll_goal_x = nx;
+        node->scroll_goal_y = ny;
+        node->scroll_goal_ms = ql_anim_now_ms();
+        if (node->scroll_goal_ms == 0)
+            node->scroll_goal_ms = 1u;    /* 0 是"没有动画"的哨兵 */
+        return QL_OK;
+    }
 
     node->scroll_x = nx;
     node->scroll_y = ny;
+    node->scroll_goal_ms = 0;
     return QL_OK;
 }
 
@@ -5916,7 +6232,7 @@ ql_err_t ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord
 {
     if (ui == NULL || node == NULL)
         return QL_ERR_INVAL;
-    if (node->style == NULL || node->style->overflow != QL_UI_OVERFLOW_AUTO)
+    if (node->style == NULL || !ql_ui_scrollable(node))
         return QL_ERR_INVAL;
 
     const ql_coord_t before_x = node->scroll_x;

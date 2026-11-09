@@ -1,6 +1,6 @@
 <div id="root">
   <div class="top">
-    <div class="h1">B5 小件：visibility / pointer-events / align-self / order</div>
+    <div class="h1">B5 小件：从 visibility 到 sticky，十二个"只加开关"的属性</div>
     <div class="badge" id="hits">点击下面的按钮</div>
   </div>
 
@@ -41,5 +41,38 @@
     </div>
   </div>
 
-  <div class="note">这五件都不改布局大框架：visibility 只是"不画自己"，order 就地排子链表，align-self 只覆盖自己在交叉轴上的对齐。</div>
+  <div class="sec">
+    <div class="cap">5. position: sticky：列表滚起来，表头钉在顶部（例程启动时已经滚了 46px）</div>
+    <div class="list" id="list">
+      <div class="lhead">表头（sticky top: 0）</div>
+      <div class="li">第 1 行</div>
+      <div class="li">第 2 行</div>
+      <div class="li">第 3 行</div>
+      <div class="li">第 4 行</div>
+      <div class="li">第 5 行</div>
+      <div class="li">第 6 行</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">6. align-content: space-between：三行均分 120px 高的换行容器</div>
+    <div class="wrapbox">
+      <div class="wc">A1</div>
+      <div class="wc">A2</div>
+      <div class="wc">B1</div>
+      <div class="wc">B2</div>
+      <div class="wc">C1</div>
+      <div class="wc">C2</div>
+      <div class="wc">C3</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">7. overflow-x: hidden + overflow-y: visible：横向裁、纵向放行</div>
+    <div class="strip">
+      <div class="long">这一行很长很长很长很长很长很长很长很长，横向被裁掉；但它的高度可以画到容器外面</div>
+    </div>
+  </div>
+
+  <div class="note">这些属性都不改布局大框架：visibility 只是"不画自己"，order 就地排子链表，sticky 是布局末尾的一次补偿平移，分轴 overflow 只改裁剪矩形的一个方向。</div>
 </div>

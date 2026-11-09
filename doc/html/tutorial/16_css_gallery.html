@@ -584,14 +584,18 @@ main img.shot { max-width: 100%; }
   带 <code>25% + 10px</code> 的 <code>calc()</code> 会让它更明显（px 项被减两次）。
   修法：主轴上的 <code>%</code> / <code>calc()</code> 在 <code>measure</code> 阶段就折成 px 写回 <code>style_copy</code>。</li>
 </ul>
-<h2 id="9-24_b5">9. <code>24_b5</code>：五个"只加开关"的属性</h2>
-<p><img src="../img/24-b5.png" alt="align-self 三种对齐、order 重排、visibility 占位、pointer-events 穿透" width="480"></p>
+<h2 id="9-24_b5">9. <code>24_b5</code>：十二个"只加开关"的属性</h2>
+<p><img src="../img/24-b5.png" alt="align-self 三种对齐、order 重排、visibility 占位、pointer-events 穿透、sticky 表头、align-content 分配、分轴 overflow" width="420"></p>
 <p>完整程序：<code>example/24_b5/</code></p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">box</span><span class="p">.</span><span class="nc">c</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">align-self</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 同一行里各自垂直对齐 */</span>
 <span class="p">.</span><span class="nc">oa</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">order</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* DOM 顺序 A B C D，视觉顺序 B D A C */</span>
 <span class="p">.</span><span class="nc">hide</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">         </span><span class="c">/* 看不见，但位置还占着 */</span>
 <span class="p">.</span><span class="nc">deco</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">       </span><span class="c">/* 盖在按钮上的装饰层不挡点击 */</span>
 <span class="p">.</span><span class="nc">row</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">flex-flow</span><span class="p">:</span><span class="w"> </span><span class="kc">row</span><span class="w"> </span><span class="kc">wrap</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* flex-direction + flex-wrap 的简写 */</span>
+
+<span class="p">.</span><span class="nc">lhead</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">sticky</span><span class="p">;</span><span class="w"> </span><span class="k">top</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 列表滚动时表头钉在顶部 */</span>
+<span class="p">.</span><span class="nc">wrapbox</span><span class="p">{</span><span class="w"> </span><span class="k">align-content</span><span class="p">:</span><span class="w"> </span><span class="kc">space-between</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* 多行在交叉轴上均分 */</span>
+<span class="p">.</span><span class="nc">strip</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">overflow-x</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="k">overflow-y</span><span class="p">:</span><span class="w"> </span><span class="kc">visible</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* 只裁横向 */</span>
 </code></pre></div>
 
 <div class="highlight"><pre><span></span><code>./build/example/example_24_b5<span class="w"> </span>--size<span class="w"> </span>720x520<span class="w"> </span>--dump<span class="w"> </span>b5.ppm
@@ -599,6 +603,10 @@ main img.shot { max-width: 100%; }
 
 <p>点一下紫色按钮：装饰层是 <code>pointer-events: none</code>，点击<strong>穿过</strong>它落到按钮上
 （终端打印命中的节点）。把那一行删掉再跑，点击就只会命中装饰层。</p>
+<p><code>position: sticky</code> 是"布局末尾的一次补偿平移"：滚动已经由 <code>apply_scroll</code>
+把子树整体平移过，sticky 再把自己推回可视边缘，改的是 <code>border_box</code> ——
+所以绘制、命中、脏区、<code>paint_box</code> 全都自动正确。约束在自己的<strong>包含块</strong>里，
+所以列表滚到头它会跟着一起走（不是永远钉着）。</p>
 <p>写这一节时又查出一个<strong>真缺陷</strong>（这一轮最有价值的发现）：</p>
 <ul>
 <li><code>align-items: center / flex-end</code> 在"容器有确定高度、只有一行"这个<strong>最常见</strong>的

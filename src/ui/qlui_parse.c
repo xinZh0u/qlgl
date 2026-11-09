@@ -2911,6 +2911,37 @@ static int expand_shorthands(Decls *ds)
         (void)decls_remove(ds, "flex");
     }
 
+    if ((v = decls_get(ds, "inset")) != NULL) {
+        /* `inset: <t> <r> <b> <l>`（1/2/4 值，与 margin 同一套语法） */
+        QLUILength e[4];
+        if (!parse_edges(v, "inset", 1, NULL, e))
+            return 0;
+        static const char *const names[4] = { "top", "right", "bottom", "left" };
+        for (int i = 0; i < 4; i++) {
+            char nb[32];
+            switch (e[i].unit) {
+            case QL_UI_UNIT_AUTO:
+                snprintf(nb, sizeof(nb), "auto");
+                break;
+            case QL_UI_UNIT_PERCENT:
+                snprintf(nb, sizeof(nb), "%d%%", (int)e[i].value);
+                break;
+            case QL_UI_UNIT_EM:
+                snprintf(nb, sizeof(nb), "%gem", (double)e[i].value / 100.0);
+                break;
+            case QL_UI_UNIT_REM:
+                snprintf(nb, sizeof(nb), "%grem", (double)e[i].value / 100.0);
+                break;
+            default:
+                snprintf(nb, sizeof(nb), "%dpx", (int)e[i].value);
+                break;
+            }
+            if (!decls_set(ds, names[i], nb))
+                return 0;
+        }
+        (void)decls_remove(ds, "inset");
+    }
+
     if ((v = decls_get(ds, "gap")) != NULL) {
         int gr = 0, gc = 0;
         if (!parse_gap(v, "gap", &gr, &gc))
@@ -3015,6 +3046,8 @@ static const char *const k_supported_props[] = {
     "letter-spacing", "text-indent", "text-transform", "text-overflow", "word-break",
     "overflow-wrap",
     "visibility", "pointer-events", "align-self", "order", "flex-flow",
+    "align-content", "overflow-x", "overflow-y", "inset",
+    "cursor", "user-select", "scroll-behavior",
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
 };
 
@@ -7012,6 +7045,49 @@ static int position_value(const char *s)
         return QL_UI_POSITION_ABSOLUTE;
     if (strcmp(s, "fixed") == 0)
         return QL_UI_POSITION_FIXED;
+    if (strcmp(s, "sticky") == 0)
+        return QL_UI_POSITION_STICKY;
+    return -1;
+}
+
+static int align_content_value(const char *s)
+{
+    if (strcmp(s, "stretch") == 0 || strcmp(s, "normal") == 0)
+        return QL_UI_ALIGN_CONTENT_STRETCH;
+    if (strcmp(s, "flex-start") == 0 || strcmp(s, "start") == 0)
+        return QL_UI_ALIGN_CONTENT_START;
+    if (strcmp(s, "center") == 0)
+        return QL_UI_ALIGN_CONTENT_CENTER;
+    if (strcmp(s, "flex-end") == 0 || strcmp(s, "end") == 0)
+        return QL_UI_ALIGN_CONTENT_END;
+    if (strcmp(s, "space-between") == 0)
+        return QL_UI_ALIGN_CONTENT_SPACE_BETWEEN;
+    if (strcmp(s, "space-around") == 0)
+        return QL_UI_ALIGN_CONTENT_SPACE_AROUND;
+    if (strcmp(s, "space-evenly") == 0)
+        return QL_UI_ALIGN_CONTENT_SPACE_EVENLY;
+    return -1;
+}
+
+/* 指针形状：认 CSS 里最常用的那批，其余报错（不猜） */
+static int cursor_value(const char *s)
+{
+    if (strcmp(s, "auto") == 0)
+        return QL_UI_CURSOR_AUTO;
+    if (strcmp(s, "default") == 0)
+        return QL_UI_CURSOR_DEFAULT;
+    if (strcmp(s, "pointer") == 0)
+        return QL_UI_CURSOR_POINTER;
+    if (strcmp(s, "text") == 0 || strcmp(s, "vertical-text") == 0)
+        return QL_UI_CURSOR_TEXT;
+    if (strcmp(s, "move") == 0 || strcmp(s, "all-scroll") == 0)
+        return QL_UI_CURSOR_MOVE;
+    if (strcmp(s, "not-allowed") == 0 || strcmp(s, "no-drop") == 0)
+        return QL_UI_CURSOR_NOT_ALLOWED;
+    if (strcmp(s, "help") == 0)
+        return QL_UI_CURSOR_HELP;
+    if (strcmp(s, "progress") == 0 || strcmp(s, "wait") == 0)
+        return QL_UI_CURSOR_PROGRESS;
     return -1;
 }
 
@@ -8277,11 +8353,44 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         set_error("%s: 不支持的 position '%s'", where, v);
         return 0;
     }
-    int ov = overflow_value((v = decls_get(st, "overflow")) != NULL ? v : "visible");
-    if (ov < 0) {
-        set_error("%s: 不支持的 overflow '%s'", where, v);
-        return 0;
+    /*
+     * `overflow` 简写写两个轴，`overflow-x` / `overflow-y` 各写一个。
+     * 后写的覆盖先写的（与 CSS 的书写顺序一致：简写就是两条长写）。
+     */
+    int ov = QL_UI_OVERFLOW_VISIBLE;
+    int ovx = QL_UI_OVERFLOW_VISIBLE;
+    int ovy = QL_UI_OVERFLOW_VISIBLE;
+    char ovlow[32];
+    if ((v = decls_get(st, "overflow")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        const int o = overflow_value(ovlow);
+        if (o < 0) {
+            set_error("%s: 不支持的 overflow '%s'", where, v);
+            return 0;
+        }
+        ov = ovx = ovy = o;
     }
+    if ((v = decls_get(st, "overflow-x")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        const int o = overflow_value(ovlow);
+        if (o < 0) {
+            set_error("%s: 不支持的 overflow-x '%s'", where, v);
+            return 0;
+        }
+        ovx = o;
+    }
+    if ((v = decls_get(st, "overflow-y")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        const int o = overflow_value(ovlow);
+        if (o < 0) {
+            set_error("%s: 不支持的 overflow-y '%s'", where, v);
+            return 0;
+        }
+        ovy = o;
+    }
+    /* 两轴一致时简写值跟着走，方便宿主/工具直接读 .overflow */
+    if (ovx == ovy)
+        ov = ovx;
     int zidx = 0;
     v = decls_get(st, "z-index");
     if (v != NULL) {
@@ -8545,6 +8654,56 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 (uint8_t)(out->reserved_text & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
         }
     }
+    /* align-content / cursor / user-select / scroll-behavior */
+    uint8_t align_content = QL_UI_ALIGN_CONTENT_STRETCH;
+    if ((v = decls_get(st, "align-content")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        const int ac = align_content_value(ovlow);
+        if (ac < 0) {
+            set_error("%s: 不支持的 align-content '%s'", where, v);
+            return 0;
+        }
+        align_content = (uint8_t)ac;
+    }
+    uint8_t cursor = QL_UI_CURSOR_AUTO;
+    if ((v = decls_get(st, "cursor")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        const int cu = cursor_value(ovlow);
+        if (cu < 0) {
+            set_error("%s: 不支持的 cursor '%s'（支持 auto/default/pointer/text/move/"
+                      "not-allowed/help/progress）", where, v);
+            return 0;
+        }
+        cursor = (uint8_t)cu;
+    }
+    uint8_t user_select_none = 0;
+    if ((v = decls_get(st, "user-select")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        if (strcmp(ovlow, "none") == 0)
+            user_select_none = 1;
+        else if (strcmp(ovlow, "auto") != 0 && strcmp(ovlow, "text") != 0 &&
+                 strcmp(ovlow, "all") != 0 && strcmp(ovlow, "contain") != 0) {
+            set_error("%s: 不支持的 user-select '%s'", where, v);
+            return 0;
+        }
+    }
+    uint8_t scroll_smooth = 0;
+    if ((v = decls_get(st, "scroll-behavior")) != NULL) {
+        trim_lower(v, ovlow, sizeof(ovlow));
+        if (strcmp(ovlow, "smooth") == 0)
+            scroll_smooth = 1;
+        else if (strcmp(ovlow, "auto") != 0) {
+            set_error("%s: 不支持的 scroll-behavior '%s'（auto / smooth）", where, v);
+            return 0;
+        }
+    }
+
+    out->overflow_x = (uint8_t)ovx;
+    out->overflow_y = (uint8_t)ovy;
+    out->align_content = align_content;
+    out->cursor = cursor;
+    out->user_select_none = user_select_none;
+    out->scroll_smooth = scroll_smooth;
     out->visibility = visibility;
     out->pointer_events = pointer_events;
     out->align_self = align_self;

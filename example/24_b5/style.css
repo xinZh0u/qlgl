@@ -173,6 +173,86 @@
   pointer-events: none;
 }
 
+/* ---- 5. sticky 列表 ---- */
+.list {
+  width: 100%;
+  height: 120px;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid #E4E8ED;
+  background-color: #FFFFFF;
+}
+
+.lhead {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  height: 26px;
+  background-color: #0969DA;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 26px;
+}
+
+.li {
+  width: 100%;
+  height: 22px;
+  color: #57606A;
+  text-align: center;
+  line-height: 22px;
+}
+
+/* ---- 6. align-content ---- */
+.wrapbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: space-between;
+  width: 100%;
+  height: 120px;
+  padding: 6px;
+  border-radius: 8px;
+  background-color: #F6F8FA;
+}
+
+.wc {
+  width: calc((100% - 24px) / 3);
+  height: 24px;
+  margin-right: 8px;
+  margin-bottom: 0;
+  border-radius: 6px;
+  background-color: #2DA44E;
+  color: #FFFFFF;
+  text-align: center;
+  line-height: 24px;
+}
+
+.wc:nth-child(3n) {
+  margin-right: 0;
+}
+
+/* ---- 7. 分轴 overflow ---- */
+.strip {
+  position: relative;
+  width: 100%;
+  height: 26px;
+  margin-bottom: 18px;
+  overflow-x: hidden;
+  overflow-y: visible;
+  border-radius: 6px;
+  background-color: #F6F8FA;
+}
+
+.long {
+  width: 900px;
+  height: 44px;
+  line-height: 20px;
+  white-space: normal;
+  padding: 3px 8px;
+  background-color: #FFE7E4;
+  color: #B42318;
+  border-radius: 6px;
+}
+
 .note {
   color: #57606A;
   line-height: 17px;

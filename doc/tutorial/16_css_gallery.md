@@ -231,9 +231,9 @@ calc 字节码 35 条（每条 4 字节）
   带 `25% + 10px` 的 `calc()` 会让它更明显（px 项被减两次）。
   修法：主轴上的 `%` / `calc()` 在 `measure` 阶段就折成 px 写回 `style_copy`。
 
-## 9. `24_b5`：五个"只加开关"的属性
+## 9. `24_b5`：十二个"只加开关"的属性
 
-<img src="../img/24-b5.png" alt="align-self 三种对齐、order 重排、visibility 占位、pointer-events 穿透" width="480">
+<img src="../img/24-b5.png" alt="align-self 三种对齐、order 重排、visibility 占位、pointer-events 穿透、sticky 表头、align-content 分配、分轴 overflow" width="420">
 
 完整程序：`example/24_b5/`
 
@@ -243,6 +243,10 @@ calc 字节码 35 条（每条 4 字节）
 .hide   { visibility: hidden; }         /* 看不见，但位置还占着 */
 .deco   { pointer-events: none; }       /* 盖在按钮上的装饰层不挡点击 */
 .row    { flex-flow: row wrap; }        /* flex-direction + flex-wrap 的简写 */
+
+.lhead  { position: sticky; top: 0; }   /* 列表滚动时表头钉在顶部 */
+.wrapbox{ align-content: space-between; }  /* 多行在交叉轴上均分 */
+.strip  { overflow-x: hidden; overflow-y: visible; }  /* 只裁横向 */
 ```
 
 ```bash
@@ -251,6 +255,11 @@ calc 字节码 35 条（每条 4 字节）
 
 点一下紫色按钮：装饰层是 `pointer-events: none`，点击**穿过**它落到按钮上
 （终端打印命中的节点）。把那一行删掉再跑，点击就只会命中装饰层。
+
+`position: sticky` 是"布局末尾的一次补偿平移"：滚动已经由 `apply_scroll`
+把子树整体平移过，sticky 再把自己推回可视边缘，改的是 `border_box` ——
+所以绘制、命中、脏区、`paint_box` 全都自动正确。约束在自己的**包含块**里，
+所以列表滚到头它会跟着一起走（不是永远钉着）。
 
 写这一节时又查出一个**真缺陷**（这一轮最有价值的发现）：
 

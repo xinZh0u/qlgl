@@ -177,6 +177,19 @@ static const char *const ALIGN_NAMES[] = {
     "QL_UI_ALIGN_CENTER", "QL_UI_ALIGN_END",
 };
 
+static const char *const ALIGN_CONTENT_NAMES[] = {
+    "QL_UI_ALIGN_CONTENT_STRETCH", "QL_UI_ALIGN_CONTENT_START",
+    "QL_UI_ALIGN_CONTENT_CENTER",  "QL_UI_ALIGN_CONTENT_END",
+    "QL_UI_ALIGN_CONTENT_SPACE_BETWEEN", "QL_UI_ALIGN_CONTENT_SPACE_AROUND",
+    "QL_UI_ALIGN_CONTENT_SPACE_EVENLY",
+};
+
+static const char *const CURSOR_NAMES[] = {
+    "QL_UI_CURSOR_AUTO", "QL_UI_CURSOR_DEFAULT", "QL_UI_CURSOR_POINTER",
+    "QL_UI_CURSOR_TEXT", "QL_UI_CURSOR_MOVE",    "QL_UI_CURSOR_NOT_ALLOWED",
+    "QL_UI_CURSOR_HELP", "QL_UI_CURSOR_PROGRESS",
+};
+
 static const char *const POSITION_NAMES[] = {
     "QL_UI_POSITION_STATIC", "QL_UI_POSITION_RELATIVE",
     "QL_UI_POSITION_ABSOLUTE", "QL_UI_POSITION_FIXED",
@@ -322,6 +335,9 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .tf_x = %d, .tf_y = %d, .sc_x = %d, .sc_y = %d,\n"
             "      .visibility = %u, .pointer_events = %u,\n"
             "      .align_self = %s, .order = %d,\n"
+            "      .overflow_x = %s, .overflow_y = %s,\n"
+            "      .align_content = %s, .cursor = %s,\n"
+            "      .user_select_none = %u, .scroll_smooth = %u,\n"
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
                       "QLUIDisplay"),
@@ -363,7 +379,16 @@ static void fput_style(FILE *f, const QLUIStyle *s)
                 ? "QL_UI_ALIGN_SELF_AUTO"
                 : enum_name(ALIGN_NAMES, COUNT_OF(ALIGN_NAMES), s->align_self,
                             "QLUIAlign"),
-            (int)s->order);
+            (int)s->order,
+            enum_name(OVERFLOW_NAMES, COUNT_OF(OVERFLOW_NAMES), s->overflow_x,
+                      "QLUIOverflow"),
+            enum_name(OVERFLOW_NAMES, COUNT_OF(OVERFLOW_NAMES), s->overflow_y,
+                      "QLUIOverflow"),
+            enum_name(ALIGN_CONTENT_NAMES, COUNT_OF(ALIGN_CONTENT_NAMES),
+                      s->align_content, "QLUIAlignContent"),
+            enum_name(CURSOR_NAMES, COUNT_OF(CURSOR_NAMES), s->cursor,
+                      "QLUICursor"),
+            (unsigned)s->user_select_none, (unsigned)s->scroll_smooth);
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);
     fputs(",\n      .inset = { ", f);

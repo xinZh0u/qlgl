@@ -169,7 +169,7 @@ UA 默认样式（UA_DEFAULTS）
 | 不认识的标签 | 自定义标签、obsolete 元素（`marquee` / `center` / `font` 等）；`<iframe>` 之类则是**占位盒**，不是错误 |
 | HTML 结构错 | 结束标签不匹配、标签未闭合、根元素不是恰好 1 个 |
 | 属性名不认识 | `inset` / 任意拼错的属性 |
-| 属性值不认识 | `position: sticky`、`display: grid`、`border: 2px dashed` |
+| 属性值不认识 | `display: grid`、`border: 2px dashed`、`cursor: hand` |
 | 单位 | `ch` / `ex` / `lh`（支持 `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `calc()`） |
 | 颜色 | `#12345`、拼错的命名色 |
 | at-rule | `@supports` / `@font-face`（认 `@keyframes`，`@media` 只认宽度断点） |
@@ -184,7 +184,8 @@ UA 默认样式（UA_DEFAULTS）
 
 > **已经不再是错误的东西**（M3/M5.5 之后）：`position` / `flex-*` / `box-shadow` /
 > `linear-gradient` / `transform` / `clip-path` / `<img>` / `<input>` / `@media`（宽度断点）/
-> `calc()` / CSS 变量 `/ `+` 与 `~` 兄弟选择器 / `::before` 全都支持了。
+> `calc()` / CSS 变量 / `+` 与 `~` 兄弟选择器 / `::before` / `position: sticky` /
+> `overflow-x`、`overflow-y` / `cursor` / `inset` 全都支持了。
 > 本文档早期版本把它们列在"报错"里，如果你看到旧说明请以这张表为准。
 
 **唯一一个"结构上"的限制**：元素级 doc 不能混用（跨 doc 的 `uint16` 下标无法引用），

@@ -11,7 +11,7 @@
 #include "common.h"
 
 #define W 720
-#define H 520
+#define H 900
 
 static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
@@ -45,6 +45,19 @@ int main(int argc, char **argv)
     }
     ql_ui_layout(ui, W, H);
     ql_ui_set_click_cb(ui, on_click, NULL);
+
+    /* sticky 列表先滚一点，截图里才看得出"表头钉住了、内容滚过去" */
+    QLUINodeRT *list = ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 0);
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        if (ui->nodes[i].src != NULL && ui->nodes[i].src->tag == QL_UI_TAG_DIV &&
+            ui->nodes[i].text == NULL && ui->nodes[i].style != NULL &&
+            ui->nodes[i].style->overflow_y == QL_UI_OVERFLOW_AUTO) {
+            list = &ui->nodes[i];
+            break;
+        }
+    }
+    if (list != NULL && ql_ui_scrollable(list))
+        (void)ql_ui_scroll_by(ui, list, 0, 46);
 
     const int rc = ex_run(ui, W, H, "QLGL · 24 B5（点一下紫色按钮）", argc, argv);
     ql_ui_free(ui);

@@ -32,7 +32,7 @@
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
 **还没做**（下表里仍标 ⏳ 的）：`border-radius` 四角、`border-*-style: dashed`（B4）、
-`overflow-x/y` 分轴、`align-content`、`cursor`（B5）、`transform: rotate()`。
+`transform: rotate()`、`word-spacing`、`text-align: justify`。
 
 > 下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— **以本节为准**，
 > 逐行状态在下一次整理时同步。
@@ -194,8 +194,8 @@
 | `margin: … auto` | ✅ | L | **横向**把剩余空间分掉（`margin: 0 auto` 居中）；纵向 auto 按 0 处理（本库还不做外边距合并） |
 | `padding` + 四方向 | ✅ | L | px / em / rem；`%` 与 `vw/vh` 报错（边距的百分比相对包含块宽度，算边距时还没有基准） |
 | `box-sizing` | ✅ | L | 表单控件 UA 默认 `border-box` |
-| `overflow` | ⚠️ | L | `visible` / `hidden` / `auto` / `scroll`；**没有分轴** |
-| `overflow-x` / `overflow-y` | ⏳ | L | `不支持的属性 'overflow-x'` |
+| `overflow` | ✅ | L | `visible` / `hidden` / `auto` / `scroll`（简写 = 两个轴都写） |
+| `overflow-x` / `overflow-y` | ✅ | L | 分轴裁剪；只有 `auto` 的那一轴能滚、能画滚动条 |
 | `visibility` | ✅ | L | `visible` / `hidden`（`collapse` 按 hidden）；**继承**，子级可写 `visible` 显示回来 |
 | `pointer-events` | ✅ | L | `auto` / `none`：自己不参与命中，子节点照常 |
 | `float` / `clear` | ❌ | N | 与 flex 混用行为诡异，现代页面基本不用 |
@@ -212,7 +212,8 @@
 | `position: relative` | ✅ | L | |
 | `position: absolute` | ✅ | L | |
 | `position: fixed` | ✅ | L | |
-| `position: sticky` | ⏳ | L | `不支持的 position 'sticky'`；要动滚动容器 |
+| `position: sticky` | ✅ | L | 布局末尾的一次补偿平移（`top/right/bottom/left` 哪个给了贴哪边），约束在包含块里 |
+| `inset`（简写） | ✅ | L | `inset: <t> <r> <b> <l>`（1/2/4 值），展开成四条长写 |
 | `top` / `right` / `bottom` / `left` | ✅ | L | |
 | `inset`（简写） | ⏳ | L | 等价四条，加解析即可 |
 | `z-index` | ✅ | L | |
@@ -328,7 +329,7 @@
 | `justify-content` | ✅ | L | 含 `space-between` / `space-around` / `space-evenly` |
 | `align-items` | ✅ | L | 含 `stretch` |
 | `align-self` | ✅ | L | 覆盖自己在交叉轴上的对齐；`auto` = 跟容器的 `align-items` |
-| `align-content` | ⏳ | L | 多行交叉轴分配（单行的"行撑满容器"已实现，见 §18.4） |
+| `align-content` | ✅ | L | 多行交叉轴分配：stretch（默认）/ start / center / end / space-between / space-around / space-evenly |
 | `order` | ✅ | L | 就地排子链表，布局/绘制/命中一起跟着走（稳定，相等时保持 HTML 顺序） |
 | `flex-flow`（简写） | ✅ | L | `<flex-direction> \|\| <flex-wrap>`，两个 token 任意顺序 |
 | `wrap-reverse` | ❌ | N | 用得极少，`flex-direction` 反向可近似 |
@@ -421,10 +422,10 @@
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `cursor` | ⏳ | L | **桌面上很要紧**（指针形状）；需要 `QLDispDriver` 加一个设光标的钩子 |
+| `cursor` | ✅ | L | 解析 + 命中测试算出"意图"（`ql_ui_cursor_at()`）；**形状由宿主设**（后端暂无光标钩子） |
 | `outline` 系列 | ⏳ | R | 见 §7 |
-| `user-select` | ⏳ | L | 现在只有输入框能选字 |
-| `scroll-behavior: smooth` | ⏳ | T | 要持续重绘 |
+| `user-select` | ✅ | L | `none` 时输入框不再拖拽连选（本库只有输入框能选字，其余取值等价于可选中） |
+| `scroll-behavior: smooth` | ✅ | T | 由 `ql_ui_anim_tick()` 逐帧推进（160ms ease-out），与 CSS 动画同一个时钟 |
 | `overscroll-behavior` | ❌ | N | 惯性/回弹是平台层的事 |
 | `touch-action` | ❌ | N | 触摸还没接（见开发规划 M6.5） |
 | `contain-intrinsic-size` / `will-change` | ❌ | N | 渲染优化提示，本库架构里没有意义 |
@@ -548,7 +549,7 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc->calc_ops[]（每条 4 字节�
 
 ---
 
-### 18.4 B5 小件：五个"只加开关"的属性
+### 18.4 B5 小件：十二个"只加开关"的属性
 
 这一批的共同点是**不动布局大框架**，各自挂到一个已有机制上：
 
@@ -559,6 +560,13 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc->calc_ops[]（每条 4 字节�
 | `align-self` | flex 交叉轴 | `auto` = 跟容器的 `align-items`；`stretch` 只在交叉轴尺寸是 `auto` 时撑满 |
 | `order` | flex 子链表 | 布局开头按 order **稳定** 排一遍子链表，之后测量/断行/摆放/绘制/命中全都自动跟着走（比"每次遍历按 order 挑下一个"少六七处改动） |
 | `flex-flow` | 简写展开 | `<flex-direction> \|\| <flex-wrap>`，两个 token 任意顺序；展开进 `flex-direction` / `flex-wrap` |
+| `overflow-x` / `overflow-y` | 裁剪 + 滚动 | 分轴只改裁剪矩形的一个方向（另一轴沿用外层裁剪）；只有 `auto` 的轴算可滚范围、才画滚动条 |
+| `align-content` | flex 交叉轴 | 多行时按 stretch / start / center / end / space-* 分配行间空间；间距同样用"累计推进"（余数不丢） |
+| `position: sticky` | 布局末尾补偿平移 | 在流里占位；滚动平移之后再把自己推回可视边缘，**约束在包含块内**（这就是"跟到头就一起滚走"）。改的是 `border_box`，所以绘制/命中/脏区/`paint_box` 全都自动正确 |
+| `inset` | 简写展开 | `inset: <t> <r> <b> <l>` → 四条长写，复用 margin/padding 的 1/2/4 值解析 |
+| `cursor` | 命中测试 | 只算**意图**（`ql_ui_cursor_at()`）：命中节点往上找第一个写了 `cursor` 的祖先，都没写时输入框给 `text`、其余 `default` |
+| `user-select` | 输入框选字 | `none` → 点还是能点（光标落点不变），但拖拽不再连选 |
+| `scroll-behavior: smooth` | `ql_ui_anim_tick` | 只记目标偏移，由每帧推进（160ms ease-out）；"跳"和"滑"共用同一份 `scroll_x/y` 状态 |
 
 **顺带修掉一个真缺陷（这是本轮最重要的收获）**：`align-items: center / flex-end`
 在"容器有确定高度、只有一行"这个最常见的情况下**完全没有效果** —— 因为单行的
@@ -566,7 +574,33 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc->calc_ops[]（每条 4 字节�
 要求单行撑满容器的交叉尺寸，补上之后 `align-items` 才真的能用（golden 的
 `align` 页因此变化，肉眼核对过：两个方块现在在 120px 高的容器里居中）。
 
-多行（`flex-wrap: wrap`）的 `align-content` 仍然没做，行高仍按内容最大值。
+同一轮把 `align-content` 也补上了（多行的行间分配），所以现在单行、多行两种
+情况的交叉轴都按 CSS 语义走。
+
+---
+
+### 18.5 `position: sticky` 与分轴 `overflow` 为什么便宜
+
+这两件看起来都要"动滚动子系统"，实际都只挂到已有机制上：
+
+```
+滚动      apply_scroll：把子树整体平移 -scroll         （早就有）
+sticky    平移之后再把自己推回可视边缘，改的是 border_box
+          → 绘制/命中/脏区/paint_box 读的都是 border_box，一行都不用改
+overflow-x 裁剪矩形只改一个方向（另一轴沿用外层裁剪）
+          → QLDraw2D 的裁剪本来就是矩形，逐轴覆盖一个边就够
+```
+
+sticky 的三条约束（都写在 `sticky_adjust` 里）：
+
+1. **只贴给了 inset 的方向**（CSS 也是这样：不给 `top` 的 sticky 等于 relative）；
+2. 贴边位置按**最近的滚动容器**的内容盒算；没有滚动容器就按视口；
+3. 不能推出**包含块**（父内容盒）—— 这就是"跟着列表滚到头就一起走"，
+   而不是永远钉在屏幕上。
+
+`cursor` 则刻意只做一半：CSS 值 + 命中测试算出**意图**（`ql_ui_cursor_at()`），
+真正设光标要窗口系统配合（X11 `XDefineCursor` / Wayland `wl_cursor`），
+后端目前没有接 —— 写进 API 手册 §3.13，不让它悄悄失效。
 
 ---
 
@@ -877,7 +911,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B2 选择器**（已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content`；**剩 `:disabled/:checked`、`::placeholder` —— 它们要先有能表达"禁用/勾选"的控件**，见 B5） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
 | **B3 文本细节**（第一批已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` **已落地** → blob v20；剩 `word-spacing` / `tab-size` / `text-decoration-*`） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
 | **B4 绘制细节** | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
-| **B5 布局与交互**（部分完成：`visibility`/`pointer-events`/`align-self`/`order`/`flex-flow` 已做，见 §18.4） | `align-content`、`overflow-x/y`、`position: sticky`、`inset`、`cursor`、`user-select`、`scroll-behavior` | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` |
+| **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
 **另外两项单独立项**（成本与一批相当，但语义是"新子系统"）：
 

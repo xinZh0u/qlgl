@@ -283,7 +283,211 @@ QL_TEST_BEGIN("test_b5")
         release(ui);
     }
 
-    /* ---------- 8. 构建期必须报错的写法 ---------- */
+    /* ---------- 8. inset 简写 ---------- */
+    {
+        const char *IH = "<div id=r><div id=a></div></div>";
+        ui = render(IH,
+                    "#r { width: 200px; height: 100px; position: relative; }"
+                    "#a { position: absolute; inset: 10px 20px 30px 40px; }");
+        QL_CHECK(ui != NULL);
+        const QLRect r = rect_of(ui, 1);
+        QL_CHECK_EQ(r.x, 40);               /* left */
+        QL_CHECK_EQ(r.y, 10);               /* top */
+        QL_CHECK_EQ(r.w, 200 - 40 - 20);    /* 拉伸：left + right */
+        QL_CHECK_EQ(r.h, 100 - 10 - 30);
+        release(ui);
+
+        /* 两值语法：`inset: 8px 16px` = 上下 8、左右 16 */
+        ui = render(IH,
+                    "#r { width: 200px; height: 100px; position: relative; }"
+                    "#a { position: absolute; inset: 8px 16px; width: 50px;"
+                    "     height: 20px; }");
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(rect_of(ui, 1).x, 16);
+        QL_CHECK_EQ(rect_of(ui, 1).y, 8);
+        release(ui);
+    }
+
+    /* ---------- 9. overflow-x / overflow-y 分轴 ---------- */
+    {
+        /*
+         * 容器 60x40，子项 120x80 跨出去：
+         *   overflow-x: hidden + overflow-y: visible → 只裁横向
+         * 所以左边 20..60 的横向范围内看得见，纵向可以画到容器外。
+         */
+        const char *OH = "<div id=r><div id=c><div id=b></div></div></div>";
+        ui = render(OH,
+                    "#r { width: 200px; height: 200px; background-color: #FFFFFF }"
+                    "#c { position: absolute; left: 20px; top: 20px; width: 60px;"
+                    "     height: 40px; background-color: #FFFFFF;"
+                    "     overflow-x: hidden; overflow-y: visible }"
+                    "#b { width: 120px; height: 80px; background-color: #0000FF }");
+        QL_CHECK(ui != NULL);
+        QL_CHECK(is_blue(px(30, 30)));      /* 容器内 */
+        QL_CHECK(!is_blue(px(100, 30)));    /* 横向越界：**应该被裁掉** */
+        QL_CHECK(is_blue(px(30, 80)));      /* 纵向越界：**应该看得见** */
+        release(ui);
+
+        /* 反过来：只裁纵向 */
+        ui = render(OH,
+                    "#r { width: 200px; height: 200px; background-color: #FFFFFF }"
+                    "#c { position: absolute; left: 20px; top: 20px; width: 60px;"
+                    "     height: 40px; background-color: #FFFFFF;"
+                    "     overflow-y: hidden; overflow-x: visible }"
+                    "#b { width: 120px; height: 80px; background-color: #0000FF }");
+        QL_CHECK(ui != NULL);
+        QL_CHECK(is_blue(px(100, 30)));     /* 横向越界：看得见 */
+        QL_CHECK(!is_blue(px(30, 80)));     /* 纵向越界：被裁 */
+        release(ui);
+
+        /* 只有 auto 的轴能滚 */
+        ui = render("<div id=c><div id=b></div></div>",
+                    "#c { width: 60px; height: 40px; overflow-x: auto;"
+                    "     overflow-y: hidden; background-color: #FFFFFF }"
+                    "#b { width: 200px; height: 200px; background-color: #0000FF }");
+        QL_CHECK(ui != NULL);
+        QL_CHECK(ui->nodes[0].scroll_max_x > 0);      /* 横向可滚 */
+        QL_CHECK_EQ(ui->nodes[0].scroll_max_y, 0);    /* 纵向不 auto → 不可滚 */
+        release(ui);
+    }
+
+    /* ---------- 10. align-content：多行的交叉轴分配 ---------- */
+    {
+        /* 每行 20 高、三行；容器 200 高 → space-between 第一行贴顶、最后一行贴底 */
+        const char *AH = "<div id=r><div class=a></div><div class=a></div>"
+                         "<div class=a></div></div>";
+        const char *BASE_CSS =
+            "#r { display: flex; flex-wrap: wrap; width: 100px; height: 200px; }"
+            ".a { width: 100px; height: 20px; }";
+        char css[512];
+
+        snprintf(css, sizeof(css), "%s #r { align-content: space-between; }", BASE_CSS);
+        ui = render(AH, css);
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(rect_of(ui, 1).y, 0);
+        QL_CHECK_EQ(rect_of(ui, 3).y, 180);
+        release(ui);
+
+        snprintf(css, sizeof(css), "%s #r { align-content: flex-end; }", BASE_CSS);
+        ui = render(AH, css);
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(rect_of(ui, 1).y, 140);     /* 3 行 = 60 高，整体贴底 */
+        QL_CHECK_EQ(rect_of(ui, 3).y, 180);
+        release(ui);
+
+        snprintf(css, sizeof(css), "%s #r { align-content: center; }", BASE_CSS);
+        ui = render(AH, css);
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(rect_of(ui, 1).y, 70);      /* (200-60)/2 */
+        release(ui);
+
+        /* stretch：剩余空间平分给三行 → 每行约 66 高，第一行方块仍然贴行首 */
+        snprintf(css, sizeof(css),
+                 "#r { display: flex; flex-wrap: wrap; align-content: stretch;"
+                 "      align-items: stretch; width: 100px; height: 200px; }"
+                 ".a { width: 100px; }");
+        ui = render(AH, css);
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(rect_of(ui, 1).h, 66);      /* 200/3 */
+        QL_CHECK_EQ(rect_of(ui, 2).y, 66);
+        release(ui);
+    }
+
+    /* ---------- 11. position: sticky ---------- */
+    {
+        /*
+         * 滚动容器 100 高、内容 300 高，里面一个 20 高的 sticky 头（top: 0）。
+         * 滚 50 之后它应该仍然贴在容器顶部（y = 容器内容盒顶），
+         * 而不是跟着内容跑上去。
+         */
+        const char *SH = "<div id=s><div id=h></div><div id=body></div></div>";
+        const char *CSS =
+            "#s { width: 100px; height: 100px; overflow-y: auto;"
+            "     background-color: #FFFFFF }"
+            "#h { position: sticky; top: 0; width: 100px; height: 20px;"
+            "     background-color: #0000FF }"
+            "#body { width: 100px; height: 300px; background-color: #FFFFFF }";
+        ui = render(SH, CSS);
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(rect_of(ui, 1).y, 0);       /* 没滚：本来就在顶部 */
+        QL_CHECK(ql_ui_scroll_by(ui, &ui->nodes[0], 0, 50) == QL_OK);
+        QL_CHECK_EQ(rect_of(ui, 1).y, 0);       /* 滚了 50：贴住顶部 */
+        /*
+         * 滚到底：sticky 的约束是"包含块"（这里是滚动容器自己），
+         * 它的边框盒不随滚动移动，所以按 CSS 语义它**一直**钉在顶部。
+         * 对照：不做 sticky 的话，滚 200 后头部会被推到 -200。
+         */
+        QL_CHECK(ql_ui_scroll_by(ui, &ui->nodes[0], 0, 400) == QL_OK);
+        QL_CHECK_EQ(ui->nodes[0].scroll_y, 220);      /* 夹到最大可滚 */
+        QL_CHECK_EQ(rect_of(ui, 1).y, 0);             /* 仍然贴顶 */
+        QL_CHECK(rect_of(ui, 2).y < 0);               /* 正文确实滚上去了 */
+        release(ui);
+    }
+
+    /* ---------- 11b. sticky 跟到包含块底部就一起滚走 ---------- */
+    {
+        /*
+         * 滚动容器 100 高；里面 #wrap（150 高，含 sticky 头）后面跟 300 高的正文。
+         * 滚到 150 之后 #wrap 的底边已经跑到容器顶之上，sticky 头必须跟着出去。
+         */
+        const char *WH = "<div id=s><div id=w><div id=h></div></div>"
+                         "<div id=tail></div></div>";
+        const char *CSS =
+            "#s { width: 100px; height: 100px; overflow-y: auto;"
+            "     background-color: #FFFFFF }"
+            "#w { width: 100px; height: 150px; }"
+            "#h { position: sticky; top: 0; width: 100px; height: 20px;"
+            "     background-color: #0000FF }"
+            "#tail { width: 100px; height: 300px; }";
+        ui = render(WH, CSS);
+        QL_CHECK(ui != NULL);
+        /* 节点：0=#s 1=#w 2=#h 3=#tail */
+        QL_CHECK(ql_ui_scroll_by(ui, &ui->nodes[0], 0, 60) == QL_OK);
+        QL_CHECK_EQ(rect_of(ui, 2).y, 0);        /* 还在 #w 里：贴顶 */
+        QL_CHECK(ql_ui_scroll_by(ui, &ui->nodes[0], 0, 120) == QL_OK);
+        /* #w 的底边跑到 150-180 = -30：头被迫上移，贴住 #w 的底（-30-20 = -50） */
+        QL_CHECK(rect_of(ui, 2).y <= -50);
+        QL_CHECK(rect_of(ui, 2).y < 0);
+        release(ui);
+    }
+
+    /* ---------- 12. cursor：命中测试算出来的意图 ---------- */
+    {
+        const char *CUR_H = "<div id=r><div id=a></div><div id=t></div></div>";
+        ui = render(CUR_H,
+                    "#r { width: 200px; height: 100px; }"
+                    "#a { position: absolute; left: 10px; top: 10px; width: 40px;"
+                    "     height: 40px; cursor: pointer }"
+                    "#t { position: absolute; left: 100px; top: 10px; width: 40px;"
+                    "     height: 40px; cursor: text }");
+        QL_CHECK(ui != NULL);
+        QL_CHECK_EQ(ql_ui_cursor_at(ui, 20, 20), QL_UI_CURSOR_POINTER);
+        QL_CHECK_EQ(ql_ui_cursor_at(ui, 110, 20), QL_UI_CURSOR_TEXT);
+        QL_CHECK_EQ(ql_ui_cursor_at(ui, 190, 90), QL_UI_CURSOR_DEFAULT);
+        release(ui);
+    }
+
+    /* ---------- 13. scroll-behavior: smooth 由 anim_tick 推进 ---------- */
+    {
+        const char *SH = "<div id=s><div id=b></div></div>";
+        ui = render(SH,
+                    "#s { width: 100px; height: 100px; overflow-y: auto;"
+                    "     scroll-behavior: smooth; background-color: #FFFFFF }"
+                    "#b { width: 100px; height: 400px; }");
+        QL_CHECK(ui != NULL);
+        QL_CHECK(ql_ui_scroll_by(ui, &ui->nodes[0], 0, 200) == QL_OK);
+        QL_CHECK_EQ(ui->nodes[0].scroll_y, 0);          /* 还没跳：等帧 */
+        QL_CHECK(ui->nodes[0].scroll_goal_ms != 0);
+        ql_ui_anim_tick(ui, ql_anim_now_ms() + 80);      /* 半程 */
+        QL_CHECK(ui->nodes[0].scroll_y > 0);
+        QL_CHECK(ui->nodes[0].scroll_y < 200);
+        ql_ui_anim_tick(ui, ql_anim_now_ms() + 400);     /* 收尾 */
+        QL_CHECK_EQ(ui->nodes[0].scroll_y, 200);
+        QL_CHECK_EQ(ui->nodes[0].scroll_goal_ms, 0);
+        release(ui);
+    }
+
+    /* ---------- 14. 构建期必须报错的写法 ---------- */
     QL_CHECK(rejects("#a { visibility: collapse-x }", "visibility"));
     QL_CHECK(rejects("#a { pointer-events: visible }", "pointer-events"));
     QL_CHECK(rejects("#a { align-self: middle }", "align-self"));

@@ -232,6 +232,12 @@ typedef enum {
     QL_UI_POSITION_RELATIVE,
     QL_UI_POSITION_ABSOLUTE,
     QL_UI_POSITION_FIXED,
+    /*
+     * `sticky`：**在流里占位**（像 relative），但贴住最近的滚动容器的可视边缘。
+     * 实现方式是布局末尾的一次补偿平移（见 qlui.c 的 apply_sticky），
+     * 所以它对绘制/命中/脏区都是"位置就是对的"，没有第二套坐标。
+     */
+    QL_UI_POSITION_STICKY,
 } QLUIPosition;
 
 typedef enum {
@@ -350,7 +356,12 @@ typedef struct {
 
     /* ----- 定位与裁剪 ----- */
     uint8_t     position;      /* QLUIPosition */
-    uint8_t     overflow;      /* QLUIOverflow */
+    /*
+     * `overflow`：**最后一次写的简写值**，只为兼容读法保留。
+     * 真正生效的是 `overflow_x` / `overflow_y`（`overflow: hidden` 两个轴都写，
+     * `overflow-x: hidden` 只写一个轴）。运行期一律用下面的访问器。
+     */
+    uint8_t     overflow;      /* QLUIOverflow（简写值） */
     int16_t     z_index;
     QLUILength  inset[4];      /* top / right / bottom / left（只有非 static 时用） */
 
@@ -502,13 +513,51 @@ typedef struct {
     uint8_t     pointer_events;  /* 0 = auto，1 = none */
     /* `align-self`：只覆盖**自己**在容器交叉轴上的对齐；0xFF = auto */
     uint8_t     align_self;      /* QLUIAlign，或 QL_UI_ALIGN_SELF_AUTO */
-    uint8_t     reserved_b5;     /* 对齐填充（留给后续 B5 属性） */
+    /* `overflow-x` / `overflow-y`：分轴裁剪（blob v24） */
+    uint8_t     overflow_x;      /* QLUIOverflow */
+    uint8_t     overflow_y;      /* QLUIOverflow */
+    /* `align-content`：多行的交叉轴分配（单行时由"行撑满容器"接管） */
+    uint8_t     align_content;   /* QLUIAlignContent */
+    /* `cursor`：命中测试时算出来的指针形状提示（见 ql_ui_cursor） */
+    uint8_t     cursor;          /* QLUICursor */
+    /* `user-select: none` → 1：这一块里的文字不可被选中 */
+    uint8_t     user_select_none;
+    /* `scroll-behavior: smooth` → 1：程序化滚动用动画过渡（宿主逐帧驱动） */
+    uint8_t     scroll_smooth;
     /*
      * `order`：flex 项的排列顺序（升序，相等时保持 HTML 顺序）。
      * 只影响**子项之间**的顺序；绘制顺序也跟着它（z-index 相同时）。
      */
     int16_t     order;
 } QLUIStyle;
+
+/* `align-content`（多行 flex 的交叉轴分配） */
+typedef enum {
+    QL_UI_ALIGN_CONTENT_STRETCH = 0,   /* 默认：行按剩余空间拉伸 */
+    QL_UI_ALIGN_CONTENT_START,
+    QL_UI_ALIGN_CONTENT_CENTER,
+    QL_UI_ALIGN_CONTENT_END,
+    QL_UI_ALIGN_CONTENT_SPACE_BETWEEN,
+    QL_UI_ALIGN_CONTENT_SPACE_AROUND,
+    QL_UI_ALIGN_CONTENT_SPACE_EVENLY,
+} QLUIAlignContent;
+
+/*
+ * `cursor`：**只是意图**，形状由宿主/后端去设。
+ * 命中测试算出"当前位置该用哪个光标"，宿主用 `ql_ui_cursor()` 取出来交给窗口系统
+ * （X11 的 `XDefineCursor` / Wayland 的 `wl_cursor`）。这样这套值在 MCU 上也有意义
+ * （有触摸屏的板子可以忽略，但语义统一）。
+ */
+typedef enum {
+    QL_UI_CURSOR_AUTO = 0,   /* 用父级/宿主的默认（`auto`） */
+    QL_UI_CURSOR_DEFAULT,    /* `default`：箭头 */
+    QL_UI_CURSOR_POINTER,    /* `pointer`：手型（可点） */
+    QL_UI_CURSOR_TEXT,       /* `text`：文本 I 形（输入框/可选文字） */
+    QL_UI_CURSOR_MOVE,       /* `move`：四向箭头 */
+    QL_UI_CURSOR_NOT_ALLOWED,/* `not-allowed`：禁止 */
+    QL_UI_CURSOR_HELP,       /* `help`：问号 */
+    QL_UI_CURSOR_PROGRESS,   /* `progress`：转圈 */
+} QLUICursor;
 
 /* `visibility` */
 #define QL_UI_VISIBLE   0
@@ -520,6 +569,16 @@ typedef struct {
 
 /* `align-self: auto` —— 用容器的 `align-items`（QLUIAlign 的取值是 0..3） */
 #define QL_UI_ALIGN_SELF_AUTO  0xFFu
+
+/* 分轴 overflow 的读取入口（运行期只用这两个，不要读 s->overflow） */
+static inline uint8_t ql_ui_style_overflow_x(const QLUIStyle *s)
+{
+    return s->overflow_x;
+}
+static inline uint8_t ql_ui_style_overflow_y(const QLUIStyle *s)
+{
+    return s->overflow_y;
+}
 
 /* `text-transform` */
 #define QL_UI_TEXT_NONE        0
@@ -843,6 +902,15 @@ typedef struct QLUINodeRT {
      */
     ql_coord_t       scroll_x;
     ql_coord_t       scroll_y;
+    /*
+     * `scroll-behavior: smooth` 的动画状态：`scroll_goal_ms != 0` 表示还在滑。
+     * 由 `ql_ui_anim_tick()` 逐帧推进（与 CSS 动画同一个时钟）。
+     */
+    ql_coord_t       scroll_from_x;
+    ql_coord_t       scroll_from_y;
+    ql_coord_t       scroll_goal_x;
+    ql_coord_t       scroll_goal_y;
+    uint32_t         scroll_goal_ms;   /* 0 = 没有进行中的平滑滚动 */
     ql_coord_t       scroll_max_x;
     ql_coord_t       scroll_max_y;
 
@@ -1084,6 +1152,14 @@ QLRect      ql_ui_paint_bounds(const QLUIRoot *ui);
 QLUINodeRT *ql_ui_root_node(QLUIRoot *ui);
 QLUINodeRT *ql_ui_find_by_tag(QLUIRoot *ui, QLUITag tag, uint16_t nth);
 QLUINodeRT *ql_ui_hit_test(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
+/*
+ * 当前位置该用哪个指针形状（QLUICursor）。命中节点往上找第一个写了 `cursor`
+ * 的祖先；都没写时输入框给 TEXT、其余给 DEFAULT。
+ *
+ * "只算意图，不设光标"：宿主拿它去设窗口光标（X11 `XDefineCursor` /
+ * Wayland `wl_cursor`）。MCU 上忽略返回值即可。
+ */
+uint8_t     ql_ui_cursor_at(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 const char *ql_ui_node_text(const QLUINodeRT *node);
 const QLFont *ql_ui_node_font(const QLUINodeRT *node);
 /* 生效样式：ACTIVE > FOCUS > HOVER > 基础（只影响绘制，不影响布局） */
@@ -1296,7 +1372,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    23u  /* 23: + visibility / pointer-events / align-self / order */
+#define QL_UI_BLOB_VERSION    24u  /* 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky */
 
 typedef struct {
     uint32_t magic;

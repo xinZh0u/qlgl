@@ -277,7 +277,7 @@ main img.shot { max-width: 100%; }
 </tbody>
 </table>
 <p><strong>还没做</strong>（下表里仍标 ⏳ 的）：<code>border-radius</code> 四角、<code>border-*-style: dashed</code>（B4）、
-<code>overflow-x/y</code> 分轴、<code>align-content</code>、<code>cursor</code>（B5）、<code>transform: rotate()</code>。</p>
+<code>transform: rotate()</code>、<code>word-spacing</code>、<code>text-align: justify</code>。</p>
 <blockquote>
 <p>下面各表的 ⏳ 里混着"已做但表还没逐行翻"的可能 —— <strong>以本节为准</strong>，
 逐行状态在下一次整理时同步。</p>
@@ -961,15 +961,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>overflow</code></td>
-<td>⚠️</td>
+<td>✅</td>
 <td>L</td>
-<td><code>visible</code> / <code>hidden</code> / <code>auto</code> / <code>scroll</code>；<strong>没有分轴</strong></td>
+<td><code>visible</code> / <code>hidden</code> / <code>auto</code> / <code>scroll</code>（简写 = 两个轴都写）</td>
 </tr>
 <tr>
 <td><code>overflow-x</code> / <code>overflow-y</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>不支持的属性 'overflow-x'</code></td>
+<td>分轴裁剪；只有 <code>auto</code> 的那一轴能滚、能画滚动条</td>
 </tr>
 <tr>
 <td><code>visibility</code></td>
@@ -1041,9 +1041,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>position: sticky</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><code>不支持的 position 'sticky'</code>；要动滚动容器</td>
+<td>布局末尾的一次补偿平移（<code>top/right/bottom/left</code> 哪个给了贴哪边），约束在包含块里</td>
+</tr>
+<tr>
+<td><code>inset</code>（简写）</td>
+<td>✅</td>
+<td>L</td>
+<td><code>inset: &lt;t&gt; &lt;r&gt; &lt;b&gt; &lt;l&gt;</code>（1/2/4 值），展开成四条长写</td>
 </tr>
 <tr>
 <td><code>top</code> / <code>right</code> / <code>bottom</code> / <code>left</code></td>
@@ -1580,9 +1586,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>align-content</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>多行交叉轴分配（单行的"行撑满容器"已实现，见 §18.4）</td>
+<td>多行交叉轴分配：stretch（默认）/ start / center / end / space-between / space-around / space-evenly</td>
 </tr>
 <tr>
 <td><code>order</code></td>
@@ -1904,9 +1910,9 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>cursor</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td><strong>桌面上很要紧</strong>（指针形状）；需要 <code>QLDispDriver</code> 加一个设光标的钩子</td>
+<td>解析 + 命中测试算出"意图"（<code>ql_ui_cursor_at()</code>）；<strong>形状由宿主设</strong>（后端暂无光标钩子）</td>
 </tr>
 <tr>
 <td><code>outline</code> 系列</td>
@@ -1916,15 +1922,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>user-select</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>现在只有输入框能选字</td>
+<td><code>none</code> 时输入框不再拖拽连选（本库只有输入框能选字，其余取值等价于可选中）</td>
 </tr>
 <tr>
 <td><code>scroll-behavior: smooth</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>T</td>
-<td>要持续重绘</td>
+<td>由 <code>ql_ui_anim_tick()</code> 逐帧推进（160ms ease-out），与 CSS 动画同一个时钟</td>
 </tr>
 <tr>
 <td><code>overscroll-behavior</code></td>
@@ -2160,7 +2166,7 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc-&gt;calc_ops[]（每条 4 字�
    这是本轮顺带修掉的老 bug）。</li>
 </ol>
 <hr />
-<h3 id="184-b5">18.4 B5 小件：五个"只加开关"的属性</h3>
+<h3 id="184-b5">18.4 B5 小件：十二个"只加开关"的属性</h3>
 <p>这一批的共同点是<strong>不动布局大框架</strong>，各自挂到一个已有机制上：</p>
 <table>
 <thead>
@@ -2196,6 +2202,41 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc-&gt;calc_ops[]（每条 4 字�
 <td>简写展开</td>
 <td><code>&lt;flex-direction&gt; \|\| &lt;flex-wrap&gt;</code>，两个 token 任意顺序；展开进 <code>flex-direction</code> / <code>flex-wrap</code></td>
 </tr>
+<tr>
+<td><code>overflow-x</code> / <code>overflow-y</code></td>
+<td>裁剪 + 滚动</td>
+<td>分轴只改裁剪矩形的一个方向（另一轴沿用外层裁剪）；只有 <code>auto</code> 的轴算可滚范围、才画滚动条</td>
+</tr>
+<tr>
+<td><code>align-content</code></td>
+<td>flex 交叉轴</td>
+<td>多行时按 stretch / start / center / end / space-* 分配行间空间；间距同样用"累计推进"（余数不丢）</td>
+</tr>
+<tr>
+<td><code>position: sticky</code></td>
+<td>布局末尾补偿平移</td>
+<td>在流里占位；滚动平移之后再把自己推回可视边缘，<strong>约束在包含块内</strong>（这就是"跟到头就一起滚走"）。改的是 <code>border_box</code>，所以绘制/命中/脏区/<code>paint_box</code> 全都自动正确</td>
+</tr>
+<tr>
+<td><code>inset</code></td>
+<td>简写展开</td>
+<td><code>inset: &lt;t&gt; &lt;r&gt; &lt;b&gt; &lt;l&gt;</code> → 四条长写，复用 margin/padding 的 1/2/4 值解析</td>
+</tr>
+<tr>
+<td><code>cursor</code></td>
+<td>命中测试</td>
+<td>只算<strong>意图</strong>（<code>ql_ui_cursor_at()</code>）：命中节点往上找第一个写了 <code>cursor</code> 的祖先，都没写时输入框给 <code>text</code>、其余 <code>default</code></td>
+</tr>
+<tr>
+<td><code>user-select</code></td>
+<td>输入框选字</td>
+<td><code>none</code> → 点还是能点（光标落点不变），但拖拽不再连选</td>
+</tr>
+<tr>
+<td><code>scroll-behavior: smooth</code></td>
+<td><code>ql_ui_anim_tick</code></td>
+<td>只记目标偏移，由每帧推进（160ms ease-out）；"跳"和"滑"共用同一份 <code>scroll_x/y</code> 状态</td>
+</tr>
 </tbody>
 </table>
 <p><strong>顺带修掉一个真缺陷（这是本轮最重要的收获）</strong>：<code>align-items: center / flex-end</code>
@@ -2203,7 +2244,28 @@ TERM(33, %)  TERM(5, px)  SUB  END        ← doc-&gt;calc_ops[]（每条 4 字�
 交叉尺寸取的是"各项最大值"，<code>room</code> 恒为 0。CSS 的默认 <code>align-content: stretch</code>
 要求单行撑满容器的交叉尺寸，补上之后 <code>align-items</code> 才真的能用（golden 的
 <code>align</code> 页因此变化，肉眼核对过：两个方块现在在 120px 高的容器里居中）。</p>
-<p>多行（<code>flex-wrap: wrap</code>）的 <code>align-content</code> 仍然没做，行高仍按内容最大值。</p>
+<p>同一轮把 <code>align-content</code> 也补上了（多行的行间分配），所以现在单行、多行两种
+情况的交叉轴都按 CSS 语义走。</p>
+<hr />
+<h3 id="185-position-sticky-overflow">18.5 <code>position: sticky</code> 与分轴 <code>overflow</code> 为什么便宜</h3>
+<p>这两件看起来都要"动滚动子系统"，实际都只挂到已有机制上：</p>
+<div class="highlight"><pre><span></span><code>滚动      apply_scroll：把子树整体平移 -scroll         （早就有）
+sticky    平移之后再把自己推回可视边缘，改的是 border_box
+          → 绘制/命中/脏区/paint_box 读的都是 border_box，一行都不用改
+overflow-x 裁剪矩形只改一个方向（另一轴沿用外层裁剪）
+          → QLDraw2D 的裁剪本来就是矩形，逐轴覆盖一个边就够
+</code></pre></div>
+
+<p>sticky 的三条约束（都写在 <code>sticky_adjust</code> 里）：</p>
+<ol>
+<li><strong>只贴给了 inset 的方向</strong>（CSS 也是这样：不给 <code>top</code> 的 sticky 等于 relative）；</li>
+<li>贴边位置按<strong>最近的滚动容器</strong>的内容盒算；没有滚动容器就按视口；</li>
+<li>不能推出<strong>包含块</strong>（父内容盒）—— 这就是"跟着列表滚到头就一起走"，
+   而不是永远钉在屏幕上。</li>
+</ol>
+<p><code>cursor</code> 则刻意只做一半：CSS 值 + 命中测试算出<strong>意图</strong>（<code>ql_ui_cursor_at()</code>），
+真正设光标要窗口系统配合（X11 <code>XDefineCursor</code> / Wayland <code>wl_cursor</code>），
+后端目前没有接 —— 写进 API 手册 §3.13，不让它悄悄失效。</p>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -3136,13 +3198,13 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>扩 <code>test_effects</code> + <code>test_gl_vs_cpu</code></td>
 </tr>
 <tr>
-<td><strong>B5 布局与交互</strong>（部分完成：<code>visibility</code>/<code>pointer-events</code>/<code>align-self</code>/<code>order</code>/<code>flex-flow</code> 已做，见 §18.4）</td>
-<td><code>align-content</code>、<code>overflow-x/y</code>、<code>position: sticky</code>、<code>inset</code>、<code>cursor</code>、<code>user-select</code>、<code>scroll-behavior</code></td>
+<td><strong>B5 布局与交互</strong>（✅ 已完成：<code>align-self</code>/<code>align-content</code>/<code>order</code>/<code>flex-flow</code>/<code>overflow-x/y</code>/<code>sticky</code>/<code>inset</code>/<code>visibility</code>/<code>pointer-events</code>/<code>cursor</code>/<code>user-select</code>/<code>scroll-behavior</code>，见 §18.4）</td>
+<td>上列十二项</td>
 <td><code>CSS_FLEX</code> 补全 + <code>CSS_UI</code></td>
 <td>表达力 + 桌面手感</td>
 <td>中：动 flex 求解器与命中测试</td>
 <td>是</td>
-<td>扩 <code>test_flex*</code> / <code>test_scroll</code></td>
+<td>扩 <code>test_flex*</code> / <code>test_scroll</code> / <code>test_b5</code></td>
 </tr>
 </tbody>
 </table>

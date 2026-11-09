@@ -947,6 +947,10 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <td><code>align-self: auto \| flex-start \| center \| flex-end \| stretch</code></td>
 </tr>
 <tr>
+<td>多行的行间分配</td>
+<td><code>align-content: stretch（默认）\| flex-start \| center \| flex-end \| space-between \| space-around \| space-evenly</code></td>
+</tr>
+<tr>
 <td>顺序</td>
 <td><code>order: &lt;整数&gt;</code>（升序，相等时保持 HTML 顺序）</td>
 </tr>
@@ -974,9 +978,9 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <li><code>flex-basis</code> 支持 px 与 <code>%</code>（相对容器主轴尺寸）；</li>
 <li>百分比 <code>width</code> 在 flex 子项上是相对<strong>容器内容宽</strong>，不是 flex-basis。</li>
 </ol>
-<p><strong>不支持的</strong>：<code>align-content</code>（多行的行间分配）、<code>baseline</code> 对齐、
-<code>wrap-reverse</code>、<code>flex-basis: auto</code> 的完整语义（等同"用 width"）。</p>
-<h3 id="371-visibility-pointer-events">3.7.1 <code>visibility</code> / <code>pointer-events</code></h3>
+<p><strong>不支持的</strong>：<code>baseline</code> 对齐、<code>wrap-reverse</code>、
+<code>flex-basis: auto</code> 的完整语义（等同"用 width"）。</p>
+<h3 id="371-visibility-pointer-events-cursor-user-select">3.7.1 <code>visibility</code> / <code>pointer-events</code> / <code>cursor</code> / <code>user-select</code></h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">placeholder</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 看不见，但位置还占着（display:none 才不占） */</span>
 <span class="p">.</span><span class="nc">tooltip</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">card</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">.</span><span class="nc">tooltip</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">visibility</span><span class="p">:</span><span class="w"> </span><span class="kc">visible</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 子级能自己显示回来（继承属性） */</span>
@@ -1004,11 +1008,29 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <td><code>auto</code> / <code>none</code></td>
 <td><code>none</code> = 自己不作为命中目标；<strong>子节点照常</strong>（可写 <code>auto</code> 重新接住）</td>
 </tr>
+<tr>
+<td><code>cursor</code></td>
+<td><code>auto</code> / <code>default</code> / <code>pointer</code> / <code>text</code> / <code>move</code> / <code>not-allowed</code> / <code>help</code> / <code>progress</code></td>
+<td>只算<strong>意图</strong>，见下面 <code>ql_ui_cursor_at()</code></td>
+</tr>
+<tr>
+<td><code>user-select</code></td>
+<td><code>none</code> / <code>auto</code> / <code>text</code> / <code>all</code> / <code>contain</code></td>
+<td><code>none</code> → 输入框仍可点（光标落点不变），但拖拽不再连选</td>
+</tr>
 </tbody>
 </table>
-<p>两者都是<strong>逐节点的开关</strong>，不引入新状态：<code>visibility</code> 在绘制时跳过"自己"那几笔，
-<code>pointer-events</code> 在命中测试里跳过"自己"这一步。所以没有性能代价，
-也不影响 <code>paint_box</code>（<code>visibility: hidden</code> 的元素仍然占着脏区范围）。</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 鼠标移动时问一句&quot;现在该用哪个光标&quot;，交给窗口系统 */</span>
+<span class="kt">uint8_t</span><span class="w"> </span><span class="n">cur</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_cursor_at</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">mx</span><span class="p">,</span><span class="w"> </span><span class="n">my</span><span class="p">);</span><span class="w">   </span><span class="cm">/* QLUICursor */</span>
+<span class="cm">/* X11: XDefineCursor(display, win, cursor_for(cur)); Wayland: wl_cursor_* */</span>
+</code></pre></div>
+
+<p><code>ql_ui_cursor_at()</code> 从命中节点往上找第一个写了 <code>cursor</code> 的祖先；都没写时输入框给
+<code>text</code>、其余给 <code>default</code>。<strong>它只算意图，不设光标</strong> —— 设光标要窗口系统配合，
+后端目前没有接（写在这里而不是让它悄悄失效）。</p>
+<p>三个属性都是<strong>逐节点的开关</strong>，不引入新状态：<code>visibility</code> 在绘制时跳过"自己"那几笔，
+<code>pointer-events</code> 在命中测试里跳过"自己"这一步，<code>cursor</code> 只是命中后往上查一层。
+所以没有性能代价，也不影响 <code>paint_box</code>（<code>visibility: hidden</code> 仍然占着脏区范围）。</p>
 <h3 id="38-z-index">3.8 定位与 z-index</h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">relative</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                    </span><span class="c">/* 成为绝对子项的包含块 */</span>
 <span class="p">.</span><span class="nc">badge</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">top</span><span class="p">:</span><span class="w"> </span><span class="mi">-6</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">right</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
@@ -1038,6 +1060,10 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <tr>
 <td><code>fixed</code></td>
 <td>脱离文档流；相对<strong>视口</strong>定位</td>
+</tr>
+<tr>
+<td><code>sticky</code></td>
+<td><strong>在流里占位</strong>；贴住最近的滚动容器的可视边缘，但不能推出自己的包含块</td>
 </tr>
 </tbody>
 </table>
@@ -1074,6 +1100,44 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 停在原来该在的位置）与 shrink-to-fit 的完整算法。这里都没实现，
 没给 inset 时贴包含块左上角。涉及这些的布局请显式写 inset。</p>
 </blockquote>
+<p><strong><code>inset</code> 简写</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">overlay</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">inset</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* 铺满包含块 */</span>
+<span class="p">.</span><span class="nc">badge</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">absolute</span><span class="p">;</span><span class="w"> </span><span class="k">inset</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="c">/* 上右下左 */</span>
+</code></pre></div>
+
+<p><code>inset</code> 与 <code>margin</code> 同一套 1/2/4 值语法，构建期展开成 <code>top</code> / <code>right</code> / <code>bottom</code> / <code>left</code>
+四条长写。所以"展开后能写的东西"它都能写（<code>px</code> / <code>%</code> / <code>em</code> / <code>rem</code> / <code>auto</code>）。</p>
+<p><strong><code>position: sticky</code></strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">list</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">240</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">overflow-y</span><span class="p">:</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">head</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">sticky</span><span class="p">;</span><span class="w"> </span><span class="k">top</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 列表滚动时表头钉在顶部 */</span>
+</code></pre></div>
+
+<p>实现是<strong>布局末尾的一次补偿平移</strong>（<code>sticky_adjust</code>）：滚动已经由 <code>apply_scroll</code>
+把子树整体平移过，之后 sticky 再把自己推回可视边缘。改的是 <code>border_box</code>，
+所以绘制、命中测试、脏区、<code>paint_box</code> 全都自动正确 —— 没有第二套坐标。</p>
+<p>三条约束：</p>
+<table>
+<thead>
+<tr>
+<th>约束</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只贴<strong>给了 inset 的方向</strong></td>
+<td>不给 <code>top</code> 的 sticky 与 <code>relative</code> 等价（与 CSS 一致）</td>
+</tr>
+<tr>
+<td>参照物是<strong>最近的滚动容器</strong></td>
+<td>没有滚动容器时按视口</td>
+</tr>
+<tr>
+<td>不能推出<strong>包含块</strong></td>
+<td>父内容盒的边界；这就是"跟着列表滚到头就一起走"</td>
+</tr>
+</tbody>
+</table>
 <p><strong>z-index</strong>：布局结束后对所有兄弟按 <code>z-index</code> <strong>稳定排序</strong>子链表，
 之后<strong>绘制顺序与命中测试顺序自动一致</strong>（链表顺序即绘制顺序）。
 z-index 相同则保持文档顺序（稳定）。</p>
@@ -1094,8 +1158,20 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <td><code>hidden</code> / <code>auto</code> / <code>scroll</code></td>
 <td>子树被裁到本节点边框盒；<strong>被裁掉的部分不可命中</strong>（命中测试同样裁剪）</td>
 </tr>
+<tr>
+<td><code>overflow-x</code> / <code>overflow-y</code></td>
+<td>分轴：只裁那个方向。另一轴沿用外层裁剪，所以"只裁横向"的容器里子项仍可以纵向画出去</td>
+</tr>
+<tr>
+<td><code>auto</code> 的轴</td>
+<td>才有可滚范围、才画滚动条（另一轴固定不可滚）</td>
+</tr>
 </tbody>
 </table>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">ticker</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">overflow-x</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="k">overflow-y</span><span class="p">:</span><span class="w"> </span><span class="kc">visible</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 横向裁、纵向放行 */</span>
+<span class="p">.</span><span class="nc">list</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">overflow-x</span><span class="p">:</span><span class="w"> </span><span class="kc">hidden</span><span class="p">;</span><span class="w"> </span><span class="k">overflow-y</span><span class="p">:</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">      </span><span class="c">/* 只纵向滚 */</span>
+</code></pre></div>
+
 <blockquote>
 <p><code>auto</code>/<code>scroll</code> 目前<strong>不产生滚动条，也不能滚动</strong> —— 只是裁剪。
 滚动容器排在 M3 之后的滚动里程碑。</p>
@@ -1598,21 +1674,20 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <p><strong>构建期报错</strong>：不是 0~1 的数字（<code>opacity: abc</code>）、越界（<code>opacity: 1.5</code>）。</p>
 <hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
-<div class="highlight"><pre><span></span><code>float / grid / align-content（多行的行间分配）
-overflow-x / overflow-y（分轴）        position: sticky
+<div class="highlight"><pre><span></span><code>float / grid / align-content: baseline
+border-radius 四角与椭圆角              border-style: dashed / dotted
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
 filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
-cursor / user-select / list-style / @supports / @font-face
-border-radius 四角与椭圆角              border-style: dashed / dotted
+list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
 word-spacing / text-decoration: overline / text-align: justify
 transition-delay                        animation-play-state: paused
 backface-visibility（假翻转没有背面）
 </code></pre></div>
 
 <p>报错示例：</p>
-<div class="highlight"><pre><span></span><code>qlui: 错误：index.css:27: 不支持的属性 &#39;position: sticky&#39;
+<div class="highlight"><pre><span></span><code>qlui: 错误：index.css:27: 不支持的属性 &#39;position: sticky-x&#39;
 qlui: 错误：index.css:12: 不支持的长度 &#39;1.5ch&#39;（支持 px / % / em / rem / vw / vh / calc()）
-qlui: 错误：index.css:31: 暂不支持分轴 overflow &#39;overflow-x&#39;
+qlui: 错误：index.css:31: 不支持的 cursor &#39;hand&#39;（支持 auto/default/pointer/text/move/...）
 qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的值
 </code></pre></div>
 
@@ -2169,6 +2244,14 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 </code></pre></div>
 
 <p><code>scroll_to</code> 只设状态（<strong>需要自己再调一次 <code>ql_ui_layout</code></strong>），<code>scroll_by</code> 内部重排并标脏。</p>
+<p><strong>平滑滚动</strong>：容器写了 <code>scroll-behavior: smooth</code> 时，<code>scroll_to</code> / <code>scroll_by</code> 只记目标
+（<code>scroll_goal_x/y</code> + <code>scroll_goal_ms</code>），偏移由 <code>ql_ui_anim_tick(ui, now_ms)</code> 逐帧推进
+（160ms ease-out，内部会自己重排）。所以宿主要像驱动动画一样每帧调它：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_ui_anim_tick</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_now_ms</span><span class="p">())</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w">   </span><span class="cm">/* 有动画/滚动在跑 */</span>
+<span class="w">    </span><span class="n">mark_dirty_and_render</span><span class="p">();</span>
+</code></pre></div>
+
+<p>不写 <code>scroll-behavior</code> 就是<strong>立即跳</strong>（老行为）。</p>
 <p><strong>滚轮的单位是"格"，不是像素。</strong> <code>QLInputEvent.dy</code> 是格数（X11 的 Button4/5 一次一格），
 <code>ql_ui_input_event</code> 会乘上 <code>QL_CFG_UI_WHEEL_STEP_PX</code>（默认 <strong>50px</strong>，约 3 行，
 与 Firefox 同量级；Chrome 是 100px）。想更快/更慢改这一个宏。</p>
