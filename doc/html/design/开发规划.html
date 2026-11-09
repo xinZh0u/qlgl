@@ -177,6 +177,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/11_input.html'>输入控件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
 <a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
 <a class='sub-item active' href='../design/开发规划.html'>QLGL 开发规划</a>
@@ -2061,6 +2062,12 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 <td>1–2 天</td>
 </tr>
 <tr>
+<td>P7a–P7l</td>
+<td><code>EMBED</code> 真渲染后端（A/B 档）—— <strong>未排期</strong>，见 §<code>EMBED</code> 后端路线</td>
+<td>—</td>
+<td>32–49 天</td>
+</tr>
+<tr>
 <td>P8</td>
 <td><code>&lt;input&gt;</code> 其余 <code>type</code>：<code>checkbox</code> <code>radio</code> <code>range</code> <code>number</code> <code>search</code></td>
 <td>—</td>
@@ -2068,8 +2075,7 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 </tr>
 </tbody>
 </table>
-<p>合计约 <strong>24–34 人日</strong>。<code>EMBED</code> 那 13 个<strong>永远只做占位</strong>（<code>script</code>/<code>svg</code>/<code>math</code>/<code>iframe</code>/
-<code>video</code> 触碰架构红线：要么要 JS 引擎，要么要第二个渲染器，要么外来内容无法有界）。</p>
+<p>合计约 <strong>24–34 人日</strong>（不含 <code>EMBED</code> 后端）。</p>
 <p><strong>裁包后的行为必须二选一并显式声明</strong>：<code>strict</code> 报错并点名缺哪个包；<code>lenient</code> 降级成
 <code>div</code>/<code>span</code> 并计入 <code>doc-&gt;degraded_tags</code>（可查名单）。默认 <code>strict</code> ——
 降级只允许发生在"你明确说要降级"的时候。<code>qltext check --features core,image</code>
@@ -2083,6 +2089,48 @@ CMake <code>QLGL_IMG_PRESET=full|lean|raw-only</code>（已验过 <code>raw-only
 <li><strong>空元素的结束标签改为忽略</strong>（<code>&lt;embed&gt;&lt;/embed&gt;</code> / <code>&lt;br&gt;&lt;/br&gt;</code>），
    与浏览器一致；非空元素的不匹配仍然明确报错。</li>
 </ol>
+<p><strong><code>EMBED</code> 后端路线（未排期，只记原则）</strong></p>
+<p>P7 落地时写过一句"这 13 个永远只做占位"，<strong>那句话收回</strong>。真正的原则是：</p>
+<blockquote>
+<p>能接外部 C 库就接，真的接不了才留占位；不同平台接不同的库；
+PC / 移动默认开，MCU 默认关，但硬要在 MCU 上保留也允许。</p>
+</blockquote>
+<p>所以<strong>占位是默认档，不是终点</strong>。全部设计（开关结构、后端接口、四档分类、
+工作量与排序）在 <a href="EMBED后端设计.html">EMBED 后端设计</a>。摘要：</p>
+<table>
+<thead>
+<tr>
+<th>档</th>
+<th>标签</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A</strong> 自己能做</td>
+<td><code>iframe</code> <code>embed</code> <code>object</code> <code>canvas</code> <code>track</code></td>
+<td>零外部库。<code>iframe</code> = 构建期子文档 + 事件坐标路由；<code>embed</code>/<code>object</code> = 类型分派；<code>canvas</code> = <strong>C API 渲染回调</strong>（HTML 语义要 JS，永久不做）</td>
+</tr>
+<tr>
+<td><strong>B</strong> 接库是加法</td>
+<td><code>svg</code> <code>audio</code> <code>video</code></td>
+<td>plutosvg / miniaudio+dr_* / pl_mpeg（ffmpeg 后加）</td>
+</tr>
+<tr>
+<td><strong>C</strong> 接了是反向</td>
+<td><code>script</code> <code>slot</code> <code>template</code></td>
+<td>引擎不是成本，DOM 是；<code>el.style.x=</code> / <code>appendChild</code> / <code>rAF</code> 三条都是反向红线</td>
+</tr>
+<tr>
+<td><strong>D</strong> 没有 C 库</td>
+<td><code>math</code></td>
+<td>运行期不做；<strong>构建期</strong> TeX→SVG/位图是可行旁路（前提是 svg 管线先通）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>唯一的架构前置</strong>：<code>ql_ui_invalidate()</code>（跨线程重绘请求）。库仍然<strong>不拥有线程</strong> ——
+audio/video 后端自带线程，只调这一个函数。它是 P7h/P7j 的入场券，可以单独先落。
+<strong>当前代码里这 13 个只有占位实现，一个后端都没接。</strong></p>
 <hr />
 <h5 id="15-c2-2026-11-08">⑮ 单行输入框（C2）—— <strong>已完成（2026-11-08）</strong></h5>
 <p>⑭ 之后界面能滚了，但<strong>一个字都改不了</strong> —— 整套数据模型是编译期算完的静态表。

@@ -177,6 +177,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/11_input.html'>输入控件</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
 <a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（目标：HTML + CSS + JS 直接搬过来用）</a>
 <a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
@@ -1101,13 +1102,55 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 这就是本库"明确失败优于半个正确"的落地方式 —— 降级是<strong>显式声明的</strong>，不是悄悄发生。</p>
 <p><code>lenient</code> 的典型用途：MCU 上贴外部 HTML 片段、只想要"能看就行"。</p>
 <hr />
-<h2 id="5-13-embed">5. 永远只做占位的 13 个（<code>EMBED</code>）✅</h2>
-<p>它们不是"还没做"，是<strong>按红线不做真渲染</strong>。现在的实现：</p>
+<h2 id="5-13-embed">5. 现在是占位的 13 个（<code>EMBED</code>）✅</h2>
+<h3 id="51">5.1 先说清楚"占位"是什么意思</h3>
+<p><strong>占位是默认档，不是终点。</strong> 这一包的原则是：</p>
+<blockquote>
+<p><strong>能接外部 C 库就接，真的接不了才留占位；不同平台接不同的库；
+PC / 移动默认开，MCU 默认关，但硬要在 MCU 上保留也允许。</strong></p>
+</blockquote>
+<p>所以下面 13 行现在全是 ✅ —— ✅ 的意思是"<strong>认识且不炸</strong>"（整页 HTML 贴进来能编译过），
+不是"已经做到头了"。每行都标了它属于哪一档：</p>
+<table>
+<thead>
+<tr>
+<th>档</th>
+<th>含义</th>
+<th>标签</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A</strong></td>
+<td>自己就能做，不需要外部库，也不动架构前提</td>
+<td><code>iframe</code> <code>embed</code> <code>object</code> <code>canvas</code> <code>track</code></td>
+</tr>
+<tr>
+<td><strong>B</strong></td>
+<td>需要外部库，但接进来是加法</td>
+<td><code>svg</code> <code>audio</code> <code>video</code></td>
+</tr>
+<tr>
+<td><strong>C</strong></td>
+<td>库存在，但接了要推翻"构建期定型 / 无运行期重排 / 脏区驱动"</td>
+<td><code>script</code> <code>slot</code> <code>template</code></td>
+</tr>
+<tr>
+<td><strong>D</strong></td>
+<td>没有可用的 C 库，自己写等于重做一个布局引擎</td>
+<td><code>math</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>全部后端的接口设计、开关结构、工作量与排序见 <a href="../../design/EMBED后端设计.html">EMBED 后端设计</a>。
+目前代码里这 13 个只有占位实现，一个后端都没接（未排期）。</strong></p>
+<h3 id="52">5.2 现状逐条</h3>
 <table>
 <thead>
 <tr>
 <th>标签</th>
-<th>为什么不做</th>
+<th>档</th>
+<th>为什么现在是占位 / 能不能接后端</th>
 <th>内容怎么处理</th>
 <th>盒子</th>
 </tr>
@@ -1115,62 +1158,86 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <tbody>
 <tr>
 <td><code>script</code></td>
-<td>没有 JS</td>
+<td><strong>C</strong></td>
+<td>引擎能接（QuickJS / JerryScript / Duktape），但 <code>el.style.x=</code> / <code>appendChild</code> / <code>rAF</code> 分别要求运行期重算样式、运行期建节点、持续全帧重绘 —— <strong>三条都是反向红线</strong>。不做</td>
 <td><strong>整段跳过</strong>（按 raw text 扫到 <code>&lt;/script&gt;</code>，内容里的 <code>&lt;</code> <code>&lt;/div&gt;</code> 都是普通字符）</td>
 <td><code>display:none</code></td>
 </tr>
 <tr>
 <td><code>template</code></td>
-<td>惰性内容，永远不渲染</td>
+<td><strong>C</strong></td>
+<td>惰性内容，没有 JS 就没有任何东西会去克隆它。可以另做"构建期宏展开"，但那是 QLGL 自己的语言特性，不是 HTML 语义</td>
 <td><strong>整段跳过</strong>（标签配平扫描）</td>
 <td><code>display:none</code></td>
 </tr>
 <tr>
-<td><code>svg</code> <code>math</code></td>
-<td>各自需要独立渲染器</td>
-<td><strong>整段跳过</strong>（内容不是 HTML：<code>&lt;path&gt;</code>/<code>&lt;mi&gt;</code> 真去解析就报错）</td>
+<td><code>slot</code></td>
+<td><strong>C</strong></td>
+<td>没有 shadow DOM 就没有可插的树。同上</td>
+<td>解析但隐藏</td>
+<td><code>display:none</code></td>
+</tr>
+<tr>
+<td><code>svg</code></td>
+<td><strong>B</strong></td>
+<td><strong>可接，ROI 最高</strong>：plutosvg（MIT，自带光栅器）。两条路 —— 构建期转 RAW（MCU 唯一档）或运行期后端（PC/移动），和 JPEG 后端同形</td>
+<td><strong>整段跳过</strong>（内容不是 HTML：<code>&lt;path&gt;</code>/<code>&lt;circle&gt;</code> 真去解析就报错）</td>
 <td>占位盒 <code>120×60</code> inline-block</td>
 </tr>
 <tr>
-<td><code>iframe</code> <code>embed</code> <code>object</code></td>
-<td>外来内容无法有界</td>
-<td>解析但隐藏（都是"兜底内容"）</td>
-<td>占位盒 <code>300×150</code> block</td>
-</tr>
-<tr>
 <td><code>audio</code></td>
-<td>要音频输出</td>
-<td>同上</td>
+<td><strong>B</strong></td>
+<td><strong>可接</strong>：<code>dr_wav</code>/<code>dr_mp3</code>/<code>dr_flac</code> + <strong>miniaudio</strong>（ALSA/Pulse/CoreAudio/WASAPI/AAudio/OpenSL 一套通吃）。真正的工作量是 <code>&lt;audio controls&gt;</code> 控件，不是解码</td>
+<td>解析但隐藏</td>
 <td>占位盒 <code>300×32</code></td>
 </tr>
 <tr>
 <td><code>video</code></td>
-<td>要解码器 + 同步</td>
-<td>同上</td>
+<td><strong>B</strong></td>
+<td><strong>可接，成本最大</strong>：起步用 pl_mpeg（MPEG-1，单文件 MIT，无依赖）；ffmpeg 作 PC 全格式后端，但要接受 5–15 MB 和 <strong>LGPL 链接要求</strong>。还需要逐帧 blit 的双缓冲</td>
+<td>解析但隐藏</td>
 <td>占位盒 <code>300×150</code></td>
+</tr>
+<tr>
+<td><code>iframe</code></td>
+<td><strong>A</strong></td>
+<td><strong>不需要任何库</strong>：构建期把 <code>src</code> 文档编进来，运行期当子视口渲染（裁剪 + 滚动都现成）。唯一新机制是<strong>事件坐标路由</strong></td>
+<td>解析但隐藏</td>
+<td>占位盒 <code>300×150</code> block</td>
+</tr>
+<tr>
+<td><code>embed</code> <code>object</code></td>
+<td><strong>A</strong></td>
+<td><strong>纯类型分派器</strong>，几十行：<code>src</code> 是图片走 <code>&lt;img&gt;</code> 那条完整路径，是 HTML 走 <code>iframe</code>，其余占位</td>
+<td>解析但隐藏</td>
+<td>占位盒 <code>300×150</code> block</td>
 </tr>
 <tr>
 <td><code>canvas</code></td>
-<td>要 JS 或"往 HTML 上画"的新 API</td>
-<td>同上</td>
-<td>占位盒 <code>300×150</code></td>
-</tr>
-<tr>
-<td><code>noscript</code></td>
-<td>没有 JS</td>
+<td><strong>A</strong></td>
+<td>HTML 语义要 JS（永远空白）→ 死路。但<strong>换成 C API 渲染回调就完全成立</strong>：<code>ql_ui_canvas_bind()</code> 让应用代码在渲染期往盒子里画图表/仪表/波形</td>
 <td>解析但隐藏</td>
-<td><code>display:none</code></td>
-</tr>
-<tr>
-<td><code>slot</code></td>
-<td>没有 shadow DOM</td>
-<td>解析但隐藏</td>
-<td><code>display:none</code></td>
+<td>占位盒 <code>300×150</code> block</td>
 </tr>
 <tr>
 <td><code>track</code></td>
-<td>字幕轨元数据</td>
+<td><strong>A</strong></td>
+<td><strong>依附</strong> audio/video：WebVTT 解析约 200 行 + 字幕叠画。没有 media 就没有意义</td>
 <td>空元素</td>
+<td><code>display:none</code></td>
+</tr>
+<tr>
+<td><code>math</code></td>
+<td><strong>D</strong></td>
+<td>C 世界没有可用的 MathML 引擎；自己写 ≥ <code>TABLE</code> 包的工作量。<strong>旁路</strong>：构建期用 TeX/KaTeX 渲染成 SVG/位图，走 <code>svg</code> 或图像管线</td>
+<td><strong>整段跳过</strong>（<code>&lt;mi&gt;</code>/<code>&lt;mo&gt;</code> 不是 HTML 标签）</td>
+<td>占位盒 <code>120×60</code> inline-block</td>
+</tr>
+<tr>
+<td><code>noscript</code></td>
+<td>—</td>
+<td>纯语义。既然本库永久无脚本，按规范内容<strong>应该显示</strong>；现在是隐藏（实用主义），后续改成开关 <code>QL_CFG_UI_NOSCRIPT_SHOW</code></td>
+<td>解析但隐藏</td>
 <td><code>display:none</code></td>
 </tr>
 </tbody>
@@ -1183,7 +1250,9 @@ P3e 加 <code>picture</code>/<code>source</code>/<code>map</code>/<code>area</co
 <ol>
 <li><strong><code>&lt;noscript&gt;</code> 的内容不显示。</strong> 严格按规范，QLGL 没有 JS ⇒ 脚本"总是不可用" ⇒
    应该显示 noscript 的内容。但这类内容在网页上通常是"请开启 JavaScript"式的降级
-   提示，在 QLGL 里显示出来只会是噪音。要显示就自己写 <code>noscript { display: block }</code>。</li>
+   提示，在 QLGL 里显示出来只会是噪音。要显示就自己写 <code>noscript { display: block }</code>。
+   后续会把这个取舍变成开关 <code>QL_CFG_UI_NOSCRIPT_SHOW</code>（默认仍是隐藏，见
+   <a href="../../design/EMBED后端设计.html">EMBED 后端设计 §6.8</a>），<strong>目前该宏还不存在</strong>。</li>
 <li><strong><code>&lt;canvas&gt;</code> / <code>&lt;iframe&gt;</code> / <code>&lt;object&gt;</code> / <code>&lt;video&gt;</code> 的兜底内容不显示。</strong>
    浏览器在"不支持"时显示它们；这里用占位盒代替，避免一页里出现两套"做不到"的说明。</li>
 </ol>

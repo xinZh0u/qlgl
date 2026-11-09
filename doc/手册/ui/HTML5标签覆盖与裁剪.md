@@ -225,22 +225,44 @@ P3e 加 `picture`/`source`/`map`/`area`、P7 加 13 个占位标签）、
 
 ---
 
-## 5. 永远只做占位的 13 个（`EMBED`）✅
+## 5. 现在是占位的 13 个（`EMBED`）✅
 
-它们不是"还没做"，是**按红线不做真渲染**。现在的实现：
+### 5.1 先说清楚"占位"是什么意思
 
-| 标签 | 为什么不做 | 内容怎么处理 | 盒子 |
-|---|---|---|---|
-| `script` | 没有 JS | **整段跳过**（按 raw text 扫到 `</script>`，内容里的 `<` `</div>` 都是普通字符） | `display:none` |
-| `template` | 惰性内容，永远不渲染 | **整段跳过**（标签配平扫描） | `display:none` |
-| `svg` `math` | 各自需要独立渲染器 | **整段跳过**（内容不是 HTML：`<path>`/`<mi>` 真去解析就报错） | 占位盒 `120×60` inline-block |
-| `iframe` `embed` `object` | 外来内容无法有界 | 解析但隐藏（都是"兜底内容"） | 占位盒 `300×150` block |
-| `audio` | 要音频输出 | 同上 | 占位盒 `300×32` |
-| `video` | 要解码器 + 同步 | 同上 | 占位盒 `300×150` |
-| `canvas` | 要 JS 或"往 HTML 上画"的新 API | 同上 | 占位盒 `300×150` |
-| `noscript` | 没有 JS | 解析但隐藏 | `display:none` |
-| `slot` | 没有 shadow DOM | 解析但隐藏 | `display:none` |
-| `track` | 字幕轨元数据 | 空元素 | `display:none` |
+**占位是默认档，不是终点。** 这一包的原则是：
+
+> **能接外部 C 库就接，真的接不了才留占位；不同平台接不同的库；
+> PC / 移动默认开，MCU 默认关，但硬要在 MCU 上保留也允许。**
+
+所以下面 13 行现在全是 ✅ —— ✅ 的意思是"**认识且不炸**"（整页 HTML 贴进来能编译过），
+不是"已经做到头了"。每行都标了它属于哪一档：
+
+| 档 | 含义 | 标签 |
+|---|---|---|
+| **A** | 自己就能做，不需要外部库，也不动架构前提 | `iframe` `embed` `object` `canvas` `track` |
+| **B** | 需要外部库，但接进来是加法 | `svg` `audio` `video` |
+| **C** | 库存在，但接了要推翻"构建期定型 / 无运行期重排 / 脏区驱动" | `script` `slot` `template` |
+| **D** | 没有可用的 C 库，自己写等于重做一个布局引擎 | `math` |
+
+**全部后端的接口设计、开关结构、工作量与排序见 [EMBED 后端设计](../../design/EMBED后端设计.html)。
+目前代码里这 13 个只有占位实现，一个后端都没接（未排期）。**
+
+### 5.2 现状逐条
+
+| 标签 | 档 | 为什么现在是占位 / 能不能接后端 | 内容怎么处理 | 盒子 |
+|---|---|---|---|---|
+| `script` | **C** | 引擎能接（QuickJS / JerryScript / Duktape），但 `el.style.x=` / `appendChild` / `rAF` 分别要求运行期重算样式、运行期建节点、持续全帧重绘 —— **三条都是反向红线**。不做 | **整段跳过**（按 raw text 扫到 `</script>`，内容里的 `<` `</div>` 都是普通字符） | `display:none` |
+| `template` | **C** | 惰性内容，没有 JS 就没有任何东西会去克隆它。可以另做"构建期宏展开"，但那是 QLGL 自己的语言特性，不是 HTML 语义 | **整段跳过**（标签配平扫描） | `display:none` |
+| `slot` | **C** | 没有 shadow DOM 就没有可插的树。同上 | 解析但隐藏 | `display:none` |
+| `svg` | **B** | **可接，ROI 最高**：plutosvg（MIT，自带光栅器）。两条路 —— 构建期转 RAW（MCU 唯一档）或运行期后端（PC/移动），和 JPEG 后端同形 | **整段跳过**（内容不是 HTML：`<path>`/`<circle>` 真去解析就报错） | 占位盒 `120×60` inline-block |
+| `audio` | **B** | **可接**：`dr_wav`/`dr_mp3`/`dr_flac` + **miniaudio**（ALSA/Pulse/CoreAudio/WASAPI/AAudio/OpenSL 一套通吃）。真正的工作量是 `<audio controls>` 控件，不是解码 | 解析但隐藏 | 占位盒 `300×32` |
+| `video` | **B** | **可接，成本最大**：起步用 pl_mpeg（MPEG-1，单文件 MIT，无依赖）；ffmpeg 作 PC 全格式后端，但要接受 5–15 MB 和 **LGPL 链接要求**。还需要逐帧 blit 的双缓冲 | 解析但隐藏 | 占位盒 `300×150` |
+| `iframe` | **A** | **不需要任何库**：构建期把 `src` 文档编进来，运行期当子视口渲染（裁剪 + 滚动都现成）。唯一新机制是**事件坐标路由** | 解析但隐藏 | 占位盒 `300×150` block |
+| `embed` `object` | **A** | **纯类型分派器**，几十行：`src` 是图片走 `<img>` 那条完整路径，是 HTML 走 `iframe`，其余占位 | 解析但隐藏 | 占位盒 `300×150` block |
+| `canvas` | **A** | HTML 语义要 JS（永远空白）→ 死路。但**换成 C API 渲染回调就完全成立**：`ql_ui_canvas_bind()` 让应用代码在渲染期往盒子里画图表/仪表/波形 | 解析但隐藏 | 占位盒 `300×150` block |
+| `track` | **A** | **依附** audio/video：WebVTT 解析约 200 行 + 字幕叠画。没有 media 就没有意义 | 空元素 | `display:none` |
+| `math` | **D** | C 世界没有可用的 MathML 引擎；自己写 ≥ `TABLE` 包的工作量。**旁路**：构建期用 TeX/KaTeX 渲染成 SVG/位图，走 `svg` 或图像管线 | **整段跳过**（`<mi>`/`<mo>` 不是 HTML 标签） | 占位盒 `120×60` inline-block |
+| `noscript` | — | 纯语义。既然本库永久无脚本，按规范内容**应该显示**；现在是隐藏（实用主义），后续改成开关 `QL_CFG_UI_NOSCRIPT_SHOW` | 解析但隐藏 | `display:none` |
 
 **占位盒长什么样**：1px 实线边框 + 居中的**标签名**（`iframe` / `video` / `svg`…）。
 用标签名而不是"未支持"两个字，是因为内建位图字体只有 ASCII（中文会变成 `???`），
@@ -252,6 +274,8 @@ P3e 加 `picture`/`source`/`map`/`area`、P7 加 13 个占位标签）、
 1. **`<noscript>` 的内容不显示。** 严格按规范，QLGL 没有 JS ⇒ 脚本"总是不可用" ⇒
    应该显示 noscript 的内容。但这类内容在网页上通常是"请开启 JavaScript"式的降级
    提示，在 QLGL 里显示出来只会是噪音。要显示就自己写 `noscript { display: block }`。
+   后续会把这个取舍变成开关 `QL_CFG_UI_NOSCRIPT_SHOW`（默认仍是隐藏，见
+   [EMBED 后端设计 §6.8](../../design/EMBED后端设计.html)），**目前该宏还不存在**。
 2. **`<canvas>` / `<iframe>` / `<object>` / `<video>` 的兜底内容不显示。**
    浏览器在"不支持"时显示它们；这里用占位盒代替，避免一页里出现两套"做不到"的说明。
 
