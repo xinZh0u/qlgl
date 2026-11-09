@@ -359,7 +359,7 @@ main img.shot { max-width: 100%; }
 <tr>
 <td><strong>P</strong></td>
 <td><strong>与"静态节点 / 构建期定型"冲突</strong>（本库最核心的取舍）</td>
-<td>CSS 变量、<code>@media</code>、<code>content: counter()</code></td>
+<td><code>content: counter()</code>、<code>@supports</code>、<code>@layer</code></td>
 </tr>
 <tr>
 <td><strong>M</strong></td>
@@ -661,10 +661,16 @@ main img.shot { max-width: 100%; }
 <td>字体文件由宿主 <code>ql_font_set_default_file()</code> 提供，不在 CSS 里配</td>
 </tr>
 <tr>
-<td><code>@media</code></td>
+<td><code>@media (min-width / max-width)</code></td>
+<td>✅</td>
+<td>—</td>
+<td><strong>构建期切成视口宽区间</strong>，每个区间编译一套样式；运行期只按宽度选下标（见 §18.2）</td>
+</tr>
+<tr>
+<td><code>@media</code> 的其它条件（<code>orientation</code> / <code>prefers-*</code> / 分辨率 / <code>em</code> 单位）</td>
 <td>❌</td>
 <td>P</td>
-<td>目标设备尺寸在构建期已知；要多套布局请用两套 doc 或宿主切换</td>
+<td>需要运行期条件求值；<code>em</code> 单位要设备字号，明确报错。<code>print</code> 整块跳过</td>
 </tr>
 <tr>
 <td><code>@supports</code></td>
@@ -2026,48 +2032,66 @@ out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面
 <td>运行期改主题</td>
 <td>不支持 —— 换肤走"换一份 CSS / 热重载"（见 <a href="../../对比与取舍.html">对比与取舍 §12</a>）</td>
 </tr>
+</tbody>
+</table>
+<h3 id="182-media">18.2 <code>@media</code> 也是构建期的事</h3>
+<p>早期结论是"❌ 目标设备尺寸构建期已知" —— 这条对<strong>定死的板子</strong>成立，但 PC 窗口是可以拖的，
+所以现在按"状态变体"的同一套办法做：</p>
+<div class="highlight"><pre><span></span><code>条件   @media (max-width: 620px) { … }
+  ↓ 构建期：把所有 min/max 宽度当分界点，切成互不相交的区间
+区间   [0,620]  [621,∞)        ← qlui.h 的 QLUIMedia[]
+  ↓ 每个区间编译一套样式（base / hover / active / focus 各一个下标）
+运行期 ql_ui_layout(w) 线性扫区间 → 取该区间的变体装回节点
+</code></pre></div>
+
+<table>
+<thead>
 <tr>
-<td><code>writing-mode</code> / <code>text-orientation</code></td>
-<td>❌</td>
+<th>项</th>
+<th>支持</th>
 </tr>
+</thead>
+<tbody>
 <tr>
-<td><code>direction</code> / <code>unicode-bidi</code></td>
-<td>❌</td>
-</tr>
-<tr>
-<td><code>will-change</code> / <code>contain</code> / <code>backface-visibility</code></td>
-<td>❌</td>
-</tr>
-<tr>
-<td>Speech（<code>speak</code> / <code>volume</code> / <code>pause</code>…）</td>
-<td>—</td>
-</tr>
-<tr>
-<td><code>scrollbar-*</code> / <code>scrollbar-width</code> / <code>scrollbar-color</code></td>
-<td>⏳</td>
-</tr>
-<tr>
-<td><code>scroll-snap-*</code></td>
-<td>❌</td>
-</tr>
-<tr>
-<td><code>image-rendering</code></td>
-<td>⏳</td>
-</tr>
-<tr>
-<td><code>object-fit</code></td>
+<td><code>(min-width: Npx)</code> / <code>(max-width: Npx)</code>，可用 <code>and</code> 串</td>
 <td>✅</td>
 </tr>
 <tr>
-<td><code>object-position</code></td>
-<td>⏳</td>
+<td>前缀 <code>screen</code> / <code>all</code></td>
+<td>✅（可省略）</td>
 </tr>
 <tr>
-<td><code>image-orientation</code></td>
-<td>❌</td>
+<td><code>print</code></td>
+<td>整块跳过（永远不生效）</td>
+</tr>
+<tr>
+<td><code>(orientation: …)</code> / <code>(prefers-color-scheme: …)</code> / <code>em</code> 单位</td>
+<td>❌ 构建期报错</td>
+</tr>
+<tr>
+<td>区间个数上限</td>
+<td><code>QL_CFG_UI_MAX_MEDIA</code>（默认 6）</td>
 </tr>
 </tbody>
 </table>
+<p>三条实现注意：</p>
+<ol>
+<li><strong>多趟编译</strong>：每个区间都要把整棵树按该区间重算一遍样式，所以"每个断点独有的声明"
+   必须在每趟开始<strong>清空</strong>（<code>final_decls</code> 是"往 out 里合并"的，不清会残留 —— 踩过）；</li>
+<li><strong>状态变体要一起装</strong>：<code>:hover</code> 也有 per-区间 的下标，否则一悬停就把响应式尺寸丢掉；</li>
+<li><strong>媒体变体在 <code>style_copy</code> 清理之后装回</strong>：清理会把 <code>n-&gt;style</code> 复位成最窄区间那份，
+   放在它前面会被当场覆盖（表现是"宽的窗口里只有 flex 子项还是窄布局"—— 踩过）。
+| <code>writing-mode</code> / <code>text-orientation</code> | ❌ | <strong>X</strong>：竖排要重整排版引擎 |
+| <code>direction</code> / <code>unicode-bidi</code> | ❌ | <strong>X</strong>：RTL 需要 bidi 算法 + 文本整形 |
+| <code>will-change</code> / <code>contain</code> / <code>backface-visibility</code> | ❌ | <strong>N</strong>：GPU 优化提示，自有渲染器不消费 |
+| Speech（<code>speak</code> / <code>volume</code> / <code>pause</code>…） | — | <strong>N</strong>：与 GUI 无关 |
+| <code>scrollbar-*</code> / <code>scrollbar-width</code> / <code>scrollbar-color</code> | ⏳ | <strong>R</strong>：滚动条现在是内置样式（<code>SCROLLBAR_W</code> / <code>0x808080 @ 0x96</code>），暴露成属性很便宜 |
+| <code>scroll-snap-*</code> | ❌ | <strong>T</strong>：要持续重绘 + 吸附动画 |
+| <code>image-rendering</code> | ⏳ | <strong>R</strong>：CPU 已是最近邻放大；GL 用的是 <code>GL_NEAREST</code>，做成属性很便宜 |
+| <code>object-fit</code> | ✅ | <strong>R</strong> | <code>fill</code> / <code>contain</code> / <code>cover</code> 等（<code>background-size</code> 的兄弟） |
+| <code>object-position</code> | ⏳ | <strong>R</strong> | |
+| <code>image-orientation</code> | ❌ | <strong>N</strong> | EXIF 旋转由解码器负责 |</li>
+</ol>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -2289,7 +2313,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <tr>
 <td><code>@media</code></td>
 <td>191 个块</td>
-<td>响应式断点整段不认</td>
+<td><strong>已支持</strong>宽度断点（<code>min/max-width</code>）；<code>orientation</code> / <code>prefers-*</code> 等仍报错</td>
 </tr>
 <tr>
 <td><code>!important</code></td>
@@ -2489,6 +2513,16 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>transform-origin</code></td>
 <td><strong>固定为元素中心</strong></td>
 <td>属性本身没实现</td>
+</tr>
+<tr>
+<td>flex 项的<strong>主轴尺寸</strong></td>
+<td>用 <code>box-sizing: border-box</code> 时精确</td>
+<td><strong>content-box 时少算 padding + border</strong>（<code>force_size</code> 把主轴尺寸按边框盒解释）—— flex 子项请写 <code>box-sizing: border-box</code>，这是真实页面的常规写法</td>
+</tr>
+<tr>
+<td><code>@media</code></td>
+<td>只有宽度断点</td>
+<td><code>orientation</code> / <code>prefers-*</code> / <code>em</code> 单位报错；<code>print</code> 整块跳过</td>
 </tr>
 <tr>
 <td><code>transition-timing-function</code></td>

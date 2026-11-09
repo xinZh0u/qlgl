@@ -203,6 +203,9 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
         rt->style = (src->style < style_count) ? &doc->styles[src->style]
                                                : &doc->styles[0];
         rt->text = NULL;
+        rt->m_hover = 0xFFFF;
+        rt->m_active = 0xFFFF;
+        rt->m_focus = 0xFFFF;
         if (src->text != 0xFFFFu && doc->text_pool != NULL && doc->text_offsets != NULL)
             rt->text = doc->text_pool + doc->text_offsets[src->text];
 
@@ -2202,11 +2205,11 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
             if (n > 1)
                 sum += gap * (n - 1);
             own = sum + pad_border;
-        } else {
-            /* 纵向堆叠（block / column flex）：主轴上是"子项的最大值" */
+        } else if (row) {
+            /* 主轴水平、子节点纵向堆叠：主轴尺寸 = 子项的**最大宽度** */
             ql_coord_t mx = 0;
             for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
-                if (c->style->display == QL_UI_DISPLAY_NONE)
+                if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
                     continue;
                 ql_coord_t v = max_content_main(c, row,
                                                 avail_w - pad_border - s->margin.left -
@@ -2216,6 +2219,26 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
                     mx = v;
             }
             own = mx + pad_border;
+        } else {
+            /*
+             * 主轴竖直（column flex 的项 / 普通块）：块流子节点是**堆叠**的，
+             * 所以主轴尺寸是子项之和，不是最大值。
+             *
+             * 以前这里对两个方向都取最大值 —— 于是"带 padding、里面有两行文字"的
+             * 卡片在 column 布局里的高度被算成**一行**，后续兄弟会压上来
+             * （@media 把一排三个改成一列时一眼就能看到）。行方向取最大是对的，
+             * 列方向必须求和。
+             */
+            ql_coord_t sum = 0;
+            for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+                if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
+                    continue;
+                sum += max_content_main(c, row,
+                                        avail_w - pad_border - s->margin.left -
+                                            s->margin.right,
+                                        depth + 1);
+            }
+            own = sum + pad_border;
         }
     } else {
         /* 百分比：要先知道包含块，测量阶段拿不到 → 按 0 处理（与浏览器"缩到最小"一致） */
@@ -2625,7 +2648,11 @@ static int collect_node_styles(const QLUINodeRT *node, const QLUIStyle *out[4])
     if (doc == NULL || src == NULL)
         return n;
 
-    const uint16_t idx[3] = { src->style_hover, src->style_active, src->style_focus };
+    const uint16_t idx[3] = {
+        (node->m_hover != 0xFFFF) ? node->m_hover : src->style_hover,
+        (node->m_active != 0xFFFF) ? node->m_active : src->style_active,
+        (node->m_focus != 0xFFFF) ? node->m_focus : src->style_focus,
+    };
     for (int i = 0; i < 3; i++) {
         if (idx[i] != 0xFFFF && idx[i] < doc->style_count)
             out[n++] = &doc->styles[idx[i]];
@@ -2907,6 +2934,46 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
         n->used_copy = 0;
     }
 
+    /*
+     * `@media`：按视口宽选断点区间，把这个区间的样式变体装回节点。
+     *
+     * 区间在构建期就切好了（见 qlui_parse.c 的区间推导），所以这里只是
+     * "线性扫一个短数组 + 三次数组取值"，没有条件表达式求值。
+     * 状态变体（:hover/:active/:focus）也一起装 —— 每区间各有一套，
+     * 否则一悬停就会把响应式尺寸丢掉。
+     *
+     * **必须在 style_copy 清理之后**：清理会把 `n->style` 复位成 doc 里的基础值
+     * （也就是最窄区间那份），放在它前面会被当场覆盖 —— 表现为"宽的窗口里
+     * 只有 flex 子项还是窄布局"（踩过）。
+     */
+    if (ui->doc->media_count > 0 && ui->doc->node_media != NULL) {
+        int bucket = -1;
+        for (uint16_t m = 0; m < ui->doc->media_count; m++) {
+            const QLUIMedia *rg = &ui->doc->media[m];
+            if (width >= (ql_coord_t)rg->lo &&
+                (rg->hi == 0xFFFFu || width <= (ql_coord_t)rg->hi)) {
+                bucket = (int)m;
+                break;
+            }
+        }
+        if (bucket >= 0) {
+            for (uint16_t i = 0; i < ui->node_count; i++) {
+                const uint16_t ofs = ui->doc->node_media[i];
+                if (ofs == 0xFFFFu)
+                    continue;                 /* 这个节点在所有断点下都一样 */
+                const uint16_t *blk = &ui->doc->media_styles[ofs + (size_t)bucket * 4u];
+                QLUINodeRT *n = &ui->nodes[i];
+                /* 变体下标 0xFFFF 表示"与该区间的 base 相同" */
+                const uint16_t base = blk[0];
+                n->style = (base != 0xFFFFu) ? &ui->doc->styles[base]
+                                             : &ui->doc->styles[n->src->style];
+                n->m_hover = blk[1];
+                n->m_active = blk[2];
+                n->m_focus = blk[3];
+            }
+        }
+    }
+
     QLUINodeRT *root = &ui->nodes[0];
 
     /*
@@ -2986,13 +3053,20 @@ static const QLUIStyle *style_for_state(const QLUINodeRT *node)
     /* 优先级与 draw_default 一致：ACTIVE > FOCUS > HOVER */
     const QLUINode *src = node->src;
     if (src != NULL) {
+        /* 媒体断点下的变体优先（没有就用 doc 里那份） */
+        const uint16_t m_hover = (node->m_hover != 0xFFFF) ? node->m_hover
+                                                          : src->style_hover;
+        const uint16_t m_active = (node->m_active != 0xFFFF) ? node->m_active
+                                                            : src->style_active;
+        const uint16_t m_focus = (node->m_focus != 0xFFFF) ? node->m_focus
+                                                          : src->style_focus;
         uint16_t idx = 0xFFFF;
         if ((node->flags & QL_UI_RT_ACTIVE) != 0)
-            idx = src->style_active;
+            idx = m_active;
         if (idx == 0xFFFF && (node->flags & QL_UI_RT_FOCUS) != 0)
-            idx = src->style_focus;
+            idx = m_focus;
         if (idx == 0xFFFF && (node->flags & QL_UI_RT_HOVER) != 0)
-            idx = src->style_hover;
+            idx = m_hover;
         if (idx != 0xFFFF && node->owner != NULL && node->owner->doc != NULL)
             return &node->owner->doc->styles[idx];
     }

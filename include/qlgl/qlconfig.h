@@ -66,6 +66,10 @@
 #ifndef QL_CFG_UI_MAX_FONT_SIZES
 #define QL_CFG_UI_MAX_FONT_SIZES    256
 #endif
+#ifndef QL_CFG_UI_MAX_MEDIA
+#define QL_CFG_UI_MAX_MEDIA         6       /* @media 断点数（每个断点一套样式变体） */
+#endif
+
 #ifndef QL_CFG_UI_MAX_ANIMS
 #define QL_CFG_UI_MAX_ANIMS         256     /* @keyframes 段数 */
 #endif

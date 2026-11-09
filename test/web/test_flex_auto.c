@@ -118,4 +118,35 @@ QL_TEST_BEGIN("test_flex_auto")
         QL_CHECK_EQ(width_of(html, css, 200, 20, 2, NULL), 100);
     }
 
+    /*
+     * ---------- 6. 列方向：主轴尺寸是"子项之和"，不是最大值 ----------
+     * 回归用例：带 padding、里面两行文字的卡片放在 column 容器里时，高度曾经
+     * 被算成一行，后面的兄弟直接压上来（@media 把三列改一列时一眼可见）。
+     */
+    {
+        const char *html =
+            "<div id=r><div id=col>"
+            "<div id=a><div class=line>x</div><div class=line>y</div></div>"
+            "<div id=b><div class=line>z</div></div>"
+            "</div><div id=n></div></div>";
+        /*
+         * 注意 `box-sizing: border-box`：flex 项用 **content-box** 时，
+         * 主轴尺寸在 force_size 里会被按边框盒解释（少算 padding + border，
+         * 见 CSS3 覆盖文档 §19.1 的"语义受限"表）。写成 border-box 就正常。
+         */
+        const char *css = "#r { width: 300px }"
+                          "#col { display: flex; flex-direction: column }"
+                          "#a { box-sizing: border-box; padding: 10px; }"
+                          "#b { box-sizing: border-box; padding: 10px; }"
+                          "#n { height: 10px }";
+        /* 下标：0=#r 1=#col 2=#a 3,4=两行文字 5=#b 6=一行文字 7=#n */
+        QLRect a, b, n;
+        QL_CHECK(width_of(html, css, 300, 400, 2, &a) >= 0);
+        QL_CHECK(width_of(html, css, 300, 400, 5, &b) >= 0);
+        QL_CHECK(width_of(html, css, 300, 400, 7, &n) >= 0);
+        QL_CHECK(a.h > 20);              /* 两行文字都算进高度了 */
+        QL_CHECK(b.y >= a.y + a.h);      /* 兄弟不重叠 */
+        QL_CHECK(n.y >= b.y + b.h);
+    }
+
 QL_TEST_END()

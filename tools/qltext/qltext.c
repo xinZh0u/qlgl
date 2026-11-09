@@ -834,6 +834,46 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fputs("};\n\n", f);
     }
 
+    /* ---- @media 断点（有才输出） ---- */
+    if (doc->media_count > 0 && doc->media != NULL) {
+        fprintf(f, "/* @media 断点区间（视口宽，闭区间；hi = 0xFFFF 表示无上界） */\n");
+        fprintf(f, "static const QLUIMedia %s_media[%u] = {\n", ident,
+                (unsigned)doc->media_count);
+        for (uint16_t i = 0; i < doc->media_count; i++)
+            fprintf(f, "    { %u, %u },\n", (unsigned)doc->media[i].lo,
+                    (unsigned)doc->media[i].hi);
+        fputs("};\n\n", f);
+
+        /* 池的长度：最后一个有变体的节点的偏移 + 一个块（media_count*4） */
+        uint32_t pool_n = 0;
+        if (doc->node_media != NULL) {
+            for (uint16_t i = 0; i < doc->node_count; i++)
+                if (doc->node_media[i] != 0xFFFFu) {
+                    const uint32_t end =
+                        (uint32_t)doc->node_media[i] + (uint32_t)doc->media_count * 4u;
+                    if (end > pool_n)
+                        pool_n = end;
+                }
+        }
+        fprintf(f, "static const uint16_t %s_node_media[%u] = {", ident,
+                (unsigned)doc->node_count);
+        for (uint16_t i = 0; i < doc->node_count; i++) {
+            if (i % 12u == 0)
+                fprintf(f, "\n    ");
+            fprintf(f, "%5u,", (unsigned)doc->node_media[i]);
+        }
+        fputs("\n};\n\n", f);
+
+        fprintf(f, "static const uint16_t %s_media_styles[%u] = {", ident,
+                (unsigned)pool_n);
+        for (uint32_t i = 0; i < pool_n; i++) {
+            if (i % 12u == 0)
+                fprintf(f, "\n    ");
+            fprintf(f, "%5u,", (unsigned)doc->media_styles[i]);
+        }
+        fputs("\n};\n\n", f);
+    }
+
     /* ---- doc ---- */
     fprintf(f,
             "const QLUIDoc %s_doc = {\n"
@@ -858,6 +898,16 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
             ident, ident,   /* font_size_cnt: sizeof(%s_font_sizes) x2 */
             (unsigned)doc->anim_count, (unsigned)doc->keyframe_count,
             ident, ident, ident, ident, ident, ident, ident);
+
+    /* @media 三段：没有断点时一个字都不多 */
+    if (doc->media_count > 0 && doc->media != NULL) {
+        fprintf(f,
+                "    .media_count   = %u,\n"
+                "    .media         = %s_media,\n"
+                "    .node_media    = %s_node_media,\n"
+                "    .media_styles  = %s_media_styles,\n",
+                (unsigned)doc->media_count, ident, ident, ident);
+    }
 
     /* 热区接在 doc 字面量里：没有 <area> 时一个字都不多 */
     if (doc->area_count > 0) {

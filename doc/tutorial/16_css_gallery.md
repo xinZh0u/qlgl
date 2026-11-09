@@ -157,7 +157,40 @@ cmake --build build -j
 `compile_style()` 根本不知道有变量这回事。代价是**不能运行期改变量** ——
 换肤请换一份 CSS，或者用上一节的 `20_live_reload` 直接热重载。
 
-## 7. 这几个例程查出了什么
+## 7. `22_media`：拖窗口就换布局
+
+<img src="../img/22-media-wide.png" alt="宽屏：一排三个" width="420">
+<img src="../img/22-media-narrow.png" alt="窄屏：一列 + 字号变小" width="300">
+
+完整程序：`example/22_media/`
+
+```css
+.row { display: flex; gap: 12px; }
+
+@media (max-width: 620px) {
+  .row { flex-direction: column; gap: 8px; }   /* 一排三个 → 一列 */
+  .h1  { font-size: 13px; }                    /* 字号小一档 */
+  .badge { background-color: #FFE7E4; color: #B42318; }
+}
+```
+
+```bash
+./build/example/example_22_media --size 820x420 --dump wide.ppm
+./build/example/example_22_media --size 420x600 --dump narrow.ppm
+```
+
+**运行期不解析任何条件**：构建期已经把宽度轴切成区间（这个例程是 `[0,620]` 与
+`[621,∞)`），每个区间编译一套样式；布局时只按视口宽选下标。拖窗口边缘就能看到
+切换（不需要重新编译，也不需要重载文件）。
+
+写这一节时踩到两个真 bug，都修了：
+
+1. **多趟编译必须清空 `final_decls`** —— 它是"往 out 里合并"的，不清的话上一个断点
+   独有的声明（`flex-direction: column`）会残留到下一个断点，表现是"宽屏也是竖排"；
+2. **列方向的最大内容高度要"求和"而不是"取最大"** —— 一个带 padding、里面两行文字
+   的卡片，在 column 布局里高度被算成一行，后面的兄弟直接压上来。
+
+## 8. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

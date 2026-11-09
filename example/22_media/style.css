@@ -1,0 +1,111 @@
+/* 通配统一盒模型：flex 项用 content-box 时主轴尺寸会少算 padding（见 CSS3 §19.1） */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 10px;
+  background-color: #EAF2FF;
+  color: #0969DA;
+  font-size: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.card {
+  flex-grow: 1;
+  padding: 12px;
+  border-radius: 10px;
+  background-color: #F6F8FA;
+  border: 1px solid #E4E8ED;
+}
+
+.t {
+  font-weight: bold;
+  color: #1F2328;
+  margin-bottom: 4px;
+}
+
+.d {
+  color: #57606A;
+  line-height: 16px;
+  white-space: normal;
+}
+
+.note {
+  width: 100%;
+  color: #57606A;
+  line-height: 18px;
+  white-space: normal;
+  margin-bottom: 10px;
+}
+
+code {
+  font-family: monospace;
+  color: #0A3069;
+  background-color: #EAF2FF;
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+.hint {
+  color: #8B949E;
+  font-size: 10px;
+  line-height: 16px;
+  white-space: normal;
+}
+
+/* ===== 断点：窄屏换布局 ===== */
+@media (max-width: 620px) {
+  #root {
+    font-size: 11px;
+    padding: 10px;
+  }
+
+  .h1 {
+    font-size: 13px;
+  }
+
+  /* 一排三个 → 一列 */
+  .row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .card {
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .badge {
+    background-color: #FFE7E4;
+    color: #B42318;
+  }
+}

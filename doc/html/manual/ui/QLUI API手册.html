@@ -803,6 +803,54 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <p>实现是 <strong>SDF + smoothstep 衰减</strong>，与 GPU 着色器同一公式，因此两条后端视觉一致。
 只有"距轮廓 blur 以内"的环需要逐像素算距离，内部实心区走行填充——
 所以在 PC 上几乎无感，在 MCU 上也可用（见开发规划 M5.5 的能力矩阵）。</p>
+<h3 id="361-media">3.6.1 <code>@media</code> 断点</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">@</span><span class="k">media</span><span class="w"> </span><span class="o">(</span><span class="nt">max-width</span><span class="o">:</span><span class="w"> </span><span class="nt">620px</span><span class="o">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">            </span><span class="c">/* 窄屏：撑满 */</span>
+<span class="p">}</span>
+<span class="p">@</span><span class="k">media</span><span class="w"> </span><span class="o">(</span><span class="nt">min-width</span><span class="o">:</span><span class="w"> </span><span class="nt">900px</span><span class="o">)</span><span class="w"> </span><span class="nt">and</span><span class="w"> </span><span class="o">(</span><span class="nt">max-width</span><span class="o">:</span><span class="w"> </span><span class="nt">1200px</span><span class="o">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="p">#</span><span class="nn">root</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mi">13</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>(min-width: Npx)</code> / <code>(max-width: Npx)</code>，可用 <code>and</code> 串联</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>媒体类型 <code>screen</code> / <code>all</code></td>
+<td>✅（可省略）</td>
+</tr>
+<tr>
+<td><code>print</code></td>
+<td>整块跳过（永不生效）</td>
+</tr>
+<tr>
+<td><code>(orientation: …)</code> / <code>(prefers-color-scheme: …)</code> / <code>em</code> 单位</td>
+<td>❌ 构建期报错</td>
+</tr>
+</tbody>
+</table>
+<p><strong>它是怎么做到的</strong>：条件在<strong>构建期</strong>被切成互不相交的视口宽区间，每个区间编译一套样式；
+运行期 <code>ql_ui_layout(ui, w, h)</code> 只按 <code>w</code> 选区间下标（线性扫一个 <code>QL_CFG_UI_MAX_MEDIA</code>
+以内的小数组），<strong>没有任何条件求值</strong>。所以：</p>
+<ul>
+<li>拖窗口缩放会立刻走另一套样式（重排是必然的）；</li>
+<li>每个区间都有一套 <code>:hover</code> / <code>:active</code> / <code>:focus</code> 变体，悬停不会把响应式尺寸弄丢；</li>
+<li>区间数上限 <code>QL_CFG_UI_MAX_MEDIA</code>（默认 6）；断点写得太碎会报错。</li>
+</ul>
+<blockquote>
+<p>一个实践提醒：flex 子项请写 <code>box-sizing: border-box</code>。content-box 时主轴尺寸会
+少算 padding + border（见 <a href="CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> §19.1）。</p>
+</blockquote>
 <h3 id="37-flexbox">3.7 Flexbox</h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">row</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">flex</span><span class="p">;</span><span class="w"> </span><span class="k">flex-direction</span><span class="p">:</span><span class="w"> </span><span class="kc">row</span><span class="p">;</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">align-items</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">flex</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* 等分 */</span>

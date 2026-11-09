@@ -87,7 +87,7 @@ static QLDispDriver *render_doc(const QLUIDoc *doc)
 QL_TEST_BEGIN("test_ui_blob")
 
     /* ---------- 1. 头结构与 ABI 自检 ---------- */
-    QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 96);   /* v14：+ <area> 热区段 */
+    QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 116);  /* v21：+ @media 三段 */
     QL_CHECK_EQ(sizeof(QLUINode), 20);   /* 9 个 uint16 + flags + reserved */
     /* v16：+ min/max-width/height（4 × QLUILength = 16 字节） */
     QL_CHECK_EQ(sizeof(QLUIStyle), 156);   /* v20：+ letter_spacing / text_indent / 文本枚举 */

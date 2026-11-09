@@ -2477,7 +2477,28 @@ typedef struct {
     int      states;
     Decls    decls;
     int      order;
+    /*
+     * `@media` 断点下标；-1 = 不在任何媒体块里（永远生效）。
+     * 一个元素在某个断点下的样式 = "media == -1 的规则 + 该断点匹配的规则"。
+     */
+    int      media;
 } Rule;
+
+/* 一个 `@media` 条件（视口宽的闭区间；hi == 0xFFFF 表示没有上界） */
+typedef struct {
+    uint16_t lo;
+    uint16_t hi;
+} MediaCond;
+
+typedef struct {
+    MediaCond *v;
+    int        n;
+    int        cap;
+} MediaConds;
+
+/* 当前正在编译哪个断点：`collect_decls` 用它跳过不该生效的媒体规则。
+ * （解析/建表是单线程的，和 `s_error` / `pseudo_counter` 同一套做法。） */
+static const uint8_t *s_media_on;
 
 typedef struct {
     Rule *r;
@@ -3188,16 +3209,150 @@ static char *strip_comments(const char *css)
     return out;
 }
 
-/* 解析整份 CSS */
-static int parse_css(const char *css, Rules *rules, KfDefs *kfs)
+/*
+ * `@media` 条件：只认 `(min-width: Npx)` / `(max-width: Npx)`（可用 and 串起来），
+ * 前缀可以是 screen / all。`print` 整块跳过（永远不生效）。
+ * 别的（orientation / prefers-color-scheme / 分辨率…）明确报错。
+ */
+static int media_cond_add(MediaConds *mc, uint16_t lo, uint16_t hi)
 {
-    char *text = strip_comments(css);
-    if (text == NULL)
-        return 0;
+    for (int i = 0; i < mc->n; i++)
+        if (mc->v[i].lo == lo && mc->v[i].hi == hi)
+            return i;                        /* 同条件复用 */
+    if (mc->n >= (int)QL_CFG_UI_MAX_MEDIA) {
+        set_error("@media 断点超过上限 %d", (int)QL_CFG_UI_MAX_MEDIA);
+        return -1;
+    }
+    if (mc->n == mc->cap) {
+        int cap = (mc->cap > 0) ? mc->cap * 2 : 4;
+        MediaCond *nv = (MediaCond *)ql_mem_realloc(mc->v,
+                                                   (size_t)cap * sizeof(MediaCond));
+        if (nv == NULL)
+            return -1;
+        mc->v = nv;
+        mc->cap = cap;
+    }
+    mc->v[mc->n].lo = lo;
+    mc->v[mc->n].hi = hi;
+    return mc->n++;
+}
 
-    const size_t len = strlen(text);
+/* 解析 `@media` 的 prelude。返回断点下标；-1 = 错误；-2 = 永不匹配（print） */
+static int parse_media_prelude(const char *pre, const char *where, MediaConds *mc)
+{
+    uint32_t lo = 0, hi = 0xFFFFu;
+    const char *p = pre;
+    int saw_any = 0;
+
+    while (*p != '\0') {
+        while (is_space(*p))
+            p++;
+        if (*p == '\0')
+            break;
+        if (*p == '(') {
+            const char *close = strchr(p, ')');
+            if (close == NULL) {
+                set_error("%s: @media 条件缺少右括号", where);
+                return -1;
+            }
+            char body[64];
+            size_t bl = (size_t)(close - p - 1);
+            if (bl >= sizeof(body))
+                bl = sizeof(body) - 1u;
+            memcpy(body, p + 1, bl);
+            body[bl] = '\0';
+            char low[64];
+            trim_lower(body, low, sizeof(low));
+
+            const char *colon = strchr(low, ':');
+            if (colon == NULL) {
+                set_error("%s: @media 只支持 (min-width: Npx) / (max-width: Npx)"
+                          "（收到 '(%s)'）", where, body);
+                return -1;
+            }
+            char key[32];
+            size_t kl = (size_t)(colon - low);
+            if (kl >= sizeof(key))
+                kl = sizeof(key) - 1u;
+            memcpy(key, low, kl);
+            key[kl] = '\0';
+            while (kl > 0 && is_space(key[kl - 1]))
+                key[--kl] = '\0';
+
+            /* 先认属性名，再解析值 —— 否则 `(orientation: landscape)` 会报成"只支持 px" */
+            const int is_min = (strcmp(key, "min-width") == 0);
+            const int is_max = (strcmp(key, "max-width") == 0);
+            if (!is_min && !is_max) {
+                set_error("%s: @media 只支持 min-width / max-width（收到 '%s'）", where,
+                          key);
+                return -1;
+            }
+            const char *val = skip_space(colon + 1);
+            char *endp = NULL;
+            const long px = strtol(val, &endp, 10);
+            if (endp == NULL || px < 0) {
+                set_error("%s: @media 的宽度必须是 px 数字（收到 '%s'）", where, val);
+                return -1;
+            }
+            const char *unit = skip_space(endp);
+            if (strncmp(unit, "px", 2) != 0) {
+                set_error("%s: @media 的宽度只支持 px（收到 '%s'）", where, val);
+                return -1;
+            }
+            if (is_min) {
+                if ((uint32_t)px > lo)
+                    lo = (uint32_t)px;
+            } else {
+                if ((uint32_t)px < hi)
+                    hi = (uint32_t)px;
+            }
+            saw_any = 1;
+            p = close + 1;
+            continue;
+        }
+        /* 媒体类型 / and */
+        const char *ts = p;
+        while (*p != '\0' && !is_space(*p) && *p != '(')
+            p++;
+        char tok[32];
+        size_t tl = (size_t)(p - ts);
+        if (tl >= sizeof(tok))
+            tl = sizeof(tok) - 1u;
+        memcpy(tok, ts, tl);
+        tok[tl] = '\0';
+        char low[32];
+        trim_lower(tok, low, sizeof(low));
+        if (strcmp(low, "and") == 0)
+            continue;
+        if (strcmp(low, "print") == 0)
+            return -2;                       /* 打印样式：整块跳过 */
+        if (strcmp(low, "screen") == 0 || strcmp(low, "all") == 0)
+            continue;
+        set_error("%s: 不支持的媒体类型 '%s'（只支持 screen / all；print 整块跳过）",
+                  where, low);
+        return -1;
+    }
+    if (!saw_any) {
+        set_error("%s: @media 里没有条件（只支持 (min-width: Npx) / (max-width: Npx)）",
+                  where);
+        return -1;
+    }
+    if (lo > hi) {
+        set_error("%s: @media 的 min-width 大于 max-width，这个条件永远不成立", where);
+        return -1;
+    }
+    return media_cond_add(mc, (uint16_t)lo, (uint16_t)hi);
+}
+
+/*
+ * 解析一段规则（可以是整份 CSS，也可以是 `@media` 的块体）。
+ * `media` = 这些规则所属的断点下标（-1 = 不在媒体块里）。
+ */
+static int parse_css_block(const char *text, size_t len, Rules *rules, KfDefs *kfs,
+                           MediaConds *mc, int media, int *order_io)
+{
     size_t pos = 0;
-    int order = 0;
+    int order = *order_io;
     int ok = 1;
 
     while (pos < len && ok) {
@@ -3239,12 +3394,33 @@ static int parse_css(const char *css, Rules *rules, KfDefs *kfs)
         size_t blen = (size_t)end - bpos - 1u;
 
         if (prelude[0] == '@') {
-            /* @keyframes <name> */
             const char *nm = prelude + 1;
             const char *kw = "keyframes";
             size_t kwlen = strlen(kw);
+
+            /* @media <条件> { <规则…> }：递归解析块体，规则带上断点下标 */
+            if (strncmp(nm, "media", 5) == 0 && is_space(nm[5])) {
+                const int idx = parse_media_prelude(nm + 5, where, mc);
+                if (idx == -1) {
+                    ql_mem_free(prelude);
+                    ok = 0;
+                    break;
+                }
+                if (idx >= 0) {
+                    if (!parse_css_block(body, blen, rules, kfs, mc, idx, &order)) {
+                        ql_mem_free(prelude);
+                        ok = 0;
+                        break;
+                    }
+                }
+                /* idx == -2（print）：整块跳过 */
+                ql_mem_free(prelude);
+                pos = (size_t)end + 1u;
+                continue;
+            }
             if (strncmp(nm, kw, kwlen) != 0) {
-                set_error("%s: 不支持 at-rule '%s'", where, prelude);
+                set_error("%s: 不支持 at-rule '%s'（支持 @keyframes / @media）", where,
+                          prelude);
                 ql_mem_free(prelude);
                 ok = 0;
                 break;
@@ -3364,6 +3540,7 @@ static int parse_css(const char *css, Rules *rules, KfDefs *kfs)
                     ok = 0;
                     break;
                 }
+                r->media = media;
                 r->order = order++;
             }
 
@@ -3378,6 +3555,18 @@ static int parse_css(const char *css, Rules *rules, KfDefs *kfs)
         pos = (size_t)end + 1u;
     }
 
+    *order_io = order;
+    return ok;
+}
+
+/* 解析整份 CSS：包一层 block 调用 */
+static int parse_css(const char *css, Rules *rules, KfDefs *kfs, MediaConds *mc)
+{
+    char *text = strip_comments(css);
+    if (text == NULL)
+        return 0;
+    int order = 0;
+    const int ok = parse_css_block(text, strlen(text), rules, kfs, mc, -1, &order);
     ql_mem_free(text);
     return ok;
 }
@@ -5587,6 +5776,7 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
     const int spec_tags = r->spec_tags;
     const int spec_ids = r->spec_ids;
     const int order = r->order;
+    const int rule_media = r->media;      /* 伪元素规则跟着源规则一起受断点约束 */
     Decl *const src_decls = r->decls.d;   /* 声明数组本身不随规则表搬家 */
     const int src_n = r->decls.n;
 
@@ -5626,6 +5816,7 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
     nr->spec_tags = spec_tags;
     nr->spec_ids = spec_ids;
     nr->order = order;
+    nr->media = rule_media;
     for (int i = 0; i < src_n; i++) {
         if (strcmp(src_decls[i].key, "content") == 0)
             continue;
@@ -5777,6 +5968,10 @@ static int collect_decls(const PNode *n, const Rules *rs, int states_active,
     for (int i = 0; i < rs->n; i++) {
         const Rule *r = &rs->r[i];
         if ((r->states & ~states_active) != 0)
+            continue;
+        /* `@media` 里的规则只在该断点区间生效（`s_media_on` 是当前区间的位置图） */
+        if (r->media >= 0 &&
+            (s_media_on == NULL || s_media_on[r->media] == 0))
             continue;
         /* `::before` / `::after` 的规则只作用于合成节点，不能落到真元素上 */
         if (r->nparts > 0 && r->parts[r->nparts - 1].pseudo_elem != 0)
@@ -8009,11 +8204,21 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     StyleTab styles;
     TextPool pool;
     IntList fonts;
+    MediaConds medias;
     AreaOut areas;
     Flat *flat = NULL;
     int nflat = 0;
     QLUIDoc *doc = NULL;
     void *arena = NULL;
+    /* `@media` 的临时数组：**必须在函数开头声明** —— 中途 `goto done` 会跳过
+     * 后面的初始化语句，届时 free 的就是野指针（踩过） */
+    uint16_t *bucket_idx = NULL;
+    uint16_t *node_media_ofs = NULL;
+    uint16_t *media_pool = NULL;
+    int media_pool_n = 0;
+    int nrange = 0;
+    QLUIMedia ranges[QL_CFG_UI_MAX_MEDIA];
+    uint8_t range_on[QL_CFG_UI_MAX_MEDIA][QL_CFG_UI_MAX_MEDIA];
 
     memset(&rules, 0, sizeof(rules));
     memset(&kfs, 0, sizeof(kfs));
@@ -8023,12 +8228,13 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     memset(&styles, 0, sizeof(styles));
     memset(&pool, 0, sizeof(pool));
     memset(&fonts, 0, sizeof(fonts));
+    memset(&medias, 0, sizeof(medias));
     memset(&areas, 0, sizeof(areas));
 
     root = parse_html(html);
     if (root == NULL)
         goto done;
-    if (!parse_css(css, &rules, &kfs))
+    if (!parse_css(css, &rules, &kfs, &medias))
         goto done;
     /*
      * `::before` / `::after` 在这里变成真节点（构建期一次到位，运行期零成本）。
@@ -8045,6 +8251,67 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
 
     /* 逐节点算样式（DFS 顺序天然父先子后，继承直接取父的最终声明） */
     int root_style_idx = -1;
+
+    /*
+     * `@media`：把条件（视口宽区间）切成互不相交的**区间**。
+     * 同一个区间里"哪些媒体块生效"是常量，所以每个区间编译一套样式就够，
+     * 运行期只按视口宽选区间下标（线性扫，最多 6 个）。
+     */
+    memset(range_on, 0, sizeof(range_on));
+    if (medias.n > 0) {
+        uint32_t bnd[2 * QL_CFG_UI_MAX_MEDIA + 2];
+        int nbd = 0;
+        bnd[nbd++] = 0;
+        for (int m = 0; m < medias.n; m++) {
+            bnd[nbd++] = medias.v[m].lo;
+            if (medias.v[m].hi != 0xFFFFu)
+                bnd[nbd++] = (uint32_t)medias.v[m].hi + 1u;
+        }
+        /* 排序去重 */
+        for (int a = 0; a < nbd; a++)
+            for (int b2 = a + 1; b2 < nbd; b2++)
+                if (bnd[b2] < bnd[a]) {
+                    const uint32_t t = bnd[a];
+                    bnd[a] = bnd[b2];
+                    bnd[b2] = t;
+                }
+        int nu = 0;
+        for (int a = 0; a < nbd; a++)
+            if (a == 0 || bnd[a] != bnd[a - 1])
+                bnd[nu++] = bnd[a];
+        for (int a = 0; a < nu; a++) {
+            if (nrange >= (int)QL_CFG_UI_MAX_MEDIA) {
+                set_error("@media 的区间数超过上限 %d（条件写得太碎）",
+                          (int)QL_CFG_UI_MAX_MEDIA);
+                goto done;
+            }
+            const uint32_t lo = bnd[a];
+            const uint32_t hi = (a + 1 < nu) ? (bnd[a + 1] - 1u) : 0xFFFFu;
+            if (lo > hi)
+                continue;                  /* 空区间（理论上不会） */
+            ranges[nrange].lo = (uint16_t)lo;
+            ranges[nrange].hi = (uint16_t)hi;
+            for (int m = 0; m < medias.n; m++)
+                if (lo >= medias.v[m].lo && lo <= medias.v[m].hi)
+                    range_on[nrange][m] = 1;
+            nrange++;
+        }
+    }
+
+    const int nbuck = (nrange > 0) ? nrange : 1;
+    /* 每个 (节点, 区间) 的 4 个样式下标：base / hover / active / focus */
+    if (nrange > 0) {
+        const size_t total = (size_t)nflat * (size_t)nbuck * 4u;
+        bucket_idx = (uint16_t *)xalloc(total * sizeof(uint16_t));
+        if (bucket_idx == NULL)
+            goto done;
+        for (size_t k = 0; k < total; k++)
+            bucket_idx[k] = 0xFFFF;
+    }
+
+    for (int b = 0; b < nbuck; b++) {
+    s_media_on = (nrange > 0) ? range_on[b] : NULL;
+
     for (int i = 0; i < nflat; i++) {
         Flat *e = &flat[i];
         const PNode *n = e->node;
@@ -8070,6 +8337,12 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         char where[96];
         snprintf(where, sizeof(where), "<%s #%d>",
                  n->tag != NULL ? n->tag : "?", i);
+        /*
+         * 多断点时会重复走这一趟：`finalize_style` 是"往 out 里合并"，
+         * 所以每趟开始必须清空 —— 否则上一个断点独有的声明（如
+         * `flex-direction: column`）会残留到下一个断点（踩过）。
+         */
+        decls_free(&e->final_decls);
         if (!finalize_style(&base, n, &inherited, &e->final_decls)) {
 
             decls_free(&base);
@@ -8083,9 +8356,13 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         if (!style_tab_add(&styles, &e->final_decls, where, &kfranges, &kftab, &anims,
                            &fonts, &idx))
             goto done;
-        e->style_index = idx;
-        if (i == 0)
-            root_style_idx = (int)idx;
+        if (b == 0) {
+            e->style_index = idx;
+            if (i == 0)
+                root_style_idx = (int)idx;
+        }
+        if (bucket_idx != NULL)
+            bucket_idx[((size_t)i * (size_t)nbuck + (size_t)b) * 4u] = idx;
 
         /* 状态变体：只在真的不同时才建（没写 :hover 的节点省 3 个下标） */
         char *base_sig = NULL;
@@ -8151,7 +8428,11 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                 goto done;
             }
             if (vlen == base_siglen && memcmp(vsig, base_sig, vlen) == 0) {
-                e->state[bi] = 0xFFFF;
+                if (b == 0)
+                    e->state[bi] = 0xFFFF;
+                if (bucket_idx != NULL)
+                    bucket_idx[((size_t)i * (size_t)nbuck + (size_t)b) * 4u +
+                               (size_t)bi + 1u] = 0xFFFF;
             } else {
                 uint16_t vidx = 0xFFFF;
                 if (!style_tab_add(&styles, &vfinal, where, &kfranges, &kftab, &anims,
@@ -8163,7 +8444,11 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
                     ql_mem_free(base_sig);
                     goto done;
                 }
-                e->state[bi] = vidx;
+                if (b == 0)
+                    e->state[bi] = vidx;
+                if (bucket_idx != NULL)
+                    bucket_idx[((size_t)i * (size_t)nbuck + (size_t)b) * 4u +
+                               (size_t)bi + 1u] = vidx;
             }
             ql_mem_free(vsig);
             decls_free(&vbase);
@@ -8221,6 +8506,41 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         }
         e->text_index = tidx;
     }
+    }           /* for (b) 断点区间 */
+    s_media_on = NULL;
+
+    /* 该节点在各区间里有没有变体？没有就不占媒体样式池（绝大多数节点都走这条） */
+    if (bucket_idx != NULL && nrange > 0) {
+        node_media_ofs = (uint16_t *)xalloc((size_t)nflat * sizeof(uint16_t));
+        if (node_media_ofs == NULL)
+            goto done;
+        size_t cap = (size_t)nflat * (size_t)nbuck * 4u;
+        media_pool = (uint16_t *)xalloc(cap * sizeof(uint16_t));
+        if (media_pool == NULL)
+            goto done;
+        for (int i = 0; i < nflat; i++) {
+            node_media_ofs[i] = 0xFFFF;
+            int varies = 0;
+            for (int b = 1; b < nbuck && !varies; b++)
+                for (int k = 0; k < 4; k++)
+                    if (bucket_idx[((size_t)i * (size_t)nbuck + (size_t)b) * 4u +
+                                   (size_t)k] !=
+                        bucket_idx[((size_t)i * (size_t)nbuck) * 4u + (size_t)k]) {
+                        varies = 1;
+                        break;
+                    }
+            if (!varies)
+                continue;
+            node_media_ofs[i] = (uint16_t)media_pool_n;
+            for (int b = 0; b < nbuck; b++)
+                for (int k = 0; k < 4; k++)
+                    media_pool[media_pool_n++] =
+                        bucket_idx[((size_t)i * (size_t)nbuck + (size_t)b) * 4u +
+                                   (size_t)k];
+        }
+    }
+    ql_mem_free(bucket_idx);
+    bucket_idx = NULL;
 
     /*
      * `rem` 统一折一遍：走完整棵树才知道根元素最终用哪个字号
@@ -8276,6 +8596,14 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         off += QL_UI_ALIGN8((size_t)areas.n * sizeof(QLUIArea));
         const size_t off_area_coords = off;
         off += QL_UI_ALIGN8((size_t)areas.cn * sizeof(int16_t));
+        const size_t off_media = off;
+        off += QL_UI_ALIGN8((size_t)nrange * sizeof(QLUIMedia));
+        const size_t off_node_media = off;
+        if (nrange > 0)
+            off += QL_UI_ALIGN8((size_t)nflat * sizeof(uint16_t));
+        const size_t off_media_styles = off;
+        if (nrange > 0)
+            off += QL_UI_ALIGN8((size_t)media_pool_n * sizeof(uint16_t));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -8345,6 +8673,18 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         for (int i = 0; i < areas.cn; i++)
             acd[i] = areas.c[i];
 
+        QLUIMedia *mdd = (QLUIMedia *)(void *)(base + off_media);
+        for (int i = 0; i < nrange; i++)
+            mdd[i] = ranges[i];
+        uint16_t *nmd_ofs = (uint16_t *)(void *)(base + off_node_media);
+        uint16_t *mst = (uint16_t *)(void *)(base + off_media_styles);
+        if (nrange > 0) {
+            for (int i = 0; i < nflat; i++)
+                nmd_ofs[i] = (node_media_ofs != NULL) ? node_media_ofs[i] : 0xFFFF;
+            for (int i = 0; i < media_pool_n; i++)
+                mst[i] = media_pool[i];
+        }
+
         char *nmd = (char *)(base + off_name);
         memcpy(nmd, nm, name_len);
 
@@ -8377,11 +8717,20 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         doc->area_coord_count = (uint16_t)areas.cn;
         doc->areas = (areas.n > 0) ? ard : NULL;
         doc->area_coords = (areas.cn > 0) ? acd : NULL;
+        doc->media_count = (uint16_t)nrange;
+        doc->media = (nrange > 0) ? mdd : NULL;
+        /* 没有 @media 时不分配这两个数组（blob 头里计数为 0，两边一致） */
+        doc->node_media = (nrange > 0) ? nmd_ofs : NULL;
+        doc->media_styles = (nrange > 0) ? mst : NULL;
         doc->arena = arena;
         arena = NULL;         /* 所有权交给 doc */
     }
 
 done:
+    ql_mem_free(medias.v);
+    ql_mem_free(node_media_ofs);
+    ql_mem_free(media_pool);
+    ql_mem_free(bucket_idx);
     if (flat != NULL) {
         for (int i = 0; i < nflat; i++)
             decls_free(&flat[i].final_decls);

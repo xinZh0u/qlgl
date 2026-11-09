@@ -609,6 +609,18 @@ typedef struct {
     uint16_t delay_ms;    /* animation-delay：起播前干等多久 */
 } QLUIAnimation;
 
+/*
+ * `@media` 断点区间：视口宽的闭区间（CSS px）。`hi == 0xFFFF` 表示没有上界。
+ *
+ * 运行期只做一件事：按当前视口宽找到命中的区间下标，然后取该区间的样式变体。
+ * 区间在**构建期**就算好（把 `(min-width)` / `(max-width)` 条件在宽度轴上切段），
+ * 所以同一个区间里"哪些媒体块生效"是常量 —— 运行期不需要理解任何条件表达式。
+ */
+typedef struct {
+    uint16_t lo;
+    uint16_t hi;
+} QLUIMedia;
+
 /* QLUINode.flags 的位 */
 #define QL_UI_NODE_PASSWORD  0x01u   /* <input type="password">：显示成圆点 */
 #define QL_UI_NODE_OPEN      0x02u   /* <details open>：展开状态 */
@@ -684,6 +696,15 @@ typedef struct {
     const uint8_t     *image_data;      /* 所有资源的字节（RAW 的像素也在这里） */
     const QLUIArea    *areas;           /* area_count 条（按 img 节点序号升序） */
     const int16_t     *area_coords;     /* area_coord_count 个 int16 */
+    /*
+     * `@media`：media_count 个视口宽区间；node_media 每个节点一个入口
+     * （0xFFFF = 这个节点在所有区间里都一样，不占池）；media_styles 是池，
+     * 每个有变体的节点占 media_count*4 个（base / hover / active / focus）。
+     */
+    uint16_t          media_count;
+    const QLUIMedia  *media;
+    const uint16_t   *node_media;
+    const uint16_t   *media_styles;
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
@@ -757,6 +778,16 @@ typedef struct QLUINodeRT {
     ql_coord_t       scroll_y;
     ql_coord_t       scroll_max_x;
     ql_coord_t       scroll_max_y;
+
+    /*
+     * `@media` 断点下的状态变体下标（0xFFFF = 用 doc 里那份）。
+     * 只有 doc 带媒体查询、且这个节点在该断点下与基础样式不同时才会被填。
+     * 之所以要单独存，是因为"响应式尺寸"与":hover 变体"必须同时生效 ——
+     * 否则一悬停就会把手机布局还原成桌面布局。
+     */
+    uint16_t         m_hover;
+    uint16_t         m_active;
+    uint16_t         m_focus;
 
     uint16_t         depth;
     uint8_t          flags;      /* QL_UI_RT_* */
@@ -1175,7 +1206,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 /*
  * 格式（little-endian，各段按 8 字节对齐）：
  *
- *   [ QLUIDocBlobHeader 96 字节 ]
+ *   [ QLUIDocBlobHeader 116 字节 ]
  *   [ nodes      ] node_count      * sizeof(QLUINode)
  *   [ styles     ] style_count     * sizeof(QLUIStyle)
  *   [ text_pool  ] 以 '\0' 分隔的 UTF-8 字节
@@ -1187,6 +1218,9 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ image_data ] image_data_size 字节（编码后的资源字节）
  *   [ areas      ] area_count      * sizeof(QLUIArea)
  *   [ area_coords] area_coord_count * int16
+ *   [ media      ] media_count     * sizeof(QLUIMedia)        （v21）
+ *   [ node_media ] node_count      * uint16                   （v21）
+ *   [ media_styles] media_pool_count * uint16                 （v21）
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -1194,7 +1228,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 头里的 struct_size / abi 字段会在加载时逐项校验，不匹配就明确拒绝。
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
-#define QL_UI_BLOB_VERSION    20u  /* 20: + letter_spacing / text_indent / 文本三枚举 */
+#define QL_UI_BLOB_VERSION    21u  /* 21: + @media 断点区间（media / node_media / media_styles） */
 
 typedef struct {
     uint32_t magic;
@@ -1229,9 +1263,15 @@ typedef struct {
     uint16_t area_coord_count;    /* area_coords[] 元素个数 */
     uint32_t off_areas;           /* QLUIArea[] */
     uint32_t off_area_coords;     /* int16[]，全部热区共用一段 */
+    uint16_t media_count;         /* @media 区间数（0 = 没有媒体查询） */
+    uint16_t reserved_media;      /* 对齐填充 */
+    uint32_t off_media;           /* QLUIMedia[media_count] */
+    uint32_t off_node_media;      /* uint16[node_count] */
+    uint32_t off_media_styles;    /* uint16[media_pool_count] */
+    uint32_t media_pool_count;
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 96, "blob 头必须是 96 字节（v14）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 116, "blob 头必须是 116 字节（v21）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

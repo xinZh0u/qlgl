@@ -73,6 +73,9 @@ typedef struct {
     size_t image_data;
     size_t areas;
     size_t area_coords;
+    size_t media;
+    size_t node_media;
+    size_t media_styles;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -86,6 +89,7 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t anim_count, uint16_t keyframe_count,
                            uint16_t image_count, size_t image_data_size,
                            uint16_t area_count, uint16_t area_coord_count,
+                           uint16_t media_count, uint32_t media_pool_count,
                            size_t pool_size, size_t name_len,
                            QLUIBlobLayout *out)
 {
@@ -125,6 +129,21 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     out->area_coords = off;
     off = QL_UI_ALIGN8(off + (size_t)area_coord_count * sizeof(int16_t));
 
+    /*
+     * `@media` 三段只在有断点时才出现（media_count == 0 时长度为 0），
+     * 这样"没写 @media 的 doc" 的 blob 与 v20 一样紧凑。
+     */
+    out->media = off;
+    off = QL_UI_ALIGN8(off + (size_t)media_count * sizeof(QLUIMedia));
+
+    out->node_media = off;
+    if (media_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)node_count * sizeof(uint16_t));
+
+    out->media_styles = off;
+    if (media_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)media_pool_count * sizeof(uint16_t));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -157,11 +176,25 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (doc->area_count > 0 && (doc->areas == NULL || doc->area_coords == NULL))
         return 0;
 
+    const uint16_t media_count = (doc->node_media != NULL) ? doc->media_count : 0;
+    uint32_t media_pool_count = 0;
+    if (media_count > 0) {
+        const uint32_t need = (uint32_t)doc->node_count * (uint32_t)media_count * 4u;
+        /* 池的真实长度 = 最后一个有变体的节点的偏移 + 它的块大小 */
+        for (int i = 0; i < (int)doc->node_count; i++)
+            if (doc->node_media[i] != 0xFFFFu) {
+                const uint32_t end = (uint32_t)doc->node_media[i] + need / doc->node_count;
+                if (end > media_pool_count)
+                    media_pool_count = end;
+            }
+    }
+
     QLUIBlobLayout lay;
     compute_layout(doc->node_count, doc->style_count, doc->text_count,
                    doc->font_size_count, doc->anim_count, doc->keyframe_count,
                    doc->image_count, image_data_size, doc->area_count,
-                   doc->area_coord_count, pool_size, name_len, &lay);
+                   doc->area_coord_count, media_count, media_pool_count, pool_size,
+                   name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
         return lay.total;
@@ -202,6 +235,11 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.area_coord_count = doc->area_coord_count;
     head.off_areas = (uint32_t)lay.areas;
     head.off_area_coords = (uint32_t)lay.area_coords;
+    head.media_count = media_count;
+    head.off_media = (uint32_t)lay.media;
+    head.off_node_media = (uint32_t)lay.node_media;
+    head.off_media_styles = (uint32_t)lay.media_styles;
+    head.media_pool_count = media_pool_count;
 
     if (doc->node_count > 0)
         memcpy(base + lay.nodes, doc->nodes,
@@ -233,6 +271,17 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (doc->area_coord_count > 0)
         memcpy(base + lay.area_coords, doc->area_coords,
                (size_t)doc->area_coord_count * sizeof(int16_t));
+    if (media_count > 0) {
+        if (doc->media != NULL)
+            memcpy(base + lay.media, doc->media,
+                   (size_t)media_count * sizeof(QLUIMedia));
+        if (doc->node_media != NULL)
+            memcpy(base + lay.node_media, doc->node_media,
+                   (size_t)doc->node_count * sizeof(uint16_t));
+        if (doc->media_styles != NULL && media_pool_count > 0)
+            memcpy(base + lay.media_styles, doc->media_styles,
+                   (size_t)media_pool_count * sizeof(uint16_t));
+    }
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -400,11 +449,22 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         return NULL;
     }
 
+    if (head.media_count > QL_CFG_UI_MAX_MEDIA) {
+        set_error_str("too many @media ranges (see QL_CFG_UI_MAX_MEDIA)");
+        return NULL;
+    }
+    if (head.media_count > 0 && head.media_pool_count >
+                                    (uint32_t)head.node_count * head.media_count * 4u) {
+        set_error_str("media style pool too large");
+        return NULL;
+    }
+
     QLUIBlobLayout lay;
     compute_layout(head.node_count, head.style_count, head.text_count,
                    head.font_size_count, head.anim_count, head.keyframe_count,
                    head.image_count, head.image_data_size, head.area_count,
-                   head.area_coord_count, pool_size, head.name_len, &lay);
+                   head.area_coord_count, head.media_count, head.media_pool_count,
+                   pool_size, head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
@@ -414,7 +474,8 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         head.off_anims != lay.anims || head.off_keyframes != lay.keyframes ||
         head.off_images != lay.images || head.off_image_data != lay.image_data ||
         head.off_areas != lay.areas || head.off_area_coords != lay.area_coords ||
-        head.off_name != lay.name) {
+        head.off_media != lay.media || head.off_node_media != lay.node_media ||
+        head.off_media_styles != lay.media_styles || head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
     }
@@ -468,6 +529,12 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
                            ? (const int16_t *)(p + lay.area_coords)
                            : NULL;
     doc->name = (head.name_len > 0) ? (const char *)(p + lay.name) : "";
+    doc->media_count = head.media_count;
+    doc->media = (head.media_count > 0) ? (const QLUIMedia *)(p + lay.media) : NULL;
+    doc->node_media =
+        (head.media_count > 0) ? (const uint16_t *)(p + lay.node_media) : NULL;
+    doc->media_styles =
+        (head.media_count > 0) ? (const uint16_t *)(p + lay.media_styles) : NULL;
 
     /* 热区：img 必须真的是 <img>，坐标区间必须落在 coords 段内 */
     for (uint16_t i = 0; i < doc->area_count; i++) {

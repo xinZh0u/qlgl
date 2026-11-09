@@ -78,6 +78,7 @@ cmake --build build -j
 | `19_css_text` | 文本细节：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break` |
 | `20_live_reload` | 热重载：改 `style.css` 窗口自己变（运行期重编译，**1 ms**，应用不重编译） |
 | `21_css_vars` | CSS 变量 `--x` / `var()`：调色板写一次、处处引用，可局部覆盖（构建期替换） |
+| `22_media` | `@media` 宽度断点：同一份 HTML，拖窗口就换成另一套布局（构建期切区间） |
 
 ## 构建与测试
 

@@ -66,7 +66,7 @@
 | **O** | **要离屏图层**（组不透明度、混合、滤镜链） | 真 `opacity`、`mix-blend-mode` |
 | **F** | **要新光栅路径**（旋转 / 任意仿射 / 非矩形） | `transform: rotate()` |
 | **X** | **要外部引擎**（文本整形、排版算法、打印引擎） | `text-justify`、`hyphens` |
-| **P** | **与"静态节点 / 构建期定型"冲突**（本库最核心的取舍） | CSS 变量、`@media`、`content: counter()` |
+| **P** | **与"静态节点 / 构建期定型"冲突**（本库最核心的取舍） | `content: counter()`、`@supports`、`@layer` |
 | **M** | **与 MCU 目标冲突**（体积 / 内存 / 代码量） | Grid、多栏、`border-image` |
 | **N** | **收益极低 / 已被取代 / 与 GUI 无关** | `float`、`text-emphasis`、打印属性 |
 
@@ -135,7 +135,8 @@
 |---|---|---|---|
 | `@keyframes` | ✅ | B | 编译期摊平成 `QLUIKeyframe[]` / `QLUIAnimation[]` 静态表 |
 | `@font-face` | ❌ | M | 字体文件由宿主 `ql_font_set_default_file()` 提供，不在 CSS 里配 |
-| `@media` | ❌ | P | 目标设备尺寸在构建期已知；要多套布局请用两套 doc 或宿主切换 |
+| `@media (min-width / max-width)` | ✅ | — | **构建期切成视口宽区间**，每个区间编译一套样式；运行期只按宽度选下标（见 §18.2） |
+| `@media` 的其它条件（`orientation` / `prefers-*` / 分辨率 / `em` 单位） | ❌ | P | 需要运行期条件求值；`em` 单位要设备字号，明确报错。`print` 整块跳过 |
 | `@supports` | ❌ | P | 构建期就知道支持什么，没有"探测"的必要 |
 | `@import` | ❌ | P | 构建期把 CSS 合并成一份即可，避免运行期加载 |
 | `@charset` | ✅ | B | 解析期跳过（输入统一按 UTF-8） |
@@ -464,6 +465,35 @@ out 里先把 `--x` 自己的值解析掉   →  再把所有 var() 换成字面
 | 名字大小写 | 属性名统一折小写，所以 `--Brand` 与 `--brand` 是同一个（与 CSS 的"大小写敏感"不同，写进限制） |
 | `content: var(--x)` | **报错**：伪元素在级联之前就展开了，那时还没有自定义属性 |
 | 运行期改主题 | 不支持 —— 换肤走"换一份 CSS / 热重载"（见 [对比与取舍 §12](../../对比与取舍.html)） |
+
+### 18.2 `@media` 也是构建期的事
+
+早期结论是"❌ 目标设备尺寸构建期已知" —— 这条对**定死的板子**成立，但 PC 窗口是可以拖的，
+所以现在按"状态变体"的同一套办法做：
+
+```
+条件   @media (max-width: 620px) { … }
+  ↓ 构建期：把所有 min/max 宽度当分界点，切成互不相交的区间
+区间   [0,620]  [621,∞)        ← qlui.h 的 QLUIMedia[]
+  ↓ 每个区间编译一套样式（base / hover / active / focus 各一个下标）
+运行期 ql_ui_layout(w) 线性扫区间 → 取该区间的变体装回节点
+```
+
+| 项 | 支持 |
+|---|---|
+| `(min-width: Npx)` / `(max-width: Npx)`，可用 `and` 串 | ✅ |
+| 前缀 `screen` / `all` | ✅（可省略） |
+| `print` | 整块跳过（永远不生效） |
+| `(orientation: …)` / `(prefers-color-scheme: …)` / `em` 单位 | ❌ 构建期报错 |
+| 区间个数上限 | `QL_CFG_UI_MAX_MEDIA`（默认 6） |
+
+三条实现注意：
+
+1. **多趟编译**：每个区间都要把整棵树按该区间重算一遍样式，所以"每个断点独有的声明"
+   必须在每趟开始**清空**（`final_decls` 是"往 out 里合并"的，不清会残留 —— 踩过）；
+2. **状态变体要一起装**：`:hover` 也有 per-区间 的下标，否则一悬停就把响应式尺寸丢掉；
+3. **媒体变体在 `style_copy` 清理之后装回**：清理会把 `n->style` 复位成最窄区间那份，
+   放在它前面会被当场覆盖（表现是"宽的窗口里只有 flex 子项还是窄布局"—— 踩过）。
 | `writing-mode` / `text-orientation` | ❌ | **X**：竖排要重整排版引擎 |
 | `direction` / `unicode-bidi` | ❌ | **X**：RTL 需要 bidi 算法 + 文本整形 |
 | `will-change` / `contain` / `backface-visibility` | ❌ | **N**：GPU 优化提示，自有渲染器不消费 |
@@ -552,7 +582,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | 墙 | 语料中出现 | 后果 |
 |---|---|---|
 | `var(--x)` | ~~537 条声明~~ | **已解决**（构建期替换） |
-| `@media` | 191 个块 | 响应式断点整段不认 |
+| `@media` | 191 个块 | **已支持**宽度断点（`min/max-width`）；`orientation` / `prefers-*` 等仍报错 |
 | `!important` | 293 条声明 | 值里带它就报错（B1 补上后消失） |
 
 所以**"CSS3 兼容度"取决于你要搬的是什么**：
@@ -606,6 +636,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `opacity` | 逐图元降透明 | 子元素会一起淡，但**同一子树内部互相覆盖处会略透**（真 group 要离屏图层，见 §20.1） |
 | `transform` | 只有 `translate` / `scale` / `scaleX` / `scaleY` | `rotate` / `skew` / `matrix` 报错 |
 | `transform-origin` | **固定为元素中心** | 属性本身没实现 |
+| flex 项的**主轴尺寸** | 用 `box-sizing: border-box` 时精确 | **content-box 时少算 padding + border**（`force_size` 把主轴尺寸按边框盒解释）—— flex 子项请写 `box-sizing: border-box`，这是真实页面的常规写法 |
+| `@media` | 只有宽度断点 | `orientation` / `prefers-*` / `em` 单位报错；`print` 整块跳过 |
 | `transition-timing-function` | 5 个具名缓动 | 没有 `cubic-bezier()` |
 | `transition-delay` | 没实现 | |
 | `font-family` | 只有 `DEFAULT` / `MONO` | 不是自由字体列表；字体文件由宿主提供 |

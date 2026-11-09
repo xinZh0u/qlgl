@@ -1,0 +1,28 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">@media：同一份 HTML，窗口变窄就换布局</div>
+    <div class="badge" id="tag">窄屏</div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <div class="t">宽屏三列</div>
+      <div class="d">窗口 >= 620px 时一排三个</div>
+    </div>
+    <div class="card">
+      <div class="t">窄屏一列</div>
+      <div class="d">小于 620px 时改成一列，字号也小一档</div>
+    </div>
+    <div class="card">
+      <div class="t">拖窗口试试</div>
+      <div class="d">拖动边缘缩放，布局在断点上切换</div>
+    </div>
+  </div>
+
+  <div class="note">
+    断点写在 CSS 里（<code>@media (max-width: 620px)</code>），<b>运行期不解析任何条件</b>：
+    构建期已经把宽度轴切成区间，每个区间编译一套样式；布局时只按视口宽选下标。
+  </div>
+
+  <div class="hint">命令行看图：<code>--size 800x400</code> 与 <code>--size 420x600</code> 各截一张</div>
+</div>

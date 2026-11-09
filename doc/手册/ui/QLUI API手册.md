@@ -318,6 +318,36 @@ box-shadow: none;
 只有"距轮廓 blur 以内"的环需要逐像素算距离，内部实心区走行填充——
 所以在 PC 上几乎无感，在 MCU 上也可用（见开发规划 M5.5 的能力矩阵）。
 
+### 3.6.1 `@media` 断点
+
+```css
+.card { width: 200px; }
+@media (max-width: 620px) {
+  .card { width: 100%; }            /* 窄屏：撑满 */
+}
+@media (min-width: 900px) and (max-width: 1200px) {
+  #root { font-size: 13px; }
+}
+```
+
+| 项 | 支持 |
+|---|---|
+| `(min-width: Npx)` / `(max-width: Npx)`，可用 `and` 串联 | ✅ |
+| 媒体类型 `screen` / `all` | ✅（可省略） |
+| `print` | 整块跳过（永不生效） |
+| `(orientation: …)` / `(prefers-color-scheme: …)` / `em` 单位 | ❌ 构建期报错 |
+
+**它是怎么做到的**：条件在**构建期**被切成互不相交的视口宽区间，每个区间编译一套样式；
+运行期 `ql_ui_layout(ui, w, h)` 只按 `w` 选区间下标（线性扫一个 `QL_CFG_UI_MAX_MEDIA`
+以内的小数组），**没有任何条件求值**。所以：
+
+- 拖窗口缩放会立刻走另一套样式（重排是必然的）；
+- 每个区间都有一套 `:hover` / `:active` / `:focus` 变体，悬停不会把响应式尺寸弄丢；
+- 区间数上限 `QL_CFG_UI_MAX_MEDIA`（默认 6）；断点写得太碎会报错。
+
+> 一个实践提醒：flex 子项请写 `box-sizing: border-box`。content-box 时主轴尺寸会
+> 少算 padding + border（见 [CSS3 覆盖与裁剪](CSS3覆盖与裁剪.html) §19.1）。
+
 ### 3.7 Flexbox
 
 ```css

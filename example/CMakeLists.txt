@@ -45,6 +45,7 @@ set(QL_EXAMPLES
     19_css_text
     20_live_reload
     21_css_vars
+    22_media
 )
 
 foreach(e ${QL_EXAMPLES})
