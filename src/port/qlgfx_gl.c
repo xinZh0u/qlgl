@@ -180,8 +180,11 @@ struct QLGfxGL {
     uint32_t         uv_used;
     /* 图集货架分配器状态 */
     /* 圆遮罩状态（设备像素） */
-    float            mask_cx, mask_cy, mask_r;
+    float            mask_cx, mask_cy, mask_rx, mask_ry;
     int              mask_on;
+    /* 颜色矩阵（`filter` 的纯颜色函数）：16.16 定点，与 QLQC 同一份数据 */
+    int32_t          cm[12];
+    int              cm_on;
 
     int              atlas_x, atlas_y, atlas_row_h;
     int              atlas_full_warned;
@@ -246,6 +249,8 @@ struct QLGfxGL {
     int              img_next;        /* 环形替换 */
     GLuint           cur_img_tex;     /* 本批次要采样的图片纹理；0 = 用占位 */
     GLint            u_image;
+    GLint            u_cm;      /* vec4[3]：颜色矩阵（3x4 行主序，0..1 归一） */
+    GLint            u_cm_on;
 };
 
 
@@ -281,7 +286,7 @@ static const char *VS_SRC =
     "out vec2 v_local; out vec2 v_half; out vec4 v_params; out vec2 v_uv; out vec4 v_color;\n"
     "out vec4 v_mask;\n"
     "out vec4 v_radii;\n"
-    "void main(){\n"
+    "vec4 shade(){\n"
     "  vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;\n"
     "  ndc.y = -ndc.y;\n"
     "  gl_Position = vec4(ndc, 0.0, 1.0);\n"
@@ -313,6 +318,16 @@ static const char *FS_SRC =
     "uniform sampler2D u_bg;\n"
     "uniform sampler2D u_image;\n"
     "uniform vec2 u_viewport;\n"
+    /*
+     * 颜色矩阵（`filter` 的纯颜色函数，B9）：3x4 行主序（每行一个 vec4，
+     * xyz 是线性部分、w 是偏移，单位 0..1）。u_cm_on = 0 时完全不参与运算。
+     *
+     * 因为是**单批次**渲染，矩阵只能当 uniform 传 —— 所以 `gl_set_cm()` 在
+     * 矩阵变化时会先 flush 一次（一个有 filter 的元素多一次 draw call，
+     * 换来不走离屏图层：省一块 RGBA 缓冲 + 两遍绘制）。
+     */
+    "uniform vec4 u_cm[3];\n"
+    "uniform int u_cm_on;\n"
     "out vec4 frag;\n"
     "float sdRoundBox(vec2 p, vec2 b, float r){\n"
     "  vec2 q = abs(p) - b + r;\n"
@@ -337,8 +352,18 @@ static const char *FS_SRC =
     "  float m = 1.0;\n"
     "  if (v_mask.z >= 0.0) {\n"
     "    vec2 fp = vec2(gl_FragCoord.x, u_viewport.y - gl_FragCoord.y);\n"
-    "    float md = length(fp - v_mask.xy) - v_mask.z;\n"
-    "    m = 1.0 - smoothstep(-0.5, 0.5, md);\n"
+    "    vec2 rr = vec2(v_mask.z, v_mask.w);\n"
+    /*
+     * 半径 <= 0 一律当成"全裁"：与 CPU 侧 mask_cov_at 的 `r == 0 → 0` 一致。
+     * 不做这个判断的话 `min(rr.x, rr.y) == 0` 会把 md 乘成 0，
+     * smoothstep 得 0.5 ⇒ 整块半透明（曾经让 golden 的 clip 用例偏 47%）。
+     */
+    "    if (rr.x <= 0.0 || rr.y <= 0.0) {\n"
+    "      m = 0.0;\n"
+    "    } else {\n"
+    "      float md = (length((fp - v_mask.xy) / rr) - 1.0) * min(rr.x, rr.y);\n"
+    "      m = 1.0 - smoothstep(-0.5, 0.5, md);\n"
+    "    }\n"
     "  }\n"
     /* 形状判定必须按 mode **从大到小**排，别再写成区间夹逼（容易漏档） */
     /*
@@ -354,20 +379,17 @@ static const char *FS_SRC =
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
     "    float dd = -d;\n"
     "    float cov = 1.0 - smoothstep(0.0, max(border, 1.0), dd);\n"
-    "    frag = vec4(v_color.rgb, v_color.a * cov * m);\n"
-    "    return;\n"
+    "    return vec4(v_color.rgb, v_color.a * cov * m);\n"
     "  }\n"
     "  if (mode > 4.5) {\n"
     /* 图片也要跟着 border-radius 裁：圆角用同一个 SDF 算覆盖率 */
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
     "    float cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
     "    if (mode > 5.5) {\n"
-    "      frag = vec4(v_color.rgb, v_color.a * texture(u_image, v_uv).r * cov * m);\n"
-    "    } else {\n"
-    "      vec4 t = texture(u_image, v_uv);\n"
-    "      frag = vec4(t.rgb, t.a * v_color.a * cov * m);\n"
+    "      return vec4(v_color.rgb, v_color.a * texture(u_image, v_uv).r * cov * m);\n"
     "    }\n"
-    "    return;\n"
+    "    vec4 t = texture(u_image, v_uv);\n"
+    "    return vec4(t.rgb, t.a * v_color.a * cov * m);\n"
     "  }\n"
     "  if (mode > 3.5) {\n"
     /* 毛玻璃：uv 盖住整个矩形，形状仍是同一个圆角 SDF */
@@ -394,8 +416,7 @@ static const char *FS_SRC =
     "    }\n"
     "  }\n"
     "  if (mode > 3.5) {\n"
-    "    frag = vec4(texture(u_bg, v_uv).rgb, v_color.a * cov * m);\n"
-    "    return;\n"
+    "    return vec4(texture(u_bg, v_uv).rgb, v_color.a * cov * m);\n"
     "  }\n"
     "  if (mode > 2.5 && mode < 3.5) {\n"
     /*
@@ -409,10 +430,24 @@ static const char *FS_SRC =
     "    float cr = floor(pk / 65536.0);\n"
     "    float t = clamp(length(v_local) / max(length(v_half), 0.5), 0.0, 1.0);\n"
     "    vec3 c2 = vec3(cr, cg, cb) / 255.0;\n"
-    "    frag = vec4(mix(v_color.rgb, c2, t), v_color.a * cov * m);\n"
-    "    return;\n"
+    "    return vec4(mix(v_color.rgb, c2, t), v_color.a * cov * m);\n"
     "  }\n"
-    "  frag = vec4(v_color.rgb, v_color.a * cov * m);\n"
+    "  return vec4(v_color.rgb, v_color.a * cov * m);\n"
+    "}\n"
+    /*
+     * 所有分支算完再统一施加颜色矩阵 —— 这是唯一一个"出口"，
+     * 不会像当年的圆遮罩那样漏掉某个 return。
+     */
+    "void main(){\n"
+    "  vec4 c = shade();\n"
+    "  if (u_cm_on != 0) {\n"
+    "    vec3 o = vec3(u_cm[0].x, u_cm[1].x, u_cm[2].x) * c.r\n"
+    "      + vec3(u_cm[0].y, u_cm[1].y, u_cm[2].y) * c.g\n"
+    "      + vec3(u_cm[0].z, u_cm[1].z, u_cm[2].z) * c.b\n"
+    "      + vec3(u_cm[0].w, u_cm[1].w, u_cm[2].w);\n"
+    "    c.rgb = clamp(o, 0.0, 1.0);\n"
+    "  }\n"
+    "  frag = c;\n"
     "}\n";
 
 static GLuint compile(GLenum type, const char *src)
@@ -461,6 +496,8 @@ static int build_program(QLGfxGL *g)
     g->u_atlas = glGetUniformLocation(g->program, "u_atlas");
     g->u_bg = glGetUniformLocation(g->program, "u_bg");
     g->u_image = glGetUniformLocation(g->program, "u_image");
+    g->u_cm = glGetUniformLocation(g->program, "u_cm");
+    g->u_cm_on = glGetUniformLocation(g->program, "u_cm_on");
     return 1;
 }
 
@@ -720,8 +757,8 @@ static void emit_vertex(QLGfxGL *g, const QLGLVertex *v)
     QLGLVertex out = *v;
     out.mcx = g->mask_cx;
     out.mcy = g->mask_cy;
-    out.mr = (g->mask_on) ? g->mask_r : -1.0f;
-    out.mpad = 0.0f;
+    out.mr = (g->mask_on) ? g->mask_rx : -1.0f;
+    out.mpad = (g->mask_on) ? g->mask_ry : -1.0f;
     g->verts[g->vert_count++] = out;
 }
 
@@ -1602,19 +1639,53 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     }
 }
 
-static void gl_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r)
+static void gl_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
+                        ql_coord_t ry)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
-    if (r < 0) {
+    if (rx < 0 || ry < 0) {
         g->mask_on = 0;
-        g->mask_r = -1.0f;
+        g->mask_rx = -1.0f;
+        g->mask_ry = -1.0f;
         return;
     }
     QLRect pt = gsx(g, ql_rect_make(cx, cy, 0, 0));
     g->mask_cx = (float)pt.x;
     g->mask_cy = (float)pt.y;
-    g->mask_r = (float)gsl(g, r);
+    g->mask_rx = (float)gsl(g, rx);
+    g->mask_ry = (float)gsl(g, ry);
     g->mask_on = 1;
+}
+
+/*
+ * 颜色矩阵。单批次渲染下矩阵只能当 uniform 传，所以变了就先 flush ——
+ * 代价是"一个带 filter 的元素多一次 draw call"，换来不走近屏图层。
+ * 矩阵没变时直接返回（一帧内同一份 filter 只 flush 一次）。
+ */
+static void gl_set_cm(QLDraw2D *self, const int32_t m[12], int on)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    if (g == NULL)
+        return;
+    if (on && m != NULL) {
+        int same = 1;
+        for (int i = 0; i < 12; i++)
+            if (g->cm[i] != m[i]) {
+                same = 0;
+                break;
+            }
+        if (same && g->cm_on)
+            return;
+        flush_batch(g);
+        for (int i = 0; i < 12; i++)
+            g->cm[i] = m[i];
+        g->cm_on = 1;
+        return;
+    }
+    if (!g->cm_on)
+        return;
+    flush_batch(g);
+    g->cm_on = 0;
 }
 
 /* 把一张 QLImage 传成纹理（命中缓存就直接复用）；失败返回 0 */
@@ -2023,8 +2094,7 @@ static const char *LAYER_FS =
     "  if (src.a <= 0.0) { frag = vec4(0.0); return; }\n"
 
     "  if (u_mode == 0 || u_pass == 0) {\n"
-    "    frag = src;\n"
-    "    return;\n"
+    "    return src;\n"
     "  }\n"
     /* 非普通混合：从背景纹理取色，按 CSS 公式算，再与 src 的 alpha 合成 */
     "  vec4 bd = texture(u_backdrop, uv);\n"
@@ -2725,8 +2795,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->height = height;
     g->scale_fx = QL_SCALE_ONE;
     g->offscreen = (flags & QL_GFX_GL_OFFSCREEN) ? 1 : 0;
-    g->mask_r = -1.0f;
+    g->mask_rx = -1.0f;
+    g->mask_ry = -1.0f;
     g->draw.mask_r = -1;
+    g->draw.mask_ry = -1;
     g->draw.elem_x_fx = QL_SCALE_ONE;
     g->draw.elem_y_fx = QL_SCALE_ONE;
     g->vert_capacity = QL_GL_MAX_VERTS;
@@ -2990,6 +3062,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 
     g->draw.set_clip = gl_set_clip;
     g->draw.set_mask = gl_set_mask;
+    g->draw.set_cm = gl_set_cm;
     g->draw.backdrop_blur = gl_backdrop_blur;
     g->draw.backdrop_blur_round = gl_backdrop_blur_round;
 #if QL_FEAT_CSS_FILTER_LAYER
@@ -3223,8 +3296,11 @@ static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
     g->clip = ql_rect_make(0, 0, g->width, g->height);
     g->clip_active = 0;
     g->mask_on = 0;
-    g->mask_r = -1.0f;
+    g->mask_rx = -1.0f;
+    g->mask_ry = -1.0f;
+    g->cm_on = 0;
     g->draw.mask_r = -1;
+    g->draw.mask_ry = -1;
     g->draw.elem_x_fx = QL_SCALE_ONE;
     g->draw.elem_y_fx = QL_SCALE_ONE;
 }
@@ -3315,6 +3391,18 @@ static void flush_batch(QLGfxGL *g)
                                                            : g->bg_dummy_tex);
         glUniform1i(g->u_image, 2);
         glActiveTexture(GL_TEXTURE0);
+
+        /* 颜色矩阵：每批次上传一次（只在 cm 变化时才会 flush，见 gl_set_cm） */
+        if (g->u_cm >= 0) {
+            GLfloat cmf[12];
+            for (int i = 0; i < 12; i++) {
+                /* 线性部分是 16.16 无量纲；偏移是"色值 * 65536"（还要 /255 归一到 0..1） */
+                cmf[i] = (i % 4 == 3) ? (GLfloat)g->cm[i] / 65536.0f / 255.0f
+                                      : (GLfloat)g->cm[i] / 65536.0f;
+            }
+            glUniform4fv(g->u_cm, 3, cmf);
+            glUniform1i(g->u_cm_on, g->cm_on);
+        }
 
         glBindBuffer(GL_ARRAY_BUFFER, g->vbo);
         glBufferData(GL_ARRAY_BUFFER,

@@ -375,6 +375,19 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
         else if (ts->align == QL_TEXT_ALIGN_RIGHT)
             pen_x = box.x + box.w - line_w;
 
+        /*
+         * `text-align: justify`：把剩余空间平摊到字形间隙。
+         * 规则与 CSS 一致：**最后一行**不拉伸（否则一段短末行会被拉得很难看），
+         * 只有一行时也就等于左对齐；`text-overflow: ellipsis` 的行不拉伸。
+         */
+        ql_coord_t justify_extra = 0;
+        if (ts->align == QL_TEXT_ALIGN_JUSTIFY && !draw_ellipsis && li + 1 < count &&
+            box.w > 0) {
+            const ql_coord_t slack = box.w - x_indent - line_w;
+            if (slack > 0)
+                justify_extra = slack;
+        }
+
         const ql_coord_t line_x0 = pen_x;
 
         /*
@@ -392,6 +405,8 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
             sopt.tab_size = ts->tab_size;
             sopt.ligatures = ts->ligatures;
             sopt.kerning = ts->kerning;
+            sopt.small_caps = ts->small_caps;
+            sopt.tabular_nums = ts->tabular_nums;
             sopt.par_rtl = ts->rtl;
 
             /*
@@ -415,6 +430,19 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
                     nsh = (int32_t)QL_TEXT_SHAPE_MAX;
 
                 ql_coord_t pen = pen_x;
+                /* 两端对齐的每字形补偿（块内按"块内字形数 - 1"平摊；跨块时
+                 * 用整行的总字形数近似，误差最多 1px 级，肉眼不可见） */
+                ql_coord_t jstep = 0;
+                if (justify_extra > 0 && nsh > 1) {
+                    int32_t total = 0;
+                    for (int32_t q2 = 0; q2 < llen; q2++) {
+                        unsigned char ch = (unsigned char)lt[q2];
+                        if ((ch & 0xC0u) != 0x80u)
+                            total++;
+                    }
+                    if (total > 1)
+                        jstep = justify_extra / (ql_coord_t)(total - 1);
+                }
                 for (int32_t k = 0; k < nsh; k++) {
                     const QLShapeGlyph *sg = &shaped[k];
                     pen += (ql_coord_t)sg->dx;
@@ -426,7 +454,10 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
                         emit_glyph(self, gf, sg->glyph, pen, baseline, &tsg);
                     }
                     pen += (ql_coord_t)sg->adv;
+                    pen += jstep;
                 }
+                if (jstep != 0)
+                    pen -= jstep;       /* 最后一个字形后面不该有间隙 */
                 if (!draw_ellipsis)
                     pen_x = pen;        /* 省略号路径自己会摆到截断点 */
                 else
@@ -492,7 +523,7 @@ typedef struct {
         size_t          matte_bytes;
         ql_coord_t      saved_off_x;
         ql_coord_t      saved_off_y;
-        ql_coord_t      saved_mask_cx, saved_mask_cy, saved_mask_r;
+        ql_coord_t      saved_mask_cx, saved_mask_cy, saved_mask_r, saved_mask_ry;
         ql_coord_t      saved_scale;
         uint8_t         saved_alpha;
     } layer[QL_CFG_UI_LAYER_MAX_DEPTH];
@@ -653,7 +684,9 @@ static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     (void)ql_canvas_backdrop_blur_round(ctx->canvas, dev, r, cdev);
 }
 
-static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
+static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
+                         ql_coord_t ry);
+static void cpu_set_cm(QLDraw2D *self, const int32_t m[12], int on);
 
 static void cpu_set_clip(QLDraw2D *self, QLRect clip)
 {
@@ -661,20 +694,29 @@ static void cpu_set_clip(QLDraw2D *self, QLRect clip)
     ql_canvas_set_clip(ctx->canvas, sx(self, clip));
 }
 
-/* 圆遮罩：CSS px → 设备像素（按"边"缩放，与矩形一致；半径按长度缩放） */
-static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r)
+/* 椭圆/圆遮罩：CSS px → 设备像素（按"边"缩放，与矩形一致；半径按长度缩放） */
+static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
+                         ql_coord_t ry)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    if (r < 0) {
-        ql_canvas_set_mask(ctx->canvas, 0, 0, -1);
+    if (rx < 0 || ry < 0) {
+        ql_canvas_set_mask(ctx->canvas, 0, 0, -1, -1);
         return;
     }
     if (self->scale_fx == QL_SCALE_ONE) {
-        ql_canvas_set_mask(ctx->canvas, cx, cy, r);
+        ql_canvas_set_mask(ctx->canvas, cx, cy, rx, ry);
         return;
     }
     QLRect pt = ql_scale_rect(ql_rect_make(cx, cy, 0, 0), self->scale_fx);
-    ql_canvas_set_mask(ctx->canvas, pt.x, pt.y, ql_scale_len(r, self->scale_fx));
+    ql_canvas_set_mask(ctx->canvas, pt.x, pt.y, ql_scale_len(rx, self->scale_fx),
+                       ql_scale_len(ry, self->scale_fx));
+}
+
+/* 颜色矩阵：直接交给画布（逐像素生效，见 ql_canvas_set_color_matrix） */
+static void cpu_set_cm(QLDraw2D *self, const int32_t m[12], int on)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    ql_canvas_set_color_matrix(ctx->canvas, m, on);
 }
 
 static void cpu_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
@@ -987,6 +1029,7 @@ static void cpu_layer_attach(QLDraw2D *self, uint8_t *buf, QLRect dev)
     c->format = QL_COLOR_RGB888;
     c->clip = ql_rect_make(0, 0, dev.w, dev.h);
     c->mask_r = -1;      /* 图层的裁剪留到合成阶段（圆角与 mask 一起做） */
+    c->mask_ry = -1;
 
     /*
      * 平移：让 dev 的左上角落在 (0,0)。
@@ -1140,6 +1183,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
 
     out->set_clip = cpu_set_clip;
     out->set_mask = cpu_set_mask;
+    out->set_cm = cpu_set_cm;
     out->backdrop_blur = cpu_backdrop_blur;
     out->backdrop_blur_round = cpu_backdrop_blur_round;
 #if QL_FEAT_CSS_FILTER_LAYER
@@ -1163,6 +1207,8 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->offset_x_fx = 0;
     out->offset_y_fx = 0;
     out->mask_r = -1;
+    out->mask_ry = -1;
+    out->cm_on = 0;
     out->alpha = 255;          /* 默认不透明 */
     out->elem_x_fx = QL_SCALE_ONE;
     out->text_geo = 0;

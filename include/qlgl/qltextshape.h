@@ -59,6 +59,12 @@ typedef struct {
      * 所以绘制方**不需要**再自己重排文本。
      */
     uint8_t    par_rtl;
+    /*
+     * OpenType 特性开关（B9）：TRUE 时给 HarfBuzz 挂上 `smcp` / `tnum`。
+     * 内建整形没有特性表，见 `ql_text_shape_has_harfbuzz()`。
+     */
+    uint8_t    small_caps;
+    uint8_t    tabular_nums;
 } QLShapeOpt;
 
 /*

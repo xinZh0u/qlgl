@@ -205,6 +205,14 @@ static inline uint16_t style_res_idx(const QLUIStyle *st, int which)
     }
 }
 static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
+
+/* clip-path（v34）：形状长度换算 + 椭圆/多边形蒙版缓存 */
+struct QLUIClipMask {
+    const QLUINodeRT *node;   /* 缓存键：哪个节点（形状由它的样式决定） */
+    QLImage           img;    /* A8，QL_UI_CLIP_MASK_RES 见方 */
+    uint8_t          *px;     /* 归 root 所有 */
+};
+static ql_coord_t clip_len_to_px(QLUILength len, ql_coord_t span);
 static void draw_border_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
 /* ------------------------------ 构建 ------------------------------ */
@@ -668,6 +676,14 @@ void ql_ui_free(QLUIRoot *ui)
     ql_mem_free(ui->ta_arena);
     ql_mem_free(ui->inputs);
     ql_mem_free(ui->selects);
+    if (ui->clip_masks != NULL) {
+        for (uint8_t i = 0; i < ui->clip_mask_n; i++)
+            ql_mem_free(ui->clip_masks[i].px);
+        ql_mem_free(ui->clip_masks);
+    }
+    /* 运行期样式副本（懒分配，见 ensure_style_copy） */
+    for (uint16_t i = 0; i < ui->node_count; i++)
+        ql_mem_free(ui->nodes[i].style_copy);
     ql_mem_free(ui->nodes);
     if (ui->owns_doc)
         ql_ui_doc_free((QLUIDoc *)(uintptr_t)ui->doc);
@@ -1237,6 +1253,27 @@ static int flex_reversed(const QLUIStyle *s)
            s->flex_direction == QL_UI_FLEX_COLUMN_REVERSE;
 }
 
+/*
+ * 拿到节点的可写样式副本（懒分配）。
+ *
+ * 为什么按需分配：`QLUIStyle` 现在 400 字节，而绝大多数节点从不需要运行期改样式
+ * （静态界面里这个指针恒为 NULL）。按需分配把 `QLUINodeRT` 从"人人 400 字节"
+ * 变成"改过的节点才 400 字节"，MCU 上省下的就是实打实的 .bss。
+ */
+static QLUIStyle *ensure_style_copy(QLUINodeRT *node)
+{
+    if (node->style_copy != NULL)
+        return node->style_copy;
+    QLUIStyle *cp = (QLUIStyle *)ql_mem_alloc(sizeof(QLUIStyle));
+    if (cp == NULL)
+        return NULL;
+    *cp = *node->style;
+    node->style_copy = cp;
+    node->style = cp;
+    node->used_copy = 1;
+    return cp;
+}
+
 /* 给节点写一个"强制主/交叉尺寸"，走 style_copy（border-box 语义） */
 static void force_size(QLUINodeRT *node, ql_coord_t main_sz, int row, int apply_main,
                        ql_coord_t cross_sz, int apply_cross)
@@ -1244,13 +1281,10 @@ static void force_size(QLUINodeRT *node, ql_coord_t main_sz, int row, int apply_
     if (!apply_main && !apply_cross)
         return;
 
-    if (!node->used_copy) {
-        node->style_copy = *node->style;
-        node->style = &node->style_copy;
-        node->used_copy = 1;
-    }
+    if (ensure_style_copy(node) == NULL)
+        return;
 
-    QLUIStyle *s = &node->style_copy;
+    QLUIStyle *s = node->style_copy;
     s->box_sizing = 1;          /* 我们给的是边框盒尺寸 */
     if (row) {
         if (apply_main) {
@@ -1424,14 +1458,11 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
 
     ql_coord_t x = cb.x + l;
     if (own_w >= 0) {
-        if (!child->used_copy) {
-            child->style_copy = *child->style;
-            child->style = &child->style_copy;
-            child->used_copy = 1;
-        }
-        child->style_copy.box_sizing = 1;
-        child->style_copy.width.value = (int16_t)((own_w < 0) ? 0 : own_w);
-        child->style_copy.width.unit = QL_UI_UNIT_PX;
+        if (ensure_style_copy(child) == NULL)
+            return;
+        child->style_copy->box_sizing = 1;
+        child->style_copy->width.value = (int16_t)((own_w < 0) ? 0 : own_w);
+        child->style_copy->width.unit = QL_UI_UNIT_PX;
         avail_w = own_w;
     }
     if (has_r && !has_l)
@@ -1443,14 +1474,11 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
         ql_coord_t stretch = cb.h - t - b;
         if (stretch < 0)
             stretch = 0;
-        if (!child->used_copy) {
-            child->style_copy = *child->style;
-            child->style = &child->style_copy;
-            child->used_copy = 1;
-        }
-        child->style_copy.box_sizing = 1;
-        child->style_copy.height.value = (int16_t)stretch;
-        child->style_copy.height.unit = QL_UI_UNIT_PX;
+        if (ensure_style_copy(child) == NULL)
+            return;
+        child->style_copy->box_sizing = 1;
+        child->style_copy->height.value = (int16_t)stretch;
+        child->style_copy->height.unit = QL_UI_UNIT_PX;
     }
 
     ql_coord_t y;
@@ -3675,14 +3703,11 @@ static void table_force_cell_w(QLUINodeRT *cell, ql_coord_t w)
     if (cs->box_sizing == 1 && cs->width.unit == QL_UI_UNIT_PX &&
         (ql_coord_t)cs->width.value == w)
         return;
-    if (!cell->used_copy) {
-        cell->style_copy = *cell->style;
-        cell->style = &cell->style_copy;
-        cell->used_copy = 1;
-    }
-    cell->style_copy.box_sizing = 1;
-    cell->style_copy.width.unit = QL_UI_UNIT_PX;
-    cell->style_copy.width.value = (int16_t)w;
+    if (ensure_style_copy(cell) == NULL)
+        return;
+    cell->style_copy->box_sizing = 1;
+    cell->style_copy->width.unit = QL_UI_UNIT_PX;
+    cell->style_copy->width.value = (int16_t)w;
 }
 
 static ql_coord_t layout_table_children(QLUIRoot *ui, QLUINodeRT *table,
@@ -4498,7 +4523,27 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
                 if (font != NULL) {
                     ql_coord_t maxw = 0;
                     if (QL_UI_WS_WRAPS(s->white_space)) {
-                        ql_coord_t inner = avail_w - pad_border - margin;
+                        /*
+                         * 折行基准宽度 = **这一项自己的宽度**（写了 width 就用它，
+                         * 否则才退回父容器给的可用宽）。
+                         *
+                         * 只用 avail_w 会在"column 容器 + 子项 width: 440px"时算错：
+                         * 容器宽 848，于是文本按 848 折成 1 行 → 高度 20，
+                         * 而绘制时按 440 折成 2 行 → 第二行压到下一个元素上
+                         * （例程 36 的 justify 段落就是这么暴露出来的）。
+                         */
+                        const ql_coord_t pad_h =
+                            (ql_coord_t)(s->padding.left + s->padding.right +
+                                         ql_ui_border_h(s));
+                        const ql_coord_t mar_h =
+                            (ql_coord_t)(s->margin.left + s->margin.right);
+                        ql_coord_t basis = avail_w;
+                        if (s->width.unit == QL_UI_UNIT_PX)
+                            basis = (ql_coord_t)s->width.value +
+                                    ((s->box_sizing == 0) ? pad_h : 0);
+                        else if (s->width.unit == QL_UI_UNIT_PERCENT && avail_w > 0)
+                            basis = (ql_coord_t)(((int32_t)avail_w * s->width.value) / 100);
+                        ql_coord_t inner = basis - pad_h - mar_h;
                         maxw = (inner > 0) ? inner : 0;
                     }
                     const QLTextWrapOpt wopt = wrap_opt_of(s);
@@ -4589,15 +4634,38 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
              * （@media 把一排三个改成一列时一眼就能看到）。行方向取最大是对的，
              * 列方向必须求和。
              */
-            ql_coord_t sum = 0;
+            /*
+             * 但**行内**子节点（`display: inline`）是横排一行的 ——
+             * 它们要取"行内最高的那个"，不能逐个相加。
+             * 不区分的话 `<div><span>a</span><span>b</span></div>`
+             * 在 column 布局里的高度会变成 a+b（实测 23+19+23+19=84），
+             * 后面的兄弟节点就被顶下去一大截（例程 36 里一眼可见）。
+             */
+            ql_coord_t sum = 0, row_max = 0;
+            int in_row = 0;
             for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
                 if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
                     continue;
-                sum += max_content_main(c, row,
-                                        avail_w - pad_border - s->margin.left -
-                                            s->margin.right,
-                                        depth + 1);
+                const ql_coord_t v =
+                    max_content_main(c, row,
+                                     avail_w - pad_border - s->margin.left -
+                                         s->margin.right,
+                                     depth + 1);
+                if (c->style->display == QL_UI_DISPLAY_BLOCK) {
+                    if (in_row) {
+                        sum += row_max;
+                        row_max = 0;
+                        in_row = 0;
+                    }
+                    sum += v;
+                } else {
+                    if (v > row_max)
+                        row_max = v;
+                    in_row = 1;
+                }
             }
+            if (in_row)
+                sum += row_max;
             own = sum + pad_border;
         }
     } else {
@@ -4657,17 +4725,15 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             const ql_coord_t len_value =
                 (c->style->box_sizing == 1) ? box : (box - pad_border);
 
-            if (!c->used_copy) {
-                c->style_copy = *c->style;
-                c->style = &c->style_copy;
-                c->used_copy = 1;
-            }
+            if (ensure_style_copy(c) == NULL)
+
+                return;
             if (row_axis) {
-                c->style_copy.width.value = (int16_t)((len_value < 0) ? 0 : len_value);
-                c->style_copy.width.unit = QL_UI_UNIT_PX;
+                c->style_copy->width.value = (int16_t)((len_value < 0) ? 0 : len_value);
+                c->style_copy->width.unit = QL_UI_UNIT_PX;
             } else {
-                c->style_copy.height.value = (int16_t)((len_value < 0) ? 0 : len_value);
-                c->style_copy.height.unit = QL_UI_UNIT_PX;
+                c->style_copy->height.value = (int16_t)((len_value < 0) ? 0 : len_value);
+                c->style_copy->height.unit = QL_UI_UNIT_PX;
             }
         }
 
@@ -4692,13 +4758,10 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
                     v = 0;
                 if (v > 32767)
                     v = 32767;
-                if (!c->used_copy) {
-                    c->style_copy = *c->style;
-                    c->style = &c->style_copy;
-                    c->used_copy = 1;
-                }
-                c->style_copy.width.value = (int16_t)v;
-                c->style_copy.width.unit = QL_UI_UNIT_PX;
+                if (ensure_style_copy(c) == NULL)
+                    return;
+                c->style_copy->width.value = (int16_t)v;
+                c->style_copy->width.unit = QL_UI_UNIT_PX;
             }
         }
 
@@ -5511,6 +5574,10 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
                               ? &ui->doc->styles[n->src->style]
                               : &ui->doc->styles[0])
                        : n->style;
+        if (n->style_copy != NULL) {
+            ql_mem_free(n->style_copy);
+            n->style_copy = NULL;
+        }
         n->used_copy = 0;
     }
 
@@ -5565,20 +5632,17 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
      */
     if (root->style->width.unit == QL_UI_UNIT_PERCENT ||
         root->style->height.unit == QL_UI_UNIT_PERCENT) {
-        if (!root->used_copy) {
-            root->style_copy = *root->style;
-            root->style = &root->style_copy;
-            root->used_copy = 1;
+        if (ensure_style_copy(root) == NULL)
+            return;
+        if (root->style_copy->width.unit == QL_UI_UNIT_PERCENT) {
+            root->style_copy->width.value =
+                (int16_t)((int32_t)width * root->style_copy->width.value / 100);
+            root->style_copy->width.unit = QL_UI_UNIT_PX;
         }
-        if (root->style_copy.width.unit == QL_UI_UNIT_PERCENT) {
-            root->style_copy.width.value =
-                (int16_t)((int32_t)width * root->style_copy.width.value / 100);
-            root->style_copy.width.unit = QL_UI_UNIT_PX;
-        }
-        if (root->style_copy.height.unit == QL_UI_UNIT_PERCENT) {
-            root->style_copy.height.value =
-                (int16_t)((int32_t)height * root->style_copy.height.value / 100);
-            root->style_copy.height.unit = QL_UI_UNIT_PX;
+        if (root->style_copy->height.unit == QL_UI_UNIT_PERCENT) {
+            root->style_copy->height.value =
+                (int16_t)((int32_t)height * root->style_copy->height.value / 100);
+            root->style_copy->height.unit = QL_UI_UNIT_PX;
         }
     }
 
@@ -7104,8 +7168,19 @@ static void paint_dash_frame(QLDraw2D *d2d, QLRect rect, ql_coord_t w, uint8_t s
 /* 四角半径 → 设备/逻辑坐标下的数组（给 4 半径接口用） */
 static void style_radii4(const QLUIStyle *s, ql_coord_t r4[4])
 {
-    for (int i = 0; i < 4; i++)
-        r4[i] = (ql_coord_t)s->radius[i];
+    /*
+     * 椭圆圆角（`border-radius: h / v`，blob v34）：两个后端都用**单半径**
+     * 的圆角 SDF（CPU 的 `round_row_span` / GL 的 `sdRoundBox` 各接一个标量），
+     * 要精确画椭圆角得给每角再加 4 个顶点属性并改写两个 SDF。
+     * 这里取两者的**算术平均**作为等价半径：视觉上最接近，且不会像 max()
+     * 那样溢出盒子。精确度由《CSS3 覆盖与裁剪》§5 明确说明。
+     */
+    for (int i = 0; i < 4; i++) {
+        ql_coord_t r = (ql_coord_t)s->radius[i];
+        if (s->radius_v[i] > 0)
+            r = (r + (ql_coord_t)s->radius_v[i]) / 2;
+        r4[i] = r;
+    }
 }
 
 /* 圆角描边（自动选 4 半径 / 单半径 / 直角三条路） */
@@ -7544,15 +7619,48 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             (ql_coord_t)((int64_t)s->sc_y * QL_SCALE_ONE / 1000), elem_cx, elem_cy);
 
     const ql_coord_t saved_mx = d2d->mask_cx, saved_my = d2d->mask_cy;
-    const ql_coord_t saved_mr = d2d->mask_r;
-    if (s->clip_kind == 1 && d2d->set_mask != NULL) {
-        ql_coord_t dmax = ql_len_far_corner(box.w, box.h);
-        ql_coord_t r = (ql_coord_t)(((int32_t)dmax * (int32_t)s->clip_r) / 1000);
-        if (saved_mr >= 0)
-            QL_LOGW("ui: nested clip-path is not supported (node #%u), keeping the "
-                    "outer circle", (unsigned)(node - node->owner->nodes));
-        else
-            ql_draw2d_set_mask(d2d, box.x + box.w / 2, box.y + box.h / 2, r);
+    const ql_coord_t saved_mr = d2d->mask_r, saved_mry = d2d->mask_ry;
+    const QLRect clip_before_inset = node->owner->clip;
+    int inset_clipped = 0;
+    if (d2d->set_mask != NULL && s->clip_kind != QL_UI_CLIP_NONE) {
+        if (s->clip_kind == QL_UI_CLIP_CIRCLE) {
+            ql_coord_t dmax = ql_len_far_corner(box.w, box.h);
+            ql_coord_t r = (ql_coord_t)(((int32_t)dmax * (int32_t)s->clip_r) / 1000);
+            if (saved_mr >= 0)
+                QL_LOGW("ui: nested clip-path is not supported (node #%u), keeping the "
+                        "outer circle", (unsigned)(node - node->owner->nodes));
+            else
+                ql_draw2d_set_mask(d2d, box.x + box.w / 2, box.y + box.h / 2, r);
+        } else if (s->clip_kind == QL_UI_CLIP_ELLIPSE) {
+            /*
+             * `ellipse(rx ry)`：与圆同一条解析遮罩，只是两个轴分开。
+             * rx/ry 是边框盒宽/高的百分比（px 也支持）。
+             */
+            const ql_coord_t rx = clip_len_to_px(s->clip_box[0], box.w);
+            const ql_coord_t ry = clip_len_to_px(s->clip_box[1], box.h);
+            if (saved_mr >= 0)
+                QL_LOGW("ui: nested clip-path is not supported (node #%u), keeping the "
+                        "outer shape", (unsigned)(node - node->owner->nodes));
+            else if (rx > 0 && ry > 0)
+                ql_draw2d_set_mask_ellipse(d2d, box.x + box.w / 2, box.y + box.h / 2,
+                                           rx, ry);
+        }
+    }
+    /*
+     * `clip-path: inset(...)`：纯矩形裁剪，直接与当前裁剪求交 —— 两个后端都精确、
+     * 零额外成本（不需要蒙版、不需要图层）。
+     */
+    if (s->clip_kind == QL_UI_CLIP_INSET && d2d->set_clip != NULL) {
+        const ql_coord_t t = clip_len_to_px(s->clip_box[0], box.h);
+        const ql_coord_t r = clip_len_to_px(s->clip_box[1], box.w);
+        const ql_coord_t b = clip_len_to_px(s->clip_box[2], box.h);
+        const ql_coord_t l = clip_len_to_px(s->clip_box[3], box.w);
+        const QLRect ins = ql_rect_make(box.x + l, box.y + t, box.w - l - r,
+                                        box.h - t - b);
+        const QLRect nc = ql_rect_intersect(node->owner->clip, ins);
+        node->owner->clip = nc;
+        d2d->set_clip(d2d, nc);
+        inset_clipped = 1;
     }
 
     /*
@@ -7581,9 +7689,28 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             const QLUIShadow *sh = &s->shadow[i];
             if (sh->alpha == 0 || sh->inset)
                 continue;
-            if (d2d->fill_shadow != NULL)
-                d2d->fill_shadow(d2d, box, ql_ui_radius_max(s), sh->blur, sh->dx, sh->dy,
-                                 sh->color, sh->alpha);
+            if (d2d->fill_shadow != NULL) {
+                /*
+                 * `spread`：阴影轮廓整体外扩（负值内缩）。做法就是把矩形与圆角
+                 * 一起按 spread 调整 —— 与浏览器一致（spread 作用于"阴影的形状"，
+                 * 不是模糊半径）。
+                 */
+                QLRect sb = box;
+                ql_coord_t sr = ql_ui_radius_max(s);
+                if (sh->spread != 0) {
+                    const ql_coord_t sp = (ql_coord_t)sh->spread;
+                    sb.x -= sp;
+                    sb.y -= sp;
+                    sb.w += 2 * sp;
+                    sb.h += 2 * sp;
+                    sr += sp;
+                    if (sr < 0)
+                        sr = 0;
+                }
+                if (sb.w > 0 && sb.h > 0)
+                    d2d->fill_shadow(d2d, sb, sr, sh->blur, sh->dx, sh->dy, sh->color,
+                                     sh->alpha);
+            }
         }
     }
 
@@ -7661,9 +7788,23 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             const QLUIShadow *sh = &s->shadow[i];
             if (sh->alpha == 0 || !sh->inset)
                 continue;
-            if (d2d->fill_inset_shadow != NULL)
-                d2d->fill_inset_shadow(d2d, box, ql_ui_radius_max(s), sh->blur, sh->dx,
-                                       sh->dy, sh->color, sh->alpha);
+            if (d2d->fill_inset_shadow != NULL) {
+                QLRect sb = box;
+                ql_coord_t sr = ql_ui_radius_max(s);
+                if (sh->spread != 0) {
+                    const ql_coord_t sp = (ql_coord_t)sh->spread;
+                    sb.x -= sp;
+                    sb.y -= sp;
+                    sb.w += 2 * sp;
+                    sb.h += 2 * sp;
+                    sr += sp;
+                    if (sr < 0)
+                        sr = 0;
+                }
+                if (sb.w > 0 && sb.h > 0)
+                    d2d->fill_inset_shadow(d2d, sb, sr, sh->blur, sh->dx, sh->dy,
+                                           sh->color, sh->alpha);
+            }
         }
     }
 
@@ -7762,6 +7903,10 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         /* 输入框的行尾空格要占宽（和 input_visual_lines 保持一致） */
         ts.keep_trailing = (uint8_t)(in != NULL);
         ts.ligatures = (uint8_t)(s->ligatures ? 1 : 0);
+        ts.small_caps =
+            (uint8_t)((s->variant_flags & QL_UI_VARIANT_SMALL_CAPS) ? 1 : 0);
+        ts.tabular_nums =
+            (uint8_t)((s->variant_flags & QL_UI_VARIANT_TABULAR_NUMS) ? 1 : 0);
         ts.kerning = (uint8_t)(s->kerning ? 1 : 0);
         /*
          * 文本细节：输入框/多行输入里**不套**字间距与缩进 —— 光标位置是按
@@ -7885,18 +8030,28 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         node->owner->clip = saved;
         ql_draw2d_set_offset(d2d, saved_ox, saved_oy);
         if (d2d->set_mask != NULL)
-            ql_draw2d_set_mask(d2d, saved_mx, saved_my, saved_mr);
+            ql_draw2d_set_mask_ellipse(d2d, saved_mx, saved_my, saved_mr, saved_mry);
         if (saved_efx != d2d->elem_x_fx || saved_efy != d2d->elem_y_fx)
             ql_draw2d_set_elem_scale_xy(d2d, saved_efx, saved_efy, 0, 0);
+        if (inset_clipped) {
+            node->owner->clip = clip_before_inset;
+            if (d2d->set_clip != NULL)
+                d2d->set_clip(d2d, clip_before_inset);
+        }
         return;
     }
 
     render_children(node, d2d);
     ql_draw2d_set_offset(d2d, saved_ox, saved_oy);
     if (d2d->set_mask != NULL)
-        ql_draw2d_set_mask(d2d, saved_mx, saved_my, saved_mr);
+        ql_draw2d_set_mask_ellipse(d2d, saved_mx, saved_my, saved_mr, saved_mry);
     if (saved_efx != d2d->elem_x_fx || saved_efy != d2d->elem_y_fx)
         ql_draw2d_set_elem_scale_xy(d2d, saved_efx, saved_efy, 0, 0);
+    if (inset_clipped) {
+        node->owner->clip = clip_before_inset;
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, clip_before_inset);
+    }
 }
 
 void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
@@ -8197,7 +8352,315 @@ static ql_coord_t resolve_origin_len(QLUILength len, ql_coord_t basis)
     return resolve_length(len, basis, 0);
 }
 
+
+/* clip-path 的长度 → px（百分比按边长，px 原样） */
+static ql_coord_t clip_len_to_px(QLUILength len, ql_coord_t span)
+{
+    if (len.unit == QL_UI_UNIT_PERCENT)
+        return (ql_coord_t)(((int32_t)span * (int32_t)len.value) / 100);
+    return (ql_coord_t)len.value;
+}
+
+/* ==================== clip-path 的椭圆/多边形蒙版（v34） ==================== */
+
+/*
+ * 蒙版分辨率：固定 64×64，与元素尺寸无关（合成时按边框盒拉伸）。
+ * 为什么不做成"按元素像素 1:1"：那要给每个元素按 DPR 分配缓冲，
+ * 一个装饰形状配上 4K 屏就是 MB 级；64×64 拉伸后在视觉上看不出差别
+ * （形状只有一些直线/弧线，没有高频细节）。
+ */
+#define QL_UI_CLIP_MASK_RES 64
+
+/*
+ * 把一条长度换算成"相对边框盒的比例"（0..1 表示 100%）。
+ * 百分比：值是整数百分比（parse_length 的口径，50 = 50%）→ /100。
+ * px     ：相对边长 → px / 边长。
+ */
+static float cliplen01(QLUILength len, ql_coord_t span)
+{
+    if (len.unit == QL_UI_UNIT_PERCENT)
+        return (float)len.value / 100.0f;
+    if (span <= 0)
+        return 0.0f;
+    return (float)len.value / (float)span;
+}
+
+/* (u,v) ∈ [0,1]^2 是否落在形状内（1 = 内） */
+typedef struct {
+    uint8_t kind;
+    float   rx, ry;                                 /* 椭圆半轴（0..1） */
+    int     n;
+    float   px[QL_CFG_UI_CLIP_PTS_MAX];
+    float   py[QL_CFG_UI_CLIP_PTS_MAX];
+} ClipShape01;
+
+static void clip_shape_prepare(const QLUIRoot *ui, const QLUINodeRT *node,
+                               const QLUIStyle *s, ClipShape01 *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->kind = s->clip_kind;
+    const ql_coord_t bw = node->border_box.w;
+    const ql_coord_t bh = node->border_box.h;
+    if (s->clip_kind == QL_UI_CLIP_ELLIPSE) {
+        out->rx = cliplen01(s->clip_box[0], bw);
+        out->ry = cliplen01(s->clip_box[1], bh);
+        /* 缺省（没写）时按 50% 处理，与 CSS 的 `ellipse()` 初值一致 */
+        if (out->rx <= 0.0f && s->clip_box[0].unit == QL_UI_UNIT_PX)
+            out->rx = 0.5f;
+        if (out->ry <= 0.0f && s->clip_box[1].unit == QL_UI_UNIT_PX)
+            out->ry = 0.5f;
+    } else if (s->clip_kind == QL_UI_CLIP_POLYGON && ui != NULL && ui->doc != NULL &&
+               ui->doc->clip_pts != NULL && s->clip_pts != QL_UI_NO_CLIP_PTS) {
+        const QLClipPt *pt = &ui->doc->clip_pts[s->clip_pts];
+        int n = (int)s->clip_pt_n;
+        if (n > QL_CFG_UI_CLIP_PTS_MAX)
+            n = QL_CFG_UI_CLIP_PTS_MAX;
+        out->n = n;
+        for (int i = 0; i < n; i++) {
+            out->px[i] = cliplen01(pt[i].x, bw);
+            out->py[i] = cliplen01(pt[i].y, bh);
+        }
+    }
+}
+
+static int clip_shape_hit(const ClipShape01 *sh, float u, float v)
+{
+    if (sh->kind == QL_UI_CLIP_ELLIPSE) {
+        if (sh->rx <= 0.0f || sh->ry <= 0.0f)
+            return 0;
+        const float du = (u - 0.5f) / sh->rx;
+        const float dv = (v - 0.5f) / sh->ry;
+        return (du * du + dv * dv <= 1.0f) ? 1 : 0;
+    }
+    if (sh->kind == QL_UI_CLIP_POLYGON && sh->n >= 3) {
+        /* 非零环绕；本库的形状只有一层，与 evenodd 等价 */
+        int inside = 0;
+        for (int i = 0, j = sh->n - 1; i < sh->n; j = i++) {
+            if (((sh->py[i] > v) != (sh->py[j] > v)) &&
+                (u < (sh->px[j] - sh->px[i]) * (v - sh->py[i]) /
+                             (sh->py[j] - sh->py[i]) +
+                         sh->px[i]))
+                inside = !inside;
+        }
+        return inside;
+    }
+    return 0;
+}
+
+/*
+ * 取（或生成）某个节点的 clip-path 蒙版。返回 NULL 表示"这个构建不支持"，
+ * 调用方应当退回"不裁"（而不是裁错）。
+ */
+static const QLImage *clip_mask_for(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *s)
+{
+#if !QL_FEAT_CSS_FILTER_LAYER
+    QL_UNUSED(ui);
+    QL_UNUSED(node);
+    QL_UNUSED(s);
+    return NULL;
+#else
+    if (s->clip_kind != QL_UI_CLIP_ELLIPSE && s->clip_kind != QL_UI_CLIP_POLYGON)
+        return NULL;
+    if (ui == NULL || node == NULL)
+        return NULL;
+
+    for (uint8_t i = 0; i < ui->clip_mask_n; i++)
+        if (ui->clip_masks[i].node == node)
+            return &ui->clip_masks[i].img;
+
+    if (ui->clip_mask_n >= ui->clip_mask_cap) {
+        const uint8_t cap = (uint8_t)(ui->clip_mask_cap == 0 ? 4 : ui->clip_mask_cap * 2);
+        struct QLUIClipMask *nm = (struct QLUIClipMask *)ql_mem_alloc(
+            (size_t)cap * sizeof(struct QLUIClipMask));
+        if (nm == NULL)
+            return NULL;
+        if (ui->clip_masks != NULL) {
+            for (uint8_t i = 0; i < ui->clip_mask_n; i++)
+                nm[i] = ui->clip_masks[i];
+            ql_mem_free(ui->clip_masks);
+        }
+        ui->clip_masks = nm;
+        ui->clip_mask_cap = cap;
+    }
+
+    const int R = QL_UI_CLIP_MASK_RES;
+    uint8_t *px = (uint8_t *)ql_mem_alloc((size_t)R * (size_t)R);
+    if (px == NULL)
+        return NULL;
+    ClipShape01 sh;
+    clip_shape_prepare(ui, node, s, &sh);
+    for (int y = 0; y < R; y++) {
+        for (int x = 0; x < R; x++) {
+            int hits = 0;
+            for (int sy = 0; sy < 2; sy++)
+                for (int sx = 0; sx < 2; sx++)
+                    hits += clip_shape_hit(
+                        &sh, ((float)x + 0.25f + 0.5f * (float)sx) / (float)R,
+                        ((float)y + 0.25f + 0.5f * (float)sy) / (float)R);
+            px[y * R + x] = (uint8_t)(hits * 255 / 4);
+        }
+    }
+
+    struct QLUIClipMask *m = &ui->clip_masks[ui->clip_mask_n++];
+    memset(m, 0, sizeof(*m));
+    m->node = node;
+    m->px = px;
+    m->img.px = px;
+    m->img.len = (uint32_t)(R * R);
+    m->img.w = (uint16_t)R;
+    m->img.h = (uint16_t)R;
+    m->img.stride = (uint16_t)R;
+    m->img.format = QL_IMAGE_A8;
+    return &m->img;
+#endif
+}
+
 /* 这一层必须走离屏合成吗？（filter / 混合模式 / 遮罩 / 真 group opacity） */
+#if QL_FEAT_CSS_FILTER_LAYER
+/* ---------------- 颜色矩阵：把 `filter` 的纯颜色函数折成一个 3x4 矩阵 ---------------- */
+
+/*
+ * 16.16 定点矩阵相乘：`out = a ∘ b`（**先 b 后 a**）。
+ * 3x4 仿射：线性部分乘、偏移项先过 a 的线性部分再加上 a 的偏移。
+ */
+static void cm_compose(int32_t out[12], const int32_t a[12], const int32_t b[12])
+{
+    int32_t r[12];
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            int64_t acc = 0;
+            for (int k = 0; k < 3; k++)
+                acc += (int64_t)a[i * 4 + k] * (int64_t)b[k * 4 + j];
+            r[i * 4 + j] = (int32_t)(acc >> 16);
+        }
+        /*
+         * 偏移项：`out_off = a_lin * b_off + a_off`。
+         * 两者都是"色值 * 65536"，所以线性部分（16.16 无量纲）乘完要 >>16。
+         */
+        int64_t off = (int64_t)a[i * 4 + 3];
+        for (int k = 0; k < 3; k++)
+            off += ((int64_t)a[i * 4 + k] * (int64_t)b[k * 4 + 3]) >> 16;
+        r[i * 4 + 3] = (int32_t)off;
+    }
+    for (int i = 0; i < 12; i++)
+        out[i] = r[i];
+}
+
+/* 一个 filter 函数折成 3x4（16.16）。返回 0 表示"不是纯颜色函数" */
+static int cm_of_op(uint8_t kind, int32_t arg, int32_t m[12])
+{
+    /*
+     * 约定：线性部分是**无量纲**的 16.16（1.0 = 65536）；
+     * 第 4 列是**色值单位**（0..255）的 16.16（255 = 255 * 65536）。
+     * 这样加偏移时 `m[3] >> 16` 就是色值增量，组合矩阵时也不会丢精度。
+     */
+    memset(m, 0, 12 * sizeof(int32_t));
+    for (int i = 0; i < 3; i++)
+        m[i * 4 + i] = 65536;
+    const double S = 65536.0;
+    const double t = (double)arg / 1000.0;      /* 千分比 → 0..1 */
+
+    switch (kind) {
+    case QL_UI_FILTER_BRIGHTNESS:
+        m[0] = m[5] = m[10] = (int32_t)(t * S + 0.5);
+        return 1;
+    case QL_UI_FILTER_CONTRAST: {
+        /* (c - 0.5) * k + 0.5 ⇒ 色值尺度上是 (c - 127.5)*k + 127.5 */
+        m[0] = m[5] = m[10] = (int32_t)(t * S + 0.5);
+        const int32_t off = (int32_t)(127.5 * (1.0 - t) * S);
+        m[3] = m[7] = m[11] = off;
+        return 1;
+    }
+    case QL_UI_FILTER_SATURATE: {
+        const double ir = 0.213, ig = 0.715, ib = 0.072;
+        const double c[9] = { ir + (1.0 - ir) * t, ig - ig * t, ib - ib * t,
+                              ir - ir * t, ig + (1.0 - ig) * t, ib - ib * t,
+                              ir - ir * t, ig - ig * t, ib + (1.0 - ib) * t };
+        for (int i = 0; i < 9; i++)
+            m[(i / 3) * 4 + (i % 3)] = (int32_t)(c[i] * S + 0.5);
+        return 1;
+    }
+    case QL_UI_FILTER_GRAYSCALE: {
+        /* c' = c + (lum - c) * t ⇒ 线性部分 = 单位*(1-t) + lum 行*t */
+        const double lum[3] = { 0.213, 0.715, 0.072 };
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                m[i * 4 + j] = (int32_t)((((i == j) ? (1.0 - t) : 0.0) + lum[j] * t) * S +
+                                         0.5);
+        return 1;
+    }
+    case QL_UI_FILTER_SEPIA: {
+        const double s9[9] = { 0.393, 0.769, 0.189, 0.349, 0.686,
+                               0.168, 0.272, 0.534, 0.131 };
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                m[i * 4 + j] =
+                    (int32_t)((((i == j) ? (1.0 - t) : 0.0) + s9[i * 3 + j] * t) * S + 0.5);
+        return 1;
+    }
+    case QL_UI_FILTER_INVERT: {
+        /* c' = c*(1-2t) + 255t */
+        m[0] = m[5] = m[10] = (int32_t)((1.0 - 2.0 * t) * S);
+        m[3] = m[7] = m[11] = (int32_t)(255.0 * t * S);
+        return 1;
+    }
+    case QL_UI_FILTER_HUE_ROTATE: {
+        /* 与 qllayer.c 的 color_op_px 用同一份 Filter Effects 系数 */
+        const double a = (double)arg * 3.14159265358979323846 / 180.0;
+        const double cs = cos(a), sn = sin(a);
+        const double mm[9] = {
+            0.213 + cs * 0.787 - sn * 0.213, 0.715 - cs * 0.715 - sn * 0.715,
+            0.072 - cs * 0.072 + sn * 0.928,
+            0.213 - cs * 0.213 + sn * 0.143, 0.715 + cs * 0.285 + sn * 0.140,
+            0.072 - cs * 0.072 - sn * 0.283,
+            0.213 - cs * 0.213 - sn * 0.787, 0.715 - cs * 0.715 + sn * 0.715,
+            0.072 + cs * 0.928 + sn * 0.072,
+        };
+        for (int i = 0; i < 9; i++)
+            m[(i / 3) * 4 + (i % 3)] = (int32_t)(mm[i] * S);
+        return 1;
+    }
+    case QL_UI_FILTER_OPACITY:
+        /*
+         * `opacity()` 动的是 alpha，不是颜色 —— 由调用方乘进 `d2d->alpha`。
+         * 这里当"是颜色类"（矩阵为单位），以便整串 filter 能走单批次。
+         */
+        return 1;
+    default:
+        return 0;      /* blur / drop-shadow：必须走图层 */
+    }
+}
+
+/*
+ * 把 `filter` 的一条声明折成一个 (矩阵, alpha 千分比)。
+ * 返回 1 表示**全部**是纯颜色函数（可以不走离屏图层），0 表示必须走图层。
+ * `alpha_pm` 输出 opacity() 的千分比乘积（1000 = 不变）。
+ */
+static int filter_build_cm(const QLUIStyle *s, int32_t out[12], int32_t *alpha_pm)
+{
+    int32_t acc[12];
+    memset(acc, 0, sizeof(acc));
+    acc[0] = acc[5] = acc[10] = 65536;
+    int32_t apm = 1000;
+    for (uint8_t i = 0; i < s->filter_n && i < 6u; i++) {
+        const uint8_t kind = QL_UI_FILTER_KIND(s->filter_op[i]);
+        const int32_t arg = QL_UI_FILTER_ARG(s->filter_op[i]);
+        if (kind == QL_UI_FILTER_OPACITY) {
+            apm = (int32_t)(((int64_t)apm * arg) / 1000);
+            continue;
+        }
+        int32_t m[12];
+        if (!cm_of_op(kind, arg, m))
+            return 0;
+        cm_compose(acc, m, acc);       /* 先 acc 再 m ⇒ 左乘 m */
+    }
+    for (int i = 0; i < 12; i++)
+        out[i] = acc[i];
+    *alpha_pm = apm;
+    return 1;
+}
+#endif /* QL_FEAT_CSS_FILTER_LAYER */
+
 static int style_needs_layer(const QLUIStyle *s, const QLUINodeRT *node)
 {
 #if !QL_FEAT_CSS_FILTER_LAYER
@@ -8205,11 +8668,30 @@ static int style_needs_layer(const QLUIStyle *s, const QLUINodeRT *node)
     (void)node;
     return 0;
 #else
-    if (s->filter_n > 0)
-        return 1;
+    /*
+     * `filter` 只有纯颜色函数（brightness / contrast / saturate / grayscale /
+     * sepia / invert / hue-rotate / opacity）时**不进离屏图层**：折成一个 3x4
+     * 颜色矩阵挂到 draw2d 上（CPU 逐像素、GPU 用 uniform），省掉一整块
+     * RGBA 缓冲 + 两遍绘制。含 blur / drop-shadow 才需要图层。
+     *
+     * 语义差别：CSS 的 filter 作用于"元素合成后的结果"，逐图元施加时
+     * 子树内部互相重叠处略有不同（文档写明；实测常见用法看不出差异）。
+     */
+    if (s->filter_n > 0) {
+        int32_t m[12], apm = 1000;
+        if (!filter_build_cm(s, m, &apm))
+            return 1;
+    }
     if (s->mix_blend != QL_UI_BLEND_NORMAL)
         return 1;
     if (s->mask_image != QL_UI_NO_MASK)
+        return 1;
+    /*
+     * `clip-path: polygon()`：形状没有解析 SDF（逐边求距离塞不进单批次着色器），
+     * 所以走"生成 A8 蒙版 → 图层合成时乘 alpha"。circle/ellipse 不需要图层
+     * （它们是解析遮罩，见 render_node_inner），inset 更不需要（直接裁矩形）。
+     */
+    if (s->clip_kind == QL_UI_CLIP_POLYGON)
         return 1;
     /*
      * 旋转/斜切/矩阵：必须先把子树按原样合成，再整体重采样
@@ -8289,6 +8771,12 @@ static void layer_fx_of(const QLUIStyle *s, QLUINodeRT *node, uint8_t inherited,
             fx->mask = image_by_name(ui, ui->doc->text_pool +
                                              ui->doc->text_offsets[s->mask_image]);
     }
+    /*
+     * `clip-path: polygon()`：蒙版与 `mask` 互斥（两条都写时按 CSS 语义叠加，
+     * 但本库只保留 clip-path —— 写法上同时用它们没有实际用例）。
+     */
+    if (s->clip_kind == QL_UI_CLIP_POLYGON && fx->mask == NULL)
+        fx->mask = clip_mask_for(node->owner, node, s);
 }
 
 /* 图层的绘制范围（CSS px）：自身盒子 ∪ 子树可能画到的范围，再按滤镜半径外扩 */
@@ -8410,7 +8898,41 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
         a = (a + 127u) / 255u;
         d2d->alpha = (uint8_t)(a > 255u ? 255u : a);
     }
+
+#if QL_FEAT_CSS_FILTER_LAYER
+    /*
+     * 纯颜色 `filter`：不进图层，把矩阵挂到 draw2d 上随子树下传。
+     * 嵌套时**与外层矩阵相乘**（先子后父：父的 filter 作用在子元素的结果上），
+     * 所以逐图元也保持了链式语义。
+     */
+    int32_t saved_cm[12];
+    const uint8_t had_cm = d2d->cm_on;
+    memcpy(saved_cm, d2d->cm, sizeof(saved_cm));
+    int cm_applied = 0;
+    if (s->filter_n > 0 && d2d->set_cm != NULL) {
+        int32_t m[12], apm = 1000;
+        if (filter_build_cm(s, m, &apm)) {
+            if (had_cm) {
+                int32_t mixed[12];
+                cm_compose(mixed, saved_cm, m);
+                cm_applied = ql_draw2d_set_cm(d2d, mixed, 1);
+            } else {
+                cm_applied = ql_draw2d_set_cm(d2d, m, 1);
+            }
+            if (apm != 1000 && d2d->alpha > 0) {
+                uint32_t a = (uint32_t)d2d->alpha * (uint32_t)apm;
+                d2d->alpha = (uint8_t)((a + 500u) / 1000u);
+            }
+        }
+    }
+#endif
+
     render_node_inner(node, d2d);
+
+#if QL_FEAT_CSS_FILTER_LAYER
+    if (cm_applied)
+        (void)ql_draw2d_set_cm(d2d, saved_cm, had_cm);
+#endif
     d2d->alpha = saved;
 }
 

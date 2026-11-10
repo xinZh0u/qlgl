@@ -59,6 +59,7 @@ set(QL_EXAMPLES
     33_table
     34_columns
     35_text_stack
+    36_clip_filter
 )
 
 foreach(e ${QL_EXAMPLES})

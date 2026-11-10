@@ -308,9 +308,9 @@ static void fput_shadow(FILE *f, const QLUIShadow *sh)
 {
     fprintf(f,
             "{ .dx = %d, .dy = %d, .blur = %u, .alpha = %u, .inset = %u,"
-            " .color = 0x%06X }",
+            " .spread = %d, .color = 0x%06X }",
             (int)sh->dx, (int)sh->dy, (unsigned)sh->blur, (unsigned)sh->alpha,
-            (unsigned)sh->inset, (unsigned)(sh->color & 0xFFFFFFu));
+            (unsigned)sh->inset, (int)sh->spread, (unsigned)(sh->color & 0xFFFFFFu));
 }
 
 static void fput_style(FILE *f, const QLUIStyle *s)
@@ -568,6 +568,26 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->column_rule_style, (unsigned)(s->column_rule_color & 0xFFFFFFu));
     fput_length(f, s->column_width);
 
+    /*
+     * clip-path 形状 + 字体变体 + 椭圆圆角（blob v34）。
+     * `clip_kind` / `clip_r` 上面已经输出过（沿用老的输出位置），这里只补新增字段。
+     */
+    fputs(",\n      .clip_pts = ", f);
+    if (s->clip_pts == QL_UI_NO_CLIP_PTS || s->clip_pt_n == 0)
+        fputs("QL_UI_NO_CLIP_PTS", f);
+    else
+        fprintf(f, "%u", (unsigned)s->clip_pts);
+    fprintf(f, ", .clip_pt_n = %u, .variant_flags = %u,\n      .clip_box = { ",
+            (unsigned)s->clip_pt_n, (unsigned)s->variant_flags);
+    for (int i = 0; i < 4; i++) {
+        if (i != 0)
+            fputs(", ", f);
+        fput_length(f, s->clip_box[i]);
+    }
+    fprintf(f, " },\n      .radius_v = { %d, %d, %d, %d }",
+            (int)s->radius_v[0], (int)s->radius_v[1], (int)s->radius_v[2],
+            (int)s->radius_v[3]);
+
     fputs(" },\n", f);
 }
 
@@ -608,6 +628,7 @@ typedef struct {
     const char *out;
     const char *root;          /* --root：图片资源根目录（给了才嵌入资源） */
     const char *pixel_format;  /* --pixel-format rgb565|rgb888|rgba8888|a8 */
+    const char *platform;      /* --platform pc|mcu：只求降级报告，不产出文件 */
     const char *format;        /* --format raw（目前只支持 raw） */
     int         scale;         /* --scale N：构建期整数倍缩小（面积平均） */
 } Args;
@@ -1107,6 +1128,19 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fputs("};\n\n", f);
     }
 
+    /* ---- clip-path 多边形顶点（有才输出，v34） ---- */
+    if (doc->clip_pt_count > 0 && doc->clip_pts != NULL) {
+        fprintf(f, "/* clip-path polygon 顶点（x 相对盒宽、y 相对盒高；千分比或 px） */\n");
+        fprintf(f, "static const QLClipPt %s_clip_pts[%u] = {\n", ident,
+                (unsigned)doc->clip_pt_count);
+        for (uint16_t i = 0; i < doc->clip_pt_count; i++) {
+            const QLClipPt *pt = &doc->clip_pts[i];
+            fprintf(f, "    { { %d, %u, 0 }, { %d, %u, 0 } },\n", (int)pt->x.value,
+                    (unsigned)pt->x.unit, (int)pt->y.value, (unsigned)pt->y.unit);
+        }
+        fputs("};\n\n", f);
+    }
+
     /* ---- 文本栈（B8）：@font-face 与 font-family 列表（有才输出） ---- */
     if (doc->font_face_count > 0 && doc->font_faces != NULL) {
         fprintf(f, "/* @font-face 声明（family / src 都是文本池下标） */\n");
@@ -1218,6 +1252,13 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                 "    .xform_count = %u,\n"
                 "    .xforms      = %s_xforms,\n",
                 (unsigned)doc->xform_count, ident);
+    }
+
+    if (doc->clip_pt_count > 0 && doc->clip_pts != NULL) {
+        fprintf(f,
+                "    .clip_pt_count = %u,\n"
+                "    .clip_pts      = %s_clip_pts,\n",
+                (unsigned)doc->clip_pt_count, ident);
     }
 
     /* 文本栈：没有 @font-face / 家族列表时一个字都不多 */
@@ -1332,6 +1373,130 @@ static void write_blob_helper(const char *ident, const char *out_dir)
 /* 命令行                                                              */
 /* ------------------------------------------------------------------ */
 
+/* ---------------------- --platform：构建期降级报告 ---------------------- */
+
+/*
+ * 同一份 HTML/CSS 在不同目标平台上的能力集不同（PC/移动全开，MCU 裁掉大件）。
+ * 被裁掉的部分在本库里**构建期报错**，所以"能不能在目标上编过"必须提前知道 ——
+ * 这就是 `qltext check --platform mcu` 的用途：不产出任何文件，只报告
+ * "这份界面用到了哪些在目标平台上会报错/不生效的东西"，并给出对应的开关名。
+ *
+ * 代价 = 0：这张表只在宿主工具里（目标机根本不链接 qltext）。
+ */
+typedef struct {
+    const char *label;       /* 人话描述 */
+    const char *macro;       /* 哪个 QL_FEAT_CSS_*（=0 时不可用） */
+    int (*hit)(const QLUIStyle *s);
+} PlatformProbe;
+
+static int hit_grid(const QLUIStyle *s)
+{
+    return s->grid != QL_UI_NO_GRID || s->display == QL_UI_DISPLAY_GRID ||
+           s->display == QL_UI_DISPLAY_INLINE_GRID;
+}
+static int hit_border_image(const QLUIStyle *s)
+{
+    return s->border_image != QL_UI_NO_IMAGE;
+}
+static int hit_table(const QLUIStyle *s)
+{
+    return s->display == QL_UI_DISPLAY_TABLE || s->display == QL_UI_DISPLAY_TABLE_ROW ||
+           s->display == QL_UI_DISPLAY_TABLE_CELL ||
+           s->display == QL_UI_DISPLAY_TABLE_ROW_GROUP ||
+           s->display == QL_UI_DISPLAY_TABLE_CAPTION ||
+           s->display == QL_UI_DISPLAY_TABLE_COLUMN ||
+           s->display == QL_UI_DISPLAY_TABLE_COLUMN_GROUP ||
+           s->table_layout != 0 || s->border_collapse != 0;
+}
+static int hit_columns(const QLUIStyle *s)
+{
+    return s->column_count != 0 || s->column_width.unit != QL_UI_UNIT_AUTO ||
+           s->column_rule_w != 0;
+}
+static int hit_filter_layer(const QLUIStyle *s)
+{
+    return s->filter_n > 0 || s->mix_blend != 0 || s->mask_image != QL_UI_NO_MASK ||
+           s->xform >= 0 || s->backdrop_blur != 0;
+}
+static int hit_font_stack(const QLUIStyle *s)
+{
+    /* 家族列表下标 0 是"默认（空）"，> 0 说明真的写了 font-family: 名字 */
+    return s->font_family > 1;
+}
+static int hit_text_shape(const QLUIStyle *s)
+{
+    return s->ligatures == 0 || s->kerning == 0 || s->variant_flags != 0;
+}
+static int hit_bidi(const QLUIStyle *s)
+{
+    return s->direction != 0 || s->unicode_bidi != 0;
+}
+static int hit_clip_shape(const QLUIStyle *s)
+{
+    return s->clip_kind == QL_UI_CLIP_POLYGON || s->clip_kind == QL_UI_CLIP_ELLIPSE ||
+           s->clip_kind == QL_UI_CLIP_INSET;
+}
+
+static const PlatformProbe k_probes[] = {
+    { "Grid 布局 / border-image 九宫格", "QL_FEAT_CSS_GRID", hit_grid },
+    { "border-image", "QL_FEAT_CSS_BORDER_IMAGE", hit_border_image },
+    { "表格（display: table 全家）", "QL_FEAT_CSS_TABLE", hit_table },
+    { "多栏（column-*）", "QL_FEAT_CSS_COLUMNS", hit_columns },
+    { "滤镜 / 混合模式 / mask / 旋转（离屏图层）", "QL_FEAT_CSS_FILTER_LAYER",
+      hit_filter_layer },
+    { "@font-face / font-family 家族列表", "QL_FEAT_CSS_FONT_STACK", hit_font_stack },
+    { "连字/字距/small-caps/tabular-nums（整形）", "QL_FEAT_CSS_TEXT_SHAPE",
+      hit_text_shape },
+    { "direction / RTL（双向）", "QL_FEAT_CSS_BIDI", hit_bidi },
+    { "clip-path 的 ellipse/inset/polygon", "QL_FEAT_CSS_FILTER_LAYER", hit_clip_shape },
+};
+
+/*
+ * 平台预设：**只列"关掉"的开关**，其余按开处理。
+ * 数值与 test/mcu/build.sh 的默认值、以及文档里各能力包的默认值保持一致。
+ */
+static int platform_has(const char *platform, const char *macro)
+{
+    if (platform == NULL)
+        return 1;
+    if (strcmp(platform, "pc") == 0 || strcmp(platform, "mobile") == 0)
+        return 1;                      /* PC/移动：全开 */
+    if (strcmp(platform, "mcu") == 0) {
+        /* MCU 默认裁掉所有"大件"（见 test/mcu/build.sh） */
+        return !(strcmp(macro, "QL_FEAT_CSS_FILTER_LAYER") == 0 ||
+                 strcmp(macro, "QL_FEAT_CSS_TABLE") == 0 ||
+                 strcmp(macro, "QL_FEAT_CSS_COLUMNS") == 0 ||
+                 strcmp(macro, "QL_FEAT_CSS_FONT_STACK") == 0 ||
+                 strcmp(macro, "QL_FEAT_CSS_TEXT_SHAPE") == 0 ||
+                 strcmp(macro, "QL_FEAT_CSS_BIDI") == 0);
+    }
+    return 1;
+}
+
+/* 返回"发现的降级项个数"；0 = 目标平台完全支持这份界面 */
+static int report_platform(const QLUIStyle *styles, uint16_t n, const char *platform)
+{
+    int total = 0;
+    printf("qltext: --platform %s 降级报告\n", platform);
+    for (size_t i = 0; i < sizeof(k_probes) / sizeof(k_probes[0]); i++) {
+        const PlatformProbe *p = &k_probes[i];
+        if (platform_has(platform, p->macro))
+            continue;                  /* 目标上有这个能力，不用报 */
+        int hits = 0;
+        for (uint16_t k = 0; k < n; k++)
+            if (p->hit(&styles[k]))
+                hits++;
+        if (hits == 0)
+            continue;
+        total += hits;
+        printf("  [裁掉] %-42s %3d 处 → %s=0 时构建期报错\n", p->label, hits,
+               p->macro);
+    }
+    if (total == 0)
+        printf("  ✔ 这份界面在 %s 上不需要裁任何特性\n", platform);
+    return total;
+}
+
 static void usage(void)
 {
     fprintf(stderr,
@@ -1340,7 +1505,8 @@ static void usage(void)
             "               [--root DIR] [--pixel-format rgb565|rgb888|rgba8888|a8]\n"
             "               [--scale N]   构建期把 <img src> 的图片转成目标像素格式并嵌入\n"
             "  qltext blob  --html A.html --css B.css --out out.qlui [--name foo] [--root DIR]\n"
-            "  qltext check --html A.html --css B.css [--name foo]\n");
+            "  qltext check --html A.html --css B.css [--name foo] [--platform pc|mcu]\n"
+            "      --platform 额外给出“构建期降级报告”（目标平台上有哪些特性会被裁掉）\n");
 }
 
 
@@ -1362,6 +1528,7 @@ static int parse_args(int argc, char **argv, Args *a)
         else if (strcmp(k, "--pixel-format") == 0) { a->pixel_format = v; i++; }
         else if (strcmp(k, "--format") == 0) { a->format = v; i++; }
         else if (strcmp(k, "--scale") == 0) { a->scale = atoi(v); i++; }
+        else if (strcmp(k, "--platform") == 0) { a->platform = v; i++; }
         else {
             fprintf(stderr, "qltext: 未知参数 %s\n", k);
             return 0;
@@ -1476,6 +1643,18 @@ int main(int argc, char **argv)
     if (is_check) {
         printf("qltext: %s 可以编译（%u 节点，%u 样式，%zu 字节文本）\n", sname,
                (unsigned)doc->node_count, (unsigned)doc->style_count, pool);
+        if (a.platform != NULL) {
+            const int bad = report_platform(doc->styles, doc->style_count, a.platform);
+            if (bad > 0) {
+                /*
+                 * 有降级项时以退出码 3 结束：CI 可以用它做"这份界面能不能上 MCU"
+                 * 的门槛，而 0/1/2 仍然分别表示成功/解析失败/参数错误。
+                 */
+                ql_ui_doc_free(doc);
+                ql_ui_text_set_name(NULL);
+                return 3;
+            }
+        }
     } else if (is_blob) {
         /*
          * blob 也要带上资源：把 doc 拷一份接上 images（QLUIDoc 是纯数据，

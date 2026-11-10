@@ -350,7 +350,7 @@ typedef struct {
     uint8_t  blur;     /* 0 = 硬边；> 0 的软边由后端的覆盖率衰减实现 */
     uint8_t  alpha;    /* 0 = 这一层不存在 */
     uint8_t  inset;    /* 1 = 内阴影 */
-    uint8_t  reserved;
+    int8_t   spread;   /* 扩散半径 px（CSS `box-shadow: x y blur spread color`，可为负） */
     uint32_t color;    /* 0xRRGGBB */
 } QLUIShadow;          /* 12 字节 */
 
@@ -443,6 +443,25 @@ typedef struct {
      */
     uint8_t     clip_kind;
     uint16_t    clip_r;
+    /*
+     * ----- clip-path 其他形状（blob v34） -----
+     *
+     *   clip_kind: 0 无、1 circle、2 ellipse、3 inset、4 polygon
+     *
+     * `clip_box` 是**按形状复用**的 4 个长度：
+     *   ellipse: [0] = rx、[1] = ry（百分比相对于边框盒宽/高）
+     *   inset  : [0..3] = top / right / bottom / left（px 或百分比）
+     *   circle / polygon 不用它。
+     *
+     * `clip_pts` / `clip_pt_n`：polygon 的顶点在 `doc->clip_pts` 池里的起始下标
+     * 与个数。每个顶点占 2 个 QLUILength（x, y），x 的百分比相对于边框盒宽、
+     * y 相对于高。同一份顶点表在池里只存一份（同值去重）。
+     */
+    QLUILength  clip_box[4];
+    uint16_t    clip_pts;
+    uint8_t     clip_pt_n;
+    /* 对齐填充，将来加小字段不用再抬版本 */
+    uint8_t     clip_reserved;
 
     /* ----- transform（只有 translate，不进布局） -----
      * 绘制期把它加到绘制偏移上，所以移动元素**零重排**；
@@ -767,6 +786,21 @@ typedef struct {
     uint8_t     unicode_bidi;
     uint8_t     ligatures;
     uint8_t     kerning;
+
+    /* ----- B9：字体变体 + 椭圆圆角（blob v34） -----
+     *
+     * `variant_flags` 位图（见 QL_UI_VARIANT_*）：
+     *   SMALL_CAPS   → `font-variant-caps: small-caps`，靠 HarfBuzz 的 `smcp`
+     *   TABULAR_NUMS → `font-variant-numeric: tabular-nums`，靠 `tnum`
+     * 两者都需要 HarfBuzz（内建整形没有 OpenType 特性）；没 HarfBuzz 时
+     * **不报错也不生效**，文档写明（属于"可选增强"）。
+     *
+     * `radius_v` 是四角半径的**纵向**分量：`border-radius: 10px / 20px` 时
+     * 水平 = radius[]、垂直 = radius_v[]。都为 0 表示"等半径"（老语义，逐像素不变）。
+     */
+    uint8_t     variant_flags;
+    uint8_t     radius_reserved;
+    int16_t     radius_v[4];   /* 上左 上右 下右 下左，与 radius[] 同序 */
 } QLUIStyle;
 
 /* ============================== transform 矩阵（M9.4） ============================== */
@@ -786,6 +820,14 @@ typedef struct {
 } QLUIXform;
 
 #define QL_UI_NO_XFORM   ((int16_t)-1)
+
+/* clip-path: polygon() 的一个顶点（x 相对边框盒宽，y 相对高） */
+typedef struct {
+    QLUILength x;
+    QLUILength y;
+} QLClipPt;
+
+#define QL_UI_NO_CLIP_PTS  0xFFFFu
 
 /* ============================== 离屏图层（M9.3） ============================== */
 
@@ -932,6 +974,15 @@ static inline ql_coord_t ql_ui_radius_max(const QLUIStyle *s)
     for (int i = 1; i < 4; i++)
         if (s->radius[i] > m)
             m = s->radius[i];
+    /* 椭圆圆角（`a / b`）取两分量的平均作为等价单半径，见 style_radii4 */
+    if (s->radius_v[0] > 0 || s->radius_v[1] > 0 || s->radius_v[2] > 0 ||
+        s->radius_v[3] > 0) {
+        ql_coord_t mv = s->radius_v[0];
+        for (int i = 1; i < 4; i++)
+            if (s->radius_v[i] > mv)
+                mv = s->radius_v[i];
+        m = (m + mv) / 2;
+    }
     return m;
 }
 
@@ -1037,6 +1088,17 @@ static inline uint8_t ql_ui_style_overflow_y(const QLUIStyle *s)
  */
 #define QL_UI_DECO_OVERLINE       0x80u   /* deco_style 的高位 */
 #define QL_UI_DECO_LINE_MASK      0x7Fu
+
+/* `font-variant-*` 位图（QLUIStyle.variant_flags，blob v34） */
+#define QL_UI_VARIANT_SMALL_CAPS   0x01u   /* font-variant-caps: small-caps（HarfBuzz `smcp`） */
+#define QL_UI_VARIANT_TABULAR_NUMS 0x02u   /* font-variant-numeric: tabular-nums（`tnum`） */
+
+/* `clip-path` 的形状（QLUIStyle.clip_kind，blob v34 起四种） */
+#define QL_UI_CLIP_NONE     0u
+#define QL_UI_CLIP_CIRCLE   1u
+#define QL_UI_CLIP_ELLIPSE  2u
+#define QL_UI_CLIP_INSET    3u
+#define QL_UI_CLIP_POLYGON  4u
 
 /* `background-image` 缺省：没有背景图 */
 #define QL_UI_NO_IMAGE            0xFFFFu
@@ -1295,6 +1357,13 @@ typedef struct {
 
     /* transform 矩阵池（M9.4）：样式的 `xform` 是它的下标 */
     uint16_t          xform_count;
+    /*
+     * `clip-path: polygon()` 顶点池（blob v34）：每个顶点 2 个 QLUILength
+     * （x 百分比相对边框盒宽，y 相对高）。样式的 `clip_pts` 是起始下标，
+     * `clip_pt_n` 是个数。
+     */
+    uint16_t          clip_pt_count;
+    const QLClipPt   *clip_pts;
     const QLUIGrid      *grids;
     const QLUIGridTrack *grid_tracks;
     const QLUIGridArea  *grid_areas;
@@ -1327,7 +1396,12 @@ typedef struct QLUINodeRT {
 
     const QLUINode  *src;
     const QLUIStyle *style;      /* 指向只读样式（或运行期改写的副本） */
-    QLUIStyle        style_copy; /* 只有运行期改过样式时才使用 */
+    /*
+     * 运行期改过的样式副本（懒分配，NULL = 没改过）。
+     * `QLUIStyle` 现在 400 字节，绝大多数节点一辈子用不到它 ——
+     * 内嵌的话每个节点白背 400 B（MCU 上是几千节点的量级）。
+     */
+    QLUIStyle       *style_copy;
 
     const char      *text;
 
@@ -1612,6 +1686,18 @@ struct QLUIRoot {
     uint8_t        paste_pending;    /* 已发出粘贴请求，等内容到（异步） */
     ql_ui_area_cb  area_cb;          /* 热区点击回调（可为 NULL） */
     void          *area_user;
+    /*
+     * `clip-path: polygon()` / `ellipse()` 的 A8 蒙版缓存（懒分配）。
+     *
+     * 这两种形状在 CPU/GPU 两个后端上**没有解析 SDF**（多边形要逐边求距离，
+     * 塞进单批次着色器代价太大），所以走"生成一张 A8 蒙版 → 强制离屏图层 →
+     * 用 fx->mask 合成"这条路 —— 两个后端早已支持的、经过测试的蒙版路径。
+     *
+     * 蒙版固定 64×64（按边框盒拉伸），所以**与元素尺寸无关**，只在形状变化时重算。
+     */
+    struct QLUIClipMask *clip_masks;
+    uint8_t        clip_mask_n;
+    uint8_t        clip_mask_cap;
 };
 
 /* ----- 生命周期 ----- */
@@ -1867,6 +1953,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ font_faces ] font_face_count  * sizeof(QLUIFontFace)    （v33）
  *   [ font_lists ] font_list_count  * sizeof(QLUIFontList)    （v33）
  *   [ font_names ] font_name_count  * uint16                  （v33）
+ *   [ clip_pts   ] clip_pt_count    * sizeof(QLClipPt)        （v34）
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -1883,15 +1970,19 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *     :disabled / :checked / ::placeholder（B2），QLUINode 20 → 28
  * 26: 四边独立 border-*（宽/样式/色）、四角 radius、box-shadow 两层 + inset、
  *     text-shadow、image-rendering、scrollbar-width/color、object-position
+ * 34: + clip-path 的 ellipse / inset / polygon（clip_box[4] / clip_pts / clip_pt_n）；
+ *     `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums`
+ *     （variant_flags）；`border-radius: a / b` 椭圆圆角（radius_v[4]）；
+ *     `box-shadow` 的 spread（复用 QLUIShadow.reserved）。QLUIStyle 368 → **396**
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    33u
+#define QL_UI_BLOB_VERSION    34u
 
 typedef struct {
     uint32_t magic;
     uint16_t version;
-    uint16_t header_size;         /* 固定 172（v33） */
+    uint16_t header_size;         /* 固定 180（v34） */
     uint16_t node_count;
     uint16_t style_count;
     uint16_t text_count;
@@ -1948,9 +2039,13 @@ typedef struct {
     uint16_t xform_count;         /* transform 矩阵条数（v30） */
     uint16_t reserved_xform;      /* 对齐填充 */
     uint32_t off_xforms;          /* QLUIXform[xform_count] */
+    /* clip-path 多边形顶点（v34） */
+    uint16_t clip_pt_count;       /* clip_pts[] 元素个数 */
+    uint16_t reserved_clip;       /* 对齐填充 */
+    uint32_t off_clip_pts;        /* QLClipPt[clip_pt_count] */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 172, "blob 头必须是 172 字节（v33）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 180, "blob 头必须是 180 字节（v34）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

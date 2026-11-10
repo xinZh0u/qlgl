@@ -1,0 +1,80 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</div>
+    <div class="badge">B9 · blob v34</div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <div class="cap">1. circle()：圆孔</div>
+      <div class="stage">
+        <div class="panel circle"><div class="kid"></div></div>
+      </div>
+      <div class="hint"><code>circle(45%)</code>；越界的子元素一起被裁。</div>
+    </div>
+
+    <div class="card">
+      <div class="cap">2. ellipse()：椭圆</div>
+      <div class="stage">
+        <div class="panel ellipse"></div>
+      </div>
+      <div class="hint"><code>ellipse(45% 30%)</code></div>
+    </div>
+
+    <div class="card">
+      <div class="cap">3. inset()：矩形内缩</div>
+      <div class="stage">
+        <div class="panel inset"></div>
+      </div>
+      <div class="hint"><code>inset(12% 8% 25% 8%)</code></div>
+    </div>
+
+    <div class="card">
+      <div class="cap">4. polygon()：三角形</div>
+      <div class="stage">
+        <div class="panel polygon"></div>
+      </div>
+      <div class="hint"><code>polygon(3 个顶点)</code></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card wide">
+      <div class="cap">5. 纯颜色 filter：不进离屏图层，折成一个 3×4 颜色矩阵</div>
+      <div class="swatches">
+        <div class="sw base"><span>原色</span></div>
+        <div class="sw gray"><span>grayscale(100%)</span></div>
+        <div class="sw sat"><span>saturate(0.4)</span></div>
+        <div class="sw inv"><span>invert(100%)</span></div>
+        <div class="sw hue"><span>hue-rotate(90deg)</span></div>
+        <div class="sw con"><span>contrast(180%)</span></div>
+        <div class="sw sep"><span>sepia(100%)</span></div>
+        <div class="sw mix"><span>gray+invert 30%</span></div>
+      </div>
+      <div class="hint">
+        这些只改颜色，不需要"先把子树合成到一张图"，所以 CPU 逐像素过矩阵、
+        GPU 用 uniform —— 每个元素都不多一块缓冲。含 <code>blur()</code> /
+        <code>drop-shadow()</code> 的才走离屏图层（见例程 31）。
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card wide">
+      <div class="cap">6. text-align: justify · small-caps · tabular-nums · 椭圆圆角 · 阴影 spread</div>
+      <div class="texts">
+        <div class="justify">
+          justify：两端对齐会把除最后一行之外的每一行拉满整行宽度，末行保持左对齐。
+          这一段足够长，所以第一行与第二行都会被拉伸到边缘，最后一行则不会。
+        </div>
+        <div class="justify last">
+          只有一行的时候，justify 与左对齐完全一样 —— 这是 CSS 的语义，不是 bug。
+        </div>
+        <div class="numeric"><span class="tn">1111</span> <span class="tn">9999</span> tabular-nums：数字等宽</div>
+        <div class="sc">Small Caps via font-variant-caps</div>
+        <div class="ellipse-radius">border-radius: 40px / 12px（椭圆圆角）</div>
+        <div class="spread">box-shadow spread: 0 0 0 8px</div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -28,10 +28,22 @@ typedef struct {
      */
     ql_coord_t scale_fx;
 
-    /* 圆遮罩（设备像素）；**r < 0 表示关闭**（r == 0 = 全裁掉）。见 ql_canvas_set_mask */
+    /*
+     * 椭圆遮罩（设备像素）；**mask_r < 0 表示关闭**（== 0 表示全裁掉）。
+     * rx == ry 时就是圆。见 ql_canvas_set_mask
+     */
     ql_coord_t mask_cx;
     ql_coord_t mask_cy;
     ql_coord_t mask_r;
+    ql_coord_t mask_ry;
+
+    /*
+     * 颜色矩阵（`filter: brightness()/contrast()/...` 的**单批次**实现）。
+     * 3x4 行主序、16.16 定点：前 3 行是 rgb→rgb 的线性部分，第 4 列是偏移。
+     * `cm_on == 0` 时完全不参与运算（快路径不受影响）。
+     */
+    int32_t    cm[12];
+    uint8_t    cm_on;
 } QLCanvas;
 
 /* 由显示驱动构造画布，clip 默认整屏 */
@@ -75,7 +87,14 @@ void       ql_canvas_write_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y,
  * 只支持一层：嵌套遮罩的语义是"取交集"，而两个圆盘的交集不是圆盘，
  * 所以上层（QLDraw2D）会拒绝嵌套并告警。
  */
-void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
+void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
+                        ql_coord_t ry);
+
+/*
+ * 颜色矩阵：3x4 行主序、16.16 定点（`[r0 g0 b0 o0  r1 g1 b1 o1  r2 g2 b2 o2]`）。
+ * 传 on = 0 关闭。开启后光栅走逐像素路径（SIMD 行填充被绕过）。
+ */
+void ql_canvas_set_color_matrix(QLCanvas *canvas, const int32_t m[12], int on);
 /* 遮罩是否生效（r >= 0） */
 int  ql_canvas_mask_active(const QLCanvas *canvas);
 
@@ -263,6 +282,11 @@ typedef enum {
     QL_TEXT_ALIGN_LEFT = 0,
     QL_TEXT_ALIGN_CENTER,
     QL_TEXT_ALIGN_RIGHT,
+    /*
+     * 两端对齐：除**最后一行**（与末行后有空行时也除外）外，把剩余空间
+     * 平摊进每个字形之间的间隙。段落只有一行时与 LEFT 完全相同（CSS 语义）。
+     */
+    QL_TEXT_ALIGN_JUSTIFY,
 } QLTextAlign;
 
 /*

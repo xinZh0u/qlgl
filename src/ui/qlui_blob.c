@@ -84,6 +84,7 @@ typedef struct {
     size_t font_faces;
     size_t font_lists;
     size_t font_names;
+    size_t clip_pts;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -102,7 +103,8 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t grid_track_count, uint16_t grid_area_count,
                            uint16_t xform_count, uint16_t font_face_count,
                            uint16_t font_list_count, uint16_t font_name_count,
-                           size_t pool_size, size_t name_len, QLUIBlobLayout *out)
+                           uint16_t clip_pt_count, size_t pool_size, size_t name_len,
+                           QLUIBlobLayout *out)
 {
     memset(out, 0, sizeof(*out));
     size_t off = sizeof(QLUIDocBlobHeader);
@@ -188,6 +190,10 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     if (font_name_count > 0)
         off = QL_UI_ALIGN8(off + (size_t)font_name_count * sizeof(uint16_t));
 
+    out->clip_pts = off;
+    if (clip_pt_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)clip_pt_count * sizeof(QLClipPt));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -247,6 +253,9 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     const uint16_t font_face_count = doc->font_face_count;
     const uint16_t font_list_count = doc->font_list_count;
     const uint16_t font_name_count = doc->font_name_count;
+    const uint16_t clip_pt_count = (doc->clip_pts != NULL) ? doc->clip_pt_count : 0;
+    if ((clip_pt_count > 0 && doc->clip_pts == NULL))
+        return 0;
     if ((font_face_count > 0 && doc->font_faces == NULL) ||
         (font_list_count > 0 && doc->font_lists == NULL) ||
         (font_name_count > 0 && doc->font_names == NULL) ||
@@ -260,7 +269,7 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
                    doc->area_coord_count, media_count, media_pool_count,
                    calc_op_count, grid_count, grid_track_count, grid_area_count,
                    xform_count, font_face_count, font_list_count, font_name_count,
-                   pool_size, name_len, &lay);
+                   clip_pt_count, pool_size, name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
         return lay.total;
@@ -322,6 +331,8 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.off_font_faces = (uint32_t)lay.font_faces;
     head.off_font_lists = (uint32_t)lay.font_lists;
     head.off_font_names = (uint32_t)lay.font_names;
+    head.clip_pt_count = clip_pt_count;
+    head.off_clip_pts = (uint32_t)lay.clip_pts;
 
     if (doc->node_count > 0)
         memcpy(base + lay.nodes, doc->nodes,
@@ -387,6 +398,9 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (font_name_count > 0)
         memcpy(base + lay.font_names, doc->font_names,
                (size_t)font_name_count * sizeof(uint16_t));
+    if (clip_pt_count > 0)
+        memcpy(base + lay.clip_pts, doc->clip_pts,
+               (size_t)clip_pt_count * sizeof(QLClipPt));
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -574,6 +588,10 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         set_error_str("grid pools too large");
         return NULL;
     }
+    if (head.clip_pt_count > QL_CFG_UI_CLIP_PTS_TOTAL) {
+        set_error_str("clip-path point pool too large (see QL_CFG_UI_CLIP_PTS_TOTAL)");
+        return NULL;
+    }
 
     QLUIBlobLayout lay;
     compute_layout(head.node_count, head.style_count, head.text_count,
@@ -582,8 +600,8 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
                    head.area_coord_count, head.media_count, head.media_pool_count,
                    head.calc_op_count, head.grid_count, head.grid_track_count,
                    head.grid_area_count, head.xform_count, head.font_face_count,
-                   head.font_list_count, head.font_name_count, pool_size,
-                   head.name_len, &lay);
+                   head.font_list_count, head.font_name_count, head.clip_pt_count,
+                   pool_size, head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
@@ -600,7 +618,8 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         head.off_grid_areas != lay.grid_areas || head.off_xforms != lay.xforms ||
         head.off_font_faces != lay.font_faces ||
         head.off_font_lists != lay.font_lists ||
-        head.off_font_names != lay.font_names || head.off_name != lay.name) {
+        head.off_font_names != lay.font_names ||
+        head.off_clip_pts != lay.clip_pts || head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
     }
@@ -691,6 +710,10 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
     doc->font_names = (head.font_name_count > 0)
                           ? (const uint16_t *)(const void *)(p + lay.font_names)
                           : NULL;
+    doc->clip_pt_count = head.clip_pt_count;
+    doc->clip_pts = (head.clip_pt_count > 0)
+                        ? (const QLClipPt *)(const void *)(p + lay.clip_pts)
+                        : NULL;
 
     /* 文本栈的边界校验：名字下标必须落在文本池里，列表区间不许越界 */
     if ((doc->font_list_count > 0) != (doc->font_names != NULL) ||

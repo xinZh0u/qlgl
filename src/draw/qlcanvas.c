@@ -43,6 +43,8 @@ ql_color_t ql_canvas_read_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y)
     }
 }
 
+static inline void cm_apply(const QLCanvas *c, uint8_t *r, uint8_t *g, uint8_t *b);
+
 void ql_canvas_write_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y,
                            ql_color_t color, uint8_t alpha)
 {
@@ -57,6 +59,8 @@ void ql_canvas_write_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y,
     uint8_t r = QL_COLOR_GET_R(color);
     uint8_t g = QL_COLOR_GET_G(color);
     uint8_t b = QL_COLOR_GET_B(color);
+    if (canvas->cm_on)
+        cm_apply(canvas, &r, &g, &b);
 
     if (alpha != 255) {
         ql_color_t old = ql_canvas_read_pixel(canvas, x, y);
@@ -133,6 +137,8 @@ ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect
     canvas->scale_fx = (driver->scale_fx > 0) ? driver->scale_fx : QL_SCALE_ONE;
     canvas->clip = ql_rect_intersect(clip, ql_rect_make(0, 0, driver->width, driver->height));
     canvas->mask_r = -1;      /* 默认关闭（memset 是 0，那会被当成"半径 0 = 全裁"） */
+    canvas->mask_ry = -1;
+    canvas->cm_on = 0;
     return QL_OK;
 }
 
@@ -175,17 +181,48 @@ QLRect ql_canvas_clip(QLCanvas *canvas)
 /* 不做任何检查的像素写入（调用方保证已在 clip 与缓冲区内） */
 /* ------------------------------ 圆遮罩 ------------------------------ */
 
-void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord_t r)
+void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
+                        ql_coord_t ry)
 {
     if (canvas == NULL)
         return;
-    if (r < 0) {
+    if (rx < 0 || ry < 0) {
         canvas->mask_r = -1;
+        canvas->mask_ry = -1;
         return;
     }
     canvas->mask_cx = cx;
     canvas->mask_cy = cy;
-    canvas->mask_r = r;
+    canvas->mask_r = rx;
+    canvas->mask_ry = ry;
+}
+
+/* ------------------------------ 颜色矩阵 ------------------------------ */
+
+void ql_canvas_set_color_matrix(QLCanvas *canvas, const int32_t m[12], int on)
+{
+    if (canvas == NULL)
+        return;
+    if (!on || m == NULL) {
+        canvas->cm_on = 0;
+        return;
+    }
+    memcpy(canvas->cm, m, sizeof(canvas->cm));
+    canvas->cm_on = 1;
+}
+
+/* 一个颜色过一遍矩阵（16.16 定点，结果截到 0..255） */
+static inline void cm_apply(const QLCanvas *c, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+    const int32_t ri = *r, gi = *g, bi = *b;
+    /* 偏移是"色值 * 65536"，所以右移 16 位就是色值增量 */
+    const int32_t o0 = c->cm[3] >> 16, o1 = c->cm[7] >> 16, o2 = c->cm[11] >> 16;
+    int32_t nr = ((c->cm[0] * ri + c->cm[1] * gi + c->cm[2] * bi) >> 16) + o0;
+    int32_t ng = ((c->cm[4] * ri + c->cm[5] * gi + c->cm[6] * bi) >> 16) + o1;
+    int32_t nb = ((c->cm[8] * ri + c->cm[9] * gi + c->cm[10] * bi) >> 16) + o2;
+    *r = (uint8_t)(nr < 0 ? 0 : (nr > 255 ? 255 : nr));
+    *g = (uint8_t)(ng < 0 ? 0 : (ng > 255 ? 255 : ng));
+    *b = (uint8_t)(nb < 0 ? 0 : (nb > 255 ? 255 : nb));
 }
 
 int ql_canvas_mask_active(const QLCanvas *canvas)
@@ -498,9 +535,16 @@ static inline uint32_t mask_cov_at(const QLCanvas *c, ql_coord_t x, ql_coord_t y
     if (c->mask_r == 0)
         return 0u;              /* 半径 0：整屏被裁掉 */
 
-    float dx = ((float)x + 0.5f) - (float)c->mask_cx;
-    float dy = ((float)y + 0.5f) - (float)c->mask_cy;
-    float d = sqrtf(dx * dx + dy * dy) - (float)c->mask_r;
+    const float rx = (float)c->mask_r;
+    const float ry = (float)((c->mask_ry >= 0) ? c->mask_ry : c->mask_r);
+    float dx = (((float)x + 0.5f) - (float)c->mask_cx) / rx;
+    float dy = (((float)y + 0.5f) - (float)c->mask_cy) / ry;
+    /*
+     * 归一化椭圆距离：`sqrt((dx/rx)^2+(dy/ry)^2) - 1`，再乘回最短半径得到**近似**
+     * 的像素距离（只用于 ±0.5px 的抗锯齿带，精度足够）。
+     * rx == ry 时退化成圆的精确距离。
+     */
+    float d = (sqrtf(dx * dx + dy * dy) - 1.0f) * ((rx < ry) ? rx : ry);
     /* d < -0.5 完全在内；d > 0.5 完全在外 */
     float cov = 1.0f - ql_smoothstep(-0.5f, 0.5f, d);
     return (uint32_t)(cov * 255.0f + 0.5f);
@@ -510,19 +554,27 @@ static inline uint32_t mask_cov_at(const QLCanvas *c, ql_coord_t x, ql_coord_t y
 static int mask_row_span(const QLCanvas *c, ql_coord_t y, ql_coord_t *lo,
                          ql_coord_t *hi)
 {
+    const float rx = (float)c->mask_r;
+    const float ry = (float)((c->mask_ry >= 0) ? c->mask_ry : c->mask_r);
+    if (rx <= 0.0f || ry <= 0.0f)
+        return 0;
     float dy = ((float)y + 0.5f) - (float)c->mask_cy;
-    float r = (float)c->mask_r;
-    if (dy <= -r - 0.5f || dy >= r + 0.5f)
+    if (dy <= -ry - 0.5f || dy >= ry + 0.5f)
         return 0;
 
-    /* 留 0.5px 给边缘做覆盖率，内层走整行填充 */
-    float rr = r - 0.5f;
-    if (rr < 0.0f)
-        rr = 0.0f;
-    float span2 = rr * rr - dy * dy;
+    /*
+     * 某一行在椭圆内的半宽 = rx * sqrt(1 - (dy/ry)^2)。
+     * 留 0.5px 给边缘做覆盖率（内层走整行填充）。
+     */
+    const float rx_in = rx - 0.5f;
+    const float ry_in = ry - 0.5f;
+    if (rx_in <= 0.0f || ry_in <= 0.0f)
+        return 0;
+    float t = dy / ry_in;
+    float span2 = 1.0f - t * t;
     if (span2 < 0.0f)
         span2 = 0.0f;
-    float half = sqrtf(span2);
+    float half = rx_in * sqrtf(span2);
 
     float f0 = (float)c->mask_cx - half;
     float f1 = (float)c->mask_cx + half;
@@ -551,6 +603,8 @@ static inline void put_px(QLCanvas *c, ql_coord_t x, ql_coord_t y,
     uint8_t r = QL_COLOR_GET_R(color);
     uint8_t g = QL_COLOR_GET_G(color);
     uint8_t b = QL_COLOR_GET_B(color);
+    if (c->cm_on)
+        cm_apply(c, &r, &g, &b);
 
     switch (c->format) {
     case QL_COLOR_RGB565: {
@@ -1236,8 +1290,14 @@ static void fill_row(QLCanvas *c, ql_coord_t x0, ql_coord_t x1, ql_coord_t y,
 {
     if (x1 < x0)
         return;
-    if (c->mask_r < 0) {
+    if (c->mask_r < 0 && !c->cm_on) {
         fill_row_raw(c, x0, x1, y, color, alpha);
+        return;
+    }
+    if (c->mask_r < 0) {
+        /* 只有颜色矩阵：逐像素过一遍矩阵（SIMD 行填充会绕开 put_px） */
+        for (ql_coord_t x = x0; x <= x1; x++)
+            put_px(c, x, y, color, alpha);
         return;
     }
 
@@ -1249,9 +1309,16 @@ static void fill_row(QLCanvas *c, ql_coord_t x0, ql_coord_t x1, ql_coord_t y,
     ql_coord_t full0 = lo;
     ql_coord_t full1 = hi;
     if (full1 >= full0) {
-        if (full0 <= x1 && full1 >= x0)
+        if (c->cm_on) {
+            /* 颜色矩阵开启：内层不能走 SIMD（会绕开 put_px） */
+            const ql_coord_t a0 = full0 > x0 ? full0 : x0;
+            const ql_coord_t a1 = full1 < x1 ? full1 : x1;
+            for (ql_coord_t x = a0; x <= a1; x++)
+                put_px(c, x, y, color, alpha);
+        } else if (full0 <= x1 && full1 >= x0) {
             fill_row_raw(c, full0 > x0 ? full0 : x0, full1 < x1 ? full1 : x1, y,
                          color, alpha);
+        }
         /* 左边界像素 */
         if (full0 - 1 >= x0 && full0 - 1 <= x1)
             put_px(c, full0 - 1, y, color, alpha);
@@ -2507,6 +2574,8 @@ void ql_canvas_blit_image(QLCanvas *canvas, const QLImage *img, QLRect dst,
             uint32_t total = (uint32_t)a * (uint32_t)alpha * cov / (255u * 255u);
             if (total == 0u)
                 continue;
+            if (canvas->cm_on)
+                cm_apply(canvas, &r, &g, &b);
             ql_canvas_write_pixel(canvas, x, y, QL_COLOR_RGB(r, g, b), (uint8_t)total);
         }
     }

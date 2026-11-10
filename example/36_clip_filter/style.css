@@ -1,0 +1,57 @@
+/* 白底主题（例程一律白底，见 example/README.md） */
+#root { width: 848px; height: 800px; background-color: #FFFFFF; color: #1A1A1A;
+        font-size: 13px; padding: 16px; }
+
+.top { margin-bottom: 12px; }
+.h1 { font-size: 19px; font-weight: bold; color: #101010; }
+.badge { margin-top: 4px; color: #1673C7; font-size: 12px; }
+
+.row { display: flex; flex-direction: row; gap: 12px; margin-bottom: 12px; }
+.card { width: 192px; background-color: #F7F9FB; border: 1px solid #DEE5EC;
+        border-radius: 8px; padding: 8px; }
+.card.wide { width: 812px; }
+.cap { font-weight: bold; color: #23303B; margin-bottom: 6px; }
+.hint { margin-top: 6px; color: #5A6875; font-size: 11px;
+        white-space: normal; }
+.stage { width: 172px; height: 120px; position: relative; }
+
+/* 舞台底色：让"被裁掉"的地方露出浅灰，一眼能看出裁到哪 */
+.panel { position: absolute; left: 0; top: 4px; width: 172px; height: 112px;
+         background-color: #2F6FD0; }
+.panel.circle  { clip-path: circle(45%); }
+.panel.ellipse { clip-path: ellipse(45% 30%); background-color: #C2552D; }
+.panel.inset   { clip-path: inset(12% 8% 25% 8%); background-color: #2E8B57; }
+.panel.polygon { clip-path: polygon(50% 0, 100% 78%, 0 78%); background-color: #7B4FB5; }
+
+/* 子元素故意越界：clip-path 作用于**整棵子树** */
+.kid { position: absolute; left: -20px; top: 44px; width: 220px; height: 14px;
+       background-color: #E8A33D; }
+
+/* ---- 颜色矩阵 ---- */
+.swatches { display: flex; flex-direction: row; gap: 6px; }
+.sw { width: 90px; height: 56px; background-color: #E04020; border-radius: 6px;
+      position: relative; flex-shrink: 0; overflow: hidden; }
+.sw span { position: absolute; left: 4px; right: 2px; bottom: 3px;
+           font-size: 10px; color: #FFFFFF; }
+.sw.gray { filter: grayscale(100%); }
+.sw.sat  { filter: saturate(0.4); }
+.sw.inv  { filter: invert(100%); }
+.sw.inv span { color: #202020; }
+.sw.hue  { filter: hue-rotate(90deg); }
+.sw.con  { filter: contrast(180%); }
+.sw.sep  { filter: sepia(100%); }
+.sw.mix  { filter: grayscale(100%) invert(30%); }
+
+/* ---- 文本细节 ---- */
+.texts { display: flex; flex-direction: column; gap: 8px; }
+.justify { width: 440px; text-align: justify; white-space: normal; line-height: 20px; }
+.justify.last { color: #1673C7; }
+.numeric { color: #23303B; }
+.tn { font-variant-numeric: tabular-nums; background-color: #E8EEF5; padding: 2px 4px; }
+.sc { font-variant-caps: small-caps; font-size: 17px; color: #7B4FB5; }
+.ellipse-radius { width: 260px; height: 34px; background-color: #2F6FD0;
+                  border-radius: 40px / 12px; color: #FFFFFF; text-align: center;
+                  line-height: 34px; }
+.spread { width: 180px; height: 26px; background-color: #FFFFFF;
+          box-shadow: 0 0 0 8px #BFD7EF; margin-left: 12px; margin-top: 10px;
+          text-align: center; line-height: 26px; color: #23303B; }

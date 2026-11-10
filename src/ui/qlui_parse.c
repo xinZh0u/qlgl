@@ -328,7 +328,7 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
         return 1;
     }
     if (strcmp(t, "inherit") == 0 || strcmp(t, "initial") == 0 ||
-        strcmp(t, "unset") == 0) {
+        strcmp(t, "unset") == 0 || strcmp(t, "revert") == 0) {
         /* `inherit` 对继承属性本来就是默认行为；对非继承属性等同 `initial`。
            两种都归到 "special"，由 finalize 决定取父值还是取初值。 */
         *rgb = (strcmp(t, "inherit") == 0) ? 0xFFFFFFFEu : 0xFFFFFFFDu;
@@ -1590,10 +1590,14 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
 }
 
 /* box-shadow: <dx> <dy> [blur] <color> */
+/* parse_shadow 的第四个长度（spread）从这里带出去，够用且不污染调用签名 */
+static int s_shadow_spread;
+
 static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
                         int *blur, uint32_t *rgb, uint8_t *alpha, int *inset)
 {
     *dx = *dy = *blur = 0;
+    s_shadow_spread = 0;
     if (inset != NULL)
         *inset = 0;
     *rgb = 0;
@@ -1695,7 +1699,7 @@ static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
     }
     rest[rn] = '\0';
 
-    int nums[3] = { 0, 0, 0 };
+    int nums[4] = { 0, 0, 0, 0 };
     int nn = 0;
     const char *p = rest;
     while (*p != '\0' && nn < 4) {
@@ -1743,14 +1747,26 @@ static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
         set_error("%s: box-shadow 里无法识别 '%s'", where, tok);
         return 0;
     }
-    if (nn < 2 || nn > 3) {
-        set_error("%s: 阴影需要 2 或 3 个长度（x y [blur]），收到 %d 个"
-                  "（spread 展开半径暂不支持）", where, nn);
+    if (nn < 2 || nn > 4) {
+        set_error("%s: 阴影需要 2~4 个长度（x y [blur] [spread]），收到 %d 个", where,
+                  nn);
         return 0;
+    }
+    /* 多余的 token 一律报错（多的那个很可能就是你想要生效的那个） */
+    {
+        const char *q = p;
+        while (is_space(*q))
+            q++;
+        if (*q != '\0') {
+            set_error("%s: 阴影需要 2~4 个长度（x y [blur] [spread]），多出 '%s'", where,
+                      q);
+            return 0;
+        }
     }
     *dx = nums[0];
     *dy = nums[1];
-    *blur = (nn == 3) ? nums[2] : 0;
+    *blur = (nn >= 3) ? nums[2] : 0;
+    s_shadow_spread = (nn >= 4) ? nums[3] : 0;
     if (*blur < 0) {
         set_error("%s: box-shadow 的模糊半径不能为负", where);
         return 0;
@@ -1871,6 +1887,9 @@ static int parse_shadow_list(const char *text, const char *where, QLUIShadow out
         out[i].blur = (uint8_t)blur;
         out[i].alpha = al;
         out[i].inset = (uint8_t)(inset != 0);
+        out[i].spread = (int8_t)((s_shadow_spread < -128)   ? -128
+                                 : (s_shadow_spread > 127) ? 127
+                                                           : s_shadow_spread);
         out[i].color = rgb;
     }
     return 1;
@@ -1989,6 +2008,47 @@ static int32_t xf_fixed(double v)
 #define QL_CFG_UI_MAX_XFORMS 32
 static QLUIXform s_xform_pool[QL_CFG_UI_MAX_XFORMS];
 static int       s_xform_n;
+
+/*
+ * clip-path: polygon() 的顶点池（v34）。同一份顶点表只存一份：
+ * 装饰形状常常重复用在多个元素上（一排同款徽标），去重后 blob 明显更小。
+ */
+static QLClipPt s_clip_pt_pool[QL_CFG_UI_CLIP_PTS_TOTAL];
+static int      s_clip_pt_n;
+
+/*
+ * 顶点池（每个 QLClipPt 存一个点）。`xy` 是 x,y 交错的长度序列。
+ * 同一份顶点表只存一份：装饰形状常常重复用在多个元素上（一排同款徽标）。
+ */
+static int clip_pts_intern(const QLUILength *xy, int n, uint16_t *out, const char *where)
+{
+    for (int i = 0; i + n <= s_clip_pt_n; i++) {
+        int ok = 1;
+        for (int j = 0; j < n && ok; j++) {
+            const QLClipPt *q = &s_clip_pt_pool[i + j];
+            if (q->x.value != xy[j * 2].value || q->x.unit != xy[j * 2].unit ||
+                q->y.value != xy[j * 2 + 1].value || q->y.unit != xy[j * 2 + 1].unit)
+                ok = 0;
+        }
+        if (ok) {
+            *out = (uint16_t)i;
+            return 1;
+        }
+    }
+    if (s_clip_pt_n + n > QL_CFG_UI_CLIP_PTS_TOTAL) {
+        set_error("%s: clip-path polygon() 顶点池已满（上限 %d，见 "
+                  "QL_CFG_UI_CLIP_PTS_TOTAL）",
+                  where, QL_CFG_UI_CLIP_PTS_TOTAL);
+        return 0;
+    }
+    for (int j = 0; j < n; j++) {
+        s_clip_pt_pool[s_clip_pt_n + j].x = xy[j * 2];
+        s_clip_pt_pool[s_clip_pt_n + j].y = xy[j * 2 + 1];
+    }
+    *out = (uint16_t)s_clip_pt_n;
+    s_clip_pt_n += n;
+    return 1;
+}
 
 static int xform_intern_fixed(const QLUIXform *q, int16_t *out, const char *where)
 {
@@ -2438,63 +2498,288 @@ static int parse_transform(const char *text, const char *where, int *tx, int *ty
     return 1;
 }
 
-/* clip-path: circle(<pct>%) → (kind, 千分比) */
-static int parse_clip_path(const char *text, const char *where, int *kind, int *r)
-{
-    *kind = 0;
-    *r = 0;
+/*
+ * clip-path 解析结果（构建期中间态）。运行期只用 QLUIStyle 里的
+ * clip_kind / clip_r / clip_box / clip_pts / clip_pt_n。
+ */
+typedef struct {
+    uint8_t    kind;
+    int        r;                              /* circle：半径千分比 */
+    QLUILength box[4];                         /* ellipse: [0]=rx [1]=ry；inset: t/r/b/l */
+    uint8_t    n;                              /* polygon 顶点数 */
+    QLUILength pt[QL_CFG_UI_CLIP_PTS_MAX * 2]; /* x,y 交错 */
+} ClipPathDef;
 
-    /* 去掉所有空白并转小写（Python: re.sub(r"\s+", "", ...)） */
-    char t[128];
-    size_t k = 0;
-    const char *s = text;
-    while (*s != '\0' && k + 1u < sizeof(t)) {
-        if (!is_space(*s)) {
-            char c = *s;
-            t[k++] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
-        }
+/* 把 `a b c` 切成 token（就地写 '\0'）；返回个数，最多 max */
+static int split_ws(char *s, char **tok, int max)
+{
+    int n = 0;
+    char *p = s;
+    while (*p != '\0') {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')
+            p++;
+        if (*p == '\0')
+            break;
+        if (n >= max)
+            return -1;
+        tok[n++] = p;
+        while (*p != '\0' && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r' &&
+               *p != ',')
+            p++;
+        if (*p != '\0')
+            *p++ = '\0';
+    }
+    return n;
+}
+
+/* 剪掉开头/结尾空白（就地） */
+static char *trim_inplace(char *s)
+{
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')
         s++;
+    size_t n = strlen(s);
+    while (n > 0) {
+        const char c = s[n - 1u];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
+            break;
+        s[--n] = '\0';
+    }
+    return s;
+}
+
+/*
+ * 一组长度（1~4 个，空格分隔）。`allow_pct` 由调用方给。
+ * 结果直接写进 out[]，返回个数；失败返回 -1（已 set_error）。
+ */
+static int parse_len_group(const char *inner, const char *where, int allow_pct,
+                           QLUILength *out, int max, const char *what)
+{
+    char buf[256];
+    if (strlen(inner) >= sizeof(buf)) {
+        set_error("%s: clip-path: %s 太长", where, what);
+        return -1;
+    }
+    memcpy(buf, inner, strlen(inner) + 1u);
+    char *tok[8];
+    const int n = split_ws(buf, tok, 8);
+    if (n < 1 || n > max) {
+        set_error("%s: clip-path: %s 需要 1~%d 个值（收到 %d 个）", where, what, max,
+                  n < 0 ? 8 : n);
+        return -1;
+    }
+    for (int i = 0; i < n; i++) {
+        uint8_t unit = 0;
+        int value = 0;
+        if (!parse_length(tok[i], where, allow_pct, NULL, &unit, &value))
+            return -1;
+        if (unit == QL_UI_UNIT_AUTO || unit == QL_UI_UNIT_EM || unit == QL_UI_UNIT_REM) {
+            set_error("%s: clip-path: %s 只支持 px / 百分比（收到 '%s'）", where, what,
+                      tok[i]);
+            return -1;
+        }
+        out[i].value = (int16_t)value;
+        out[i].unit = unit;
+        out[i].reserved = 0;
+    }
+    return n;
+}
+
+/*
+ * clip-path：
+ *   none
+ *   circle(<pct>%)
+ *   ellipse(<rx> <ry>)
+ *   inset(<t> [<r> [<b> [<l>]]])          ← CSS 顺序 top right bottom left
+ *   polygon([<x> <y>]#)                    ← 至少 3 个顶点
+ *
+ * 明确不支持（构建期报错，不做静默降级）：
+ *   - 圆心的 `at <位置>`（本库的圆/椭圆圆心恒在元素中心）
+ *   - `inset(... round <半径>)`（圆角矩形裁剪要另一套扫线，见文档）
+ *   - `polygon(... , <fill-rule>)`（evenodd 与非零环绕在本库是同一结果，
+ *     因为形状只有一层；写了就报错，免得你以为生效了）
+ *   - `path()` / `url()`（需要 SVG 路径解析器）
+ */
+static int parse_clip_path(const char *text, const char *where, ClipPathDef *out)
+{
+    memset(out, 0, sizeof(*out));
+    for (int i = 0; i < 4; i++) {
+        out->box[i].unit = (uint8_t)QL_UI_UNIT_PX;
+        out->box[i].value = 0;
+    }
+
+    char t[512];
+    size_t k = 0;
+    for (const char *s = text; *s != '\0' && k + 1u < sizeof(t); s++) {
+        const char c = *s;
+        t[k++] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
     }
     t[k] = '\0';
+    char *body = trim_inplace(t);
 
-    if (strcmp(t, "none") == 0 || t[0] == '\0')
+    if (body[0] == '\0' || strcmp(body, "none") == 0)
         return 1;
-    if (strncmp(t, "circle(", 7) != 0 || t[k - 1] != ')') {
-        set_error("%s: clip-path 只支持 circle(<百分比>)（0%%~100%%），收到 '%s'", where,
-                  text);
+
+    /* 取出 `name(` 与结尾的 `)` */
+    const char *lp = strchr(body, '(');
+    if (lp == NULL || body[strlen(body) - 1u] != ')') {
+        set_error("%s: clip-path 语法错误（收到 '%s'）", where, text);
         return 0;
     }
-    /* 中间必须形如 "<num>%" */
-    const char *inner = t + 7;
-    size_t n = strlen(inner) - 1u;      /* 去掉 ')' */
-    if (n < 2 || inner[n - 1u] != '%') {
-        set_error("%s: clip-path 只支持 circle(<百分比>)（0%%~100%%），收到 '%s'", where,
-                  text);
-        return 0;
+    const size_t name_len = (size_t)(lp - body);
+    char *inner = (char *)lp + 1;
+    body[strlen(body) - 1u] = '\0';
+    inner = trim_inplace(inner);
+
+    if (name_len == 6 && strncmp(body, "circle", 6) == 0) {
+        /* 沿用老规则：只认 `<pct>%`，圆心固定元素中心 */
+        const size_t n = strlen(inner);
+        if (n < 2 || inner[n - 1u] != '%') {
+            set_error("%s: clip-path circle() 只支持 <百分比>（0%%~100%%），收到 '%s'",
+                      where, text);
+            return 0;
+        }
+        char num[64];
+        if (n - 1u >= sizeof(num)) {
+            set_error("%s: clip-path 的百分比太长", where);
+            return 0;
+        }
+        memcpy(num, inner, n - 1u);
+        num[n - 1u] = '\0';
+        double v = 0;
+        const char *end = NULL;
+        if (num[0] == '-' || !match_number(num, &end, &v) || *end != '\0') {
+            set_error("%s: clip-path circle() 只支持 <百分比>（0%%~100%%），收到 '%s'",
+                      where, text);
+            return 0;
+        }
+        if (v < 0.0 || v > 100.0) {
+            set_error("%s: clip-path circle() 的百分比必须在 0~100（收到 '%s'）", where,
+                      text);
+            return 0;
+        }
+        out->kind = QL_UI_CLIP_CIRCLE;
+        out->r = (int)py_round(v * 10.0);
+        return 1;
     }
-    char num[64];
-    if (n - 1u >= sizeof(num)) {
-        set_error("%s: clip-path 的百分比太长", where);
-        return 0;
+
+    if (name_len == 7 && strncmp(body, "ellipse", 7) == 0) {
+        if (strstr(inner, "at ") != NULL) {
+            set_error("%s: clip-path ellipse(): 不支持 'at <位置>'（圆心恒在元素中心）",
+                      where);
+            return 0;
+        }
+        const int en = parse_len_group(inner, where, 1, out->box, 2, "ellipse()");
+        if (en < 0)
+            return 0;
+        if (en != 2) {
+            set_error("%s: clip-path ellipse() 需要两个半径（rx ry），收到 %d 个", where,
+                      en);
+            return 0;
+        }
+        out->kind = QL_UI_CLIP_ELLIPSE;
+        return 1;
     }
-    memcpy(num, inner, n - 1u);
-    num[n - 1u] = '\0';
-    double v = 0;
-    const char *end = NULL;
-    /* Python 的正则是 [0-9.]+（不带负号） */
-    if (num[0] == '-' || !match_number(num, &end, &v) || *end != '\0') {
-        set_error("%s: clip-path 只支持 circle(<百分比>)（0%%~100%%），收到 '%s'", where,
-                  text);
-        return 0;
+
+    if (name_len == 5 && strncmp(body, "inset", 5) == 0) {
+        if (strstr(inner, "round") != NULL) {
+            set_error("%s: clip-path inset(): 不支持 'round <半径>'（圆角矩形裁剪要另一套"
+                      "扫线，请改用 border-radius + overflow: hidden）",
+                      where);
+            return 0;
+        }
+        QLUILength v[4];
+        for (int i = 0; i < 4; i++) {
+            v[i].value = 0;
+            v[i].unit = (uint8_t)QL_UI_UNIT_PX;
+            v[i].reserved = 0;
+        }
+        const int n = parse_len_group(inner, where, 1, v, 4, "inset()");
+        if (n < 0)
+            return 0;
+        if (n == 1) {
+            v[1] = v[2] = v[3] = v[0];
+        } else if (n == 2) {
+            v[2] = v[0];
+            v[3] = v[1];
+        } else if (n == 3) {
+            v[3] = v[1];
+        }
+        for (int i = 0; i < 4; i++)
+            out->box[i] = v[i];
+        out->kind = QL_UI_CLIP_INSET;
+        return 1;
     }
-    if (v < 0.0 || v > 100.0) {
-        set_error("%s: clip-path circle() 的百分比必须在 0~100（收到 '%s'）", where,
-                  text);
-        return 0;
+
+    if (name_len == 7 && strncmp(body, "polygon", 7) == 0) {
+        char buf[400];
+        if (strlen(inner) >= sizeof(buf)) {
+            set_error("%s: clip-path polygon() 太长", where);
+            return 0;
+        }
+        memcpy(buf, inner, strlen(inner) + 1u);
+        /* 按逗号切成"点"，每个点里应当恰好两个长度 */
+        char *pts[QL_CFG_UI_CLIP_PTS_MAX + 1];
+        int n = 0;
+        {
+            char *p = buf;
+            while (*p != '\0') {
+                while (*p == ' ' || *p == '\t')
+                    p++;
+                if (*p == '\0')
+                    break;
+                if (n >= QL_CFG_UI_CLIP_PTS_MAX + 1) {
+                    set_error("%s: clip-path polygon() 顶点超过上限 %d"
+                              "（见 QL_CFG_UI_CLIP_PTS_MAX）",
+                              where, QL_CFG_UI_CLIP_PTS_MAX);
+                    return 0;
+                }
+                pts[n++] = p;
+                while (*p != '\0' && *p != ',')
+                    p++;
+                if (*p == ',')
+                    *p++ = '\0';
+            }
+        }
+        if (n < 3) {
+            set_error("%s: clip-path polygon() 至少要 3 个顶点（收到 %d 个）", where, n);
+            return 0;
+        }
+        for (int i = 0; i < n; i++) {
+            char *tok[4];
+            char *one = trim_inplace(pts[i]);
+            const int m = split_ws(one, tok, 4);
+            if (m != 2) {
+                set_error("%s: clip-path polygon() 的每个顶点必须正好是 'x y'"
+                          "（第 %d 个点是 '%s'）",
+                          where, i + 1, one);
+                return 0;
+            }
+            uint8_t ux = 0, uy = 0;
+            int vx = 0, vy = 0;
+            if (!parse_length(tok[0], where, 1, NULL, &ux, &vx) ||
+                !parse_length(tok[1], where, 1, NULL, &uy, &vy))
+                return 0;
+            if (ux == QL_UI_UNIT_AUTO || ux == QL_UI_UNIT_EM || ux == QL_UI_UNIT_REM ||
+                uy == QL_UI_UNIT_AUTO || uy == QL_UI_UNIT_EM || uy == QL_UI_UNIT_REM) {
+                set_error("%s: clip-path polygon() 只支持 px / 百分比", where);
+                return 0;
+            }
+            out->pt[i * 2].value = (int16_t)vx;
+            out->pt[i * 2].unit = ux;
+            out->pt[i * 2].reserved = 0;
+            out->pt[i * 2 + 1].value = (int16_t)vy;
+            out->pt[i * 2 + 1].unit = uy;
+            out->pt[i * 2 + 1].reserved = 0;
+        }
+        out->n = (uint8_t)n;
+        out->kind = QL_UI_CLIP_POLYGON;
+        return 1;
     }
-    *kind = 1;
-    *r = (int)py_round(v * 10.0);
-    return 1;
+
+    set_error("%s: clip-path 支持 circle() / ellipse() / inset() / polygon() / none，"
+              "收到 '%s'",
+              where, text);
+    return 0;
 }
 
 /* `200ms` / `1.5s` → 毫秒 */
@@ -3489,6 +3774,97 @@ static int expand_shorthands(Decls *ds)
             return 0;
     }
 
+    /*
+     * `font` 简写（B9）：`font: [style] [variant] [weight] size[/line-height] family`。
+     * 只认本库支持的那几个值，其余（`font-stretch`、`caption` 之类系统字族关键字）
+     * 明确报错 —— 静默丢掉一段会让你以为生效了。
+     */
+    if ((v = decls_get(ds, "font")) != NULL) {
+        char buf[256];
+        size_t n = strlen(v);
+        if (n >= sizeof(buf))
+            n = sizeof(buf) - 1u;
+        memcpy(buf, v, n);
+        buf[n] = '\0';
+        (void)decls_remove(ds, "font");
+
+        char *fam = NULL;           /* family 用掉剩下的整段（可能含空格/逗号） */
+        int have_size = 0;
+        const char *p = buf;
+        while (*p != '\0') {
+            while (is_space(*p))
+                p++;
+            if (*p == '\0')
+                break;
+            const char *start = p;
+            while (*p != '\0' && !is_space(*p))
+                p++;
+            char tok[128];
+            size_t len = (size_t)(p - start);
+            if (len >= sizeof(tok))
+                len = sizeof(tok) - 1u;
+            memcpy(tok, start, len);
+            tok[len] = '\0';
+            char low[128];
+            trim_lower(tok, low, sizeof(low));
+
+            if (have_size) {
+                fam = xstrdup(p - 1);   /* 从 size 之后那格空白开始（含前导空格） */
+                if (fam == NULL)
+                    return 0;
+                char *t2 = fam;
+                while (*t2 == ' ' || *t2 == '\t')
+                    t2++;
+                if (!decls_set(ds, "font-family", t2)) {
+                    ql_mem_free(fam);
+                    return 0;
+                }
+                ql_mem_free(fam);
+                fam = NULL;
+                break;
+            }
+            if (strcmp(low, "italic") == 0 || strcmp(low, "oblique") == 0) {
+                if (!decls_set(ds, "font-style", "italic"))
+                    return 0;
+            } else if (strcmp(low, "small-caps") == 0) {
+                if (!decls_set(ds, "font-variant-caps", "small-caps"))
+                    return 0;
+            } else if (strcmp(low, "bold") == 0 || strcmp(low, "bolder") == 0 ||
+                       strcmp(low, "lighter") == 0 || strcmp(low, "normal") == 0 ||
+                       is_all_digits(low)) {
+                /*
+                 * 数字字重（100..900）：必须**整段都是数字** ——
+                 * 只看首字符会把 `20px` 当成字重（踩过）。
+                 */
+                if (!decls_set(ds, "font-weight", low))
+                    return 0;
+            } else if (strcmp(low, "serif") == 0 || strcmp(low, "sans-serif") == 0 ||
+                       strcmp(low, "monospace") == 0 || strcmp(low, "cursive") == 0 ||
+                       strcmp(low, "fantasy") == 0) {
+                /* 字族写在字号前面 = 漏了字号（CSS 里字号是必须的） */
+                set_error("font: 缺少字号（`font: 16px sans-serif`），收到 '%s'", buf);
+                return 0;
+            } else {
+                /* 还带 `/line-height` 时就地拆开 */
+                char *slash = strchr(low, '/');
+                if (slash != NULL) {
+                    *slash = '\0';
+                    if (!decls_set(ds, "line-height", slash + 1))
+                        return 0;
+                }
+                if (!decls_set(ds, "font-size", low))
+                    return 0;
+                have_size = 1;
+            }
+        }
+        if (!have_size) {
+            set_error("font: 缺少字号（`font: 16px sans-serif`），收到 '%s'", buf);
+            return 0;
+        }
+        if (fam == NULL)
+            ql_mem_free(fam);
+    }
+
     if ((v = decls_get(ds, "border")) != NULL) {
         char buf[128];
         size_t n = strlen(v);
@@ -3649,6 +4025,7 @@ static const char *const k_supported_props[] = {
     "outline", "outline-width", "outline-color", "outline-style", "outline-offset",
     "background", "background-color", "color",
     "background-size", "background-position", "background-repeat",
+    "font",
     "font-size", "text-align", "line-height", "white-space", "box-sizing",
     "vertical-align", "font-family",
     "object-fit",
@@ -3683,7 +4060,7 @@ static const char *const k_supported_props[] = {
     "text-overflow", "word-break",
     "text-decoration-line", "text-decoration-style", "text-decoration-color",
     "text-decoration-thickness", "text-underline-offset",
-    "overflow-wrap",
+    "overflow-wrap", "word-wrap",
     "visibility", "pointer-events", "align-self", "order", "flex-flow",
     "align-content", "overflow-x", "overflow-y", "inset",
     "cursor", "user-select", "scroll-behavior",
@@ -3695,6 +4072,8 @@ static const char *const k_supported_props[] = {
     "column-rule", "column-rule-width", "column-rule-style", "column-rule-color",
     /* B8 文本栈与双向 */
     "direction", "unicode-bidi", "font-feature-settings", "font-variant-ligatures",
+    /* B9：字体变体 + 椭圆圆角（blob v34） */
+    "font-variant-caps", "font-variant-numeric",
 };
 
 /* @keyframes 里允许的属性（与 Python 的 KEYFRAME_PROPS 一致） */
@@ -3875,6 +4254,7 @@ static int parse_decls(const char *body, size_t len, const char *where,
 #define SELP_NTH_OF_TYPE      0x0100
 #define SELP_NTH_LAST_OF_TYPE 0x0200
 #define SELP_ROOT             0x0400   /* `:root`：元素树最外层第一个元素 */
+#define SELP_EMPTY            0x0800   /* `:empty`：没有子元素也没有非空文本 */
 
 #define SEL_ATTR_EXISTS  0
 #define SEL_ATTR_EQ      1
@@ -4392,7 +4772,17 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
                 p->pseudo_elem = 2;
             else if (strcmp(pe, "placeholder") == 0)
                 p->pseudo_elem = 3;   /* B2：输入框占位文字 */
-            else {
+            else if (strcmp(pe, "first-line") == 0 || strcmp(pe, "first-letter") == 0) {
+                /*
+                 * `::first-line` / `::first-letter` 依赖**折行结果**：哪几个字
+                 * 落在第一行要等布局才知道，而本库的样式是构建期编译成静态表的
+                 * （运行期没有"按行改样式"的能力）。硬做只能退化成"整段都套上"，
+                 * 那是错的 —— 所以明确报错并给替代写法。
+                 */
+                set_error("'::%s' 依赖折行结果，构建期无法确定；"
+                          "请用 <span class=...> 手工包住那几个字", pe);
+                return 0;
+            } else {
                 set_error("不支持的伪元素 '::%s'"
                           "（只支持 ::before / ::after / ::placeholder）", pe);
                 return 0;
@@ -4434,6 +4824,8 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
             p->states |= 32;
         } else if (strcmp(name, "root") == 0) {
             p->pseudo |= SELP_ROOT;
+        } else if (strcmp(name, "empty") == 0) {
+            p->pseudo |= SELP_EMPTY;
         } else if (strcmp(name, "first-child") == 0) {
             p->pseudo |= SELP_FIRST_CHILD;
         } else if (strcmp(name, "last-child") == 0) {
@@ -4523,7 +4915,7 @@ static int parse_simple_selector(const char *tok, SelPart *p, int *spec_ids,
                       ":disabled :enabled :checked "
                       ":first-child :last-child :only-child :nth-child() "
                       ":nth-last-child() :first-of-type :last-of-type :only-of-type "
-                      ":nth-of-type() :nth-last-of-type() :not()）", name);
+                      ":nth-of-type() :nth-last-of-type() :not() :empty）", name);
             return 0;
         }
         (*spec_cls)++;
@@ -7113,6 +7505,30 @@ static int simple_matches(const PNode *n, const SelPart *sp)
                 strcmp(n->parent->tag, "#document") != 0 || n->sib_idx != 0)
                 return 0;
         }
+        /*
+         * `:empty`：没有子元素、也没有非空文本（CSS 的定义：
+         * 只含空白文本的元素**算** empty，因为它不产生任何盒子）。
+         */
+        if ((sp->pseudo & SELP_EMPTY) != 0) {
+            if (n->first_child != NULL)
+                return 0;
+            /* 文本可能挂在 `text` 快路径，也可能挂在 `items` 里（混合内容） */
+            if (n->text != NULL) {
+                for (const char *t = n->text; *t != '\0'; t++)
+                    if (*t != ' ' && *t != '\t' && *t != '\n' && *t != '\r')
+                        return 0;
+            }
+            for (int ii = 0; ii < n->nitems; ii++) {
+                if (!n->items[ii].is_text)
+                    return 0;
+                const char *t = n->items[ii].text;
+                if (t == NULL)
+                    continue;
+                for (; *t != '\0'; t++)
+                    if (*t != ' ' && *t != '\t' && *t != '\n' && *t != '\r')
+                        return 0;
+            }
+        }
         const int pos = n->sib_idx + 1;
         const int tpos = n->type_idx + 1;
         if ((sp->pseudo & SELP_FIRST_CHILD) && pos != 1)
@@ -8292,6 +8708,8 @@ static int text_align_value(const char *s)
         return QL_TEXT_ALIGN_CENTER;
     if (strcmp(s, "right") == 0)
         return QL_TEXT_ALIGN_RIGHT;
+    if (strcmp(s, "justify") == 0)
+        return QL_TEXT_ALIGN_JUSTIFY;
     return -1;
 }
 
@@ -8465,11 +8883,13 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
                 }
             }
             if ((props & KF_CLIP) != 0) {
-                int kind = 0;
-                if (!parse_clip_path(decls_get(d, "clip-path"), where, &kind, &clipr)) {
+                ClipPathDef cd;
+                if (!parse_clip_path(decls_get(d, "clip-path"), where, &cd)) {
                     ql_mem_free(idx);
                     return 0;
                 }
+                if (cd.kind == QL_UI_CLIP_CIRCLE)
+                    clipr = cd.r;
             }
             if ((props & KF_RADIUS) != 0) {
                 uint8_t unit;
@@ -9565,7 +9985,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             return 0;
         }
     }
-    if ((v = decls_get(st, "overflow-wrap")) != NULL) {
+    if ((v = decls_get(st, "overflow-wrap")) == NULL)
+        v = decls_get(st, "word-wrap");     /* `word-wrap` 是老名字，语义相同 */
+    if (v != NULL) {
         char t[32];
         trim_lower(v, t, sizeof(t));
         if (strcmp(t, "normal") == 0)
@@ -10425,14 +10847,33 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
 
     /* ---- 四角圆角（1/2/4 个值，顺序 左上 右上 右下 左下） ---- */
     int16_t rad4[4] = { 0, 0, 0, 0 };
+    int16_t radv4[4] = { 0, 0, 0, 0 };   /* 纵向分量：`border-radius: a / b` */
     {
         if ((v = decls_get(st, "border-radius")) != NULL) {
-            if (strchr(v, '/') != NULL) {
-                set_error("%s: 椭圆的 border-radius（'/' 写法）暂不支持", where);
-                return 0;
+            /*
+             * `border-radius: <h> / <v>`：斜杠两侧各自是 1/2/4 个长度，
+             * 前者是水平半径、后者是垂直半径（椭圆圆角）。
+             * 绘制侧的做法见 ql_ui_radius_* —— 每行按"椭圆在该高度的半宽"算，
+             * 与 CSS 的椭圆圆角语义一致。
+             */
+            /*
+             * `tmp` 必须和 `hpart` / `vpart` 同一个作用域：`vpart` 指向它里面，
+             * 放进内层块会让 vpart 悬空（ASan 报 stack-use-after-scope）。
+             */
+            char tmp[256];
+            char hpart[128];
+            const char *vpart = NULL;
+            trim_lower(v, tmp, sizeof(tmp));
+            {
+                char *slash = strchr(tmp, '/');
+                if (slash != NULL) {
+                    *slash = '\0';
+                    vpart = skip_space(slash + 1);
+                }
+                memcpy(hpart, tmp, strlen(tmp) + 1u);
             }
             char seg[4][64];
-            const int n = split_top_spaces(v, where, seg, 4);
+            const int n = split_top_spaces(hpart, where, seg, 4);
             if (n < 0)
                 return 0;
             if (n != 1 && n != 2 && n != 4) {
@@ -10456,13 +10897,43 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             quad_fill(n, r4);
             for (int i = 0; i < 4; i++)
                 rad4[i] = (int16_t)r4[i];
+
+            if (vpart != NULL) {
+                char segv[4][64];
+                const int m = split_top_spaces(vpart, where, segv, 4);
+                if (m < 0)
+                    return 0;
+                if (m != 1 && m != 2 && m != 4) {
+                    set_error("%s: border-radius 斜杠右侧需要 1/2/4 个长度", where);
+                    return 0;
+                }
+                int rv[4] = { 0, 0, 0, 0 };
+                for (int i = 0; i < m; i++) {
+                    uint8_t unit;
+                    int num;
+                    if (!parse_length(segv[i], where, 0, calc, &unit, &num))
+                        return 0;
+                    if (!length_wants_const(unit, where, "border-radius"))
+                        return 0;
+                    if (num < 0 || num > 32767) {
+                        set_error("%s: border-radius 超出 0~32767px", where);
+                        return 0;
+                    }
+                    rv[i] = num;
+                }
+                quad_fill(m, rv);
+                for (int i = 0; i < 4; i++)
+                    radv4[i] = (int16_t)rv[i];
+            }
         }
         for (int i = 0; i < 4; i++) {
             snprintf(pbuf_side, sizeof(pbuf_side), "border-%s-radius",
                      k_corner_names[i]);
             if ((v = decls_get(st, pbuf_side)) != NULL) {
                 if (strchr(v, '/') != NULL) {
-                    set_error("%s: 椭圆的 border-radius（'/' 写法）暂不支持", where);
+                    set_error("%s: border-%s-radius 不支持斜杠写法"
+                              "（请用 `border-radius: h / v`）",
+                              where, k_corner_names[i]);
                     return 0;
                 }
                 uint8_t unit;
@@ -11070,6 +11541,49 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             return 0;
         }
 #endif
+
+        /*
+         * `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums`
+         * （B9，blob v34）。两者都靠 HarfBuzz 的 OpenType 特性（`smcp` / `tnum`），
+         * 内建整形没有特性表 —— 所以**没有整形能力时明确报错**，不做"看起来
+         * 生效了其实没变"的静默降级。
+         */
+        out->variant_flags = 0;
+        const char *fvc = decls_get(st, "font-variant-caps");
+        if (fvc != NULL) {
+            char low[32];
+            trim_lower(fvc, low, sizeof(low));
+            if (strcmp(low, "small-caps") == 0) {
+                out->variant_flags |= QL_UI_VARIANT_SMALL_CAPS;
+            } else if (strcmp(low, "normal") == 0 || strcmp(low, "none") == 0) {
+                /* 显式关掉 */
+            } else {
+                set_error("%s: font-variant-caps 只支持 small-caps / normal"
+                          "（收到 '%s'）", where, fvc);
+                return 0;
+            }
+        }
+        const char *fvn = decls_get(st, "font-variant-numeric");
+        if (fvn != NULL) {
+            char low[32];
+            trim_lower(fvn, low, sizeof(low));
+            if (strcmp(low, "tabular-nums") == 0) {
+                out->variant_flags |= QL_UI_VARIANT_TABULAR_NUMS;
+            } else if (strcmp(low, "normal") == 0) {
+                /* 显式关掉 */
+            } else {
+                set_error("%s: font-variant-numeric 只支持 tabular-nums / normal"
+                          "（收到 '%s'）", where, fvn);
+                return 0;
+            }
+        }
+#if !QL_FEAT_CSS_TEXT_SHAPE
+        if (out->variant_flags != 0) {
+            set_error("%s: small-caps / tabular-nums 需要整形（QL_FEAT_CSS_TEXT_SHAPE）",
+                      where);
+            return 0;
+        }
+#endif
     }
 
     /* ----- 多栏：column-count / column-width / columns / column-rule* ----- */
@@ -11333,10 +11847,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         }
     }
 
-    int clip_kind = 0, clip_r = 0;
+    ClipPathDef clip;
     if (!parse_clip_path((v = decls_get(st, "clip-path")) != NULL ? v : "none", where,
-                         &clip_kind, &clip_r))
+                         &clip))
         return 0;
+    int clip_kind = clip.kind;
+    int clip_r = clip.r;
 
     int tf_x = 0, tf_y = 0, sc_x = 1000, sc_y = 1000;
     QLUIXform xform;
@@ -11361,7 +11877,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     if (!anim_index_of(st, where, ranges, kftab, anims, &anim_idx))
         return 0;
 
-    /* 动画里动 clip-path 时，基础样式也要把 clip_kind 打开 */
+    /* 动画里动 clip-path 时，基础样式也要把 clip_kind 打开（只有圆能动画） */
     if (clip_kind == 0 && anim_idx != 0xFFFF) {
         const QLUIAnimation *an = &anims->a[anim_idx];
         for (int k = an->first_frame;
@@ -11429,6 +11945,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         out->border_style4[i] = bstyle4[i];
         out->border_color4[i] = bcol4[i];
         out->radius[i] = rad4[i];
+        out->radius_v[i] = radv4[i];
     }
     out->outline_color = outline_color;
     out->outline_width = (int8_t)outline_w;
@@ -11487,6 +12004,16 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->trans_props = (uint8_t)trans_props;
     out->clip_kind = (uint8_t)clip_kind;
     out->clip_r = (uint16_t)clip_r;
+    for (int i = 0; i < 4; i++)
+        out->clip_box[i] = clip.box[i];
+    out->clip_pt_n = clip.n;
+    out->clip_pts = QL_UI_NO_CLIP_PTS;
+    if (clip.kind == QL_UI_CLIP_POLYGON && clip.n >= 3) {
+        uint16_t pts_idx = 0;
+        if (!clip_pts_intern(clip.pt, clip.n, &pts_idx, where))
+            return 0;
+        out->clip_pts = pts_idx;
+    }
     out->tf_x = (int16_t)tf_x;
     out->tf_y = (int16_t)tf_y;
     out->sc_x = (int16_t)sc_x;
@@ -13648,6 +14175,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
 {
     s_error[0] = '\0';
     s_xform_n = 0;      /* 矩阵池每次加载从零开始（同一次加载内去重） */
+    s_clip_pt_n = 0;    /* 同上：clip-path 顶点池 */
     s_degraded_tags = 0;
     if (html == NULL)
         html = "";
@@ -14304,6 +14832,9 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const size_t off_font_names = off;
         if (name_count > 0)
             off += QL_UI_ALIGN8((size_t)name_count * sizeof(uint16_t));
+        const size_t off_clip_pts = off;
+        if (s_clip_pt_n > 0)
+            off += QL_UI_ALIGN8((size_t)s_clip_pt_n * sizeof(QLClipPt));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -14460,6 +14991,12 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             QLUIXform *xfd = (QLUIXform *)(void *)(base + off_xforms);
             memcpy(xfd, s_xform_pool, (size_t)s_xform_n * sizeof(QLUIXform));
             doc->xforms = xfd;
+        }
+        doc->clip_pt_count = (uint16_t)s_clip_pt_n;
+        if (s_clip_pt_n > 0) {
+            QLClipPt *cpd = (QLClipPt *)(void *)(base + off_clip_pts);
+            memcpy(cpd, s_clip_pt_pool, (size_t)s_clip_pt_n * sizeof(QLClipPt));
+            doc->clip_pts = cpd;
         }
         doc->font_face_count = (uint16_t)n_faces;
         /*

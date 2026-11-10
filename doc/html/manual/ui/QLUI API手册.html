@@ -188,6 +188,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -271,9 +272,38 @@ tools/qltext/qltext.c ┘
 <td><code>--name</code></td>
 <td>输出标识（默认取 HTML 文件名）</td>
 </tr>
+<tr>
+<td><code>--root</code></td>
+<td>图片资源根目录（给了才把 <code>&lt;img src&gt;</code> 在构建期解码并嵌入）</td>
+</tr>
+<tr>
+<td><code>--pixel-format</code></td>
+<td><code>rgb565</code> / <code>rgb888</code> / <code>rgba8888</code> / <code>a8</code>（构建期转码的目标格式）</td>
+</tr>
+<tr>
+<td><code>--platform</code></td>
+<td>只对 <code>check</code> 有效：<code>pc</code> / <code>mcu</code>，给出<strong>构建期降级报告</strong>（见下）</td>
+</tr>
 </tbody>
 </table>
-<p>退出码：<code>0</code> 成功；<code>1</code> 有错误（错误信息带 <code>文件:行号</code>）。</p>
+<p>退出码：<code>0</code> 成功；<code>1</code> 有错误（错误信息带 <code>文件:行号</code>）；<code>2</code> 参数错误；
+带 <code>--platform</code> 且发现了降级项时是 <code>3</code>。</p>
+<h4 id="111-qltext-check-platform-mcu">1.1.1 <code>qltext check --platform</code>：构建前就知道 MCU 上会报什么错</h4>
+<p>本库对"这个构建没启用的能力"是<strong>构建期报错</strong>，所以同一份 HTML/CSS 在 PC 上能编、
+在 MCU 上编不过。<code>--platform</code> 把这件事提前到开发机上：</p>
+<div class="highlight"><pre><span></span><code>qltext<span class="w"> </span>check<span class="w"> </span>--html<span class="w"> </span>ui/index.html<span class="w"> </span>--css<span class="w"> </span>ui/index.css<span class="w"> </span>--platform<span class="w"> </span>mcu
+<span class="c1">#   [裁掉] 表格（display: table 全家）            3 处 → QL_FEAT_CSS_TABLE=0 时构建期报错</span>
+<span class="c1">#   [裁掉] 滤镜 / 混合模式 / mask / 旋转（离屏图层）   1 处 → QL_FEAT_CSS_FILTER_LAYER=0 时构建期报错</span>
+<span class="c1"># 退出码 3</span>
+</code></pre></div>
+
+<ul>
+<li><code>pc</code> / <code>mobile</code> 预设 = 能力全开；<code>mcu</code> 预设 = <code>FILTER_LAYER</code> / <code>TABLE</code> / <code>COLUMNS</code> /
+  <code>FONT_STACK</code> / <code>TEXT_SHAPE</code> / <code>BIDI</code> 关（与 <code>test/mcu/build.sh</code> 一致，<strong>Grid 不裁</strong>：
+  实测它反而降低 MCU 布局时间）。</li>
+<li>没有降级项时退出码 <code>0</code> 并打印 <code>✔ 这份界面在 &lt;平台&gt; 上不需要裁任何特性</code>。</li>
+<li>代价 0：这张表只在宿主工具里，目标机根本不链接 <code>qltext</code>。</li>
+</ul>
 <h3 id="12-cmake">1.2 CMake 集成</h3>
 <div class="highlight"><pre><span></span><code><span class="nb">find_package</span><span class="p">(</span><span class="s">Python3</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">Interpreter</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
 

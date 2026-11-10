@@ -58,13 +58,14 @@
 | **表格**：`display: table` 全家 + `<table>` 系列标签 + `table-layout: auto/fixed` + `colspan`/`rowspan` + `border-spacing`/`collapse` + `<colgroup>/<col>` | blob v31（见 §18.12） |
 | **多栏**：`column-count` / `column-width` / `columns` / `column-gap` / `column-rule*`（贪心分栏 + 等高平衡） | blob v32（见 §18.13） |
 | **文本栈**：`@font-face` / 自由 `font-family` 列表 + 逐字回退 / 真字重与真斜体 / HarfBuzz 整形（连字、字距、复杂文字）/ `direction` + RTL（fribidi 或内建 UAX#9） | blob v33（见 §18.14） |
+| **`clip-path` 四种形状**（`circle` / `ellipse` / `inset` / `polygon`）、**纯颜色 `filter` 单批次**（3×4 矩阵）、`small-caps` / `tabular-nums`、`text-align: justify`、阴影 `spread`、椭圆 `border-radius`、`font` 简写、`word-wrap`、`:empty`、`revert` | blob v34（见 §18.15） |
 
 **还没做**，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：
 
 | 类 | 项 | 归宿 |
 |---|---|---|
-| **PC/Mobile 必做**（MCU 归能力包） | `clip-path` 的 `inset`/`ellipse`/`polygon`；`font-variant: small-caps` / `tabular-nums` | §22 |
-| **小件**（随时插队） | `text-align: justify`、阴影 `spread`、椭圆 `border-radius`（`10px / 20px`）、`font` 简写、`word-wrap` 别名、`::first-line` / `::first-letter`、`:empty`、`revert` | 各节 ⏳ |
+| ~~**PC/Mobile 必做**~~ **✅ B9 已完成（2026-11-11）** | `clip-path` 的 `inset`/`ellipse`/`polygon`（§18.15）；`font-variant: small-caps` / `tabular-nums`（§9.1）；纯颜色 `filter` 单批次（§14） | §18.15 |
+| **小件** —— **✅ B9 也已全部落地** | `text-align: justify`、阴影 `spread`、椭圆 `border-radius`（`10px / 20px`）、`font` 简写、`word-wrap` 别名、`:empty`、`revert` 全部 ✅；`::first-line` / `::first-letter` 保持 ❌（明确报错并给替代写法） | 各节 ✅ |
 | **不排期** | 3D 变换（`perspective()` / `rotate3d()`）；bidi 的完整算法之外的冷门项；打印相关 | 各节 ❌ |
 
 五批（B1–B5）已全部落地，见 §18.5 / §18.6 / §18.7；B6–B8 见 §22。
@@ -219,7 +220,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `:first-of-type` / `:last-of-type` / `:only-of-type` / `:nth-of-type()` / `:nth-last-of-type()` | ✅ | B | 只数**同标签**的兄弟 |
 | `:not(<简单选择器>)` | ✅ | B | 不支持嵌套 `:not()` |
 | `:root` | ✅ | B | = 元素树最外层第一个元素；变量常写在这里（Bootstrap 的 `:root { --bs-*: … }`） |
-| `:empty` | ⏳ | B | 判据明确（没有文本也没有子节点），便宜 |
+| `:empty` | ✅ | B | 没有子元素、也没有非空文本；**只有空白**算 empty（它不产生盒子），与 CSS 一致（B9） |
 | `:link` `:visited` | — | N | 本库没有超链接跳转语义（`<a>` 只是行内文本） |
 | `:target` `:lang()` `:dir()` | ❌ | P | 需要运行期状态/文档语言上下文 |
 | `:has()` `:is()` `:where()` `:focus-visible` `:focus-within` | ❌ | B | L4 选择器；`has()` 会引入"反向依赖"，与构建期定型冲突 |
@@ -231,7 +232,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 |---|---|---|---|
 | `::before` + `content: "文本"` | ✅ | B | 构建期生成真节点 |
 | `::after` + `content: "文本"` | ✅ | B | 同上 |
-| `::first-line` `::first-letter` | ❌ | F | 要"改变行盒内字形"的能力，与逐行排版冲突 |
+| `::first-line` `::first-letter` | ❌ | F | 哪几个字落在第一行要等**折行**才知道，而本库的样式是构建期编译成静态表的。B9 起**明确报错并给替代写法**（`<span class=...>`），不再只报"不支持的伪元素" |
 | `::selection` | ❌ | P | 选区颜色是运行期状态；输入框选区已经硬编码为 `text_color @ 0x50` |
 | `::placeholder` | ✅ | B | `placeholder` 属性 + 一份独立占位样式（§18.7） |
 | `::marker` | ❌ | P | 没有生成内容机制，符号请自己写字符 |
@@ -280,7 +281,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `hwb()` / `lab()` / `oklch()` / `color()` | ⏳ | R | 纯换算，无副作用；上屏是 8 位色，宽色域没有意义 |
 | `inherit` | ✅ | R | |
 | `initial` / `unset` | ✅ | R | 回到 UA 默认值 |
-| `revert` | ⏳ | R | 层级语义差别很小，暂报错 |
+| `revert` | ✅ | R | 与 `unset` 同路径：继承属性取父值、非继承属性取初值（B9；层级差异见 §18.15） |
 | `currentColor` | ✅ | R | 解析期替换成 `color` 的值 |
 | `!important` | ✅ | L | 级联两趟：普通先应用，important 再应用 |
 | 转义 / CSS 注释 | ✅ | B | `/* … */` 已支持 |
@@ -349,12 +350,12 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `border-*-width` / `-style` / `-color` | ✅ | R | 单边长写；布局按四边各自的宽度内缩内容盒 |
 | `border-radius`（1 / 2 / 4 个值） | ✅ | R | `4px` 四角同；`4px 8px` 是"左上右下 / 右上左下"；四个值按 左上 右上 右下 左下。≥ 短边一半时是胶囊/内切圆 |
 | `border-{corner}-radius` | ✅ | R | 四角长写，可单独覆盖 |
-| `border-radius` 斜杠椭圆角 | ⏳ | R | `10px / 20px` 报错：椭圆角要改两套 SDF，收益低 |
+| `border-radius` 斜杠椭圆角 | ⚠️ | R | B9：`10px / 20px` **能编译也能画**，但两个后端都用单半径 SDF，所以**取水平/垂直两者的平均**作为等价半径。要精确的椭圆角得给每角再加 4 个顶点属性并改写两个 SDF —— 已知近似，写在 §18.15 |
 | 四边不同色 + 圆角 | ⚠️ | R | 四条边各自裁一次整圈描边；**角部归上/下边**（浏览器沿 45° 斜线切分） |
 | `border-image` + `-source` / `-slice` / `-width` / `-repeat`（`stretch`/`repeat`/`round`/`space`） | ✅ | R | **已完成（B6）**：九宫格切片，复用 `blit_image(dst, src)`（§18.9） |
 | `border-image-outset` | ❌ | N | 报错：边框图不向盒子外扩 |
 | `box-shadow`（单条） | ✅ | R | CPU SDF + GPU `mode=2` 各一份实现 |
-| `box-shadow`（多重 / `inset`） | ✅ | R | 最多**两层**（多写的报错，不静默丢弃）；`inset` 用反向 SDF（GPU `mode=7`）。`spread`（展开半径）报错 |
+| `box-shadow`（多重 / `inset` / `spread`） | ✅ | R | 最多**两层**（多写的报错，不静默丢弃）；`inset` 用反向 SDF（GPU `mode=7`）；**B9 起支持 `spread`**（第四个长度，轮廓整体外扩/内缩） |
 | `text-shadow` | ✅ | R | 一层（多层的语义是叠色）；`blur` 用 5 次采样近似（0~16px） |
 | `outline` + `-width/-style/-color/-offset` | ✅ | R | 画在边框盒**外侧**、**不占布局**（focus 环标配）；`outline-offset` 可为负（压进边框里）。CSS 语义照抄：只写 `outline-width` 不画（`outline-style` 初值 `none`），要画就写 `outline: 2px solid <色>` |
 | `box-decoration-break` | ❌ | N | 跨行断开的盒子装饰，本库没有"跨行盒子"概念 |
@@ -385,7 +386,8 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `font-weight` | ✅ | G | PC/Mobile：按 `@font-face` 声明的字面挑**真字重**（挑不到才合成加粗）；MCU：合成 |
 | `font-style` | ✅ | G | 同上：PC/Mobile 用真斜体字面，MCU 合成倾斜 |
 | `font`（简写） | ⏳ | L | 目前要分开写 |
-| `font-variant-ligatures` / `font-feature-settings` | ⚠️ | G | 只认 `liga` / `clig` / `kern` 三个开关（其余特性**构建期报错**）；`small-caps` / `tabular-nums` 等还没做 |
+| `font-variant-ligatures` / `font-feature-settings` | ⚠️ | G | 只认 `liga` / `clig` / `kern` 三个开关（其余特性**构建期报错**） |
+| `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums` | ✅ | G | B9：HarfBuzz 的 `smcp` / `tnum` 特性；**没有整形能力（`QL_FEAT_CSS_TEXT_SHAPE=0`）时构建期报错**，不静默降级。样式里只占 1 字节（`variant_flags`） |
 | `font-stretch` / `font-size-adjust` / `font-optical-sizing` | ❌ | X | 变量字体轴，B8 不做 |
 | `@font-face` | ✅ | G | `font-family` / `src: url()` / `font-weight` / `font-style` 四样；`unicode-range` / `local()` 构建期报错 |
 
@@ -393,8 +395,8 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `text-align` | ✅ | L | `left` / `center` / `right`（没有 `justify`）；也作用于行内子节点，换行后每行各自对齐 |
-| `text-align: justify` | ❌ | B | 要改行内分配算法；中文排版里常用但成本不低，且断行是布局/绘制共用的一份实现 |
+| `text-align` | ✅ | L | `left` / `center` / `right` / **`justify`**（B9）；也作用于行内子节点，换行后每行各自对齐 |
+| `text-align: justify` | ✅ | B | B9：除**最后一行**外把剩余空间平摊到字形间隙；只有一行时等同左对齐；`text-overflow: ellipsis` 的行不拉伸 |
 | `line-height` | ✅ | L | `normal` / `px` / 无单位倍数 |
 | `white-space` | ✅ | L | `normal` / `nowrap` / `pre` / `pre-wrap` / `pre-line` |
 | `vertical-align` | ⚠️ | L | **只有 `baseline` / `sub` / `super`**；`middle` / `text-top` / 长度值都报错（`<sub>`/`<sup>` 够用） |
@@ -409,7 +411,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `word-wrap` | ⏳ | L | 就是 `overflow-wrap` 的旧名字，加个别名即可 |
 | `hyphens` | ❌ | X | 要连字词典（各语言各一份） |
 | `text-shadow` | ✅ | R | 复用 `box-shadow` 的 SDF 路径（字形级） |
-| `text-justify` / `text-align-last` | ❌ | X | 见 `justify` |
+| `text-justify` / `text-align-last` | ❌ | X | 只做 `text-align: justify`（最后一行的行为固定为"不拉伸"，与浏览器默认一致） |
 | `direction` / `unicode-bidi` | ❌ | X | RTL 需要 bidi 算法 + 整形（HarfBuzz/SheenBidi），是独立立项 |
 | `writing-mode` / `text-orientation` | ❌ | X | 竖排同样要重整排版引擎 |
 | `text-emphasis` / `ruby-align` / `ruby-position` | ❌ | X | 注音排版；`<ruby>` 标签本身也还没做 |
@@ -530,8 +532,11 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | ✅ | O | 颜色矩阵族，同一图层里可链式（最多 6 个）；`1.2` 与 `120%` 等价 |
 | `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`spread` 报错 |
 | `filter: url(#svg)` / `backdrop-filter` 的颜色函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur） |
-| `clip-path: circle()` | ✅ | R | 子树级圆形遮罩；CPU 与 GPU 各一份 |
-| `clip-path: inset()` / `ellipse()` / `polygon()` / `path()` | ⏳ | F | PC/Mobile 排期：`inset()`/`ellipse()` 便宜（SDF 扩展），`polygon()`/`path()` 要扫线 |
+| `clip-path: circle()` / `ellipse()` | ✅ | R | 子树级**椭圆**遮罩（圆心恒在元素中心）；GPU 顶点属性带 `(cx,cy,rx,ry)`，CPU 同一公式 |
+| `clip-path: inset()` | ✅ | R | **与裁剪矩形求交**，两后端精确、零额外成本（B9） |
+| `clip-path: polygon()` | ✅ | F | B9：顶点进 doc 池（同形状去重）→ 运行期生成 64×64 A8 蒙版 → 强制离屏图层走 `fx->mask`（复用 `mask: url()` 那条已测路径） |
+| `clip-path: path()` / `url()` | ❌ | X | 要 SVG 路径解析器；明确报错 |
+| `clip-path: circle(… at x y)` / `inset(… round R)` / `polygon(… evenodd)` | ❌ | F | 明确报错并给替代做法（圆心恒居中；圆角矩形裁剪请用 `border-radius` + `overflow: hidden`） |
 | `mask` / `mask-image` | ✅ | O | `url(<name>)` / `none`；只用图片 alpha，拉伸到边框盒（= `mask-size: 100% 100%` + `mask-mode: alpha`）。见 §18.10 |
 | `mask-position` / `-repeat` / `-composite` / `mask-border` | ❌ | O | 语义分支多，收益低 |
 | `mix-blend-mode` | ✅ | O | 与 `filter` 共用同一套离屏图层；GPU 侧要把目标表面抓成纹理再算 |
@@ -1579,6 +1584,104 @@ x86-64 上"碰巧"没事，但那是未定义行为。
 **为什么 MCU 不能开**：HarfBuzz 1,178 KB、fribidi 106 KB、一份全量 CJK TTF 20 MB 级；
 而整块 MCU 固件现在是 141 KB。这不是"再优化一下"，是数量级。
 
+### 18.15 B9 落地：`clip-path` 四种形状 / 纯颜色 `filter` 单批次 / 字体变体（blob v34）
+
+这一批解决的是"真实页面天天写、写了以前会报错"的几件：`clip-path` 不只圆、
+`filter` 不必每次走离屏图层、`small-caps` / `tabular-nums`。
+
+#### 18.15.1 `clip-path`：四种形状，三种代价
+
+| 形状 | 实现 | 额外内存 | 额外绘制遍数 |
+|---|---|---|---|
+| `inset(t r b l)` | **与裁剪矩形求交**，然后照原样画 | 0 | 0 |
+| `circle(p%)` | 解析椭圆 SDF（`rx == ry`），GPU 走顶点属性 `a_mask=(cx,cy,rx,ry)`，CPU 走 `mask_cov_at` + `mask_row_span` 快路径 | 0 | 0 |
+| `ellipse(rx ry)` | 与圆同一条路，两个轴分开 | 0 | 0 |
+| `polygon(...)` | 顶点进 doc 池 → 运行期生成 **64×64 A8 蒙版** → 强制离屏图层，合成时 `fx->mask` 乘 alpha | 4 KB/形状（`QL_CFG_UI_CLIP_PTS_MAX` 顶点上限）+ 一张 64×64 图 | 1（图层） |
+
+为什么要抬到图层：任意多边形塞不进"一个顶点级 SDF"（要逐边求距离），而
+"生成一张蒙版再整体乘 alpha"这条路**早就为 `mask: url()` 测过**，两个后端天然一致。
+蒙版固定 64×64、按边框盒拉伸，所以**与元素尺寸无关**，形状不改就一直复用。
+
+顶点池写在 doc 里（`clip_pts` / `clip_pt_count`，blob 新增一段），同值去重：
+一排同款徽标共用一个顶点表。
+
+明确报错的写法（不做静默降级）：`circle(… at x y)`（圆心恒居中）、`inset(… round R)`
+（圆角矩形裁剪要另一套扫线）、`polygon(… evenodd)`（形状只有一层，两种环绕结果相同）、
+`path()` / `url()`（要 SVG 路径解析器）。
+
+#### 18.15.2 纯颜色 `filter` 折成 3×4 矩阵
+
+八个纯颜色函数（brightness / contrast / saturate / grayscale / sepia / invert /
+hue-rotate / opacity）在构建期**链式相乘**成一个 3×4 仿射矩阵：
+
+```
+brightness(k) : diag(k,k,k)
+contrast(k)   : diag(k,k,k) + 127.5*(1-k)
+saturate(s)   : Filter Effects 的 3×3 系数矩阵
+grayscale(k)  : (1-k)*I + k*lum   （lum = .213/.715/.072）
+sepia(k)      : (1-k)*I + k*sepia9
+invert(k)     : (1-2k)*I + 255k
+hue-rotate(θ) : Filter Effects 的固定 3×3
+opacity(k)    : 不动颜色，乘进 d2d->alpha
+```
+
+矩阵用 16.16：线性部分无量纲、第 4 列是"色值 × 65536"，所以组合与施加都不丢精度。
+
+- **CPU**：`QLCanvas` 加 `cm[12]` + `cm_on`，`put_px` / 行填充 / `blit_image` 三个入口
+  各过一遍；开启时绕开 SIMD 行填充（它不经过 `put_px`）。
+- **GPU**：`u_cm[3]`（每行一个 vec4）+ `u_cm_on`。片元被重构成
+  `vec4 shade()` + 一个统一出口 `main()`：**所有分支只 return 颜色，矩阵在唯一出口施加** ——
+  这样不会重演"圆遮罩漏掉某个 return"的老坑。单批次渲染下矩阵只能当 uniform 传，
+  所以 `gl_set_cm()` 在矩阵变化时先 flush（一个带 filter 的元素多一次 draw call，
+  换来不走图层）。
+
+`style_needs_layer()` 只在**含 blur / drop-shadow** 时才返回 1。
+
+> **语义差别**：CSS 的 filter 作用于"元素合成后的结果"。逐图元施加时，子树内部
+> **互相重叠**处略有不同。常见用法（整体调色）看不出差别；要严格等价就加
+> `blur()`（哪怕 `blur(0.001px)`）把它推回图层。
+
+#### 18.15.3 字体变体
+
+`font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums` →
+`variant_flags` 一个字节 → `QLShapeOpt.small_caps/tabular_nums` → HarfBuzz 的
+`smcp` / `tnum` 两个 `hb_feature_t`（`feats[6]`，与 `liga`/`clig`/`kern` 共用同一个数组）。
+没有整形能力时**构建期报错**。
+
+#### 18.15.4 顺手补的 L1 小件
+
+| 属性 | 实现要点 |
+|---|---|
+| `text-align: justify` | 剩余空间 / (字形数-1) 摊进字间；**最后一行不拉伸**（`li+1 == count` 时关掉），`ellipsis` 行不拉伸；跨整形块时按整行字形数近似（误差 ≤1px 级） |
+| `box-shadow` 的 `spread` | 复用 `QLUIShadow.reserved`（零结构体膨胀）；矩形与圆角一起按 spread 调整 |
+| `border-radius: a / b` | `radius_v[4]`（8 字节）；绘制侧取两者平均作为等价单半径 |
+| `font` 简写 | `[style] [variant] [weight] size[/line-height] family`；数字字重要求**整段都是数字**（否则 `20px` 会被当成字重，踩过） |
+| `word-wrap` | `overflow-wrap` 的老名字，同一套解析 |
+| `:empty` | 有子元素 → 不匹配；文本全空白 → 匹配（`items` 里的混合内容也扫） |
+| `revert` | 与 `unset` 同路径 |
+| `::first-line` / `::first-letter` | **明确报错**并给替代写法（依赖折行结果，构建期无法确定） |
+
+#### 18.15.5 结构体与 blob
+
+`QLUIStyle` 368 → **400**（`clip_box[4]` 32 + `clip_pts`/`clip_pt_n`/`clip_reserved` 4 +
+`variant_flags`/`radius_reserved`/`radius_v[4]` 12 + 对齐），blob **v34**、
+头 172 → **180**（`clip_pt_count` + `off_clip_pts`），doc 新增一段 `clip_pts`。
+
+#### 18.15.6 这一轮抓到的三个老 bug
+
+1. **GL 片元的零半径遮罩**：半径 0 时 `min(rx,ry)` 把距离乘成 0 → `smoothstep` 得 0.5 →
+   整块半透明。`clip()` 的 golden 用例 CPU/GPU 差 **47%**。现在 `rr <= 0` 明确判全裁。
+2. **column flex 里折行文本的高度**：折行基准取了**容器**宽度而不是**子项自己**的
+   `width`，于是"窄列 + 长段落"按 1 行算高度（20px），绘制却按 440px 折成 2 行 →
+   第二行压到下一个元素上。
+3. **行内子节点的测量高度**：column 布局把 `inline` 子节点高度**逐个相加**
+   （`<span>a</span><span>b</span>` 得 84px 而不是 23px），后面的兄弟被顶下去一大截。
+
+前两个只在"column flex + 文本"这种组合下出现，第三个只要"inline 子节点有 padding"就能看到 ——
+例程 `36_clip_filter` 同时踩中了三个。
+
+---
+
 ## 19. 覆盖率：两份实测 + 一份规范口径
 
 三个数回答三个不同的问题，别混着用。
@@ -1925,12 +2028,13 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 |---|---|---|---|
 | ~~**离屏图层**（`filter: blur()` / 真 group `opacity` / `mix-blend-mode`）~~ | ✅ 已完成（M9.3） | 三者共用同一块能力："子树先合成到一张图，再整体处理"（见 §18.10） | 实测 Flash +15,344 B / RAM +676 B |
 | ~~**`transform: rotate()` / `skew()` / `matrix()`**~~ | ✅ 已完成（M9.4） | 复用离屏图层：合成后做一次仿射重采样（见 §18.11） | 实测 Flash +3,488 B（开着图层包时）/ +804 B（只有解析器） |
-| **`filter` 的颜色矩阵族**（brightness/contrast/saturate/grayscale…） | **PC/Mobile 必做** | 不一定要离屏：单色乘法可以直接融进每个绘制入口（CPU 乘、GL 用一个 uniform）。但要保证"子树整体"语义才准 | 中：CPU + GL 各一份 |
-| **`clip-path` 的任意形状**（`polygon()` / `path()` / `inset()`） | PC/Mobile | 要通用裁剪扫线（现在只有 `circle()` 的 SDF） | 中 |
+| ~~**`filter` 的颜色矩阵族**~~ ✅ **B9 已完成** | PC/Mobile | 折成 3×4 矩阵挂到 draw2d 上，**不进离屏图层**（见 §18.15.2） | CPU + GL 各一份，已落地 |
+| ~~**`clip-path` 的任意形状**~~ ✅ **B9 已完成**（`inset`/`ellipse`/`polygon`；`path()` 仍 ❌） | PC/Mobile | `inset` 求交、`ellipse` 扩 SDF、`polygon` 走 A8 蒙版 + 图层（见 §18.15.1） | 已落地 |
 | **3D 变换**（`perspective()` / `rotate3d()`） | ❌ 不排期 | 要透视除法 + 深度排序 + 一个真正的合成器 | 极高，且与"一个节点一个盒"冲突 |
 
-**建议顺序**：B1–B8 + M9.3/M9.4 **全部完成**。剩下的都是"单独立项"那一栏里的
-小件（`clip-path` 任意形状、`filter` 颜色矩阵、`font-variant` 的 small-caps/tabular-nums）。
+**建议顺序**：B1–B9 + M9.3/M9.4 **全部完成**。§22 上面"单独立项"那栏里的
+`clip-path` 任意形状、`filter` 颜色矩阵、`font-variant` 的 small-caps/tabular-nums
+**已经在 B9 一起做完了**（见 §18.15）；剩下的是 3D 变换（明确不排期）与 `path()`。
 每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。
 
 ---

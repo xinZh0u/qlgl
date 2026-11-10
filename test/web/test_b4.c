@@ -502,8 +502,10 @@ QL_TEST_BEGIN("test_b4")
                          "最多支持 2 段"));
         QL_CHECK(rejects("#a { text-shadow: 0 0 32px #f00 }",
                          "text-shadow 模糊半径最大 16px"));
-        QL_CHECK(rejects("#a { border-radius: 10px / 20px }",
-                         "椭圆的 border-radius"));
+        /* v34 起 `a / b` 椭圆圆角是**支持**的（规格见 CSS3 覆盖 §5），
+           这里改成验证一个仍然非法的写法：斜杠右侧多值但左边没给 */
+        QL_CHECK(rejects("#a { border-radius: / 20px }",
+                         "border-radius"));
         QL_CHECK(rejects("#a { image-rendering: fancy }", "image-rendering"));
         QL_CHECK(rejects("#a { scrollbar-width: fat }", "scrollbar-width"));
     }

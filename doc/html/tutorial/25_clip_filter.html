@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a href='../tutorial/25_clip_filter.html' class='active'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/第三方依赖.html'>第三方依赖与许可</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="clip-path"><code>clip-path</code> 的四种形状 · 纯颜色滤镜 · 字体变体</h1>
+<p><img src="../img/36-clip-filter.png" alt="circle/ellipse/inset/polygon 四种裁剪、七种颜色滤镜、justify 与 small-caps" width="630"></p>
+<p>完整程序：<code>example/36_clip_filter/</code></p>
+<p>这一章（B9，blob <strong>v34</strong>）补的都是"真实页面天天写、写了以前会报错"的东西：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">avatar</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">45</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">badge</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">polygon</span><span class="p">(</span><span class="mi">50</span><span class="kt">%</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="w"> </span><span class="mi">78</span><span class="kt">%</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">78</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 三角标 */</span>
+<span class="p">.</span><span class="nc">frame</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">inset</span><span class="p">(</span><span class="mi">6</span><span class="kt">%</span><span class="w"> </span><span class="mi">8</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">                      </span><span class="c">/* 内缩一圈 */</span>
+<span class="p">.</span><span class="nc">oval</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">ellipse</span><span class="p">(</span><span class="mi">45</span><span class="kt">%</span><span class="w"> </span><span class="mi">30</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">.</span><span class="nc">dim</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">grayscale</span><span class="p">(</span><span class="mi">100</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 只是颜色 → 不进离屏图层 */</span>
+<span class="p">.</span><span class="nc">faded</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">brightness</span><span class="p">(</span><span class="mf">0.85</span><span class="p">)</span><span class="w"> </span><span class="nb">contrast</span><span class="p">(</span><span class="mf">1.1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">big</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">font-variant-caps</span><span class="p">:</span><span class="w"> </span><span class="kc">small-caps</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">nums</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">font-variant-numeric</span><span class="p">:</span><span class="w"> </span><span class="n">tabular-nums</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">para</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">justify</span><span class="p">;</span><span class="w"> </span><span class="k">white-space</span><span class="p">:</span><span class="w"> </span><span class="kc">normal</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">squashed</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="kt">px</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">12</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 椭圆圆角 */</span>
+<span class="p">.</span><span class="nc">pop</span><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="k">box-shadow</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="mh">#BFD7EF</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* spread */</span>
+</code></pre></div>
+
+<p>它们各自的<strong>代价</strong>差别很大，所以下面按"便宜 → 贵"排。</p>
+<hr />
+<h2 id="1-inset">1. <code>inset()</code>：最便宜，直接与裁剪矩形求交</h2>
+<p><code>clip-path: inset(top right bottom left)</code> 是<strong>纯矩形</strong> —— 它等价于"把自己裁到那个
+内缩矩形里"，所以实现上什么都没多做：直接把内缩矩形与当前裁剪求交，然后照原样画。</p>
+<ul>
+<li>两个后端<strong>都精确</strong>（不是近似，也没有抗锯齿带的差异）；</li>
+<li>零额外内存、零额外绘制遍数；</li>
+<li>百分比相对<strong>边框盒</strong>的宽/高（与 CSS 一致：左右按宽、上下按高）。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">inset</span><span class="p">(</span><span class="mi">12</span><span class="kt">%</span><span class="w"> </span><span class="mi">8</span><span class="kt">%</span><span class="w"> </span><span class="mi">25</span><span class="kt">%</span><span class="w"> </span><span class="mi">8</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>值可以是 1/2/3/4 个，展开规则与 <code>margin</code> 完全一样。</p>
+<hr />
+<h2 id="2-circle-ellipse-sdf">2. <code>circle()</code> / <code>ellipse()</code>：解析遮罩（一条 SDF，不用缓冲）</h2>
+<p>圆与椭圆在片元里就是一个距离函数：</p>
+<div class="highlight"><pre><span></span><code><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">length</span><span class="p">((</span><span class="n">p</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">center</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="kt">vec2</span><span class="p">(</span><span class="n">rx</span><span class="p">,</span><span class="w"> </span><span class="n">ry</span><span class="p">))</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mf">1.0</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">min</span><span class="p">(</span><span class="n">rx</span><span class="p">,</span><span class="w"> </span><span class="n">ry</span><span class="p">);</span>
+<span class="n">coverage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">smoothstep</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span><span class="w"> </span><span class="n">d</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li><strong>GPU</strong>：遮罩参数跟着顶点走（<code>a_mask = (cx, cy, rx, ry)</code>），一次 <code>glDrawArrays</code> 里
+  每个图元各自带自己的遮罩，所以<strong>不进离屏图层、不多 draw call</strong>；</li>
+<li><strong>CPU</strong>：<code>mask_cov_at()</code> 逐像素算同一个公式；填充分支还有一条"整行跨度"快路径
+  （<code>mask_row_span</code>），中间那一段走 SIMD 行填充。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">avatar</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">circle</span><span class="p">(</span><span class="mi">45</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 半径 = 最远角距离的 45% */</span>
+<span class="p">.</span><span class="nc">oval</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nb">ellipse</span><span class="p">(</span><span class="mi">45</span><span class="kt">%</span><span class="w"> </span><span class="mi">30</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* rx / ry 分开 */</span>
+</code></pre></div>
+
+<blockquote>
+<p>半径用<strong>百分比</strong>而不是 px 是有意的：<code>0% → 100%</code> 的动画在任何尺寸的盒子上都成立
+（px 会"提前跑完"）。见例程 <code>31_filter</code> 的揭示动画。</p>
+</blockquote>
+<p><code>circle()</code> 与 <code>ellipse()</code> 都裁<strong>整棵子树</strong>（等价 CSS 语义）：例程里那根橙色横条
+故意画出父盒之外，一样被裁掉。</p>
+<hr />
+<h2 id="3-polygona8">3. <code>polygon()</code>：A8 蒙版 + 离屏图层（最贵，但仍然很小）</h2>
+<p>任意多边形没法塞进一个顶点级 SDF（要逐边求距离），所以走另一条路：</p>
+<ol>
+<li>构建期把顶点存进 <strong>doc 的顶点池</strong>（同样形状只存一份，一排同款徽标共用一个），
+   样式里只留 <code>clip_pts</code> 下标 + <code>clip_pt_n</code>；</li>
+<li>运行期第一次画到时生成一张 <strong>64×64 的 A8 蒙版</strong>（2×2 超采样做抗锯齿），
+   按节点缓存在 <code>QLUIRoot</code> 里，形状不变就一直复用；</li>
+<li>这一层<strong>强制走离屏图层</strong>，合成时用 <code>fx-&gt;mask</code> 把蒙版 alpha 乘上去 ——
+   这正是早就测过的 <code>mask: url()</code> 那条路径，所以 CPU 与 GPU 天然一致。</li>
+</ol>
+<p>代价与"整块 RGBA 图层"相比很小：蒙版固定 64×64（<strong>与元素尺寸无关</strong>），
+拉伸到边框盒后看不出差别（形状里没有高频细节）。</p>
+<p>约束（构建期报错，不做静默降级）：</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>polygon(0 0, 100% 0, 50% 100%)</code></td>
+<td>✅ 至少 3 个顶点，任意多个（上限 <code>QL_CFG_UI_CLIP_PTS_MAX</code>）</td>
+</tr>
+<tr>
+<td><code>polygon(... , evenodd)</code></td>
+<td>❌ 本库形状只有一层，evenodd 与非零环绕结果相同 —— 报错以免你以为生效了</td>
+</tr>
+<tr>
+<td><code>path('M0 0 L…')</code> / <code>url(#id)</code></td>
+<td>❌ 要 SVG 路径解析器，明确不支持</td>
+</tr>
+<tr>
+<td><code>inset(… round 4px)</code></td>
+<td>❌ 圆角矩形裁剪要另一套扫线；建议改用 <code>border-radius</code> + <code>overflow: hidden</code></td>
+</tr>
+<tr>
+<td><code>circle(50% at 30% 30%)</code></td>
+<td>❌ 圆心恒在元素中心</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-filter">4. 纯颜色 <code>filter</code>：<strong>不进离屏图层</strong></h2>
+<p>在 B9 之前，任何 <code>filter</code> 都会让这一层走离屏图层（先把子树合成一张 RGBA，再整体处理）。
+但 <code>brightness()</code> / <code>contrast()</code> / <code>saturate()</code> / <code>grayscale()</code> / <code>sepia()</code> /
+<code>invert()</code> / <code>hue-rotate()</code> / <code>opacity()</code> 这八个只改<strong>颜色</strong>，逐图元做和先合成再做
+在绝大多数用法里没有区别 —— 而它们的代价差一整块缓冲 + 两遍绘制。</p>
+<p>所以现在构建期把这一串函数<strong>折成一个 3×4 颜色矩阵</strong>（16.16 定点，链式相乘）：</p>
+<ul>
+<li><strong>CPU</strong>：挂到 <code>QLCanvas</code> 上，<code>put_px</code> / 行填充 / <code>blit_image</code> 三个入口过一遍矩阵
+  （开启时绕开 SIMD 行填充，因为那条路不经过逐像素）；</li>
+<li><strong>GPU</strong>：作为 uniform 上传（<code>u_cm[3]</code> + <code>u_cm_on</code>），片元里在<strong>唯一出口</strong>处施加 ——
+  这样不会重演当年"圆遮罩漏了某个 return"的老坑。</li>
+</ul>
+<p><code>QLQ</code> 侧只是判断"这一串 op 里有没有 blur / drop-shadow"：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">s</span><span class="o">-&gt;</span><span class="n">filter_n</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">m</span><span class="p">[</span><span class="mi">12</span><span class="p">],</span><span class="w"> </span><span class="n">apm</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">filter_build_cm</span><span class="p">(</span><span class="n">s</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">apm</span><span class="p">))</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">      </span><span class="cm">/* 含 blur / drop-shadow → 老老实实走图层 */</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>语义差别（写进文档，不藏着）</strong>：CSS 的 <code>filter</code> 作用于"元素合成后的结果"，
+逐图元施加时，<strong>子树内部互相重叠</strong>的地方会略有不同。<code>filter: brightness(.9)</code>
+这类用法看不出区别；要严格等价就加一个 <code>blur()</code>（或 <code>blur(0.001px)</code>）把它推回图层。</p>
+</blockquote>
+<p><code>opacity()</code> 在这里被折成"乘进 <code>d2d-&gt;alpha</code>"，所以它也不需要图层。</p>
+<hr />
+<h2 id="5-small-caps-tabular-nums">5. 字体变体：<code>small-caps</code> / <code>tabular-nums</code></h2>
+<p>这两个都靠 <strong>OpenType 特性</strong>（<code>smcp</code> / <code>tnum</code>），所以需要 HarfBuzz：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">title</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-variant-caps</span><span class="p">:</span><span class="w"> </span><span class="kc">small-caps</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">nums</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">font-variant-numeric</span><span class="p">:</span><span class="w"> </span><span class="n">tabular-nums</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<ul>
+<li>有 HarfBuzz → 给 <code>hb_shape()</code> 多挂两条 <code>hb_feature_t</code>；</li>
+<li>没有 HarfBuzz → <strong>构建期报错</strong>（<code>QL_FEAT_CSS_TEXT_SHAPE=0</code> 时）。
+  不做"看起来生效了其实没变"的静默降级 —— 那比报错更难查。</li>
+</ul>
+<p>样式里只占<strong>一个字节</strong>（<code>variant_flags</code> 位图），所以 MCU 上开关它没有成本。</p>
+<hr />
+<h2 id="6">6. 顺手补上的几件小事</h2>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>行为</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text-align: justify</code></td>
+<td>除<strong>最后一行</strong>外，把剩余空间平摊到字形间隙</td>
+<td>只有一行时等于左对齐；<code>text-overflow: ellipsis</code> 的行不拉伸</td>
+</tr>
+<tr>
+<td><code>border-radius: a / b</code></td>
+<td>水平半径 <code>a</code>、垂直半径 <code>b</code></td>
+<td>绘制侧取两者<strong>平均</strong>作为等价单半径（精确椭圆角要改两个 SDF，见文档 §5）</td>
+</tr>
+<tr>
+<td><code>box-shadow: x y blur spread color</code></td>
+<td>第四个长度 = 扩散半径</td>
+<td>阴影轮廓整体外扩/内缩，与浏览器一致（spread 作用于"形状"，不是模糊）</td>
+</tr>
+<tr>
+<td><code>font: italic bold 20px/28px monospace</code></td>
+<td>简写</td>
+<td>支持 style / variant / weight / size / line-height / family</td>
+</tr>
+<tr>
+<td><code>word-wrap: break-word</code></td>
+<td>= <code>overflow-wrap</code> 的老名字</td>
+<td></td>
+</tr>
+<tr>
+<td><code>:empty</code></td>
+<td>没有子元素、也没有非空文本</td>
+<td><strong>只有空白</strong>的元素算 empty（它不产生盒子），与 CSS 一致</td>
+</tr>
+<tr>
+<td><code>revert</code></td>
+<td>与 <code>unset</code> 同路径</td>
+<td>回滚到"父级继承值 / 初始值"</td>
+</tr>
+<tr>
+<td><code>::first-line</code> / <code>::first-letter</code></td>
+<td><strong>构建期报错</strong></td>
+<td>哪几个字落在第一行要等布局才知道，而本库样式是构建期编译成静态表的；请用 <code>&lt;span class=...&gt;</code> 手工包住那几个字</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-bug">7. 三个"顺手抓到"的真 bug</h2>
+<p>这一轮改动同时暴露了三处老问题（都已修，并被 <code>test_b9</code> / 全量用例守住）：</p>
+<ol>
+<li><strong>GL 片元的零半径遮罩</strong>：<code>min(rx, ry) == 0</code> 时距离被乘成 0，<code>smoothstep</code> 得 0.5，
+   整块变半透明 —— golden 的 <code>clip</code> 用例 CPU/GPU 差 47%。（现在半径 ≤ 0 明确判为全裁。）</li>
+<li><strong>column flex 里的折行文本高度</strong>：折行基准用的是<strong>容器</strong>宽度而不是<strong>子项自己</strong>的
+   <code>width</code>，于是"窄列 + 长段落"被算成 1 行（高度 20px），而绘制按 440px 折成 2 行，
+   第二行压到下一个元素上。</li>
+<li><strong>行内子节点的测量高度</strong>：column 布局里把 <code>inline</code> 子节点的高度<strong>逐个相加</strong>了
+   （<code>&lt;span&gt;a&lt;/span&gt;&lt;span&gt;b&lt;/span&gt;</code> 得 84px 而不是 23px）。现在按"行内一行取最大值"算。</li>
+</ol>
+<hr />
+<h2 id="8-mcu">8. 裁剪开关与 MCU</h2>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>开关</th>
+<th>关掉之后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clip-path</code> 四种形状</td>
+<td><code>QL_FEAT_CSS_FILTER_LAYER</code>（<code>polygon</code> 依赖图层；<code>circle</code>/<code>ellipse</code>/<code>inset</code> 只依赖 SDF 与裁剪）</td>
+<td>写 <code>clip-path</code> 构建期报错</td>
+</tr>
+<tr>
+<td>纯颜色 <code>filter</code></td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>small-caps</code> / <code>tabular-nums</code></td>
+<td><code>QL_FEAT_CSS_TEXT_SHAPE</code></td>
+<td>构建期报错（没有整形就没有特性表）</td>
+</tr>
+</tbody>
+</table>
+<p>用 <code>qltext check --platform mcu</code> 可以在<strong>构建前</strong>知道这份界面在 MCU 上会被裁掉哪些东西
+（见《QLUI API 手册》的 <code>qltext</code> 一节）。</p>
+<div class='pager'>
+<a href='../tutorial/24_text_stack.html'><span class='dir'>上一页</span>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

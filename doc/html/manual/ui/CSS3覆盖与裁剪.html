@@ -188,6 +188,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -372,6 +373,10 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <td><strong>文本栈</strong>：<code>@font-face</code> / 自由 <code>font-family</code> 列表 + 逐字回退 / 真字重与真斜体 / HarfBuzz 整形（连字、字距、复杂文字）/ <code>direction</code> + RTL（fribidi 或内建 UAX#9）</td>
 <td>blob v33（见 §18.14）</td>
 </tr>
+<tr>
+<td><strong><code>clip-path</code> 四种形状</strong>（<code>circle</code> / <code>ellipse</code> / <code>inset</code> / <code>polygon</code>）、<strong>纯颜色 <code>filter</code> 单批次</strong>（3×4 矩阵）、<code>small-caps</code> / <code>tabular-nums</code>、<code>text-align: justify</code>、阴影 <code>spread</code>、椭圆 <code>border-radius</code>、<code>font</code> 简写、<code>word-wrap</code>、<code>:empty</code>、<code>revert</code></td>
+<td>blob v34（见 §18.15）</td>
+</tr>
 </tbody>
 </table>
 <p><strong>还没做</strong>，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：</p>
@@ -385,14 +390,14 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 </thead>
 <tbody>
 <tr>
-<td><strong>PC/Mobile 必做</strong>（MCU 归能力包）</td>
-<td><code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code>；<code>font-variant: small-caps</code> / <code>tabular-nums</code></td>
-<td>§22</td>
+<td>~~<strong>PC/Mobile 必做</strong>~~ <strong>✅ B9 已完成（2026-11-11）</strong></td>
+<td><code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code>（§18.15）；<code>font-variant: small-caps</code> / <code>tabular-nums</code>（§9.1）；纯颜色 <code>filter</code> 单批次（§14）</td>
+<td>§18.15</td>
 </tr>
 <tr>
-<td><strong>小件</strong>（随时插队）</td>
-<td><code>text-align: justify</code>、阴影 <code>spread</code>、椭圆 <code>border-radius</code>（<code>10px / 20px</code>）、<code>font</code> 简写、<code>word-wrap</code> 别名、<code>::first-line</code> / <code>::first-letter</code>、<code>:empty</code>、<code>revert</code></td>
-<td>各节 ⏳</td>
+<td><strong>小件</strong> —— <strong>✅ B9 也已全部落地</strong></td>
+<td><code>text-align: justify</code>、阴影 <code>spread</code>、椭圆 <code>border-radius</code>（<code>10px / 20px</code>）、<code>font</code> 简写、<code>word-wrap</code> 别名、<code>:empty</code>、<code>revert</code> 全部 ✅；<code>::first-line</code> / <code>::first-letter</code> 保持 ❌（明确报错并给替代写法）</td>
+<td>各节 ✅</td>
 </tr>
 <tr>
 <td><strong>不排期</strong></td>
@@ -855,9 +860,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>:empty</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>B</td>
-<td>判据明确（没有文本也没有子节点），便宜</td>
+<td>没有子元素、也没有非空文本；<strong>只有空白</strong>算 empty（它不产生盒子），与 CSS 一致（B9）</td>
 </tr>
 <tr>
 <td><code>:link</code> <code>:visited</code></td>
@@ -912,7 +917,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td><code>::first-line</code> <code>::first-letter</code></td>
 <td>❌</td>
 <td>F</td>
-<td>要"改变行盒内字形"的能力，与逐行排版冲突</td>
+<td>哪几个字落在第一行要等<strong>折行</strong>才知道，而本库的样式是构建期编译成静态表的。B9 起<strong>明确报错并给替代写法</strong>（<code>&lt;span class=...&gt;</code>），不再只报"不支持的伪元素"</td>
 </tr>
 <tr>
 <td><code>::selection</code></td>
@@ -1159,9 +1164,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>revert</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>层级语义差别很小，暂报错</td>
+<td>与 <code>unset</code> 同路径：继承属性取父值、非继承属性取初值（B9；层级差异见 §18.15）</td>
 </tr>
 <tr>
 <td><code>currentColor</code></td>
@@ -1489,9 +1494,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>border-radius</code> 斜杠椭圆角</td>
-<td>⏳</td>
+<td>⚠️</td>
 <td>R</td>
-<td><code>10px / 20px</code> 报错：椭圆角要改两套 SDF，收益低</td>
+<td>B9：<code>10px / 20px</code> <strong>能编译也能画</strong>，但两个后端都用单半径 SDF，所以<strong>取水平/垂直两者的平均</strong>作为等价半径。要精确的椭圆角得给每角再加 4 个顶点属性并改写两个 SDF —— 已知近似，写在 §18.15</td>
 </tr>
 <tr>
 <td>四边不同色 + 圆角</td>
@@ -1518,10 +1523,10 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td>CPU SDF + GPU <code>mode=2</code> 各一份实现</td>
 </tr>
 <tr>
-<td><code>box-shadow</code>（多重 / <code>inset</code>）</td>
+<td><code>box-shadow</code>（多重 / <code>inset</code> / <code>spread</code>）</td>
 <td>✅</td>
 <td>R</td>
-<td>最多<strong>两层</strong>（多写的报错，不静默丢弃）；<code>inset</code> 用反向 SDF（GPU <code>mode=7</code>）。<code>spread</code>（展开半径）报错</td>
+<td>最多<strong>两层</strong>（多写的报错，不静默丢弃）；<code>inset</code> 用反向 SDF（GPU <code>mode=7</code>）；<strong>B9 起支持 <code>spread</code></strong>（第四个长度，轮廓整体外扩/内缩）</td>
 </tr>
 <tr>
 <td><code>text-shadow</code></td>
@@ -1640,7 +1645,13 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td><code>font-variant-ligatures</code> / <code>font-feature-settings</code></td>
 <td>⚠️</td>
 <td>G</td>
-<td>只认 <code>liga</code> / <code>clig</code> / <code>kern</code> 三个开关（其余特性<strong>构建期报错</strong>）；<code>small-caps</code> / <code>tabular-nums</code> 等还没做</td>
+<td>只认 <code>liga</code> / <code>clig</code> / <code>kern</code> 三个开关（其余特性<strong>构建期报错</strong>）</td>
+</tr>
+<tr>
+<td><code>font-variant-caps: small-caps</code> / <code>font-variant-numeric: tabular-nums</code></td>
+<td>✅</td>
+<td>G</td>
+<td>B9：HarfBuzz 的 <code>smcp</code> / <code>tnum</code> 特性；<strong>没有整形能力（<code>QL_FEAT_CSS_TEXT_SHAPE=0</code>）时构建期报错</strong>，不静默降级。样式里只占 1 字节（<code>variant_flags</code>）</td>
 </tr>
 <tr>
 <td><code>font-stretch</code> / <code>font-size-adjust</code> / <code>font-optical-sizing</code></td>
@@ -1671,13 +1682,13 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td><code>text-align</code></td>
 <td>✅</td>
 <td>L</td>
-<td><code>left</code> / <code>center</code> / <code>right</code>（没有 <code>justify</code>）；也作用于行内子节点，换行后每行各自对齐</td>
+<td><code>left</code> / <code>center</code> / <code>right</code> / <strong><code>justify</code></strong>（B9）；也作用于行内子节点，换行后每行各自对齐</td>
 </tr>
 <tr>
 <td><code>text-align: justify</code></td>
-<td>❌</td>
+<td>✅</td>
 <td>B</td>
-<td>要改行内分配算法；中文排版里常用但成本不低，且断行是布局/绘制共用的一份实现</td>
+<td>B9：除<strong>最后一行</strong>外把剩余空间平摊到字形间隙；只有一行时等同左对齐；<code>text-overflow: ellipsis</code> 的行不拉伸</td>
 </tr>
 <tr>
 <td><code>line-height</code></td>
@@ -1767,7 +1778,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td><code>text-justify</code> / <code>text-align-last</code></td>
 <td>❌</td>
 <td>X</td>
-<td>见 <code>justify</code></td>
+<td>只做 <code>text-align: justify</code>（最后一行的行为固定为"不拉伸"，与浏览器默认一致）</td>
 </tr>
 <tr>
 <td><code>direction</code> / <code>unicode-bidi</code></td>
@@ -2259,16 +2270,34 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td>前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur）</td>
 </tr>
 <tr>
-<td><code>clip-path: circle()</code></td>
+<td><code>clip-path: circle()</code> / <code>ellipse()</code></td>
 <td>✅</td>
 <td>R</td>
-<td>子树级圆形遮罩；CPU 与 GPU 各一份</td>
+<td>子树级<strong>椭圆</strong>遮罩（圆心恒在元素中心）；GPU 顶点属性带 <code>(cx,cy,rx,ry)</code>，CPU 同一公式</td>
 </tr>
 <tr>
-<td><code>clip-path: inset()</code> / <code>ellipse()</code> / <code>polygon()</code> / <code>path()</code></td>
-<td>⏳</td>
+<td><code>clip-path: inset()</code></td>
+<td>✅</td>
+<td>R</td>
+<td><strong>与裁剪矩形求交</strong>，两后端精确、零额外成本（B9）</td>
+</tr>
+<tr>
+<td><code>clip-path: polygon()</code></td>
+<td>✅</td>
 <td>F</td>
-<td>PC/Mobile 排期：<code>inset()</code>/<code>ellipse()</code> 便宜（SDF 扩展），<code>polygon()</code>/<code>path()</code> 要扫线</td>
+<td>B9：顶点进 doc 池（同形状去重）→ 运行期生成 64×64 A8 蒙版 → 强制离屏图层走 <code>fx-&gt;mask</code>（复用 <code>mask: url()</code> 那条已测路径）</td>
+</tr>
+<tr>
+<td><code>clip-path: path()</code> / <code>url()</code></td>
+<td>❌</td>
+<td>X</td>
+<td>要 SVG 路径解析器；明确报错</td>
+</tr>
+<tr>
+<td><code>clip-path: circle(… at x y)</code> / <code>inset(… round R)</code> / <code>polygon(… evenodd)</code></td>
+<td>❌</td>
+<td>F</td>
+<td>明确报错并给替代做法（圆心恒居中；圆角矩形裁剪请用 <code>border-radius</code> + <code>overflow: hidden</code>）</td>
 </tr>
 <tr>
 <td><code>mask</code> / <code>mask-image</code></td>
@@ -3830,6 +3859,148 @@ x86-64 上"碰巧"没事，但那是未定义行为。</p>
 以及 blob v33 的读写路径。这份成本换来的是"PC/Mobile 上一行代码就能开整形与双向"。</p>
 <p><strong>为什么 MCU 不能开</strong>：HarfBuzz 1,178 KB、fribidi 106 KB、一份全量 CJK TTF 20 MB 级；
 而整块 MCU 固件现在是 141 KB。这不是"再优化一下"，是数量级。</p>
+<h3 id="1815-b9-clip-path-filter-blob-v34">18.15 B9 落地：<code>clip-path</code> 四种形状 / 纯颜色 <code>filter</code> 单批次 / 字体变体（blob v34）</h3>
+<p>这一批解决的是"真实页面天天写、写了以前会报错"的几件：<code>clip-path</code> 不只圆、
+<code>filter</code> 不必每次走离屏图层、<code>small-caps</code> / <code>tabular-nums</code>。</p>
+<h4 id="18151-clip-path">18.15.1 <code>clip-path</code>：四种形状，三种代价</h4>
+<table>
+<thead>
+<tr>
+<th>形状</th>
+<th>实现</th>
+<th>额外内存</th>
+<th>额外绘制遍数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inset(t r b l)</code></td>
+<td><strong>与裁剪矩形求交</strong>，然后照原样画</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>circle(p%)</code></td>
+<td>解析椭圆 SDF（<code>rx == ry</code>），GPU 走顶点属性 <code>a_mask=(cx,cy,rx,ry)</code>，CPU 走 <code>mask_cov_at</code> + <code>mask_row_span</code> 快路径</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>ellipse(rx ry)</code></td>
+<td>与圆同一条路，两个轴分开</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>polygon(...)</code></td>
+<td>顶点进 doc 池 → 运行期生成 <strong>64×64 A8 蒙版</strong> → 强制离屏图层，合成时 <code>fx-&gt;mask</code> 乘 alpha</td>
+<td>4 KB/形状（<code>QL_CFG_UI_CLIP_PTS_MAX</code> 顶点上限）+ 一张 64×64 图</td>
+<td>1（图层）</td>
+</tr>
+</tbody>
+</table>
+<p>为什么要抬到图层：任意多边形塞不进"一个顶点级 SDF"（要逐边求距离），而
+"生成一张蒙版再整体乘 alpha"这条路<strong>早就为 <code>mask: url()</code> 测过</strong>，两个后端天然一致。
+蒙版固定 64×64、按边框盒拉伸，所以<strong>与元素尺寸无关</strong>，形状不改就一直复用。</p>
+<p>顶点池写在 doc 里（<code>clip_pts</code> / <code>clip_pt_count</code>，blob 新增一段），同值去重：
+一排同款徽标共用一个顶点表。</p>
+<p>明确报错的写法（不做静默降级）：<code>circle(… at x y)</code>（圆心恒居中）、<code>inset(… round R)</code>
+（圆角矩形裁剪要另一套扫线）、<code>polygon(… evenodd)</code>（形状只有一层，两种环绕结果相同）、
+<code>path()</code> / <code>url()</code>（要 SVG 路径解析器）。</p>
+<h4 id="18152-filter-34">18.15.2 纯颜色 <code>filter</code> 折成 3×4 矩阵</h4>
+<p>八个纯颜色函数（brightness / contrast / saturate / grayscale / sepia / invert /
+hue-rotate / opacity）在构建期<strong>链式相乘</strong>成一个 3×4 仿射矩阵：</p>
+<div class="highlight"><pre><span></span><code>brightness(k) : diag(k,k,k)
+contrast(k)   : diag(k,k,k) + 127.5*(1-k)
+saturate(s)   : Filter Effects 的 3×3 系数矩阵
+grayscale(k)  : (1-k)*I + k*lum   （lum = .213/.715/.072）
+sepia(k)      : (1-k)*I + k*sepia9
+invert(k)     : (1-2k)*I + 255k
+hue-rotate(θ) : Filter Effects 的固定 3×3
+opacity(k)    : 不动颜色，乘进 d2d-&gt;alpha
+</code></pre></div>
+
+<p>矩阵用 16.16：线性部分无量纲、第 4 列是"色值 × 65536"，所以组合与施加都不丢精度。</p>
+<ul>
+<li><strong>CPU</strong>：<code>QLCanvas</code> 加 <code>cm[12]</code> + <code>cm_on</code>，<code>put_px</code> / 行填充 / <code>blit_image</code> 三个入口
+  各过一遍；开启时绕开 SIMD 行填充（它不经过 <code>put_px</code>）。</li>
+<li><strong>GPU</strong>：<code>u_cm[3]</code>（每行一个 vec4）+ <code>u_cm_on</code>。片元被重构成
+  <code>vec4 shade()</code> + 一个统一出口 <code>main()</code>：<strong>所有分支只 return 颜色，矩阵在唯一出口施加</strong> ——
+  这样不会重演"圆遮罩漏掉某个 return"的老坑。单批次渲染下矩阵只能当 uniform 传，
+  所以 <code>gl_set_cm()</code> 在矩阵变化时先 flush（一个带 filter 的元素多一次 draw call，
+  换来不走图层）。</li>
+</ul>
+<p><code>style_needs_layer()</code> 只在<strong>含 blur / drop-shadow</strong> 时才返回 1。</p>
+<blockquote>
+<p><strong>语义差别</strong>：CSS 的 filter 作用于"元素合成后的结果"。逐图元施加时，子树内部
+<strong>互相重叠</strong>处略有不同。常见用法（整体调色）看不出差别；要严格等价就加
+<code>blur()</code>（哪怕 <code>blur(0.001px)</code>）把它推回图层。</p>
+</blockquote>
+<h4 id="18153">18.15.3 字体变体</h4>
+<p><code>font-variant-caps: small-caps</code> / <code>font-variant-numeric: tabular-nums</code> →
+<code>variant_flags</code> 一个字节 → <code>QLShapeOpt.small_caps/tabular_nums</code> → HarfBuzz 的
+<code>smcp</code> / <code>tnum</code> 两个 <code>hb_feature_t</code>（<code>feats[6]</code>，与 <code>liga</code>/<code>clig</code>/<code>kern</code> 共用同一个数组）。
+没有整形能力时<strong>构建期报错</strong>。</p>
+<h4 id="18154-l1">18.15.4 顺手补的 L1 小件</h4>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>实现要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text-align: justify</code></td>
+<td>剩余空间 / (字形数-1) 摊进字间；<strong>最后一行不拉伸</strong>（<code>li+1 == count</code> 时关掉），<code>ellipsis</code> 行不拉伸；跨整形块时按整行字形数近似（误差 ≤1px 级）</td>
+</tr>
+<tr>
+<td><code>box-shadow</code> 的 <code>spread</code></td>
+<td>复用 <code>QLUIShadow.reserved</code>（零结构体膨胀）；矩形与圆角一起按 spread 调整</td>
+</tr>
+<tr>
+<td><code>border-radius: a / b</code></td>
+<td><code>radius_v[4]</code>（8 字节）；绘制侧取两者平均作为等价单半径</td>
+</tr>
+<tr>
+<td><code>font</code> 简写</td>
+<td><code>[style] [variant] [weight] size[/line-height] family</code>；数字字重要求<strong>整段都是数字</strong>（否则 <code>20px</code> 会被当成字重，踩过）</td>
+</tr>
+<tr>
+<td><code>word-wrap</code></td>
+<td><code>overflow-wrap</code> 的老名字，同一套解析</td>
+</tr>
+<tr>
+<td><code>:empty</code></td>
+<td>有子元素 → 不匹配；文本全空白 → 匹配（<code>items</code> 里的混合内容也扫）</td>
+</tr>
+<tr>
+<td><code>revert</code></td>
+<td>与 <code>unset</code> 同路径</td>
+</tr>
+<tr>
+<td><code>::first-line</code> / <code>::first-letter</code></td>
+<td><strong>明确报错</strong>并给替代写法（依赖折行结果，构建期无法确定）</td>
+</tr>
+</tbody>
+</table>
+<h4 id="18155-blob">18.15.5 结构体与 blob</h4>
+<p><code>QLUIStyle</code> 368 → <strong>400</strong>（<code>clip_box[4]</code> 32 + <code>clip_pts</code>/<code>clip_pt_n</code>/<code>clip_reserved</code> 4 +
+<code>variant_flags</code>/<code>radius_reserved</code>/<code>radius_v[4]</code> 12 + 对齐），blob <strong>v34</strong>、
+头 172 → <strong>180</strong>（<code>clip_pt_count</code> + <code>off_clip_pts</code>），doc 新增一段 <code>clip_pts</code>。</p>
+<h4 id="18156-bug">18.15.6 这一轮抓到的三个老 bug</h4>
+<ol>
+<li><strong>GL 片元的零半径遮罩</strong>：半径 0 时 <code>min(rx,ry)</code> 把距离乘成 0 → <code>smoothstep</code> 得 0.5 →
+   整块半透明。<code>clip()</code> 的 golden 用例 CPU/GPU 差 <strong>47%</strong>。现在 <code>rr &lt;= 0</code> 明确判全裁。</li>
+<li><strong>column flex 里折行文本的高度</strong>：折行基准取了<strong>容器</strong>宽度而不是<strong>子项自己</strong>的
+   <code>width</code>，于是"窄列 + 长段落"按 1 行算高度（20px），绘制却按 440px 折成 2 行 →
+   第二行压到下一个元素上。</li>
+<li><strong>行内子节点的测量高度</strong>：column 布局把 <code>inline</code> 子节点高度<strong>逐个相加</strong>
+   （<code>&lt;span&gt;a&lt;/span&gt;&lt;span&gt;b&lt;/span&gt;</code> 得 84px 而不是 23px），后面的兄弟被顶下去一大截。</li>
+</ol>
+<p>前两个只在"column flex + 文本"这种组合下出现，第三个只要"inline 子节点有 padding"就能看到 ——
+例程 <code>36_clip_filter</code> 同时踩中了三个。</p>
+<hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
 <h3 id="191">19.1 语料实测（最可靠，推荐引用这一份）</h3>
@@ -4941,16 +5112,16 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>实测 Flash +3,488 B（开着图层包时）/ +804 B（只有解析器）</td>
 </tr>
 <tr>
-<td><strong><code>filter</code> 的颜色矩阵族</strong>（brightness/contrast/saturate/grayscale…）</td>
-<td><strong>PC/Mobile 必做</strong></td>
-<td>不一定要离屏：单色乘法可以直接融进每个绘制入口（CPU 乘、GL 用一个 uniform）。但要保证"子树整体"语义才准</td>
-<td>中：CPU + GL 各一份</td>
+<td>~~<strong><code>filter</code> 的颜色矩阵族</strong>~~ ✅ <strong>B9 已完成</strong></td>
+<td>PC/Mobile</td>
+<td>折成 3×4 矩阵挂到 draw2d 上，<strong>不进离屏图层</strong>（见 §18.15.2）</td>
+<td>CPU + GL 各一份，已落地</td>
 </tr>
 <tr>
-<td><strong><code>clip-path</code> 的任意形状</strong>（<code>polygon()</code> / <code>path()</code> / <code>inset()</code>）</td>
+<td>~~<strong><code>clip-path</code> 的任意形状</strong>~~ ✅ <strong>B9 已完成</strong>（<code>inset</code>/<code>ellipse</code>/<code>polygon</code>；<code>path()</code> 仍 ❌）</td>
 <td>PC/Mobile</td>
-<td>要通用裁剪扫线（现在只有 <code>circle()</code> 的 SDF）</td>
-<td>中</td>
+<td><code>inset</code> 求交、<code>ellipse</code> 扩 SDF、<code>polygon</code> 走 A8 蒙版 + 图层（见 §18.15.1）</td>
+<td>已落地</td>
 </tr>
 <tr>
 <td><strong>3D 变换</strong>（<code>perspective()</code> / <code>rotate3d()</code>）</td>
@@ -4960,8 +5131,9 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </tr>
 </tbody>
 </table>
-<p><strong>建议顺序</strong>：B1–B8 + M9.3/M9.4 <strong>全部完成</strong>。剩下的都是"单独立项"那一栏里的
-小件（<code>clip-path</code> 任意形状、<code>filter</code> 颜色矩阵、<code>font-variant</code> 的 small-caps/tabular-nums）。
+<p><strong>建议顺序</strong>：B1–B9 + M9.3/M9.4 <strong>全部完成</strong>。§22 上面"单独立项"那栏里的
+<code>clip-path</code> 任意形状、<code>filter</code> 颜色矩阵、<code>font-variant</code> 的 small-caps/tabular-nums
+<strong>已经在 B9 一起做完了</strong>（见 §18.15）；剩下的是 3D 变换（明确不排期）与 <code>path()</code>。
 每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。</p>
 <hr />
 <h2 id="23-css">23. 怎么新增一个 CSS 属性（检查清单）</h2>

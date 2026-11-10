@@ -128,6 +128,7 @@ python3 tools/qltext/qltext.py cc \
 | `33_table` | B7 表格：`display: table` 全家、`table-layout: auto` vs `fixed`、`<colgroup>/<col>`、`colspan/rowspan`、`border-spacing` vs `collapse`、单元格垂直对齐 |
 | `34_columns` | B7 多栏：`column-count` / `column-width` / `columns`、`column-rule` 分隔线、确定高度时的换栏 |
 | `35_text_stack` | B8 文本栈：`@font-face`（运行期探测系统字体）、家族列表与逐字回退、真粗体/真斜体、连字开关、阿拉伯文 RTL |
+| `36_clip_filter` | B9：`clip-path` 的 circle/ellipse/inset/polygon 四种形状、纯颜色 `filter` 走单批次（不进离屏图层）、`small-caps` / `tabular-nums`、`text-align: justify`、椭圆圆角、阴影 `spread` |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 

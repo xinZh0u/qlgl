@@ -148,6 +148,9 @@ typedef struct {
     /* 连字 / 字距开关（`font-variant-ligatures` / `font-feature-settings`），默认 1 */
     uint8_t    ligatures;
     uint8_t    kerning;
+    /* `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums`（B9） */
+    uint8_t    small_caps;
+    uint8_t    tabular_nums;
 
     /*
      * `text-decoration-*`（B3）：线长什么样。
@@ -170,8 +173,21 @@ struct QLDraw2D {
      * 不会出现"背景淡了、边还硬着"那种半个正确。
      */
     uint8_t alpha;
-    /* 圆遮罩（CSS px）。NULL = 该后端不支持，上层据此跳过该特性 */
-    void (*set_mask)(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t r);
+    /*
+     * 椭圆遮罩（CSS px）。rx == ry 就是圆。NULL = 该后端不支持。
+     * `clip-path: circle()` / `ellipse()` 都走这里（一个圆只是 rx==ry 的椭圆）。
+     */
+    void (*set_mask)(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
+                     ql_coord_t ry);
+    /*
+     * 颜色矩阵（`filter` 的纯颜色函数，B9 起可**不进离屏图层**）。
+     * m 是 3x4 行主序、16.16 定点；on = 0 关闭。NULL = 后端不支持（上层退回图层）。
+     *
+     * 语义差别（文档里写明）：CSS 的 filter 作用于"元素合成后的结果"，
+     * 这里是**逐图元**施加 —— 子树内部互相重叠的地方略有不同。绝大多数
+     * `filter: brightness(.9)` 这类用法看不出区别，而省掉一整块离屏缓冲。
+     */
+    void (*set_cm)(QLDraw2D *self, const int32_t m[12], int on);
 
     /* alpha: 0 透明（跳过），255 不透明 */
     void (*fill_rect)(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha);
@@ -310,7 +326,11 @@ struct QLDraw2D {
      */
     ql_coord_t mask_cx;
     ql_coord_t mask_cy;
-    ql_coord_t mask_r;      /* < 0 = 关闭 */
+    ql_coord_t mask_r;      /* < 0 = 关闭（水平半径 / 圆的半径） */
+    ql_coord_t mask_ry;     /* 垂直半径（圆时等于 mask_r） */
+    /* 当前生效的颜色矩阵（16.16 定点，3x4 行主序）；cm_on = 0 表示没有 */
+    int32_t    cm[12];
+    uint8_t    cm_on;
 
     /*
      * 元素缩放（`transform: scale()`，26.6 定点，QL_SCALE_ONE = 1.0）+ 缩放中心。
@@ -475,16 +495,49 @@ static inline int ql_draw2d_backdrop_blur_round(QLDraw2D *d2d, QLRect rect,
     return ql_draw2d_backdrop_blur(d2d, rect, sigma);
 }
 
-static inline void ql_draw2d_set_mask(QLDraw2D *d2d, ql_coord_t cx, ql_coord_t cy,
-                                      ql_coord_t r)
+static inline void ql_draw2d_set_mask_ellipse(QLDraw2D *d2d, ql_coord_t cx,
+                                              ql_coord_t cy, ql_coord_t rx,
+                                              ql_coord_t ry)
 {
     if (d2d == NULL)
         return;
+    if (rx < 0 || ry < 0) {
+        d2d->mask_cx = cx;
+        d2d->mask_cy = cy;
+        d2d->mask_r = -1;
+        d2d->mask_ry = -1;
+        if (d2d->set_mask != NULL)
+            d2d->set_mask(d2d, cx, cy, -1, -1);
+        return;
+    }
     d2d->mask_cx = cx;
     d2d->mask_cy = cy;
-    d2d->mask_r = (r < 0) ? -1 : r;
+    d2d->mask_r = rx;
+    d2d->mask_ry = ry;
     if (d2d->set_mask != NULL)
-        d2d->set_mask(d2d, cx, cy, d2d->mask_r);
+        d2d->set_mask(d2d, cx, cy, rx, ry);
+}
+
+static inline void ql_draw2d_set_mask(QLDraw2D *d2d, ql_coord_t cx, ql_coord_t cy,
+                                      ql_coord_t r)
+{
+    ql_draw2d_set_mask_ellipse(d2d, cx, cy, r, r);
+}
+
+/* 设置颜色矩阵；on = 0 关闭。后端不支持时返回 0（调用方应退回离屏图层） */
+static inline int ql_draw2d_set_cm(QLDraw2D *d2d, const int32_t m[12], int on)
+{
+    if (d2d == NULL || d2d->set_cm == NULL)
+        return 0;
+    if (on && m != NULL) {
+        for (int i = 0; i < 12; i++)
+            d2d->cm[i] = m[i];
+        d2d->cm_on = 1;
+    } else {
+        d2d->cm_on = 0;
+    }
+    d2d->set_cm(d2d, d2d->cm, d2d->cm_on);
+    return 1;
 }
 
 static inline void ql_draw2d_set_offset(QLDraw2D *d2d, ql_coord_t x_fx, ql_coord_t y_fx)

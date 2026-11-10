@@ -161,6 +161,20 @@ QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 | 双向文字 / RTL | `libfribidi0`（**只需运行库**） | `-DQL_FEAT_CSS_BIDI=0` |
 
 一个后端都没有时仍可正常构建，程序自动降级到内存显示（可导出 PPM）。
+
+**在自己的工程里用**（装了之后）：
+
+```bash
+cmake --install build --prefix /usr/local
+```
+
+```cmake
+find_package(qlgl 0.1 REQUIRED)
+target_link_libraries(app PRIVATE qlgl::qlgl)
+```
+
+非 CMake 工程：`pkg-config --cflags --libs qlgl`（`.pc` 用 `${pcfiledir}` 相对定位，
+`--prefix` 装到任何目录都不用重新生成）。
 `xdg-shell.xml` 已随仓库提供，不需要系统安装 wayland-protocols 的头文件。
 
 > 用到的每个库"干什么、什么许可、为什么是它"：见 [第三方依赖与许可](doc/第三方依赖.md)。
@@ -271,7 +285,8 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [旋转光栅](doc/tutorial/21_transform.md) →
 [表格](doc/tutorial/22_table.md) →
 [多栏](doc/tutorial/23_columns.md) →
-**[文本栈](doc/tutorial/24_text_stack.md)** →
+[文本栈](doc/tutorial/24_text_stack.md) →
+**[clip-path / 纯颜色滤镜 / 字体变体](doc/tutorial/25_clip_filter.md)** →
 [性能诊断与 MCU 基准](doc/tutorial/17_perf.md)。
 
 模块手册：

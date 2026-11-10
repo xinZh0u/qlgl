@@ -188,6 +188,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a href='../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -3391,6 +3392,49 @@ MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整�
 ③ 逐段输出必须自己推进 <code>out</code> 指针（第一版每段都从 0 写）；④ 链上的包装体只能放自己的
 字形缓存，<code>impl</code> 归注册表（否则 double free）；⑤ <code>dlsym</code> 到函数指针要走 <code>memcpy</code>
 （<code>QL_DLSYM</code> 宏），直接强转在 <code>-Wpedantic</code> 下报错。</p>
+<h4 id="m95-b9clip-path-filter-2026-11-11">M9.5 · B9：<code>clip-path</code> 四种形状 / 纯颜色 <code>filter</code> 单批次 / 字体变体 —— <strong>已完成（2026-11-11）</strong></h4>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clip-path</code> 的 <code>inset()</code> / <code>ellipse()</code> / <code>polygon()</code></td>
+<td>✅</td>
+<td><code>inset</code> 与裁剪矩形求交（零成本）；<code>ellipse</code> 把圆的 SDF 扩成两轴；<code>polygon</code> 顶点进 doc 池 → 64×64 A8 蒙版 → 强制离屏图层走 <code>fx-&gt;mask</code></td>
+</tr>
+<tr>
+<td>纯颜色 <code>filter</code> <strong>不进离屏图层</strong></td>
+<td>✅</td>
+<td>八个颜色函数折成 3×4 矩阵；CPU 三个入口过矩阵、GPU 用 uniform 且在<strong>唯一出口</strong>施加</td>
+</tr>
+<tr>
+<td><code>font-variant-caps: small-caps</code> / <code>-numeric: tabular-nums</code></td>
+<td>✅</td>
+<td>HarfBuzz 的 <code>smcp</code> / <code>tnum</code>；没有整形能力时构建期报错</td>
+</tr>
+<tr>
+<td>L1 小件</td>
+<td>✅</td>
+<td><code>text-align: justify</code>、阴影 <code>spread</code>、椭圆 <code>border-radius</code>、<code>font</code> 简写、<code>word-wrap</code>、<code>:empty</code>、<code>revert</code>；<code>::first-line/letter</code> 明确报错</td>
+</tr>
+<tr>
+<td><strong>L2：<code>style_copy</code> 按需分配</strong></td>
+<td>✅</td>
+<td><code>QLUINodeRT</code> 192 B（原 ~580 B）：400 字节的 <code>QLUIStyle</code> 改成懒分配指针</td>
+</tr>
+</tbody>
+</table>
+<p><strong>落地数据</strong>：<code>QLUIStyle</code> 368 → <strong>400</strong>（<code>clip_box</code> / <code>clip_pts</code> / <code>variant_flags</code> / <code>radius_v</code>）、
+blob <strong>v34</strong>（头 172 → 180、新增 <code>clip_pts</code> 段）；<code>test_b9</code> <strong>88 项</strong>；例程 <code>36_clip_filter</code>；
+教程 <code>25_clip_filter.md</code>；实现要点见《CSS3 覆盖与裁剪》§18.15。</p>
+<p><strong>顺手抓到的三个老 bug</strong>（都已修）：① GL 片元的零半径椭圆遮罩把整块变成半透明
+（golden 的 <code>clip</code> 用例 CPU/GPU 差 47%）；② column flex 里折行文本用了<strong>容器</strong>宽度
+而不是子项自己的 <code>width</code> 当折行基准；③ column 布局把 <code>inline</code> 子节点高度<strong>逐个相加</strong>。</p>
 <h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
 <table>
 <thead>
@@ -3408,8 +3452,13 @@ MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整�
 </tr>
 <tr>
 <td>benchmark 回归</td>
-<td><code>bench --offscreen --frames N</code> 的汇总数字进 CI，阈值超标即失败</td>
-<td>⏳</td>
+<td><code>bench --offscreen --frames N</code> 的汇总数字进 CI。<strong>实现为"功能门槛"而不是 FPS 阈值</strong>（CI 机器抖动会让 FPS 断言天天红，见 bench.md 的说明）</td>
+<td>✅ <code>test_bench_check</code></td>
+</tr>
+<tr>
+<td>~~<code>qltext check --platform</code>~~</td>
+<td>构建前报告"这份界面在 MCU 上会被裁掉哪些特性"（退出码 3 = 有降级项，CI 可当门槛）</td>
+<td>✅（2026-11-11，<code>test_qltext_platform</code>）</td>
 </tr>
 <tr>
 <td>~~golden image 套件~~</td>
@@ -3424,7 +3473,7 @@ MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整�
 <tr>
 <td>模板实例化</td>
 <td>支持动态列表：<code>qlui</code> 生成 template，运行期 <code>ql_ui_instantiate(tpl, n)</code></td>
-<td></td>
+<td>⏳（下一批）</td>
 </tr>
 <tr>
 <td>文档</td>
@@ -3432,9 +3481,9 @@ MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整�
 <td></td>
 </tr>
 <tr>
-<td>打包</td>
-<td>CMake install/export、pkg-config、示例仓库</td>
-<td></td>
+<td>~~打包~~</td>
+<td>CMake <code>install(TARGETS … EXPORT …)</code> + <code>qlglConfig.cmake</code>（自动 <code>find_dependency(PkgConfig/Freetype/JPEG/X11)</code>）+ <code>qlgl.pc</code>（用 <code>${pcfiledir}</code> 相对定位，<code>--prefix</code> 装哪都行）。已验证 <code>find_package(qlgl 0.1 REQUIRED)</code> + <code>target_link_libraries(app qlgl::qlgl)</code> 能编能跑</td>
+<td>✅（2026-11-11）</td>
 </tr>
 </tbody>
 </table>
@@ -3699,6 +3748,10 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <hr />
 <h2 id="8">8. 立即可开工（按性价比）</h2>
 <blockquote>
+<p><strong>2026-11-11 更新</strong>：第 0 层（<code>clip-path</code> 四种形状 / 纯颜色 <code>filter</code> 单批次 /
+字体变体）+ 第 1 层小件 + 第 2 层的 <code>style_copy</code> 按需、<code>install/export</code> + <code>pkg-config</code>、
+<code>qltext --platform</code> 已全部完成（见 M9.5 与 M7 表）。<strong>下一步</strong>：模板实例化、
+字形行级裁剪、迁移指南。下面是当时的定档记录，保留作依据。</p>
 <p><strong>2026-11-10 重新定档后的下一步</strong>（PC/Mobile 主线）：
 ① <strong>M9.1 Grid + <code>border-image</code></strong>（B6，估 4–7 KB Flash，且实测能降 MCU 布局时间）→
 ② <strong>M9.3 离屏图层</strong>（一次解锁 <code>filter</code> / group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code>）→

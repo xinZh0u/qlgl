@@ -399,7 +399,7 @@ static int32_t hb_shape_run(const QLFont *font, const char *text, int32_t from, 
     if (s_hb.buffer_set_direction != NULL)
         s_hb.buffer_set_direction(buf, run_rtl ? 5 : 4);   /* HB_DIRECTION_RTL / LTR */
 
-    ql_hb_feature_t feats[4];
+    ql_hb_feature_t feats[6];
     unsigned nf = 0;
     if (!opt->ligatures) {
         feats[nf].tag = QL_HB_TAG('l', 'i', 'g', 'a');
@@ -416,6 +416,21 @@ static int32_t hb_shape_run(const QLFont *font, const char *text, int32_t from, 
     if (!opt->kerning) {
         feats[nf].tag = QL_HB_TAG('k', 'e', 'r', 'n');
         feats[nf].value = 0;
+        feats[nf].start = 0;
+        feats[nf].end = (uint32_t)-1;
+        nf++;
+    }
+    /* B9：小写大写字母（TrueType 的 smcp）/ 等宽数字（tnum） */
+    if (opt->small_caps) {
+        feats[nf].tag = QL_HB_TAG('s', 'm', 'c', 'p');
+        feats[nf].value = 1;
+        feats[nf].start = 0;
+        feats[nf].end = (uint32_t)-1;
+        nf++;
+    }
+    if (opt->tabular_nums) {
+        feats[nf].tag = QL_HB_TAG('t', 'n', 'u', 'm');
+        feats[nf].value = 1;
         feats[nf].start = 0;
         feats[nf].end = (uint32_t)-1;
         nf++;
@@ -626,7 +641,7 @@ int32_t ql_text_shape(const QLFont *font, const char *text, int32_t len,
                       const QLShapeOpt *opt, QLShapeGlyph *out, int32_t cap,
                       ql_coord_t *out_width)
 {
-    static const QLShapeOpt k_default = { 0, 0, 0, 1, 1, 0 };
+    static const QLShapeOpt k_default = { 0, 0, 0, 1, 1, 0, 0, 0 };
     if (font == NULL || text == NULL)
         return 0;
     if (opt == NULL)

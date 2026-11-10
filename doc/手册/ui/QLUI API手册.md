@@ -34,8 +34,30 @@ qltext cc \
 | `--css` | 输入 CSS（必填） |
 | `--out` | 输出目录（必填，不存在会创建） |
 | `--name` | 输出标识（默认取 HTML 文件名） |
+| `--root` | 图片资源根目录（给了才把 `<img src>` 在构建期解码并嵌入） |
+| `--pixel-format` | `rgb565` / `rgb888` / `rgba8888` / `a8`（构建期转码的目标格式） |
+| `--platform` | 只对 `check` 有效：`pc` / `mcu`，给出**构建期降级报告**（见下） |
 
-退出码：`0` 成功；`1` 有错误（错误信息带 `文件:行号`）。
+退出码：`0` 成功；`1` 有错误（错误信息带 `文件:行号`）；`2` 参数错误；
+带 `--platform` 且发现了降级项时是 `3`。
+
+#### 1.1.1 `qltext check --platform`：构建前就知道 MCU 上会报什么错
+
+本库对"这个构建没启用的能力"是**构建期报错**，所以同一份 HTML/CSS 在 PC 上能编、
+在 MCU 上编不过。`--platform` 把这件事提前到开发机上：
+
+```bash
+qltext check --html ui/index.html --css ui/index.css --platform mcu
+#   [裁掉] 表格（display: table 全家）            3 处 → QL_FEAT_CSS_TABLE=0 时构建期报错
+#   [裁掉] 滤镜 / 混合模式 / mask / 旋转（离屏图层）   1 处 → QL_FEAT_CSS_FILTER_LAYER=0 时构建期报错
+# 退出码 3
+```
+
+- `pc` / `mobile` 预设 = 能力全开；`mcu` 预设 = `FILTER_LAYER` / `TABLE` / `COLUMNS` /
+  `FONT_STACK` / `TEXT_SHAPE` / `BIDI` 关（与 `test/mcu/build.sh` 一致，**Grid 不裁**：
+  实测它反而降低 MCU 布局时间）。
+- 没有降级项时退出码 `0` 并打印 `✔ 这份界面在 <平台> 上不需要裁任何特性`。
+- 代价 0：这张表只在宿主工具里，目标机根本不链接 `qltext`。
 
 ### 1.2 CMake 集成
 

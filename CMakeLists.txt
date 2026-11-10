@@ -17,7 +17,9 @@ file(GLOB_RECURSE QLGL_SRC CONFIGURE_DEPENDS
 )
 
 add_library(qlgl STATIC ${QLGL_SRC})
-target_include_directories(qlgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(qlgl PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 # libm 是自己用的（缓动曲线、SDF、颜色插值），不借 FreeType 的传递依赖 ——
 # 之前关掉 FreeType 之后例程集体链接失败，就是这个"顺手用别人的 -lm"
@@ -272,6 +274,7 @@ if(QLGL_BUILD_GL AND UNIX AND NOT APPLE)
     if(QL_EGL_FOUND AND QL_GLES_FOUND AND X11_FOUND)
         target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/port/qlgfx_gl.c)
         target_compile_definitions(qlgl PUBLIC QLGL_ENABLE_GL=1)
+        set(QLGL_ENABLE_GL_FLAG 1)
         target_link_libraries(qlgl PUBLIC PkgConfig::QL_EGL PkgConfig::QL_GLES)
         message(STATUS "QLGL: GL(ES3/EGL) GPU 后端已启用")
     else()
@@ -301,7 +304,7 @@ if(QLGL_BUILD_WAYLAND AND UNIX AND NOT APPLE)
             COMMENT "生成 xdg-shell 协议代码")
         target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/port/qldisp_wayland.c
                                     ${QL_WL_SRC})
-        target_include_directories(qlgl PUBLIC ${QL_WL_GEN_DIR})
+        target_include_directories(qlgl PUBLIC $<BUILD_INTERFACE:${QL_WL_GEN_DIR}>)
         target_compile_definitions(qlgl PUBLIC QLGL_ENABLE_WAYLAND=1)
         target_link_libraries(qlgl PUBLIC PkgConfig::WAYLAND_CLIENT)
         message(STATUS "QLGL: Wayland 窗口后端已启用")
@@ -346,7 +349,7 @@ if(QLGL_BUILD_TESTS)
         if(test_src MATCHES "/test/mcu/")
             continue()
         endif()
-        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_line_height$|^test_text_wrap$|^test_html_tags$|^test_text_style$|^test_scroll$|^test_input_edit$|^test_select$|^test_progress$|^test_details$|^test_dialog$|^test_image$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^test_pct_height$|^test_blur_dirty$|^test_opacity$|^test_css_units$|^test_pseudo_text$|^test_transition_shorthand$|^test_text_adv$|^test_css_vars$|^test_media$|^test_calc$|^test_b4$|^test_b5$|^test_m8$|^test_grid$|^test_layer$|^test_transform$|^test_table$|^test_columns$|^test_font_stack$|^test_text_shape$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
+        if(test_name MATCHES "^test_web_ui$|^test_gl_vs_cpu$|^example_gl_window$|^example_bench_fps$|^test_ui_blob$|^example_ui_blob$|^test_flex$|^test_flex_auto$|^test_render$|^test_dpr$|^test_transition$|^test_keyframes$|^test_clip$|^test_scale$|^test_flip$|^test_blur$|^test_line_height$|^test_text_wrap$|^test_html_tags$|^test_text_style$|^test_scroll$|^test_input_edit$|^test_select$|^test_progress$|^test_details$|^test_dialog$|^test_image$|^test_golden$|^test_text_parse$|^test_text_reject$|^test_anim_stress$|^test_gl_dirty$|^test_pct_height$|^test_blur_dirty$|^test_opacity$|^test_css_units$|^test_pseudo_text$|^test_transition_shorthand$|^test_text_adv$|^test_css_vars$|^test_media$|^test_calc$|^test_b4$|^test_b5$|^test_m8$|^test_grid$|^test_layer$|^test_transform$|^test_table$|^test_columns$|^test_font_stack$|^test_text_shape$|^test_b9$|^example_anim_window$|^example_flip_window$|^example_showcase_window$|^example_bench_ui$")
             set(_ql_ui_sources ${QL_UI_GEN})
             add_executable(${test_name} ${test_src} ${_ql_ui_sources})
             add_dependencies(${test_name} qlui)
@@ -428,6 +431,12 @@ if(QLGL_BUILD_TESTS)
         DEPENDS qltext ${QL_UI_IN}/flex/row.html ${QL_UI_IN}/flex/row.css
         COMMENT "qltext blob 直接产出 .qlui")
     add_custom_target(qltext_blob ALL DEPENDS ${QL_DIRECT_BLOB})
+    # `qltext check --platform` 的降级报告（退出码 3 = 有降级项）
+    add_test(NAME test_qltext_platform
+             COMMAND ${CMAKE_COMMAND}
+                     -DQLTEXT=$<TARGET_FILE:qltext>
+                     -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/platform_report.cmake)
     add_test(NAME test_qltext_blob
              COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
@@ -488,3 +497,119 @@ if(Python3_Interpreter_FOUND)
         COMMENT "生成 HTML 文档到 doc/html/"
         VERBATIM)
 endif()
+
+# ---- 安装与打包（M7）：cmake --install + find_package(qlgl) + pkg-config ----
+#
+# 目标：别人的工程里三行就能用上 ——
+#     find_package(qlgl REQUIRED)
+#     target_link_libraries(app PRIVATE qlgl::qlgl)
+# 或者非 CMake 的工程：
+#     pkg-config --cflags --libs qlgl
+#
+# 说明：能力开关（`QL_FEAT_*`）**不随包导出** —— 它们是"这一份构建的属性"，
+# 静态库的调用方如果编译期看到的宏与库里不一致，结构体布局就会错位。
+# 所以 `qlgl.pc` 与 `qlglConfig.cmake` 只导出 include 目录与链接依赖。
+include(GNUInstallDirs)
+
+install(TARGETS qlgl
+        EXPORT qlglTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/qlgl
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+
+# 宿主工具：构建期把 HTML/CSS 编成 C（目标机不需要它）
+if(TARGET qltext)
+    install(TARGETS qltext RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+install(EXPORT qlglTargets
+        FILE qlglTargets.cmake
+        NAMESPACE qlgl::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qlgl)
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/qlglConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+# 导出的 target 里有 imported target（PkgConfig::QL_EGL / X11::X11 …），
+# 消费方的 CMake **必须**先把它们找出来，否则 include(qlglTargets.cmake) 会报
+# "target was not found"。所以 config 文件里按"这份构建到底链了谁"补上依赖。
+set(QLGL_CONFIG_DEPS "include(CMakeFindDependencyMacro)\n")
+if(QLGL_ENABLE_GL_FLAG OR WAYLAND_CLIENT_FOUND)
+    string(APPEND QLGL_CONFIG_DEPS "find_dependency(PkgConfig)\n")
+endif()
+if(QLGL_ENABLE_GL_FLAG)
+    string(APPEND QLGL_CONFIG_DEPS "pkg_check_modules(QL_EGL IMPORTED_TARGET egl)\n")
+    string(APPEND QLGL_CONFIG_DEPS "pkg_check_modules(QL_GLES IMPORTED_TARGET glesv2)\n")
+endif()
+if(WAYLAND_CLIENT_FOUND)
+    string(APPEND QLGL_CONFIG_DEPS
+        "pkg_check_modules(WAYLAND_CLIENT IMPORTED_TARGET wayland-client)\n")
+endif()
+if(QLGL_FREETYPE_ENABLED)
+    string(APPEND QLGL_CONFIG_DEPS "find_dependency(Freetype)\n")
+endif()
+if(QLGL_BUILD_JPEG AND JPEG_FOUND)
+    string(APPEND QLGL_CONFIG_DEPS "find_dependency(JPEG)\n")
+endif()
+if(QLGL_BUILD_X11 AND X11_FOUND)
+    string(APPEND QLGL_CONFIG_DEPS "find_dependency(X11)\n")
+endif()
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qlglConfig.cmake
+"${QLGL_CONFIG_DEPS}include(\"\${CMAKE_CURRENT_LIST_DIR}/qlglTargets.cmake\")\n")
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/qlglConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/qlglConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qlgl)
+
+# pkg-config：链接依赖要跟着"这份构建到底链了谁"走
+set(QL_PC_LIBS "-lm")
+if(QLGL_FREETYPE_ENABLED)
+    set(QL_PC_LIBS "${QL_PC_LIBS} -lfreetype")
+endif()
+if(QLGL_BUILD_JPEG AND JPEG_FOUND)
+    set(QL_PC_LIBS "${QL_PC_LIBS} -ljpeg")
+endif()
+if(QLGL_ENABLE_GL_FLAG)
+    set(QL_PC_LIBS "${QL_PC_LIBS} -lEGL -lGLESv2")
+endif()
+# 窗口后端：静态库按需拉取对象文件，但 pkg-config 的调用方通常一次链完，
+# 所以把它们的库名也写上（没装这些 -dev 包的机器会在链接期明确报错）。
+if(QLGL_BUILD_X11 AND X11_FOUND)
+    set(QL_PC_LIBS "${QL_PC_LIBS} -lX11")
+    if(X11_Xext_FOUND)
+        set(QL_PC_LIBS "${QL_PC_LIBS} -lXext")
+    endif()
+endif()
+if(WAYLAND_CLIENT_FOUND)
+    set(QL_PC_LIBS "${QL_PC_LIBS} -lwayland-client")
+endif()
+if(QL_CFG_HAVE_DLOPEN_PC)
+    set(QL_PC_LIBS "${QL_PC_LIBS}")
+elseif(UNIX)
+    set(QL_PC_LIBS "${QL_PC_LIBS} -ldl")
+endif()
+# 用 `${pcfiledir}` 相对定位，这样 `cmake --install --prefix <任意目录>` 之后
+# 不用重新生成 .pc（否则里面写死的 prefix 会指向 configure 时的默认路径）。
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qlgl.pc
+"prefix=\${pcfiledir}/../..
+exec_prefix=\${prefix}
+libdir=\${pcfiledir}/..
+includedir=\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}
+
+Name: qlgl
+Description: CSS+HTML 的 GUI 库（HTML/CSS 编译成静态数据、CPU/GPU 双后端、可裁到 MCU）
+Version: ${PROJECT_VERSION}
+Cflags: -I\${includedir}
+Libs: -L\${libdir} -lqlgl ${QL_PC_LIBS}
+")
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qlgl.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+message(STATUS "QLGL: 安装目标已就绪（cmake --install <build> --prefix /usr/local）")
