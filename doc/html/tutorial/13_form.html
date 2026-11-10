@@ -424,10 +424,20 @@ main img.shot { max-width: 100%; }
 
 <p>没有剪贴板、没有 IME、光标不闪 —— 三条限制与单行输入框完全一致（见第 10 章）。</p>
 <blockquote>
-<p><strong>Linux 上中文要走输入法</strong>：X11 后端优先用 XIM（<code>XOpenIM</code>/<code>XCreateIC</code> +
-<code>Xutf8LookupString</code>），所以 ibus / fcitx 挂上 <code>XMODIFIERS=@im=...</code> 就能直接
-打中文；XIM 不可用时退回 <code>XLookupString</code>，那时只有 Latin-1。
-没有输入法环境（比如裸 X）就还是只能用 <code>ql_ui_input_set_value()</code> 从程序里填。</p>
+<p><strong>Linux 上中文要走输入法</strong>：X11 后端走 XIM。窗口后端（GL）和纯 CPU 的
+X11 显示后端都接了同一套，<strong>四件事缺一不可</strong>：</p>
+<ol>
+<li>进程调过 <code>setlocale(LC_ALL, "")</code>（例程在 <code>ex_setup_locale()</code> 里做）；</li>
+<li><code>XSetLocaleModifiers("")</code> —— 读 <code>XMODIFIERS</code> 并初始化 XIM 的传输层；</li>
+<li>窗口选上 <code>FocusChangeMask</code>，收到 <code>FocusIn</code> 后 <code>XSetICFocus()</code>；</li>
+<li>每个事件先过 <code>XFilterEvent()</code>，字符走 <code>Xutf8LookupString()</code>。</li>
+</ol>
+<p>第 2 条最阴：漏了它 <code>XOpenIM</code> 照样成功、IC 也建得出来，但 <code>XFilterEvent()</code>
+永远返回 False —— 现象是"ibus/fcitx 明明在跑，拼音敲进去只有字母"。
+第 3 条漏了则输入法完全不接管按键（它只给有焦点的输入上下文转事件）。</p>
+<p>XIM 不可用时退回 <code>XLookupString</code>，那时只有 Latin-1；裸 X（没有输入法）就
+只能用 <code>ql_ui_input_set_value()</code> 从程序里填。Wayland 原生窗口还没有
+<code>zwp_text_input_v3</code>（见《对比与取舍》）。</p>
 </blockquote>
 <h2 id="_8">与浏览器不同的地方</h2>
 <ol>

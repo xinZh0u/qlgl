@@ -180,10 +180,21 @@ ql_ui_set_input_cb(ui, on_input, NULL);
 
 没有剪贴板、没有 IME、光标不闪 —— 三条限制与单行输入框完全一致（见第 10 章）。
 
-> **Linux 上中文要走输入法**：X11 后端优先用 XIM（`XOpenIM`/`XCreateIC` +
-> `Xutf8LookupString`），所以 ibus / fcitx 挂上 `XMODIFIERS=@im=...` 就能直接
-> 打中文；XIM 不可用时退回 `XLookupString`，那时只有 Latin-1。
-> 没有输入法环境（比如裸 X）就还是只能用 `ql_ui_input_set_value()` 从程序里填。
+> **Linux 上中文要走输入法**：X11 后端走 XIM。窗口后端（GL）和纯 CPU 的
+> X11 显示后端都接了同一套，**四件事缺一不可**：
+>
+> 1. 进程调过 `setlocale(LC_ALL, "")`（例程在 `ex_setup_locale()` 里做）；
+> 2. `XSetLocaleModifiers("")` —— 读 `XMODIFIERS` 并初始化 XIM 的传输层；
+> 3. 窗口选上 `FocusChangeMask`，收到 `FocusIn` 后 `XSetICFocus()`；
+> 4. 每个事件先过 `XFilterEvent()`，字符走 `Xutf8LookupString()`。
+>
+> 第 2 条最阴：漏了它 `XOpenIM` 照样成功、IC 也建得出来，但 `XFilterEvent()`
+> 永远返回 False —— 现象是"ibus/fcitx 明明在跑，拼音敲进去只有字母"。
+> 第 3 条漏了则输入法完全不接管按键（它只给有焦点的输入上下文转事件）。
+>
+> XIM 不可用时退回 `XLookupString`，那时只有 Latin-1；裸 X（没有输入法）就
+> 只能用 `ql_ui_input_set_value()` 从程序里填。Wayland 原生窗口还没有
+> `zwp_text_input_v3`（见《对比与取舍》）。
 
 ## 与浏览器不同的地方
 

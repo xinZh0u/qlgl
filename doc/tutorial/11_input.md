@@ -67,7 +67,7 @@ ql_ui_input_set_value(ui, user, "张三");           /* 写值（光标移到末
 
 | 缺 | 原因 / 替代 |
 |---|---|
-| 输入法（IME） | 平台层负责把上屏文本变成一个 `QL_INPUT_TEXT`；本库不猜候选框 |
+| 输入法（IME） | 平台层负责把上屏文本变成一个 `QL_INPUT_TEXT`；本库不猜候选框。X11 侧已接 XIM（见第 13 章的四件事） |
 | 光标闪烁 | 闪烁要求主循环一直醒着，省电优先 |
 | `maxlength` / `required` / `pattern` | 属性不影响渲染，静默忽略；长度上限是 `QL_CFG_UI_INPUT_LEN` |
 | `readonly` | 静默忽略 —— 要只读就别接 `input_cb`，或直接写 `disabled` |

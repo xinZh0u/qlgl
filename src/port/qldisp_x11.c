@@ -36,6 +36,13 @@ typedef struct {
     Visual      *visual;        /* 重建 XImage 要用 */
     int          depth;
     int          resize_pending; /* 窗口尺寸变过，调用方需要重建画布并重排 */
+    /*
+     * 输入法（XIM）。和 GL 后端同一套三件套：`XSetLocaleModifiers("")` +
+     * `XOpenIM` + `FocusChangeMask`/`XSetICFocus`。漏一条就"输入法活着但
+     * 一个中文都打不出来"，细节见《QLRender 阅读指南》踩坑表。
+     */
+    XIM          xim;
+    XIC          xic;
 } QLDispX11;
 
 /*
@@ -271,11 +278,11 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
 
     strncpy(x->title, (title != NULL) ? title : "QLGL", sizeof(x->title) - 1);
     x11_set_title(dpy, x->win, x->title);
-    XSelectInput(dpy, x->win,
-                 ExposureMask | StructureNotifyMask |
-                 KeyPressMask | KeyReleaseMask |
-                 ButtonPressMask | ButtonReleaseMask |
-                 PointerMotionMask | EnterWindowMask | LeaveWindowMask);
+    long evmask = ExposureMask | StructureNotifyMask | FocusChangeMask |
+                  KeyPressMask | KeyReleaseMask |
+                  ButtonPressMask | ButtonReleaseMask |
+                  PointerMotionMask | EnterWindowMask | LeaveWindowMask;
+    XSelectInput(dpy, x->win, evmask);
 
     x->wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, x->win, &x->wm_delete, 1);
@@ -298,6 +305,27 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     XMapWindow(dpy, x->win);
     XFlush(dpy);
 
+    /*
+     * 接上 XIM。三件事缺一不可（顺序也重要）：
+     *   setlocale(LC_ALL,"") → XSetLocaleModifiers("") → XOpenIM → XCreateIC
+     * 再把这个 IC 声明的事件位并进窗口掩码，并在 FocusIn 时 XSetICFocus。
+     */
+    (void)XSetLocaleModifiers("");
+    x->xim = XOpenIM(dpy, NULL, NULL, NULL);
+    if (x->xim != NULL) {
+        x->xic = XCreateIC(x->xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                           XNClientWindow, x->win, XNFocusWindow, x->win, NULL);
+        if (x->xic != NULL) {
+            long im_events = NoEventMask;
+            if (XGetICValues(x->xic, XNFilterEvents, &im_events, NULL) == NULL &&
+                im_events != NoEventMask)
+                XSelectInput(dpy, x->win, evmask | im_events);
+        } else {
+            XCloseIM(x->xim);
+            x->xim = NULL;
+        }
+    }
+
     if (ql_disp_set(&x->base) != QL_OK) {
         QL_LOGE("x11: ql_disp_set failed");
         goto fail;
@@ -314,7 +342,11 @@ fail:
         XDestroyImage(x->image);
     }
     if (x->gc != NULL)
-        XFreeGC(dpy, x->gc);
+        if (x->xic != NULL)
+        XDestroyIC(x->xic);
+    if (x->xim != NULL)
+        XCloseIM(x->xim);
+    XFreeGC(dpy, x->gc);
     if (x->win != 0)
         XDestroyWindow(dpy, x->win);
     XCloseDisplay(dpy);
@@ -354,6 +386,16 @@ int ql_disp_x11_poll(QLDispDriver *driver)
             break;
         }
 
+        case FocusIn:
+            if (x->xic != NULL)
+                XSetICFocus(x->xic);
+            break;
+
+        case FocusOut:
+            if (x->xic != NULL)
+                XUnsetICFocus(x->xic);
+            break;
+
         case ClientMessage:
             if ((Atom)ev.xclient.data.l[0] == x->wm_delete)
                 x->closed = 1;
@@ -364,8 +406,11 @@ int ql_disp_x11_poll(QLDispDriver *driver)
             break;
 
         default:
+            /* 输入法先过一遍：正在组字时按键不能给界面层 */
+            if (x->xic != NULL && XFilterEvent(&ev, None))
+                break;
             /* 其余输入事件交给输入系统；Esc/关闭改由应用决定 */
-            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx, NULL);
+            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx, x->xic);
             break;
         }
     }
@@ -389,6 +434,14 @@ void ql_disp_x11_destroy(QLDispDriver *driver)
     ql_disp_unset(driver);
 
     if (x->dpy != NULL) {
+        if (x->xic != NULL) {
+            XDestroyIC(x->xic);
+            x->xic = NULL;
+        }
+        if (x->xim != NULL) {
+            XCloseIM(x->xim);
+            x->xim = NULL;
+        }
         if (x->gc != NULL)
             XFreeGC(x->dpy, x->gc);
         if (x->win != 0)

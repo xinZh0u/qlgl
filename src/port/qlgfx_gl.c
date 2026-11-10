@@ -2968,7 +2968,13 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         swa.colormap = XCreateColormap(g->dpy, RootWindow(g->dpy, screen),
                                        vinfo.visual, AllocNone);
         swa.border_pixel = 0;
-        swa.event_mask = ExposureMask | StructureNotifyMask |
+        /*
+         * `FocusChangeMask` 是 **XIM 必需的**：输入法只在输入上下文"有焦点"时
+         * 才截键（`XSetICFocus` 在 FocusIn 里调）。少这一位就永远收不到 FocusIn，
+         * 输入法于是完全不理会按键 —— 表现就是"ibus/fcitx 都装了、拼音也打了，
+         * 但输入框里只有字母"。这个位不影响别的逻辑（焦点事件在 switch 里处理）。
+         */
+        swa.event_mask = ExposureMask | StructureNotifyMask | FocusChangeMask |
                          KeyPressMask | KeyReleaseMask |
                          ButtonPressMask | ButtonReleaseMask |
                          PointerMotionMask | EnterWindowMask | LeaveWindowMask;
@@ -3015,14 +3021,33 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         XMapWindow(g->dpy, g->win);
 
         /*
-         * 输入法（fcitx5 / ibus 都提供 XIM 服务）。
+         * 输入法（fcitx5 / ibus 都提供 XIM 服务）。拿不到就降级成"只能打 Latin-1"
+         * —— 很多精简环境根本没装输入法，那不是错误。
          *
-         * 拿不到就静默降级成"只能打 Latin-1" —— 很多精简环境根本没装输入法，
-         * 那不是错误。要中文就必须：
-         *   1. 进程里调过 setlocale(LC_ALL, "")（XIM 靠它找 locale 对应的输入法）；
-         *   2. 系统有 fcitx/ibus（且它们的 XIM 模块是开着的）。
+         * XIM 要三件事**同时**成立，缺一条就"装了输入法也打不出中文"：
+         *   1. 进程调用过 `setlocale(LC_ALL, "")`（例程在 ex_setup_locale 里做）；
+         *   2. `XSetLocaleModifiers("")` —— 读 `XMODIFIERS` 并初始化 XIM 的传输层。
+         *      漏掉这一句时 `XOpenIM` 照样成功、IC 也建得出来、`XNFilterEvents`
+         *      也报 0x3，但 `XFilterEvent()` **永远返回 False**，输入法根本不接管
+         *      按键 —— 表现就是"拼音敲进去只有字母"。这条是实测出来的（见
+         *      《QLRender 阅读指南》踩坑表）。
+         *   3. 窗口选上 `FocusChangeMask`，收到 FocusIn 后 `XSetICFocus()`
+         *      （输入法只给"有焦点的输入上下文"转事件）。
          */
+        if (!XSupportsLocale())
+            QL_LOGW("gl: locale 不支持（没有 setlocale(LC_ALL, \"\")？）—— XIM 可能不可用");
+        (void)XSetLocaleModifiers("");
         g->xim = XOpenIM(g->dpy, NULL, NULL, NULL);
+        if (g->xim == NULL) {
+            /* `XMODIFIERS` 没设也很常见（比如从没继承桌面会话环境）：挨个试常见的 */
+            static const char *const alts[] = { "@im=ibus", "@im=fcitx" };
+            for (size_t i = 0; i < sizeof(alts) / sizeof(alts[0]) && g->xim == NULL; i++) {
+                (void)XSetLocaleModifiers(alts[i]);
+                g->xim = XOpenIM(g->dpy, NULL, NULL, NULL);
+                if (g->xim != NULL)
+                    QL_LOGI("gl: XMODIFIERS 没设，改用 %s 连上了输入法", alts[i]);
+            }
+        }
         if (g->xim != NULL) {
             g->xic = XCreateIC(g->xim,
                                XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
@@ -3030,8 +3055,31 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
                                XNFocusWindow, g->win,
                                NULL);
         }
-        if (g->xic == NULL)
-            QL_LOGI("gl: 没有可用的 XIM 输入法，只能输入 Latin-1（中文请装 fcitx/ibus 并 setlocale）");
+        if (g->xic != NULL) {
+            /*
+             * 输入法会声明"我还需要关注哪些事件"（通常是 KeyPress/KeyRelease，
+             * 有的还会要 PropertyNotify / ClientMessage 之类）。必须把这些位
+             * 并进窗口的事件掩码，否则那些事件根本不会送到我们这里，
+             * 输入法就收不到它想要的通知。
+             */
+            long im_events = NoEventMask;
+            if (XGetICValues(g->xic, XNFilterEvents, &im_events, NULL) == NULL &&
+                im_events != NoEventMask) {
+                XSelectInput(g->dpy, g->win, swa.event_mask | im_events);
+            }
+            /*
+             * 窗口可能在建 IC 之前就已经拿到焦点（比如刚启动就被 WM 激活），
+             * 那时没有 FocusIn 可等 —— 主动看一眼当前焦点，直接设上。
+             */
+            Window focus_win = None;
+            int revert = 0;
+            XGetInputFocus(g->dpy, &focus_win, &revert);
+            if (focus_win == g->win)
+                XSetICFocus(g->xic);
+        } else {
+            QL_LOGW("gl: 没有可用的 XIM 输入法，只能输入 Latin-1（装好 ibus/fcitx 并保证 "
+                    "XMODIFIERS=@im=ibus|fcitx，且进程调过 setlocale(LC_ALL, \"\")）");
+        }
 
         g->surface = eglCreateWindowSurface(g->egdpy, cfg, (EGLNativeWindowType)g->win, NULL);
         g->surface_w = width;
