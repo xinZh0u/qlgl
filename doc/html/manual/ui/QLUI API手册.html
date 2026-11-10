@@ -836,8 +836,12 @@ color stop 位置一律报错。UI 里的光晕、暗角就是它。</p>
 <td>必须（不支持浏览器默认色）</td>
 </tr>
 <tr>
-<td><code>spread</code>（第 4 个长度）、<code>inset</code>、多重阴影</td>
-<td>❌ 构建期报错</td>
+<td><code>inset</code>、两层阴影、<code>spread</code>（第 4 个长度，B9）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>三层及以上</td>
+<td>❌ 构建期报错（多写的报错，不静默丢弃）</td>
 </tr>
 </tbody>
 </table>

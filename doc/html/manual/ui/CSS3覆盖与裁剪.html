@@ -2262,7 +2262,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>filter: drop-shadow(&lt;dx&gt; &lt;dy&gt; [blur] [color])</code></td>
 <td>✅</td>
 <td>O</td>
-<td>影子取 <strong>alpha 形状</strong>（跟着圆角/透明洞走）；颜色默认 <code>currentColor</code>；<code>spread</code> 报错</td>
+<td>影子取 <strong>alpha 形状</strong>（跟着圆角/透明洞走）；颜色默认 <code>currentColor</code>；<code>drop-shadow</code> <strong>不接受</strong> <code>spread</code>（CSS 也没有）</td>
 </tr>
 <tr>
 <td><code>filter: url(#svg)</code> / <code>backdrop-filter</code> 的颜色函数</td>
@@ -4500,8 +4500,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </tr>
 <tr>
 <td><code>text-align</code></td>
-<td><code>left</code> / <code>center</code> / <code>right</code></td>
-<td>没有 <code>justify</code>；行内子节点一起对齐</td>
+<td><code>left</code> / <code>center</code> / <code>right</code> / <code>justify</code></td>
+<td>B9 起有 <code>justify</code>（末行不拉伸）；行内子节点一起对齐</td>
 </tr>
 <tr>
 <td><code>overflow</code></td>

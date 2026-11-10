@@ -530,7 +530,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | `backdrop-filter: blur()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
 | `filter: blur(<N>px)` | ✅ | O | **离屏图层**（§18.10）：元素先合成到临时图再整体糊。9 抽头可分离高斯，抽头间距 = N/2，两条后端同一公式。MCU 档恒关 |
 | `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | ✅ | O | 颜色矩阵族，同一图层里可链式（最多 6 个）；`1.2` 与 `120%` 等价 |
-| `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`spread` 报错 |
+| `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`drop-shadow` **不接受** `spread`（CSS 也没有） |
 | `filter: url(#svg)` / `backdrop-filter` 的颜色函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur） |
 | `clip-path: circle()` / `ellipse()` | ✅ | R | 子树级**椭圆**遮罩（圆心恒在元素中心）；GPU 顶点属性带 `(cx,cy,rx,ry)`，CPU 同一公式 |
 | `clip-path: inset()` | ✅ | R | **与裁剪矩形求交**，两后端精确、零额外成本（B9） |
@@ -1829,7 +1829,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `font-weight` / `font-style` | **合成**（画两遍 / 按行剪切） | 不加载第二份字体文件 |
 | `text-decoration` | `underline` / `overline` / `line-through` | 没有 `wavy` 线型 |
 | `vertical-align` | `baseline` / `sub` / `super` | 没有 `middle` / 长度值 |
-| `text-align` | `left` / `center` / `right` | 没有 `justify`；行内子节点一起对齐 |
+| `text-align` | `left` / `center` / `right` / `justify` | B9 起有 `justify`（末行不拉伸）；行内子节点一起对齐 |
 | `overflow` | 一个值管两轴 | 没有 `overflow-x/y` |
 | `flex-wrap` | `nowrap` / `wrap` | 没有 `wrap-reverse` |
 | `display` | `block` / `inline` / `inline-block` / `flex` / `inline-flex` / `none` | 没有 `grid` / `table` / `contents` |

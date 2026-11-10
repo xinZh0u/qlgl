@@ -230,7 +230,7 @@ main img.shot { max-width: 100%; }
 （<a href="16_css_gallery.html">CSS 效果检阅</a>）、选择器与 <code>::before</code>
 （<a href="14_css3.html">CSS3 补全</a>）、绘制细节（<a href="16_css_gallery.html">CSS 效果检阅</a> 与
 <code>example/25_b4</code>）、布局与交互（<code>example/24_b5</code>）；这一篇补齐最后三块，
-并说明<strong>为什么 <code>filter: blur()</code> 还没做</strong>。</p>
+并说明<strong><code>filter</code> 当时为什么拆成两条路</strong>（B9 已全部落地）。</p>
 <table>
 <thead>
 <tr>
@@ -323,75 +323,38 @@ main img.shot { max-width: 100%; }
 <li>背景图铺在<strong>背景色之上、边框之下</strong>，圆角由 <code>border-radius</code> 裁（走图片自己的 SDF）。</li>
 </ul>
 <hr />
-<h2 id="4-filter-blur">4. 为什么 <code>filter: blur()</code> 还没做</h2>
-<p>五批清单里 B4 还留着 <code>filter</code> 一项。这一项的成本与前四项不是一个量级：</p>
+<h2 id="4-filter-b9">4. <code>filter</code> 后来分成两条路（B9 收尾）</h2>
+<p>这一节是历史记录：当时 B4 还留着 <code>filter</code> 一项，因为它与前面几项的成本不是一个量级。
+后来的结论是<strong>把它拆成两条路</strong>（见 <a href="20_filter.html">20_filter</a> 与 <a href="25_clip_filter.html">25_clip_filter</a>）：</p>
 <table>
 <thead>
 <tr>
 <th>函数</th>
 <th>需要什么</th>
-<th>结论</th>
+<th>现在</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate</code></td>
-<td>逐图元颜色矩阵（CPU 改混合路径、GPU 加 uniform）</td>
-<td>可以做，但等于给每条绘制入口加一次矩阵</td>
+<td><code>brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity</code></td>
+<td>折成一个 <strong>3×4 颜色矩阵</strong>，CPU 逐像素、GPU 用 uniform</td>
+<td>✅ <strong>不进离屏图层</strong>（B9）</td>
 </tr>
 <tr>
 <td><code>blur()</code> / <code>drop-shadow()</code></td>
-<td><strong>离屏图层</strong>：子树的绘制结果要先合成到一张图，再整体模糊</td>
-<td>与 <code>transform: rotate()</code> 同级的新子系统</td>
+<td><strong>离屏图层</strong>：子树先合成到一张图，再整体处理</td>
+<td>✅ 走图层（M9.3）</td>
 </tr>
 <tr>
 <td><code>backdrop-filter</code></td>
-<td>——</td>
-<td>已有（<code>15_backdrop</code>）</td>
+<td>读"已经画好的内容"</td>
+<td>✅ 独立小着色器（教程 15）</td>
 </tr>
 </tbody>
 </table>
-<p>所以这一轮先把"真实页面里出现频率高得多"的三块做完，<code>filter</code> 与
-<code>transform: rotate()</code> 一起留作单独立项。覆盖表里如实标 ⏳，不假装支持。</p>
-<hr />
-<h2 id="5">5. 三条例程怎么跑</h2>
-<div class="highlight"><pre><span></span><code>./build/example/example_26_css_states<span class="w">      </span><span class="c1"># 点复选框 / 试 disabled 输入框</span>
-./build/example/example_27_css_text2<span class="w">       </span><span class="c1"># 看 word-spacing / tab-size / 装饰线</span>
-./build/example/example_28_bg_image<span class="w">        </span><span class="c1"># 看 cover/contain/position/repeat</span>
-</code></pre></div>
-
-<p>三页都是纯 CSS：没有任何运行期样式匹配，也没有一行 JS。</p>
-<p><img alt="状态选择器" src="../img/26-css-states.png" /></p>
-<p><img alt="文本细节" src="../img/27-css-text2.png" /></p>
-<p><img alt="背景图" src="../img/28-bg-image.png" /></p>
-<hr />
-<h2 id="6">6. 这一轮的验收</h2>
-<table>
-<thead>
-<tr>
-<th>项</th>
-<th>数字</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>新增测试</td>
-<td><code>test_m8</code>（61 项：状态/文字/背景逐点取色 + 7 条非法值必须报错）</td>
-</tr>
-<tr>
-<td>blob</td>
-<td>v26 → <strong>v27</strong>（<code>QLUIStyle</code> 240 → 272，<code>QLUINode</code> 20 → 28）</td>
-</tr>
-<tr>
-<td>golden</td>
-<td>29 页全部重生成，图像逐像素未变（只改了结构体布局）</td>
-</tr>
-<tr>
-<td>三套构建</td>
-<td>普通 / strict / ASan 各 74/74</td>
-</tr>
-</tbody>
-</table>
+<p>关键洞见：绝大多数真实页面的 <code>filter</code> 只是<strong>调色</strong>，逐图元施加和"先合成再处理"
+在观感上没有区别 —— 而代价差一整块 RGBA 缓冲 + 两遍绘制。所以只有含
+<code>blur()</code> / <code>drop-shadow()</code> 时才走图层。</p>
 <div class='pager'>
 <a href='../tutorial/17_perf.html'><span class='dir'>上一页</span>性能诊断与 MCU 基准</a>
 <a class='next' href='../tutorial/19_grid.html'><span class='dir'>下一页</span>Grid：二维布局，以及 `border-image`</a>

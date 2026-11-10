@@ -4,7 +4,7 @@
 （[CSS 效果检阅](16_css_gallery.html)）、选择器与 `::before`
 （[CSS3 补全](14_css3.html)）、绘制细节（[CSS 效果检阅](16_css_gallery.html) 与
 `example/25_b4`）、布局与交互（`example/24_b5`）；这一篇补齐最后三块，
-并说明**为什么 `filter: blur()` 还没做**。
+并说明**`filter` 当时为什么拆成两条路**（B9 已全部落地）。
 
 | 批 | 这一篇补的 | 例程 |
 |---|---|---|
@@ -87,44 +87,17 @@ a   { text-decoration: underline; text-decoration-color: #38BDF8;
 
 ---
 
-## 4. 为什么 `filter: blur()` 还没做
+## 4. `filter` 后来分成两条路（B9 收尾）
 
-五批清单里 B4 还留着 `filter` 一项。这一项的成本与前四项不是一个量级：
+这一节是历史记录：当时 B4 还留着 `filter` 一项，因为它与前面几项的成本不是一个量级。
+后来的结论是**把它拆成两条路**（见 [20_filter](20_filter.md) 与 [25_clip_filter](25_clip_filter.md)）：
 
-| 函数 | 需要什么 | 结论 |
+| 函数 | 需要什么 | 现在 |
 |---|---|---|
-| `brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate` | 逐图元颜色矩阵（CPU 改混合路径、GPU 加 uniform） | 可以做，但等于给每条绘制入口加一次矩阵 |
-| `blur()` / `drop-shadow()` | **离屏图层**：子树的绘制结果要先合成到一张图，再整体模糊 | 与 `transform: rotate()` 同级的新子系统 |
-| `backdrop-filter` | —— | 已有（`15_backdrop`） |
+| `brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | 折成一个 **3×4 颜色矩阵**，CPU 逐像素、GPU 用 uniform | ✅ **不进离屏图层**（B9） |
+| `blur()` / `drop-shadow()` | **离屏图层**：子树先合成到一张图，再整体处理 | ✅ 走图层（M9.3） |
+| `backdrop-filter` | 读"已经画好的内容" | ✅ 独立小着色器（教程 15） |
 
-所以这一轮先把"真实页面里出现频率高得多"的三块做完，`filter` 与
-`transform: rotate()` 一起留作单独立项。覆盖表里如实标 ⏳，不假装支持。
-
----
-
-## 5. 三条例程怎么跑
-
-```bash
-./build/example/example_26_css_states      # 点复选框 / 试 disabled 输入框
-./build/example/example_27_css_text2       # 看 word-spacing / tab-size / 装饰线
-./build/example/example_28_bg_image        # 看 cover/contain/position/repeat
-```
-
-三页都是纯 CSS：没有任何运行期样式匹配，也没有一行 JS。
-
-![状态选择器](../img/26-css-states.png)
-
-![文本细节](../img/27-css-text2.png)
-
-![背景图](../img/28-bg-image.png)
-
----
-
-## 6. 这一轮的验收
-
-| 项 | 数字 |
-|---|---|
-| 新增测试 | `test_m8`（61 项：状态/文字/背景逐点取色 + 7 条非法值必须报错） |
-| blob | v26 → **v27**（`QLUIStyle` 240 → 272，`QLUINode` 20 → 28） |
-| golden | 29 页全部重生成，图像逐像素未变（只改了结构体布局） |
-| 三套构建 | 普通 / strict / ASan 各 74/74 |
+关键洞见：绝大多数真实页面的 `filter` 只是**调色**，逐图元施加和"先合成再处理"
+在观感上没有区别 —— 而代价差一整块 RGBA 缓冲 + 两遍绘制。所以只有含
+`blur()` / `drop-shadow()` 时才走图层。

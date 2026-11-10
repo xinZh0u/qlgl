@@ -287,14 +287,19 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>&lt;colgroup&gt;</code> / <code>&lt;col&gt;</code></td>
-<td><code>none</code>（列宽声明还没做，见 §6）</td>
+<td><code>table-column</code> / <code>table-column-group</code>（只提供列宽，不产生盒子；见 §6）</td>
 </tr>
 </tbody>
 </table>
 <p>也可以不写标签，直接用 CSS 的 <code>display: table / table-row / table-cell</code> 拼。</p>
 <hr />
-<h2 id="2-table-layout-fixed">2. 列宽怎么定：<code>table-layout: fixed</code></h2>
-<p>本库只做 <strong>fixed</strong> 语义（<code>table-layout: auto</code> 也按同一套算，见 §6）：</p>
+<h2 id="2-fixed-auto">2. 列宽怎么定：<code>fixed</code> 与 <code>auto</code></h2>
+<p><code>table-layout: fixed</code>（快、可预测）与 <code>auto</code>（按内容自适应）都支持：</p>
+<ul>
+<li><strong>fixed</strong>：列宽由<strong>第一行的 <code>width</code></strong>（或 <code>&lt;col&gt;</code>）决定，余量按各列宽度<strong>比例</strong>摊回；</li>
+<li><strong>auto</strong>：先量每列的 <code>min-content</code> / <code>max-content</code>，再在 <code>[floor, pref]</code> 之间插值。</li>
+</ul>
+<p>下面先看 fixed：</p>
 <ol>
 <li><strong>首行</strong>里显式写了 <code>width</code> 的单列单元格 → 这一列就是那个宽度；</li>
 <li>其余列<strong>等分</strong>剩下的宽度（余数给右边那几列）；</li>
@@ -372,11 +377,11 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>table-layout: auto</code></td>
-<td>接受这个值，但按 <strong>fixed</strong> 算（列宽不会跟着内容变宽）</td>
+<td>✅ 已支持（先量 min/max-content，再在 <code>[floor, pref]</code> 之间插值）</td>
 </tr>
 <tr>
 <td><code>colgroup</code> / <code>col</code> 的列宽声明</td>
-<td>标签存在但 <code>display: none</code>，不生效</td>
+<td>✅ 已支持（fixed 下优先于首行；auto 下是那一列的下界）</td>
 </tr>
 <tr>
 <td><code>caption-side: bottom</code></td>

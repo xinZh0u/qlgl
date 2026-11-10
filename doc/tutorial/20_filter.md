@@ -57,7 +57,8 @@
 | `opacity(<0~1>)` | — | 乘在图层 alpha 上 |
 | `drop-shadow(<dx> <dy> [<blur>] [<color>])` | — | 影子取 **alpha 形状**，跟着圆角走 |
 
-不支持 `url(#svg)`、`spread`（第 4 个长度值）—— 都会**构建期报错**。
+不支持 `url(#svg)` —— 会**构建期报错**。第 4 个长度值 `spread` 自 B9 起支持
+（`box-shadow: 0 0 0 8px #BFD7EF`），见教程 [25_clip_filter](25_clip_filter.md)。
 
 ```css
 .a { filter: blur(4px); }

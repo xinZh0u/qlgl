@@ -45,15 +45,20 @@ table           ← 表格本身（有盒子）
 | `<tr>` | `table-row` |
 | `<td>` | `table-cell` |
 | `<th>` | `table-cell` + 加粗 + 居中 |
-| `<colgroup>` / `<col>` | `none`（列宽声明还没做，见 §6） |
+| `<colgroup>` / `<col>` | `table-column` / `table-column-group`（只提供列宽，不产生盒子；见 §6） |
 
 也可以不写标签，直接用 CSS 的 `display: table / table-row / table-cell` 拼。
 
 ---
 
-## 2. 列宽怎么定：`table-layout: fixed`
+## 2. 列宽怎么定：`fixed` 与 `auto`
 
-本库只做 **fixed** 语义（`table-layout: auto` 也按同一套算，见 §6）：
+`table-layout: fixed`（快、可预测）与 `auto`（按内容自适应）都支持：
+
+- **fixed**：列宽由**第一行的 `width`**（或 `<col>`）决定，余量按各列宽度**比例**摊回；
+- **auto**：先量每列的 `min-content` / `max-content`，再在 `[floor, pref]` 之间插值。
+
+下面先看 fixed：
 
 1. **首行**里显式写了 `width` 的单列单元格 → 这一列就是那个宽度；
 2. 其余列**等分**剩下的宽度（余数给右边那几列）；
@@ -124,8 +129,8 @@ td { height: 60px }
 
 | 项 | 现状 |
 |---|---|
-| `table-layout: auto` | 接受这个值，但按 **fixed** 算（列宽不会跟着内容变宽） |
-| `colgroup` / `col` 的列宽声明 | 标签存在但 `display: none`，不生效 |
+| `table-layout: auto` | ✅ 已支持（先量 min/max-content，再在 `[floor, pref]` 之间插值） |
+| `colgroup` / `col` 的列宽声明 | ✅ 已支持（fixed 下优先于首行；auto 下是那一列的下界） |
 | `caption-side: bottom` | 标题恒在上方 |
 | `table-header-group` 的"每页重复表头" | 没有分页，无所谓 |
 | 跨行单元格内容超高时的"按比例分配" | 差额全给覆盖的最后一行 |
