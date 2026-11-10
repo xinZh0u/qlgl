@@ -1501,10 +1501,19 @@ CSS 里写：
 - **没有 HarfBuzz 时**：逐码位查字形 + 逐字回退，行为与 B8 之前**逐像素一致**
   （没有连字与字距）。
 
-**HarfBuzz 不写进链接依赖**：构建期找到头文件就直连是理想路径，但很多发行版
-只装运行库（`libharfbuzz.so.0`）而没有 `-dev`。所以这里用 `dlopen` + 手写的
-16 个符号白名单（`hb_glyph_info_t` / `hb_glyph_position_t` 的布局从 1.x 起没变），
-拿不到就退回内建 —— 用户装不装库都能跑。
+**第三方库怎么选**（`CMakeLists.txt` 里的 `QLGL_USE_HARFBUZZ` / `QLGL_USE_FRIBIDI`）：
+
+| 机器上有什么 | 走哪条路 |
+|---|---|
+| 开发头文件 + 库 | **构建期直连**（自动 `find_path` / `find_library`，定义 `QLGL_HAVE_HARFBUZZ`） |
+| 只有运行库（很多发行版的默认状态） | 运行期 `dlopen("libharfbuzz.so.0")` |
+| 都没有 | 退回内建整形 / 内建 UAX#9 子集 |
+
+三条路填的是**同一张函数指针表**，所以上层一行都不用改。`dlopen` 白名单只列
+真正用到的 11 个符号；直连路径把 `hb_glyph_info_t` / `hb_glyph_position_t` /
+`hb_feature_t` 的布局用 `_Static_assert` 钉在编译期 —— 这套检查真的抓到过一个
+bug：`hb_shape` 是 **4 个参数**（`font, buffer, features, count`），多写一个在
+x86-64 上"碰巧"没事，但那是未定义行为。
 
 #### 4. 双向：先整形后重排，**不要先重排再整形**
 

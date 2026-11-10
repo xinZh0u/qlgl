@@ -111,6 +111,46 @@ if(QLGL_BUILD_FREETYPE)
     endif()
 endif()
 
+# ---- B8 的第三方库：构建期探测 HarfBuzz / fribidi ----
+#
+# 两条路都能用（这是"平台选择第三方库"的落点）：
+#   1. **有开发头文件** → 直连（`QLGL_HAVE_HARFBUZZ` / `QLGL_HAVE_FRIBIDI`），不依赖 dlopen；
+#   2. **只有运行库**（很多发行版就是这样）→ 运行期 `dlopen("libharfbuzz.so.0")`；
+#   3. 都没有 → 退回内建整形 / 内建 UAX#9 子集。
+#
+# 三种情况下**用户代码一行都不用改**。
+option(QLGL_USE_HARFBUZZ "构建期直连 HarfBuzz（找不到头文件时自动退回运行期 dlopen）" ON)
+option(QLGL_USE_FRIBIDI "构建期直连 fribidi（找不到头文件时自动退回运行期 dlopen）" ON)
+
+if(QLGL_USE_HARFBUZZ)
+    find_path(HARFBUZZ_INCLUDE_DIR hb.h PATH_SUFFIXES harfbuzz)
+    find_library(HARFBUZZ_LIBRARY NAMES harfbuzz)
+    if(HARFBUZZ_INCLUDE_DIR AND HARFBUZZ_LIBRARY)
+        target_include_directories(qlgl PRIVATE ${HARFBUZZ_INCLUDE_DIR})
+        target_link_libraries(qlgl PUBLIC ${HARFBUZZ_LIBRARY})
+        target_compile_definitions(qlgl PUBLIC QLGL_HAVE_HARFBUZZ=1)
+        message(STATUS "QLGL: HarfBuzz 直连（整形）")
+    else()
+        message(STATUS "QLGL: 未找到 HarfBuzz 开发头文件，整形将在运行期 dlopen（没有就退回内建）")
+    endif()
+endif()
+
+if(QLGL_USE_FRIBIDI)
+    find_path(FRIBIDI_INCLUDE_DIR fribidi/fribidi.h)
+    find_library(FRIBIDI_LIBRARY NAMES fribidi)
+    if(FRIBIDI_INCLUDE_DIR AND FRIBIDI_LIBRARY)
+        target_include_directories(qlgl PRIVATE ${FRIBIDI_INCLUDE_DIR})
+        target_link_libraries(qlgl PUBLIC ${FRIBIDI_LIBRARY})
+        target_compile_definitions(qlgl PUBLIC QLGL_HAVE_FRIBIDI=1)
+        message(STATUS "QLGL: fribidi 直连（双向）")
+    else()
+        message(STATUS "QLGL: 未找到 fribidi 开发头文件，双向将在运行期 dlopen（没有就退回内建）")
+    endif()
+endif()
+
+# dlopen 本体（走的是 libdl；glibc 2.34+ 已经在 libc 里，链接空串也没事）
+target_link_libraries(qlgl PUBLIC ${CMAKE_DL_LIBS})
+
 if(UNIX AND NOT APPLE)
     find_package(X11)
 endif()

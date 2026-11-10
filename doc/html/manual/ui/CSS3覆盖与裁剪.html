@@ -3685,10 +3685,34 @@ HarfBuzz / fribidi  → 一行怎么排：连字、字距、连接形、视觉�
 <li><strong>没有 HarfBuzz 时</strong>：逐码位查字形 + 逐字回退，行为与 B8 之前<strong>逐像素一致</strong>
   （没有连字与字距）。</li>
 </ul>
-<p><strong>HarfBuzz 不写进链接依赖</strong>：构建期找到头文件就直连是理想路径，但很多发行版
-只装运行库（<code>libharfbuzz.so.0</code>）而没有 <code>-dev</code>。所以这里用 <code>dlopen</code> + 手写的
-16 个符号白名单（<code>hb_glyph_info_t</code> / <code>hb_glyph_position_t</code> 的布局从 1.x 起没变），
-拿不到就退回内建 —— 用户装不装库都能跑。</p>
+<p><strong>第三方库怎么选</strong>（<code>CMakeLists.txt</code> 里的 <code>QLGL_USE_HARFBUZZ</code> / <code>QLGL_USE_FRIBIDI</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>机器上有什么</th>
+<th>走哪条路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开发头文件 + 库</td>
+<td><strong>构建期直连</strong>（自动 <code>find_path</code> / <code>find_library</code>，定义 <code>QLGL_HAVE_HARFBUZZ</code>）</td>
+</tr>
+<tr>
+<td>只有运行库（很多发行版的默认状态）</td>
+<td>运行期 <code>dlopen("libharfbuzz.so.0")</code></td>
+</tr>
+<tr>
+<td>都没有</td>
+<td>退回内建整形 / 内建 UAX#9 子集</td>
+</tr>
+</tbody>
+</table>
+<p>三条路填的是<strong>同一张函数指针表</strong>，所以上层一行都不用改。<code>dlopen</code> 白名单只列
+真正用到的 11 个符号；直连路径把 <code>hb_glyph_info_t</code> / <code>hb_glyph_position_t</code> /
+<code>hb_feature_t</code> 的布局用 <code>_Static_assert</code> 钉在编译期 —— 这套检查真的抓到过一个
+bug：<code>hb_shape</code> 是 <strong>4 个参数</strong>（<code>font, buffer, features, count</code>），多写一个在
+x86-64 上"碰巧"没事，但那是未定义行为。</p>
 <h4 id="4_1">4. 双向：先整形后重排，<strong>不要先重排再整形</strong></h4>
 <p>这是最容易写错的地方：</p>
 <div class="highlight"><pre><span></span><code>错：bidi 重排文本 → 交给 HarfBuzz 整形 → 阿拉伯字母变成一串孤立形

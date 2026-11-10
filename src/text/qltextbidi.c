@@ -218,6 +218,28 @@ static QLBidiParType          s_fb_par_ltr;
 static QLBidiParType          s_fb_par_rtl;
 static int s_fribidi_state;      /* 0 = 没试过，1 = 可用，-1 = 不可用 */
 
+#if defined(QLGL_HAVE_FRIBIDI)
+/* 构建期直连：直接取符号地址填进同一张表 */
+#include <fribidi/fribidi.h>
+
+_Static_assert(sizeof(FriBidiChar) == 4, "FriBidiChar 不是 32 位");
+_Static_assert(sizeof(FriBidiStrIndex) == 4, "FriBidiStrIndex 不是 32 位");
+_Static_assert(sizeof(FriBidiLevel) == 1, "FriBidiLevel 不是 8 位");
+
+static int fribidi_fill_direct(void)
+{
+    s_fb_types = (ql_fribidi_types_fn)fribidi_get_bidi_types;
+    s_fb_brackets = (ql_fribidi_brackets_fn)fribidi_get_bracket_types;
+    s_fb_levels = (ql_fribidi_levels_fn)fribidi_get_par_embedding_levels_ex;
+    s_fb_reorder = (ql_fribidi_reorder_fn)fribidi_reorder_line;
+    s_fb_par_ltr = (QLBidiParType)FRIBIDI_PAR_LTR;
+    s_fb_par_rtl = (QLBidiParType)FRIBIDI_PAR_RTL;
+    QL_LOGI("bidi: using fribidi (direct link)");
+    s_fribidi_state = 1;
+    return 1;
+}
+#endif
+
 static int fribidi_load(void)
 {
     if (s_fribidi_state != 0)
@@ -231,6 +253,10 @@ static int fribidi_load(void)
             return 0;
         }
     }
+
+#if defined(QLGL_HAVE_FRIBIDI)
+    return fribidi_fill_direct();
+#else
 
     void *lib = ql_dlopen("libfribidi.so.0");
     if (lib == NULL)
@@ -270,6 +296,7 @@ static int fribidi_load(void)
     s_fribidi_state = 1;
     QL_LOGI("bidi: using fribidi (dlopen)");
     return 1;
+#endif /* QLGL_HAVE_FRIBIDI */
 }
 
 #else

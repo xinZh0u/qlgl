@@ -65,11 +65,6 @@ typedef struct {
 
 typedef struct {
     void *lib;
-    hb_blob_t *(*blob_create)(const char *, unsigned int, int, void *, void *);
-    hb_face_t *(*face_create)(hb_blob_t *, unsigned int);
-    void (*blob_destroy)(hb_blob_t *);
-    void (*face_destroy)(hb_face_t *);
-    hb_font_t *(*font_create)(hb_face_t *);
     hb_font_t *(*ft_font_create_referenced)(FT_Face);
     void (*font_destroy)(hb_font_t *);
     void (*font_set_scale)(hb_font_t *, int, int);
@@ -78,13 +73,61 @@ typedef struct {
     void (*buffer_add_utf8)(hb_buffer_t *, const char *, int, unsigned int, int);
     void (*buffer_guess_segment_properties)(hb_buffer_t *);
     void (*buffer_set_direction)(hb_buffer_t *, int);
-    void (*shape)(hb_font_t *, hb_buffer_t *, const ql_hb_feature_t *, unsigned int, int);
+    /*
+     * 注意参数个数：HarfBuzz 是
+     *   `hb_shape(font, buffer, features, num_features)`
+     * —— 4 个参数，没有第 5 个。多写一个参数在 x86-64/AAPCS 上"碰巧"没事，
+     * 但那是未定义行为（这里被"直连路径"的编译检查抓出来过一次）。
+     */
+    void (*shape)(hb_font_t *, hb_buffer_t *, const ql_hb_feature_t *, unsigned int);
     ql_hb_glyph_info_t *(*buffer_get_glyph_infos)(hb_buffer_t *, unsigned int *);
     ql_hb_glyph_position_t *(*buffer_get_glyph_positions)(hb_buffer_t *, unsigned int *);
 } QLHarfBuzz;
 
 static QLHarfBuzz s_hb;
 static int s_hb_state;      /* 0 = 没试过，1 = 可用，-1 = 不可用 */
+
+#if defined(QLGL_HAVE_HARFBUZZ)
+/* 构建期直连：直接取符号地址填进同一张表（没有 dlopen 依赖） */
+#include <hb.h>
+#include <hb-ft.h>
+
+/*
+ * 直连时把 ABI 假设钉在编译期：我们手写的 ql_hb_* 结构与 HarfBuzz 的真实结构
+ * 必须同宽（字段顺序是 HarfBuzz 公开且稳定的 ABI，宽度由这里兜底）。
+ */
+_Static_assert(sizeof(hb_glyph_info_t) == sizeof(ql_hb_glyph_info_t),
+               "hb_glyph_info_t 的布局与 ql_hb_glyph_info_t 不一致");
+_Static_assert(sizeof(hb_glyph_position_t) == sizeof(ql_hb_glyph_position_t),
+               "hb_glyph_position_t 的布局与 ql_hb_glyph_position_t 不一致");
+_Static_assert(sizeof(hb_feature_t) == sizeof(ql_hb_feature_t),
+               "hb_feature_t 的布局与 ql_hb_feature_t 不一致");
+
+static int hb_fill_direct(void)
+{
+    s_hb.ft_font_create_referenced = hb_ft_font_create_referenced;
+    s_hb.font_destroy = hb_font_destroy;
+    s_hb.font_set_scale = hb_font_set_scale;
+    s_hb.buffer_create = hb_buffer_create;
+    s_hb.buffer_destroy = hb_buffer_destroy;
+    s_hb.buffer_add_utf8 = hb_buffer_add_utf8;
+    s_hb.buffer_guess_segment_properties = hb_buffer_guess_segment_properties;
+    s_hb.buffer_set_direction =
+        (void (*)(hb_buffer_t *, int))hb_buffer_set_direction;
+    /* feature / glyph 结构只是"名字不同"，布局由上面的 static_assert 钉住 */
+    s_hb.shape = (void (*)(hb_font_t *, hb_buffer_t *, const ql_hb_feature_t *,
+                           unsigned int))hb_shape;
+    s_hb.buffer_get_glyph_infos =
+        (ql_hb_glyph_info_t * (*)(hb_buffer_t *, unsigned int *))
+            hb_buffer_get_glyph_infos;
+    s_hb.buffer_get_glyph_positions =
+        (ql_hb_glyph_position_t * (*)(hb_buffer_t *, unsigned int *))
+            hb_buffer_get_glyph_positions;
+    QL_LOGI("text-shape: using harfbuzz (direct link)");
+    s_hb_state = 1;
+    return 1;
+}
+#endif
 
 static int hb_load(void)
 {
@@ -100,6 +143,10 @@ static int hb_load(void)
         }
     }
 
+#if defined(QLGL_HAVE_HARFBUZZ)
+    return hb_fill_direct();
+#else
+
     void *lib = ql_dlopen("libharfbuzz.so.0");
     if (lib == NULL)
         lib = ql_dlopen("libharfbuzz.so");
@@ -110,11 +157,6 @@ static int hb_load(void)
     }
 
     s_hb.lib = lib;
-    QL_DLSYM(lib, "hb_blob_create", s_hb.blob_create);
-    QL_DLSYM(lib, "hb_face_create", s_hb.face_create);
-    QL_DLSYM(lib, "hb_blob_destroy", s_hb.blob_destroy);
-    QL_DLSYM(lib, "hb_face_destroy", s_hb.face_destroy);
-    QL_DLSYM(lib, "hb_font_create", s_hb.font_create);
     QL_DLSYM(lib, "hb_ft_font_create_referenced", s_hb.ft_font_create_referenced);
     QL_DLSYM(lib, "hb_font_destroy", s_hb.font_destroy);
     QL_DLSYM(lib, "hb_font_set_scale", s_hb.font_set_scale);
@@ -143,6 +185,7 @@ static int hb_load(void)
     s_hb_state = 1;
     QL_LOGI("text-shape: using harfbuzz (dlopen)");
     return 1;
+#endif /* QLGL_HAVE_HARFBUZZ */
 }
 
 int ql_text_shape_has_harfbuzz(void)
@@ -378,7 +421,7 @@ static int32_t hb_shape_run(const QLFont *font, const char *text, int32_t from, 
         nf++;
     }
 
-    s_hb.shape(hb, buf, (nf > 0) ? feats : NULL, nf, 0);
+    s_hb.shape(hb, buf, (nf > 0) ? feats : NULL, nf);
 
     unsigned gn = 0;
     ql_hb_glyph_info_t *info = s_hb.buffer_get_glyph_infos(buf, &gn);
