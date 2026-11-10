@@ -681,6 +681,12 @@ void ql_ui_free(QLUIRoot *ui)
             ql_mem_free(ui->clip_masks[i].px);
         ql_mem_free(ui->clip_masks);
     }
+    /* 模板实例化替 `{i}` 生成的文本 */
+    if (ui->rep_texts != NULL) {
+        for (uint16_t i = 0; i < ui->rep_count; i++)
+            ql_mem_free(ui->rep_texts[i]);
+        ql_mem_free(ui->rep_texts);
+    }
     /* 运行期样式副本（懒分配，见 ensure_style_copy） */
     for (uint16_t i = 0; i < ui->node_count; i++)
         ql_mem_free(ui->nodes[i].style_copy);
@@ -688,6 +694,286 @@ void ql_ui_free(QLUIRoot *ui)
     if (ui->owns_doc)
         ql_ui_doc_free((QLUIDoc *)(uintptr_t)ui->doc);
     ql_mem_free(ui);
+}
+
+/* ------------------------------ 模板实例化 ------------------------------ */
+
+/* 运行期样式副本（定义在 layout 那一节；实例化也要用它） */
+static QLUIStyle *ensure_style_copy(QLUINodeRT *node);
+
+/* 节点指针 → 下标（不在数组里就是 0xFFFF） */
+static uint16_t node_index(const QLUIRoot *ui, const QLUINodeRT *n)
+{
+    if (n == NULL || ui == NULL || ui->nodes == NULL)
+        return 0xFFFFu;
+    const ptrdiff_t d = n - ui->nodes;
+    if (d < 0 || d >= (ptrdiff_t)ui->node_count)
+        return 0xFFFFu;
+    return (uint16_t)d;
+}
+
+/*
+ * 子树在节点数组里的结束下标（不含）。
+ * 节点数组是深度优先顺序，子树因此连续 —— 判据就是"父链上能不能走到它"。
+ * 这样写是对的且好读：节点数只有几百，调用又只在实例化时发生。
+ */
+static uint16_t subtree_end(const QLUIRoot *ui, uint16_t idx)
+{
+    const QLUINodeRT *me = &ui->nodes[idx];
+    uint16_t i = (uint16_t)(idx + 1u);
+    while (i < ui->node_count) {
+        const QLUINodeRT *p = ui->nodes[i].parent;
+        int inside = 0;
+        while (p != NULL) {
+            if (p == me) {
+                inside = 1;
+                break;
+            }
+            p = p->parent;
+        }
+        if (!inside)
+            break;
+        i++;
+    }
+    return i;
+}
+
+/* 把 `s` 里的 `{i}` 换成数值 `k`（其余原样）。返回新分配的字符串（归 root） */
+static char *rep_subst(QLUIRoot *ui, const char *s, uint32_t k)
+{
+    if (s == NULL || strstr(s, "{i}") == NULL)
+        return NULL;                 /* 没有令牌：继续借用原指针，零成本 */
+
+    char num[16];
+    snprintf(num, sizeof(num), "%u", (unsigned)k);
+    const size_t nl = strlen(num);
+
+    size_t cap = strlen(s) + 16u * 4u;
+    char *out = (char *)ql_mem_alloc(cap);
+    if (out == NULL)
+        return NULL;
+    size_t o = 0;
+    for (const char *p = s; *p != '\0';) {
+        if (p[0] == '{' && p[1] == 'i' && p[2] == '}') {
+            if (o + nl + 1u > cap)
+                break;
+            memcpy(out + o, num, nl);
+            o += nl;
+            p += 3;
+        } else {
+            if (o + 2u > cap)
+                break;
+            out[o++] = *p++;
+        }
+    }
+    out[o] = '\0';
+
+    if (ui->rep_count >= ui->rep_cap) {
+        const uint16_t cap2 = (uint16_t)((ui->rep_cap == 0) ? 16 : ui->rep_cap * 2);
+        char **nt = (char **)ql_mem_alloc((size_t)cap2 * sizeof(char *));
+        if (nt == NULL) {
+            ql_mem_free(out);
+            return NULL;
+        }
+        if (ui->rep_texts != NULL) {
+            memcpy(nt, ui->rep_texts, (size_t)ui->rep_count * sizeof(char *));
+            ql_mem_free(ui->rep_texts);
+        }
+        ui->rep_texts = nt;
+        ui->rep_cap = cap2;
+    }
+    ui->rep_texts[ui->rep_count++] = out;
+    return out;
+}
+
+ql_err_t ql_ui_repeat(QLUIRoot *ui, QLUINodeRT *tpl, uint16_t count)
+{
+    if (ui == NULL || tpl == NULL || ui->nodes == NULL)
+        return QL_ERR_INVAL;
+    const uint16_t ti = node_index(ui, tpl);
+    if (ti == 0xFFFFu || ti == 0u)
+        return QL_ERR_INVAL;             /* 根节点不能当模板 */
+    const uint16_t te0 = subtree_end(ui, ti);
+    const uint16_t sub0 = (uint16_t)(te0 - ti);
+    if (sub0 == 0)
+        return QL_ERR_INVAL;
+
+    if (count == 0) {
+        /*
+         * 0 份 = 真的把这支**删掉**（不是 `display: none`）。
+         * 不能用 style_copy 隐藏：`ql_ui_layout()` 每轮开头都会把 style_copy 清掉
+         * （那是"上一帧的强制尺寸"的清理），运行期覆盖活不过一次布局。
+         */
+        QLUINodeRT *old = ui->nodes;
+        const uint16_t old_n = ui->node_count;
+        const uint16_t parent_idx = node_index(ui, tpl->parent);
+        const uint16_t after_idx = node_index(ui, tpl->next_sibling);
+        uint16_t prev_idx = 0xFFFFu;
+        if (parent_idx != 0xFFFFu) {
+            for (QLUINodeRT *c = tpl->parent->first_child; c != NULL && c != tpl;
+                 c = c->next_sibling)
+                prev_idx = node_index(ui, c);
+        }
+
+        const uint16_t total = (uint16_t)(old_n - sub0);
+        QLUINodeRT *arr =
+            (QLUINodeRT *)ql_mem_alloc((size_t)total * sizeof(QLUINodeRT));
+        if (arr == NULL)
+            return QL_ERR_NOMEM;
+        memcpy(arr, old, (size_t)ti * sizeof(QLUINodeRT));
+        memcpy(arr + ti, old + te0, (size_t)(old_n - te0) * sizeof(QLUINodeRT));
+        for (uint16_t i = 0; i < total; i++) {
+            QLUINodeRT *n = &arr[i];
+            if (n->parent != NULL) {
+                const uint16_t k = (uint16_t)(n->parent - old);
+                n->parent = (k >= te0) ? &arr[(uint16_t)(k - sub0)] : &arr[k];
+            }
+            if (n->first_child != NULL) {
+                const uint16_t k = (uint16_t)(n->first_child - old);
+                n->first_child = (k >= te0) ? &arr[(uint16_t)(k - sub0)] : &arr[k];
+            }
+            if (n->next_sibling != NULL) {
+                const uint16_t k = (uint16_t)(n->next_sibling - old);
+                n->next_sibling = (k >= te0) ? &arr[(uint16_t)(k - sub0)] : &arr[k];
+            }
+        }
+        /*
+         * 接链：`prev` / `parent` 的下标都 < ti，所以在新区里位置不变。
+         * 模板的 next_sibling 一定在子树之外（`te0` 之后），换算后指向同一根节点。
+         */
+        QLUINodeRT *after =
+            (after_idx == 0xFFFFu) ? NULL
+                                   : &arr[(uint16_t)(after_idx - sub0)];
+        if (prev_idx != 0xFFFFu)
+            arr[prev_idx].next_sibling = after;
+        else if (parent_idx != 0xFFFFu)
+            arr[parent_idx].first_child = after;
+
+        ui->nodes = arr;
+        ui->node_count = total;
+        ql_mem_free(old);
+        return QL_OK;
+    }
+
+    const uint16_t te = te0;
+    const uint16_t sub = sub0;
+
+    const uint32_t extra = (uint32_t)(count - 1u) * (uint32_t)sub;
+    if ((uint32_t)ui->node_count + extra > 0xFFFFu)
+        return QL_ERR_FULL;
+
+    QLUINodeRT *old = ui->nodes;
+    const uint16_t old_n = ui->node_count;
+    const uint16_t parent_idx = node_index(ui, tpl->parent);
+
+    const uint32_t total = (uint32_t)old_n + extra;
+    QLUINodeRT *arr = (QLUINodeRT *)ql_mem_alloc((size_t)total * sizeof(QLUINodeRT));
+    if (arr == NULL)
+        return QL_ERR_NOMEM;
+    memcpy(arr, old, (size_t)old_n * sizeof(QLUINodeRT));
+
+    /* 指针重定位：旧指针都指向 old 内部，换成新基址 + 同一下标 */
+    for (uint16_t i = 0; i < old_n; i++) {
+        QLUINodeRT *n = &arr[i];
+        if (n->parent != NULL)
+            n->parent = &arr[n->parent - old];
+        if (n->first_child != NULL)
+            n->first_child = &arr[n->first_child - old];
+        if (n->next_sibling != NULL)
+            n->next_sibling = &arr[n->next_sibling - old];
+    }
+    ql_mem_free(old);                    /* 旧数组只用于上面的指针换算 */
+    ui->nodes = arr;                     /* 之后所有下标换算都以新数组为基 */
+    ui->node_count = (uint16_t)total;
+
+    /*
+     * 逐份克隆：模板子树内部的下标一律映射到 base + (j - ti)。
+     * 接链位置是**模板自己的位置**（不是子树末端）：一份份依次插在它后面，
+     * 于是列表项挨着长，模板后面的兄弟（比如"总计"那一行）还在最后。
+     */
+    QLUINodeRT *tail = &arr[ti];
+    uint16_t base = old_n;
+    for (uint16_t c = 1; c < count; c++) {
+        for (uint16_t j = ti; j < te; j++) {
+            const uint16_t dj = (uint16_t)(base + (uint16_t)(j - ti));
+            QLUINodeRT *dst = &arr[dj];
+            *dst = arr[j];
+
+            /* 父节点：子树内部 → 映射；子树外面 → 原样 */
+            if (j == ti) {
+                dst->parent = (parent_idx != 0xFFFFu) ? &arr[parent_idx] : NULL;
+            } else {
+                const uint16_t pid = node_index(ui, arr[j].parent);
+                dst->parent = (pid >= ti && pid < te)
+                                  ? &arr[base + (uint16_t)(pid - ti)]
+                                  : ((pid != 0xFFFFu) ? &arr[pid] : NULL);
+            }
+            /* 子 / 兄弟：只有落在子树内的才重映射 */
+            if (arr[j].first_child != NULL) {
+                const uint16_t cid = node_index(ui, arr[j].first_child);
+                dst->first_child = (cid >= ti && cid < te)
+                                       ? &arr[base + (uint16_t)(cid - ti)]
+                                       : &arr[cid];
+            } else {
+                dst->first_child = NULL;
+            }
+            if (arr[j].next_sibling != NULL) {
+                const uint16_t sid = node_index(ui, arr[j].next_sibling);
+                dst->next_sibling = (sid >= ti && sid < te)
+                                        ? &arr[base + (uint16_t)(sid - ti)]
+                                        : &arr[sid];
+            } else {
+                dst->next_sibling = NULL;
+            }
+
+            /* 运行期状态不复制（滚动位置、脏标记、状态变体下标都要重算） */
+            dst->used_copy = 0;
+            dst->style_copy = NULL;
+            dst->flags = 0;
+            dst->m_hover = 0xFFFF;
+            dst->m_active = 0xFFFF;
+            dst->m_focus = 0xFFFF;
+            dst->col_n = 0;
+            dst->col_w = 0;
+            if (arr[j].style_copy != NULL) {
+                /* 模板自己改过样式：副本要独立一份，否则共享会串味 */
+                QLUIStyle *cp = (QLUIStyle *)ql_mem_alloc(sizeof(QLUIStyle));
+                if (cp == NULL) {
+                    /* 半成品：把新数组还给旧数组，恢复原状 */
+                    ql_mem_free(arr);
+                    ui->nodes = old;
+                    ui->node_count = old_n;
+                    return QL_ERR_NOMEM;
+                }
+                *cp = *arr[j].style_copy;
+                dst->style_copy = cp;
+                dst->style = cp;
+                dst->used_copy = 1;
+            } else {
+                dst->style = arr[j].style;
+            }
+        }
+        /* 接进兄弟链：这一份的根插到 tail（上一份的根 / 模板自己）后面 */
+        arr[base].next_sibling = tail->next_sibling;
+        tail->next_sibling = &arr[base];
+        tail = &arr[base];
+        base = (uint16_t)(base + sub);
+    }
+
+    /* 文本令牌替换：模板那份 {i} = 1，第 c 份 = c（从 1 开始数） */
+    {
+        uint16_t b = ti;
+        for (uint16_t c = 1; c <= count; c++) {
+            for (uint16_t j = 0; j < sub; j++) {
+                QLUINodeRT *n = &ui->nodes[(uint16_t)(b + j)];
+                char *rep = rep_subst(ui, n->text, c);
+                if (rep != NULL)
+                    n->text = rep;
+            }
+            b = (uint16_t)(b + sub);
+        }
+    }
+    return QL_OK;
 }
 
 QLUINodeRT *ql_ui_root_node(QLUIRoot *ui)

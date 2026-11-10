@@ -1698,11 +1698,41 @@ struct QLUIRoot {
     struct QLUIClipMask *clip_masks;
     uint8_t        clip_mask_n;
     uint8_t        clip_mask_cap;
+
+    /*
+     * 模板实例化（`ql_ui_repeat`）替 `{i}` 生成的字符串。归 root 所有，
+     * 因为 `QLUINodeRT.text` 只存指针（不复制）。
+     */
+    char         **rep_texts;
+    uint16_t       rep_count;
+    uint16_t       rep_cap;
 };
 
 /* ----- 生命周期 ----- */
 QLUIRoot   *ql_ui_build(const QLUIDoc *doc);
 void        ql_ui_free(QLUIRoot *ui);
+
+/*
+ * 模板实例化：把 `tpl` 这棵子树复制成 `count` 份（含原来那份），
+ * 追加成它的兄弟，并把每份文本里的 `{i}` 换成 **1 起的序号**。
+ *
+ * 为什么是"运行期复制子树"而不是"编译期展开"：列表长度常常要到运行时才知道
+ * （从文件/网络读到几行）。而样式与节点定义在 doc 里是共享只读的，复制一份
+ * 子树只是 `count × 子树节点数` 个 `QLUINodeRT`（192 B/节点），没有额外 CSS 成本。
+ *
+ * 约定：
+ *   - **必须在 `ql_ui_build()` 之后、`ql_ui_layout()` 之前调用**（节点数会变）；
+ *   - `tpl` 必须有父节点（根节点的"模板"没有意义）；
+ *   - `count == 0` 时相当于把模板删掉（子树节点数不变，只是标记 `display:none`）；
+ *   - 同一棵树可以多次调用（各自追加）。
+ *
+ * 返回 QL_OK / QL_ERR_INVAL / QL_ERR_NOMEM / QL_ERR_FULL（节点数超过 uint16）。
+ *
+ * ⚠️ **调用之后所有 `QLUINodeRT*` 都可能失效**（节点数组会重新分配）。
+ * 拿新指针的办法：`ql_ui_root_node(ui)` 然后顺着 `first_child` / `next_sibling` 走，
+ * 或者直接用 `ql_ui_find_by_tag()`。
+ */
+ql_err_t    ql_ui_repeat(QLUIRoot *ui, QLUINodeRT *tpl, uint16_t count);
 
 /* 按给定视口尺寸做一次完整布局（自上而下 + 自下而上算高度） */
 void        ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height);

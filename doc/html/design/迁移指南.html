@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>从 Web 迁到 QLGL：写法对照与坑 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a href='../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/第三方依赖.html'>第三方依赖与许可</a>
+<a class='sub-item active' href='../design/迁移指南.html'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="web-qlgl">从 Web 迁到 QLGL：写法对照与坑</h1>
+<blockquote>
+<p>状态：<strong>现行（2026-11-11）</strong>。目标读者：手上已有一份 HTML/CSS（或 React/Vue 的静态
+结构 + 样式），想搬到 QLGL 上的人。</p>
+<p>一句话：<strong>HTML/CSS 的"长相"几乎照搬，"行为"要换脑子</strong>。本库没有 JS 引擎、没有 DOM、
+没有浏览器默认样式表那一堆隐式行为，取而代之的是 C 结构体、显式事件和"构建期报错"。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 三分钟判断这份页面能不能搬</h2>
+<table>
+<thead>
+<tr>
+<th>你的页面里有</th>
+<th>能不能搬</th>
+<th>怎么办</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;div&gt;</code> / <code>&lt;span&gt;</code> / flex / grid 布局、<code>border-radius</code>、阴影、渐变、<code>filter</code>、<code>transform</code></td>
+<td>✅ 直接搬</td>
+<td>见 §1</td>
+</tr>
+<tr>
+<td><code>&lt;table&gt;</code> / 多栏正文 / <code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / <code>&lt;progress&gt;</code> / <code>&lt;details&gt;</code> / <code>&lt;dialog&gt;</code></td>
+<td>✅ 直接搬</td>
+<td>标签与属性同名</td>
+</tr>
+<tr>
+<td><code>@media (max-width: 600px)</code></td>
+<td>✅ 直接搬（构建期切区间）</td>
+<td>§3</td>
+</tr>
+<tr>
+<td><code>@font-face</code> + <code>font-family: A, B, sans-serif</code></td>
+<td>✅ 直接搬</td>
+<td>运行期要能打开那个字体文件（§4）</td>
+</tr>
+<tr>
+<td>JS 驱动的<strong>交互逻辑</strong>（点击后改 DOM、列表渲染、表单校验）</td>
+<td>⚠️ 要重写</td>
+<td>换成 C：<code>ql_ui_set_text()</code> / <code>ql_ui_repeat()</code> / 事件回调（§5）</td>
+</tr>
+<tr>
+<td>依赖浏览器默认样式（<code>&lt;h1&gt;</code> 是 32px、<code>&lt;p&gt;</code> 有 1em 上下边距…）</td>
+<td>⚠️ 要显式写</td>
+<td>本库的 UA 样式是有意收窄的（§2）</td>
+</tr>
+<tr>
+<td>Canvas 绘图、SVG、<code>position: fixed</code> 的浮层动画、3D 变换</td>
+<td>❌</td>
+<td>明确不支持（构建期报错）</td>
+</tr>
+<tr>
+<td>任何 <code>javascript:</code>、<code>&lt;script&gt;</code>、Web Components</td>
+<td>❌</td>
+<td>永久红线（不做 JS 引擎）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1">1. 长相：几乎照搬</h2>
+<div class="highlight"><pre><span></span><code><span class="cm">&lt;!-- Web --&gt;</span>
+<span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;card&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;title&quot;</span><span class="p">&gt;</span>标题<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;body&quot;</span><span class="p">&gt;</span>正文很长……<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">&lt;!-- QLGL：一模一样 --&gt;</span>
+<span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;card&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;title&quot;</span><span class="p">&gt;</span>标题<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;body&quot;</span><span class="p">&gt;</span>正文很长……<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<p>CSS 也基本照抄。已经支持的大件（详见《CSS3 覆盖与裁剪》）：</p>
+<p>flex 全家 · grid 全家 · <code>position: absolute/relative/sticky</code> · <code>overflow</code> 分轴 ·
+<code>border-radius</code>（含 <code>a / b</code> 椭圆角）· <code>box-shadow</code>（两层 + <code>inset</code> + <code>spread</code>）·
+<code>text-shadow</code> · <code>outline</code> · 线性/径向渐变 · <code>background-image</code>（<code>cover/contain/具体尺寸</code>）·
+<code>border-image</code> 九宫格 · <code>filter</code>（blur / drop-shadow / 八个颜色函数）· <code>mix-blend-mode</code> ·
+<code>mask</code> · <code>transform</code>（translate / scale / rotate / skew / matrix）· <code>clip-path</code>
+（circle / ellipse / inset / polygon）· <code>transition</code> · <code>@keyframes</code> · 多栏 · 表格 ·
+<code>@font-face</code> + 家族列表 + 整形 + RTL。</p>
+<hr />
+<h2 id="2">2. 五处最容易踩的"默认值不一样"</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>Web</th>
+<th>QLGL</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>white-space</code></strong></td>
+<td><code>normal</code>（自动折行）</td>
+<td><strong><code>nowrap</code></strong>（一段文本就是一行）</td>
+<td>v0 的文本模型如此，改默认会让所有既有界面重排。要折行就写 <code>white-space: normal</code> —— 一行 CSS 换一个明确语义</td>
+</tr>
+<tr>
+<td><strong>UA 样式</strong></td>
+<td><code>&lt;h1&gt;</code>=2em bold、<code>&lt;p&gt;</code>=1em 上下边距…</td>
+<td>有意收窄：只保证"块/行内"与少量内边距</td>
+<td>我们要的是"可预测"，不是"复刻每个浏览器的默认表"。显式写样式</td>
+</tr>
+<tr>
+<td><strong><code>display: inline</code> 的宽度</strong></td>
+<td>由内容决定</td>
+<td>同</td>
+<td>但 <code>&lt;div&gt;</code> 默认 <code>block</code>、<code>&lt;span&gt;</code> 默认 <code>inline</code>，与 Web 一致</td>
+</tr>
+<tr>
+<td><strong><code>z-index</code> / 层叠</strong></td>
+<td>完整 CSS 层叠上下文</td>
+<td>支持 <code>z-index</code>，但<strong>只有一层</strong>绘制顺序（没有 3D 上下文、<code>isolation</code>）</td>
+<td>一个节点一个盒，模型简单得多</td>
+</tr>
+<tr>
+<td><strong>百分比高度</strong></td>
+<td>需要父级有确定高度</td>
+<td>同</td>
+<td>但根元素可以直接 <code>height: 100%</code>（按视口解析）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>迁移时最省事的做法：给 <code>body</code>/根容器加一条
+<code>* { box-sizing: border-box }</code>，并显式写 <code>white-space: normal</code>（如果你原来靠自动折行）。</p>
+</blockquote>
+<hr />
+<h2 id="3-media">3. <code>@media</code>：构建期就切好区间</h2>
+<div class="highlight"><pre><span></span><code><span class="c">/* Web：一模一样 */</span>
+<span class="p">@</span><span class="k">media</span><span class="w"> </span><span class="o">(</span><span class="nt">max-width</span><span class="o">:</span><span class="w"> </span><span class="nt">600px</span><span class="o">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>区别在<strong>什么时候算</strong>：本库在 <code>qltext</code> 编译时就把每个区间各编译一份样式变体，
+运行期只做"按视口宽选一个区间 + 三次数组取值"（没有条件表达式求值）。
+所以：</p>
+<ul>
+<li>支持的断点类型只有 <strong>宽度</strong>（<code>min-width</code> / <code>max-width</code> / 区间）；</li>
+<li><code>@media (prefers-color-scheme: dark)</code> 之类<strong>构建期报错</strong>（要的是运行期环境判断，
+  换主题请用 CSS 变量 + 改一份变量表，见 §5.3）。</li>
+</ul>
+<hr />
+<h2 id="4-font-face">4. 字体：<code>@font-face</code> 能搬，但要能打开文件</h2>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">font-face</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">font-family</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;My Sans&quot;</span><span class="o">;</span><span class="w"> </span><span class="nt">src</span><span class="o">:</span><span class="w"> </span><span class="nt">url</span><span class="o">(/</span><span class="nt">opt</span><span class="o">/</span><span class="nt">fonts</span><span class="o">/</span><span class="nt">MySans-Regular</span><span class="p">.</span><span class="nc">ttf</span><span class="o">);</span>
+<span class="w">             </span><span class="nt">font-weight</span><span class="o">:</span><span class="w"> </span><span class="nt">400</span><span class="w"> </span><span class="p">}</span>
+<span class="p">@</span><span class="k">font-face</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">font-family</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;My Sans&quot;</span><span class="o">;</span><span class="w"> </span><span class="nt">src</span><span class="o">:</span><span class="w"> </span><span class="nt">url</span><span class="o">(/</span><span class="nt">opt</span><span class="o">/</span><span class="nt">fonts</span><span class="o">/</span><span class="nt">MySans-Bold</span><span class="p">.</span><span class="nc">ttf</span><span class="o">);</span>
+<span class="w">             </span><span class="nt">font-weight</span><span class="o">:</span><span class="w"> </span><span class="nt">700</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">body</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">font-family</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Sans&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Noto Sans CJK SC&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">sans-serif</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<ul>
+<li>构建期只<strong>收集声明</strong>（家族名/资源名进文本池），字体文件不进二进制；</li>
+<li>运行期 <code>ql_ui_build()</code> 时按表去打开文件（<code>ql_font_family_register()</code> 也可以手工注册）；</li>
+<li>打不开就<strong>报错并跳过那条</strong>，家族列表继续往后找 —— 所以最后一定写一个通用族兜底；</li>
+<li>MCU 档建议直接用构建期位图字体（<code>tools/qlfontgen</code>），不要带 TTF。</li>
+</ul>
+<hr />
+<h2 id="5-dom-c">5. 行为：从 DOM 操作换成 C</h2>
+<h3 id="51">5.1 改文字</h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// Web</span>
+<span class="nb">document</span><span class="p">.</span><span class="nx">querySelector</span><span class="p">(</span><span class="s1">&#39;.title&#39;</span><span class="p">).</span><span class="nx">textContent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;新标题&#39;</span><span class="p">;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL */</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">t</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_tag</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_DIV</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 或用你自己的 id 表 */</span>
+<span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;新标题&quot;</span><span class="p">);</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 文本变了要重排 */</span>
+</code></pre></div>
+
+<blockquote>
+<p>别每帧都 <code>set_text</code> + 全量 <code>layout</code>：布局 0.034 ms 量级虽小，但绘制会整块脏。
+用 <code>ql_ui_consume_dirty()</code> + <code>ql_ui_render_rect()</code> 只重画变的地方。</p>
+</blockquote>
+<h3 id="52">5.2 列表渲染</h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// Web（框架帮你做的事）</span>
+<span class="nx">items</span><span class="p">.</span><span class="nx">forEach</span><span class="p">(</span><span class="nx">it</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">list</span><span class="p">.</span><span class="nx">append</span><span class="p">(</span><span class="nx">row</span><span class="p">(</span><span class="nx">it</span><span class="p">)));</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL：把模板写进 HTML，运行期复制 */</span>
+<span class="cm">/* &lt;div class=&quot;row&quot;&gt;&lt;span class=&quot;k&quot;&gt;键 {i}&lt;/span&gt;&lt;span class=&quot;v&quot;&gt;{i}&lt;/span&gt;&lt;/div&gt; */</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+<span class="n">ql_ui_repeat</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_root_node</span><span class="p">(</span><span class="n">ui</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">uint16_t</span><span class="p">)</span><span class="n">n_items</span><span class="p">);</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">);</span>
+<span class="cm">/* ⚠️ repeat 之后所有节点指针失效，要用 ql_ui_root_node() 重新取 */</span>
+</code></pre></div>
+
+<p>数据不要"拼 HTML 字符串"再重新 <code>ql_ui_load_text()</code> —— 那会把整份 CSS 重新编译一遍。
+<code>ql_ui_repeat()</code> 只复制节点（192 B/节点），样式是共享只读的。</p>
+<h3 id="53">5.3 换主题</h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// Web</span>
+<span class="nb">document</span><span class="p">.</span><span class="nx">documentElement</span><span class="p">.</span><span class="nx">style</span><span class="p">.</span><span class="nx">setProperty</span><span class="p">(</span><span class="s1">&#39;--bg&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;#222&#39;</span><span class="p">);</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL：CSS 变量在构建期就展开成了具体值（那是它便宜的原因），</span>
+<span class="cm">   运行期换主题有两条路： */</span>
+<span class="cm">/* ① 两份 doc，切换着用（最省事，适合&quot;亮/暗&quot;这种有限集合） */</span>
+<span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">theme_dark_doc</span><span class="p">);</span>
+<span class="cm">/* ② 运行期改具体节点（适合只改几个重点色的场景） */</span>
+<span class="n">QLUIStyle</span><span class="w"> </span><span class="o">*</span><span class="n">s</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ensure_style_copy</span><span class="p">(...);</span><span class="w">   </span><span class="cm">/* 用户侧通常用 ql_ui_set_text 那类 API */</span>
+</code></pre></div>
+
+<h3 id="54">5.4 事件</h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// Web</span>
+<span class="nx">btn</span><span class="p">.</span><span class="nx">addEventListener</span><span class="p">(</span><span class="s1">&#39;click&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">});</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL：一次性挂回调，回调里拿到节点指针 */</span>
+<span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="n">user_data</span><span class="p">);</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ud</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="o">-&gt;</span><span class="n">tag</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_UI_TAG_BUTTON</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>输入框同理：<code>ql_ui_set_input_cb()</code>；滚动、拖动、悬停都有对应入口（见《QLUI API 手册》）。</p>
+<hr />
+<h2 id="6">6. 构建：从"打包 + 浏览器"到"编译进固件"</h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># Web：静态资源原样部署，浏览器运行期解析 CSS</span>
+<span class="c1"># QLGL：构建期编译成 C 数组，目标机零解析</span>
+qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> </span>index.html<span class="w"> </span>--css<span class="w"> </span>style.css<span class="w"> </span>--name<span class="w"> </span>index<span class="w"> </span>--out<span class="w"> </span>build/ui
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>Web 概念</th>
+<th>QLGL 对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>打包工具</td>
+<td><code>qltext cc</code>（把 HTML+CSS 变成 <code>ui_index.c</code>）</td>
+</tr>
+<tr>
+<td>运行期文档</td>
+<td><strong>没有</strong>。想热重载就用 <code>.qlui</code> blob + <code>ql_ui_load_file()</code>（开发期用）</td>
+</tr>
+<tr>
+<td><code>pkg-config</code> / npm</td>
+<td><code>find_package(qlgl)</code> 或 <code>pkg-config qlgl</code></td>
+</tr>
+<tr>
+<td>浏览器 devtools</td>
+<td><code>qltext check</code>（构建期报错）、<code>--dump x.ppm</code>（离屏出图）、<code>benchmark/bench</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>迁移前先跑一次降级报告</strong>：</p>
+<div class="highlight"><pre><span></span><code>qltext<span class="w"> </span>check<span class="w"> </span>--html<span class="w"> </span>index.html<span class="w"> </span>--css<span class="w"> </span>style.css<span class="w"> </span>--platform<span class="w"> </span>mcu
+<span class="c1">#   [裁掉] 表格（display: table 全家）  3 处 → QL_FEAT_CSS_TABLE=0 时构建期报错</span>
+</code></pre></div>
+
+<p>它告诉你这份界面在目标平台上会撞到哪些裁剪项 —— 报出来的东西在真机上<strong>编不过</strong>，
+不会"跑起来才发现不对"。</p>
+<hr />
+<h2 id="7">7. 逐项对照表（速查）</h2>
+<table>
+<thead>
+<tr>
+<th>Web 写法</th>
+<th>QLGL 写法</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>display: flex; gap: 8px</code></td>
+<td>同</td>
+<td></td>
+</tr>
+<tr>
+<td><code>display: grid; grid-template-columns: repeat(3, 1fr)</code></td>
+<td>同</td>
+<td></td>
+</tr>
+<tr>
+<td><code>position: sticky; top: 0</code></td>
+<td>同</td>
+<td>挂在哪一级容器上很重要（§4.1）</td>
+</tr>
+<tr>
+<td><code>overflow: auto</code></td>
+<td>同（滚动条是<strong>覆盖式</strong>，不占布局）</td>
+<td></td>
+</tr>
+<tr>
+<td><code>transition: all .2s</code></td>
+<td>同</td>
+<td>可过渡属性少一些（见手册）</td>
+</tr>
+<tr>
+<td><code>@keyframes</code> + <code>animation</code></td>
+<td>同</td>
+<td><code>steps()</code> / <code>cubic-bezier()</code> 报错</td>
+</tr>
+<tr>
+<td><code>filter: blur(4px)</code></td>
+<td>同</td>
+<td>走离屏图层</td>
+</tr>
+<tr>
+<td><code>filter: grayscale(1)</code></td>
+<td>同</td>
+<td><strong>不走图层</strong>（折成 3×4 矩阵，B9）</td>
+</tr>
+<tr>
+<td><code>clip-path: circle(45%)</code> / <code>polygon(...)</code></td>
+<td>同</td>
+<td>见教程 25</td>
+</tr>
+<tr>
+<td><code>transform: rotate(15deg)</code></td>
+<td>同</td>
+<td>走离屏图层 + 仿射重采样</td>
+</tr>
+<tr>
+<td><code>transform: perspective(...)</code></td>
+<td>❌</td>
+<td>3D 不排期（构建期报错）</td>
+</tr>
+<tr>
+<td><code>::first-line</code> / <code>::first-letter</code></td>
+<td>❌</td>
+<td>明确报错；用 <code>&lt;span class&gt;</code> 手工包</td>
+</tr>
+<tr>
+<td><code>document.querySelector</code></td>
+<td><code>ql_ui_find_by_tag()</code> / 自己维护一张 id 表</td>
+<td>没有选择器引擎</td>
+</tr>
+<tr>
+<td><code>innerHTML = ...</code></td>
+<td><code>ql_ui_repeat()</code> / <code>ql_ui_set_text()</code></td>
+<td>运行期不重新编译 CSS</td>
+</tr>
+<tr>
+<td><code>localStorage</code></td>
+<td>你自己的持久化（<code>fopen</code> / NVS / Preferences）</td>
+<td>库不碰存储</td>
+</tr>
+<tr>
+<td><code>requestAnimationFrame</code></td>
+<td>主循环 + <code>ql_ui_anim_tick()</code></td>
+<td>静止时 0 帧</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8">8. 迁移检查清单</h2>
+<ul>
+<li>[ ] 显式写 <code>white-space: normal</code>（如果原来靠自动折行）</li>
+<li>[ ] 不再依赖 UA 默认字号/边距，样式写全</li>
+<li>[ ] <code>&lt;script&gt;</code> 逻辑全部改写为 C 回调（没有 JS）</li>
+<li>[ ] 列表用 <code>ql_ui_repeat()</code>，不要拼 HTML 再重新编译</li>
+<li>[ ] <code>qltext check --platform &lt;目标&gt;</code> 跑一遍，把报出来的裁剪项处理掉</li>
+<li>[ ] 目标机字体：要么 <code>@font-face</code> 能打开文件，要么用构建期位图字体</li>
+<li>[ ] 动画/过渡用 <code>transition</code> 与 <code>@keyframes</code>（不要自己写定时器逐帧改样式）</li>
+<li>[ ] 大列表考虑分页：节点数上限见 <code>QL_CFG_UI_MAX_NODES</code></li>
+</ul>
+<div class='pager'>
+<a href='../design/第三方依赖.html'><span class='dir'>上一页</span>第三方依赖与许可</a>
+<a class='next' href='../design/Web兼容设计.html'><span class='dir'>下一页</span>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

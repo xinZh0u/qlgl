@@ -194,6 +194,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
 <a class='sub-item' href='../design/第三方依赖.html'>第三方依赖与许可</a>
+<a class='sub-item' href='../design/迁移指南.html'>从 Web 迁到 QLGL：写法对照与坑</a>
 <a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
 <a class='sub-item active' href='../design/开发规划.html'>QLGL 开发规划</a>
@@ -1040,7 +1041,7 @@ qlui: 21 处降级，1 处无法降级
 <tr>
 <td>字形行级裁剪 + 缓存</td>
 <td>G4</td>
-<td>待办（文本占节点页 render 的 22%；FreeType 的位图盒已贴边，先要 SIMD 才有意义）</td>
+<td><strong>行级裁剪早就有了</strong>（<code>glyph_blit</code> 的 <code>gy0/gy1</code> 与 <code>canvas-&gt;clip</code> 求交）、字形位图也按字号缓存。<strong>剩下的</strong>是 8bpp 逐像素 alpha 混合的 SIMD 化（文本占节点页 render 的 22%，但那 22% 是逐像素混合，不是裁剪缺失所致）</td>
 </tr>
 <tr>
 <td>增量布局（脏子树）</td>
@@ -3471,14 +3472,19 @@ blob <strong>v34</strong>（头 172 → 180、新增 <code>clip_pts</code> 段�
 <td>✅ <code>.github/workflows/ci.yml</code></td>
 </tr>
 <tr>
-<td>模板实例化</td>
-<td>支持动态列表：<code>qlui</code> 生成 template，运行期 <code>ql_ui_instantiate(tpl, n)</code></td>
-<td>⏳（下一批）</td>
+<td>~~模板实例化~~</td>
+<td><strong><code>ql_ui_repeat(ui, tpl, n)</code></strong>：运行期复制子树、<code>{i}</code> 换序号（零字符串分配）、<code>count==0</code> 真删、样式共享只读。<code>test_repeat</code> 78 项</td>
+<td>✅（2026-11-11）</td>
 </tr>
 <tr>
 <td>文档</td>
-<td>每个模块"阅读指南 + API 手册"（已有 5 组，继续补齐）+ 迁移指南（Web 写法 → QLGL 写法）</td>
-<td></td>
+<td>每个模块"阅读指南 + API 手册"（已有 5 组，继续补齐）</td>
+<td>持续</td>
+</tr>
+<tr>
+<td>~~迁移指南~~</td>
+<td><a href="迁移指南.html">迁移指南</a>：三分钟判断能不能搬、五处默认值差异、写法对照表、构建流程、检查清单</td>
+<td>✅（2026-11-11）</td>
 </tr>
 <tr>
 <td>~~打包~~</td>

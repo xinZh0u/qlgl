@@ -194,6 +194,7 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
 <a class='sub-item active' href='../design/第三方依赖.html'>第三方依赖与许可</a>
+<a class='sub-item' href='../design/迁移指南.html'>从 Web 迁到 QLGL：写法对照与坑</a>
 <a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
 <a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
 <a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
@@ -385,7 +386,7 @@ main img.shot { max-width: 100%; }
    失败必须能<strong>干净退出</strong>（不许 <code>abort</code>、不许无限分配）。这是 §2.2 里 libjpeg 要包一层
    <code>setjmp/longjmp</code> 的原因 —— libjpeg 错误路径默认直接 <code>exit()</code>。</li>
 <li><strong>必须能在 MCU 上裁成 0。</strong> 不是"关掉功能"，而是<strong>关掉之后连符号都不进固件</strong>。
-   清单里 7 个库除了 <code>libm</code> 全部是真开关（见 §7 的体积账：MCU 全档 144,808 B，一个外部库都没链）。</li>
+   清单里 7 个库除了 <code>libm</code> 全部是真开关（见 §7 的体积账：MCU 全档 151,728 B，一个外部库都没链）。</li>
 <li><strong>许可不能传染 MIT 主库。</strong> 强 copyleft（GPL/AGPL）一律不走链接。目前唯一沾边的是
    fribidi（LGPL），处理方式见 §5.2。</li>
 </ol>
@@ -1027,7 +1028,7 @@ arm-none-eabi-size<span class="w"> </span>/tmp/mcu/bench.elf<span class="w">    
 </tr>
 <tr>
 <td><strong>MCU</strong>（<code>test/mcu/build.sh</code> 默认档：PC 特性全关）</td>
-<td><strong>148,348 B</strong></td>
+<td><strong>151,728 B</strong></td>
 <td>108 B</td>
 <td>144,424 B</td>
 <td>—</td>
@@ -1346,7 +1347,7 @@ ldd<span class="w"> </span>build/example/example_01_window<span class="w"> </spa
 </ol>
 <div class='pager'>
 <a href='../design/底层实现设计.html'><span class='dir'>上一页</span>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='next' href='../design/Web兼容设计.html'><span class='dir'>下一页</span>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='next' href='../design/迁移指南.html'><span class='dir'>下一页</span>从 Web 迁到 QLGL：写法对照与坑</a>
 </div>
 </main>
 </div>

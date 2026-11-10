@@ -1204,6 +1204,37 @@ QLRect    ql_ui_paint_bounds(const QLUIRoot *ui);
 | `ql_ui_render_rect` | 只重绘 `dirty`：裁剪设成 `dirty∩视口`，靠 `paint_box` 剪掉不相交的子树。**dirty 内的结果与全量重绘逐像素相同** |
 | `ql_ui_paint_bounds` | 整棵树的绘制范围（= 根节点的 `paint_box`，可能超出视口，例如带阴影的贴边元素） |
 
+### 5.0.1 模板实例化：`ql_ui_repeat()`
+
+列表长度常常要到运行时才知道（读文件、读网络、数条目）。这时候不要写死 N 份 HTML，
+也不要自己动手拼 HTML 字符串（那会把整份 CSS 重新编译一遍）：
+
+```html
+<div id="list">
+  <div class="row"><span class="k">键 {i}</span><span class="v">{i}</span></div></div>
+```
+
+```c
+QLUIRoot *ui = ql_ui_build(doc);
+QLUINodeRT *tpl = ql_ui_root_node(ui)->first_child;
+ql_ui_repeat(ui, tpl, 20);      /* 变成 20 行；{i} 依次是 1..20 */
+ql_ui_layout(ui, 480, 640);
+```
+
+| 语义 | 说明 |
+|---|---|
+| 复制范围 | `tpl` **整棵子树**（含嵌套孩子），像素级与手写 N 份完全一样 |
+| `{i}` | 替换成 **1 起的序号**；文本里没有 `{i}` 时**一个字节都不分配**（指针原样借用） |
+| 样式 | 共享只读的 `QLUIStyle`（模板若在运行期改过样式，副本各得一份独立拷贝） |
+| `count == 0` | **真的删掉**那支（节点数减少；不是 `display: none` —— 布局每轮会清掉 style_copy） |
+| 调用时机 | **`ql_ui_build()` 之后、`ql_ui_layout()` 之前**；之后节点数不会自动回到原样 |
+| ⚠️ 指针失效 | 节点数组会重新分配，**调用后所有 `QLUINodeRT*` 失效**，要用 `ql_ui_root_node()` 重新取 |
+| 代价 | `(n-1) × 子树节点数` 个 `QLUINodeRT`（192 B/节点），**没有额外 CSS 成本** |
+
+`test_repeat`（78 项）守着这些契约：节点数、兄弟顺序、嵌套父子关系、样式共享、
+`{i}` 序号、`count == 0`、非法参数（根节点当模板 / 溢出 `uint16`）、以及
+"没有 `{i}` 时零分配"。
+
 ### 查询
 
 ```c

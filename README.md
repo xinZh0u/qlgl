@@ -291,6 +291,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 
 模块手册：
 
+- 从 Web 迁过来：[迁移指南](doc/迁移指南.md)（写法对照表 + 五处默认值差异 + 检查清单）
 - 对象系统：[QLObject 阅读指南](doc/手册/object/QLObject阅读指南.md) / [QLObject API 手册](doc/手册/object/QLObject%20API手册.md)
 - 绘制后端：[QLRender 阅读指南](doc/手册/render/QLRender阅读指南.md) / [QLRender API 手册](doc/手册/render/QLRender%20API手册.md)
 - 交互与输入：[QLInput 阅读指南](doc/手册/input/QLInput阅读指南.md) / [QLInput API 手册](doc/手册/input/QLInput%20API手册.md)
