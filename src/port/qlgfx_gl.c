@@ -3834,7 +3834,7 @@ int ql_gfx_gl_poll(QLGfxGL *g)
                 g->width = (ql_coord_t)nw;
                 g->height = (ql_coord_t)nh;
                 g->fbo_fresh = 1;      /* 保留模式的旧内容已经作废 */
-                g->ime_x = -1;         /* 窗口挪了/改尺寸了：光标在根窗口的位置也变了 */
+                g->ime_x = -1;         /* 改尺寸后光标的窗口内位置可能变了：重算 */
                 g->resize_pending = 1;
                 /* 未来 200ms 内不跟 vblank（见 ql_gfx_gl_end 里的说明） */
                 g->resize_until_ms = (uint32_t)(now_us_mono() / 1000) + 200u;
@@ -3895,21 +3895,17 @@ void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h
     g->ime_h = h;
 
     /*
-     * XIM 的 spot 用**根窗口坐标**，而且是光标的**左下角**（baseline 位置）。
-     * 我们的坐标是"视口内的 CSS px"，所以要：乘 DPR → 平移到根窗口 → y 加高度。
+     * spot 的坐标系：**相对焦点窗口**（没设焦点窗口就相对客户窗口），
+     * 不是根窗口 —— Xlib 手册 13.5.6.13.3 原文：
+     *   "The x and y coordinates are relative to the focus window, if it has
+     *    been set; otherwise, they are relative to the client window."
+     * 我们的坐标本来就是"视口内 CSS px"，所以只做 DPR 换算，**不要**平移到根窗口
+     * （平移过会多出一个窗口原点，候选窗就飘到屏幕右下角去了）。
+     * y 取光标的**下沿**（与 GTK 一致：候选窗会画在这一行的下面）。
      */
     XPoint spot;
     spot.x = (short)gsl(g, x);
     spot.y = (short)gsl(g, y + h);
-    {
-        Window child = None;
-        int rx = 0, ry = 0;
-        if (XTranslateCoordinates(g->dpy, g->win, DefaultRootWindow(g->dpy),
-                                  (int)gsl(g, x), (int)gsl(g, y + h), &rx, &ry, &child)) {
-            spot.x = (short)rx;
-            spot.y = (short)ry;
-        }
-    }
     /*
      * 送两遍：
      *   1. **preedit attributes 里的 XNSpotLocation** —— GTK/Qt 都是这么送的，

@@ -384,7 +384,7 @@ int ql_disp_x11_poll(QLDispDriver *driver)
              */
             if (x11_apply_resize(x, ev.xconfigure.width, ev.xconfigure.height))
                 x->resize_pending = 1;
-            x->ime_x = -1;     /* 窗口挪了/改尺寸了：光标在根窗口的位置也变了 */
+            x->ime_x = -1;     /* 改尺寸后光标的窗口内位置可能变了：重算 */
             break;
         }
 
@@ -440,19 +440,14 @@ void ql_disp_x11_set_ime_spot(QLDispDriver *driver, ql_coord_t x, ql_coord_t y,
     xd->ime_y = y;
     xd->ime_h = h;
 
-    /* spot 是根窗口坐标、光标左下角（同 GL 后端的说明） */
+    /*
+     * spot 相对**焦点窗口**（Xlib 手册 13.5.6.13.3），所以只做 DPR 换算，
+     * 不平移到根窗口。y 取光标下沿（同 GL 后端）。
+     */
     const ql_coord_t fx = (driver->scale_fx > 0) ? driver->scale_fx : QL_SCALE_ONE;
     XPoint spot;
     spot.x = (short)ql_scale_len(x, fx);
     spot.y = (short)ql_scale_len(y + h, fx);
-    Window child = None;
-    int rx = 0, ry = 0;
-    if (XTranslateCoordinates(xd->dpy, xd->win, DefaultRootWindow(xd->dpy),
-                              (int)ql_scale_len(x, fx), (int)ql_scale_len(y + h, fx),
-                              &rx, &ry, &child)) {
-        spot.x = (short)rx;
-        spot.y = (short)ry;
-    }
     (void)XSetICValues(xd->xic, XNSpotLocation, &spot, NULL);
 }
 
