@@ -127,6 +127,17 @@ struct QLGfxGL {
      * 这样输入法的候选窗里就只剩候选列表，不会出现两个预览框。
      */
     QLUIRoot        *ime_ui;        /* 由 ql_gfx_gl_attach_ime() 接上 */
+    /*
+     * **常驻**的 preedit attributes 列表：里面既有四个回调，也有 XNSpotLocation。
+     *
+     * 为什么必须常驻：`XSetICValues(xic, XNPreeditAttributes, list)` 之后立刻
+     * `XFree(list)` 会留下悬空引用 —— Xlib 会在下一次预编辑/提交时再去读这块
+     * 内存，于是"打个字就崩"（SIGSEGV/SIGBUS 都见过）。所以这里建一次、
+     * 之后只改 `ime_spot` 的值，列表本身不重建也不释放。
+     */
+    XVaNestedList    ime_pa;
+    XPoint           ime_spot;
+    XIMCallback      ime_cb[4];     /* start / done / draw / caret */
     char             ime_pre[QL_CFG_UI_INPUT_LEN * 2];
     uint16_t         ime_pre_len;
     uint16_t         ime_pre_caret; /* 码点下标（XIM 回调给的就是这个） */
@@ -3094,29 +3105,36 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
                 XFree(styles);
             }
             if (use_cb) {
-                /* 静态存储：Xlib 会在 IC 生命周期里持有这些回调，别用栈上的 */
-                static XIMCallback cb_start, cb_done, cb_draw, cb_caret;
-                cb_start.client_data = (XPointer)g;
-                cb_start.callback = IM_PROC(ime_preedit_start);
-                cb_done.client_data = (XPointer)g;
-                cb_done.callback = IM_PROC(ime_preedit_done);
-                cb_draw.client_data = (XPointer)g;
-                cb_draw.callback = IM_PROC(ime_preedit_draw);
-                cb_caret.client_data = (XPointer)g;
-                cb_caret.callback = IM_PROC(ime_preedit_caret);
-                XVaNestedList pa = XVaCreateNestedList(
-                    0, XNPreeditStartCallback, &cb_start, XNPreeditDoneCallback, &cb_done,
-                    XNPreeditDrawCallback, &cb_draw, XNPreeditCaretCallback, &cb_caret,
+                /*
+                 * 回调结构体与 XVaNestedList 都放在 g 里**常驻**（见结构体注释）：
+                 * Xlib 会在 IC 生命周期内反复读它们，栈上/随用随 free 的版本
+                 * 会在下一次预编辑事件时踩到已释放内存。
+                 */
+                g->ime_cb[0].client_data = (XPointer)g;
+                g->ime_cb[0].callback = IM_PROC(ime_preedit_start);
+                g->ime_cb[1].client_data = (XPointer)g;
+                g->ime_cb[1].callback = IM_PROC(ime_preedit_done);
+                g->ime_cb[2].client_data = (XPointer)g;
+                g->ime_cb[2].callback = IM_PROC(ime_preedit_draw);
+                g->ime_cb[3].client_data = (XPointer)g;
+                g->ime_cb[3].callback = IM_PROC(ime_preedit_caret);
+                g->ime_spot.x = 0;
+                g->ime_spot.y = 0;
+                g->ime_pa = XVaCreateNestedList(
+                    0, XNSpotLocation, &g->ime_spot,
+                    XNPreeditStartCallback, &g->ime_cb[0],
+                    XNPreeditDoneCallback, &g->ime_cb[1],
+                    XNPreeditDrawCallback, &g->ime_cb[2],
+                    XNPreeditCaretCallback, &g->ime_cb[3],
                     NULL);
-                if (pa != NULL) {
+                if (g->ime_pa != NULL) {
                     g->xic = XCreateIC(g->xim,
                                        XNInputStyle,
                                        XIMPreeditCallbacks | XIMStatusNothing,
                                        XNClientWindow, g->win,
                                        XNFocusWindow, g->win,
-                                       XNPreeditAttributes, pa,
+                                       XNPreeditAttributes, g->ime_pa,
                                        NULL);
-                    XFree(pa);
                 }
             }
             if (g->xic == NULL) {
@@ -4052,14 +4070,26 @@ static void ime_preedit_draw(XIC ic, XPointer client, XPointer call)
     QLGfxGL *g = (QLGfxGL *)client;
     if (g == NULL)
         return;
-    const XIMText *t = (const XIMText *)call;
-    if (t == NULL || t->length <= 0 || t->length > 4096) {
-        /* NULL = 清空；长度离谱说明结构不对，宁可清空也不要越界读 */
+    /*
+     * `XNPreeditDrawCallback` 的 call_data 是 **XIMPreeditDrawCallbackStruct**，
+     * 不是 `XIMText`！结构是：
+     *     { int caret; int chg_first; int chg_length; XIMText *text; }
+     * 把它当 XIMText 读，`length` 会读到 caret、`encoding_is_wchar` 读到 chg_first
+     * （垃圾值），于是走进宽字符分支按 4 字节步长乱读 → SIGBUS。这是实测踩出来的。
+     */
+    const XIMPreeditDrawCallbackStruct *d =
+        (const XIMPreeditDrawCallbackStruct *)call;
+    if (d == NULL)
+        return;
+    if (d->text == NULL || d->text->length <= 0 || d->text->length > 4096) {
+        /* text == NULL = 清空；长度离谱说明结构不对，宁可清空也不要越界读 */
         g->ime_pre_len = 0;
         g->ime_pre[0] = '\0';
     } else {
-        ime_text_to_utf8(t, g->ime_pre, sizeof(g->ime_pre), &g->ime_pre_len);
+        ime_text_to_utf8(d->text, g->ime_pre, sizeof(g->ime_pre), &g->ime_pre_len);
     }
+    if (d->caret >= 0)
+        g->ime_pre_caret = (uint16_t)d->caret;
     if (g->trace_im)
         fprintf(stderr, "[IM] preedit \"%s\"\n", g->ime_pre);
     ime_preedit_flush(g);
@@ -4106,32 +4136,23 @@ void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h
     XPoint spot;
     spot.x = (short)gsl(g, x);
     spot.y = (short)gsl(g, y + h);
+    g->ime_spot = spot;            /* 常驻列表里的那个点就是它 */
+
     /*
-     * 送两遍：
-     *   1. **preedit attributes 里的 XNSpotLocation** —— GTK/Qt 都是这么送的，
-     *      ibus 的候选窗位置就是从这条路径上取的；
-     *   2. 顶层 `XNSpotLocation` —— `XIMPreeditNothing` 风格下有些实现只认这条。
-     * 只送一条时踩过坑：候选窗出现在窗口下方/屏幕外，等于输入法根本不知道
-     * 光标在哪。
+     * 只更新**常驻列表里那个 XPoint**，不重建、不释放列表（见结构体注释）：
+     * `XSetICValues` 之后立刻 `XFree` 列表会留下悬空引用，Xlib 下一次处理
+     * 预编辑/提交事件时踩到已释放内存 —— 现象就是"打个字就崩"。
+     * 顶层 `XNSpotLocation` 只在 preedit 属性不被接受时才用（有的实现在
+     * `XIMPreeditNothing` 风格下只认那条；`XIMPreeditCallbacks` 会拒绝）。
      */
     char *bad = NULL;
-    XVaNestedList preedit = XVaCreateNestedList(0, XNSpotLocation, &spot, NULL);
-    if (preedit != NULL) {
-        /*
-         * 返回值是 Xlib 内部的字符串（"哪一个属性设不进去"），
-         * **不能 XFree** —— 那不是我们分配的内存，free 它会直接踩坏堆
-         * （现象就是退出时 `free(): invalid pointer`）。
-         */
-        bad = XSetICValues(g->xic, XNPreeditAttributes, preedit, NULL);
-        XFree(preedit);
-    }
-    if (bad != NULL) {
-        /* 这个输入风格没有 preedit attributes：只靠下面那条顶层值 */
-    }
-    bad = XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
+    if (g->ime_pa != NULL)
+        bad = XSetICValues(g->xic, XNPreeditAttributes, g->ime_pa, NULL);
+    if (bad != NULL)
+        (void)XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
     if (g->trace_im)
-        fprintf(stderr, "[IM] spot root=(%d,%d)%s\n", spot.x, spot.y,
-                (bad != NULL) ? "（顶层 XNSpotLocation 未接受）" : "");
+        fprintf(stderr, "[IM] spot win=(%d,%d)%s\n", spot.x, spot.y,
+                (bad != NULL) ? "（preedit 属性未接受，已退回顶层）" : "");
 }
 
 int ql_gfx_gl_resize_pending(QLGfxGL *g)
@@ -4182,6 +4203,10 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
         g->xim = NULL;
     }
 
+    if (g->ime_pa != NULL) {
+        XFree(g->ime_pa);       /* IC 已在上面销毁，这时释放才安全 */
+        g->ime_pa = NULL;
+    }
     if (g->egdpy != EGL_NO_DISPLAY && g->egdpy != NULL) {
         eglMakeCurrent(g->egdpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (g->atlas_tex)
