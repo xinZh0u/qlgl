@@ -1591,10 +1591,20 @@ void ql_ui_detach_input(void);
 
 中文/日文走 **XIM**：窗口创建时会 `XOpenIM` + `XCreateIC`，键事件先过 `XFilterEvent`
 （输入法正在组字时按键归 IME），字符用 `Xutf8LookupString` 取 UTF-8。
-这让 fcitx5 / ibus 的 XIM 服务能直接用。**两个前提**：
+这让 fcitx5 / ibus 的 XIM 服务能直接用。**四个前提**：
 
 1. 进程里要调过 `setlocale(LC_ALL, "")`（XIM 靠它选 locale 对应的输入法）；
-2. 系统装了 fcitx / ibus 且它们的 XIM 模块是开着的。
+2. 调过 `XSetLocaleModifiers("")` —— **漏了它 `XOpenIM`/`XCreateIC` 照样能成功，
+   但 `XFilterEvent()` 永远返回 False**，表现是"能切输入法，但打字全进输入框"；
+3. 窗口事件掩码带 `FocusChangeMask`，并在 `FocusIn` 里 `XSetICFocus`（否则输入法
+   不知道你聚焦了）；还要把 IC 的 `XNFilterEvents` 并进窗口掩码；
+4. 系统装了 fcitx / ibus 且它们的 XIM 模块是开着的。
+
+组字文本（preedit）用 `XIMPreeditCallbacks` 由我们绘制：`ql_ui_input_set_preedit()`
+把它**拼进正文排版**（推开后面的文字，字号/基线不变；单行加下划线，密码框显示圆点），
+`ql_ui_input_preedit_apply()` 处理 XIM 发来的 `chg_first`/`chg_length` 增量改动
+（码点级，按整串替换会丢字、劈开半个 UTF-8 → 方框）。候选窗定位用
+`ql_ui_ime_spot()` + `ql_gfx_gl_set_ime_spot()`（窗口内坐标，不是根窗口）。
 
 拿不到 XIM 时不是错误，会静默降级成"只能打 Latin-1"（ASCII）。
 输入法一次提交超过 63 字节会被丢弃（不截半个汉字）—— 正常的词不会这么长。

@@ -29,6 +29,16 @@ static long dark_pixels(QLDispDriver *d, QLRect box)
     return n;
 }
 
+/* 矩形里最靠右的深色像素（没有就返回 box.x） */
+static ql_coord_t ink_right(QLDispDriver *d, QLRect box)
+{
+    for (ql_coord_t x = ql_rect_right(box) - 1; x >= box.x; x--)
+        for (ql_coord_t y = box.y; y < ql_rect_bottom(box); y++)
+            if ((ql_disp_mem_pixel(d, x, y) & 0xFFFFFFu) < 0xE0E0E0u)
+                return x;
+    return box.x;
+}
+
 static void send_text(QLUIRoot *ui, const char *s)
 {
     QLInputEvent ev;
@@ -249,6 +259,39 @@ QL_TEST_BEGIN("test_input_edit")
                     QL_CHECK_STR(pre, "a好b");
             }
             ql_ui_input_set_preedit(ui, NULL, 0);
+
+            ql_ui_free(ui);
+            ql_disp_mem_destroy(dd);
+        }
+        ql_ui_doc_free(doc);
+    }
+
+    /*
+     * 组字文本要**插进**正文而不是叠在光标上：有值时后面那截必须被推开。
+     * （叠着画会和正文重叠，看起来像"字号不对/糊成一团"。）
+     */
+    {
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk("<input id=a value=\"abcd\">", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *in = &ui->nodes[1];
+            QLDispDriver *dd = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+            QLCanvas c;
+            QL_CHECK_EQ(ql_canvas_from_disp(&c, dd), QL_OK);
+            (void)ql_ui_pointer_down(ui, in->content_box.x + 1, 12);
+            (void)ql_ui_pointer_up(ui, in->content_box.x + 1, 12);
+
+            ql_canvas_clear(&c, 0xFFFFFF);
+            ql_ui_render_canvas(ui, &c);
+            const ql_coord_t right0 = ink_right(dd, in->content_box);
+
+            ql_ui_input_set_preedit(ui, "汉", 1);
+            ql_canvas_clear(&c, 0xFFFFFF);
+            ql_ui_render_canvas(ui, &c);
+            const ql_coord_t right1 = ink_right(dd, in->content_box);
+            /* "汉" 约 14px 宽：后面的 "abcd" 应该被推开这么多 */
+            QL_CHECK(right1 >= right0 + 8);
 
             ql_ui_free(ui);
             ql_disp_mem_destroy(dd);

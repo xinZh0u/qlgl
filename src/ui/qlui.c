@@ -7220,57 +7220,6 @@ static void draw_progress(QLUINodeRT *node, QLDraw2D *d2d)
  * 密码框：文本已经在上一步画过了 —— 所以这里不重复处理，
  * 而是在 draw_text 之前把显示用的字符串换掉（见 render_node 里 password_text）。
  */
-/*
- * 画输入法的**预编辑**（组字中的文本）：在光标处画出来，带下划线，
- * 光标停在 `preedit_caret` 处。返回 1 表示画了（调用方就不要再画自己的光标）。
- *
- * `x` / `y` 是"原本该画光标的位置"（y 是字形顶边），`h` 是字形高度。
- * 组字文本只在**聚焦的那个输入框**上画。
- */
-static int draw_preedit(QLUINodeRT *node, QLDraw2D *d2d, const QLFont *font,
-                        ql_coord_t x, ql_coord_t y, ql_coord_t h)
-{
-    QLUIRoot *ui = node->owner;
-    if (ui == NULL || ui->preedit_len == 0 || d2d->draw_text == NULL)
-        return 0;
-    if (ui->focus != node)
-        return 0;
-
-    /* 与正文同一套字体/行高；颜色取正文色，组字文本靠下划线区分 */
-    QLTextStyle ts;
-    memset(&ts, 0, sizeof(ts));
-    const QLUIStyle *st = node->style;
-    ts.color = (st != NULL) ? st->text_color : 0x202020;
-    if (st != NULL) {
-        ts.line_h = st->line_h;
-        ts.letter_spacing = st->letter_spacing;
-    }
-    const ql_coord_t w = ql_font_line_width(font, ui->preedit, (int32_t)ui->preedit_len);
-
-    QLRect box = ql_rect_make(x, y, (w > 0) ? w + 2 : 2, h);
-    d2d->draw_text(d2d, font, ui->preedit, -1, box, &ts);
-
-    /* 下划线：这是"还没上屏"的视觉标志 */
-    if (d2d->draw_line != NULL && w > 0) {
-        const ql_coord_t uy = y + h;
-        d2d->draw_line(d2d, x, uy, x + w, uy, 1,
-                       (node->style != NULL && node->style->text_color != 0)
-                           ? node->style->text_color
-                           : 0x202020);
-    }
-    /* 组字中的光标：跟着预编辑文本里的插入点走 */
-    if (d2d->fill_rect != NULL) {
-        const ql_coord_t cx =
-            x + ql_font_line_width(font, ui->preedit, (int32_t)ui->preedit_caret);
-        d2d->fill_rect(d2d, ql_rect_make(cx, y, 1, h),
-                       (node->style != NULL && node->style->text_color != 0)
-                           ? node->style->text_color
-                           : 0x202020,
-                       255);
-    }
-    return 1;
-}
-
 static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
 {
     QLUIRoot *ui = node->owner;
@@ -7360,12 +7309,12 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
             if (ui->focus == node) {
                 ql_coord_t cx = 0, cy = 0;
                 caret_px(font, in, lines, count, lh, &cx, &cy);
-                if (!draw_preedit(node, d2d, font, base_x + cx, base_y + cy + half_lead,
-                                  (ink_h > 0) ? ink_h : lh)) {
-                    QLRect r = ql_rect_make(base_x + cx, base_y + cy + half_lead, 1,
-                                            (ink_h > 0) ? ink_h : lh);
-                    d2d->fill_rect(d2d, r, node->style->text_color, 255);
-                }
+                if (ui->preedit_len > 0)
+                    cx += ql_font_line_width(font, ui->preedit,
+                                             (int32_t)ui->preedit_caret);
+                QLRect r = ql_rect_make(base_x + cx, base_y + cy + half_lead, 1,
+                                        (ink_h > 0) ? ink_h : lh);
+                d2d->fill_rect(d2d, r, node->style->text_color, 255);
             }
 
             /*
@@ -7407,13 +7356,14 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
      * 正在组字时画的是**预编辑文本**（输入法交给客户端画），光标跟着它走。
      */
     if (ui->focus == node && d2d->fill_rect != NULL) {
-        const ql_coord_t cx =
+        ql_coord_t cx =
             base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(in->caret));
+        /* 组字中：光标跟着预编辑里的插入点走（预编辑本身已经拼进正文画了） */
+        if (ui->preedit_len > 0)
+            cx += ql_font_line_width(font, ui->preedit, (int32_t)ui->preedit_caret);
         const ql_coord_t ch = (cb.h > 4) ? cb.h - 4 : cb.h;
-        if (!draw_preedit(node, d2d, font, cx, cb.y + 2, ch)) {
-            QLRect r = ql_rect_make(cx, cb.y + 2, 1, ch);
-            d2d->fill_rect(d2d, r, node->style->text_color, 255);
-        }
+        QLRect r = ql_rect_make(cx, cb.y + 2, 1, ch);
+        d2d->fill_rect(d2d, r, node->style->text_color, 255);
     }
     #undef DISP_OFF
 
@@ -8211,20 +8161,63 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
      * 所以判据是"有文字" 或 "这个节点是输入框"。
      */
     struct QLUIInput *in = input_of(node->owner, node);
-    if (!inv && has_shown_text(node) && (node->text[0] != '\0' || in != NULL) &&
+    /* 空输入框也要进这一段：光标、以及输入法组字文本都在这里画 */
+    const int pre_active = (in != NULL && node->owner->preedit_len > 0 &&
+                            node->owner->focus == node);
+    if (!inv && (has_shown_text(node) || pre_active) &&
+        ((node->text != NULL && node->text[0] != '\0') || in != NULL) &&
         !ql_rect_is_empty(node->content_box)) {
         /*
          * 输入框：显示文本可能被换成圆点（密码），而且比盒子宽时要横向滚。
          * 这两件事都只在输入框上发生，普通文本节点走的是同一条 draw_text。
          */
         char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
-        const char *shown = node->text;
+        const char *shown = (node->text != NULL) ? node->text : "";
         QLRect tbox = node->content_box;
         QLRect input_saved_clip = clip;
         int input_clipped = 0;
+        /*
+         * 输入法组字中的文本要**插进**显示串里（而不是叠在光标上另画一遍）：
+         * 叠着画会和光标后面的正文重叠，看起来像"字号不对/糊成一团"。
+         * 拼进去以后 draw_text 会照常排版、折行，后面的文字自然被推开。
+         */
+        char composed[QL_CFG_UI_INPUT_LEN * 4 + 8];
+        uint16_t pre_b0 = 0, pre_b1 = 0;
+        int has_pre = 0;
         if (in != NULL) {
-            shown = input_display_text(in, (node->src->flags & QL_UI_NODE_PASSWORD) != 0,
-                                       dots, sizeof(dots));
+            const int pw = (node->src->flags & QL_UI_NODE_PASSWORD) != 0;
+            shown = input_display_text(in, pw, dots, sizeof(dots));
+            if (node->owner->preedit_len > 0 && node->owner->focus == node) {
+                const uint16_t off = (uint16_t)((pw)
+                                                    ? (cp_count(in->buf, in->caret) * 3)
+                                                    : in->caret);
+                size_t n = 0;
+                const size_t head = (off < (uint16_t)strlen(shown)) ? off : strlen(shown);
+                if (head + 1u < sizeof(composed))
+                    memcpy(composed, shown, head), n = head;
+                pre_b0 = (uint16_t)n;
+                /* 密码框：组字文本也显示成圆点，别把明文漏出去 */
+                for (uint16_t k = 0; k < node->owner->preedit_len && n + 4 < sizeof(composed);
+                     k++) {
+                    const unsigned char c = (unsigned char)node->owner->preedit[k];
+                    if (pw && ((c & 0xC0u) != 0x80u)) {
+                        composed[n++] = (char)0xE2;   /* '•' = E2 80 A2 */
+                        composed[n++] = (char)0x80;
+                        composed[n++] = (char)0xA2;
+                    } else if (pw) {
+                        continue;                     /* 续字节：已经画过圆点 */
+                    } else {
+                        composed[n++] = (char)c;
+                    }
+                }
+                pre_b1 = (uint16_t)n;
+                const char *rest = shown + head;
+                while (*rest != '\0' && n + 1 < sizeof(composed))
+                    composed[n++] = *rest++;
+                composed[n] = '\0';
+                shown = composed;
+                has_pre = 1;
+            }
             tbox.x -= in->scroll_x;
             tbox.y -= in->scroll_y;      /* 多行：纵向滚动（单行恒 0） */
             /*
@@ -8233,7 +8226,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
              * 以前这里是 tbox.h += scroll_y 让文字不被高度截断 —— 方向反了：
              * 该裁的是绘制，不是把盒子撑高。
              */
-            if (node->text[0] != '\0' && d2d->set_clip != NULL &&
+            if (shown[0] != '\0' && d2d->set_clip != NULL &&
                 !ql_rect_is_empty(node->content_box)) {
                 const QLRect c = ql_rect_intersect(clip, node->content_box);
                 node->owner->clip = c;
@@ -8278,7 +8271,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
          * 样式来自 `style_placeholder`（构建期把 `input::placeholder` 的声明
          * 合并进宿主样式算出来的），所以字号/颜色都能单独写。
          */
-        if (in != NULL && in->len == 0 && node->src != NULL &&
+        if (in != NULL && in->len == 0 && !has_pre && node->src != NULL &&
             node->src->placeholder != 0xFFFF && node->owner != NULL &&
             node->owner->doc != NULL && node->owner->doc->text_pool != NULL &&
             node->owner->doc->text_offsets != NULL) {
@@ -8323,7 +8316,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
          * 每次 alpha 摊薄 —— 不是真高斯，但对 1~4px 的模糊肉眼看不出差别，
          * 而且完全不需要离屏缓冲（MCU 上也能跑）。
          */
-        if (node->text[0] != '\0') {
+        if (shown[0] != '\0') {   /* 空输入框里也可能有组字文本要画 */
             const QLUIShadow *tsh = &s->text_shadow;
             if (tsh->alpha > 0) {
                 QLTextStyle shadow_ts = ts;
@@ -8353,6 +8346,20 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
                 }
             }
             d2d->draw_text(d2d, font_of(node), shown, -1, tbox, &ts);
+
+            /*
+             * 组字文本加下划线（"还没上屏"的标志）。多行折行时不画：
+             * 跨行的下划线要按视觉行拆开，收益不大。
+             */
+            if (has_pre && !in->multiline && d2d->draw_line != NULL) {
+                const QLFont *tf = font_of(node);
+                const ql_coord_t x0 = tbox.x + ql_font_line_width(tf, shown, (int32_t)pre_b0);
+                const ql_coord_t x1 = tbox.x + ql_font_line_width(tf, shown, (int32_t)pre_b1);
+                const ql_coord_t uy = ql_rect_bottom(node->content_box) - 3;
+                if (x1 > x0)
+                    d2d->draw_line(d2d, x0, uy, x1, uy, 1,
+                                   (s->text_color != 0) ? s->text_color : 0x202020);
+            }
         }
         if (input_clipped) {
             node->owner->clip = input_saved_clip;

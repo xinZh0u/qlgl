@@ -448,9 +448,12 @@ if (ql_ui_ime_spot(ui, &amp;sx, &amp;sy, &amp;sh))      /* 没有聚焦输入框
 spot 用的是<strong>窗口内坐标</strong>（Xlib 手册 §13.5.6.13.3：相对焦点窗口/客户窗口），
 不是根窗口 —— 多平移一次窗口原点，候选窗就会跑到屏幕右下角。</p>
 <p><strong>组字文本由我们画</strong>（<code>XIMPreeditCallbacks</code>）：输入法回调里拿到拼音就交给
-界面层，画在光标处（带下划线，见 <code>ql_ui_input_set_preedit()</code>），
-这样输入法的候选窗里只剩候选列表。用 <code>XIMPreeditNothing</code> 时输入法只好把
-预编辑也画在候选窗顶上，屏幕上就会出现两个预览框。接一下即可：</p>
+界面层（<code>ql_ui_input_set_preedit()</code>），<strong>拼进正文一起排版</strong> —— 也就是说光标后
+原有的文字会被推开，字号、基线、行高都跟正文完全一致；单行时下面画一条细下划线
+标出哪截还在组字，密码框里则显示成圆点。这样输入法的候选窗里只剩候选列表。
+用 <code>XIMPreeditNothing</code> 时输入法只好把预编辑也画在候选窗顶上，屏幕上就会出现两个
+预览框；而如果"另起一段叠着画"，则会跟正文重叠，看起来像字号不对、糊成一团。
+接一下即可：</p>
 <p><code>c
 ql_gfx_gl_attach_ime(gfx, ui);   /* 与 attach_clipboard 一样，建好窗口调一次 */</code>
 排障：<code>QLGL_TRACE_IM=1 ./example_10_input</code> 会把"哪个按键被输入法吃掉"打出来

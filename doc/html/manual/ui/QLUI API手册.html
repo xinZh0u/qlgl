@@ -2690,11 +2690,20 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 控制键翻成 <code>QLKey</code>；<code>Ctrl</code> / <code>Alt</code> 组合<strong>不产生文本</strong>（Ctrl+A 不该插入 <code>a</code>）。</p>
 <p>中文/日文走 <strong>XIM</strong>：窗口创建时会 <code>XOpenIM</code> + <code>XCreateIC</code>，键事件先过 <code>XFilterEvent</code>
 （输入法正在组字时按键归 IME），字符用 <code>Xutf8LookupString</code> 取 UTF-8。
-这让 fcitx5 / ibus 的 XIM 服务能直接用。<strong>两个前提</strong>：</p>
+这让 fcitx5 / ibus 的 XIM 服务能直接用。<strong>四个前提</strong>：</p>
 <ol>
 <li>进程里要调过 <code>setlocale(LC_ALL, "")</code>（XIM 靠它选 locale 对应的输入法）；</li>
+<li>调过 <code>XSetLocaleModifiers("")</code> —— <strong>漏了它 <code>XOpenIM</code>/<code>XCreateIC</code> 照样能成功，
+   但 <code>XFilterEvent()</code> 永远返回 False</strong>，表现是"能切输入法，但打字全进输入框"；</li>
+<li>窗口事件掩码带 <code>FocusChangeMask</code>，并在 <code>FocusIn</code> 里 <code>XSetICFocus</code>（否则输入法
+   不知道你聚焦了）；还要把 IC 的 <code>XNFilterEvents</code> 并进窗口掩码；</li>
 <li>系统装了 fcitx / ibus 且它们的 XIM 模块是开着的。</li>
 </ol>
+<p>组字文本（preedit）用 <code>XIMPreeditCallbacks</code> 由我们绘制：<code>ql_ui_input_set_preedit()</code>
+把它<strong>拼进正文排版</strong>（推开后面的文字，字号/基线不变；单行加下划线，密码框显示圆点），
+<code>ql_ui_input_preedit_apply()</code> 处理 XIM 发来的 <code>chg_first</code>/<code>chg_length</code> 增量改动
+（码点级，按整串替换会丢字、劈开半个 UTF-8 → 方框）。候选窗定位用
+<code>ql_ui_ime_spot()</code> + <code>ql_gfx_gl_set_ime_spot()</code>（窗口内坐标，不是根窗口）。</p>
 <p>拿不到 XIM 时不是错误，会静默降级成"只能打 Latin-1"（ASCII）。
 输入法一次提交超过 63 字节会被丢弃（不截半个汉字）—— 正常的词不会这么长。</p>
 <p><strong>窗口缩放</strong>：<code>ql_gfx_gl_poll()</code> 收到 <code>ConfigureNotify</code> 会更新画布尺寸并置位，
