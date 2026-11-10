@@ -1605,7 +1605,12 @@ void ql_ui_detach_input(void);
 `ql_ui_input_preedit_apply()` 处理 XIM 发来的 `chg_first`/`chg_length` 增量改动
 （码点级，按整串替换会丢字、劈开半个 UTF-8 → 方框）。传进来的文本会先过
 `ql_utf8_valid_len()`：**不合法的尾巴一律丢掉**，坏字节永远不会进缓冲 ——
-ibus 的 `XIMText.length` 是字符数而不是手册说的字节数，按字节切就是半个汉字。候选窗定位用
+ibus 的 `XIMText.length` 是字符数而不是手册说的字节数，按字节切就是半个汉字。
+
+**组字什么时候结束**：只要有字符真的进了值缓冲（`QL_INPUT_TEXT`，或粘贴、
+多行回车），预编辑就当场清掉；焦点一换也清掉。别指望输入法随后发"清空
+preedit"那次回调 —— 实测它有概率晚一步（松键才到），中间那一帧里"提交后的值"
+和"还没清的预编辑"会同时画出来，屏幕上同一个词出现两遍、第二遍还带下划线。候选窗定位用
 `ql_ui_ime_spot()` + `ql_gfx_gl_set_ime_spot()`（窗口内坐标，不是根窗口）。
 
 拿不到 XIM 时不是错误，会静默降级成"只能打 Latin-1"（ASCII）。

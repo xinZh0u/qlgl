@@ -2106,6 +2106,25 @@ static void input_after_edit(QLUIRoot *ui, struct QLUIInput *in)
 }
 
 
+/*
+ * 组字结束：把预编辑文本清掉并标脏。
+ *
+ * 什么时候算结束？**只要有字符真的进了值缓冲**。输入法提交时发的是
+ * "XLookupChars 文本 + 一次清空 preedit"，但清空那一下要等输入法下一个回调
+ * 才到；中间那一帧里"提交后的值"和"还没清的预编辑"同时存在 —— 屏幕上就是
+ * 一个词出现两遍，第二遍还带下划线，松手才消失。所以在插入处直接收尾。
+ */
+static void input_preedit_clear(QLUIRoot *ui)
+{
+    if (ui == NULL || ui->preedit_len == 0)
+        return;
+    ui->preedit_len = 0;
+    ui->preedit_caret = 0;
+    ui->preedit[0] = '\0';
+    if (ui->focus != NULL)
+        ui->focus->flags |= QL_UI_RT_DIRTY;
+}
+
 static int input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
 {
     size_t add = strlen(s);
@@ -2119,6 +2138,7 @@ static int input_insert(QLUIRoot *ui, struct QLUIInput *in, const char *s)
     if (add == 0)
         return 0;      /* 满了：静默截断（打字不该因为"满了"而失败） */
 
+    input_preedit_clear(ui);        /* 有字进缓冲 = 组字结束 */
     memmove(in->buf + in->caret + add, in->buf + in->caret,
             (size_t)(in->len - in->caret) + 1u);
     memcpy(in->buf + in->caret, s, add);
@@ -10187,6 +10207,8 @@ void ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node)
     if (ui->focus != NULL)
         set_state_chain(ui->focus, QL_UI_RT_FOCUS, 0);
     ui->focus = node;
+    /* 组字跟着焦点走：焦点一换，没上屏的预编辑就作废（否则会画到新控件里） */
+    input_preedit_clear(ui);
     if (node != NULL)
         set_state_chain(node, QL_UI_RT_FOCUS, 1);
 }

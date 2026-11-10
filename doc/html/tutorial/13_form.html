@@ -461,11 +461,19 @@ ql_gfx_gl_attach_ime(gfx, ui);   /* 与 attach_clipboard 一样，建好窗口�
 <li><code>XIMPreeditDrawCallback</code> 的 call_data 是 <code>XIMPreeditDrawCallbackStruct</code>
    <code>{caret, chg_first, chg_length, text}</code>，<strong>不是</strong> <code>XIMText</code>；<code>chg_first</code> /
    <code>chg_length</code> 是<strong>码点</strong>级的片段改动（不是整串），按整串替换会丢字。</li>
-<li><code>XIMText.length</code> <strong>不能当字节数用</strong>：Xlib 手册说 multi_byte 的 <code>length</code> 是
+<li>
+<p><code>XIMText.length</code> <strong>不能当字节数用</strong>：Xlib 手册说 multi_byte 的 <code>length</code> 是
    字节数，但 ibus 实际给的是<strong>字符数</strong>（<code>length=1</code>，字符串是 <code>e4 b8 89</code> = "三"）。
    照字节数拷就只剩 <code>0xE4</code>，半个汉字进缓冲 → 字体找不到字形 → 屏幕上一个个<strong>方框</strong>。
    字符串本身是 NUL 结尾的，量长度最稳；拿到后还要过一遍 <code>ql_utf8_valid_len()</code>
-   把不合法的尾巴砍掉（界面层 <code>ql_ui_input_set_preedit()</code> 内部也会再挡一次）。</li>
+   把不合法的尾巴砍掉（界面层 <code>ql_ui_input_set_preedit()</code> 内部也会再挡一次）。</p>
+</li>
+<li>
+<p>组字结束<strong>不能</strong>等输入法的"清空 preedit"回调：实测它有时晚一步（松键才到），
+   中间那一帧里提交后的正文和还没清的组字文本会同时画出来 —— 屏幕上同一个词
+   出现两遍，第二遍带下划线。本库的判据是"有字符进了值缓冲"（或焦点换了），
+   在 <code>ql_ui_input_set_preedit()</code> / 插入路径里当场收尾。</p>
+</li>
 </ol>
 <p>排障：<code>QLGL_TRACE_IM=1 ./example_10_input</code> 会把"哪个按键被输入法吃掉"打出来
 —— 全是 <code>filtered=0</code> 说明按键没进输入法（焦点/连接问题），不是界面层的锅；

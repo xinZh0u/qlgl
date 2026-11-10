@@ -178,6 +178,14 @@ QL_TEST_BEGIN("test_input_edit")
             ql_ui_render_canvas(ui, &c);
             long before = dark_pixels(dd, in->content_box);
 
+            /* 组字中换焦点：没上屏的预编辑必须作废，不能画到新控件里 */
+            ql_ui_input_set_preedit(ui, "nihao", 5);
+            QL_CHECK(ql_ui_input_preedit(ui, NULL) != NULL);
+            ql_ui_set_focus_node(ui, NULL);
+            QL_CHECK(ql_ui_input_preedit(ui, NULL) == NULL);
+            (void)ql_ui_pointer_down(ui, in->content_box.x + 2, 12);
+            ql_ui_pointer_up(ui, in->content_box.x + 2, 12);
+
             /* 组字中的文本：完全不影响输入框的值，但必须出现在画面上 */
             ql_ui_input_set_preedit(ui, "nihao", 5);
             QL_CHECK_STR(ql_ui_input_value(ui, in), "");
@@ -194,9 +202,53 @@ QL_TEST_BEGIN("test_input_edit")
             const long during = dark_pixels(dd, in->content_box);
             QL_CHECK(during > before);       /* 预编辑真的画出来了 */
 
+            /*
+             * 上屏：输入法提交文本（QL_INPUT_TEXT）**自己就该结束组字**。
+             * 等输入法下一次发"清空 preedit"回调，中间那一帧里提交后的值和
+             * 还没清的预编辑会同时出现 —— 屏幕上同一个词显示两遍，第二遍带下划线。
+             */
+            ql_ui_input_set_preedit(ui, "阿斯", 2);
+            send_text(ui, "阿斯");
+            QL_CHECK_STR(ql_ui_input_value(ui, in), "阿斯");
+            QL_CHECK(ql_ui_input_preedit(ui, NULL) == NULL);   /* 组字已收尾 */
+            /*
+             * 收尾要"干净"：画出来的必须和从头就没组过字的一模一样
+             * （不能留着下划线，也不能因为脏区没标而少画/多画）。
+             */
+            ql_canvas_clear(&c, 0xFFFFFF);
+            ql_ui_render_canvas(ui, &c);
+            const long after_commit = dark_pixels(dd, in->content_box);
+
             /* 上屏：预编辑清空，值由 QL_INPUT_TEXT 走正常路径进来 */
             ql_ui_input_set_preedit(ui, NULL, 0);
             QL_CHECK(ql_ui_input_preedit(ui, NULL) == NULL);
+            /* 对照组：同样是值 "阿斯"，但从来没有组过字 */
+            {
+                QLUIDoc *pdoc = NULL;
+                QLUIRoot *plain = mk("<input id=a>", &pdoc);
+                QL_CHECK(plain != NULL);
+                if (plain != NULL) {
+                    QLUINodeRT *pin = &plain->nodes[1];
+                    /* 同样聚焦、同样从光标 0 插入，这样连光标像素也一致 */
+                    (void)ql_ui_pointer_down(plain, pin->content_box.x + 2, 12);
+                    ql_ui_pointer_up(plain, pin->content_box.x + 2, 12);
+                    send_text(plain, "阿斯");
+                    QLDispDriver *pd = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+                    QLCanvas pc;
+                    QL_CHECK_EQ(ql_canvas_from_disp(&pc, pd), QL_OK);
+                    ql_canvas_clear(&pc, 0xFFFFFF);
+                    ql_ui_render_canvas(plain, &pc);
+                    QL_CHECK_EQ(dark_pixels(pd, pin->content_box), after_commit);
+                    ql_disp_mem_destroy(pd);
+                    ql_ui_free(plain);
+                }
+                ql_ui_doc_free(pdoc);
+                /* 静态 draw2d 上下文是"最近 init 的那个"：换回来才能继续比像素 */
+                QL_CHECK_EQ(ql_canvas_from_disp(&c, dd), QL_OK);
+            }
+
+            /* 值里有内容了：清干净再比像素 */
+            ql_ui_input_set_value(ui, in, "");
             ql_canvas_clear(&c, 0xFFFFFF);
             ql_ui_render_canvas(ui, &c);
             QL_CHECK_EQ(dark_pixels(dd, in->content_box), before);
