@@ -105,6 +105,19 @@
 #define QL_CFG_UI_TABLE_MAX_COLS    24
 #endif
 
+/* ----- 多栏（B7 后半的能力包）：column-count / column-width / column-rule -----
+ *
+ * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_COLUMNS=0`）。
+ * 关掉之后这几条属性在**构建期报错**（不静默降级）。
+ */
+#ifndef QL_FEAT_CSS_COLUMNS
+#define QL_FEAT_CSS_COLUMNS         1
+#endif
+/* 一个多栏容器最多几栏（超出按上限截断，内容仍全部排进最后一栏） */
+#ifndef QL_CFG_UI_COLUMN_MAX
+#define QL_CFG_UI_COLUMN_MAX        8
+#endif
+
 /* ----- 离屏图层（M9.3 能力包）：filter / mix-blend-mode / mask / 真 group opacity ----- */
 /*
  * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_FILTER_LAYER=0`）。

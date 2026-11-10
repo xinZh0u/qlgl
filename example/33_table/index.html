@@ -5,7 +5,7 @@
   </div>
 
   <div class="sec">
-    <div class="cap">1. 基础表格：等分列宽 + caption + thead/th</div>
+    <div class="cap">1. 基础表格：<code>table-layout: fixed</code> 等分列宽 + caption + thead/th</div>
     <table class="t1">
       <caption>2026 年第一季度（万元）</caption>
       <thead>
@@ -80,6 +80,40 @@
         <td><div class="chip c4">透明度</div></td>
       </tr>
     </table>
+  </div>
+
+  <div class="sec">
+    <div class="cap">6. <code>table-layout: auto</code>（默认）vs <code>fixed</code>：同一份内容的两种列宽</div>
+    <div class="side">
+      <table class="t6 auto">
+        <tr><th>名称</th><th>数量</th></tr>
+        <tr><td>很长很长的一段说明文字</td><td>7</td></tr>
+        <tr><td>短</td><td>1234</td></tr>
+      </table>
+      <table class="t6 fixed">
+        <tr><th>名称</th><th>数量</th></tr>
+        <tr><td>很长很长的一段说明文字</td><td>7</td></tr>
+        <tr><td>短</td><td>1234</td></tr>
+      </table>
+    </div>
+    <div class="hint2">左 <code>auto</code>：列宽跟着内容走，长文本列自己变宽；
+      右 <code>fixed</code>：首行的 <code>width</code> 说了算，其余列等分</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">7. <code>&lt;colgroup&gt;</code> / <code>&lt;col&gt;</code>：把列宽写在一处</div>
+    <table class="t7">
+      <colgroup>
+        <col class="c1">
+        <col class="c2" span="2">
+        <col class="c3">
+      </colgroup>
+      <tr><th>编号</th><th colspan="2">销售额（万元）</th><th>占比</th></tr>
+      <tr><td>A-01</td><td>128</td><td>143</td><td>32%</td></tr>
+      <tr><td>A-02</td><td>96</td><td>88</td><td>21%</td></tr>
+    </table>
+    <div class="hint2">一条 <code>&lt;col span="2"&gt;</code> 同时管两列；fixed 下
+      <code>&lt;col&gt;</code> 的宽度优先于首行，auto 下它是那一列的<b>下界</b></div>
   </div>
 
   <div class="note">

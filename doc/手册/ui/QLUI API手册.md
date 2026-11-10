@@ -936,19 +936,45 @@ th, td { border: 1px solid #D0D7DE; padding: 5px 8px }
 |---|---|
 | `display` | `table` / `inline-table`、`table-row`、`table-cell`、`table-caption`、`table-row-group`（`table-header-group` / `table-footer-group` 同义） |
 | 标签 | `<table>` `<caption>` `<thead>` `<tbody>` `<tfoot>` `<tr>` `<td>` `<th>`；`<colgroup>`/`<col>` 存在但 `display: none` |
-| `table-layout` | `fixed`（只做这个语义；`auto` 接受但同样按 fixed 算） |
+| `table-layout` | `auto`（默认：量各列 min/max-content 后按可用宽度插值）/ `fixed`（首行或 `<col>` 说了算，其余等分） |
 | `border-collapse` | `separate`（默认）/ `collapse` |
 | `border-spacing` | 1~2 个**非负 px**（横 [纵]） |
 | `colspan` / `rowspan` 属性 | 1~255 的十进制整数（非法值按 1） |
+| `<colgroup>` / `<col>` | `display: table-column-group` / `table-column`；`width` 定列宽，`span`（1~255）展开成多列。`fixed` 下优先于首行，`auto` 下是那一列的**下界** |
 | `vertical-align` | 单元格里支持 `top` / `middle` / `bottom`；其它元素仍只认 `baseline` / `sub` / `super` |
 
 **样式写在 `td` / `th` 上** —— `tr` / `thead` 不是盒子（与浏览器一致），
 写在上面的边框、背景、内边距不会生效。实现细节与代价见《CSS3 覆盖与裁剪》§18.12，
 教程见 [表格](../tutorial/22_table.md)。
 
-**构建期报错**：`table-layout: <fix/auto 之外>`、`border-collapse: <collapse/separate 之外>`、
-`border-spacing` 带 `%`、`display: table-column` / `table-column-group`、
+**构建期报错**：`table-layout: <auto/fixed 之外>`、`border-collapse: <collapse/separate 之外>`、
+`border-spacing` 带 `%`、`caption-side: bottom`、
 `QL_FEAT_CSS_TABLE=0` 时的 `<table>` 与 `display: table*`。
+
+---
+
+### 3.11.5 多栏（`column-*`）
+
+```css
+.news { column-count: 3; column-gap: 16px; column-rule: 1px solid #D0D7DE }
+```
+
+| 项 | 取值 |
+|---|---|
+| `column-count` | `auto`（默认）/ 1~255（超过 `QL_CFG_UI_COLUMN_MAX`(8) 按上限截断） |
+| `column-width` | 非负 `px` / 百分比（相对容器内容宽）/ `auto` |
+| `columns` | `<栏数>` 与/或 `<栏宽>`（顺序随意，至少给一个） |
+| `column-gap` | px（与 flex 的 `column-gap` 共用）；不写按 16px（CSS 的 `normal`） |
+| `column-rule` / `-width` / `-style` / `-color` | 同 `border` 的取值：`1px solid #888`、`dashed`、`dotted`、`none` |
+
+**语义收窄成"贪心分栏"**：按文档顺序把子节点塞进当前栏，塞不下就换下一栏，
+**不把一个子节点劈成两栏**（容器高度 auto 时会先二分出一个"等高栏高"）。
+不支持 `column-span: all`。实现细节与代价见《CSS3 覆盖与裁剪》§18.13，
+教程见 [多栏](../tutorial/23_columns.md)。
+
+**构建期报错**：`column-count: <非整数>`、负的 `column-width`、`columns: auto`、
+`column-rule: <wavy 等非 solid/dashed/dotted/none>`、`column-span` 整个属性、
+`QL_FEAT_CSS_COLUMNS=0` 时上述任一属性。
 
 ---
 
@@ -958,7 +984,7 @@ th, td { border: 1px solid #D0D7DE; padding: 5px 8px }
 float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
-display: table-column / colgroup 的列宽声明（表格本身已支持）
+column-span / column-fill / break-inside（多栏的其它属性）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode

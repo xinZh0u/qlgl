@@ -14,7 +14,7 @@
 #include "common.h"
 
 #define W 820
-#define H 1010
+#define H 1400
 
 int main(int argc, char **argv)
 {

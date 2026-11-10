@@ -165,6 +165,7 @@ static const char *const DISPLAY_NAMES[] = {
     "QL_UI_DISPLAY_GRID", "QL_UI_DISPLAY_INLINE_GRID",
     "QL_UI_DISPLAY_TABLE", "QL_UI_DISPLAY_TABLE_ROW", "QL_UI_DISPLAY_TABLE_CELL",
     "QL_UI_DISPLAY_TABLE_CAPTION", "QL_UI_DISPLAY_TABLE_ROW_GROUP",
+    "QL_UI_DISPLAY_TABLE_COLUMN", "QL_UI_DISPLAY_TABLE_COLUMN_GROUP",
 };
 
 static const char *const FLEX_DIR_NAMES[] = {
@@ -550,6 +551,15 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             " .table_spacing_x = %d, .table_spacing_y = %d",
             (unsigned)s->table_layout, (unsigned)s->border_collapse,
             (unsigned)s->valign, (int)s->table_spacing_x, (int)s->table_spacing_y);
+
+    /* 多栏（blob v32） */
+    fprintf(f,
+            ",\n      .column_count = %u, .column_rule_w = %u,"
+            " .column_rule_style = %u, .column_rule_color = 0x%06Xu,\n"
+            "      .column_width = ",
+            (unsigned)s->column_count, (unsigned)s->column_rule_w,
+            (unsigned)s->column_rule_style, (unsigned)(s->column_rule_color & 0xFFFFFFu));
+    fput_length(f, s->column_width);
 
     fputs(" },\n", f);
 }

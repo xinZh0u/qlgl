@@ -225,6 +225,8 @@ typedef enum {
     QL_UI_DISPLAY_TABLE_CELL,
     QL_UI_DISPLAY_TABLE_CAPTION,
     QL_UI_DISPLAY_TABLE_ROW_GROUP,   /* thead / tbody / tfoot 同义 */
+    QL_UI_DISPLAY_TABLE_COLUMN,       /* <col>：只提供列宽，不产生盒子 */
+    QL_UI_DISPLAY_TABLE_COLUMN_GROUP, /* <colgroup>：同上，可嵌套 <col> */
 } QLUIDisplay;
 
 /* `vertical-align` 在**表格单元里**的取值（其它场合只认 baseline/sub/super） */
@@ -732,6 +734,25 @@ typedef struct {
     uint8_t     valign;
     int16_t     table_spacing_x;
     int16_t     table_spacing_y;
+
+    /* ----- 多栏（B7 后半，blob v32） -----
+     *
+     * 与浏览器同一套属性名，但语义收窄成"**贪心分栏**"：按顺序把子节点塞进
+     * 当前栏，塞不下（会超过栏高）就换下一栏，**不把一个子节点劈成两半**。
+     *
+     * `column_count`：0 = auto（栏数由 `column_width` 反推）；>0 = 栏数上限。
+     * `column_width`：auto = 不定宽（栏宽 = (容器宽 - 栏间距×(n-1)) / n）。
+     * 两者都给时**栏数优先**（浏览器是"能塞几栏就几栏，最多 count"，差别见文档）。
+     * 栏间距直接用 `column-gap`（与 flex 共用同一个字段，auto 时按 16px 算）。
+     * `column_rule_*`：栏间分隔线；`column_rule_w == 0` 或 style == none 时不画，
+     * `column_rule_color == 0` 表示 currentColor。
+     */
+    uint8_t     column_count;
+    uint8_t     column_rule_w;
+    uint8_t     column_rule_style;
+    uint8_t     column_reserved;
+    uint32_t    column_rule_color;
+    QLUILength  column_width;
 } QLUIStyle;
 
 /* ============================== transform 矩阵（M9.4） ============================== */
@@ -1327,6 +1348,10 @@ typedef struct QLUINodeRT {
     uint16_t         m_active;
     uint16_t         m_focus;
 
+    /* 多栏容器的布局结果（绘制 column-rule 要用；0 = 不是多栏） */
+    int16_t          col_n;
+    int16_t          col_w;
+
     uint16_t         depth;
     uint8_t          flags;      /* QL_UI_RT_* */
     uint8_t          used_copy;  /* style_copy 是否启用 */
@@ -1813,7 +1838,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    31u
+#define QL_UI_BLOB_VERSION    32u
 
 typedef struct {
     uint32_t magic;

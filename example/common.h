@@ -355,6 +355,38 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                     ql_ui_render_rect(ui, d2d, areas[i]);
             }
             ql_gfx_gl_end(gfx);
+            /*
+             * 调试用：QL_EX_WINDOW_DUMP=/tmp/x.ppm 把窗口里**真正渲染出来的**那一帧
+             * 抓下来（离屏 --dump 走的是 CPU 路径，看不到窗口特有的问题）。
+             */
+            {
+                const char *wd = getenv("QL_EX_WINDOW_DUMP");
+                if (wd != NULL && wd[0] != '\0' && frame == 0) {
+                    ql_gfx_gl_finish(gfx);
+                    uint8_t *px = (uint8_t *)calloc(1, (size_t)w * (size_t)h * 4u);
+                    if (px != NULL) {
+                        if (ql_gfx_gl_read_pixels(gfx, px, (uint32_t)w * 4u) == QL_OK) {
+                            FILE *fp = fopen(wd, "wb");
+                            if (fp != NULL) {
+                                fprintf(fp, "P6\n%d %d\n255\n", w, h);
+                                for (int yy = 0; yy < h; yy++)
+                                    for (int xx = 0; xx < w; xx++) {
+                                        const uint8_t *q =
+                                            px + ((size_t)yy * (size_t)w + (size_t)xx) * 4u;
+                                        fwrite(q, 1, 3, fp);
+                                    }
+                                fclose(fp);
+                                ql_coord_t gw = 0, gh = 0;
+                                ql_gfx_gl_size(gfx, &gw, &gh);
+                                printf("已抓下窗口帧 %s（绘制 %dx%d，窗口 %dx%d，"
+                                       "布局 %dx%d）\n", wd, w, h, (int)gw, (int)gh,
+                                       (int)ui->width, (int)ui->height);
+                            }
+                        }
+                        free(px);
+                    }
+                }
+            }
             need_full = 0;
             if (want_stats && s_frame_n < EX_FRAME_SAMPLES) {
                 static struct timespec t_prev;

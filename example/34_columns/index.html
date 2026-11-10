@@ -1,0 +1,78 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">多栏：column-count / column-width / column-rule</div>
+    <div class="badge">贪心分栏 · 不劈子节点</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. <code>column-count: 3</code>：按顺序塞满一栏再换下一栏</div>
+    <div class="cols3">
+      <div class="card">卡片 1</div>
+      <div class="card">卡片 2</div>
+      <div class="card">卡片 3</div>
+      <div class="card">卡片 4</div>
+      <div class="card">卡片 5</div>
+      <div class="card">卡片 6</div>
+    </div>
+    <div class="hint">栏宽 =（容器宽 - 间距×(栏数-1)）/ 栏数。本库<b>不把子节点劈到两栏</b>，
+      所以每栏放几个由"塞不下就换栏"决定；容器没给高度时会先算一个<b>等高栏高</b>，
+      内容 6 项正好两两一组。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. <code>column-width: 160px</code>：栏数由容器宽反推</div>
+    <div class="cols-auto">
+      <div class="card tall">自适应 1（高一些）</div>
+      <div class="card">自适应 2</div>
+      <div class="card">自适应 3</div>
+      <div class="card">自适应 4</div>
+      <div class="card">自适应 5</div>
+    </div>
+    <div class="hint">容器内容宽 704、缝 16：最多能放下 4 栏 160px（(704+16)/(160+16)=4.09）。
+      高度 auto 时做等高平衡，内容不齐就少用一栏 —— 所以这里是 3 栏而不是硬塞 4 栏；
+      容器一变窄，最大栏数就跟着少。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. <code>column-rule</code>：栏间分隔线（实线 / 虚线）</div>
+    <div class="row">
+      <div class="cols2 rule-solid">
+        <div class="line">实线分隔 1</div>
+        <div class="line">实线分隔 2</div>
+        <div class="line">实线分隔 3</div>
+        <div class="line">实线分隔 4</div>
+      </div>
+      <div class="cols2 rule-dashed">
+        <div class="line">虚线分隔 1</div>
+        <div class="line">虚线分隔 2</div>
+        <div class="line">虚线分隔 3</div>
+        <div class="line">虚线分隔 4</div>
+      </div>
+    </div>
+    <div class="hint">分隔线画在两条缝的正中间，高度取容器内容盒高；
+      <code>column-rule-width: 0</code> 或 <code>none</code> 时整条不画。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. 容器给了 <code>height</code>：放不下就换栏（内容不丢）</div>
+    <div class="cols-fixed">
+      <div class="tiny">1</div>
+      <div class="tiny">2</div>
+      <div class="tiny">3</div>
+      <div class="tiny">4</div>
+      <div class="tiny">5</div>
+      <div class="tiny">6</div>
+      <div class="tiny">7</div>
+      <div class="tiny">8</div>
+    </div>
+    <div class="hint">容器高 120、每项 32：每栏放 3 项，两栏放 6 项，
+      剩下 2 项挤在最后一栏里（宁可溢出也不丢内容）。</div>
+  </div>
+
+  <div class="note">
+    多栏在 MCU 档是<b>可裁</b>的（<code>QL_FEAT_CSS_COLUMNS=0</code>，默认关）：
+    关掉之后 <code>column-*</code> 在构建期报错。<br>
+    不支持 <code>column-span: all</code>，也不会把一个子节点拆到两栏 —— 这两条是
+    "能在 MCU 上把代码写到几 KB"的取舍，不是漏做。
+  </div>
+</div>

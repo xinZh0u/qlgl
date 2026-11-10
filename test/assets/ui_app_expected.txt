@@ -60,7 +60,9 @@ static const QLUIStyle ui_app_styles[] = {
       .ds_dx = 0, .ds_dy = 0, .ds_blur = 0, .ds_a = 0, .ds_color = 0x000000u,
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
-      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0 },
+      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0,
+      .column_count = 0, .column_rule_w = 0, .column_rule_style = 3, .column_rule_color = 0x000000u,
+      .column_width = { 0, QL_UI_UNIT_AUTO } },
     { .bg_color = 0x000000, .text_color = 0x000000,
       .bg_color2 = 0x000000,
       .border_color4 = { 0x000000, 0x000000, 0x000000, 0x000000 },
@@ -108,7 +110,9 @@ static const QLUIStyle ui_app_styles[] = {
       .ds_dx = 0, .ds_dy = 0, .ds_blur = 0, .ds_a = 0, .ds_color = 0x000000u,
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
-      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0 },
+      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0,
+      .column_count = 0, .column_rule_w = 0, .column_rule_style = 3, .column_rule_color = 0x000000u,
+      .column_width = { 0, QL_UI_UNIT_AUTO } },
     { .bg_color = 0x000000, .text_color = 0x000000,
       .bg_color2 = 0x000000,
       .border_color4 = { 0x000000, 0x000000, 0x000000, 0x000000 },
@@ -156,7 +160,9 @@ static const QLUIStyle ui_app_styles[] = {
       .ds_dx = 0, .ds_dy = 0, .ds_blur = 0, .ds_a = 0, .ds_color = 0x000000u,
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
-      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0 },
+      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0,
+      .column_count = 0, .column_rule_w = 0, .column_rule_style = 3, .column_rule_color = 0x000000u,
+      .column_width = { 0, QL_UI_UNIT_AUTO } },
 };
 
 static const char ui_app_text[] = "logo.bmp\000hi\000";

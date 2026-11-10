@@ -186,6 +186,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1508,6 +1509,17 @@ index.html + index.css ──qltext cc──┤
 2. <code>vertical-align: middle/bottom</code> 的余量要用"自然内容高"
    （<code>table_cell_content_h()</code>），拿撑开后的 <code>border_box.h</code> 永远算不出余量；
 3. 文字直接挂在单元格上时（没有子节点），要挪 <code>content_box.y</code> 而不是子节点。</p>
+<h4 id="layout_columns_children">多栏：排一遍 + 二分 + 平移（<code>layout_columns_children()</code>）</h4>
+<p>多栏<strong>不重排</strong>。顺序是：按栏宽在 <code>(0,0)</code> 把每个子节点正常排一遍（顺带得到高度）
+→ 定栏高（容器有 <code>height</code> 用它；否则用 <code>columns_needed()</code> 二分找"最小能塞进 N 栏"
+的高度，纯算术、不动盒子）→ 顺序贪心分配，用 <code>translate_subtree()</code> 挪到最终位置。</p>
+<p>三个要点：
+1. <strong><code>cursor</code> 是绝对坐标，<code>target</code> 是栏高</strong>。比较必须写成
+   <code>(cursor - col_top) + advance &gt; target</code>，否则从第二个子节点起永远"放不下"；
+2. <strong>不劈子节点</strong>。断点若允许落在文字行中间，绘制/命中/滚动/<code>paint_box</code> 剪枝
+   全都要引入"盒内分裂"——与 MCU 目标冲突。塞不下就换栏，最后一栏放不下就溢出；
+3. <strong><code>column-rule</code> 的 solid 不能走 <code>paint_dash_run()</code></strong>（它把 solid 也切成
+   <code>3w + 2w</code> 的虚线），要单独 <code>fill_rect</code>。</p>
 <h4 id="blit-scissor">一个只在脏区重绘时出现的坑：blit 也受 scissor 影响</h4>
 <p>混合模式要读"图层的背景"，做法是先把目标表面上那一块 <code>glBlitFramebuffer</code> 到
 一张纹理。<strong>blit 会被 scissor 裁</strong>，而背景纹理的目标矩形在 <code>(0,0)</code>、脏区重绘时
@@ -1569,8 +1581,8 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 </tr>
 <tr>
 <td>表格</td>
-<td>✅ <code>display: table</code> 全家（B7）；<code>table-layout: auto</code> 按 fixed 算</td>
-<td><code>colgroup</code> 列宽声明、<code>caption-side: bottom</code> 没有</td>
+<td>✅ <code>display: table</code> 全家（B7）；<code>table-layout: auto/fixed</code>；<code>&lt;colgroup&gt;/&lt;col&gt;</code> 列宽</td>
+<td><code>caption-side: bottom</code> 没有</td>
 </tr>
 <tr>
 <td>伪类</td>
@@ -1609,8 +1621,13 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 </tr>
 <tr>
 <td>表格</td>
-<td>✅ <code>display: table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + <code>colspan/rowspan</code> + <code>border-collapse</code>（B7）</td>
-<td><code>table-layout: auto</code> 按 fixed 算；<code>colgroup</code> 列宽声明没有</td>
+<td>✅ <code>display: table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + <code>table-layout: auto/fixed</code> + <code>colspan/rowspan</code> + <code>border-collapse</code> + <code>&lt;colgroup&gt;/&lt;col&gt;</code>（B7）</td>
+<td><code>caption-side: bottom</code>、<code>empty-cells</code> 没有</td>
+</tr>
+<tr>
+<td>多栏</td>
+<td>✅ <code>column-count</code> / <code>column-width</code> / <code>columns</code> / <code>column-gap</code> / <code>column-rule*</code>（B7 后半，贪心分栏）</td>
+<td><code>column-span: all</code>、真·跨栏分裂没有</td>
 </tr>
 <tr>
 <td><code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> / 组 <code>opacity</code></td>

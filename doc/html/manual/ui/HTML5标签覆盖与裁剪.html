@@ -186,6 +186,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -763,13 +764,13 @@ main img.shot { max-width: 100%; }
 <td>表格</td>
 <td><code>&lt;col&gt;</code></td>
 <td><code>TABLE</code></td>
-<td>✅ 可用（<code>display: none</code>）</td>
+<td>✅ 可用（<code>display: table-column</code>，<strong>只提供列宽</strong>，不产生盒子；<code>span</code> 展开成多列）</td>
 </tr>
 <tr>
 <td>表格</td>
 <td><code>&lt;colgroup&gt;</code></td>
 <td><code>TABLE</code></td>
-<td>✅ 可用（<code>display: none</code>）</td>
+<td>✅ 可用（<code>display: table-column-group</code>，同上）</td>
 </tr>
 <tr>
 <td>表格</td>
@@ -1017,7 +1018,7 @@ P4a/P4b 加 <code>pre</code>/<code>sub</code>/<code>sup</code>、P5 加 <code>te
 <td>10（<code>table</code> 全家）</td>
 <td>✅ <strong>B7 已完成（2026-11-11）</strong></td>
 <td>⚙️ 默认关</td>
-<td>表格布局（固定列宽、<code>colspan/rowspan</code>、<code>border-collapse</code>）。实现见 <a href="CSS3覆盖与裁剪.html">CSS 覆盖表 §18.12</a>，教程见<a href="../../tutorial/22_table.html">表格</a></td>
+<td>表格布局（<code>table-layout: auto/fixed</code>、<code>colspan/rowspan</code>、<code>border-collapse</code>、<code>&lt;colgroup&gt;/&lt;col&gt;</code> 列宽）。实现见 <a href="CSS3覆盖与裁剪.html">CSS 覆盖表 §18.12</a>，教程见<a href="../../tutorial/22_table.html">表格</a></td>
 </tr>
 <tr>
 <td><code>IMAGE</code> ✅</td>

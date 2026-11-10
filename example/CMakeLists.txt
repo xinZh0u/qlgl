@@ -57,6 +57,7 @@ set(QL_EXAMPLES
     31_filter
     32_transform
     33_table
+    34_columns
 )
 
 foreach(e ${QL_EXAMPLES})

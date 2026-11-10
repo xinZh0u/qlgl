@@ -155,7 +155,8 @@ QL_TEST_BEGIN("test_table")
         /* 首行写了两列的固定宽，第三列吃掉剩下的 */
         ui = render_html(
             "<table id=t><tr><td class=f1>a</td><td class=f2>b</td><td>c</td></tr></table>",
-            "#t{width:300px}td{padding:0}.f1{width:40px}.f2{width:60px}");
+            "#t{width:300px;table-layout:fixed}td{padding:0}"
+            ".f1{width:40px}.f2{width:60px}");
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
             QLUINodeRT *c0 = nth_cell(ui, 0);
@@ -328,12 +329,109 @@ QL_TEST_BEGIN("test_table")
         }
     }
 
-    /* ---------- 8. 不该支持的写法 ---------- */
+    /* ---------- 8. table-layout: auto：列宽跟内容走 ---------- */
+    {
+        /* 第一列长文本、第二列短文本：auto 下第一列要更宽 */
+        const char *html = "<table id=t><tr><td class=long>很长很长的一段文字</td>"
+                           "<td class=short>a</td></tr></table>";
+        QLUIRoot *ui = render_html(html, "#t{width:300px}td{padding:0;font-size:12px}"
+                                         "#t{table-layout:auto}");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *a = nth_cell(ui, 0);
+            QLUINodeRT *b = nth_cell(ui, 1);
+            QL_CHECK(a != NULL && b != NULL);
+            if (a != NULL && b != NULL) {
+                printf("  auto：长文本列 w=%d，短文本列 w=%d\n", (int)a->border_box.w,
+                       (int)b->border_box.w);
+                QL_CHECK((int)a->border_box.w > (int)b->border_box.w * 3);
+                QL_CHECK_EQ((int)(a->border_box.w + b->border_box.w), 300);
+            }
+            ql_ui_free(ui);
+        }
+
+        /* 同样的 HTML 换成 fixed：两列等分（内容说了不算） */
+        ui = render_html(html, "#t{width:300px}td{padding:0;font-size:12px}"
+                               "#t{table-layout:fixed}");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *a = nth_cell(ui, 0);
+            QL_CHECK(a != NULL);
+            if (a != NULL) {
+                printf("  fixed：长文本列 w=%d（等分 150）\n", (int)a->border_box.w);
+                QL_CHECK_EQ((int)a->border_box.w, 150);
+            }
+            ql_ui_free(ui);
+        }
+    }
+
+    /* ---------- 9. <colgroup> / <col> 的列宽 ---------- */
+    {
+        /* fixed：<col> 的 width 优先于首行 */
+        QLUIRoot *ui = render_html(
+            "<table id=t><colgroup><col class=c1><col class=c2></colgroup>"
+            "<tr><td>a</td><td>b</td></tr></table>",
+            "#t{width:300px;table-layout:fixed}td{padding:0}"
+            "td{width:250px}.c1{width:40px}.c2{width:60px}");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *a = nth_cell(ui, 0);
+            QLUINodeRT *b = nth_cell(ui, 1);
+            QL_CHECK(a != NULL && b != NULL);
+            if (a != NULL && b != NULL) {
+                /* `<col>` 的 40/60 是比例：加起来不足 300，余量按比例摊回（40:60 → 120:180） */
+                printf("  <col> + fixed：w = %d, %d\n", (int)a->border_box.w,
+                       (int)b->border_box.w);
+                QL_CHECK_EQ((int)a->border_box.w, 120);
+                QL_CHECK_EQ((int)b->border_box.w, 180);
+            }
+            ql_ui_free(ui);
+        }
+
+        /* auto：<col> 的宽度是那一列的下界（内容更宽时取内容） */
+        ui = render_html(
+            "<table id=t><colgroup><col class=c1></colgroup>"
+            "<tr><td>a</td><td>bbbbbbbbbbbbbbbbbbbb</td></tr></table>",
+            "#t{width:300px;table-layout:auto}td{padding:0;font-size:12px}"
+            ".c1{width:120px}");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *a = nth_cell(ui, 0);
+            QL_CHECK(a != NULL);
+            if (a != NULL) {
+                printf("  <col> + auto：第一列 w=%d（下界 120）\n", (int)a->border_box.w);
+                QL_CHECK((int)a->border_box.w >= 120);
+            }
+            ql_ui_free(ui);
+        }
+
+        /* <col span> 展开 */
+        ui = render_html(
+            "<table id=t><colgroup><col class=half span=2></colgroup>"
+            "<tr><td>a</td><td>b</td></tr></table>",
+            "#t{width:300px;table-layout:fixed}td{padding:0}.half{width:90px}");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *a = nth_cell(ui, 0);
+            QLUINodeRT *b = nth_cell(ui, 1);
+            QL_CHECK(a != NULL && b != NULL);
+            if (a != NULL && b != NULL) {
+                /* `<col span=2>` 一条规则管两列：各 90，余量再按比例摊平 → 150/150 */
+                printf("  <col span=2>：w = %d, %d\n", (int)a->border_box.w,
+                       (int)b->border_box.w);
+                QL_CHECK_EQ((int)a->border_box.w, 150);
+                QL_CHECK_EQ((int)b->border_box.w, 150);
+            }
+            ql_ui_free(ui);
+        }
+    }
+
+    /* ---------- 10. 不该支持的写法 ---------- */
     {
         QL_CHECK(rejects("<div id=r></div>", "#r{table-layout:auto-fixed}", "table-layout"));
         QL_CHECK(rejects("<div id=r></div>", "#r{border-collapse:half}", "border-collapse"));
         QL_CHECK(rejects("<div id=r></div>", "#r{border-spacing:10%}", "border-spacing"));
-        QL_CHECK(rejects("<div id=r></div>", "#r{display:table-column}", "display"));
+        QL_CHECK(rejects("<div id=r></div>", "#r{display:table-columnz}", "display"));
         QL_CHECK(rejects("<div id=r>x</div>", "#r{vertical-align:text-top}", "vertical-align"));
     }
 

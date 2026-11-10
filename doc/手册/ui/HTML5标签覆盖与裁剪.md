@@ -110,8 +110,8 @@
 | 媒体 | `<track>` | `EMBED` | ✅ 占位 |
 | 媒体 | `<video>` | `EMBED` | ✅ 占位 |
 | 表格 | `<caption>` | `TABLE` | ✅ 可用 |
-| 表格 | `<col>` | `TABLE` | ✅ 可用（`display: none`） |
-| 表格 | `<colgroup>` | `TABLE` | ✅ 可用（`display: none`） |
+| 表格 | `<col>` | `TABLE` | ✅ 可用（`display: table-column`，**只提供列宽**，不产生盒子；`span` 展开成多列） |
+| 表格 | `<colgroup>` | `TABLE` | ✅ 可用（`display: table-column-group`，同上） |
 | 表格 | `<table>` | `TABLE` | ✅ 可用 |
 | 表格 | `<tbody>` | `TABLE` | ✅ 可用 |
 | 表格 | `<td>` | `TABLE` | ✅ 可用 |
@@ -169,7 +169,7 @@ P4a/P4b 加 `pre`/`sub`/`sup`、P5 加 `textarea`）、
 | `CORE` | 恒开 | 62 | ✅ | ✅ | 无（永远有） |
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
 | `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | 4/6 ✅ | ⚙️ 可裁 | 已做：`white-space: pre/pre-wrap/pre-line`、`vertical-align: sub/super`、两级字体族；未做：`ruby`/`rt`/`rp` 行内注音（要"注音排版"，PC/Mobile 档排期） |
-| `TABLE` | `QL_FEAT_CSS_TABLE`（与 CSS 表格包同一个开关） | 10（`table` 全家） | ✅ **B7 已完成（2026-11-11）** | ⚙️ 默认关 | 表格布局（固定列宽、`colspan/rowspan`、`border-collapse`）。实现见 [CSS 覆盖表 §18.12](../ui/CSS3覆盖与裁剪.html)，教程见[表格](../../tutorial/22_table.html) |
+| `TABLE` | `QL_FEAT_CSS_TABLE`（与 CSS 表格包同一个开关） | 10（`table` 全家） | ✅ **B7 已完成（2026-11-11）** | ⚙️ 默认关 | 表格布局（`table-layout: auto/fixed`、`colspan/rowspan`、`border-collapse`、`<colgroup>/<col>` 列宽）。实现见 [CSS 覆盖表 §18.12](../ui/CSS3覆盖与裁剪.html)，教程见[表格](../../tutorial/22_table.html) |
 | `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG/GIF`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM` / `QL_FEAT_IMG_LIBJPEG`（JPEG） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `CONTROL` | `QL_FEAT_UI_CONTROL` | 12（`input select option optgroup` + `progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | **需要专用运行期状态或覆盖层**：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；`textarea` 复用输入框池 |
 | `EMBED` ✅ | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ✅（**占位是零成本的**，保留也几乎不花 Flash） | **只做占位盒 / 不产生盒子**，见 §5 |

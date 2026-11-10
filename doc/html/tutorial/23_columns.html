@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>多栏：`column-count` / `column-width` / `column-rule` · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../tutorial/23_columns.html' class='active'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="column-count-column-width-column-rule">多栏：<code>column-count</code> / <code>column-width</code> / <code>column-rule</code></h1>
+<p><img src="../img/34-columns.png" alt="三栏卡片、按宽度反推栏数、栏间分隔线、确定高度时换栏" width="620"></p>
+<p>完整程序：<code>example/34_columns/</code></p>
+<p>一页要放"很多张小卡片"，最省事的不是 <code>flex</code> 也不是 <code>grid</code>，而是把容器分成几栏、
+内容从上往下填，填满一栏换下一栏 —— 这就是 CSS 的多栏：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">cards</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">column-count</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w"> </span><span class="k">column-gap</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">card</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">margin-bottom</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;cards&quot;</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;card&quot;</span><span class="p">&gt;</span>卡片 1<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;card&quot;</span><span class="p">&gt;</span>卡片 2<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+  <span class="cm">&lt;!-- ... --&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<hr />
+<h2 id="1">1. 栏数从哪来</h2>
+<table>
+<thead>
+<tr>
+<th>你写的</th>
+<th>栏数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>column-count: 3</code></td>
+<td>3 栏（上限 <code>QL_CFG_UI_COLUMN_MAX</code> = 8）</td>
+</tr>
+<tr>
+<td><code>column-width: 160px</code></td>
+<td><code>floor((容器内容宽 + 缝) / (160 + 缝))</code></td>
+</tr>
+<tr>
+<td>两个都写</td>
+<td>取上面两个里<strong>小的</strong>那个</td>
+</tr>
+</tbody>
+</table>
+<p>栏宽则是 <code>(容器内容宽 - 缝 × (栏数 - 1)) / 栏数</code>。
+<code>column-gap</code> 不写时按 CSS 的 <code>normal</code> 算成 16px（本库用 <code>1em≈16px</code> 的近似）。</p>
+<p>所以 <code>column-width</code> 是"响应式"的写法：容器一变窄，栏数自动变少，不用写 <code>@media</code>。</p>
+<h2 id="2">2. 内容怎么分配（本库的取舍）</h2>
+<p>按<strong>文档顺序</strong>往当前栏里塞，塞不下（会超过栏高）就换下一栏。
+<strong>不会把一个子节点劈成两栏</strong> —— 一个很高的卡片会占满它所在的那一栏。</p>
+<p>栏高怎么定：</p>
+<ul>
+<li>容器写了 <code>height</code> → 就用它当栏高，放不下就换栏；<strong>最后一栏放不下就溢出</strong>
+  （宁可溢出也不丢内容）；</li>
+<li>容器高度 <code>auto</code> → 先求一个"最小能塞进 N 栏的栏高"（<strong>等高栏</strong>），
+  子节点高度不齐时可能用不满 N 栏，但每栏都不会特别空。</li>
+</ul>
+<p>这条取舍的代价写进了《CSS3 覆盖与裁剪》§18.13：真·分栏的断点可能落在文字行中间，
+要把同一个节点劈成两段来画，而本库的绘制、命中、滚动、脏区剪枝全都建立在
+"一个节点一个盒"上。对嵌入式 UI 来说，"卡片列表分两三栏"才是常见需求。</p>
+<h2 id="3">3. 栏间分隔线</h2>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">news</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">column-rule</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#D0D7DE</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 也支持 1px dashed / dotted */</span>
+</code></pre></div>
+
+<ul>
+<li>画在两条缝的<strong>正中间</strong>，高度取容器内容盒高；</li>
+<li><code>column-rule-width: 0</code> 或 <code>column-rule-style: none</code> 时整条不画；</li>
+<li>颜色不写就是 <code>currentColor</code>；</li>
+<li>它是"装饰"，不占布局：栏宽已经由 <code>column-gap</code> 决定。</li>
+</ul>
+<h2 id="4-grid">4. 什么时候用多栏、什么时候用 grid</h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>选哪个</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一堆<strong>等高</strong>的小卡片，顺序不重要（标签墙、快捷入口）</td>
+<td>多栏最省事</td>
+</tr>
+<tr>
+<td>卡片高度不一，且要按行对齐</td>
+<td><code>grid</code>（多栏会造成每栏顶部错位）</td>
+</tr>
+<tr>
+<td>需要"每栏标题 + 内容"的成组结构</td>
+<td><code>flex</code>（多栏会把标题和内容拆到不同栏）</td>
+</tr>
+<tr>
+<td>长文正文分栏</td>
+<td>多栏（但注意：本库不劈子节点，长段落会整段落到一栏）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="5">5. 裁剪</h2>
+<p>多栏是<strong>能力包</strong> <code>QL_FEAT_CSS_COLUMNS</code>：</p>
+<ul>
+<li>PC / Mobile：默认开（实测 +640 B <code>.text</code>）；</li>
+<li>MCU：默认关。关掉之后 <code>column-*</code> 在<strong>构建期报错</strong>（不静默降级）。</li>
+</ul>
+<h2 id="6">6. 不支持的部分</h2>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>column-span: all</code></td>
+<td>要打断"盒内分裂"的不变量（同上）</td>
+</tr>
+<tr>
+<td><code>column-fill</code>、<code>break-before/after/inside</code></td>
+<td>GUI 里几乎用不到；断页是打印的语义</td>
+</tr>
+<tr>
+<td>百分比 <code>column-gap</code></td>
+<td>与 flex 共用 <code>gap_col</code>，只存 px</td>
+</tr>
+</tbody>
+</table>
+<p>这些都<strong>构建期报错</strong>，不会悄悄当成没写。</p>
+<div class='pager'>
+<a href='../tutorial/22_table.html'><span class='dir'>上一页</span>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

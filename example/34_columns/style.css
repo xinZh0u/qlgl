@@ -1,0 +1,139 @@
+/*
+ * B7 后半：多栏。白底浅色主题（见 ../README.md 的"约定"）。
+ *
+ * 多栏容器的子节点一律按**块级**处理（行内内容不分栏），所以每个子节点都写成块。
+ */
+#root {
+  width: 760px;
+  padding: 20px 28px 24px 28px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  font-size: 10px;
+  color: #57606A;
+  background-color: #F6F8FA;
+  border-radius: 9px;
+  padding: 3px 8px;
+}
+
+.sec {
+  margin-bottom: 22px;
+}
+
+.cap {
+  font-size: 11px;
+  color: #57606A;
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 10px;
+  color: #6E7781;
+  margin-top: 8px;
+  white-space: normal;
+  line-height: 16px;
+}
+
+.row {
+  display: flex;
+  gap: 24px;
+}
+
+code {
+  color: #9A6700;
+}
+
+.card {
+  height: 30px;
+  line-height: 30px;
+  padding-left: 8px;
+  margin-bottom: 6px;
+  background-color: #F6F8FA;
+  border-left: 3px solid #0969DA;
+  color: #1F2328;
+}
+
+.card.tall {
+  height: 52px;
+  line-height: 52px;
+}
+
+/* ---------- 1. count ---------- */
+
+.cols3 {
+  column-count: 3;
+  column-gap: 16px;
+}
+
+/* ---------- 2. width ---------- */
+
+.cols-auto {
+  column-width: 160px;
+  column-gap: 16px;
+}
+
+/* ---------- 3. rule ---------- */
+
+.cols2 {
+  width: 336px;
+  column-count: 2;
+  column-gap: 20px;
+}
+
+.line {
+  height: 24px;
+  line-height: 24px;
+  font-size: 11px;
+  color: #1F2328;
+}
+
+.rule-solid {
+  column-rule: 1px solid #D0D7DE;
+}
+
+.rule-dashed {
+  column-rule: 1px dashed #BC4C00;
+}
+
+/* ---------- 4. 确定高度 ---------- */
+
+.cols-fixed {
+  width: 400px;
+  height: 120px;
+  column-count: 2;
+  column-gap: 16px;
+  /* 溢出的那两项会画到盒子外面：留出地方，别压住下面的说明 */
+  margin-bottom: 62px;
+}
+
+.tiny {
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  color: #FFFFFF;
+  background-color: #0969DA;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.note {
+  white-space: normal;
+  font-size: 10px;
+  color: #6E7781;
+  line-height: 17px;
+}

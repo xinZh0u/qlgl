@@ -186,6 +186,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -358,8 +359,12 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <td>blob v30（见 §18.11）</td>
 </tr>
 <tr>
-<td><strong>表格</strong>：<code>display: table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + <code>colspan</code>/<code>rowspan</code> + <code>border-spacing</code>/<code>collapse</code></td>
+<td><strong>表格</strong>：<code>display: table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + <code>table-layout: auto/fixed</code> + <code>colspan</code>/<code>rowspan</code> + <code>border-spacing</code>/<code>collapse</code> + <code>&lt;colgroup&gt;/&lt;col&gt;</code></td>
 <td>blob v31（见 §18.12）</td>
+</tr>
+<tr>
+<td><strong>多栏</strong>：<code>column-count</code> / <code>column-width</code> / <code>columns</code> / <code>column-gap</code> / <code>column-rule*</code>（贪心分栏 + 等高平衡）</td>
+<td>blob v32（见 §18.13）</td>
 </tr>
 </tbody>
 </table>
@@ -375,7 +380,7 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <tbody>
 <tr>
 <td><strong>PC/Mobile 必做</strong>（MCU 归能力包）</td>
-<td>多栏（B7 后半）；<code>@font-face</code> + 真字体栈、连字整形、双向（B8）；<code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code></td>
+<td><code>@font-face</code> + 真字体栈、连字整形、双向（B8）；<code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code></td>
 <td>§22</td>
 </tr>
 <tr>
@@ -2280,31 +2285,31 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 </tbody>
 </table>
 <hr />
-<h2 id="15">15. 多栏、分页、打印</h2>
+<h2 id="15-b7-mcu">15. 多栏、分页、打印（B7 后半 ✅ 已完成，MCU 归"大核"包）</h2>
 <table>
 <thead>
 <tr>
 <th>属性</th>
-<th>批次</th>
+<th>状态</th>
 <th>档位</th>
 <th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>columns</code> / <code>column-count</code> / <code>column-width</code></td>
-<td>B7</td>
+<td><code>column-count</code> / <code>column-width</code> / <code>columns</code> / <code>column-gap</code></td>
+<td>✅</td>
 <td>大核</td>
-<td>列高平衡要"先排一遍量高度、再排一遍落列"，是<strong>唯一真正与"一个节点一个盒"冲突</strong>的一项</td>
+<td>blob v32；<code>columns</code> 简写按"最长一个整数当栏数、带单位的当栏宽"拆</td>
 </tr>
 <tr>
-<td><code>column-rule</code> / <code>column-gap</code></td>
-<td>B7</td>
+<td><code>column-rule</code> / <code>-width</code> / <code>-style</code> / <code>-color</code></td>
+<td>✅</td>
 <td>大核</td>
-<td>画在两列之间的竖线，复用 <code>border</code> 的绘制路径</td>
+<td>复用 <code>border</code> 的虚线绘制（<code>paint_dash_run</code>），画在缝的正中间</td>
 </tr>
 <tr>
-<td><code>column-span</code> / <code>column-fill</code> / <code>break-*</code></td>
+<td><code>column-span: all</code> / <code>column-fill</code> / <code>break-*</code></td>
 <td>❌</td>
 <td>—</td>
 <td><code>S</code>：跨列要打断"盒内分裂"的不变量；<code>break-inside</code> 在 GUI 里几乎用不到</td>
@@ -2323,11 +2328,17 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 </tr>
 </tbody>
 </table>
-<p><strong>为什么排到 B7 而不是不做</strong>：长文阅读界面（设置页的帮助、<code>&lt;article&gt;</code> 正文）真的会用它，
-而且它是纯 CPU 的排版计算，PC 档毫无压力。MCU 档归"大核"包，默认关。</p>
-<p><strong>风险</strong>：<code>column-count</code> 的语义要求"列高尽量相等"，意味着<strong>同一份内容要排两遍</strong>
-（第一遍测总高、第二遍按目标列高断列）。这是 §2.1 里"布局边际成本 ×2"，所以它比
-Grid 贵 —— 但仍是我们自己的代码，没有第三方依赖。</p>
+<p><strong>实现收窄成"贪心分栏"</strong>（详见 §18.13）：按顺序把子节点塞进当前栏，塞不下就换下一栏，
+<strong>不把一个子节点劈到两栏</strong>。所以本项并没有真的"把一份内容排两遍"：</p>
+<ul>
+<li>容器给了 <code>height</code> → 直接用它当栏高，一遍排完（只多一次"量高度"的哑排）；</li>
+<li>容器高度 auto → 高度已经量出来了，栏高用<strong>二分</strong>在"纯算术"层面求最小可容纳值
+  （不重排），总代价是一次排版 + 十次左右"读 <code>border_box.h</code> 的循环"。</li>
+</ul>
+<p><strong>为什么不做真·分栏</strong>：真分栏要把每个子节点的绘制切成两段（断点可能在文字行中间），
+本库的绘制/命中/滚动全都建立在"一个节点一个盒"上。收益（长文自动分栏）在嵌入式 UI 里
+很小，而"卡片列表分两三栏"才是常见需求 —— 这一项用贪心就够了。</p>
+<p>教程见 <a href="../tutorial/23_columns.md">23_columns</a>，例程 <code>example/34_columns</code>。</p>
 <hr />
 <h2 id="16-b7-mcu">16. 表格（B7 前半 ✅ 已完成，MCU 归"大核"包）</h2>
 <table>
@@ -2350,13 +2361,13 @@ Grid 贵 —— 但仍是我们自己的代码，没有第三方依赖。</p>
 <td><code>table-layout: fixed</code></td>
 <td>✅</td>
 <td>大核</td>
-<td><strong>首行显式 <code>width</code> 决定列宽，其余等分</strong>；只排一遍</td>
+<td><strong>首行显式 <code>width</code>（或 <code>&lt;col&gt;</code>）决定列宽，其余等分</strong>；只排一遍</td>
 </tr>
 <tr>
-<td><code>table-layout: auto</code></td>
-<td>⚠️</td>
+<td><code>table-layout: auto</code>（默认）</td>
+<td>✅</td>
 <td>大核</td>
-<td>值接受，但<strong>按 fixed 算</strong>（列宽不跟内容变宽）。真 auto 要两遍"量 min/max-content"</td>
+<td>量每列的 min/max-content 后按可用宽度插值：余量按 max-content 比例摊，够了就压到 min-content</td>
 </tr>
 <tr>
 <td><code>border-collapse</code> / <code>border-spacing</code></td>
@@ -2384,9 +2395,9 @@ Grid 贵 —— 但仍是我们自己的代码，没有第三方依赖。</p>
 </tr>
 <tr>
 <td><code>&lt;colgroup&gt;</code> / <code>&lt;col&gt;</code> 列宽声明</td>
-<td>❌</td>
-<td>—</td>
-<td>标签存在但 <code>display: none</code>；要列宽就给 <code>td</code> 写 <code>width</code></td>
+<td>✅</td>
+<td>大核</td>
+<td><code>display: table-column(-group)</code>；<code>fixed</code> 下优先于首行，<code>auto</code> 下是那一列的<strong>下界</strong>；<code>&lt;col span&gt;</code> 展开成多列</td>
 </tr>
 <tr>
 <td><code>empty-cells</code> / <code>table-row</code> 的背景</td>
@@ -3410,13 +3421,40 @@ CPU 原来那套"两趟盒式 ≈ 钟形"与 GL 的高斯形状不同，同一�
 <li><strong><code>collapse</code> 的相邻边框</strong>：把每个单元格朝左上挪"自己那半条边框"、同时把尺寸补回
    同样的量，两个边框就落在同一像素上；右/下边缘仍落在网格线上（不挪则外框会跑出去）。</li>
 </ol>
+<h4 id="table-layout-autominmax-content"><code>table-layout: auto</code>：min/max-content 之间插值</h4>
+<p>第 2 遍（定列宽）有两条路，<code>s-&gt;table_layout == 0</code> 走 auto：</p>
+<ol>
+<li>单列单元格各量一次 <strong>max-content</strong>（<code>max_content_main</code>）与 <strong>min-content</strong>
+   （最长连续非空白段，中文按整句算），取该列所有单元格的最大值 → <code>pref[]</code> / <code>floorw[]</code>；</li>
+<li><code>colspan &gt; 1</code> 的单元格：它覆盖的列宽之和不够就<strong>均摊补差额</strong>（还不开循环，只做一遍）；</li>
+<li>三种情形落定：
+   - <code>avail &gt;= Σpref</code> → 余量<strong>按 <code>pref</code> 比例</strong>摊给各列（表格式块级，盒子仍撑满容器，
+     所以余量只能摊到列上 —— 这一点与浏览器"表格盒子跟着内容走"不同，见 §19.1 的受限表）；
+   - <code>avail &lt;= Σfloor</code> → 直接取 <code>floorw</code>（宁可溢出也不把字压碎）；
+   - 中间 → 按 <code>[floor, pref]</code> 线性插值。</li>
+</ol>
+<h4 id="colgroup-col"><code>&lt;colgroup&gt;</code> / <code>&lt;col&gt;</code></h4>
+<p><code>display: table-column(-group)</code> 是<strong>真角色</strong>（不再是 <code>display: none</code>）：不产生盒子，
+只在第二遍里提供列宽。<code>&lt;col span&gt;</code> 用 <code>span</code> 属性（不是 <code>colspan</code>），构建期就展开成多列。
+<code>fixed</code> 下 <code>&lt;col&gt;</code> 的宽度<strong>优先于首行</strong>；<code>auto</code> 下它同时充当 <code>pref</code>/<code>floor</code> 的<strong>初值</strong>
+（内容更宽时取内容）。</p>
+<p>两个坑：</p>
+<ol>
+<li><strong>单元格宽度必须由列宽决定</strong>。<code>td{width:250px}</code> 在 fixed 下只是"这一列要 250"的申请，
+   列宽算完之后单元格必须填满整列。第一版没有这一步，<code>td{width}</code> 会把自己的 border-box
+   撑到 250，把列宽算出来的结果覆盖掉（<code>&lt;col&gt;</code> 明明写了 40，渲染出来还是 250）。
+   现在摆放前用 <code>table_force_cell_w()</code> 走 <code>style_copy</code> 把宽度改写成列宽。</li>
+<li><strong><code>&lt;col&gt;</code> 是空元素</strong>。不把 <code>col</code> 加进"空元素表"，<code>&lt;col&gt;</code> 会一路吞掉后面的兄弟节点，
+   报"结束标签不匹配"。</li>
+</ol>
 <h4 id="_8">明确不做的</h4>
-<p><code>table-layout: auto</code>（按 fixed 算）、<code>colgroup</code>/<code>col</code> 的列宽声明、<code>caption-side: bottom</code>、
-<code>empty-cells</code>、跨行内容超高时"按比例分配差额"。都在 §16 的表格里如实标着。</p>
+<p><code>caption-side: bottom</code>、<code>empty-cells</code>、跨行内容超高时"按比例分配差额"。
+都在 §16 的表格里如实标着。</p>
 <h4 id="_9">验证</h4>
-<p><code>test_table</code>（60 项）：标签 → 角色映射、等分/固定列宽、<code>colspan</code>/<code>rowspan</code> 的宽高、
-<code>border-spacing</code>、<code>collapse</code> 的像素级单线、<code>vertical-align</code> 三档（量第一行墨迹）、
-<code>caption</code> 宽度、5 条报错。</p>
+<p><code>test_table</code>（78 项）：标签 → 角色映射、等分/固定列宽、<code>auto</code> 的内容列宽
+（长文本列 &gt;3 倍于短文本列、同样内容下 fixed 仍是等分）、<code>colspan</code>/<code>rowspan</code> 的宽高、
+<code>&lt;col&gt;</code>/<code>&lt;col span&gt;</code> 在 fixed 与 auto 下的列宽、<code>border-spacing</code>、<code>collapse</code> 的像素级单线、
+<code>vertical-align</code> 三档（量第一行墨迹）、<code>caption</code> 宽度、5 条报错。</p>
 <h4 id="_10">代价与裁剪</h4>
 <table>
 <thead>
@@ -3460,23 +3498,142 @@ CPU 原来那套"两趟盒式 ≈ 钟形"与 GL 的高斯形状不同，同一�
 <tbody>
 <tr>
 <td><code>QL_FEAT_CSS_TABLE=0</code>（MCU 默认）</td>
-<td>140,728 B</td>
-<td>140,264 B</td>
+<td>141,624 B</td>
+<td>140,268 B</td>
 </tr>
 <tr>
-<td><code>QL_FEAT_CSS_TABLE=1</code></td>
-<td>143,884 B</td>
-<td>140,264 B</td>
+<td><code>QL_FEAT_CSS_TABLE=1</code>（多栏仍关）</td>
+<td>146,956 B</td>
+<td>140,268 B</td>
 </tr>
 <tr>
 <td><strong>差额</strong></td>
-<td><strong>+3,156 B（+2.2%）</strong></td>
+<td><strong>+5,332 B（+3.8%）</strong></td>
 <td><strong>0</strong>（布局用 24 字节栈，不占静态 RAM）</td>
 </tr>
 </tbody>
 </table>
-<p>比 Grid（4,528 B）便宜，比 border-image（2,176 B）贵一点 —— 主要成本在那个
-"每列还被占几行"的记账与五遍扫描的分支。</p>
+<p>（<code>table-layout: auto</code> 与 <code>&lt;col&gt;</code> 落地前是 +3,156 B；auto 的两遍 min/max-content 测量
+与 <code>&lt;col&gt;</code> 的列宽收集又加了约 2.2 KB。）</p>
+<p>比 Grid（4,528 B）贵一些、比 border-image（2,176 B）贵一倍多 —— 主要成本是
+"每列还被占几行"的记账、五遍扫描的分支，以及 auto 的 min/max-content 测量。</p>
+<h3 id="1813-b7-column-">18.13 B7 后半落地：多栏（<code>column-*</code>）</h3>
+<p>多栏<strong>不是</strong>"把一份内容排两遍"。本库的做法是三步，且只有第一步真的排版：</p>
+<table>
+<thead>
+<tr>
+<th>步</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>按栏宽把每个子节点在 <code>(0,0)</code> 排一遍（这一次就是正常的 <code>layout_node</code>），顺带记下高度</td>
+</tr>
+<tr>
+<td>2</td>
+<td>定栏高：容器有 <code>height</code> 就用它；否则<strong>二分</strong>找"最小能让内容塞进 N 栏"的栏高（纯算术，不重排）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>按顺序贪心分配 + <code>translate_subtree</code> 平移到最终位置（<strong>不重排</strong>）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>栏数</strong>怎么来（<code>n</code>）：</p>
+<div class="highlight"><pre><span></span><code>n = column_count                      /* 只给了栏数 */
+n = floor((宽 + 缝) / (栏宽 + 缝))     /* 只给了栏宽 */
+n = min(column_count, 上一个式子)     /* 两个都给：取小的 */
+</code></pre></div>
+
+<p>然后 <code>栏宽 = (容器内容宽 - 缝×(n-1)) / n</code>，上限 <code>QL_CFG_UI_COLUMN_MAX</code>（8）。
+<code>column-gap</code> 与 flex 共用 <code>gap_col</code> 字段；没写时按 CSS 的 <code>normal</code>≈16px 算。</p>
+<p><strong>为什么"不劈子节点"这条要写死</strong>：真分栏的断点可能落在文字行中间，需要把同一个节点的
+绘制切成两段 —— 而本库的绘制、命中测试、滚动、<code>paint_box</code> 剪枝全都建立在"一个节点
+一个盒"上。要支持就得引入"盒内分裂"整套机制，与 MCU 目标直接冲突。
+所以：<strong>一个子节点整体落到某一栏</strong>，塞不下就换栏（空栏至少放一个，避免死循环）；
+最后一栏放不下就<strong>溢出</strong>（宁可溢出也不丢内容）。</p>
+<p><strong>踩过的坑</strong>：</p>
+<ol>
+<li><strong><code>cursor</code> 与 <code>target</code> 单位不同</strong>。<code>cursor</code> 是绝对坐标（<code>content_y + 已用高度</code>），
+   <code>target</code> 是"栏高"。第一版直接写 <code>cursor + adv &gt; target</code>，于是从第二个子节点起
+   永远判定为"放不下"，每栏只放一个、其余全堆在最后一栏（例程 34 第一节一跑就现形）。
+   正确的是 <code>(cursor - col_top) + adv &gt; target</code>。</li>
+<li><strong>均分栏高不等于"等高"</strong>。<code>ceil(总高/n)</code> 在子节点高度不齐时会让第一栏连一个高个子
+   都塞不下（同上现象）。所以改成二分求"最小可容纳栏高"——栏高越大需要的栏数越少，
+   这个谓词是单调的，二分 12 次足够；代价是纯算术重扫，不打乱任何盒子。</li>
+<li><strong><code>column-rule</code> 不是 <code>border</code></strong>。<code>paint_dash_run()</code> 会把"solid"也切成
+   <code>3w + 2w</code> 的虚线，直接复用会画成一串短横线。solid 要走一次 <code>fill_rect</code>。</li>
+</ol>
+<h4 id="_11">绘制</h4>
+<p>栏间分隔线画在<strong>背景/边框之上、内容之下</strong>（<code>render_node_inner</code> 里），
+x 取缝的中点，高度取内容盒高；<code>column_rule_width == 0</code> 或 <code>style == none</code> 时整条不画，
+颜色 0 表示 <code>currentColor</code>。</p>
+<h4 id="_12">验证</h4>
+<p><code>test_columns</code>（34 项）：栏数三种来源、栏宽公式、等高平衡（4 项 2 栏 → 每栏 2 项、
+容器高 40）、确定高度下"每栏 1 项 + 剩余溢出"、<code>column-rule</code> 的像素级检查
+（缝中点 1px 红、<code>width:0</code> 不画）、5 条报错。</p>
+<h4 id="_13">代价与裁剪</h4>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QLUIStyle</code></td>
+<td>352 → <strong>364 B</strong>（<code>column_count</code> / <code>column_rule_*</code> / <code>column_width</code>）</td>
+</tr>
+<tr>
+<td><code>QLUINodeRT</code></td>
+<td>+4 B（<code>col_n</code> / <code>col_w</code>，绘制分隔线要用；运行期结构，不进 blob）</td>
+</tr>
+<tr>
+<td>编译开关</td>
+<td><code>QL_FEAT_CSS_COLUMNS</code>（<strong>MCU 默认关</strong>）</td>
+</tr>
+<tr>
+<td>裁掉之后</td>
+<td><code>column-*</code> <strong>构建期报错</strong>；布局退回普通块流</td>
+</tr>
+<tr>
+<td>容量上限</td>
+<td><code>QL_CFG_UI_COLUMN_MAX</code>(8)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MCU 实测</strong>（mps2-an386，同一把尺子，见 §21.2 的汇总表）：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code>.text</code></th>
+<th><code>.bss</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_FEAT_CSS_COLUMNS=0</code>（MCU 默认）</td>
+<td>141,624 B</td>
+<td>140,268 B</td>
+</tr>
+<tr>
+<td><code>QL_FEAT_CSS_COLUMNS=1</code>（表格仍关）</td>
+<td>142,264 B</td>
+<td>140,268 B</td>
+</tr>
+<tr>
+<td><strong>差额</strong></td>
+<td><strong>+640 B（+0.5%）</strong></td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table>
+<p>两个都开：147,596 B（+5,972 B）。多栏比表格（+5,332 B）便宜一个数量级：
+没有列宽/行高那五遍扫描，只有"排一遍 + 二分 + 平移"。</p>
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
 <h3 id="191">19.1 语料实测（最可靠，推荐引用这一份）</h3>
@@ -4257,20 +4414,20 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td><code>CSS_TABLE</code></td>
 <td><code>QL_FEAT_CSS_TABLE</code></td>
-<td><strong>B7 ✅</strong>：<code>display: table</code> 全家 + <code>&lt;table&gt;</code> 标签 + 固定列宽 + <code>colspan/rowspan</code> + <code>border-collapse</code>（<code>table-layout: auto</code> 的内容自适应还没做，按 fixed 算）</td>
+<td><strong>B7 ✅</strong>：<code>display: table</code> 全家 + <code>&lt;table&gt;</code> 标签 + <code>table-layout: auto/fixed</code> + <code>colspan/rowspan</code> + <code>border-collapse</code> + <code>&lt;colgroup&gt;/&lt;col&gt;</code></td>
 <td>✅</td>
 <td><strong>默认关</strong></td>
 <td>BASE</td>
-<td><strong>实测 3,156 B</strong>（见 §18.12 末）</td>
+<td><strong>实测 5,332 B</strong>（见 §18.12 末）</td>
 </tr>
 <tr>
 <td><code>CSS_COLUMNS</code></td>
 <td><code>QL_FEAT_CSS_COLUMNS</code></td>
-<td><strong>B7</strong>：<code>columns</code> / <code>column-rule</code>（列高平衡 = 排两遍）</td>
+<td><strong>B7 ✅</strong>：<code>column-count</code> / <code>column-width</code> / <code>columns</code> / <code>column-gap</code> / <code>column-rule*</code>（贪心分栏 + 等高平衡）</td>
 <td>✅</td>
 <td><strong>默认关</strong></td>
 <td>BASE</td>
-<td>估 8–15 KB（最贵的一项：要"盒内分裂"）</td>
+<td><strong>实测 640 B</strong>（见 §18.13 末）</td>
 </tr>
 <tr>
 <td><code>CSS_BORDER_IMAGE</code></td>
@@ -4535,7 +4692,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </tbody>
 </table>
 <p>| <strong>B6 布局广度</strong> ✅ <strong>已完成（2026-11-10）</strong> | <strong>Grid</strong>（<code>display: grid</code> 全家、<code>fr</code>/<code>minmax()</code>/<code>repeat()</code>/具名区域/自动放置/跨格/对齐）、<strong><code>border-image</code></strong> 九宫格 | <code>CSS_GRID</code> + <code>CSS_BORDER_IMAGE</code> | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | <strong>是</strong> → blob v28（<code>QLUIStyle</code> 272 → 312） | <code>test_grid</code>（74 项，含跨列/跨行/区域/负线号/9 条报错）+ 例程 29/30 |
-| <strong>B7 数据排版</strong>（PC/Mobile 必做；<strong>表格 ✅ 2026-11-11</strong>，多栏待做） | <strong>表格</strong>（<code>table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + 固定列宽 + <code>colspan/rowspan</code> + <code>border-collapse</code>）✅、<strong>多栏</strong>（<code>columns</code> 平衡列高）⏳ | <code>CSS_TABLE</code> ✅ + <code>CSS_COLUMNS</code> ⏳ | 后台管理界面、长文正文 | 表格：中（已落地，实测 3,156 B）；多栏：高（列高平衡 = 排两遍） | 是 → blob v31（<code>QLUIStyle</code> 344 → 352、<code>QLUINode</code> 28 → 30） | <code>test_table</code>（60 项）+ 例程 33 ✅；多栏待做 |
+| <strong>B7 数据排版 ✅ 2026-11-11</strong> | <strong>表格</strong>（<code>table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + <code>table-layout: auto/fixed</code> + <code>colspan/rowspan</code> + <code>border-collapse</code> + <code>&lt;colgroup&gt;/&lt;col&gt;</code>）✅、<strong>多栏</strong>（<code>column-count/width/rule</code>，贪心分栏 + 等高平衡）✅ | <code>CSS_TABLE</code> ✅ + <code>CSS_COLUMNS</code> ✅ | 后台管理界面、长文正文 | 表格：实测 5,332 B；多栏：实测 640 B（不做真分栏，所以没有"排两遍"） | 是 → blob v31/v32（<code>QLUIStyle</code> 344 → 364、<code>QLUINode</code> 28 → 30） | <code>test_table</code>（78 项）+ <code>test_columns</code>（34 项）+ 例程 33/34 ✅ |
 | <strong>B8 文本栈</strong>（PC/Mobile 必做，MCU 恒裁） | <code>@font-face</code>、自由 <code>font-family</code>、真字重/斜体、连字与字距、<code>direction</code>/<code>unicode-bidi</code> | <code>CSS_FONT_STACK</code> / <code>CSS_TEXT_SHAPE</code> / <code>CSS_BIDI</code> | <strong>多语言真实页面</strong>（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 <code>test_font_ft</code> / 新 <code>test_shape</code> |</p>
 <p><strong>另外几项单独立项</strong>（成本与一批相当，但语义是"新子系统"）：</p>
 <table>

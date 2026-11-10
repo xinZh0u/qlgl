@@ -63,6 +63,7 @@ code {
 /* ---------- 1. 基础表格 ---------- */
 
 .t1 {
+  table-layout: fixed;
   width: 520px;
   border-collapse: collapse;
 }
@@ -95,6 +96,7 @@ code {
 /* ---------- 2. 跨行跨列 ---------- */
 
 .t2 {
+  table-layout: fixed;
   width: 560px;
   border-collapse: collapse;
 }
@@ -122,7 +124,72 @@ code {
   text-align: center;
 }
 
-.t2 .note {
+.t2 /* ---------- 6. auto vs fixed ---------- */
+
+.side {
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.t6 {
+  width: 340px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.t6.auto {
+  table-layout: auto;
+}
+
+.t6 th,
+.t6 td {
+  border: 1px solid #D0D7DE;
+  padding: 4px 6px;
+  height: 24px;
+  vertical-align: middle;
+  font-size: 11px;
+}
+
+.t6 th {
+  background-color: #F6F8FA;
+  color: #57606A;
+}
+
+/* ---------- 7. colgroup / col ---------- */
+
+.t7 {
+  table-layout: fixed;
+  width: 520px;
+  border-collapse: collapse;
+}
+
+.t7 th,
+.t7 td {
+  border: 1px solid #D0D7DE;
+  padding: 4px 8px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+.t7 th {
+  background-color: #F6F8FA;
+  color: #57606A;
+  font-size: 11px;
+}
+
+.t7 .c1 { width: 90px; }
+.t7 .c2 { width: 130px; }     /* span=2：两列各 130 */
+.t7 .c3 { width: 90px; }
+
+.hint2 {
+  font-size: 10px;
+  color: #6E7781;
+  margin-top: 6px;
+  white-space: normal;
+  width: 520px;
+}
+
+.note {
   font-size: 10px;
   color: #6E7781;
   white-space: normal;
@@ -136,6 +203,7 @@ code {
 /* ---------- 3. spacing vs collapse ---------- */
 
 .t3 {
+  table-layout: fixed;
   width: 150px;
   border-spacing: 4px;
 }
@@ -163,6 +231,7 @@ code {
 /* ---------- 4. vertical-align ---------- */
 
 .t4 {
+  table-layout: fixed;
   width: 560px;
   border-collapse: collapse;
 }
@@ -189,6 +258,7 @@ code {
 /* ---------- 5. 单元格里的图层特效 ---------- */
 
 .t5 {
+  table-layout: fixed;
   width: 520px;
   border-spacing: 6px;
 }

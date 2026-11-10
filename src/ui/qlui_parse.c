@@ -3690,6 +3690,9 @@ static const char *const k_supported_props[] = {
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
     /* B7 表格 */
     "table-layout", "border-collapse", "border-spacing",
+    /* B7 后半：多栏 */
+    "columns", "column-count", "column-width",
+    "column-rule", "column-rule-width", "column-rule-style", "column-rule-color",
 };
 
 /* @keyframes 里允许的属性（与 Python 的 KEYFRAME_PROPS 一致） */
@@ -5246,7 +5249,7 @@ static int tag_is_void(const char *tag)
            strcmp(tag, "input") == 0 || strcmp(tag, "wbr") == 0 ||
            strcmp(tag, "img") == 0 || strcmp(tag, "source") == 0 ||
            strcmp(tag, "area") == 0 || strcmp(tag, "embed") == 0 ||
-           strcmp(tag, "track") == 0;
+           strcmp(tag, "track") == 0 || strcmp(tag, "col") == 0;
 }
 
 /*
@@ -7242,9 +7245,11 @@ static int ua_defaults(const char *tag, Decls *out)
         return decls_set(out, "display", "table-cell") &&
                decls_set(out, "font-weight", "bold") &&
                decls_set(out, "text-align", "center");
-    /* `colgroup` / `col`：列宽声明还没做（见文档），不占位 */
-    if (strcmp(tag, "colgroup") == 0 || strcmp(tag, "col") == 0)
-        return decls_set(out, "display", "none");
+    /* `colgroup` / `col`：不产生盒子，只提供列宽（见 §18.12） */
+    if (strcmp(tag, "colgroup") == 0)
+        return decls_set(out, "display", "table-column-group");
+    if (strcmp(tag, "col") == 0)
+        return decls_set(out, "display", "table-column");
 
     /* ---- <hr>：块级细线。不写 background-color 就是黑的，所以必须显式给 ---- */
     if (strcmp(tag, "hr") == 0) {
@@ -7822,6 +7827,10 @@ static int display_value(const char *s)
     if (strcmp(s, "table-row-group") == 0 || strcmp(s, "table-header-group") == 0 ||
         strcmp(s, "table-footer-group") == 0)
         return QL_UI_DISPLAY_TABLE_ROW_GROUP;
+    if (strcmp(s, "table-column") == 0)
+        return QL_UI_DISPLAY_TABLE_COLUMN;
+    if (strcmp(s, "table-column-group") == 0)
+        return QL_UI_DISPLAY_TABLE_COLUMN_GROUP;
     return -1;
 }
 
@@ -10595,6 +10604,212 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 set_error("%s: border-spacing 要 1~2 个值（收到 '%s'）", where, tv);
                 return 0;
             }
+        }
+    }
+
+    /* ----- 多栏：column-count / column-width / columns / column-rule* ----- */
+    {
+        int col_n = -1;                 /* -1 = 没写 */
+        uint8_t col_wu = QL_UI_UNIT_AUTO;
+        int col_wv = 0;
+        int col_n_set = 0, col_w_set = 0;
+
+        /* `columns: <count> || <width>`：纯整数当栏数，带单位的当栏宽 */
+        if ((v = decls_get(st, "columns")) != NULL) {
+            const char *p = skip_space(v);
+            int got = 0;
+            while (*p != '\0') {
+                const char *e = p;
+                while (*e != '\0' && !is_space(*e))
+                    e++;
+                char tok[32];
+                const size_t tn = (size_t)(e - p);
+                if (tn >= sizeof(tok)) {
+                    set_error("%s: columns 的取值太长（收到 '%s'）", where, v);
+                    return 0;
+                }
+                memcpy(tok, p, tn);
+                tok[tn] = '\0';
+                /*
+                 * 靠"有没有单位后缀"区分两个值（`parse_length` 会把裸整数当 px，
+                 * 所以不能只看 unit）：带 `px` / `%` 的是栏宽，纯数字的是栏数。
+                 */
+                const size_t ltn = strlen(tok);
+                const int has_unit =
+                    (ltn > 1 && tok[ltn - 1] == 'x' && tok[ltn - 2] == 'p') ||
+                    (ltn > 0 && tok[ltn - 1] == '%');
+                uint8_t unit = QL_UI_UNIT_AUTO;
+                int num = 0;
+                if (has_unit && !parse_length(tok, where, 1, calc, &unit, &num))
+                    return 0;
+                if (!has_unit) {
+                    char lt[16];
+                    trim_lower(tok, lt, sizeof(lt));
+                    if (strcmp(lt, "auto") == 0) {
+                        /* `auto` 两边都不算：整条都在才报错（见下面的检查） */
+                    } else {
+                        const char *end = NULL;
+                        double d = 0;
+                        if (!match_number(lt, &end, &d) || *end != '\0' || d < 1) {
+                            set_error("%s: columns 只接受 <栏数> 或 <栏宽>（收到 '%s'）",
+                                      where, tok);
+                            return 0;
+                        }
+                        col_n = (int)py_round(d);
+                        col_n_set = 1;
+                    }
+                } else {
+                    col_wu = unit;
+                    col_wv = num;
+                    col_w_set = 1;
+                }
+                got++;
+                p = skip_space(e);
+            }
+            if (got == 0 || got > 2) {
+                set_error("%s: columns 要 1~2 个值（收到 '%s'）", where, v);
+                return 0;
+            }
+            if (!col_n_set && !col_w_set) {
+                set_error("%s: columns 至少要给栏数或栏宽之一（收到 '%s'）", where, v);
+                return 0;
+            }
+        }
+
+        if ((v = decls_get(st, "column-count")) != NULL) {
+            char lt[16];
+            trim_lower(v, lt, sizeof(lt));
+            if (strcmp(lt, "auto") == 0) {
+                col_n = 0;
+            } else {
+                const char *end = NULL;
+                double d = 0;
+                const int okn = match_number(lt, &end, &d);
+                const int nn = (int)py_round(d);
+                if (!okn || *end != '\0' || nn < 1 || nn > 255) {
+                    set_error("%s: column-count 只接受 1~255 的整数或 auto（收到 '%s'）",
+                              where, v);
+                    return 0;
+                }
+                col_n = nn;
+            }
+            col_n_set = 1;
+        }
+        if ((v = decls_get(st, "column-width")) != NULL) {
+            if (!parse_length(v, where, 1, calc, &col_wu, &col_wv))
+                return 0;
+            if (col_wu != QL_UI_UNIT_AUTO && col_wu != QL_UI_UNIT_PX &&
+                col_wu != QL_UI_UNIT_PERCENT) {
+                set_error("%s: column-width 只支持 px / 百分比（收到 '%s'）", where, v);
+                return 0;
+            }
+            if (col_wv < 0) {
+                set_error("%s: column-width 不能是负数（收到 '%s'）", where, v);
+                return 0;
+            }
+            col_w_set = 1;
+        }
+        out->column_count = (uint8_t)((col_n > 0 && col_n <= QL_CFG_UI_COLUMN_MAX)
+                                          ? col_n
+                                          : ((col_n > QL_CFG_UI_COLUMN_MAX)
+                                                 ? QL_CFG_UI_COLUMN_MAX
+                                                 : 0));
+        out->column_width.unit = col_wu;
+        out->column_width.value = (int16_t)col_wv;
+        if ((col_n_set || col_w_set) && out->column_count == 0 &&
+            col_wu == QL_UI_UNIT_AUTO) {
+            set_error("%s: columns 至少要给栏数或栏宽之一", where);
+            return 0;
+        }
+#if !QL_FEAT_CSS_COLUMNS
+        if (col_n_set || col_w_set) {
+            set_error("%s: 这个构建关掉了多栏（QL_FEAT_CSS_COLUMNS=0），"
+                      "不支持 column-count / column-width / columns", where);
+            return 0;
+        }
+#endif
+
+        /* `column-rule`（宽度/样式/颜色，三个长写 + 一个简写） */
+        out->column_rule_w = 0;
+        out->column_rule_style = QL_UI_BORDER_NONE;
+        out->column_rule_color = 0;
+        int rule_w = -1;            /* -1 = 没写 */
+        int rule_style = -1;
+        uint32_t rule_rgb = 0;
+        int rule_color_set = 0;
+        if ((v = decls_get(st, "column-rule")) != NULL) {
+            const char *p = skip_space(v);
+            while (*p != '\0') {
+                const char *e = p;
+                while (*e != '\0' && !is_space(*e))
+                    e++;
+                char tok[32];
+                const size_t tn = (size_t)(e - p);
+                if (tn >= sizeof(tok)) {
+                    set_error("%s: column-rule 的取值太长（收到 '%s'）", where, v);
+                    return 0;
+                }
+                memcpy(tok, p, tn);
+                tok[tn] = '\0';
+                uint8_t unit = QL_UI_UNIT_AUTO;
+                int num = 0;
+                uint32_t rgb = 0;
+                uint8_t alpha = 0;
+                if (parse_border_style_kw(tok, where, &unit)) {
+                    rule_style = unit;
+                } else if (parse_color(tok, where, &rgb, &alpha)) {
+                    rule_rgb = rgb & 0xFFFFFFu;
+                    rule_color_set = 1;
+                } else if (parse_length(tok, where, 0, NULL, &unit, &num) &&
+                           unit == QL_UI_UNIT_PX) {
+                    rule_w = num;
+                } else {
+                    set_error("%s: column-rule 只接受 <宽度> / <样式> / <颜色>（收到 '%s'）",
+                              where, tok);
+                    return 0;
+                }
+                p = skip_space(e);
+            }
+        }
+        if ((v = decls_get(st, "column-rule-width")) != NULL) {
+            uint8_t unit = QL_UI_UNIT_AUTO;
+            int num = 0;
+            if (!parse_length(v, where, 0, NULL, &unit, &num) || unit != QL_UI_UNIT_PX) {
+                set_error("%s: column-rule-width 只支持 px（收到 '%s'）", where, v);
+                return 0;
+            }
+            rule_w = num;
+        }
+        if ((v = decls_get(st, "column-rule-style")) != NULL) {
+            uint8_t st2 = 0;
+            if (!parse_border_style_kw(v, where, &st2))
+                return 0;
+            rule_style = st2;
+        }
+        if ((v = decls_get(st, "column-rule-color")) != NULL) {
+            uint32_t rgb = 0;
+            uint8_t alpha = 0;
+            if (!parse_color(v, where, &rgb, &alpha))
+                return 0;
+            rule_rgb = rgb & 0xFFFFFFu;
+            rule_color_set = 1;
+        }
+        if (rule_w >= 0 || rule_style >= 0 || rule_color_set) {
+#if !QL_FEAT_CSS_COLUMNS
+            set_error("%s: 这个构建关掉了多栏（QL_FEAT_CSS_COLUMNS=0），"
+                      "不支持 column-rule", where);
+            return 0;
+#else
+            if (rule_w < 0)
+                rule_w = (rule_style > 0) ? 1 : 0;      /* 有样式没宽度：默认 1px */
+            if (rule_w > 16)
+                rule_w = 16;
+            if (rule_style < 0)
+                rule_style = (rule_w > 0) ? QL_UI_BORDER_SOLID : QL_UI_BORDER_NONE;
+            out->column_rule_w = (uint8_t)rule_w;
+            out->column_rule_style = (uint8_t)rule_style;
+            out->column_rule_color = rule_color_set ? rule_rgb : 0;
+#endif
         }
     }
 
@@ -13595,7 +13810,11 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             nd->placeholder = flat[i].placeholder;
             nd->flags = flat[i].node->flags;
             /* B7 表格：`colspan` / `rowspan`（就两个小整数，直接读属性，不进 Attrs） */
-            nd->colspan = table_span_attr(flat[i].node, "colspan");
+            /* `<col span>` / `<colgroup span>` 用的是 `span` 属性，其它标签没有 */
+            const char *tagn = flat[i].node->tag;
+            const int is_col = (tagn != NULL) && (strcmp(tagn, "col") == 0 ||
+                                                 strcmp(tagn, "colgroup") == 0);
+            nd->colspan = table_span_attr(flat[i].node, is_col ? "span" : "colspan");
             nd->rowspan = table_span_attr(flat[i].node, "rowspan");
         }
 

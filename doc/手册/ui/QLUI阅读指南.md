@@ -973,6 +973,20 @@ layout_flex_children(容器):
    （`table_cell_content_h()`），拿撑开后的 `border_box.h` 永远算不出余量；
 3. 文字直接挂在单元格上时（没有子节点），要挪 `content_box.y` 而不是子节点。
 
+#### 多栏：排一遍 + 二分 + 平移（`layout_columns_children()`）
+
+多栏**不重排**。顺序是：按栏宽在 `(0,0)` 把每个子节点正常排一遍（顺带得到高度）
+→ 定栏高（容器有 `height` 用它；否则用 `columns_needed()` 二分找"最小能塞进 N 栏"
+的高度，纯算术、不动盒子）→ 顺序贪心分配，用 `translate_subtree()` 挪到最终位置。
+
+三个要点：
+1. **`cursor` 是绝对坐标，`target` 是栏高**。比较必须写成
+   `(cursor - col_top) + advance > target`，否则从第二个子节点起永远"放不下"；
+2. **不劈子节点**。断点若允许落在文字行中间，绘制/命中/滚动/`paint_box` 剪枝
+   全都要引入"盒内分裂"——与 MCU 目标冲突。塞不下就换栏，最后一栏放不下就溢出；
+3. **`column-rule` 的 solid 不能走 `paint_dash_run()`**（它把 solid 也切成
+   `3w + 2w` 的虚线），要单独 `fill_rect`。
+
 #### 一个只在脏区重绘时出现的坑：blit 也受 scissor 影响
 
 混合模式要读"图层的背景"，做法是先把目标表面上那一块 `glBlitFramebuffer` 到
@@ -1021,7 +1035,7 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 | 绝对定位 | 无 "static position" 与完整 shrink-to-fit | 没给 inset 时贴左上角；非文本内容撑满 |
 | `overflow` | ✅ 裁剪 + **滚动**（`auto` / `hidden` / `visible`；一个值管两轴） | 没有 `overflow-x/y` 分开写、没有惯性滚动 |
 | grid | ✅ `display: grid` 全家（B6）；网格页面比嵌套 flex 更快（省 wrapper 层） |
-| 表格 | ✅ `display: table` 全家（B7）；`table-layout: auto` 按 fixed 算 | `colgroup` 列宽声明、`caption-side: bottom` 没有 |
+| 表格 | ✅ `display: table` 全家（B7）；`table-layout: auto/fixed`；`<colgroup>/<col>` 列宽 | `caption-side: bottom` 没有 |
 | 伪类 | ✅ `:hover/:active/:focus/:disabled/:enabled/:checked`、结构伪类、`:not()`、`[attr]*`、`::before/::after` | `:has()/:is()/:focus-visible` 无；组合伪类报错 |
 | 混合内容（块里裸文本 + 子元素） | ❌ 报错 | 需把文本包进 `<span>` |
 | 行内基线对齐 | 简化：`vertical-align` 只 `baseline`/`sub`/`super` | 中英文混排可能不齐 |
@@ -1029,7 +1043,8 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 | `position` / `z-index` | ✅ `static`/`relative`/`absolute`/`fixed`/`sticky` + `z-index` | 弹窗靠 `absolute` + `z-index` 自己搭 |
 | `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path` | `box-shadow` 不参与过渡；`delay` 报错 |
 | `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
-| 表格 | ✅ `display: table` 全家 + `<table>` 系列标签 + `colspan/rowspan` + `border-collapse`（B7） | `table-layout: auto` 按 fixed 算；`colgroup` 列宽声明没有 |
+| 表格 | ✅ `display: table` 全家 + `<table>` 系列标签 + `table-layout: auto/fixed` + `colspan/rowspan` + `border-collapse` + `<colgroup>/<col>`（B7） | `caption-side: bottom`、`empty-cells` 没有 |
+| 多栏 | ✅ `column-count` / `column-width` / `columns` / `column-gap` / `column-rule*`（B7 后半，贪心分栏） | `column-span: all`、真·跨栏分裂没有 |
 | `filter` / `mix-blend-mode` / `mask` / 组 `opacity` | ✅ 离屏图层（M9.3） | `filter: url()`、`mask-position/repeat/composite`、`background-blend-mode` 报错；`filter` 链最长 6 个函数 |
 | `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
 | `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` + `rotate()`/`skew()`/`matrix()` + `transform-origin` | 3D（`perspective()`/`rotate3d()`/`matrix3d()`）报错；`rotate` 等依赖离屏图层包 |
