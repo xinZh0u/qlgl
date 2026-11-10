@@ -118,6 +118,9 @@ struct QLGfxGL {
      */
     XIM              xim;
     XIC              xic;
+    /* 上一次告诉输入法的光标位置（CSS px；全 -1 表示还没设过） */
+    ql_coord_t       ime_x, ime_y, ime_h;
+    int              trace_im;      /* QLGL_TRACE_IM=1：打印输入法事件过滤情况 */
     int              resize_pending;   /* 窗口尺寸变过，调用方需要重新 layout */
     /*
      * 窗口的 X11 背景像素（= 上一帧的清除色）。
@@ -3118,6 +3121,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
      * 设 QLGL_KEEP_VSYNC=1 就退回"拖动时也跟 vblank"。
      */
     g->keep_vsync_on_resize = getenv("QLGL_KEEP_VSYNC") != NULL;
+    g->trace_im = getenv("QLGL_TRACE_IM") != NULL;
     g->lag_debug = getenv("QLGL_LAG_DEBUG") != NULL;
     if (!g->offscreen)
         eglSwapInterval(g->egdpy, 1);
@@ -3484,6 +3488,9 @@ static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
     g->draw.mask_ry = -1;
     g->draw.mask_pn = 0;
     g->draw.elem_x_fx = QL_SCALE_ONE;
+    g->ime_x = -1;
+    g->ime_y = -1;
+    g->ime_h = -1;
     g->draw.elem_y_fx = QL_SCALE_ONE;
 }
 
@@ -3785,8 +3792,18 @@ int ql_gfx_gl_poll(QLGfxGL *g)
          * 输入法必须**先过一遍**：正在组字时（拼音还没选词）按键要交给 IME，
          * 不能让界面层看到。返回 True 表示这条事件被吃掉。
          */
-        if (g->xic != NULL && XFilterEvent(&ev, None))
-            continue;
+        {
+            const Bool im_took = (g->xic != NULL) ? XFilterEvent(&ev, None) : False;
+            /*
+             * 输入法排障：`QLGL_TRACE_IM=1` 时把"哪些事件被输入法吃掉"打出来。
+             * 打不出中文时先看这里 —— 按键全都没被吃掉说明 IC 没拿到焦点
+             * （或者根本没连上输入法），与界面层无关。
+             */
+            if (g->trace_im && (ev.type == KeyPress || ev.type == KeyRelease))
+                fprintf(stderr, "[IM] type=%d filtered=%d\n", ev.type, (int)im_took);
+            if (im_took)
+                continue;
+        }
 
         switch (ev.type) {
         case ClientMessage:
@@ -3817,6 +3834,7 @@ int ql_gfx_gl_poll(QLGfxGL *g)
                 g->width = (ql_coord_t)nw;
                 g->height = (ql_coord_t)nh;
                 g->fbo_fresh = 1;      /* 保留模式的旧内容已经作废 */
+                g->ime_x = -1;         /* 窗口挪了/改尺寸了：光标在根窗口的位置也变了 */
                 g->resize_pending = 1;
                 /* 未来 200ms 内不跟 vblank（见 ql_gfx_gl_end 里的说明） */
                 g->resize_until_ms = (uint32_t)(now_us_mono() / 1000) + 200u;
@@ -3864,6 +3882,35 @@ void ql_gfx_gl_attach_clipboard(QLGfxGL *g, QLUIRoot *ui)
         return;
     ql_x11_clip_attach(g->dpy, g->win);
     ql_ui_set_clipboard(ui, &s_gl_clip, NULL);
+}
+
+void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h)
+{
+    if (g == NULL || g->xic == NULL || g->dpy == NULL)
+        return;
+    if (x == g->ime_x && y == g->ime_y && h == g->ime_h)
+        return;                     /* 没动就不发 X 请求 */
+    g->ime_x = x;
+    g->ime_y = y;
+    g->ime_h = h;
+
+    /*
+     * XIM 的 spot 用**根窗口坐标**，而且是光标的**左下角**（baseline 位置）。
+     * 我们的坐标是"视口内的 CSS px"，所以要：乘 DPR → 平移到根窗口 → y 加高度。
+     */
+    XPoint spot;
+    spot.x = (short)gsl(g, x);
+    spot.y = (short)gsl(g, y + h);
+    {
+        Window child = None;
+        int rx = 0, ry = 0;
+        if (XTranslateCoordinates(g->dpy, g->win, DefaultRootWindow(g->dpy),
+                                  (int)gsl(g, x), (int)gsl(g, y + h), &rx, &ry, &child)) {
+            spot.x = (short)rx;
+            spot.y = (short)ry;
+        }
+    }
+    (void)XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
 }
 
 int ql_gfx_gl_resize_pending(QLGfxGL *g)

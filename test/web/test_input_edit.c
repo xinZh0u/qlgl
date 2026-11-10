@@ -153,9 +153,32 @@ QL_TEST_BEGIN("test_input_edit")
             QL_CHECK_STR(ql_ui_input_value(ui, in), "Xabcdef");
 
             ql_ui_pointer_up(ui, in->content_box.x + 1, 12);
+
+            /*
+             * 输入法定位：`ql_ui_ime_spot()` 给的是"光标左上角 + 高度"。
+             * 它必须落在内容盒里、而且跟光标位置一致（候选窗就画在
+             * (x, y+h) 那个点上）—— 走的是与绘制光标同一套几何。
+             */
+            {
+                ql_coord_t sx = -1, sy = -1, sh = -1;
+                QL_CHECK_EQ(ql_ui_ime_spot(ui, &sx, &sy, &sh), 1);
+                QL_CHECK(sx >= in->content_box.x &&
+                         sx <= ql_rect_right(in->content_box));
+                QL_CHECK(sy >= in->content_box.y &&
+                         sy + sh <= ql_rect_bottom(in->content_box));
+                QL_CHECK(sh > 0);
+                /*
+                 * 光标在 "X" 之后：x 应该比内容盒左边右移一个字符宽，
+                 * 也就是"spot 跟着光标走"（不是永远贴左边）。
+                 */
+                QL_CHECK(sx > in->content_box.x);
+            }
+
             /* 点到别处 → 失焦 */
             ql_ui_pointer_down(ui, W - 2, H - 2);
             QL_CHECK(ql_ui_focus_node(ui) == NULL);
+            /* 没有聚焦输入框就没有 spot（输入法要据此隐藏候选窗） */
+            QL_CHECK_EQ(ql_ui_ime_spot(ui, NULL, NULL, NULL), 0);
             ql_ui_pointer_up(ui, W - 2, H - 2);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);

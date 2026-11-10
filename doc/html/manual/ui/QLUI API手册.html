@@ -2651,6 +2651,11 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <h3 id="_9">焦点</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">        </span><span class="nf">ql_ui_set_focus_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_focus_node</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+
+<span class="cm">/* 光标位置（CSS px，视口坐标）：给输入法定位候选窗。</span>
+<span class="cm"> * 返回 1 = 有聚焦输入框；out_y + out_h 就是 XIM 的 spot 点。 */</span>
+<span class="kt">int</span><span class="w"> </span><span class="nf">ql_ui_ime_spot</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_y</span><span class="p">,</span>
+<span class="w">                   </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">out_h</span><span class="p">);</span>
 </code></pre></div>
 
 <p><code>Tab</code> / <code>Shift+Tab</code> 在 <code>input</code> / <code>textarea</code> / <code>select</code> / <code>button</code> 之间按树序循环。

@@ -43,6 +43,7 @@ typedef struct {
      */
     XIM          xim;
     XIC          xic;
+    ql_coord_t   ime_x, ime_y, ime_h;   /* 上次告诉输入法的光标位置（CSS px） */
 } QLDispX11;
 
 /*
@@ -383,6 +384,7 @@ int ql_disp_x11_poll(QLDispDriver *driver)
              */
             if (x11_apply_resize(x, ev.xconfigure.width, ev.xconfigure.height))
                 x->resize_pending = 1;
+            x->ime_x = -1;     /* 窗口挪了/改尺寸了：光标在根窗口的位置也变了 */
             break;
         }
 
@@ -422,6 +424,36 @@ void ql_disp_x11_close(QLDispDriver *driver)
 {
     if (driver != NULL)
         ((QLDispX11 *)driver)->closed = 1;
+}
+
+void ql_disp_x11_set_ime_spot(QLDispDriver *driver, ql_coord_t x, ql_coord_t y,
+                              ql_coord_t h)
+{
+    if (driver == NULL)
+        return;
+    QLDispX11 *xd = (QLDispX11 *)driver;
+    if (xd->dpy == NULL || xd->xic == NULL)
+        return;
+    if (x == xd->ime_x && y == xd->ime_y && h == xd->ime_h)
+        return;
+    xd->ime_x = x;
+    xd->ime_y = y;
+    xd->ime_h = h;
+
+    /* spot 是根窗口坐标、光标左下角（同 GL 后端的说明） */
+    const ql_coord_t fx = (driver->scale_fx > 0) ? driver->scale_fx : QL_SCALE_ONE;
+    XPoint spot;
+    spot.x = (short)ql_scale_len(x, fx);
+    spot.y = (short)ql_scale_len(y + h, fx);
+    Window child = None;
+    int rx = 0, ry = 0;
+    if (XTranslateCoordinates(xd->dpy, xd->win, DefaultRootWindow(xd->dpy),
+                              (int)ql_scale_len(x, fx), (int)ql_scale_len(y + h, fx),
+                              &rx, &ry, &child)) {
+        spot.x = (short)rx;
+        spot.y = (short)ry;
+    }
+    (void)XSetICValues(xd->xic, XNSpotLocation, &spot, NULL);
 }
 
 void ql_disp_x11_destroy(QLDispDriver *driver)

@@ -10129,6 +10129,75 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui)
     return (ui != NULL) ? ui->focus : NULL;
 }
 
+/*
+ * 焦点输入框的光标位置（CSS px，视口坐标）。
+ *
+ * 这里刻意**不复用** draw_input_decor 的绘制路径：那个函数需要 QLDraw2D，
+ * 而输入法问位置的时候可能根本没有渲染（比如刚聚焦还没画）。两次算出来的
+ * 几何必须一致，所以公式与 draw_input_decor 里画光标那两行保持同步。
+ */
+int ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *out_y,
+                   ql_coord_t *out_h)
+{
+    struct QLUIInput *in = focused_input((QLUIRoot *)ui);
+    if (in == NULL || ui == NULL || in->node == NULL || ui->focus == NULL)
+        return 0;
+    QLUINodeRT *node = in->node;
+    if (node->style == NULL)
+        return 0;
+    const QLFont *font = font_of_style(node, node->style);
+    if (font == NULL)
+        return 0;
+
+    const QLRect cb = node->content_box;
+    char dots[QL_CFG_UI_INPUT_LEN * 3 + 4];
+    const int pw = (node->src != NULL) && ((node->src->flags & QL_UI_NODE_PASSWORD) != 0);
+    const char *disp = input_display_text(in, pw, dots, sizeof(dots));
+    const ql_coord_t base_x = cb.x - in->scroll_x;
+
+    ql_coord_t x = base_x;
+    ql_coord_t y = cb.y;
+    ql_coord_t h = cb.h;
+
+    if (in->multiline) {
+        QLTextLine lines[QL_CFG_TEXT_MAX_LINES];
+        int count = input_visual_lines(font, in, cb.w, lines, QL_CFG_TEXT_MAX_LINES);
+        if (count > QL_CFG_TEXT_MAX_LINES)
+            count = QL_CFG_TEXT_MAX_LINES;
+        if (count > 0) {
+            const ql_coord_t lh = text_line_h_of(node->style, font);
+            ql_coord_t cx = 0, cy = 0;
+            caret_px(font, in, lines, count, lh, &cx, &cy);
+            x = base_x + cx;
+            y = cb.y - in->scroll_y + cy;
+            h = lh;
+        }
+    } else {
+        const uint16_t off = (uint16_t)(pw ? (cp_count(in->buf, in->caret) * 3) : in->caret);
+        x = base_x + ql_font_line_width(font, disp, (int32_t)off);
+    }
+
+    /* 光标滚出内容盒时把 spot 夹在盒子内：否则候选窗会跑到窗口外面去 */
+    if (x < cb.x)
+        x = cb.x;
+    if (x > ql_rect_right(cb) - 1)
+        x = ql_rect_right(cb) - 1;
+    if (y < cb.y)
+        y = cb.y;
+    if (y + h > ql_rect_bottom(cb))
+        y = ql_rect_bottom(cb) - h;
+    if (h <= 0)
+        h = cb.h;
+
+    if (out_x != NULL)
+        *out_x = x;
+    if (out_y != NULL)
+        *out_y = y;
+    if (out_h != NULL)
+        *out_h = h;
+    return 1;
+}
+
 void ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user)
 {
     if (ui == NULL)

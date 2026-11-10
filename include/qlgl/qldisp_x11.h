@@ -42,6 +42,13 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
  */
 int ql_disp_x11_poll(QLDispDriver *driver);
 
+/*
+ * 告诉输入法光标位置（候选窗定位），语义同 `ql_gfx_gl_set_ime_spot()`：
+ * CSS px、视口坐标。每帧或每次光标移动后调一次即可（值没变不发 X 请求）。
+ */
+void ql_disp_x11_set_ime_spot(QLDispDriver *driver, ql_coord_t x, ql_coord_t y,
+                              ql_coord_t h);
+
 void ql_disp_x11_destroy(QLDispDriver *driver);
 
 /* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */

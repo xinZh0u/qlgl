@@ -1942,6 +1942,19 @@ void        ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev);
 void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
 
+/*
+ * 光标在屏幕上的位置（CSS px，原点 = 视口左上角）。给**输入法**定位候选窗用。
+ *
+ * 返回 1 表示有聚焦的输入框，`out_x/out_y` 是光标左上角、`out_h` 是光标高度
+ * （输入法要的 spot 一般是"光标左下角"，即 `(x, y + h)`）。没有聚焦输入框返回 0。
+ *
+ * 为什么需要它：XIM 的 `XIMPreeditNothing` 风格下候选窗由输入法自己画，它靠
+ * `XNSpotLocation` 知道往哪儿画。不告诉它，候选窗会跑到窗口左上角/鼠标附近
+ * （实测是窗口下方一大截），看起来就是"提示框位置不对"。
+ */
+int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *out_y,
+                           ql_coord_t *out_h);
+
 /* ===================== 二进制 blob（.qlui） ===================== */
 
 /*

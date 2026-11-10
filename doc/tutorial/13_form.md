@@ -195,6 +195,19 @@ ql_ui_set_input_cb(ui, on_input, NULL);
 > XIM 不可用时退回 `XLookupString`，那时只有 Latin-1；裸 X（没有输入法）就
 > 只能用 `ql_ui_input_set_value()` 从程序里填。Wayland 原生窗口还没有
 > `zwp_text_input_v3`（见《对比与取舍》）。
+>
+> **候选窗位置要自己告诉输入法**：`XIMPreeditNothing` 风格下候选窗由输入法画，
+> 它靠 `XNSpotLocation` 定位。主循环里把光标位置推给它（值没变时后端自动跳过）：
+>
+> ```c
+> ql_coord_t sx, sy, sh;
+> if (ql_ui_ime_spot(ui, &sx, &sy, &sh))      /* 没有聚焦输入框就返回 0 */
+>     ql_gfx_gl_set_ime_spot(gfx, sx, sy, sh); /* CPU 后端：ql_disp_x11_set_ime_spot() */
+> ```
+>
+> 不推的话候选窗会跑到窗口下方一大截（ibus 拿不到位置时的行为）。
+> 排障：`QLGL_TRACE_IM=1 ./example_10_input` 会把"哪个按键被输入法吃掉"打出来
+> —— 全是 `filtered=0` 说明按键没进输入法（焦点/连接问题），不是界面层的锅。
 
 ## 与浏览器不同的地方
 

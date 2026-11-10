@@ -334,6 +334,16 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                 }
             }
             ql_input_dispatch();
+            /*
+             * 把"光标在哪儿"告诉输入法（候选窗靠它定位）。必须在
+             * ql_input_dispatch() **之后** 调：这一轮可能刚移了光标/换了焦点。
+             * 值没变时后端直接返回，不会每个事件都发一次 X 请求。
+             */
+            {
+                ql_coord_t sx = 0, sy = 0, sh = 0;
+                if (ql_ui_ime_spot(ui, &sx, &sy, &sh))
+                    ql_gfx_gl_set_ime_spot(gfx, sx, sy, sh);
+            }
             const uint32_t moving = ql_ui_anim_tick(ui, ql_anim_now_ms());
 
             QLRect areas[16];

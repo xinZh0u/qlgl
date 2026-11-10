@@ -43,6 +43,18 @@ void ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
 /* 把 X11 剪贴板接到这个界面（Ctrl+C/X/V 生效）。可在窗口建好之后调一次。 */
 void ql_gfx_gl_attach_clipboard(QLGfxGL *gfx, QLUIRoot *ui);
 
+/*
+ * 告诉输入法"光标在哪儿"，用来定位候选窗。
+ *
+ * `x/y/h` 是**CSS px、视口坐标**（直接喂 `ql_ui_ime_spot()` 的输出）。
+ * 主循环每帧或每次光标移动后调一次即可（值没变时内部直接返回，不发 X 请求）。
+ *
+ * 为什么必须调：XIM 的 `XIMPreeditNothing` 风格下候选窗由输入法自己画，
+ * 它靠 `XNSpotLocation` 知道位置。不告诉它，候选窗会画到窗口下方一大截
+ * （ibus 会退回到"上一次的位置"或窗口原点）。
+ */
+void ql_gfx_gl_set_ime_spot(QLGfxGL *gfx, ql_coord_t x, ql_coord_t y, ql_coord_t h);
+
 int      ql_gfx_gl_poll(QLGfxGL *gfx);
 /*
  * 阻塞等到"有事件或超时"（毫秒），返回 1=继续 0=窗口已关闭。

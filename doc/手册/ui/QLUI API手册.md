@@ -1542,6 +1542,11 @@ if (ql_ui_anim_tick(ui, ql_anim_now_ms()) > 0)   /* 有动画/滚动在跑 */
 ```c
 void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
+
+/* 光标位置（CSS px，视口坐标）：给输入法定位候选窗。
+ * 返回 1 = 有聚焦输入框；out_y + out_h 就是 XIM 的 spot 点。 */
+int ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *out_y,
+                   ql_coord_t *out_h);
 ```
 
 `Tab` / `Shift+Tab` 在 `input` / `textarea` / `select` / `button` 之间按树序循环。
