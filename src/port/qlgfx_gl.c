@@ -3910,7 +3910,33 @@ void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h
             spot.y = (short)ry;
         }
     }
-    (void)XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
+    /*
+     * 送两遍：
+     *   1. **preedit attributes 里的 XNSpotLocation** —— GTK/Qt 都是这么送的，
+     *      ibus 的候选窗位置就是从这条路径上取的；
+     *   2. 顶层 `XNSpotLocation` —— `XIMPreeditNothing` 风格下有些实现只认这条。
+     * 只送一条时踩过坑：候选窗出现在窗口下方/屏幕外，等于输入法根本不知道
+     * 光标在哪。
+     */
+    {
+        char *bad = NULL;
+        XVaNestedList preedit = XVaCreateNestedList(0, XNSpotLocation, &spot, NULL);
+        if (preedit != NULL) {
+            bad = XSetICValues(g->xic, XNPreeditAttributes, preedit, NULL);
+            XFree(preedit);
+        }
+        if (bad != NULL) {
+            /* 这个输入风格没有 preedit attributes：释放并退回顶层那条 */
+            XFree(bad);
+        }
+    }
+    {
+        char *bad = XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
+        if (bad != NULL)
+            XFree(bad);
+        if (g->trace_im)
+            fprintf(stderr, "[IM] spot root=(%d,%d)\n", spot.x, spot.y);
+    }
 }
 
 int ql_gfx_gl_resize_pending(QLGfxGL *g)
