@@ -1693,6 +1693,15 @@ struct QLUIRoot {
     char         **rep_texts;
     uint16_t       rep_count;
     uint16_t       rep_cap;
+
+    /*
+     * 输入法**预编辑**（组字中、还没提交的文本）。归 root 所有，因为只有
+     * 一个输入框在组字。`preedit_len == 0` 表示没有。
+     * 预编辑不算输入框的值：提交时才通过 `QL_INPUT_TEXT` 进值缓冲。
+     */
+    char           preedit[QL_CFG_UI_INPUT_LEN * 2];
+    uint16_t       preedit_len;      /* 字节数（不含结尾 0） */
+    uint16_t       preedit_caret;    /* 光标：**字节**偏移，0..preedit_len */
 };
 
 /* ----- 生命周期 ----- */
@@ -1941,6 +1950,20 @@ void        ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev);
 /* 键盘焦点：驱动 :focus 样式；传 NULL 清除 */
 void        ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node);
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
+
+/*
+ * 输入法预编辑（IME preedit）：组字中的文本，**不改**输入框的值。
+ *
+ * `utf8 == NULL` 或空串表示组字结束。`caret_cp` 是光标在预编辑文本里的
+ * **码点**下标（XIM 的 `XNPreeditCaretCallback` 就是这么给的），< 0 表示放到末尾。
+ *
+ * 为什么要单独一条：`XIMPreeditCallbacks` 风格下由**客户端**负责画组字文本，
+ * 输入法只画候选窗。不画的话用户敲拼音时输入框里什么都不动（只剩候选窗），
+ * 而画在输入法那边就会和候选窗里的预编辑行重复（两个预览框）。
+ */
+void        ql_ui_input_set_preedit(QLUIRoot *ui, const char *utf8, int caret_cp);
+/* 取当前的预编辑（没有则返回 NULL）；caret_cp 可为 NULL */
+const char *ql_ui_input_preedit(const QLUIRoot *ui, int *caret_cp);
 
 /*
  * 光标在屏幕上的位置（CSS px，原点 = 视口左上角）。给**输入法**定位候选窗用。

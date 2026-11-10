@@ -7220,6 +7220,57 @@ static void draw_progress(QLUINodeRT *node, QLDraw2D *d2d)
  * 密码框：文本已经在上一步画过了 —— 所以这里不重复处理，
  * 而是在 draw_text 之前把显示用的字符串换掉（见 render_node 里 password_text）。
  */
+/*
+ * 画输入法的**预编辑**（组字中的文本）：在光标处画出来，带下划线，
+ * 光标停在 `preedit_caret` 处。返回 1 表示画了（调用方就不要再画自己的光标）。
+ *
+ * `x` / `y` 是"原本该画光标的位置"（y 是字形顶边），`h` 是字形高度。
+ * 组字文本只在**聚焦的那个输入框**上画。
+ */
+static int draw_preedit(QLUINodeRT *node, QLDraw2D *d2d, const QLFont *font,
+                        ql_coord_t x, ql_coord_t y, ql_coord_t h)
+{
+    QLUIRoot *ui = node->owner;
+    if (ui == NULL || ui->preedit_len == 0 || d2d->draw_text == NULL)
+        return 0;
+    if (ui->focus != node)
+        return 0;
+
+    /* 与正文同一套字体/行高；颜色取正文色，组字文本靠下划线区分 */
+    QLTextStyle ts;
+    memset(&ts, 0, sizeof(ts));
+    const QLUIStyle *st = node->style;
+    ts.color = (st != NULL) ? st->text_color : 0x202020;
+    if (st != NULL) {
+        ts.line_h = st->line_h;
+        ts.letter_spacing = st->letter_spacing;
+    }
+    const ql_coord_t w = ql_font_line_width(font, ui->preedit, (int32_t)ui->preedit_len);
+
+    QLRect box = ql_rect_make(x, y, (w > 0) ? w + 2 : 2, h);
+    d2d->draw_text(d2d, font, ui->preedit, -1, box, &ts);
+
+    /* 下划线：这是"还没上屏"的视觉标志 */
+    if (d2d->draw_line != NULL && w > 0) {
+        const ql_coord_t uy = y + h;
+        d2d->draw_line(d2d, x, uy, x + w, uy, 1,
+                       (node->style != NULL && node->style->text_color != 0)
+                           ? node->style->text_color
+                           : 0x202020);
+    }
+    /* 组字中的光标：跟着预编辑文本里的插入点走 */
+    if (d2d->fill_rect != NULL) {
+        const ql_coord_t cx =
+            x + ql_font_line_width(font, ui->preedit, (int32_t)ui->preedit_caret);
+        d2d->fill_rect(d2d, ql_rect_make(cx, y, 1, h),
+                       (node->style != NULL && node->style->text_color != 0)
+                           ? node->style->text_color
+                           : 0x202020,
+                       255);
+    }
+    return 1;
+}
+
 static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
 {
     QLUIRoot *ui = node->owner;
@@ -7309,9 +7360,12 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
             if (ui->focus == node) {
                 ql_coord_t cx = 0, cy = 0;
                 caret_px(font, in, lines, count, lh, &cx, &cy);
-                QLRect r = ql_rect_make(base_x + cx, base_y + cy + half_lead, 1,
-                                        (ink_h > 0) ? ink_h : lh);
-                d2d->fill_rect(d2d, r, node->style->text_color, 255);
+                if (!draw_preedit(node, d2d, font, base_x + cx, base_y + cy + half_lead,
+                                  (ink_h > 0) ? ink_h : lh)) {
+                    QLRect r = ql_rect_make(base_x + cx, base_y + cy + half_lead, 1,
+                                            (ink_h > 0) ? ink_h : lh);
+                    d2d->fill_rect(d2d, r, node->style->text_color, 255);
+                }
             }
 
             /*
@@ -7348,12 +7402,18 @@ static void draw_input_decor(QLUINodeRT *node, QLDraw2D *d2d)
         }
     }
 
-    /* 光标：只在聚焦时画（不闪 —— 闪烁要主循环一直醒着，省电优先） */
+    /*
+     * 光标：只在聚焦时画（不闪 —— 闪烁要主循环一直醒着，省电优先）。
+     * 正在组字时画的是**预编辑文本**（输入法交给客户端画），光标跟着它走。
+     */
     if (ui->focus == node && d2d->fill_rect != NULL) {
         const ql_coord_t cx =
             base_x + ql_font_line_width(font, disp, (int32_t)DISP_OFF(in->caret));
-        QLRect r = ql_rect_make(cx, cb.y + 2, 1, (cb.h > 4) ? cb.h - 4 : cb.h);
-        d2d->fill_rect(d2d, r, node->style->text_color, 255);
+        const ql_coord_t ch = (cb.h > 4) ? cb.h - 4 : cb.h;
+        if (!draw_preedit(node, d2d, font, cx, cb.y + 2, ch)) {
+            QLRect r = ql_rect_make(cx, cb.y + 2, 1, ch);
+            d2d->fill_rect(d2d, r, node->style->text_color, 255);
+        }
     }
     #undef DISP_OFF
 
@@ -10127,6 +10187,55 @@ void ql_ui_set_focus_node(QLUIRoot *ui, QLUINodeRT *node)
 QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui)
 {
     return (ui != NULL) ? ui->focus : NULL;
+}
+
+/* 码点下标 → 字节偏移（预编辑文本里；越界则夹到末尾） */
+static uint16_t cp_index_to_bytes(const char *s, uint16_t len, int cp)
+{
+    if (s == NULL)
+        return 0;
+    if (cp < 0)
+        return len;
+    uint16_t i = 0;
+    int k = 0;
+    while (i < len && k < cp) {
+        const unsigned char c = (unsigned char)s[i];
+        i = (uint16_t)(i + ((c < 0x80u) ? 1u : ((c >= 0xF0u) ? 4u
+                                                 : ((c >= 0xE0u) ? 3u : 2u))));
+        k++;
+    }
+    return (i <= len) ? i : len;
+}
+
+void ql_ui_input_set_preedit(QLUIRoot *ui, const char *utf8, int caret_cp)
+{
+    if (ui == NULL)
+        return;
+    const size_t cap = sizeof(ui->preedit);
+    size_t n = 0;
+    if (utf8 != NULL) {
+        n = strlen(utf8);
+        if (n > cap - 1u)
+            n = cap - 1u;         /* 超长就截断：预编辑是瞬时状态，不能撑爆缓冲 */
+        /* 别把最后一个 UTF-8 序列劈成半个 */
+        while (n > 0 && ((unsigned char)utf8[n] & 0xC0u) == 0x80u)
+            n--;
+        memcpy(ui->preedit, utf8, n);
+    }
+    ui->preedit[n] = '\0';
+    ui->preedit_len = (uint16_t)n;
+    ui->preedit_caret = cp_index_to_bytes(ui->preedit, (uint16_t)n, caret_cp);
+    if (ui->focus != NULL)
+        ui->focus->flags |= QL_UI_RT_DIRTY;     /* 组字文本变了：那一块要重画 */
+}
+
+const char *ql_ui_input_preedit(const QLUIRoot *ui, int *caret_cp)
+{
+    if (ui == NULL || ui->preedit_len == 0)
+        return NULL;
+    if (caret_cp != NULL)
+        *caret_cp = (int)cp_count(ui->preedit, ui->preedit_caret);
+    return ui->preedit;
 }
 
 /*

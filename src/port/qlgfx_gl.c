@@ -121,6 +121,16 @@ struct QLGfxGL {
     /* 上一次告诉输入法的光标位置（CSS px；全 -1 表示还没设过） */
     ql_coord_t       ime_x, ime_y, ime_h;
     int              trace_im;      /* QLGL_TRACE_IM=1：打印输入法事件过滤情况 */
+    /*
+     * 输入法**预编辑**（组字中的文本）。`XIMPreeditCallbacks` 风格下由客户端
+     * 负责画它 —— 我们把它交给界面层，画在输入框里（带下划线），
+     * 这样输入法的候选窗里就只剩候选列表，不会出现两个预览框。
+     */
+    QLUIRoot        *ime_ui;        /* 由 ql_gfx_gl_attach_ime() 接上 */
+    char             ime_pre[QL_CFG_UI_INPUT_LEN * 2];
+    uint16_t         ime_pre_len;
+    uint16_t         ime_pre_caret; /* 码点下标（XIM 回调给的就是这个） */
+    int              ime_pre_active;
     int              resize_pending;   /* 窗口尺寸变过，调用方需要重新 layout */
     /*
      * 窗口的 X11 背景像素（= 上一帧的清除色）。
@@ -516,6 +526,19 @@ static GLuint compile(GLenum type, const char *src)
     }
     return sh;
 }
+
+/*
+ * XIMCallback.callback 的类型是 `void (*)(XIM, XPointer, XPointer)`，与实际回调
+ * 签名不完全一致（Xlib 的历史包袱）。按惯例经 `void (*)(void)` 中转一次转换，
+ * 免得 -Wcast-function-type 报"类型不兼容"。
+ */
+#define IM_PROC(fn) ((XIMProc)(void (*)(void))(fn))
+
+/* 输入法预编辑回调（定义在后面，create 里要注册） */
+static int  ime_preedit_start(XIC ic, XPointer client, XPointer call);
+static void ime_preedit_done(XIC ic, XPointer client, XPointer call);
+static void ime_preedit_draw(XIC ic, XPointer client, XPointer call);
+static void ime_preedit_caret(XIC ic, XPointer client, XPointer call);
 
 static int build_program(QLGfxGL *g)
 {
@@ -3052,11 +3075,55 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
             }
         }
         if (g->xim != NULL) {
-            g->xic = XCreateIC(g->xim,
-                               XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
-                               XNClientWindow, g->win,
-                               XNFocusWindow, g->win,
-                               NULL);
+            /*
+             * 优先用 `XIMPreeditCallbacks`：这样**组字文本由客户端画**（我们的
+             * 输入框里画，带下划线），输入法的候选窗里就只剩候选列表。
+             * 用 `XIMPreeditNothing` 的话输入法只能自己把预编辑也画在候选窗里，
+             * 于是屏幕上出现两个预览（一个在框里、一个在候选窗顶部）。
+             * 输入法不支持 callbacks 就退回 nothing。
+             */
+            int use_cb = 0;
+            XIMStyles *styles = NULL;
+            if (XGetIMValues(g->xim, XNQueryInputStyle, &styles, NULL) == NULL &&
+                styles != NULL) {
+                for (int i = 0; i < styles->count_styles; i++)
+                    if (styles->supported_styles[i] ==
+                        (XIMStyle)(XIMPreeditCallbacks | XIMStatusNothing))
+                        use_cb = 1;
+                XFree(styles);
+            }
+            if (use_cb) {
+                XIMCallback cb_start, cb_done, cb_draw, cb_caret;
+                cb_start.client_data = (XPointer)g;
+                cb_start.callback = IM_PROC(ime_preedit_start);
+                cb_done.client_data = (XPointer)g;
+                cb_done.callback = IM_PROC(ime_preedit_done);
+                cb_draw.client_data = (XPointer)g;
+                cb_draw.callback = IM_PROC(ime_preedit_draw);
+                cb_caret.client_data = (XPointer)g;
+                cb_caret.callback = IM_PROC(ime_preedit_caret);
+                XVaNestedList pa = XVaCreateNestedList(
+                    0, XNPreeditStartCallback, &cb_start, XNPreeditDoneCallback, &cb_done,
+                    XNPreeditDrawCallback, &cb_draw, XNPreeditCaretCallback, &cb_caret,
+                    NULL);
+                if (pa != NULL) {
+                    g->xic = XCreateIC(g->xim,
+                                       XNInputStyle,
+                                       XIMPreeditCallbacks | XIMStatusNothing,
+                                       XNClientWindow, g->win,
+                                       XNFocusWindow, g->win,
+                                       XNPreeditAttributes, pa,
+                                       NULL);
+                    XFree(pa);
+                }
+            }
+            if (g->xic == NULL) {
+                g->xic = XCreateIC(g->xim,
+                                   XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                                   XNClientWindow, g->win,
+                                   XNFocusWindow, g->win,
+                                   NULL);
+            }
         }
         if (g->xic != NULL) {
             /*
@@ -3882,6 +3949,127 @@ void ql_gfx_gl_attach_clipboard(QLGfxGL *g, QLUIRoot *ui)
         return;
     ql_x11_clip_attach(g->dpy, g->win);
     ql_ui_set_clipboard(ui, &s_gl_clip, NULL);
+}
+
+/* ---------------- 输入法预编辑回调（XIMPreeditCallbacks） ---------------- */
+
+/* 把当前预编辑状态推给界面层（没接 ui 就只留在这层，安全） */
+static void ime_preedit_flush(QLGfxGL *g)
+{
+    if (g->ime_ui == NULL)
+        return;
+    if (g->ime_pre_active && g->ime_pre_len > 0)
+        ql_ui_input_set_preedit(g->ime_ui, g->ime_pre, (int)g->ime_pre_caret);
+    else
+        ql_ui_input_set_preedit(g->ime_ui, NULL, 0);
+}
+
+static int ime_preedit_start(XIC ic, XPointer client, XPointer call)
+{
+    QL_UNUSED(ic);
+    QL_UNUSED(call);
+    QLGfxGL *g = (QLGfxGL *)client;
+    if (g == NULL)
+        return -1;
+    g->ime_pre_active = 1;
+    g->ime_pre_len = 0;
+    g->ime_pre_caret = 0;
+    g->ime_pre[0] = '\0';
+    ime_preedit_flush(g);
+    return -1;      /* -1 = 没有长度限制（我们自己做截断） */
+}
+
+static void ime_preedit_done(XIC ic, XPointer client, XPointer call)
+{
+    QL_UNUSED(ic);
+    QL_UNUSED(call);
+    QLGfxGL *g = (QLGfxGL *)client;
+    if (g == NULL)
+        return;
+    g->ime_pre_active = 0;
+    g->ime_pre_len = 0;
+    g->ime_pre_caret = 0;
+    g->ime_pre[0] = '\0';
+    ime_preedit_flush(g);
+}
+
+/* XIMText → UTF-8。属性（下划线/高亮）忽略：整段统一样式就够了 */
+static void ime_text_to_utf8(const XIMText *t, char *out, size_t cap, uint16_t *out_len)
+{
+    out[0] = '\0';
+    *out_len = 0;
+    if (t == NULL || t->string.multi_byte == NULL || t->length == 0)
+        return;
+    size_t n = 0;
+    if (!t->encoding_is_wchar) {
+        n = (size_t)t->length;
+        if (n > cap - 1u)
+            n = cap - 1u;
+        memcpy(out, t->string.multi_byte, n);
+    } else {
+        /* 宽字符：逐码点折成 UTF-8（XIM 说 length 是"字符数"） */
+        const wchar_t *w = t->string.wide_char;
+        for (int i = 0; i < t->length && n + 4 < cap; i++) {
+            const unsigned long c = (unsigned long)w[i];
+            if (c < 0x80u) {
+                out[n++] = (char)c;
+            } else if (c < 0x800u) {
+                out[n++] = (char)(0xC0u | (c >> 6));
+                out[n++] = (char)(0x80u | (c & 0x3Fu));
+            } else if (c < 0x10000u) {
+                out[n++] = (char)(0xE0u | (c >> 12));
+                out[n++] = (char)(0x80u | ((c >> 6) & 0x3Fu));
+                out[n++] = (char)(0x80u | (c & 0x3Fu));
+            } else {
+                out[n++] = (char)(0xF0u | (c >> 18));
+                out[n++] = (char)(0x80u | ((c >> 12) & 0x3Fu));
+                out[n++] = (char)(0x80u | ((c >> 6) & 0x3Fu));
+                out[n++] = (char)(0x80u | (c & 0x3Fu));
+            }
+        }
+    }
+    /* 别把最后一个 UTF-8 序列劈开 */
+    while (n > 0 && ((unsigned char)out[n] & 0xC0u) == 0x80u)
+        n--;
+    out[n] = '\0';
+    *out_len = (uint16_t)n;
+}
+
+static void ime_preedit_draw(XIC ic, XPointer client, XPointer call)
+{
+    QL_UNUSED(ic);
+    QLGfxGL *g = (QLGfxGL *)client;
+    if (g == NULL)
+        return;
+    const XIMText *t = (const XIMText *)call;
+    if (t == NULL) {
+        g->ime_pre_len = 0;
+        g->ime_pre[0] = '\0';
+    } else {
+        ime_text_to_utf8(t, g->ime_pre, sizeof(g->ime_pre), &g->ime_pre_len);
+    }
+    if (g->trace_im)
+        fprintf(stderr, "[IM] preedit \"%s\"\n", g->ime_pre);
+    ime_preedit_flush(g);
+}
+
+static void ime_preedit_caret(XIC ic, XPointer client, XPointer call)
+{
+    QL_UNUSED(ic);
+    QLGfxGL *g = (QLGfxGL *)client;
+    if (g == NULL)
+        return;
+    const XIMPreeditCaretCallbackStruct *c = (const XIMPreeditCaretCallbackStruct *)call;
+    g->ime_pre_caret = (uint16_t)((c != NULL && c->position >= 0) ? c->position : 0);
+    ime_preedit_flush(g);
+}
+
+void ql_gfx_gl_attach_ime(QLGfxGL *gfx, QLUIRoot *ui)
+{
+    if (gfx == NULL)
+        return;
+    gfx->ime_ui = ui;
+    ime_preedit_flush(gfx);        /* 接上时可能已经在组字了 */
 }
 
 void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h)

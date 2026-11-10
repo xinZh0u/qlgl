@@ -298,6 +298,8 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
         ql_ui_attach_input(ui);
         /* Ctrl+C / Ctrl+V 走 X11 剪贴板（协议是异步的，内容下一帧才到） */
         ql_gfx_gl_attach_clipboard(gfx, ui);
+        /* 输入法组字文本交给我们画（不接的话拼音只出现在候选窗里） */
+        ql_gfx_gl_attach_ime(gfx, ui);
         QLDraw2D *d2d = ql_gfx_gl_draw(gfx);
         /*
          * 保留式画布 + 脏区重绘：静止的界面一个像素都不重画。

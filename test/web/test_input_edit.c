@@ -18,6 +18,17 @@
 static QLDispDriver *s_disp;
 static QLCanvas s_cv;
 
+/* 某个矩形里"明显不是背景"的像素个数（判断有没有画出东西） */
+static long dark_pixels(QLDispDriver *d, QLRect box)
+{
+    long n = 0;
+    for (ql_coord_t y = box.y; y < ql_rect_bottom(box); y++)
+        for (ql_coord_t x = box.x; x < ql_rect_right(box); x++)
+            if ((ql_disp_mem_pixel(d, x, y) & 0xFFFFFFu) < 0xE0E0E0u)
+                n++;
+    return n;
+}
+
 static void send_text(QLUIRoot *ui, const char *s)
 {
     QLInputEvent ev;
@@ -136,6 +147,63 @@ QL_TEST_BEGIN("test_input_edit")
         /* 不认识的 type 明确报错 */
         QL_CHECK(ql_ui_load_text("<div><input type=\"date\"></div>", "") == NULL);
         QL_CHECK(strstr(ql_ui_text_last_error(), "text / password") != NULL);
+    }
+
+    /* ---------- 1.5 输入法预编辑：不算值、要画出来 ---------- */
+    {
+        QLUIDoc *doc = NULL;
+        QLUIRoot *ui = mk("<input id=a>", &doc);
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QLUINodeRT *in = &ui->nodes[1];
+            (void)ql_ui_pointer_down(ui, in->content_box.x + 2, 12);
+            ql_ui_pointer_up(ui, in->content_box.x + 2, 12);
+            QL_CHECK(ql_ui_focus_node(ui) == in);
+
+            QLDispDriver *dd = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+            QLCanvas c;
+            QL_CHECK_EQ(ql_canvas_from_disp(&c, dd), QL_OK);
+
+            ql_canvas_clear(&c, 0xFFFFFF);
+            ql_ui_render_canvas(ui, &c);
+            long before = dark_pixels(dd, in->content_box);
+
+            /* 组字中的文本：完全不影响输入框的值，但必须出现在画面上 */
+            ql_ui_input_set_preedit(ui, "nihao", 5);
+            QL_CHECK_STR(ql_ui_input_value(ui, in), "");
+            {
+                int cp = -1;
+                const char *pre = ql_ui_input_preedit(ui, &cp);
+                QL_CHECK(pre != NULL);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "nihao");
+                QL_CHECK_EQ(cp, 5);
+            }
+            ql_canvas_clear(&c, 0xFFFFFF);
+            ql_ui_render_canvas(ui, &c);
+            const long during = dark_pixels(dd, in->content_box);
+            QL_CHECK(during > before);       /* 预编辑真的画出来了 */
+
+            /* 上屏：预编辑清空，值由 QL_INPUT_TEXT 走正常路径进来 */
+            ql_ui_input_set_preedit(ui, NULL, 0);
+            QL_CHECK(ql_ui_input_preedit(ui, NULL) == NULL);
+            ql_canvas_clear(&c, 0xFFFFFF);
+            ql_ui_render_canvas(ui, &c);
+            QL_CHECK_EQ(dark_pixels(dd, in->content_box), before);
+
+            /* 码点下标 → 字节：中文一个码点 3 字节，切一半会劈坏字符 */
+            ql_ui_input_set_preedit(ui, "你好", 1);
+            {
+                int cp = -1;
+                (void)ql_ui_input_preedit(ui, &cp);
+                QL_CHECK_EQ(cp, 1);
+            }
+            ql_ui_input_set_preedit(ui, NULL, 0);
+
+            ql_ui_free(ui);
+            ql_disp_mem_destroy(dd);
+        }
+        ql_ui_doc_free(doc);
     }
 
     /* ---------- 2. 点击聚焦 + 按位置定光标 ---------- */

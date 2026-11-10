@@ -44,6 +44,16 @@ void ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
 void ql_gfx_gl_attach_clipboard(QLGfxGL *gfx, QLUIRoot *ui);
 
 /*
+ * 把输入法的**预编辑**（组字中的文本）接到界面层：输入法回调里拿到的拼音/汉字
+ * 会通过 `ql_ui_input_set_preedit()` 交给界面层，画在输入框里（带下划线）。
+ *
+ * 为什么必须接：输入上下文用 `XIMPreeditCallbacks` 时，组字文本由**客户端**负责
+ * 显示。不接的话打字时输入框里什么都不动；而让输入法自己画（`XIMPreeditNothing`）
+ * 又会出现"输入框里没有、候选窗顶部多一行"的两个预览。
+ */
+void ql_gfx_gl_attach_ime(QLGfxGL *gfx, QLUIRoot *ui);
+
+/*
  * 告诉输入法"光标在哪儿"，用来定位候选窗。
  *
  * `x/y/h` 是**CSS px、视口坐标**（直接喂 `ql_ui_ime_spot()` 的输出）。
