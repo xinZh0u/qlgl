@@ -1004,16 +1004,16 @@ P4a/P4b 加 <code>pre</code>/<code>sub</code>/<code>sup</code>、P5 加 <code>te
 <td><code>QL_FEAT_UI_TEXT</code></td>
 <td>6（<code>pre sub sup ruby rt rp</code>）</td>
 <td>4/6 ✅</td>
-<td>❌</td>
-<td>已做：<code>white-space: pre/pre-wrap/pre-line</code>、<code>vertical-align: sub/super</code>、两级字体族；未做：<code>ruby</code>/<code>rt</code>/<code>rp</code> 行内注音</td>
+<td>⚙️ 可裁</td>
+<td>已做：<code>white-space: pre/pre-wrap/pre-line</code>、<code>vertical-align: sub/super</code>、两级字体族；未做：<code>ruby</code>/<code>rt</code>/<code>rp</code> 行内注音（要"注音排版"，PC/Mobile 档排期）</td>
 </tr>
 <tr>
 <td><code>TABLE</code></td>
 <td><code>QL_FEAT_UI_TABLE</code></td>
 <td>10（<code>table</code> 全家）</td>
-<td>✅</td>
-<td>❌</td>
-<td>表格布局算法（列宽分配、跨行跨列、边框合并）</td>
+<td>⏳ <strong>B7 排期（PC/Mobile 必做）</strong></td>
+<td>⚙️ 默认关</td>
+<td>表格布局算法（列宽分配、跨行跨列、边框合并）。<strong>不再归"不做"</strong>：后台管理界面刚需，见 <a href="CSS3覆盖与裁剪.html">CSS 覆盖表 §16</a></td>
 </tr>
 <tr>
 <td><code>IMAGE</code> ✅</td>
@@ -1437,6 +1437,9 @@ app.html:<span class="w"> </span><span class="m">42</span><span class="w"> </spa
 <h2 id="8">8. 与文档其它地方的口径</h2>
 <ul>
 <li>现在：<strong>已支持 101 / 114</strong>（含 13 个占位），未支持 13（见 §1 的统计行）。</li>
+<li><strong>那 13 个里有 10 个是表格标签</strong>（<code>table</code> 全家），它们已从"不做"改成
+  <strong>B7 排期（PC/Mobile 必做，MCU 归能力包）</strong>；剩下的是 <code>ruby</code>/<code>rt</code>/<code>rp</code>（注音排版，同样 PC 排期）。
+  判据见 <a href="CSS3覆盖与裁剪.html">CSS 覆盖表 §0 / §2.2</a>：<strong>"MCU 装不下"不再是"不做"的理由</strong>。</li>
 <li>教程的"<a href="../../tutorial/10_vs_web.html">与 Web 的差别</a>"列的是<strong>用户会踩到的差异</strong>，不重复这份清单。</li>
 <li>各标签的 UA 默认样式见<a href="QLUI阅读指南.html">阅读指南 §5.4.7</a>；
   属性白名单见 <a href="QLUI API手册.html">API 手册 §3.2</a>。</li>

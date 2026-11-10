@@ -523,7 +523,52 @@ src/ 同一份源码 ──────────────┼──▶ arm-
 <li>60fps 的 16.7ms 预算里，"光栅 6.0 + 布局 0.3" 只占 <strong>36%</strong>；</li>
 <li><strong>局部更新只要 0.02ms</strong> —— MCU 上真正该做的是脏区重绘，不是每帧全画。</li>
 </ol>
-<h3 id="_5">裸机上必须自己接的两样东西</h3>
+<h3 id="_5">拿它当"设计决策的依据"</h3>
+<p>同一个基准只改输入场景，就能回答"某个 CSS 能力值不值得给 MCU 档留"。
+下面这组是本轮实测量的（同一份 CSS，只改卡片数量 / 嵌套层数）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>节点数</th>
+<th>布局 @200 MHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>扁平 <code>flex-wrap</code>，9 张卡</td>
+<td>12</td>
+<td>0.23 ms</td>
+</tr>
+<tr>
+<td>同上 36 张</td>
+<td>39</td>
+<td>0.82 ms</td>
+</tr>
+<tr>
+<td>同上 72 张</td>
+<td>75</td>
+<td>1.94 ms</td>
+</tr>
+<tr>
+<td>嵌套 flex 拼 3×3（3 个 <code>.row</code>）</td>
+<td>15</td>
+<td><strong>0.427 ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>两个能直接用的数：</p>
+<ul>
+<li><strong>边际成本 ≈ 22 µs/节点</strong>；</li>
+<li><strong>一层 wrapper ≈ 3 个叶子节点</strong> —— 嵌套只是"为了排得下"，却付了 3 倍的钱。</li>
+</ul>
+<p>所以"用 flex 拼网格 vs 用 Grid"不是风格问题，是<strong>布局时间差 46%</strong> 的问题。
+这也是我们把 Grid 从"不做"改成"要做"的直接原因（见
+<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §11</a>）。</p>
+<p><strong>库体积</strong>同理：全量 <code>text</code> 131,520 B，关掉图像管线后 123,404 B（−6.2%）。
+参考量级：<code>libharfbuzz.so</code> 1,178 KB、<code>libfreetype.so</code> 813 KB、一份全量 CJK TTF 21 MB ——
+这决定了"真字体栈"只能出现在 PC/Mobile 档。</p>
+<h3 id="_6">裸机上必须自己接的两样东西</h3>
 <table>
 <thead>
 <tr>

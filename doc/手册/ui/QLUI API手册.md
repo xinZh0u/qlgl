@@ -881,7 +881,7 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 ### 3.12 不支持的写法一律报错
 
 ```
-float / grid / align-content: baseline
+float / grid（B6 排期）/ align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
 filter（blur 等）                       backdrop-filter 的 blur() 以外的函数

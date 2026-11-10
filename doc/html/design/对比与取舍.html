@@ -453,7 +453,7 @@ main img.shot { max-width: 100%; }
 </table>
 <p><strong>共同短板</strong>（qlgl 并不能靠换框架解决）</p>
 <ul>
-<li>复杂文字整形（阿拉伯/印度语系）与 RTL：qlgl 明确不做（要 HarfBuzz/SheenBidi）；</li>
+<li>复杂文字整形（阿拉伯/印度语系）与 RTL：<strong>PC/Mobile 档已排期（M10，要 HarfBuzz/SheenBidi）；MCU 档恒裁</strong> —— HarfBuzz 一个库就等于当前整个固件体积的 8.9 倍；</li>
 <li>平台原生观感：自绘框架都不像系统控件（GTK/Qt 才是那一档）。</li>
 </ul>
 <p><strong>该选 Flutter 的时候</strong>：做移动端产品、要现成控件与生态、团队愿意学 Dart。</p>
@@ -926,36 +926,48 @@ qlgl 的赌注是"<strong>PC 上的原型和板子上是同一份 HTML/CSS</stro
 </thead>
 <tbody>
 <tr>
-<td><code>calc()</code> / <code>min()</code> / <code>max()</code></td>
-<td>要改 <code>QLUILength</code> 表示（+40 字节/样式），未开始</td>
+<td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
+<td>✅ 已完成（编译成后缀字节码，见 CSS3 §18.3）</td>
 </tr>
 <tr>
-<td><code>border-radius</code> 四角、<code>border-style: dashed</code></td>
-<td>未开始</td>
+<td><code>border-radius</code> 四角、<code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code></td>
+<td>✅ 已完成（B4）</td>
+</tr>
+<tr>
+<td><code>:checked</code> / <code>:disabled</code> / <code>:enabled</code> / <code>::placeholder</code>（含复选框）</td>
+<td>✅ 已完成（B2）</td>
+</tr>
+<tr>
+<td><code>visibility</code> / <code>cursor</code> / <code>pointer-events</code> / <code>outline</code> / <code>text-shadow</code> / <code>background-size</code> / <code>object-fit</code></td>
+<td>✅ 已完成（B4/B5）</td>
 </tr>
 <tr>
 <td><code>transform: rotate()</code> / <code>skew()</code></td>
-<td>要一条旋转光栅路径，单独立项</td>
+<td>⏳ <strong>M9.4 排期</strong>（PC/Mobile）；要一条旋转光栅路径</td>
 </tr>
 <tr>
-<td>真 group <code>opacity</code>（离屏图层）</td>
-<td>现在是逐图元降透明</td>
+<td>真 group <code>opacity</code> / <code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code>（离屏图层）</td>
+<td>⏳ <strong>M9.3 排期</strong>（PC/Mobile）；四样共用一块能力</td>
 </tr>
 <tr>
-<td><code>visibility</code> / <code>cursor</code> / <code>pointer-events</code> / <code>outline</code> / <code>text-shadow</code> / <code>list-style</code> / <code>background-size</code></td>
-<td>未开始（<code>!important</code> 与 <code>var()</code> 已经支持，见 CSS3 文档 §18.1）</td>
+<td><strong>CSS Grid</strong></td>
+<td>⏳ <strong>M9.1 排期（PC/Mobile 必做）</strong>；MCU 归能力包。实测比嵌套 flex 拼网格<strong>快 46%</strong></td>
 </tr>
 <tr>
-<td>CSS Grid / <code>float</code></td>
-<td>Grid 未排期；<code>float</code> 明确不做</td>
+<td><strong>表格 / 多栏</strong></td>
+<td>⏳ <strong>M9.2 排期</strong>（PC/Mobile）；MCU 归能力包</td>
 </tr>
 <tr>
-<td><code>:checked</code> / <code>:disabled</code> / <code>::placeholder</code></td>
-<td>要先有能表达"禁用/勾选"的控件</td>
+<td><strong><code>@font-face</code> / 真字体栈 / 连字 / 双向</strong></td>
+<td>⏳ <strong>M10 排期</strong>（PC/Mobile）；MCU 恒裁</td>
+</tr>
+<tr>
+<td><code>float</code> / <code>list-style</code>（<code>::marker</code>）</td>
+<td>❌ 不做（本库没有"文字环绕"；符号自己写字符）</td>
 </tr>
 <tr>
 <td>CSS / HTML 能力包真的生效</td>
-<td>现在只有名字（图像那几个是真的）</td>
+<td>图像那几个是真的；其余仍只有名字（M9/M10 落地时同步实现）</td>
 </tr>
 </tbody>
 </table>

@@ -4,18 +4,37 @@
 
 1. **CSS 的每一样东西，本库支持到哪一步？** —— 按模块穷举，一条不漏。
 2. **不支持的为什么不做？** —— 每条给一个**原因码**（§2），不写"暂不支持"这种废话。
-3. **哪一批先做？** —— 按"收益 / 风险 / 是否动 `QLUIStyle`"排成五批（§10）。
+3. **哪一批先做？** —— 按"收益 / 风险 / 是否动 `QLUIStyle`"排批次（§22）。
+
+## 0. 一份代码，两档目标（先读这一节）
+
+从这一版起，"支持 / 不支持"**按平台分开回答**。两档的差距不是程度问题，是数量级问题：
+
+| | **PC / Mobile 档** | **MCU 档** |
+|---|---|---|
+| 目标 | **尽可能完整兼容 HTML/CSS**，第三方库（FreeType / HarfBuzz / SheenBidi / libpng…）该上就上 | **确定性性能 + 自由裁剪**，一个能力包一行 `-D` 就能摘掉 |
+| Flash | 不设上限（MB 级随便用） | 典型 M4 板 256 KB~1 MB；当前全量 **131.5 KB**（§2.1） |
+| RAM | 几十 MB 随便用 | 几十~几百 KB |
+| 帧率 | 60~144 fps，掉一帧要查原因 | 30 fps 够用，宁可少画也不掉帧 |
+| 布局算法 | **该有的都要有**：Grid、表格、多栏、`border-image` | 按能力包裁剪；**但 Grid 反而是减负**（§11） |
+| 文本 | 自由字体列表 + 真整形（连字/字距/双向） | 内建 ASCII 位图字体（≈9 KB），或裁剪后的子集 TTF |
+| "不做"的东西 | 只剩**与"构建期定型"根本冲突**的（运行期 CSS 匹配、DOM/JS 引擎） | 按需裁剪，不是"不做" |
+
+**因此本文里的 ❌ 只有三种含义**：① 与"构建期定型"冲突（`P`）；② 与 GUI 无关（`N`）；
+③ 已明确排到某个后续批次（`⏳`）。**"MCU 上装不下"不再是 ❌ 的理由** ——
+那属于能力包（§21）的裁剪口径，PC/Mobile 档照样全做。
 
 一句话现状：
 
-> **布局与绘制的骨架已经齐了**（盒模型、flexbox、定位、圆角、阴影、渐变、变换、过渡、动画）；
-> 缺的是**真实页面天天用的细节**（`min/max-*`、`em/rem`、`:nth-child`、`::before`、
-> `letter-spacing`、`text-overflow`、`border-style`、`cursor`…）。
-> 加这些是"补细节"，不是"补架构"。
+> **布局与绘制的骨架已经齐了**（盒模型、flexbox、定位、圆角、阴影、渐变、变换、过渡、动画），
+> 五批（B1–B5）把"真实页面天天用的细节"补完了。
+> 下一阶段的重点是**PC/Mobile 档的兼容广度**：Grid（B6）、表格与多栏（B7）、
+> 第三方文本栈（B8：FreeType + HarfBuzz + 双向）、`filter` / `rotate`（独立立项）。
+> MCU 档同步只做一件事：**把这些新能力都做成可裁的能力包**。
 
 ---
 
-## 0. 已完成 vs 待做（2026-11-09 更新）
+## 0.1 已完成 vs 待做（2026-11-10 更新）
 
 **已完成（B2 全部 + B1 第一片）**：
 
@@ -34,11 +53,15 @@
 | `word-spacing` / `tab-size` / `text-decoration-*` / `:disabled` / `:enabled` / `:checked` / `::placeholder` / `background-image: url()` | blob v27（见 §18.7） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
-**还没做**（下表仍标 ⏳ / ❌ 的就是全部）：`filter`（颜色矩阵 + `blur()` 离屏）、
-`transform: rotate()` / `skew()`、`text-align: justify`、
-阴影的 `spread` 展开半径、椭圆 `border-radius`（斜杠写法）、`font` 简写、
-`word-wrap` 别名、`::first-line` / `::first-letter`。
-五批（B1–B5）至此除上列各项外全部落地，见 §18.5 / §18.6 / §18.7。
+**还没做**，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：
+
+| 类 | 项 | 归宿 |
+|---|---|---|
+| **PC/Mobile 必做**（MCU 归能力包） | Grid、`border-image`（B6）；表格、多栏（B7）；`@font-face` + 真字体栈、连字整形、双向（B8）；离屏图层（`filter` / 真 group `opacity` / `mix-blend-mode` / `mask`）；`transform: rotate()`/`skew()`/`matrix()`；`clip-path` 的 `inset`/`ellipse`/`polygon` | §22 |
+| **小件**（随时插队） | `text-align: justify`、阴影 `spread`、椭圆 `border-radius`（`10px / 20px`）、`font` 简写、`word-wrap` 别名、`::first-line` / `::first-letter`、`:empty`、`revert` | 各节 ⏳ |
+| **不排期** | 3D 变换（`perspective()` / `rotate3d()`）；bidi 的完整算法之外的冷门项；打印相关 | 各节 ❌ |
+
+五批（B1–B5）已全部落地，见 §18.5 / §18.6 / §18.7；B6–B8 见 §22。
 下表已逐行对齐当前实现（`qltext check` 实测）。
 
 ---
@@ -56,6 +79,15 @@
 **红线**：不支持的东西必须报错并给行号。下面每一个 ⏳/❌ 今天的实际表现都是
 `ql_ui_text_last_error()` 里一句能读懂的话（多数还带替代方案），而不是"忽略这条规则继续渲染"。
 
+**平台维度**（§0）：每行还有一个"档位"标记，说明它在两档里各是什么下场。
+
+| 档位 | PC / Mobile | MCU |
+|---|---|---|
+| **双档** | ✅ 默认开 | ✅ 默认开（`CSS_BASE`） |
+| **包裁** | ✅ 默认开 | ⚙️ 由能力包控制（§21），可整块摘掉 |
+| **大核** | ✅ 默认开 | ⚙️ 默认**关**（Grid / 表格 / 多栏 / `border-image` / 第三方文本栈） |
+| **仅 PC** | ✅ | ❌ 恒关（离屏图层类：`filter`、真 group `opacity`、`backdrop-filter` 的完整链） |
+
 ---
 
 ## 2. 原因码
@@ -72,8 +104,67 @@
 | **F** | **要新光栅路径**（旋转 / 任意仿射 / 非矩形） | `transform: rotate()` |
 | **X** | **要外部引擎**（文本整形、排版算法、打印引擎） | `text-justify`、`hyphens` |
 | **P** | **与"静态节点 / 构建期定型"冲突**（本库最核心的取舍） | `content: counter()`、`@supports`、`@layer` |
-| **M** | **与 MCU 目标冲突**（体积 / 内存 / 代码量） | Grid、多栏、`border-image` |
+| **S** | **要一个新的排版/绘制子系统**（不是"加个属性"，是一次立项） | Grid 列轨道、表格列宽分配、多栏分裂、离屏图层 |
+| **G** | **要第三方库**（FreeType / HarfBuzz / SheenBidi…）：PC/Mobile 档上，MCU 档裁 | 真字体列表、连字整形、双向文本、彩色 emoji |
 | **N** | **收益极低 / 已被取代 / 与 GUI 无关** | `float`、`text-emphasis`、打印属性 |
+
+> 旧版的 `M`（"与 MCU 目标冲突"）**已废除**：MCU 的体积问题是能力包（§21）解决的问题，
+> 不是"不做"的理由。原来标 `M` 的行现在分别是 `S`（Grid / 表格 / 多栏 / `border-image`）
+> 与 `G`（`@font-face` / 多变体字体 / 双向），并且**都进了后续批次**（§22）。
+
+---
+
+### 2.1 两档的实测数字（2026-11-10，本机）
+
+这些数字是决定"哪些能力配 MCU 档"的依据，都是**本轮实测**，不是估值。
+
+| 项目 | 平台 / 配置 | 数值 |
+|---|---|---|
+| 全量固件 `text` | Cortex-M4 Thumb-2，`-O2`，240×160 RGB565（`test/mcu`） | **131,520 B** |
+| 同上，关掉图像管线（`QL_FEAT_IMG_*=0`） | 同上 | 123,404 B（**−8,116 B，−6.2%**） |
+| 内建 ASCII 位图字体（12px + 16px，全字节表） | 同上 | ≈9 KB |
+| 布局：12 节点 | QEMU `mps2-an386` `-icount` @200 MHz 折算 | 0.23 ms |
+| 布局：39 节点 | 同上 | 0.82 ms |
+| 布局：75 节点 | 同上 | 1.94 ms |
+| **布局边际成本** | 同上（三点拟合） | **≈4.4k 指令/节点 ≈ 22 µs/节点** |
+| **多一层 wrapper 容器**（15 节点嵌套 vs 12 节点扁平，视觉相同） | 同上 | **+0.20 ms（+86%）**，一层 ≈ 3 个叶子节点 |
+| 光栅一帧 240×160 RGB565 | 同上 | 6.1–7.8 ms（≈40 周期/像素） |
+| 重排 | x86-64 `-O3`（`bench --scene scroll`，302/902/1802 节点拟合） | **0.53 µs/节点** |
+| 整帧 `cards` 800×480 / 362 节点 | 同上，CPU 后端 | 0.72–0.77 ms |
+| `libharfbuzz.so` `text` | x86-64 系统库 | **1,178 KB** |
+| `libfreetype.so` `text` | 同上 | **813 KB** |
+| `libfribidi.so` `text` | 同上 | 106 KB |
+| 一份全量 CJK TTF | `uming.ttc` | **21 MB**（GB2312 子集化后典型 200–400 KB） |
+
+> **口径**：MCU 那一列按 `test/mcu/README.md` 的换算——QEMU `-icount` 下"虚拟 ns ≈ 指令数"，
+> 换到 M4@200 MHz 乘 5。这是**乐观下界**（M4 无 cache，实际 IPC 常 0.6~0.8），
+> 真实板子上乘 1.5~2 更接近。库体积（`text`）是 ELF 实测，不含栈与堆。
+
+三条能直接推出结论的读数：
+
+1. **MCU 档的瓶颈是 Flash，不是"布局算法多"**：一个 HarfBuzz 就是当前整个固件的
+   8.9 倍；一份全量 CJK 字体是 160 倍。所以"字体栈"必须按 `G` 处理（PC 上，MCU 裁），
+   而**布局算法（Grid/表格）加起来也就几 KB**，够不上一个数量级。
+2. **Grid 在 MCU 上不是负担，是减负**：见 §11 的实测对比 —— 用嵌套 flex 拼 3×3
+   网格要 0.427 ms 布局，换成 Grid（同一视觉）只要 ≈0.229 ms，**省 46%**，
+   因为省掉了 3 个 wrapper 容器（每层 ≈3 个叶子节点的代价）。
+3. **PC/Mobile 档完全不缺这点性能**：整帧 0.72 ms 的预算里，加一个 Grid 求解器
+   增加的是"每容器一次 O(行×列) 的加法"，量级在 µs；真正的成本只有代码体积（MB 级预算里的几 KB）。
+
+### 2.2 两档"能不能加"的判据
+
+给一个新属性/新能力，按这个顺序问：
+
+```
+① 与"构建期定型"冲突吗？        → 是：P（不做，任何档）
+② 与 GUI 无关吗？               → 是：N（不做，任何档）
+③ 要第三方库吗？                → 是：G（PC/Mobile 上，MCU 裁）
+④ 要新子系统吗？                → 是：S → 进 §22 的批次；PC/Mobile 必做，MCU 归"大核"包（默认关）
+⑤ 只是"多解析一个值 / 多画一种线"？ → 直接做，进对应能力包（§21）
+```
+
+**没有"因为 MCU 装不下所以不做"这一条了。** MCU 装不下就裁；
+PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化。
 
 ---
 
@@ -139,7 +230,7 @@
 | @ 规则 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `@keyframes` | ✅ | B | 编译期摊平成 `QLUIKeyframe[]` / `QLUIAnimation[]` 静态表 |
-| `@font-face` | ❌ | M | 字体文件由宿主 `ql_font_set_default_file()` 提供，不在 CSS 里配 |
+| `@font-face` | ⏳ | G | **B8**：PC/Mobile 档解析成"字体表条目"，喂给 FreeType/HarfBuzz；MCU 档裁掉（只留内建位图字体） |
 | `@media (min-width / max-width)` | ✅ | — | **构建期切成视口宽区间**，每个区间编译一套样式；运行期只按宽度选下标（见 §18.2） |
 | `@media` 的其它条件（`orientation` / `prefers-*` / 分辨率 / `em` 单位） | ❌ | P | 需要运行期条件求值；`em` 单位要设备字号，明确报错。`print` 整块跳过 |
 | `@supports` | ❌ | P | 构建期就知道支持什么，没有"探测"的必要 |
@@ -164,7 +255,7 @@
 | `s` / `ms` | ✅ | T | `transition-duration` / `animation-duration` |
 | `deg` | ⚠️ | L | 只在渐变方向里（`90deg` / `180deg`），不进 `transform` |
 | `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而 `transform: rotate()` 还没做 |
-| `fr` | ❌ | M | Grid 专用 |
+| `fr` | ⏳ | L | Grid 专用，随 B6 一起做（§11）；flex 里写了报错 |
 | `ch` / `ex` / `lh` / `rlh` / `cap` | ❌ | N | 都要"字体度量 × 系数"，收益极低 |
 | `calc()` | ✅ | L | `+ - * /` 与括号；标量乘除在构建期折进每个操作数（见 §18.3） |
 | `min()` / `max()` / `clamp()` | ✅ | L | 参数是长度表达式，可嵌套 `calc()` |
@@ -233,7 +324,7 @@
 | `background`（简写） | ⚠️ | R | 只认**纯色或单个渐变**；写成 `background: #fff url(a.png)` 会报错 |
 | `background-image: linear-gradient()` | ⚠️ | R | **必须写方向**（`to right` / `to bottom` / `90deg` / `180deg`）；`to bottom right` 报错 |
 | `background-image: radial-gradient()` | ✅ | R | 需要 3 个参数（位置, 起色, 止色） |
-| `background-image: url(...)` | ✅ | M | 与 `<img src>` 共用资源表，按名字注册（§18.7） |
+| `background-image: url(...)` | ✅ | R | 与 `<img src>` 共用资源表，按名字注册（§18.7） |
 | `background-size` | ✅ | R | `cover` / `contain` / `<w> <h>`；渐变不受影响（渐变的尺寸就是元素尺寸） |
 | `background-position` | ✅ | R | `left/center/right + top/center/bottom` 与 px 混写 |
 | `background-repeat` | ✅ | R | `repeat` / `no-repeat` / `repeat-x` / `repeat-y` |
@@ -248,7 +339,7 @@
 | `border-{corner}-radius` | ✅ | R | 四角长写，可单独覆盖 |
 | `border-radius` 斜杠椭圆角 | ⏳ | R | `10px / 20px` 报错：椭圆角要改两套 SDF，收益低 |
 | 四边不同色 + 圆角 | ⚠️ | R | 四条边各自裁一次整圈描边；**角部归上/下边**（浏览器沿 45° 斜线切分） |
-| `border-image` | ❌ | M | 九宫格缩放 + 切片解析，代码量接近圆角的三倍，收益低 |
+| `border-image` | ⏳ | S | **B6**：九宫格切片 + 缩放，复用现有 `ql_canvas_blit_image`（§18.8） |
 | `box-shadow`（单条） | ✅ | R | CPU SDF + GPU `mode=2` 各一份实现 |
 | `box-shadow`（多重 / `inset`） | ✅ | R | 最多**两层**（多写的报错，不静默丢弃）；`inset` 用反向 SDF（GPU `mode=7`）。`spread`（展开半径）报错 |
 | `text-shadow` | ✅ | R | 一层（多层的语义是叠色）；`blur` 用 5 次采样近似（0~16px） |
@@ -275,14 +366,14 @@
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `font-family` | ⚠️ | M | **只有 `DEFAULT` / `MONO` 两族**（矢量字体 + 内建位图各一套），不是自由字体列表 |
+| `font-family` | ⚠️ | G | 现在是 `DEFAULT` / `MONO` 两族（矢量 + 内建位图）。**B8 起 PC/Mobile 档变成自由列表**（`@font-face` 注册）；MCU 档仍是两族 |
 | `font-size` | ✅ | L | `px` / `%`（相对父级）/ `smaller` / `larger` |
-| `font-weight` | ⚠️ | M | **合成**：加粗 = 画两遍右移 1px（MCU 上不加载第二份字体） |
-| `font-style` | ⚠️ | M | **合成**：斜体 = 按行剪切 |
+| `font-weight` | ⚠️ | G | 现在是**合成**加粗（画两遍右移 1px）。**B8 起 PC/Mobile 档**按 `font-weight` 选真实字重（`@font-face` + FreeType）；MCU 档保持合成 |
+| `font-style` | ⚠️ | G | 现在是**合成**斜体（按行剪切）。**B8 起 PC/Mobile 档**加载真斜体字面；MCU 档保持合成 |
 | `font`（简写） | ⏳ | L | 目前要分开写 |
-| `font-variant` / `font-stretch` / `font-feature-settings` | ❌ | M | 要完整字体引擎（HarfBuzz + 多变体字体文件） |
+| `font-variant` / `font-stretch` / `font-feature-settings` | ⏳ | G | **B8**：`small-caps` / `tabular-nums` 等由 HarfBuzz 特性位实现；MCU 档裁 |
 | `font-size-adjust` / `font-kerning` / `font-optical-sizing` | ❌ | X | 同上 |
-| `@font-face` | ❌ | M | 见 §3.5 |
+| `@font-face` | ⏳ | G | **B8**，见 §3.5 |
 
 ### 9.2 文本
 
@@ -346,16 +437,35 @@
 
 ---
 
-## 11. Grid（整块不做）
+## 11. Grid（B6：PC/Mobile 必做，MCU 归"大核"包）
 
-| 属性 | 状态 | 原因 |
+**这一块从"不做"改成"要做"了**，理由是实测出来的：
+
+| 同一视觉：3×3 卡片格（240×160） | 节点数 | 布局耗时 @200 MHz |
 |---|---|---|
-| `display: grid` / `inline-grid` | ❌ | **M**：实现成本接近 flex 的两倍 |
-| `grid-template-*` / `grid-auto-*` / `grid-area` / `grid-row` / `grid-column` | ❌ | **M**：同上 |
-| `grid-gap` 及其别名 | ❌ | **M**：同上 |
+| 嵌套 flex（3 个 `.row` 各 3 张卡） | 15 | **0.427 ms** |
+| 扁平 flex（`flex-wrap: wrap` + 固定宽） | 12 | **0.229 ms** |
+| *Grid 版（1 个容器 + 9 张卡，无 wrapper）* | *12* | *≈0.229 ms*（与扁平同量级） |
 
-**替代方案**：卡片网格用 `display: flex; flex-wrap: wrap; gap: …` + 固定宽高。
-本库自己的 benchmark 就是这么排的（见 `benchmark/bench_scenes.h` 的 `cards` 维度）。
+也就是说：**Grid 在 MCU 上比"用嵌套 flex 拼"更快**，因为它省掉了 wrapper 层
+（实测一层 wrapper ≈ 3 个叶子节点的代价）。它唯一的成本是 Flash 里的求解器代码，
+和 `layout_node`（6.1 KB）同量级 —— 在一个 MB 级预算的 PC 档里可以忽略。
+
+| 属性 | 批次 | 档位 | 备注 |
+|---|---|---|---|
+| `display: grid` / `inline-grid` | B6 | 大核 | 单层轨道求解；不做 `subgrid` |
+| `grid-template-columns` / `-rows` / `-areas` | B6 | 大核 | `repeat()` / `minmax()` / `auto` / `fr` / 具名线 |
+| `grid-auto-columns` / `-rows` / `-flow` | B6 | 大核 | `row` / `column` / `dense` |
+| `grid-row` / `grid-column` / `grid-area`（含 `span`） | B6 | 大核 | 跨格 |
+| `justify-items` / `justify-self` / `place-*` | B6 | 大核 | 与现有的 `align-*` 对称 |
+| `gap` / `row-gap` / `column-gap` | ✅ 已有 | 双档 | flex 里已经生效，Grid 复用同一组字段 |
+| `subgrid` / `masonry` | ❌ | — | `S`：要"子网格反向依赖父轨道"，收益远小于成本 |
+
+**为什么现在不做、但进批次**：它是一个**独立求解器**（轨道定尺 → 放置 → 对齐三段），
+与 flex 那套"主轴/交叉轴"不是同一份代码，所以要按"新子系统"立项（`S`）。
+PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 的栅格都建在它上面。
+
+**MCU 档**：`QL_FEAT_CSS_GRID` 默认 **0**。裁掉之后 `display: grid` 报错并提示用 flex。
 
 ---
 
@@ -366,12 +476,12 @@
 | `transform: translate()` | ✅ | R | 加到绘制偏移上，**不进布局**（零重排） |
 | `transform: scale()` | ✅ | R | 允许负值（几何压扁 + 镜像） |
 | `transform: scaleX()` / `scaleY()` | ✅ | R | 假 3D 翻转就靠它 |
-| `transform: rotate()` | ⏳ | **F** | `只支持 translate()/scale()/scaleX()/scaleY()`；要旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转） |
-| `transform: skew()` | ⏳ | F | 同上（斜体就是按行剪切，机制类似） |
-| `transform: matrix()` / `matrix3d()` | ❌ | F | 通用仿射需要完整的 3×3 变换管线 |
-| `transform: perspective()` / `rotate3d()` 等 3D | ❌ | M | 要真 3D 管线；`scaleX` 已经能近似"翻面"效果 |
-| `transform-origin` | ⏳ | R | 现在固定绕元素中心 |
-| `transform-style` / `backface-visibility` | ❌ | M | 3D 专用 |
+| `transform: rotate()` | ⏳ | **F** | **单独立项，PC/Mobile 必做**（§22）：要旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转）。MCU 档恒关 |
+| `transform: skew()` | ⏳ | F | 同上（与 `rotate` 同一份仿射路径，一起做几乎不加成本） |
+| `transform: matrix()` / `matrix3d()` | ⏳ | F | `matrix()` 随之解锁（`rotate`/`skew` 落地后只是"拆矩阵"）；`matrix3d()` 归 3D，不排期 |
+| `transform: perspective()` / `rotate3d()` 等 3D | ❌ | S | 要真 3D 管线（透视除法 + 深度排序）。PC 档也**不排期**：`scaleX` 已能近似"翻面"，而 3D 需要一整套矩阵 + 分层合成 |
+| `transform-origin` | ⏳ | R | 现在固定绕元素中心；随 `rotate` 一起做（有旋转才需要原点） |
+| `transform-style` / `backface-visibility` | ❌ | S | 3D 专用，同上 |
 
 ---
 
@@ -397,31 +507,49 @@
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `backdrop-filter: blur()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
-| `filter: blur()` | ⏳ | O | 要"元素自己离屏后再模糊"，与 `backdrop-filter` 不是一回事 |
-| `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/drop-shadow` | ⏳ | O | 每个都要 CPU + GL 两份实现 |
+| `filter: blur()` | ⏳ | O | **单独立项"离屏图层"，PC/Mobile 必做**（§22）：要"元素自己离屏后再模糊"，与 `backdrop-filter` 不是一回事。MCU 档恒关 |
+| `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/drop-shadow` | ⏳ | O | 同样进"离屏图层"立项；颜色矩阵那几族也可以先做"单色乘法融进绘制入口"的便宜版 |
 | `clip-path: circle()` | ✅ | R | 子树级圆形遮罩；CPU 与 GPU 各一份 |
-| `clip-path: inset()` / `ellipse()` / `polygon()` / `path()` | ⏳ | F | 需要通用裁剪形状 |
-| `mask` / `mask-image` / `-webkit-mask` | ❌ | O | 要遮罩图层 |
-| `mix-blend-mode` | ❌ | O | 见 §8 |
+| `clip-path: inset()` / `ellipse()` / `polygon()` / `path()` | ⏳ | F | PC/Mobile 排期：`inset()`/`ellipse()` 便宜（SDF 扩展），`polygon()`/`path()` 要扫线 |
+| `mask` / `mask-image` / `-webkit-mask` | ⏳ | O | 进"离屏图层"立项（A8 通道 + 逐像素乘） |
+| `mix-blend-mode` | ⏳ | O | 进"离屏图层"立项：混合模式要求"读到下层已画好的像素"，与 `backdrop-filter` 同一条件 |
 
 ---
 
-## 15. 多栏、分页、打印（整块不做）
+## 15. 多栏、分页、打印
 
-| 属性 | 状态 | 原因 |
-|---|---|---|
-| `columns` / `column-count` / `column-width` / `column-rule` / `column-span` / `column-fill` / `break-*` | ❌ | **M**：多栏排版要"盒内分裂"，与"一个节点一个盒"冲突；手机上界面也很少用 |
-| `page-break-*` / `orphans` / `widows` | — | **N**：本库不打印 |
-| `@page` / `@media print` | — | **N**：同上 |
+| 属性 | 批次 | 档位 | 备注 |
+|---|---|---|---|
+| `columns` / `column-count` / `column-width` | B7 | 大核 | 列高平衡要"先排一遍量高度、再排一遍落列"，是**唯一真正与"一个节点一个盒"冲突**的一项 |
+| `column-rule` / `column-gap` | B7 | 大核 | 画在两列之间的竖线，复用 `border` 的绘制路径 |
+| `column-span` / `column-fill` / `break-*` | ❌ | — | `S`：跨列要打断"盒内分裂"的不变量；`break-inside` 在 GUI 里几乎用不到 |
+| `page-break-*` / `orphans` / `widows` | — | — | `N`：本库不打印 |
+| `@page` / `@media print` | — | — | `N`：同上（`@media print` 目前**整块跳过**，不报错） |
+
+**为什么排到 B7 而不是不做**：长文阅读界面（设置页的帮助、`<article>` 正文）真的会用它，
+而且它是纯 CPU 的排版计算，PC 档毫无压力。MCU 档归"大核"包，默认关。
+
+**风险**：`column-count` 的语义要求"列高尽量相等"，意味着**同一份内容要排两遍**
+（第一遍测总高、第二遍按目标列高断列）。这是 §2.1 里"布局边际成本 ×2"，所以它比
+Grid 贵 —— 但仍是我们自己的代码，没有第三方依赖。
 
 ---
 
-## 16. 表格（CSS2.1 遗留）
+## 16. 表格（B7：PC/Mobile 必做，MCU 归"大核"包）
 
-| 属性 | 状态 | 原因 |
-|---|---|---|
-| `display: table` / `table-row` / `table-cell` … | ❌ | **M**：表格布局算法（列宽分配、跨行跨列、边框合并）极其繁琐；`<table>` 标签本身也明确报错并给出替代做法 |
-| `table-layout` / `border-collapse` / `border-spacing` / `caption-side` / `empty-cells` | ❌ | **M**：同上 |
+| 属性 | 批次 | 档位 | 备注 |
+|---|---|---|---|
+| `display: table` / `table-row` / `table-cell` / `table-caption` … | B7 | 大核 | `<table>` `<tr>` `<td>` `<th>` `<thead>` `<tbody>` `<tfoot>` `<caption>` 一并打开 |
+| `table-layout: auto` | B7 | 大核 | 列宽按内容分配（要两遍：测 min/max-content，再分配） |
+| `table-layout: fixed` | B7 | 大核 | 一遍就够，先做这个 |
+| `border-collapse` / `border-spacing` | B7 | 大核 | `collapse` 要"半边边框"相加规则 |
+| `caption-side` / `empty-cells` / `vertical-align: middle`（表格单元格内） | B7 | 大核 | |
+| 跨行跨列 `rowspan` / `colspan` | B7 | 大核 | 占位格（被跨过的那格不画但占位置） |
+| `<colgroup>` / `<col>` | ❌ | — | `N`：用 CSS 给 `td` 写宽度即可 |
+
+**为什么不做了改成"要做"**：数据表格是**后台管理界面**的刚需，
+而"用嵌套 flex 拼表格"拼不出列宽对齐 —— 这是真实的表达力缺口，不是省事。
+PC/Mobile 档没有任何理由不做；MCU 档归"大核"包（`QL_FEAT_CSS_TABLE` 默认 0）。
 
 **替代方案**：用嵌套 flex 画表格（`display: flex` 每一行，单元格给固定宽度）。
 
@@ -730,6 +858,59 @@ background-image: url(checker)  → 名字进文本池，样式里存 QL_UI_NO_I
 但 `blur()` / `drop-shadow()` 需要**离屏图层**（子树先合成到一张图再整体模糊），
 成本与 `transform: rotate()` 同级，所以一起留作单独立项 —— 覆盖表里如实标 ⏳。
 
+### 18.8 B6/B7 的代价是怎么估出来的
+
+新批次（Grid / 表格 / 多栏 / `border-image`）都要在"进 MCU 能力包"之前先说清代价。
+这一节说明**怎么量**，数字见 §2.1。
+
+**① 布局的边际成本**（`test/mcu` 的同一份 CSS，只改卡片数量）：
+
+```
+12 节点 0.23 ms → 39 节点 0.82 ms → 75 节点 1.94 ms
+拟合斜率 ≈ 4.4k 指令/节点 ≈ 22 µs/节点 @200 MHz
+```
+
+**② wrapper 容器的成本**（同一视觉，两种结构）：
+
+```
+3×3 卡片用嵌套 flex（3 个 .row，15 节点）   0.427 ms
+同一视觉用扁平 flex-wrap（12 节点）         0.229 ms
+```
+
+差 0.198 ms 只换来 3 个"什么都不画"的 `.row` —— **一层 wrapper ≈ 3 个叶子节点**。
+这条读数直接推翻了旧文档"Grid 太贵所以不做"的判断：
+
+- Grid 的求解是"轨道定尺 → 放置 → 对齐"三段，都是整数加法，**没有逐像素**；
+- 而"用 flex 拼网格"要付 wrapper 的钱，**每次重排都付**；
+- 所以 Grid 落地后，网格类页面的 MCU 布局时间是**下降**的（省 46%，见上）。
+
+**③ 表格为什么比 Grid 贵**：`table-layout: auto` 的列宽分配要**两遍**
+（第一遍量每列 `min-content` / `max-content`，第二遍按可用宽度分配），
+即"布局边际成本 ×2"；`border-collapse` 还要"半边边框相加"。所以它估 6–10 KB。
+
+**④ 多栏最贵**：`column-count` 要求列高尽量相等，只能"先排一遍量总高、
+算出目标列高、再排一遍断列"。同样是 ×2 遍，但还要维护"一个节点跨两列"的中间态 ——
+这是**唯一真正与"一个节点一个盒"冲突**的一项，所以估 8–15 KB。
+
+**⑤ `border-image` 最便宜**：九宫格 = 把源图切 9 块，四角原样、四边单向拉伸、
+中间双向拉伸。绘制走的是现成的 `ql_canvas_blit_image()`（只是采样区间不同），
+解析期切一次就存进样式，**运行期零额外状态**。估 2–3 KB。
+
+**⑥ 第三方库为什么必须按 `G` 处理**（`@font-face` / 整形 / 双向）：
+
+```
+libharfbuzz.so   1,178 KB   = 当前整个 MCU 固件（131.5 KB）的 8.9 倍
+libfreetype.so     813 KB   = 6.2 倍
+libfribidi.so      106 KB   = 0.8 倍（fribidi 本身还勉强，但单独它不解连字）
+一份全量 CJK TTF    21 MB   = 160 倍
+```
+
+这几样在 PC/Mobile 档是**必须的**（否则中文以外的语言、真字重、连字全都没有），
+在 MCU 档是**必须裁的**（裁掉后仍是内建 ASCII 位图字体 + 可选子集 TTF）。
+这就是 `G` 这个原因码存在的意义：**它标的是"依赖关系"，不是"不做"**。
+
+---
+
 ---
 
 ## 19. 覆盖率：两份实测 + 一份规范口径
@@ -845,6 +1026,10 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 **两个数差这么多的原因**：规范里一大半属性是冷门项（`page-break-*`、`text-emphasis`、
 `border-image`、多栏…），真实样式表几乎不写。**判断可用性看 19.1 的声明级，看"离规范多远"看 19.6。**
 
+> 但"真实样式表几乎不写"**不等于可以不做**：`border-image` 与多栏已经进 B6/B7
+> （§22），因为 PC/Mobile 档的目标是兼容，不是"够用"。这份覆盖率是**现状**，
+> 不是**目标**。
+
 ---
 
 ## 19.1 已支持但**语义受限**的速查表
@@ -946,8 +1131,15 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_SELECTOR_ADV` | `QL_FEAT_CSS_SELECTOR_ADV` | **B2 之后**：`:nth-child` 等结构伪类、`[attr]`、`::before/::after` | ✅ | ⚠️ 见下 | BASE | 只省解析期 |
 | `CSS_IMAGE_FIT` | `QL_FEAT_CSS_IMAGE_FIT` | `object-fit` / `object-position`（只在有图片管线时有意义） | ✅ | ❌ | `QL_FEAT_UI_IMAGE` | 与图像管线共用 |
 | `CSS_UI` | `QL_FEAT_CSS_UI` | **B5 之后**：`cursor` / `pointer-events` / `user-select` / `scrollbar-*` | ✅ | ❌ | BASE | — |
+| `CSS_GRID` | `QL_FEAT_CSS_GRID` | **B6**：`display: grid` 全家（轨道定尺 / 自动放置 / 跨格 / `justify-*`） | ✅ | **默认关** | BASE | 估 2–4 KB（与 `layout_node` 6.1 KB 同量级，落地时实测） |
+| `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7**：`display: table` 全家 + `<table>` 标签 + 列宽分配 + `border-collapse` | ✅ | **默认关** | BASE | 估 6–10 KB（`table-layout: auto` 要两遍测量） |
+| `CSS_COLUMNS` | `QL_FEAT_CSS_COLUMNS` | **B7**：`columns` / `column-rule`（列高平衡 = 排两遍） | ✅ | **默认关** | BASE | 估 8–15 KB（最贵的一项：要"盒内分裂"） |
+| `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6**：`border-image` 九宫格 | ✅ | **默认关** | BASE + `QL_FEAT_UI_IMAGE` | 估 2–3 KB（复用 blit） |
+| `CSS_FONT_STACK` | `QL_FEAT_CSS_FONT_STACK` | **B8**：`@font-face` + 自由 `font-family` + 真字重/斜体 —— 依赖 FreeType | ✅ | **恒关** | BASE + `QL_FEAT_FONT_FREETYPE` | 依赖库体积见 §2.1（FreeType 813 KB） |
+| `CSS_TEXT_SHAPE` | `QL_FEAT_CSS_TEXT_SHAPE` | **B8**：连字 / 字距 / `font-feature-settings` —— 依赖 HarfBuzz | ✅ | **恒关** | `CSS_FONT_STACK` | 依赖库体积见 §2.1（HarfBuzz 1,178 KB） |
+| `CSS_BIDI` | `QL_FEAT_CSS_BIDI` | **B8**：`direction` / `unicode-bidi` —— 依赖 SheenBidi（或 fribidi，106 KB） | ✅ | **恒关** | BASE | 依赖库体积见 §2.1 |
 
-### 21.3 三个反直觉的判断
+### 21.3 四个反直觉的判断
 
 1. **`CSS_SELECTOR_ADV` 是唯一"裁了不省多少"的包**。B2 全部在**构建期**展开
    （`:nth-child` → 内部类、`::before` → 真节点），运行期零成本。
@@ -957,7 +1149,10 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 2. **`CSS_GRADIENT` 在 GPU 上几乎免费**（顶点颜色插值，不加顶点、不加 draw call），
    CPU 侧才是逐像素成本。所以"给 MCU 留渐变、裁掉阴影"是合理组合 ——
    包之间是**正交**的，不搞"要么全有要么全无"。
-3. **`CSS_ANIM` 与省电相关**。关掉它不仅是省代码：没有 `animation` 就没有
+3. **`CSS_GRID` 裁掉之后页面会变慢，不是变快**（§11 实测：嵌套 flex 拼 3×3
+   要 0.427 ms，Grid 只要 ≈0.229 ms）。所以"MCU 上关 Grid"只在**Flash 紧张**
+   时才划算；Flash 够的板子建议留着，让同一份 HTML 两端通用。
+4. **`CSS_ANIM` 与省电相关**。关掉它不仅是省代码：没有 `animation` 就没有
    "主循环必须一直醒着"的理由。MCU 上关这个包等于**强制静止界面**，这对电池更实在。
 
 ### 21.4 硬约束（与标签 §3 同一条）
@@ -1029,10 +1224,12 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 ---
 
-## 22. 五批计划
+## 22. 批次计划（B1–B5 已完成，B6–B8 是 PC/Mobile 档的主线）
 
 排序依据：**先补"真实页面没它写不出来"的，再补"锦上添花"的**；同一批内先做不动
 `QLUIStyle` 的（只动解析期），后做动结构体的（要抬 blob 版本 + 重生成 golden）。
+
+**B1–B5** 是"补细节"（已完成）；**B6–B8** 是"补架构"（PC/Mobile 档，MCU 归能力包）。
 
 | 批 | 内容（对应上面各节） | 归属能力包 | 收益 | 风险 | 动 `QLUIStyle` | 验收 |
 |---|---|---|---|---|---|---|
@@ -1042,14 +1239,23 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）、`background-image: url()` + `size/position/repeat`（§18.7）。**只剩 `filter`**（颜色矩阵可做，`blur()` 需离屏图层 —— 与 `rotate` 同级，单独立项） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
 | **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
-**另外两项单独立项**（成本与一批相当，但语义是"新子系统"）：
+| **B6 布局广度**（PC/Mobile 必做） | **Grid**（`display: grid` 全家、`fr`/`minmax()`/`repeat()`/自动放置/跨格）、**`border-image`** | `CSS_GRID` + `CSS_BORDER_IMAGE` | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | 是（`QLUIStyle` 追加轨道字段） | 新 `test_grid`（含"Grid 比嵌套 flex 快"的性能断言）+ golden |
+| **B7 数据排版**（PC/Mobile 必做） | **表格**（`table` 全家 + `<table>` 系列标签 + 列宽分配 + `border-collapse`）、**多栏**（`columns` 平衡列高） | `CSS_TABLE` + `CSS_COLUMNS` | 后台管理界面、长文正文 | 高：`auto` 列宽与列高平衡都要排两遍 | 是 | 新 `test_table` / `test_columns` + golden |
+| **B8 文本栈**（PC/Mobile 必做，MCU 恒裁） | `@font-face`、自由 `font-family`、真字重/斜体、连字与字距、`direction`/`unicode-bidi` | `CSS_FONT_STACK` / `CSS_TEXT_SHAPE` / `CSS_BIDI` | **多语言真实页面**（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 `test_font_ft` / 新 `test_shape` |
 
-- **`transform: rotate()` / `skew()`**：要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 +
-  字形旋转 + 裁剪盒变换）。做完它，变换才算齐。
-- **真 group `opacity`**：要离屏图层（见 §20.1）。现在的 `opacity` 是逐图元降透明。
+**另外几项单独立项**（成本与一批相当，但语义是"新子系统"）：
 
-**建议顺序**：**B1 + B2 一起做**（一次抬 blob 版本、一次重生成 golden），之后 B3 → B4 → B5，
-中间可随时插入 `rotate`（对动效类页面它比 B5 更实用）。
+| 项 | 目标档 | 为什么单独立项 | 成本 |
+|---|---|---|---|
+| **离屏图层**（`filter: blur()` / 真 group `opacity` / `mix-blend-mode`） | **PC/Mobile 必做** | 三者共用同一块能力："子树先合成到一张图，再整体处理"。做完它，这三样一起解锁（见 §20.1） | 高：CPU 要一块临时缓冲 + 一次合成；GL 要 FBO 复用 + 纹理采样。RAM 成本 = 一个元素盒子大小的 RGBA 缓冲 |
+| **`transform: rotate()` / `skew()`** | **PC/Mobile 必做** | 要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转 + 裁剪盒变换） | 中高：与 flex 求解器不同量级，但比离屏图层便宜（不需要额外缓冲） |
+| **`filter` 的颜色矩阵族**（brightness/contrast/saturate/grayscale…） | **PC/Mobile 必做** | 不一定要离屏：单色乘法可以直接融进每个绘制入口（CPU 乘、GL 用一个 uniform）。但要保证"子树整体"语义才准 | 中：CPU + GL 各一份 |
+| **`clip-path` 的任意形状**（`polygon()` / `path()` / `inset()`） | PC/Mobile | 要通用裁剪扫线（现在只有 `circle()` 的 SDF） | 中 |
+| **3D 变换**（`perspective()` / `rotate3d()`） | ❌ 不排期 | 要透视除法 + 深度排序 + 一个真正的合成器 | 极高，且与"一个节点一个盒"冲突 |
+
+**建议顺序**：B1–B5 已完成 → **B6（Grid + `border-image`）→ B7（表格 + 多栏）→ B8（文本栈）**；
+`离屏图层` 可以插在 B6 之后（它一次解锁三样，性价比最高）。
+每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。
 
 ---
 

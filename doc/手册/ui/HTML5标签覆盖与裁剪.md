@@ -168,8 +168,8 @@ P4a/P4b 加 `pre`/`sub`/`sup`、P5 加 `textarea`）、
 |---|---|---|---|---|---|
 | `CORE` | 恒开 | 62 | ✅ | ✅ | 无（永远有） |
 | `META` ✅ | `QL_FEAT_UI_META` | 6（`base head link meta style title`） | ✅ | ✅ | 无 —— 解析期整段跳过，不产生盒子 |
-| `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | 4/6 ✅ | ❌ | 已做：`white-space: pre/pre-wrap/pre-line`、`vertical-align: sub/super`、两级字体族；未做：`ruby`/`rt`/`rp` 行内注音 |
-| `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ✅ | ❌ | 表格布局算法（列宽分配、跨行跨列、边框合并） |
+| `TEXT` | `QL_FEAT_UI_TEXT` | 6（`pre sub sup ruby rt rp`） | 4/6 ✅ | ⚙️ 可裁 | 已做：`white-space: pre/pre-wrap/pre-line`、`vertical-align: sub/super`、两级字体族；未做：`ruby`/`rt`/`rp` 行内注音（要"注音排版"，PC/Mobile 档排期） |
+| `TABLE` | `QL_FEAT_UI_TABLE` | 10（`table` 全家） | ⏳ **B7 排期（PC/Mobile 必做）** | ⚙️ 默认关 | 表格布局算法（列宽分配、跨行跨列、边框合并）。**不再归"不做"**：后台管理界面刚需，见 [CSS 覆盖表 §16](../ui/CSS3覆盖与裁剪.html) |
 | `IMAGE` ✅ | `QL_FEAT_UI_IMAGE`<br>+ `QL_FEAT_IMG_BMP/QOI/PNG/GIF`（各自一个开关）<br>+ `QL_FEAT_IMG_PLATFORM` / `QL_FEAT_IMG_LIBJPEG`（JPEG） | 5（`img picture source map area`） | ✅ | ✅（用 `raw-only`：只吃构建期转好的 `RAW`，零解码器、零图片 RAM） | 开关正交、组合都合法；`full`/`lean`/`raw-only` 只是预设。构建期转码是零成本路径，任何平台可选。设计见[图像管线设计](../../design/图像管线设计.html) |
 | `CONTROL` | `QL_FEAT_UI_CONTROL` | 12（`input select option optgroup` + `progress meter output datalist textarea details summary dialog`） | ✅ | ❌ | **需要专用运行期状态或覆盖层**：输入框池（光标/选区）、下拉池 + 覆盖面板、进度池、浮层栈、展开状态；`textarea` 复用输入框池 |
 | `EMBED` ✅ | `QL_FEAT_UI_EMBED` | 13（`iframe embed object audio video track canvas script noscript slot template svg math`） | ✅ | ✅（**占位是零成本的**，保留也几乎不花 Flash） | **只做占位盒 / 不产生盒子**，见 §5 |
@@ -347,6 +347,9 @@ app.html: 42 个节点，使用标签 9 种
 ## 8. 与文档其它地方的口径
 
 - 现在：**已支持 101 / 114**（含 13 个占位），未支持 13（见 §1 的统计行）。
+- **那 13 个里有 10 个是表格标签**（`table` 全家），它们已从"不做"改成
+  **B7 排期（PC/Mobile 必做，MCU 归能力包）**；剩下的是 `ruby`/`rt`/`rp`（注音排版，同样 PC 排期）。
+  判据见 [CSS 覆盖表 §0 / §2.2](CSS3覆盖与裁剪.html)：**"MCU 装不下"不再是"不做"的理由**。
 - 教程的"[与 Web 的差别](../../tutorial/10_vs_web.html)"列的是**用户会踩到的差异**，不重复这份清单。
 - 各标签的 UA 默认样式见[阅读指南 §5.4.7](QLUI阅读指南.html)；
   属性白名单见 [API 手册 §3.2](QLUI API手册.html)。

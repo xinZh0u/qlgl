@@ -414,52 +414,91 @@ QLGL 现在就是照这个模型长的：</p>
 </table>
 <p><strong>优先级</strong>（specificity）必须与规范一致：<code>(id, class/attr/伪类, tag/伪元素)</code> 三元组比较，
 否则同一份 CSS 在两个引擎上的渲染会不一致 —— 这不是"锦上添花"，是<strong>正确性</strong>。</p>
-<h3 id="33">3.3 明确不做（并要求构建期报错）</h3>
+<h3 id="33-2026-11">3.3 分档处理（2026-11 重新定档）</h3>
+<p><strong>这一节原来叫"明确不做"，现在不成立了。</strong> 原因很简单：本库是两个目标差距悬殊的档位
+共用一份源码，而"不做"把一个档位的取舍强加给了另一个档位。</p>
 <table>
 <thead>
 <tr>
-<th>不做</th>
-<th>理由</th>
+<th>能力</th>
+<th>PC / Mobile 档</th>
+<th>MCU 档</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>CSS Grid</td>
-<td>实现成本接近 flex 的两倍，且可用 flex 替代</td>
+<td><strong>CSS Grid</strong></td>
+<td>✅ 必做（B6）</td>
+<td>⚙️ 能力包，默认关</td>
+<td>实测 Grid 比"用嵌套 flex 拼网格"<strong>更快</strong>（省 wrapper 层，布局 −46%）——见<a href="../manual/ui/CSS3覆盖与裁剪.html">覆盖表 §11</a></td>
 </tr>
 <tr>
-<td><code>float</code> 布局</td>
-<td>与 flex 混用时行为诡异，现代页面基本不用</td>
+<td><strong>表格布局</strong></td>
+<td>✅ 必做（B7）</td>
+<td>⚙️ 能力包，默认关</td>
+<td>后台管理界面的刚需；<code>table-layout: auto</code> 要排两遍</td>
 </tr>
 <tr>
-<td><code>transition</code> / <code>animation</code> / <code>@keyframes</code></td>
-<td>需要时间轴与插值引擎，属于"另做一个子系统"</td>
+<td><strong>多栏</strong></td>
+<td>✅ 必做（B7）</td>
+<td>⚙️ 能力包，默认关</td>
+<td>长文正文会用到</td>
 </tr>
 <tr>
-<td>CSS 变量（<code>--x</code> / <code>var()</code>）</td>
-<td>会让"运行期样式"变复杂，破坏构建期预计算的收益</td>
+<td><strong><code>border-image</code></strong></td>
+<td>✅ 必做（B6）</td>
+<td>⚙️ 能力包，默认关</td>
+<td>复用现有 blit，最便宜的一项</td>
 </tr>
 <tr>
-<td><code>@media</code>（响应式断点）</td>
-<td>目标设备屏幕固定，多数场景可用固定尺寸替代</td>
+<td><strong><code>transition</code> / <code>animation</code> / <code>@keyframes</code></strong></td>
+<td>✅ 已有</td>
+<td>⚙️ 可裁</td>
+<td>M5.5 已落地；裁掉等于"强制静止界面"，省电</td>
 </tr>
 <tr>
-<td><code>table</code> 布局</td>
-<td>表格算法极其繁琐，建议用 div+flex 重写</td>
+<td><strong>CSS 变量 <code>--x</code> / <code>var()</code></strong></td>
+<td>✅ 已有</td>
+<td>✅</td>
+<td><strong>构建期替换</strong>，运行期零成本（原判断有误，见 §18.1）</td>
 </tr>
 <tr>
-<td><code>box-shadow</code> / 渐变 / 滤镜</td>
-<td>可以后续作为独立"绘制效果"补，不阻塞布局</td>
+<td><strong><code>@media</code> 宽度断点</strong></td>
+<td>✅ 已有</td>
+<td>✅</td>
+<td>构建期切成视口宽区间；原判断有误（§18.2）</td>
 </tr>
 <tr>
-<td>SVG / Canvas / iframe / video / Web Components / Shadow DOM</td>
-<td>都是独立子系统</td>
+<td><strong><code>box-shadow</code> / 渐变 / 滤镜</strong></td>
+<td>✅ 已有 / ⏳ 排期</td>
+<td>⚙️ 可裁</td>
+<td>阴影与渐变早就做了；<code>filter</code> 进"离屏图层"立项</td>
+</tr>
+<tr>
+<td><strong>真字体栈（<code>@font-face</code> / 整形 / 双向）</strong></td>
+<td>✅ 必做（B8）</td>
+<td>❌ 恒裁</td>
+<td>依赖 FreeType + HarfBuzz（合计 ≈2 MB）；中文以外语言与真字重全靠它</td>
+</tr>
+<tr>
+<td><strong><code>float</code> 布局</strong></td>
+<td>❌ 不做</td>
+<td>❌</td>
+<td>与 flex 混用时行为诡异，本库没有"文字环绕"</td>
+</tr>
+<tr>
+<td><strong>SVG / Canvas / iframe / video / Web Components / Shadow DOM</strong></td>
+<td>⚙️ EMBED 占位盒</td>
+<td>⚙️ 同上</td>
+<td>都是独立子系统；标签能解析、能排版，不渲染内容</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p><strong>关键要求</strong>：以上任何一项出现在输入里，<code>qcssc</code>/运行时都必须<strong>报错并给出行号</strong>，
-而不是"忽略这条规则继续渲染"。静默降级是"PC 上看着对、板子上错位"的根源。</p>
+<p><strong>关键要求不变</strong>：档位里<strong>没有实现</strong>的东西出现在输入里，构建期必须<strong>报错并给出行号</strong>，
+而不是"忽略这条规则继续渲染"。静默降级是"PC 上看着对、板子上错位"的根源。
+而"MCU 档裁掉了、PC 档有"的差异由能力包表达（<code>QL_FEAT_CSS_*</code>），不靠报错文案。</p>
 </blockquote>
 <hr />
 <h2 id="4-dom">4. DOM 树</h2>

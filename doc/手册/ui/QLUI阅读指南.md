@@ -966,7 +966,7 @@ layout_flex_children(容器):
 | flex 完整度 | `flex-direction` / `flex-wrap`（无 `wrap-reverse`）/ `justify-content` / `align-items` / `align-content` / `order` / `align-self` / `flex-flow` / `gap` 都有；`flex-basis` 在 `box-sizing: content-box` 下少算 padding | 卡片/工具栏/表单布局够用 |
 | 绝对定位 | 无 "static position" 与完整 shrink-to-fit | 没给 inset 时贴左上角；非文本内容撑满 |
 | `overflow` | ✅ 裁剪 + **滚动**（`auto` / `hidden` / `visible`；一个值管两轴） | 没有 `overflow-x/y` 分开写、没有惯性滚动 |
-| grid | ❌ 无 | 用嵌套 flex |
+| grid | ⏳ B6 排期（PC/Mobile） | 现在用嵌套 flex；Grid 落地后网格页面布局更快（省 wrapper 层） |
 | 表格 | ❌ 报错 | 用嵌套 flex |
 | 伪类 | ✅ `:hover/:active/:focus/:disabled/:enabled/:checked`、结构伪类、`:not()`、`[attr]*`、`::before/::after` | `:has()/:is()/:focus-visible` 无；组合伪类报错 |
 | 混合内容（块里裸文本 + 子元素） | ❌ 报错 | 需把文本包进 `<span>` |

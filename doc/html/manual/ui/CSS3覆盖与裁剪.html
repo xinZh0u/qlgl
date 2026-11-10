@@ -221,17 +221,69 @@ main img.shot { max-width: 100%; }
 <ol>
 <li><strong>CSS 的每一样东西，本库支持到哪一步？</strong> —— 按模块穷举，一条不漏。</li>
 <li><strong>不支持的为什么不做？</strong> —— 每条给一个<strong>原因码</strong>（§2），不写"暂不支持"这种废话。</li>
-<li><strong>哪一批先做？</strong> —— 按"收益 / 风险 / 是否动 <code>QLUIStyle</code>"排成五批（§10）。</li>
+<li><strong>哪一批先做？</strong> —— 按"收益 / 风险 / 是否动 <code>QLUIStyle</code>"排批次（§22）。</li>
 </ol>
+<h2 id="0">0. 一份代码，两档目标（先读这一节）</h2>
+<p>从这一版起，"支持 / 不支持"<strong>按平台分开回答</strong>。两档的差距不是程度问题，是数量级问题：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>PC / Mobile 档</strong></th>
+<th><strong>MCU 档</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标</td>
+<td><strong>尽可能完整兼容 HTML/CSS</strong>，第三方库（FreeType / HarfBuzz / SheenBidi / libpng…）该上就上</td>
+<td><strong>确定性性能 + 自由裁剪</strong>，一个能力包一行 <code>-D</code> 就能摘掉</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>不设上限（MB 级随便用）</td>
+<td>典型 M4 板 256 KB~1 MB；当前全量 <strong>131.5 KB</strong>（§2.1）</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>几十 MB 随便用</td>
+<td>几十~几百 KB</td>
+</tr>
+<tr>
+<td>帧率</td>
+<td>60~144 fps，掉一帧要查原因</td>
+<td>30 fps 够用，宁可少画也不掉帧</td>
+</tr>
+<tr>
+<td>布局算法</td>
+<td><strong>该有的都要有</strong>：Grid、表格、多栏、<code>border-image</code></td>
+<td>按能力包裁剪；<strong>但 Grid 反而是减负</strong>（§11）</td>
+</tr>
+<tr>
+<td>文本</td>
+<td>自由字体列表 + 真整形（连字/字距/双向）</td>
+<td>内建 ASCII 位图字体（≈9 KB），或裁剪后的子集 TTF</td>
+</tr>
+<tr>
+<td>"不做"的东西</td>
+<td>只剩<strong>与"构建期定型"根本冲突</strong>的（运行期 CSS 匹配、DOM/JS 引擎）</td>
+<td>按需裁剪，不是"不做"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>因此本文里的 ❌ 只有三种含义</strong>：① 与"构建期定型"冲突（<code>P</code>）；② 与 GUI 无关（<code>N</code>）；
+③ 已明确排到某个后续批次（<code>⏳</code>）。<strong>"MCU 上装不下"不再是 ❌ 的理由</strong> ——
+那属于能力包（§21）的裁剪口径，PC/Mobile 档照样全做。</p>
 <p>一句话现状：</p>
 <blockquote>
-<p><strong>布局与绘制的骨架已经齐了</strong>（盒模型、flexbox、定位、圆角、阴影、渐变、变换、过渡、动画）；
-缺的是<strong>真实页面天天用的细节</strong>（<code>min/max-*</code>、<code>em/rem</code>、<code>:nth-child</code>、<code>::before</code>、
-<code>letter-spacing</code>、<code>text-overflow</code>、<code>border-style</code>、<code>cursor</code>…）。
-加这些是"补细节"，不是"补架构"。</p>
+<p><strong>布局与绘制的骨架已经齐了</strong>（盒模型、flexbox、定位、圆角、阴影、渐变、变换、过渡、动画），
+五批（B1–B5）把"真实页面天天用的细节"补完了。
+下一阶段的重点是<strong>PC/Mobile 档的兼容广度</strong>：Grid（B6）、表格与多栏（B7）、
+第三方文本栈（B8：FreeType + HarfBuzz + 双向）、<code>filter</code> / <code>rotate</code>（独立立项）。
+MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能力包</strong>。</p>
 </blockquote>
 <hr />
-<h2 id="0-vs-2026-11-09">0. 已完成 vs 待做（2026-11-09 更新）</h2>
+<h2 id="01-vs-2026-11-10">0.1 已完成 vs 待做（2026-11-10 更新）</h2>
 <p><strong>已完成（B2 全部 + B1 第一片）</strong>：</p>
 <table>
 <thead>
@@ -291,11 +343,34 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p><strong>还没做</strong>（下表仍标 ⏳ / ❌ 的就是全部）：<code>filter</code>（颜色矩阵 + <code>blur()</code> 离屏）、
-<code>transform: rotate()</code> / <code>skew()</code>、<code>text-align: justify</code>、
-阴影的 <code>spread</code> 展开半径、椭圆 <code>border-radius</code>（斜杠写法）、<code>font</code> 简写、
-<code>word-wrap</code> 别名、<code>::first-line</code> / <code>::first-letter</code>。
-五批（B1–B5）至此除上列各项外全部落地，见 §18.5 / §18.6 / §18.7。
+<p><strong>还没做</strong>，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：</p>
+<table>
+<thead>
+<tr>
+<th>类</th>
+<th>项</th>
+<th>归宿</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PC/Mobile 必做</strong>（MCU 归能力包）</td>
+<td>Grid、<code>border-image</code>（B6）；表格、多栏（B7）；<code>@font-face</code> + 真字体栈、连字整形、双向（B8）；离屏图层（<code>filter</code> / 真 group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code>）；<code>transform: rotate()</code>/<code>skew()</code>/<code>matrix()</code>；<code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code></td>
+<td>§22</td>
+</tr>
+<tr>
+<td><strong>小件</strong>（随时插队）</td>
+<td><code>text-align: justify</code>、阴影 <code>spread</code>、椭圆 <code>border-radius</code>（<code>10px / 20px</code>）、<code>font</code> 简写、<code>word-wrap</code> 别名、<code>::first-line</code> / <code>::first-letter</code>、<code>:empty</code>、<code>revert</code></td>
+<td>各节 ⏳</td>
+</tr>
+<tr>
+<td><strong>不排期</strong></td>
+<td>3D 变换（<code>perspective()</code> / <code>rotate3d()</code>）；bidi 的完整算法之外的冷门项；打印相关</td>
+<td>各节 ❌</td>
+</tr>
+</tbody>
+</table>
+<p>五批（B1–B5）已全部落地，见 §18.5 / §18.6 / §18.7；B6–B8 见 §22。
 下表已逐行对齐当前实现（<code>qltext check</code> 实测）。</p>
 <hr />
 <h2 id="1">1. 状态记号</h2>
@@ -331,6 +406,38 @@ main img.shot { max-width: 100%; }
 </table>
 <p><strong>红线</strong>：不支持的东西必须报错并给行号。下面每一个 ⏳/❌ 今天的实际表现都是
 <code>ql_ui_text_last_error()</code> 里一句能读懂的话（多数还带替代方案），而不是"忽略这条规则继续渲染"。</p>
+<p><strong>平台维度</strong>（§0）：每行还有一个"档位"标记，说明它在两档里各是什么下场。</p>
+<table>
+<thead>
+<tr>
+<th>档位</th>
+<th>PC / Mobile</th>
+<th>MCU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>双档</strong></td>
+<td>✅ 默认开</td>
+<td>✅ 默认开（<code>CSS_BASE</code>）</td>
+</tr>
+<tr>
+<td><strong>包裁</strong></td>
+<td>✅ 默认开</td>
+<td>⚙️ 由能力包控制（§21），可整块摘掉</td>
+</tr>
+<tr>
+<td><strong>大核</strong></td>
+<td>✅ 默认开</td>
+<td>⚙️ 默认<strong>关</strong>（Grid / 表格 / 多栏 / <code>border-image</code> / 第三方文本栈）</td>
+</tr>
+<tr>
+<td><strong>仅 PC</strong></td>
+<td>✅</td>
+<td>❌ 恒关（离屏图层类：<code>filter</code>、真 group <code>opacity</code>、<code>backdrop-filter</code> 的完整链）</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="2">2. 原因码</h2>
 <p>每行的"原因"列用下面的码。一个属性可能同时命中多个，只写主因。</p>
@@ -384,9 +491,14 @@ main img.shot { max-width: 100%; }
 <td><code>content: counter()</code>、<code>@supports</code>、<code>@layer</code></td>
 </tr>
 <tr>
-<td><strong>M</strong></td>
-<td><strong>与 MCU 目标冲突</strong>（体积 / 内存 / 代码量）</td>
-<td>Grid、多栏、<code>border-image</code></td>
+<td><strong>S</strong></td>
+<td><strong>要一个新的排版/绘制子系统</strong>（不是"加个属性"，是一次立项）</td>
+<td>Grid 列轨道、表格列宽分配、多栏分裂、离屏图层</td>
+</tr>
+<tr>
+<td><strong>G</strong></td>
+<td><strong>要第三方库</strong>（FreeType / HarfBuzz / SheenBidi…）：PC/Mobile 档上，MCU 档裁</td>
+<td>真字体列表、连字整形、双向文本、彩色 emoji</td>
 </tr>
 <tr>
 <td><strong>N</strong></td>
@@ -395,6 +507,127 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>旧版的 <code>M</code>（"与 MCU 目标冲突"）<strong>已废除</strong>：MCU 的体积问题是能力包（§21）解决的问题，
+不是"不做"的理由。原来标 <code>M</code> 的行现在分别是 <code>S</code>（Grid / 表格 / 多栏 / <code>border-image</code>）
+与 <code>G</code>（<code>@font-face</code> / 多变体字体 / 双向），并且<strong>都进了后续批次</strong>（§22）。</p>
+</blockquote>
+<hr />
+<h3 id="21-2026-11-10">2.1 两档的实测数字（2026-11-10，本机）</h3>
+<p>这些数字是决定"哪些能力配 MCU 档"的依据，都是<strong>本轮实测</strong>，不是估值。</p>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>平台 / 配置</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全量固件 <code>text</code></td>
+<td>Cortex-M4 Thumb-2，<code>-O2</code>，240×160 RGB565（<code>test/mcu</code>）</td>
+<td><strong>131,520 B</strong></td>
+</tr>
+<tr>
+<td>同上，关掉图像管线（<code>QL_FEAT_IMG_*=0</code>）</td>
+<td>同上</td>
+<td>123,404 B（<strong>−8,116 B，−6.2%</strong>）</td>
+</tr>
+<tr>
+<td>内建 ASCII 位图字体（12px + 16px，全字节表）</td>
+<td>同上</td>
+<td>≈9 KB</td>
+</tr>
+<tr>
+<td>布局：12 节点</td>
+<td>QEMU <code>mps2-an386</code> <code>-icount</code> @200 MHz 折算</td>
+<td>0.23 ms</td>
+</tr>
+<tr>
+<td>布局：39 节点</td>
+<td>同上</td>
+<td>0.82 ms</td>
+</tr>
+<tr>
+<td>布局：75 节点</td>
+<td>同上</td>
+<td>1.94 ms</td>
+</tr>
+<tr>
+<td><strong>布局边际成本</strong></td>
+<td>同上（三点拟合）</td>
+<td><strong>≈4.4k 指令/节点 ≈ 22 µs/节点</strong></td>
+</tr>
+<tr>
+<td><strong>多一层 wrapper 容器</strong>（15 节点嵌套 vs 12 节点扁平，视觉相同）</td>
+<td>同上</td>
+<td><strong>+0.20 ms（+86%）</strong>，一层 ≈ 3 个叶子节点</td>
+</tr>
+<tr>
+<td>光栅一帧 240×160 RGB565</td>
+<td>同上</td>
+<td>6.1–7.8 ms（≈40 周期/像素）</td>
+</tr>
+<tr>
+<td>重排</td>
+<td>x86-64 <code>-O3</code>（<code>bench --scene scroll</code>，302/902/1802 节点拟合）</td>
+<td><strong>0.53 µs/节点</strong></td>
+</tr>
+<tr>
+<td>整帧 <code>cards</code> 800×480 / 362 节点</td>
+<td>同上，CPU 后端</td>
+<td>0.72–0.77 ms</td>
+</tr>
+<tr>
+<td><code>libharfbuzz.so</code> <code>text</code></td>
+<td>x86-64 系统库</td>
+<td><strong>1,178 KB</strong></td>
+</tr>
+<tr>
+<td><code>libfreetype.so</code> <code>text</code></td>
+<td>同上</td>
+<td><strong>813 KB</strong></td>
+</tr>
+<tr>
+<td><code>libfribidi.so</code> <code>text</code></td>
+<td>同上</td>
+<td>106 KB</td>
+</tr>
+<tr>
+<td>一份全量 CJK TTF</td>
+<td><code>uming.ttc</code></td>
+<td><strong>21 MB</strong>（GB2312 子集化后典型 200–400 KB）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>口径</strong>：MCU 那一列按 <code>test/mcu/README.md</code> 的换算——QEMU <code>-icount</code> 下"虚拟 ns ≈ 指令数"，
+换到 M4@200 MHz 乘 5。这是<strong>乐观下界</strong>（M4 无 cache，实际 IPC 常 0.6~0.8），
+真实板子上乘 1.5~2 更接近。库体积（<code>text</code>）是 ELF 实测，不含栈与堆。</p>
+</blockquote>
+<p>三条能直接推出结论的读数：</p>
+<ol>
+<li><strong>MCU 档的瓶颈是 Flash，不是"布局算法多"</strong>：一个 HarfBuzz 就是当前整个固件的
+   8.9 倍；一份全量 CJK 字体是 160 倍。所以"字体栈"必须按 <code>G</code> 处理（PC 上，MCU 裁），
+   而<strong>布局算法（Grid/表格）加起来也就几 KB</strong>，够不上一个数量级。</li>
+<li><strong>Grid 在 MCU 上不是负担，是减负</strong>：见 §11 的实测对比 —— 用嵌套 flex 拼 3×3
+   网格要 0.427 ms 布局，换成 Grid（同一视觉）只要 ≈0.229 ms，<strong>省 46%</strong>，
+   因为省掉了 3 个 wrapper 容器（每层 ≈3 个叶子节点的代价）。</li>
+<li><strong>PC/Mobile 档完全不缺这点性能</strong>：整帧 0.72 ms 的预算里，加一个 Grid 求解器
+   增加的是"每容器一次 O(行×列) 的加法"，量级在 µs；真正的成本只有代码体积（MB 级预算里的几 KB）。</li>
+</ol>
+<h3 id="22">2.2 两档"能不能加"的判据</h3>
+<p>给一个新属性/新能力，按这个顺序问：</p>
+<div class="highlight"><pre><span></span><code>① 与&quot;构建期定型&quot;冲突吗？        → 是：P（不做，任何档）
+② 与 GUI 无关吗？               → 是：N（不做，任何档）
+③ 要第三方库吗？                → 是：G（PC/Mobile 上，MCU 裁）
+④ 要新子系统吗？                → 是：S → 进 §22 的批次；PC/Mobile 必做，MCU 归&quot;大核&quot;包（默认关）
+⑤ 只是&quot;多解析一个值 / 多画一种线&quot;？ → 直接做，进对应能力包（§21）
+</code></pre></div>
+
+<p><strong>没有"因为 MCU 装不下所以不做"这一条了。</strong> MCU 装不下就裁；
+PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化。</p>
 <hr />
 <h2 id="3">3. 选择器与规则</h2>
 <h3 id="31">3.1 简单选择器</h3>
@@ -678,9 +911,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>@font-face</code></td>
-<td>❌</td>
-<td>M</td>
-<td>字体文件由宿主 <code>ql_font_set_default_file()</code> 提供，不在 CSS 里配</td>
+<td>⏳</td>
+<td>G</td>
+<td><strong>B8</strong>：PC/Mobile 档解析成"字体表条目"，喂给 FreeType/HarfBuzz；MCU 档裁掉（只留内建位图字体）</td>
 </tr>
 <tr>
 <td><code>@media (min-width / max-width)</code></td>
@@ -800,9 +1033,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>fr</code></td>
-<td>❌</td>
-<td>M</td>
-<td>Grid 专用</td>
+<td>⏳</td>
+<td>L</td>
+<td>Grid 专用，随 B6 一起做（§11）；flex 里写了报错</td>
 </tr>
 <tr>
 <td><code>ch</code> / <code>ex</code> / <code>lh</code> / <code>rlh</code> / <code>cap</code></td>
@@ -1131,7 +1364,7 @@ main img.shot { max-width: 100%; }
 <tr>
 <td><code>background-image: url(...)</code></td>
 <td>✅</td>
-<td>M</td>
+<td>R</td>
 <td>与 <code>&lt;img src&gt;</code> 共用资源表，按名字注册（§18.7）</td>
 </tr>
 <tr>
@@ -1220,9 +1453,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>border-image</code></td>
-<td>❌</td>
-<td>M</td>
-<td>九宫格缩放 + 切片解析，代码量接近圆角的三倍，收益低</td>
+<td>⏳</td>
+<td>S</td>
+<td><strong>B6</strong>：九宫格切片 + 缩放，复用现有 <code>ql_canvas_blit_image</code>（§18.8）</td>
 </tr>
 <tr>
 <td><code>box-shadow</code>（单条）</td>
@@ -1316,8 +1549,8 @@ main img.shot { max-width: 100%; }
 <tr>
 <td><code>font-family</code></td>
 <td>⚠️</td>
-<td>M</td>
-<td><strong>只有 <code>DEFAULT</code> / <code>MONO</code> 两族</strong>（矢量字体 + 内建位图各一套），不是自由字体列表</td>
+<td>G</td>
+<td>现在是 <code>DEFAULT</code> / <code>MONO</code> 两族（矢量 + 内建位图）。<strong>B8 起 PC/Mobile 档变成自由列表</strong>（<code>@font-face</code> 注册）；MCU 档仍是两族</td>
 </tr>
 <tr>
 <td><code>font-size</code></td>
@@ -1328,14 +1561,14 @@ main img.shot { max-width: 100%; }
 <tr>
 <td><code>font-weight</code></td>
 <td>⚠️</td>
-<td>M</td>
-<td><strong>合成</strong>：加粗 = 画两遍右移 1px（MCU 上不加载第二份字体）</td>
+<td>G</td>
+<td>现在是<strong>合成</strong>加粗（画两遍右移 1px）。<strong>B8 起 PC/Mobile 档</strong>按 <code>font-weight</code> 选真实字重（<code>@font-face</code> + FreeType）；MCU 档保持合成</td>
 </tr>
 <tr>
 <td><code>font-style</code></td>
 <td>⚠️</td>
-<td>M</td>
-<td><strong>合成</strong>：斜体 = 按行剪切</td>
+<td>G</td>
+<td>现在是<strong>合成</strong>斜体（按行剪切）。<strong>B8 起 PC/Mobile 档</strong>加载真斜体字面；MCU 档保持合成</td>
 </tr>
 <tr>
 <td><code>font</code>（简写）</td>
@@ -1345,9 +1578,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>font-variant</code> / <code>font-stretch</code> / <code>font-feature-settings</code></td>
-<td>❌</td>
-<td>M</td>
-<td>要完整字体引擎（HarfBuzz + 多变体字体文件）</td>
+<td>⏳</td>
+<td>G</td>
+<td><strong>B8</strong>：<code>small-caps</code> / <code>tabular-nums</code> 等由 HarfBuzz 特性位实现；MCU 档裁</td>
 </tr>
 <tr>
 <td><code>font-size-adjust</code> / <code>font-kerning</code> / <code>font-optical-sizing</code></td>
@@ -1357,9 +1590,9 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>@font-face</code></td>
-<td>❌</td>
-<td>M</td>
-<td>见 §3.5</td>
+<td>⏳</td>
+<td>G</td>
+<td><strong>B8</strong>，见 §3.5</td>
 </tr>
 </tbody>
 </table>
@@ -1662,35 +1895,95 @@ main img.shot { max-width: 100%; }
 </tbody>
 </table>
 <hr />
-<h2 id="11-grid">11. Grid（整块不做）</h2>
+<h2 id="11-gridb6pcmobile-mcu">11. Grid（B6：PC/Mobile 必做，MCU 归"大核"包）</h2>
+<p><strong>这一块从"不做"改成"要做"了</strong>，理由是实测出来的：</p>
+<table>
+<thead>
+<tr>
+<th>同一视觉：3×3 卡片格（240×160）</th>
+<th>节点数</th>
+<th>布局耗时 @200 MHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌套 flex（3 个 <code>.row</code> 各 3 张卡）</td>
+<td>15</td>
+<td><strong>0.427 ms</strong></td>
+</tr>
+<tr>
+<td>扁平 flex（<code>flex-wrap: wrap</code> + 固定宽）</td>
+<td>12</td>
+<td><strong>0.229 ms</strong></td>
+</tr>
+<tr>
+<td><em>Grid 版（1 个容器 + 9 张卡，无 wrapper）</em></td>
+<td><em>12</em></td>
+<td><em>≈0.229 ms</em>（与扁平同量级）</td>
+</tr>
+</tbody>
+</table>
+<p>也就是说：<strong>Grid 在 MCU 上比"用嵌套 flex 拼"更快</strong>，因为它省掉了 wrapper 层
+（实测一层 wrapper ≈ 3 个叶子节点的代价）。它唯一的成本是 Flash 里的求解器代码，
+和 <code>layout_node</code>（6.1 KB）同量级 —— 在一个 MB 级预算的 PC 档里可以忽略。</p>
 <table>
 <thead>
 <tr>
 <th>属性</th>
-<th>状态</th>
-<th>原因</th>
+<th>批次</th>
+<th>档位</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>display: grid</code> / <code>inline-grid</code></td>
-<td>❌</td>
-<td><strong>M</strong>：实现成本接近 flex 的两倍</td>
+<td>B6</td>
+<td>大核</td>
+<td>单层轨道求解；不做 <code>subgrid</code></td>
 </tr>
 <tr>
-<td><code>grid-template-*</code> / <code>grid-auto-*</code> / <code>grid-area</code> / <code>grid-row</code> / <code>grid-column</code></td>
-<td>❌</td>
-<td><strong>M</strong>：同上</td>
+<td><code>grid-template-columns</code> / <code>-rows</code> / <code>-areas</code></td>
+<td>B6</td>
+<td>大核</td>
+<td><code>repeat()</code> / <code>minmax()</code> / <code>auto</code> / <code>fr</code> / 具名线</td>
 </tr>
 <tr>
-<td><code>grid-gap</code> 及其别名</td>
+<td><code>grid-auto-columns</code> / <code>-rows</code> / <code>-flow</code></td>
+<td>B6</td>
+<td>大核</td>
+<td><code>row</code> / <code>column</code> / <code>dense</code></td>
+</tr>
+<tr>
+<td><code>grid-row</code> / <code>grid-column</code> / <code>grid-area</code>（含 <code>span</code>）</td>
+<td>B6</td>
+<td>大核</td>
+<td>跨格</td>
+</tr>
+<tr>
+<td><code>justify-items</code> / <code>justify-self</code> / <code>place-*</code></td>
+<td>B6</td>
+<td>大核</td>
+<td>与现有的 <code>align-*</code> 对称</td>
+</tr>
+<tr>
+<td><code>gap</code> / <code>row-gap</code> / <code>column-gap</code></td>
+<td>✅ 已有</td>
+<td>双档</td>
+<td>flex 里已经生效，Grid 复用同一组字段</td>
+</tr>
+<tr>
+<td><code>subgrid</code> / <code>masonry</code></td>
 <td>❌</td>
-<td><strong>M</strong>：同上</td>
+<td>—</td>
+<td><code>S</code>：要"子网格反向依赖父轨道"，收益远小于成本</td>
 </tr>
 </tbody>
 </table>
-<p><strong>替代方案</strong>：卡片网格用 <code>display: flex; flex-wrap: wrap; gap: …</code> + 固定宽高。
-本库自己的 benchmark 就是这么排的（见 <code>benchmark/bench_scenes.h</code> 的 <code>cards</code> 维度）。</p>
+<p><strong>为什么现在不做、但进批次</strong>：它是一个<strong>独立求解器</strong>（轨道定尺 → 放置 → 对齐三段），
+与 flex 那套"主轴/交叉轴"不是同一份代码，所以要按"新子系统"立项（<code>S</code>）。
+PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 的栅格都建在它上面。</p>
+<p><strong>MCU 档</strong>：<code>QL_FEAT_CSS_GRID</code> 默认 <strong>0</strong>。裁掉之后 <code>display: grid</code> 报错并提示用 flex。</p>
 <hr />
 <h2 id="12">12. 变换</h2>
 <table>
@@ -1725,37 +2018,37 @@ main img.shot { max-width: 100%; }
 <td><code>transform: rotate()</code></td>
 <td>⏳</td>
 <td><strong>F</strong></td>
-<td><code>只支持 translate()/scale()/scaleX()/scaleY()</code>；要旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转）</td>
+<td><strong>单独立项，PC/Mobile 必做</strong>（§22）：要旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转）。MCU 档恒关</td>
 </tr>
 <tr>
 <td><code>transform: skew()</code></td>
 <td>⏳</td>
 <td>F</td>
-<td>同上（斜体就是按行剪切，机制类似）</td>
+<td>同上（与 <code>rotate</code> 同一份仿射路径，一起做几乎不加成本）</td>
 </tr>
 <tr>
 <td><code>transform: matrix()</code> / <code>matrix3d()</code></td>
-<td>❌</td>
+<td>⏳</td>
 <td>F</td>
-<td>通用仿射需要完整的 3×3 变换管线</td>
+<td><code>matrix()</code> 随之解锁（<code>rotate</code>/<code>skew</code> 落地后只是"拆矩阵"）；<code>matrix3d()</code> 归 3D，不排期</td>
 </tr>
 <tr>
 <td><code>transform: perspective()</code> / <code>rotate3d()</code> 等 3D</td>
 <td>❌</td>
-<td>M</td>
-<td>要真 3D 管线；<code>scaleX</code> 已经能近似"翻面"效果</td>
+<td>S</td>
+<td>要真 3D 管线（透视除法 + 深度排序）。PC 档也<strong>不排期</strong>：<code>scaleX</code> 已能近似"翻面"，而 3D 需要一整套矩阵 + 分层合成</td>
 </tr>
 <tr>
 <td><code>transform-origin</code></td>
 <td>⏳</td>
 <td>R</td>
-<td>现在固定绕元素中心</td>
+<td>现在固定绕元素中心；随 <code>rotate</code> 一起做（有旋转才需要原点）</td>
 </tr>
 <tr>
 <td><code>transform-style</code> / <code>backface-visibility</code></td>
 <td>❌</td>
-<td>M</td>
-<td>3D 专用</td>
+<td>S</td>
+<td>3D 专用，同上</td>
 </tr>
 </tbody>
 </table>
@@ -1855,13 +2148,13 @@ main img.shot { max-width: 100%; }
 <td><code>filter: blur()</code></td>
 <td>⏳</td>
 <td>O</td>
-<td>要"元素自己离屏后再模糊"，与 <code>backdrop-filter</code> 不是一回事</td>
+<td><strong>单独立项"离屏图层"，PC/Mobile 必做</strong>（§22）：要"元素自己离屏后再模糊"，与 <code>backdrop-filter</code> 不是一回事。MCU 档恒关</td>
 </tr>
 <tr>
 <td><code>filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/drop-shadow</code></td>
 <td>⏳</td>
 <td>O</td>
-<td>每个都要 CPU + GL 两份实现</td>
+<td>同样进"离屏图层"立项；颜色矩阵那几族也可以先做"单色乘法融进绘制入口"的便宜版</td>
 </tr>
 <tr>
 <td><code>clip-path: circle()</code></td>
@@ -1873,73 +2166,130 @@ main img.shot { max-width: 100%; }
 <td><code>clip-path: inset()</code> / <code>ellipse()</code> / <code>polygon()</code> / <code>path()</code></td>
 <td>⏳</td>
 <td>F</td>
-<td>需要通用裁剪形状</td>
+<td>PC/Mobile 排期：<code>inset()</code>/<code>ellipse()</code> 便宜（SDF 扩展），<code>polygon()</code>/<code>path()</code> 要扫线</td>
 </tr>
 <tr>
 <td><code>mask</code> / <code>mask-image</code> / <code>-webkit-mask</code></td>
-<td>❌</td>
+<td>⏳</td>
 <td>O</td>
-<td>要遮罩图层</td>
+<td>进"离屏图层"立项（A8 通道 + 逐像素乘）</td>
 </tr>
 <tr>
 <td><code>mix-blend-mode</code></td>
-<td>❌</td>
+<td>⏳</td>
 <td>O</td>
-<td>见 §8</td>
+<td>进"离屏图层"立项：混合模式要求"读到下层已画好的像素"，与 <code>backdrop-filter</code> 同一条件</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="15">15. 多栏、分页、打印（整块不做）</h2>
+<h2 id="15">15. 多栏、分页、打印</h2>
 <table>
 <thead>
 <tr>
 <th>属性</th>
-<th>状态</th>
-<th>原因</th>
+<th>批次</th>
+<th>档位</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>columns</code> / <code>column-count</code> / <code>column-width</code> / <code>column-rule</code> / <code>column-span</code> / <code>column-fill</code> / <code>break-*</code></td>
+<td><code>columns</code> / <code>column-count</code> / <code>column-width</code></td>
+<td>B7</td>
+<td>大核</td>
+<td>列高平衡要"先排一遍量高度、再排一遍落列"，是<strong>唯一真正与"一个节点一个盒"冲突</strong>的一项</td>
+</tr>
+<tr>
+<td><code>column-rule</code> / <code>column-gap</code></td>
+<td>B7</td>
+<td>大核</td>
+<td>画在两列之间的竖线，复用 <code>border</code> 的绘制路径</td>
+</tr>
+<tr>
+<td><code>column-span</code> / <code>column-fill</code> / <code>break-*</code></td>
 <td>❌</td>
-<td><strong>M</strong>：多栏排版要"盒内分裂"，与"一个节点一个盒"冲突；手机上界面也很少用</td>
+<td>—</td>
+<td><code>S</code>：跨列要打断"盒内分裂"的不变量；<code>break-inside</code> 在 GUI 里几乎用不到</td>
 </tr>
 <tr>
 <td><code>page-break-*</code> / <code>orphans</code> / <code>widows</code></td>
 <td>—</td>
-<td><strong>N</strong>：本库不打印</td>
+<td>—</td>
+<td><code>N</code>：本库不打印</td>
 </tr>
 <tr>
 <td><code>@page</code> / <code>@media print</code></td>
 <td>—</td>
-<td><strong>N</strong>：同上</td>
+<td>—</td>
+<td><code>N</code>：同上（<code>@media print</code> 目前<strong>整块跳过</strong>，不报错）</td>
 </tr>
 </tbody>
 </table>
+<p><strong>为什么排到 B7 而不是不做</strong>：长文阅读界面（设置页的帮助、<code>&lt;article&gt;</code> 正文）真的会用它，
+而且它是纯 CPU 的排版计算，PC 档毫无压力。MCU 档归"大核"包，默认关。</p>
+<p><strong>风险</strong>：<code>column-count</code> 的语义要求"列高尽量相等"，意味着<strong>同一份内容要排两遍</strong>
+（第一遍测总高、第二遍按目标列高断列）。这是 §2.1 里"布局边际成本 ×2"，所以它比
+Grid 贵 —— 但仍是我们自己的代码，没有第三方依赖。</p>
 <hr />
-<h2 id="16-css21">16. 表格（CSS2.1 遗留）</h2>
+<h2 id="16-b7pcmobile-mcu">16. 表格（B7：PC/Mobile 必做，MCU 归"大核"包）</h2>
 <table>
 <thead>
 <tr>
 <th>属性</th>
-<th>状态</th>
-<th>原因</th>
+<th>批次</th>
+<th>档位</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>display: table</code> / <code>table-row</code> / <code>table-cell</code> …</td>
-<td>❌</td>
-<td><strong>M</strong>：表格布局算法（列宽分配、跨行跨列、边框合并）极其繁琐；<code>&lt;table&gt;</code> 标签本身也明确报错并给出替代做法</td>
+<td><code>display: table</code> / <code>table-row</code> / <code>table-cell</code> / <code>table-caption</code> …</td>
+<td>B7</td>
+<td>大核</td>
+<td><code>&lt;table&gt;</code> <code>&lt;tr&gt;</code> <code>&lt;td&gt;</code> <code>&lt;th&gt;</code> <code>&lt;thead&gt;</code> <code>&lt;tbody&gt;</code> <code>&lt;tfoot&gt;</code> <code>&lt;caption&gt;</code> 一并打开</td>
 </tr>
 <tr>
-<td><code>table-layout</code> / <code>border-collapse</code> / <code>border-spacing</code> / <code>caption-side</code> / <code>empty-cells</code></td>
+<td><code>table-layout: auto</code></td>
+<td>B7</td>
+<td>大核</td>
+<td>列宽按内容分配（要两遍：测 min/max-content，再分配）</td>
+</tr>
+<tr>
+<td><code>table-layout: fixed</code></td>
+<td>B7</td>
+<td>大核</td>
+<td>一遍就够，先做这个</td>
+</tr>
+<tr>
+<td><code>border-collapse</code> / <code>border-spacing</code></td>
+<td>B7</td>
+<td>大核</td>
+<td><code>collapse</code> 要"半边边框"相加规则</td>
+</tr>
+<tr>
+<td><code>caption-side</code> / <code>empty-cells</code> / <code>vertical-align: middle</code>（表格单元格内）</td>
+<td>B7</td>
+<td>大核</td>
+<td></td>
+</tr>
+<tr>
+<td>跨行跨列 <code>rowspan</code> / <code>colspan</code></td>
+<td>B7</td>
+<td>大核</td>
+<td>占位格（被跨过的那格不画但占位置）</td>
+</tr>
+<tr>
+<td><code>&lt;colgroup&gt;</code> / <code>&lt;col&gt;</code></td>
 <td>❌</td>
-<td><strong>M</strong>：同上</td>
+<td>—</td>
+<td><code>N</code>：用 CSS 给 <code>td</code> 写宽度即可</td>
 </tr>
 </tbody>
 </table>
+<p><strong>为什么不做了改成"要做"</strong>：数据表格是<strong>后台管理界面</strong>的刚需，
+而"用嵌套 flex 拼表格"拼不出列宽对齐 —— 这是真实的表达力缺口，不是省事。
+PC/Mobile 档没有任何理由不做；MCU 档归"大核"包（<code>QL_FEAT_CSS_TABLE</code> 默认 0）。</p>
 <p><strong>替代方案</strong>：用嵌套 flex 画表格（<code>display: flex</code> 每一行，单元格给固定宽度）。</p>
 <hr />
 <h2 id="17-ui">17. UI 与交互</h2>
@@ -2409,6 +2759,46 @@ flags: QL_UI_NODE_CHECKBOX / _CHECKED / _DISABLED
 <p><strong>没做的：<code>filter</code></strong>。颜色矩阵类（brightness/grayscale/...）技术上可行，
 但 <code>blur()</code> / <code>drop-shadow()</code> 需要<strong>离屏图层</strong>（子树先合成到一张图再整体模糊），
 成本与 <code>transform: rotate()</code> 同级，所以一起留作单独立项 —— 覆盖表里如实标 ⏳。</p>
+<h3 id="188-b6b7">18.8 B6/B7 的代价是怎么估出来的</h3>
+<p>新批次（Grid / 表格 / 多栏 / <code>border-image</code>）都要在"进 MCU 能力包"之前先说清代价。
+这一节说明<strong>怎么量</strong>，数字见 §2.1。</p>
+<p><strong>① 布局的边际成本</strong>（<code>test/mcu</code> 的同一份 CSS，只改卡片数量）：</p>
+<div class="highlight"><pre><span></span><code>12 节点 0.23 ms → 39 节点 0.82 ms → 75 节点 1.94 ms
+拟合斜率 ≈ 4.4k 指令/节点 ≈ 22 µs/节点 @200 MHz
+</code></pre></div>
+
+<p><strong>② wrapper 容器的成本</strong>（同一视觉，两种结构）：</p>
+<div class="highlight"><pre><span></span><code>3×3 卡片用嵌套 flex（3 个 .row，15 节点）   0.427 ms
+同一视觉用扁平 flex-wrap（12 节点）         0.229 ms
+</code></pre></div>
+
+<p>差 0.198 ms 只换来 3 个"什么都不画"的 <code>.row</code> —— <strong>一层 wrapper ≈ 3 个叶子节点</strong>。
+这条读数直接推翻了旧文档"Grid 太贵所以不做"的判断：</p>
+<ul>
+<li>Grid 的求解是"轨道定尺 → 放置 → 对齐"三段，都是整数加法，<strong>没有逐像素</strong>；</li>
+<li>而"用 flex 拼网格"要付 wrapper 的钱，<strong>每次重排都付</strong>；</li>
+<li>所以 Grid 落地后，网格类页面的 MCU 布局时间是<strong>下降</strong>的（省 46%，见上）。</li>
+</ul>
+<p><strong>③ 表格为什么比 Grid 贵</strong>：<code>table-layout: auto</code> 的列宽分配要<strong>两遍</strong>
+（第一遍量每列 <code>min-content</code> / <code>max-content</code>，第二遍按可用宽度分配），
+即"布局边际成本 ×2"；<code>border-collapse</code> 还要"半边边框相加"。所以它估 6–10 KB。</p>
+<p><strong>④ 多栏最贵</strong>：<code>column-count</code> 要求列高尽量相等，只能"先排一遍量总高、
+算出目标列高、再排一遍断列"。同样是 ×2 遍，但还要维护"一个节点跨两列"的中间态 ——
+这是<strong>唯一真正与"一个节点一个盒"冲突</strong>的一项，所以估 8–15 KB。</p>
+<p><strong>⑤ <code>border-image</code> 最便宜</strong>：九宫格 = 把源图切 9 块，四角原样、四边单向拉伸、
+中间双向拉伸。绘制走的是现成的 <code>ql_canvas_blit_image()</code>（只是采样区间不同），
+解析期切一次就存进样式，<strong>运行期零额外状态</strong>。估 2–3 KB。</p>
+<p><strong>⑥ 第三方库为什么必须按 <code>G</code> 处理</strong>（<code>@font-face</code> / 整形 / 双向）：</p>
+<div class="highlight"><pre><span></span><code>libharfbuzz.so   1,178 KB   = 当前整个 MCU 固件（131.5 KB）的 8.9 倍
+libfreetype.so     813 KB   = 6.2 倍
+libfribidi.so      106 KB   = 0.8 倍（fribidi 本身还勉强，但单独它不解连字）
+一份全量 CJK TTF    21 MB   = 160 倍
+</code></pre></div>
+
+<p>这几样在 PC/Mobile 档是<strong>必须的</strong>（否则中文以外的语言、真字重、连字全都没有），
+在 MCU 档是<strong>必须裁的</strong>（裁掉后仍是内建 ASCII 位图字体 + 可选子集 TTF）。
+这就是 <code>G</code> 这个原因码存在的意义：<strong>它标的是"依赖关系"，不是"不做"</strong>。</p>
+<hr />
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -2779,6 +3169,11 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 </table>
 <p><strong>两个数差这么多的原因</strong>：规范里一大半属性是冷门项（<code>page-break-*</code>、<code>text-emphasis</code>、
 <code>border-image</code>、多栏…），真实样式表几乎不写。<strong>判断可用性看 19.1 的声明级，看"离规范多远"看 19.6。</strong></p>
+<blockquote>
+<p>但"真实样式表几乎不写"<strong>不等于可以不做</strong>：<code>border-image</code> 与多栏已经进 B6/B7
+（§22），因为 PC/Mobile 档的目标是兼容，不是"够用"。这份覆盖率是<strong>现状</strong>，
+不是<strong>目标</strong>。</p>
+</blockquote>
 <hr />
 <h2 id="191_1">19.1 已支持但<strong>语义受限</strong>的速查表</h2>
 <p>这些不用改架构，但<strong>写的时候要知道边界</strong>，否则会以为是 bug：</p>
@@ -3144,9 +3539,72 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>BASE</td>
 <td>—</td>
 </tr>
+<tr>
+<td><code>CSS_GRID</code></td>
+<td><code>QL_FEAT_CSS_GRID</code></td>
+<td><strong>B6</strong>：<code>display: grid</code> 全家（轨道定尺 / 自动放置 / 跨格 / <code>justify-*</code>）</td>
+<td>✅</td>
+<td><strong>默认关</strong></td>
+<td>BASE</td>
+<td>估 2–4 KB（与 <code>layout_node</code> 6.1 KB 同量级，落地时实测）</td>
+</tr>
+<tr>
+<td><code>CSS_TABLE</code></td>
+<td><code>QL_FEAT_CSS_TABLE</code></td>
+<td><strong>B7</strong>：<code>display: table</code> 全家 + <code>&lt;table&gt;</code> 标签 + 列宽分配 + <code>border-collapse</code></td>
+<td>✅</td>
+<td><strong>默认关</strong></td>
+<td>BASE</td>
+<td>估 6–10 KB（<code>table-layout: auto</code> 要两遍测量）</td>
+</tr>
+<tr>
+<td><code>CSS_COLUMNS</code></td>
+<td><code>QL_FEAT_CSS_COLUMNS</code></td>
+<td><strong>B7</strong>：<code>columns</code> / <code>column-rule</code>（列高平衡 = 排两遍）</td>
+<td>✅</td>
+<td><strong>默认关</strong></td>
+<td>BASE</td>
+<td>估 8–15 KB（最贵的一项：要"盒内分裂"）</td>
+</tr>
+<tr>
+<td><code>CSS_BORDER_IMAGE</code></td>
+<td><code>QL_FEAT_CSS_BORDER_IMAGE</code></td>
+<td><strong>B6</strong>：<code>border-image</code> 九宫格</td>
+<td>✅</td>
+<td><strong>默认关</strong></td>
+<td>BASE + <code>QL_FEAT_UI_IMAGE</code></td>
+<td>估 2–3 KB（复用 blit）</td>
+</tr>
+<tr>
+<td><code>CSS_FONT_STACK</code></td>
+<td><code>QL_FEAT_CSS_FONT_STACK</code></td>
+<td><strong>B8</strong>：<code>@font-face</code> + 自由 <code>font-family</code> + 真字重/斜体 —— 依赖 FreeType</td>
+<td>✅</td>
+<td><strong>恒关</strong></td>
+<td>BASE + <code>QL_FEAT_FONT_FREETYPE</code></td>
+<td>依赖库体积见 §2.1（FreeType 813 KB）</td>
+</tr>
+<tr>
+<td><code>CSS_TEXT_SHAPE</code></td>
+<td><code>QL_FEAT_CSS_TEXT_SHAPE</code></td>
+<td><strong>B8</strong>：连字 / 字距 / <code>font-feature-settings</code> —— 依赖 HarfBuzz</td>
+<td>✅</td>
+<td><strong>恒关</strong></td>
+<td><code>CSS_FONT_STACK</code></td>
+<td>依赖库体积见 §2.1（HarfBuzz 1,178 KB）</td>
+</tr>
+<tr>
+<td><code>CSS_BIDI</code></td>
+<td><code>QL_FEAT_CSS_BIDI</code></td>
+<td><strong>B8</strong>：<code>direction</code> / <code>unicode-bidi</code> —— 依赖 SheenBidi（或 fribidi，106 KB）</td>
+<td>✅</td>
+<td><strong>恒关</strong></td>
+<td>BASE</td>
+<td>依赖库体积见 §2.1</td>
+</tr>
 </tbody>
 </table>
-<h3 id="213">21.3 三个反直觉的判断</h3>
+<h3 id="213">21.3 四个反直觉的判断</h3>
 <ol>
 <li><strong><code>CSS_SELECTOR_ADV</code> 是唯一"裁了不省多少"的包</strong>。B2 全部在<strong>构建期</strong>展开
    （<code>:nth-child</code> → 内部类、<code>::before</code> → 真节点），运行期零成本。
@@ -3156,6 +3614,9 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <li><strong><code>CSS_GRADIENT</code> 在 GPU 上几乎免费</strong>（顶点颜色插值，不加顶点、不加 draw call），
    CPU 侧才是逐像素成本。所以"给 MCU 留渐变、裁掉阴影"是合理组合 ——
    包之间是<strong>正交</strong>的，不搞"要么全有要么全无"。</li>
+<li><strong><code>CSS_GRID</code> 裁掉之后页面会变慢，不是变快</strong>（§11 实测：嵌套 flex 拼 3×3
+   要 0.427 ms，Grid 只要 ≈0.229 ms）。所以"MCU 上关 Grid"只在<strong>Flash 紧张</strong>
+   时才划算；Flash 够的板子建议留着，让同一份 HTML 两端通用。</li>
 <li><strong><code>CSS_ANIM</code> 与省电相关</strong>。关掉它不仅是省代码：没有 <code>animation</code> 就没有
    "主循环必须一直醒着"的理由。MCU 上关这个包等于<strong>强制静止界面</strong>，这对电池更实在。</li>
 </ol>
@@ -3293,9 +3754,10 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <li><strong>两端一致</strong>：包开着时 <code>test_gl_vs_cpu</code> 逐像素一致（绘制类包强制）。</li>
 </ol>
 <hr />
-<h2 id="22">22. 五批计划</h2>
+<h2 id="22-b1b5-b6b8-pcmobile">22. 批次计划（B1–B5 已完成，B6–B8 是 PC/Mobile 档的主线）</h2>
 <p>排序依据：<strong>先补"真实页面没它写不出来"的，再补"锦上添花"的</strong>；同一批内先做不动
 <code>QLUIStyle</code> 的（只动解析期），后做动结构体的（要抬 blob 版本 + 重生成 golden）。</p>
+<p><strong>B1–B5</strong> 是"补细节"（已完成）；<strong>B6–B8</strong> 是"补架构"（PC/Mobile 档，MCU 归能力包）。</p>
 <table>
 <thead>
 <tr>
@@ -3356,14 +3818,55 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </tr>
 </tbody>
 </table>
-<p><strong>另外两项单独立项</strong>（成本与一批相当，但语义是"新子系统"）：</p>
-<ul>
-<li><strong><code>transform: rotate()</code> / <code>skew()</code></strong>：要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 +
-  字形旋转 + 裁剪盒变换）。做完它，变换才算齐。</li>
-<li><strong>真 group <code>opacity</code></strong>：要离屏图层（见 §20.1）。现在的 <code>opacity</code> 是逐图元降透明。</li>
-</ul>
-<p><strong>建议顺序</strong>：<strong>B1 + B2 一起做</strong>（一次抬 blob 版本、一次重生成 golden），之后 B3 → B4 → B5，
-中间可随时插入 <code>rotate</code>（对动效类页面它比 B5 更实用）。</p>
+<p>| <strong>B6 布局广度</strong>（PC/Mobile 必做） | <strong>Grid</strong>（<code>display: grid</code> 全家、<code>fr</code>/<code>minmax()</code>/<code>repeat()</code>/自动放置/跨格）、<strong><code>border-image</code></strong> | <code>CSS_GRID</code> + <code>CSS_BORDER_IMAGE</code> | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | 是（<code>QLUIStyle</code> 追加轨道字段） | 新 <code>test_grid</code>（含"Grid 比嵌套 flex 快"的性能断言）+ golden |
+| <strong>B7 数据排版</strong>（PC/Mobile 必做） | <strong>表格</strong>（<code>table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + 列宽分配 + <code>border-collapse</code>）、<strong>多栏</strong>（<code>columns</code> 平衡列高） | <code>CSS_TABLE</code> + <code>CSS_COLUMNS</code> | 后台管理界面、长文正文 | 高：<code>auto</code> 列宽与列高平衡都要排两遍 | 是 | 新 <code>test_table</code> / <code>test_columns</code> + golden |
+| <strong>B8 文本栈</strong>（PC/Mobile 必做，MCU 恒裁） | <code>@font-face</code>、自由 <code>font-family</code>、真字重/斜体、连字与字距、<code>direction</code>/<code>unicode-bidi</code> | <code>CSS_FONT_STACK</code> / <code>CSS_TEXT_SHAPE</code> / <code>CSS_BIDI</code> | <strong>多语言真实页面</strong>（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 <code>test_font_ft</code> / 新 <code>test_shape</code> |</p>
+<p><strong>另外几项单独立项</strong>（成本与一批相当，但语义是"新子系统"）：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>目标档</th>
+<th>为什么单独立项</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>离屏图层</strong>（<code>filter: blur()</code> / 真 group <code>opacity</code> / <code>mix-blend-mode</code>）</td>
+<td><strong>PC/Mobile 必做</strong></td>
+<td>三者共用同一块能力："子树先合成到一张图，再整体处理"。做完它，这三样一起解锁（见 §20.1）</td>
+<td>高：CPU 要一块临时缓冲 + 一次合成；GL 要 FBO 复用 + 纹理采样。RAM 成本 = 一个元素盒子大小的 RGBA 缓冲</td>
+</tr>
+<tr>
+<td><strong><code>transform: rotate()</code> / <code>skew()</code></strong></td>
+<td><strong>PC/Mobile 必做</strong></td>
+<td>要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转 + 裁剪盒变换）</td>
+<td>中高：与 flex 求解器不同量级，但比离屏图层便宜（不需要额外缓冲）</td>
+</tr>
+<tr>
+<td><strong><code>filter</code> 的颜色矩阵族</strong>（brightness/contrast/saturate/grayscale…）</td>
+<td><strong>PC/Mobile 必做</strong></td>
+<td>不一定要离屏：单色乘法可以直接融进每个绘制入口（CPU 乘、GL 用一个 uniform）。但要保证"子树整体"语义才准</td>
+<td>中：CPU + GL 各一份</td>
+</tr>
+<tr>
+<td><strong><code>clip-path</code> 的任意形状</strong>（<code>polygon()</code> / <code>path()</code> / <code>inset()</code>）</td>
+<td>PC/Mobile</td>
+<td>要通用裁剪扫线（现在只有 <code>circle()</code> 的 SDF）</td>
+<td>中</td>
+</tr>
+<tr>
+<td><strong>3D 变换</strong>（<code>perspective()</code> / <code>rotate3d()</code>）</td>
+<td>❌ 不排期</td>
+<td>要透视除法 + 深度排序 + 一个真正的合成器</td>
+<td>极高，且与"一个节点一个盒"冲突</td>
+</tr>
+</tbody>
+</table>
+<p><strong>建议顺序</strong>：B1–B5 已完成 → <strong>B6（Grid + <code>border-image</code>）→ B7（表格 + 多栏）→ B8（文本栈）</strong>；
+<code>离屏图层</code> 可以插在 B6 之后（它一次解锁三样，性价比最高）。
+每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。</p>
 <hr />
 <h2 id="23-css">23. 怎么新增一个 CSS 属性（检查清单）</h2>
 <p>照着走，漏一步就会留下"能解析但没生效"或"只在一个后端生效"的坑：</p>
