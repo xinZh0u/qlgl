@@ -58,6 +58,9 @@ QL_TEST_BEGIN("test_html_tags")
             "iframe", "embed", "object", "audio", "video", "track", "canvas",
             "script", "noscript", "slot", "template", "svg", "math",
             "pre", "sub", "sup", "textarea",
+            /* --- B7 表格 --- */
+            "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th",
+            "colgroup", "col",
         };
         QL_CHECK_EQ((int)QL_UI_TAG_COUNT, (int)(sizeof(expect) / sizeof(expect[0])));
         for (int i = 0; i < (int)QL_UI_TAG_COUNT && i < (int)(sizeof(expect) / sizeof(expect[0])); i++)
@@ -271,7 +274,7 @@ QL_TEST_BEGIN("test_html_tags")
     /* ---------- 11. 明确报错，且提示要能指导下一步 ---------- */
     {
         struct { const char *html; const char *needle; } bad[] = {
-            { "<div id=r><table><tr><td>x</td></tr></table></div>", "用嵌套的 flex" },
+            { "<div id=r><marquee>x</marquee></div>", "不支持的标签" },
 
             { "<div id=r><input type=\"date\"></div>", "只支持 text / password" },
         };

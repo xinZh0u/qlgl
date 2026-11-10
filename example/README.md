@@ -125,6 +125,7 @@ python3 tools/qltext/qltext.py cc \
 | `30_border_image` | B6 `border-image`：九宫格切片，stretch / repeat / round 三种填充 |
 | `31_filter` | M9.3 离屏图层：`filter`（blur / drop-shadow / 颜色矩阵族）、真 group `opacity`、`mix-blend-mode`、`mask` |
 | `32_transform` | M9.4 旋转光栅：`transform: rotate / skew / matrix` 与 `transform-origin`，以及与图层的叠加 |
+| `33_table` | B7 表格：`display: table` 全家、`colspan/rowspan`、`border-spacing` vs `collapse`、单元格垂直对齐 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 

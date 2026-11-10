@@ -185,6 +185,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -3191,11 +3192,12 @@ blob v10 → <strong>v11</strong>。</p>
 因为省掉了 wrapper 层（实测一层 wrapper ≈ 3 个叶子节点）。
 验收里要有一条<strong>性能断言</strong>（Grid 版不得比嵌套 flex 版慢），不只是像素 golden。</p>
 </blockquote>
-<h4 id="m92-b7">M9.2 · B7：表格与多栏</h4>
+<h4 id="m92-b7-2026-11-11">M9.2 · B7：表格与多栏 —— <strong>表格已完成（2026-11-11），多栏待做</strong></h4>
 <table>
 <thead>
 <tr>
 <th>任务</th>
+<th>状态</th>
 <th>说明</th>
 <th>代价</th>
 </tr>
@@ -3203,26 +3205,41 @@ blob v10 → <strong>v11</strong>。</p>
 <tbody>
 <tr>
 <td><code>display: table</code> 全家 + <code>&lt;table&gt;</code> 系列标签</td>
-<td>行/列/标题/分组；<code>table-layout: fixed</code> 先做（一遍）</td>
-<td>估 6–10 KB</td>
-</tr>
-<tr>
-<td><code>table-layout: auto</code></td>
-<td>列宽分配：先量每列 <code>min/max-content</code>，再按可用宽度分配（<strong>两遍</strong>）</td>
-<td>布局边际成本 ×2</td>
+<td>✅</td>
+<td>行/列/标题/分组；<code>table-layout: fixed</code> 语义（首行 width 优先，其余等分）</td>
+<td>实测 <strong>+3,156 B</strong></td>
 </tr>
 <tr>
 <td><code>rowspan</code> / <code>colspan</code> / <code>border-collapse</code> / <code>border-spacing</code></td>
-<td>占位格 + 半边边框相加</td>
-<td>中</td>
+<td>✅</td>
+<td>每列一个"还剩几行被占"的计数器（24 B）；collapse 用"挪半条边框"实现</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>table-layout: auto</code></td>
+<td>⏳</td>
+<td>列宽按内容分配：先量每列 <code>min/max-content</code>，再按可用宽度分配（<strong>两遍</strong>）</td>
+<td>布局边际成本 ×2</td>
+</tr>
+<tr>
+<td><code>colgroup</code> / <code>col</code> 列宽声明</td>
+<td>❌</td>
+<td>标签存在但 <code>display: none</code>；要列宽就给 <code>td</code> 写 <code>width</code></td>
+<td>—</td>
 </tr>
 <tr>
 <td><code>columns</code> / <code>column-count</code> / <code>column-rule</code></td>
+<td>⏳</td>
 <td><strong>列高平衡要排两遍</strong>；唯一真正与"一个节点一个盒"冲突的一项</td>
 <td>估 8–15 KB（最贵）</td>
 </tr>
 </tbody>
 </table>
+<p><strong>落地数据</strong>：<code>QLUINode</code> 28 → <strong>30</strong>、<code>QLUIStyle</code> 344 → <strong>352</strong>、blob <strong>v31</strong>；
+<code>test_table</code> 60 项；例程 <code>33_table</code>；教程 <code>22_table.md</code>；实现要点见
+《CSS3 覆盖与裁剪》§18.12。<strong>坑</strong>：① 跨行之后的行要按"跳过被占用的列"重新分配
+起始列（否则第二行的第一个格子会压住上一行跨行的格子）；② 表格角色不能用文字撑宽；
+③ <code>vertical-align</code> 的余量要用"自然内容高"，不能拿撑开后的 <code>border_box.h</code>。</p>
 <h4 id="m93-2026-11-11">M9.3 · 离屏图层（一次解锁四样）—— <strong>已完成（2026-11-11）</strong></h4>
 <table>
 <thead>
@@ -3671,7 +3688,7 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <p><strong>2026-11-10 重新定档后的下一步</strong>（PC/Mobile 主线）：
 ① <strong>M9.1 Grid + <code>border-image</code></strong>（B6，估 4–7 KB Flash，且实测能降 MCU 布局时间）→
 ② <strong>M9.3 离屏图层</strong>（一次解锁 <code>filter</code> / group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code>）→
-③ <strong>M9.4 旋转光栅</strong> → ④ <strong>M9.2 表格 + 多栏</strong> → ⑤ <strong>M10 文本栈</strong>。
+③ <strong>M9.4 旋转光栅 ✅</strong> → ④ <strong>M9.2 表格 ✅ / 多栏 ⏳</strong> → ⑤ <strong>M10 文本栈</strong>。
 每一批都要同时给出"MCU 档裁掉后的数字"，这是本库的老规矩。</p>
 </blockquote>
 <ol>

@@ -88,6 +88,23 @@
 #define QL_FEAT_CSS_BORDER_IMAGE    1
 #endif
 
+/* ----- 表格（B7 能力包） -----
+ *
+ * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_TABLE=0`）。
+ * 关掉之后：`<table>` 系列的标签与 `display: table*` 在**构建期报错**，
+ * 不会退化成"一堆块叠在一起"（那是最难查的一类问题）。
+ */
+#ifndef QL_FEAT_CSS_TABLE
+#define QL_FEAT_CSS_TABLE           1
+#endif
+/* 一张表格最多几行 / 几列（超出按上限截断并告警，不静默丢内容） */
+#ifndef QL_CFG_UI_TABLE_MAX_ROWS
+#define QL_CFG_UI_TABLE_MAX_ROWS    64
+#endif
+#ifndef QL_CFG_UI_TABLE_MAX_COLS
+#define QL_CFG_UI_TABLE_MAX_COLS    24
+#endif
+
 /* ----- 离屏图层（M9.3 能力包）：filter / mix-blend-mode / mask / 真 group opacity ----- */
 /*
  * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_FILTER_LAYER=0`）。

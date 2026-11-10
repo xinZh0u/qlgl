@@ -153,12 +153,18 @@ static const char *const TAG_NAMES[] = {
     "QL_UI_TAG_MATH",
     "QL_UI_TAG_PRE", "QL_UI_TAG_SUB", "QL_UI_TAG_SUP",
     "QL_UI_TAG_TEXTAREA",
+    "QL_UI_TAG_TABLE", "QL_UI_TAG_CAPTION", "QL_UI_TAG_THEAD",
+    "QL_UI_TAG_TBODY", "QL_UI_TAG_TFOOT", "QL_UI_TAG_TR", "QL_UI_TAG_TD",
+    "QL_UI_TAG_TH", "QL_UI_TAG_COLGROUP", "QL_UI_TAG_COL",
 };
 
 static const char *const DISPLAY_NAMES[] = {
     "QL_UI_DISPLAY_BLOCK", "QL_UI_DISPLAY_INLINE",
     "QL_UI_DISPLAY_INLINE_BLOCK", "QL_UI_DISPLAY_NONE",
     "QL_UI_DISPLAY_FLEX", "QL_UI_DISPLAY_INLINE_FLEX",
+    "QL_UI_DISPLAY_GRID", "QL_UI_DISPLAY_INLINE_GRID",
+    "QL_UI_DISPLAY_TABLE", "QL_UI_DISPLAY_TABLE_ROW", "QL_UI_DISPLAY_TABLE_CELL",
+    "QL_UI_DISPLAY_TABLE_CAPTION", "QL_UI_DISPLAY_TABLE_ROW_GROUP",
 };
 
 static const char *const FLEX_DIR_NAMES[] = {
@@ -538,7 +544,14 @@ static void fput_style(FILE *f, const QLUIStyle *s)
     fput_length(f, s->inset[2]);
     fputs(", ", f);
     fput_length(f, s->inset[3]);
-    fputs(" } },\n", f);
+    /* B7 表格（blob v31） */
+    fprintf(f,
+            " },\n      .table_layout = %u, .border_collapse = %u, .valign = %u,"
+            " .table_spacing_x = %d, .table_spacing_y = %d",
+            (unsigned)s->table_layout, (unsigned)s->border_collapse,
+            (unsigned)s->valign, (int)s->table_spacing_x, (int)s->table_spacing_y);
+
+    fputs(" },\n", f);
 }
 
 /* 一次性建出 out_dir（老 qlui.py 用 os.makedirs，这里对齐它的行为） */
@@ -844,7 +857,7 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
     fprintf(f,
             "static const QLUINode %s_nodes[] = {\n"
             "    /* tag                     parent first  next   style  text   hover"
-            "  active focus  disabled checked placeholder ph-text flags */\n",
+            "  active focus  disabled checked placeholder ph-text flags cspan rspan */\n",
             ident);
     for (uint16_t i = 0; i < doc->node_count; i++) {
         const QLUINode *n = &doc->nodes[i];
@@ -862,7 +875,8 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         idx_ofs(f, n->style_checked, 0);
         idx_ofs(f, n->style_placeholder, 0);
         idx_ofs(f, n->placeholder, 0);
-        fprintf(f, ", 0x%02X, 0x00 },\n", (unsigned)n->flags);
+        fprintf(f, ", 0x%02X, %u, %u },\n", (unsigned)n->flags, (unsigned)n->colspan,
+                (unsigned)n->rowspan);
     }
     fputs("};\n\n", f);
 

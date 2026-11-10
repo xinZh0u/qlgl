@@ -3688,6 +3688,8 @@ static const char *const k_supported_props[] = {
     "align-content", "overflow-x", "overflow-y", "inset",
     "cursor", "user-select", "scroll-behavior",
     "content",          /* 只能用在 ::before / ::after 上（见 expand_pseudo） */
+    /* B7 表格 */
+    "table-layout", "border-collapse", "border-spacing",
 };
 
 /* @keyframes 里允许的属性（与 Python 的 KEYFRAME_PROPS 一致） */
@@ -5125,6 +5127,26 @@ static const char *pnode_attr(const PNode *n, const char *name)
     return NULL;
 }
 
+/*
+ * B7 表格的 `colspan` / `rowspan`：只接受 1..255 的十进制整数，其它一律当 1
+ * （浏览器也把非法的 span 当 1 处理）。不做除法、不做内存分配，就一个 atoi。
+ */
+static uint8_t table_span_attr(const PNode *n, const char *name)
+{
+    const char *v = pnode_attr(n, name);
+    if (v == NULL || v[0] == '\0')
+        return 1;
+    int val = 0;
+    for (const char *p = v; *p != '\0'; p++) {
+        if (*p < '0' || *p > '9')
+            return 1;
+        val = val * 10 + (*p - '0');
+        if (val > 255)
+            return 255;
+    }
+    return (uint8_t)((val < 1) ? 1 : val);
+}
+
 /* 不是"元素"的节点：伪元素合成节点、包裹宿主文本的匿名 span */
 static int not_an_element(const PNode *n)
 {
@@ -5165,6 +5187,9 @@ static const char *const k_tags[] = {
     "pre", "sub", "sup",
     /* --- CONTROL 包（P5） --- */
     "textarea",
+    /* --- B7 表格 --- */
+    "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th",
+    "colgroup", "col",
 };
 
 #define TAG_COUNT ((int)(sizeof(k_tags) / sizeof(k_tags[0])))
@@ -6409,10 +6434,16 @@ static PNode *parse_html(const char *html)
                  * 这里只管**当前还没实现**的那批（table 包 / textarea）；
                  * img / input / select 都已支持，别再往这里加。
                  */
+#if !QL_FEAT_CSS_TABLE
                 if (strcmp(name, "table") == 0 || strcmp(name, "tr") == 0 ||
-                         strcmp(name, "td") == 0 || strcmp(name, "th") == 0)
-                    set_error("HTML: 不支持表格 <%s>：用嵌套的 flex 行来做", name);
-                else if (strcmp(name, "ruby") == 0 || strcmp(name, "rt") == 0 ||
+                    strcmp(name, "td") == 0 || strcmp(name, "th") == 0 ||
+                    strcmp(name, "thead") == 0 || strcmp(name, "tbody") == 0 ||
+                    strcmp(name, "tfoot") == 0 || strcmp(name, "caption") == 0)
+                    set_error("HTML: 这个构建关掉了表格（QL_FEAT_CSS_TABLE=0），"
+                              "不支持 <%s>", name);
+                else
+#endif
+                if (strcmp(name, "ruby") == 0 || strcmp(name, "rt") == 0 ||
                          strcmp(name, "rp") == 0)
                     set_error("HTML: 不支持注音 <%s>：用两行文本自己排", name);
                 else
@@ -7189,6 +7220,32 @@ static int ua_defaults(const char *tag, Decls *out)
     if (strcmp(tag, "li") == 0)
         return ua_set_block(out);
 
+    /* ---- B7 表格：结构标签自己只定 display 角色，画什么由内容决定 ----
+     *
+     * UA 默认值对齐浏览器里最常用的那几条：`table` 无边框、`th` 加粗居中、
+     * 单元格 1px 内边距。**不给边框颜色**：浏览器默认 `border-color: gray`
+     * 而宽度是 0，写了 `border: 1px solid` 才看得见 —— 这里保持一致（宽度 0）。
+     */
+    if (strcmp(tag, "table") == 0)
+        return decls_set(out, "display", "table");
+    if (strcmp(tag, "caption") == 0)
+        return decls_set(out, "display", "table-caption") &&
+               decls_set(out, "text-align", "center");
+    if (strcmp(tag, "thead") == 0 || strcmp(tag, "tbody") == 0 ||
+        strcmp(tag, "tfoot") == 0)
+        return decls_set(out, "display", "table-row-group");
+    if (strcmp(tag, "tr") == 0)
+        return decls_set(out, "display", "table-row");
+    if (strcmp(tag, "td") == 0)
+        return decls_set(out, "display", "table-cell");
+    if (strcmp(tag, "th") == 0)
+        return decls_set(out, "display", "table-cell") &&
+               decls_set(out, "font-weight", "bold") &&
+               decls_set(out, "text-align", "center");
+    /* `colgroup` / `col`：列宽声明还没做（见文档），不占位 */
+    if (strcmp(tag, "colgroup") == 0 || strcmp(tag, "col") == 0)
+        return decls_set(out, "display", "none");
+
     /* ---- <hr>：块级细线。不写 background-color 就是黑的，所以必须显式给 ---- */
     if (strcmp(tag, "hr") == 0) {
         return decls_set(out, "display", "block") &&
@@ -7628,6 +7685,29 @@ static int px_of_decl(const char *v, int def)
     return (n > 0) ? n : def;
 }
 
+/* `border-spacing` 的一个分量：非负整数 + 可选 `px`（唯一允许无单位的是 0） */
+static int table_spacing_px(const char *t, int *out)
+{
+    size_t n = strlen(t);
+    if (n > 2 && t[n - 2] == 'p' && t[n - 1] == 'x') {
+        n -= 2;
+    } else if (!(n == 1 && t[0] == '0')) {
+        return 0;
+    }
+    if (n == 0)
+        return 0;
+    int v = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (t[i] < '0' || t[i] > '9')
+            return 0;
+        v = v * 10 + (t[i] - '0');
+        if (v > 1000)
+            return 0;
+    }
+    *out = v;
+    return 1;
+}
+
 /* 浏览器 `font-size: smaller/larger` 的比例：5/6 ≈ 0.833，1.2。窄到整数 px */
 static int font_size_nudge(int parent_px, int larger)
 {
@@ -7727,6 +7807,21 @@ static int display_value(const char *s)
         return QL_UI_DISPLAY_FLEX;
     if (strcmp(s, "inline-flex") == 0)
         return QL_UI_DISPLAY_INLINE_FLEX;
+#if !QL_FEAT_CSS_TABLE
+    if (strncmp(s, "table", 5) == 0 || strcmp(s, "inline-table") == 0)
+        return -2;      /* 特殊值：调用处报"表格包被裁掉" */
+#endif
+    if (strcmp(s, "table") == 0 || strcmp(s, "inline-table") == 0)
+        return QL_UI_DISPLAY_TABLE;
+    if (strcmp(s, "table-row") == 0)
+        return QL_UI_DISPLAY_TABLE_ROW;
+    if (strcmp(s, "table-cell") == 0)
+        return QL_UI_DISPLAY_TABLE_CELL;
+    if (strcmp(s, "table-caption") == 0)
+        return QL_UI_DISPLAY_TABLE_CAPTION;
+    if (strcmp(s, "table-row-group") == 0 || strcmp(s, "table-header-group") == 0 ||
+        strcmp(s, "table-footer-group") == 0)
+        return QL_UI_DISPLAY_TABLE_ROW_GROUP;
     return -1;
 }
 
@@ -9254,6 +9349,13 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     }
 
     int disp = display_value((v = decls_get(st, "display")) != NULL ? v : "block");
+#if !QL_FEAT_CSS_TABLE
+    if (disp == -2) {
+        set_error("%s: display: %s 需要 QL_FEAT_CSS_TABLE（这个能力包被裁掉了）", where,
+                  v);
+        return 0;
+    }
+#endif
     if (disp < 0) {
         set_error("%s: 不支持的 display '%s'", where,
                   (v != NULL) ? v : "block");
@@ -9300,6 +9402,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
      *   super = -33% em（浏览器约 1/3 em），sub = +20% em。
      */
     int baseline_dy = 0;
+    int valign = QL_UI_VALIGN_BASELINE;
     {
         const char *vav = decls_get(st, "vertical-align");
         if (vav != NULL) {
@@ -9311,13 +9414,20 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 baseline_dy = -(font_px * 33 / 100);
             } else if (strcmp(vt, "sub") == 0) {
                 baseline_dy = (font_px * 20 / 100);
+            } else if (strcmp(vt, "top") == 0) {
+                valign = QL_UI_VALIGN_TOP;
+            } else if (strcmp(vt, "middle") == 0) {
+                valign = QL_UI_VALIGN_MIDDLE;
+            } else if (strcmp(vt, "bottom") == 0) {
+                valign = QL_UI_VALIGN_BOTTOM;
             } else {
-                set_error("%s: 不支持的 vertical-align '%s'（只支持 baseline / sub / super）",
-                          where, vav);
+                set_error("%s: 不支持的 vertical-align '%s'（支持 baseline / sub / super"
+                          " / top / middle / bottom）", where, vav);
                 return 0;
             }
         }
     }
+    out->valign = (uint8_t)valign;
 
     /*
      * `font-family`：本库只有**两级**（正文 / 等宽）。
@@ -10416,6 +10526,73 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             backdrop = (int)py_round(d);
             if (backdrop < 1 || backdrop > 64) {
                 set_error("%s: backdrop-filter: blur 半径必须在 1~64px", where);
+                return 0;
+            }
+        }
+    }
+
+    /* ----- B7 表格：table-layout / border-collapse / border-spacing ----- */
+    {
+        const char *tv = decls_get(st, "table-layout");
+        if (tv != NULL) {
+            char lt[16];
+            trim_lower(tv, lt, sizeof(lt));
+            if (strcmp(lt, "fixed") == 0) {
+                out->table_layout = 1;
+            } else if (strcmp(lt, "auto") == 0) {
+                out->table_layout = 0;
+            } else {
+                set_error("%s: table-layout 只支持 auto / fixed（收到 '%s'）", where, tv);
+                return 0;
+            }
+        }
+        tv = decls_get(st, "border-collapse");
+        if (tv != NULL) {
+            char bc[16];
+            trim_lower(tv, bc, sizeof(bc));
+            if (strcmp(bc, "collapse") == 0) {
+                out->border_collapse = 1;
+            } else if (strcmp(bc, "separate") == 0) {
+                out->border_collapse = 0;
+            } else {
+                set_error("%s: border-collapse 只支持 collapse / separate（收到 '%s'）",
+                          where, tv);
+                return 0;
+            }
+        }
+        tv = decls_get(st, "border-spacing");
+        if (tv != NULL) {
+            /* 一到两个**非负 px**（CSS 不允许百分比） */
+            int got = 0;
+            const char *p = skip_space(tv);
+            while (*p != '\0' && got < 2) {
+                const char *e = p;
+                while (*e != '\0' && !is_space(*e))
+                    e++;
+                char tok[24];
+                const size_t tn = (size_t)(e - p);
+                if (tn >= sizeof(tok)) {
+                    set_error("%s: border-spacing 的取值太长（收到 '%s'）", where, tv);
+                    return 0;
+                }
+                memcpy(tok, p, tn);
+                tok[tn] = '\0';
+                int px = 0;
+                if (!table_spacing_px(tok, &px)) {
+                    set_error("%s: border-spacing 只接受非负 px（收到 '%s'）", where, tok);
+                    return 0;
+                }
+                if (got == 0) {
+                    out->table_spacing_x = (int16_t)px;
+                    out->table_spacing_y = (int16_t)px;   /* 只写一个值时两向同值 */
+                } else {
+                    out->table_spacing_y = (int16_t)px;
+                }
+                got++;
+                p = skip_space(e);
+            }
+            if (got == 0) {
+                set_error("%s: border-spacing 要 1~2 个值（收到 '%s'）", where, tv);
                 return 0;
             }
         }
@@ -13417,6 +13594,9 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             nd->style_placeholder = (uint16_t)flat[i].state_ph;
             nd->placeholder = flat[i].placeholder;
             nd->flags = flat[i].node->flags;
+            /* B7 表格：`colspan` / `rowspan`（就两个小整数，直接读属性，不进 Attrs） */
+            nd->colspan = table_span_attr(flat[i].node, "colspan");
+            nd->rowspan = table_span_attr(flat[i].node, "rowspan");
         }
 
         QLUIStyle *stl = (QLUIStyle *)(void *)(base + off_styles);

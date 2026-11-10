@@ -56,6 +56,7 @@ set(QL_EXAMPLES
     30_border_image
     31_filter
     32_transform
+    33_table
 )
 
 foreach(e ${QL_EXAMPLES})

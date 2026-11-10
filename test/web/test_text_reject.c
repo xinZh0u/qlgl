@@ -23,8 +23,10 @@ typedef struct {
 } RejectCase;
 
 static const RejectCase k_cases[] = {
-    { 0, "<div id='a'><table></table></div>",
-      "", "<input> 第 1 行：不支持的标签 <table>" },
+    { 1, "<div id='a'><table><tr><td>x</td></tr></table></div>",
+      "", "" },
+    { 0, "<div id='a'><marquee></marquee></div>",
+      "", "第 1 行：不支持的标签 <marquee>" },
     { 0, "<div><span></div>",
       "", "第 1 行：结束标签 </div> 与 <span> 不匹配" },
     { 0, "<div>",

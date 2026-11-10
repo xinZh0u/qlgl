@@ -185,6 +185,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1102,7 +1103,7 @@ ql_text_wrap_ex(font, text, max_w, out, max_lines, keep_trailing)
 <li><strong><code>&lt;br&gt;</code> 是一个"高度为 0 的块"</strong>：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。</li>
 <li><strong><code>&lt;table&gt;</code> / <code>&lt;textarea&gt;</code> 明确报错</strong>，错误信息里给出替代做法
-   （表格用嵌套 flex、多行文本用 <code>white-space: pre</code>）。<code>&lt;input type="date"&gt;</code>
+   （多行文本用 <code>white-space: pre</code>）。<code>&lt;input type="date"&gt;</code>
    这类没实现的 <code>type</code> 也报错，并列出支持的那几个。</li>
 <li><strong>空元素的结束标签被忽略</strong>（<code>&lt;br&gt;&lt;/br&gt;</code> / <code>&lt;embed&gt;&lt;/embed&gt;</code>）：浏览器这么做，
    这里照做 —— 否则看着正常的写法会让整页编译不过。非空标签不匹配仍然报错。</li>
@@ -1494,6 +1495,19 @@ index.html + index.css ──qltext cc──┤
 <code>layer_begin</code> + <code>render_node_inner</code> + <code>layer_end</code>。<strong>画子树必须走
 <code>render_node_inner</code> 而不是 <code>render_node</code></strong>，否则第二次进去又会开一层新图层，
 无限递归。</p>
+<h4 id="24">表格：五遍扫描 + 24 字节的"占用计数器"</h4>
+<p><code>layout_table_children()</code> 是唯一一个<strong>不是按父子顺序一遍走完</strong>的布局函数：
+表格要先知道列宽才能量行高、先量完行高才能摆放。所以它扫五遍
+（列数 → 列宽 → 行高 → 跨行补差额 → 摆放），每一遍都用同一个
+<code>uint8_t live[QL_CFG_UI_TABLE_MAX_COLS]</code> 记账 —— "这一列还被上面几行的 rowspan
+占着"。行是按顺序处理的，行末把大于 0 的减一，于是 <code>rowspan</code> 之后的那一行会
+<strong>自动跳过</strong>被占的列（不做这件事的表现：第二行的第一个格子压住上一行跨行的格子）。</p>
+<p>三条容易写错的规矩（都在代码注释里）：
+1. 表格角色（table-cell / caption / row / row-group）<strong>不能用文字撑宽</strong>
+   —— 否则单元格只有文字那么宽；
+2. <code>vertical-align: middle/bottom</code> 的余量要用"自然内容高"
+   （<code>table_cell_content_h()</code>），拿撑开后的 <code>border_box.h</code> 永远算不出余量；
+3. 文字直接挂在单元格上时（没有子节点），要挪 <code>content_box.y</code> 而不是子节点。</p>
 <h4 id="blit-scissor">一个只在脏区重绘时出现的坑：blit 也受 scissor 影响</h4>
 <p>混合模式要读"图层的背景"，做法是先把目标表面上那一块 <code>glBlitFramebuffer</code> 到
 一张纹理。<strong>blit 会被 scissor 裁</strong>，而背景纹理的目标矩形在 <code>(0,0)</code>、脏区重绘时
@@ -1555,8 +1569,8 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 </tr>
 <tr>
 <td>表格</td>
-<td>❌ 报错</td>
-<td>用嵌套 flex</td>
+<td>✅ <code>display: table</code> 全家（B7）；<code>table-layout: auto</code> 按 fixed 算</td>
+<td><code>colgroup</code> 列宽声明、<code>caption-side: bottom</code> 没有</td>
 </tr>
 <tr>
 <td>伪类</td>
@@ -1592,6 +1606,11 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 <td><code>backdrop-filter</code></td>
 <td>✅ <code>blur(1~64px)</code></td>
 <td>其它 filter 函数报错（它是"糊背后"，与 <code>filter</code> 不是一回事）</td>
+</tr>
+<tr>
+<td>表格</td>
+<td>✅ <code>display: table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + <code>colspan/rowspan</code> + <code>border-collapse</code>（B7）</td>
+<td><code>table-layout: auto</code> 按 fixed 算；<code>colgroup</code> 列宽声明没有</td>
 </tr>
 <tr>
 <td><code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> / 组 <code>opacity</code></td>

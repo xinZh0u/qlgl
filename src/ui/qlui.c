@@ -32,6 +32,10 @@ static void anim_boot(QLUIRoot *ui);
 /* 定义在布局那一段；构建时判断"父节点是不是 flex 容器"要用 */
 static int is_flex_container(const QLUIStyle *s);
 static int is_grid_container(const QLUIStyle *s);
+static ql_coord_t layout_table_children(QLUIRoot *ui, QLUINodeRT *node,
+                                        ql_coord_t content_x, ql_coord_t content_y,
+                                        ql_coord_t content_w, int definite_h);
+static int is_table_container(const QLUIStyle *s);
 static void sort_children_by_order(QLUINodeRT *node);
 static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t avail_w,
                                    int depth);
@@ -66,6 +70,9 @@ static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
     /* --- TEXT 包（P4） --- */
     "pre", "sub", "sup",
     "textarea",
+    /* --- B7 表格 --- */
+    "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th",
+    "colgroup", "col",
 };
 
 const char *ql_ui_tag_name(uint16_t tag)
@@ -915,7 +922,12 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
     }
 
     const QLFont *font = font_of_style(node, s);
-    int text_sized = s->display != QL_UI_DISPLAY_BLOCK &&
+    /*
+     * 表格角色（cell / caption / row / row-group）一律**不用文本撑宽**：
+     * 它们的宽度由列宽（或表格内容宽）决定，与浏览器一致。
+     */
+    const int table_role = s->display >= QL_UI_DISPLAY_TABLE;
+    int text_sized = s->display != QL_UI_DISPLAY_BLOCK && !table_role &&
                      s->width.unit == QL_UI_UNIT_AUTO &&
                      has_shown_text(node) && node->first_child == NULL;
 
@@ -2248,7 +2260,11 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         }
     }
 
-    if (node->first_child != NULL && is_grid_container(s)) {
+    if (node->first_child != NULL && is_table_container(s)) {
+        int definite_h = height_is_definite(s, basis_h);
+        content_h = layout_table_children(node->owner, node, content_x, content_y,
+                                          content_w, definite_h);
+    } else if (node->first_child != NULL && is_grid_container(s)) {
         /* grid 容器：轨道定尺之后逐格摆放（见 layout_grid_children） */
         int definite_h = height_is_definite(s, basis_h);
         ql_coord_t avail_h = 0;
@@ -2393,7 +2409,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      */
     if (height_is_definite(s, basis_h) &&
         !(node->first_child != NULL &&
-          (is_flex_container(s) || is_grid_container(s)))) {
+          (is_flex_container(s) || is_grid_container(s) || is_table_container(s)))) {
         ql_coord_t hv = height_of_style(s, basis_h, content_h);
         if (s->box_sizing == 1) {
             hv -= ql_ui_border_v(s) + s->padding.top + s->padding.bottom;
@@ -3066,6 +3082,544 @@ static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
 }
 
 #endif  /* QL_FEAT_CSS_GRID */
+
+/* ------------------------------ B7 表格 ------------------------------ */
+/*
+ * 表格布局（`table-layout: fixed` 语义）。
+ *
+ * CSS 的表格是**两套 display 交叉**的结构：`table` / `row-group` / `row` / `cell`，
+ * 但只有 cell 有真正的盒子，row 与 row-group 只是"分组"。所以这里的做法是：
+ *
+ *   1. 收集行（展开 thead/tbody/tfoot），数出一共有几列；
+ *   2. 定列宽：首行里显式写了 `width` 的单列单元格优先，其余列**等分**剩余宽度；
+ *   3. 量行高：单行单元格各自布局一次，取最大值；跨行单元格在轮完之后再补差额；
+ *   4. 摆：按列宽/行高把每个单元格布局到位，再把单元格高度撑到整行，
+ *      内容按 `vertical-align` 上/中/下对齐。
+ *
+ * 明确不做的（见文档）：`table-layout: auto` 的内容自适应、`colgroup`/`col` 的
+ * 列宽声明、列高平衡（那是多栏的事）、`caption-side: bottom`。
+ */
+typedef struct {
+    QLUINodeRT *rows[QL_CFG_UI_TABLE_MAX_ROWS];
+    int         n;
+    int         truncated;
+} TableRows;
+
+/*
+ * 每一列"还被上面某个 rowspan 占着几行"。
+ *
+ * 为什么要有它：`<td rowspan=2>` 让下一行**少一个格子**，后面所有单元格都要
+ * 往右顺延一列。只看"本行第几个格子"会把它们排到错误的列上（实测：第二行
+ * 的第一个单元格会跑到第一列，压住上一行跨行的那个格子）。
+ *
+ * 用一个 24 字节的计数器数组（不是 64×24 的矩阵）就够了：行是按顺序处理的，
+ * 每行结束时把还大于 0 的减一。
+ */
+typedef struct {
+    uint8_t live[QL_CFG_UI_TABLE_MAX_COLS];
+} TableOcc;
+
+static int is_table_container(const QLUIStyle *s)
+{
+    return s->display == QL_UI_DISPLAY_TABLE;
+}
+
+static int is_table_row(const QLUIStyle *s)
+{
+    return s->display == QL_UI_DISPLAY_TABLE_ROW;
+}
+
+static int is_table_row_group(const QLUIStyle *s)
+{
+    return s->display == QL_UI_DISPLAY_TABLE_ROW_GROUP;
+}
+
+static int is_table_cell(const QLUIStyle *s)
+{
+    return s->display == QL_UI_DISPLAY_TABLE_CELL;
+}
+
+/* 收集表格的行：直接是 tr 的，和包在 row-group 里的（组本身不画，只透传） */
+static void table_collect_rows(QLUINodeRT *table, TableRows *out)
+{
+    out->n = 0;
+    out->truncated = 0;
+    for (QLUINodeRT *c = table->first_child; c != NULL; c = c->next_sibling) {
+        const QLUIStyle *cs = c->style;
+        if (cs->display == QL_UI_DISPLAY_NONE || is_out_of_flow(cs))
+            continue;
+        if (is_table_row(cs)) {
+            if (out->n >= (int)QL_CFG_UI_TABLE_MAX_ROWS) {
+                out->truncated = 1;
+                return;
+            }
+            out->rows[out->n++] = c;
+        } else if (is_table_row_group(cs)) {
+            for (QLUINodeRT *r = c->first_child; r != NULL; r = r->next_sibling) {
+                if (r->style->display == QL_UI_DISPLAY_NONE || !is_table_row(r->style))
+                    continue;
+                if (out->n >= (int)QL_CFG_UI_TABLE_MAX_ROWS) {
+                    out->truncated = 1;
+                    return;
+                }
+                out->rows[out->n++] = r;
+            }
+        }
+    }
+}
+
+/* 跳过被上面 rowspan 占住的列，返回第一个空列 */
+static int occ_free(const TableOcc *o, int from, int ncol)
+{
+    while (from < ncol && o->live[from] > 0)
+        from++;
+    return from;
+}
+
+/* 占住 [col, col+cs) 这些列，rs 行 */
+static void occ_take(TableOcc *o, int col, int cs, int rs, int ncol)
+{
+    for (int k = col; k < col + cs && k < ncol; k++)
+        o->live[k] = (uint8_t)((rs > 1) ? rs : 0);
+}
+
+/* 行末：所有占用计数减一（下一行继续占的那些还留着） */
+static void occ_end_row(TableOcc *o, int ncol)
+{
+    for (int k = 0; k < ncol; k++)
+        if (o->live[k] > 0)
+            o->live[k]--;
+}
+
+/* 单元格声明的宽度（边框盒 px）；没写或不是 px 返回 0 */
+static ql_coord_t table_cell_fixed_w(const QLUINodeRT *cell)
+{
+    const QLUIStyle *cs = cell->style;
+    if (cs->width.unit != QL_UI_UNIT_PX || cs->width.value <= 0)
+        return 0;
+    ql_coord_t w = (ql_coord_t)cs->width.value;
+    if (cs->box_sizing == 0)
+        w += (ql_coord_t)(cs->padding.left + cs->padding.right) + ql_ui_border_h(cs);
+    return w;
+}
+
+/*
+ * 单元格**内容**自然高度（不按它自己声明的 height 算）。
+ *
+ * 为什么要单独算：`vertical-align: middle` 要居中的是"内容相对整行多出来的空间"，
+ * 而单元格自己写的 `height: 60px` 会把 border_box 撑到 60，直接拿它当内容高
+ * 就永远算不出余量（结果 middle 和 top 一模一样）。
+ */
+static ql_coord_t table_cell_content_h(const QLUINodeRT *cell, ql_coord_t avail_w)
+{
+    const QLUIStyle *cs = cell->style;
+    if (cell->first_child != NULL) {
+        ql_coord_t bottom = cell->content_box.y;
+        for (QLUINodeRT *c = cell->first_child; c != NULL; c = c->next_sibling) {
+            if (c->style->display == QL_UI_DISPLAY_NONE)
+                continue;
+            const ql_coord_t b = c->border_box.y + c->border_box.h +
+                                 (ql_coord_t)(c->style->margin.top + c->style->margin.bottom);
+            if (b > bottom)
+                bottom = b;
+        }
+        return bottom - cell->content_box.y;
+    }
+    if (!has_shown_text(cell))
+        return 0;
+    const QLFont *font = font_of_style(cell, cs);
+    const ql_coord_t lh = text_line_h_of(cs, font);
+    const QLTextWrapOpt wopt = wrap_opt_of(cs);
+    int lines = ql_text_wrap_opt(font, cell->text,
+                                 QL_UI_WS_WRAPS(cs->white_space) ? avail_w : 0, &wopt,
+                                 NULL, 0, 0);
+    if (lines < 1)
+        lines = 1;
+    return lh * (ql_coord_t)lines;
+}
+
+/* 把单元格高度撑到 `h`（边框盒），并按 vertical-align 摆内容 */
+static void table_fit_cell(QLUINodeRT *cell, ql_coord_t h)
+{
+    const QLUIStyle *cs = cell->style;
+    const ql_coord_t inner =
+        (ql_coord_t)(cs->padding.top + cs->padding.bottom) + ql_ui_border_v(cs);
+    const ql_coord_t used_border_h = cell->border_box.h;
+    if (h < used_border_h)
+        return;                       /* 内容比这一行还高：让它溢出去（不压扁） */
+    const ql_coord_t used_content = table_cell_content_h(cell, cell->content_box.w);
+    const ql_coord_t avail = h - inner;
+    cell->border_box.h = h;
+    cell->content_box.h = (avail > 0) ? avail : 0;
+
+    ql_coord_t dy = 0;
+    if (cs->valign == QL_UI_VALIGN_MIDDLE) {
+        dy = (avail - used_content) / 2;
+    } else if (cs->valign == QL_UI_VALIGN_BOTTOM) {
+        dy = avail - used_content;
+    }
+    if (dy > 0) {
+        if (cell->first_child != NULL) {
+            for (QLUINodeRT *c = cell->first_child; c != NULL; c = c->next_sibling)
+                translate_subtree(c, 0, dy);
+        } else {
+            /* 文字直接挂在单元格上：挪内容盒，绘制时文字跟着走 */
+            cell->content_box.y += dy;
+        }
+    }
+}
+
+static ql_coord_t layout_table_children(QLUIRoot *ui, QLUINodeRT *table,
+                                        ql_coord_t content_x, ql_coord_t content_y,
+                                        ql_coord_t content_w, int definite_h)
+{
+    (void)ui;
+    (void)definite_h;
+    const QLUIStyle *s = table->style;
+
+#if QL_FEAT_CSS_TABLE
+    TableRows rows;
+    table_collect_rows(table, &rows);
+    if (rows.truncated)
+        QL_LOGW("ui: 表格超过 %d 行（QL_CFG_UI_TABLE_MAX_ROWS），后面的行不参与布局",
+                (int)QL_CFG_UI_TABLE_MAX_ROWS);
+
+    /* caption（表格上方那一行说明）先排 */
+    ql_coord_t y = content_y;
+    for (QLUINodeRT *c = table->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style->display == QL_UI_DISPLAY_TABLE_CAPTION) {
+            y += layout_node(c, content_x, y, content_w, -1);
+            break;
+        }
+    }
+
+    if (rows.n == 0)
+        return y - content_y;
+
+    const int collapse = (s->border_collapse != 0);
+    const ql_coord_t gap = collapse ? 0 : (ql_coord_t)s->table_spacing_x;
+    const int maxcol = (int)QL_CFG_UI_TABLE_MAX_COLS;
+
+    /* ---- 1. 列数（要按 rowspan 顺延后的真实列号算） ---- */
+    int ncol = 0;
+    {
+        TableOcc occ;
+        memset(&occ, 0, sizeof(occ));
+        for (int r = 0; r < rows.n; r++) {
+            int ci = 0;
+            for (QLUINodeRT *cell = rows.rows[r]->first_child; cell != NULL;
+                 cell = cell->next_sibling) {
+                if (!is_table_cell(cell->style) ||
+                    cell->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+                const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+                ci = occ_free(&occ, ci, maxcol);
+                if (ci >= maxcol)
+                    break;
+                occ_take(&occ, ci, cs, rs, maxcol);
+                ci += cs;
+                if (ci > ncol)
+                    ncol = ci;
+            }
+            occ_end_row(&occ, ncol < maxcol ? ncol : maxcol);
+        }
+    }
+    if (ncol > maxcol)
+        ncol = maxcol;
+    if (ncol <= 0)
+        return y - content_y;
+
+    /* ---- 2. 列宽：首行显式 width 优先，其余等分 ---- */
+    ql_coord_t colw[QL_CFG_UI_TABLE_MAX_COLS];
+    int fixed_col[QL_CFG_UI_TABLE_MAX_COLS];
+    for (int i = 0; i < ncol; i++) {
+        colw[i] = 0;
+        fixed_col[i] = 0;
+    }
+    {
+        TableOcc occ;
+        memset(&occ, 0, sizeof(occ));
+        int ci = 0;
+        for (QLUINodeRT *cell = rows.rows[0]->first_child; cell != NULL;
+             cell = cell->next_sibling) {
+            if (!is_table_cell(cell->style) ||
+                cell->style->display == QL_UI_DISPLAY_NONE)
+                continue;
+            const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+            const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+            ci = occ_free(&occ, ci, ncol);
+            if (ci >= ncol)
+                break;
+            const ql_coord_t fw = table_cell_fixed_w(cell);
+            if (cs == 1 && fw > 0) {
+                colw[ci] = fw;
+                fixed_col[ci] = 1;
+            }
+            occ_take(&occ, ci, cs, rs, ncol);
+            ci += cs;
+        }
+    }
+
+    ql_coord_t fixed_sum = 0;
+    int auto_n = 0;
+    for (int i = 0; i < ncol; i++) {
+        if (fixed_col[i])
+            fixed_sum += colw[i];
+        else
+            auto_n++;
+    }
+    /* 可用宽度减掉列间距（separate 时有 ncol+1 条缝） */
+    ql_coord_t avail = content_w - (collapse ? 0 : gap * (ncol + 1));
+    if (avail < 0)
+        avail = 0;
+    if (auto_n > 0) {
+        ql_coord_t rest = avail - fixed_sum;
+        if (rest < 0)
+            rest = 0;
+        const ql_coord_t each = rest / auto_n;
+        ql_coord_t extra = rest - each * auto_n;      /* 余数给右边那些列 */
+        for (int i = 0; i < ncol; i++) {
+            if (fixed_col[i])
+                continue;
+            colw[i] = each;
+            if (extra > 0) {
+                colw[i] += 1;
+                extra--;
+            }
+        }
+    } else if (fixed_sum < avail) {
+        colw[ncol - 1] += avail - fixed_sum;
+    }
+
+    /* 跨列宽：覆盖的列宽之和 + 中间的列间距 */
+    /* （单独抽出来，因为三处都要算） */
+    /* ---- 3. 行高：先看单行单元格 ---- */
+    ql_coord_t rowh[QL_CFG_UI_TABLE_MAX_ROWS];
+    for (int r = 0; r < rows.n; r++)
+        rowh[r] = 0;
+
+    for (int r = 0; r < rows.n; r++) {
+        TableOcc occ;
+        memset(&occ, 0, sizeof(occ));
+        /* 先把前面各行"占用"的状态补出来（只关心本行开始时哪些列被占） */
+        for (int k = 0; k < r; k++) {
+            int ci = 0;
+            for (QLUINodeRT *cell = rows.rows[k]->first_child; cell != NULL;
+                 cell = cell->next_sibling) {
+                if (!is_table_cell(cell->style) ||
+                    cell->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+                const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+                ci = occ_free(&occ, ci, ncol);
+                if (ci >= ncol)
+                    break;
+                occ_take(&occ, ci, cs, rs, ncol);
+                ci += cs;
+            }
+            occ_end_row(&occ, ncol);
+        }
+        int ci = 0;
+        for (QLUINodeRT *cell = rows.rows[r]->first_child; cell != NULL;
+             cell = cell->next_sibling) {
+            if (!is_table_cell(cell->style) ||
+                cell->style->display == QL_UI_DISPLAY_NONE)
+                continue;
+            const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+            const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+            ci = occ_free(&occ, ci, ncol);
+            if (ci >= ncol)
+                break;
+            ql_coord_t w = 0;
+            for (int k = ci; k < ci + cs && k < ncol; k++)
+                w += colw[k];
+            if (!collapse && cs > 1)
+                w += gap * (cs - 1);
+            if (rs == 1) {
+                const ql_coord_t h = layout_node(cell, 0, 0, w, -1);
+                if (h > rowh[r])
+                    rowh[r] = h;
+            }
+            occ_take(&occ, ci, cs, rs, ncol);
+            ci += cs;
+        }
+    }
+
+    /* ---- 4. 跨行单元格：不够高就把差额补给覆盖范围内的最后一行 ---- */
+    for (int r = 0; r < rows.n; r++) {
+        TableOcc occ;
+        memset(&occ, 0, sizeof(occ));
+        for (int k = 0; k < r; k++) {
+            int ci = 0;
+            for (QLUINodeRT *cell = rows.rows[k]->first_child; cell != NULL;
+                 cell = cell->next_sibling) {
+                if (!is_table_cell(cell->style) ||
+                    cell->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+                const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+                ci = occ_free(&occ, ci, ncol);
+                if (ci >= ncol)
+                    break;
+                occ_take(&occ, ci, cs, rs, ncol);
+                ci += cs;
+            }
+            occ_end_row(&occ, ncol);
+        }
+        int ci = 0;
+        for (QLUINodeRT *cell = rows.rows[r]->first_child; cell != NULL;
+             cell = cell->next_sibling) {
+            if (!is_table_cell(cell->style) ||
+                cell->style->display == QL_UI_DISPLAY_NONE)
+                continue;
+            const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+            const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+            ci = occ_free(&occ, ci, ncol);
+            if (ci >= ncol)
+                break;
+            const int col0 = ci;
+            occ_take(&occ, ci, cs, rs, ncol);
+            ci += cs;
+            if (rs <= 1)
+                continue;
+            int last = r + rs - 1;
+            if (last >= rows.n)
+                last = rows.n - 1;
+            if (last <= r)
+                continue;
+            ql_coord_t w = 0;
+            for (int k = col0; k < col0 + cs && k < ncol; k++)
+                w += colw[k];
+            if (!collapse && cs > 1)
+                w += gap * (cs - 1);
+            const ql_coord_t need = layout_node(cell, 0, 0, w, -1);
+            ql_coord_t have = collapse ? 0 : gap * (last - r);
+            for (int k = r; k <= last; k++)
+                have += rowh[k];
+            if (need > have)
+                rowh[last] += need - have;
+        }
+    }
+
+    /* ---- 5. 摆放 ---- */
+    ql_coord_t row_y = y + (collapse ? 0 : gap);
+    for (int r = 0; r < rows.n; r++) {
+        QLUINodeRT *row = rows.rows[r];
+        TableOcc occ;
+        memset(&occ, 0, sizeof(occ));
+        for (int k = 0; k < r; k++) {
+            int ci = 0;
+            for (QLUINodeRT *cell = rows.rows[k]->first_child; cell != NULL;
+                 cell = cell->next_sibling) {
+                if (!is_table_cell(cell->style) ||
+                    cell->style->display == QL_UI_DISPLAY_NONE)
+                    continue;
+                const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+                const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+                ci = occ_free(&occ, ci, ncol);
+                if (ci >= ncol)
+                    break;
+                occ_take(&occ, ci, cs, rs, ncol);
+                ci += cs;
+            }
+            occ_end_row(&occ, ncol);
+        }
+
+        int ci = 0;
+        for (QLUINodeRT *cell = row->first_child; cell != NULL;
+             cell = cell->next_sibling) {
+            if (!is_table_cell(cell->style) ||
+                cell->style->display == QL_UI_DISPLAY_NONE)
+                continue;
+            const int cs = (cell->src->colspan > 0) ? cell->src->colspan : 1;
+            const int rs = (cell->src->rowspan > 0) ? cell->src->rowspan : 1;
+            ci = occ_free(&occ, ci, ncol);
+            if (ci >= ncol)
+                break;
+
+            /* 起始 x：前面各列的宽度 + 列间距 */
+            ql_coord_t x = content_x + (collapse ? 0 : gap);
+            for (int k = 0; k < ci; k++)
+                x += colw[k] + (collapse ? 0 : gap);
+            ql_coord_t w = 0;
+            for (int k = ci; k < ci + cs && k < ncol; k++)
+                w += colw[k];
+            if (!collapse && cs > 1)
+                w += gap * (cs - 1);
+
+            int last = r + rs - 1;
+            if (last >= rows.n)
+                last = rows.n - 1;
+            ql_coord_t h = rowh[r];
+            for (int k = r + 1; k <= last; k++)
+                h += rowh[k] + (collapse ? 0 : gap);
+            if (h <= 0)
+                h = rowh[r];
+
+            /*
+             * collapse：把单元格朝左上挪"自己那半条边框"，同时把尺寸补回同样的量
+             * —— 相邻两条边框重叠成一条，右/下边缘仍落在原来的网格线上。
+             * 第一列/第一行不挪（否则表格外框会往外跑）。
+             */
+            ql_coord_t cx2 = x;
+            ql_coord_t cy2 = row_y;
+            ql_coord_t w2 = w;
+            ql_coord_t h2 = h;
+            if (collapse) {
+                if (ci > 0) {
+                    const ql_coord_t bl = (ql_coord_t)cell->style->border_w[3];
+                    cx2 -= bl;
+                    w2 += bl;
+                }
+                if (r > 0) {
+                    const ql_coord_t bt = (ql_coord_t)cell->style->border_w[0];
+                    cy2 -= bt;
+                    h2 += bt;
+                }
+            }
+            (void)layout_node(cell, cx2, cy2, w2, -1);
+            table_fit_cell(cell, h2);
+
+            occ_take(&occ, ci, cs, rs, ncol);
+            ci += cs;
+        }
+
+        /* 行本身的盒子（定位/裁剪/绘制上界要用）：整行宽度 + 这一行的高度 */
+        row->border_box = ql_rect_make(content_x, row_y, content_w, rowh[r]);
+        row->content_box = row->border_box;
+        row_y += rowh[r] + (collapse ? 0 : gap);
+    }
+
+    /* row-group 的盒子 = 它包含的行的并集（同样只为裁剪/上界服务） */
+    for (QLUINodeRT *g = table->first_child; g != NULL; g = g->next_sibling) {
+        if (!is_table_row_group(g->style))
+            continue;
+        QLRect r = ql_rect_make(0, 0, 0, 0);
+        int any = 0;
+        for (int i = 0; i < rows.n; i++) {
+            if (rows.rows[i]->parent != g)
+                continue;
+            const QLRect b = rows.rows[i]->border_box;
+            r = any ? ql_rect_union(r, b) : b;
+            any = 1;
+        }
+        g->border_box = any ? r : ql_rect_make(content_x, content_y, content_w, 0);
+        g->content_box = g->border_box;
+    }
+
+    return row_y - content_y;
+#else
+    /* 关掉表格包：退化成普通块流（标签在构建期就已经报错了，这里只是兜底） */
+    ql_coord_t cy = content_y;
+    for (QLUINodeRT *c = table->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style->display == QL_UI_DISPLAY_NONE)
+            continue;
+        cy += layout_node(c, content_x, cy, content_w, -1);
+    }
+    return cy - content_y;
+#endif /* QL_FEAT_CSS_TABLE */
+}
 
 /* ------------------------------ flex 实现 ------------------------------ */
 

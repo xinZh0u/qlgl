@@ -185,6 +185,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1767,10 +1768,61 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <code>opacity</code> 退回逐图元语义。</p>
 <p><strong>构建期报错</strong>：不是 0~1 的数字（<code>opacity: abc</code>）、越界（<code>opacity: 1.5</code>）。</p>
 <hr />
+<h3 id="3114-display-table">3.11.4 表格（<code>display: table</code> 全家）</h3>
+<div class="highlight"><pre><span></span><code><span class="nt">table</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">520</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">border-collapse</span><span class="p">:</span><span class="w"> </span><span class="kc">collapse</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">th</span><span class="o">,</span><span class="w"> </span><span class="nt">td</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#D0D7DE</span><span class="p">;</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="kt">px</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>display</code></td>
+<td><code>table</code> / <code>inline-table</code>、<code>table-row</code>、<code>table-cell</code>、<code>table-caption</code>、<code>table-row-group</code>（<code>table-header-group</code> / <code>table-footer-group</code> 同义）</td>
+</tr>
+<tr>
+<td>标签</td>
+<td><code>&lt;table&gt;</code> <code>&lt;caption&gt;</code> <code>&lt;thead&gt;</code> <code>&lt;tbody&gt;</code> <code>&lt;tfoot&gt;</code> <code>&lt;tr&gt;</code> <code>&lt;td&gt;</code> <code>&lt;th&gt;</code>；<code>&lt;colgroup&gt;</code>/<code>&lt;col&gt;</code> 存在但 <code>display: none</code></td>
+</tr>
+<tr>
+<td><code>table-layout</code></td>
+<td><code>fixed</code>（只做这个语义；<code>auto</code> 接受但同样按 fixed 算）</td>
+</tr>
+<tr>
+<td><code>border-collapse</code></td>
+<td><code>separate</code>（默认）/ <code>collapse</code></td>
+</tr>
+<tr>
+<td><code>border-spacing</code></td>
+<td>1~2 个<strong>非负 px</strong>（横 [纵]）</td>
+</tr>
+<tr>
+<td><code>colspan</code> / <code>rowspan</code> 属性</td>
+<td>1~255 的十进制整数（非法值按 1）</td>
+</tr>
+<tr>
+<td><code>vertical-align</code></td>
+<td>单元格里支持 <code>top</code> / <code>middle</code> / <code>bottom</code>；其它元素仍只认 <code>baseline</code> / <code>sub</code> / <code>super</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>样式写在 <code>td</code> / <code>th</code> 上</strong> —— <code>tr</code> / <code>thead</code> 不是盒子（与浏览器一致），
+写在上面的边框、背景、内边距不会生效。实现细节与代价见《CSS3 覆盖与裁剪》§18.12，
+教程见 <a href="../tutorial/22_table.md">表格</a>。</p>
+<p><strong>构建期报错</strong>：<code>table-layout: &lt;fix/auto 之外&gt;</code>、<code>border-collapse: &lt;collapse/separate 之外&gt;</code>、
+<code>border-spacing</code> 带 <code>%</code>、<code>display: table-column</code> / <code>table-column-group</code>、
+<code>QL_FEAT_CSS_TABLE=0</code> 时的 <code>&lt;table&gt;</code> 与 <code>display: table*</code>。</p>
+<hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
 <div class="highlight"><pre><span></span><code>float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
+display: table-column / colgroup 的列宽声明（表格本身已支持）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode

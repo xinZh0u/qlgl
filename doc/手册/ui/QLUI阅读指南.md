@@ -664,7 +664,7 @@ ql_text_wrap_ex(font, text, max_w, out, max_lines, keep_trailing)
 4. **`<br>` 是一个"高度为 0 的块"**：没有生成内容，也没法在一个文本节点里插换行，
    所以靠"块级会结束当前行内行"来达到换行的效果。代价是它占一个节点。
 5. **`<table>` / `<textarea>` 明确报错**，错误信息里给出替代做法
-   （表格用嵌套 flex、多行文本用 `white-space: pre`）。`<input type="date">`
+   （多行文本用 `white-space: pre`）。`<input type="date">`
    这类没实现的 `type` 也报错，并列出支持的那几个。
 6. **空元素的结束标签被忽略**（`<br></br>` / `<embed></embed>`）：浏览器这么做，
    这里照做 —— 否则看着正常的写法会让整页编译不过。非空标签不匹配仍然报错。
@@ -957,6 +957,22 @@ layout_flex_children(容器):
 `render_node_inner` 而不是 `render_node`**，否则第二次进去又会开一层新图层，
 无限递归。
 
+#### 表格：五遍扫描 + 24 字节的"占用计数器"
+
+`layout_table_children()` 是唯一一个**不是按父子顺序一遍走完**的布局函数：
+表格要先知道列宽才能量行高、先量完行高才能摆放。所以它扫五遍
+（列数 → 列宽 → 行高 → 跨行补差额 → 摆放），每一遍都用同一个
+`uint8_t live[QL_CFG_UI_TABLE_MAX_COLS]` 记账 —— "这一列还被上面几行的 rowspan
+占着"。行是按顺序处理的，行末把大于 0 的减一，于是 `rowspan` 之后的那一行会
+**自动跳过**被占的列（不做这件事的表现：第二行的第一个格子压住上一行跨行的格子）。
+
+三条容易写错的规矩（都在代码注释里）：
+1. 表格角色（table-cell / caption / row / row-group）**不能用文字撑宽**
+   —— 否则单元格只有文字那么宽；
+2. `vertical-align: middle/bottom` 的余量要用"自然内容高"
+   （`table_cell_content_h()`），拿撑开后的 `border_box.h` 永远算不出余量；
+3. 文字直接挂在单元格上时（没有子节点），要挪 `content_box.y` 而不是子节点。
+
 #### 一个只在脏区重绘时出现的坑：blit 也受 scissor 影响
 
 混合模式要读"图层的背景"，做法是先把目标表面上那一块 `glBlitFramebuffer` 到
@@ -1005,7 +1021,7 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 | 绝对定位 | 无 "static position" 与完整 shrink-to-fit | 没给 inset 时贴左上角；非文本内容撑满 |
 | `overflow` | ✅ 裁剪 + **滚动**（`auto` / `hidden` / `visible`；一个值管两轴） | 没有 `overflow-x/y` 分开写、没有惯性滚动 |
 | grid | ✅ `display: grid` 全家（B6）；网格页面比嵌套 flex 更快（省 wrapper 层） |
-| 表格 | ❌ 报错 | 用嵌套 flex |
+| 表格 | ✅ `display: table` 全家（B7）；`table-layout: auto` 按 fixed 算 | `colgroup` 列宽声明、`caption-side: bottom` 没有 |
 | 伪类 | ✅ `:hover/:active/:focus/:disabled/:enabled/:checked`、结构伪类、`:not()`、`[attr]*`、`::before/::after` | `:has()/:is()/:focus-visible` 无；组合伪类报错 |
 | 混合内容（块里裸文本 + 子元素） | ❌ 报错 | 需把文本包进 `<span>` |
 | 行内基线对齐 | 简化：`vertical-align` 只 `baseline`/`sub`/`super` | 中英文混排可能不齐 |
@@ -1013,6 +1029,7 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 | `position` / `z-index` | ✅ `static`/`relative`/`absolute`/`fixed`/`sticky` + `z-index` | 弹窗靠 `absolute` + `z-index` 自己搭 |
 | `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path` | `box-shadow` 不参与过渡；`delay` 报错 |
 | `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
+| 表格 | ✅ `display: table` 全家 + `<table>` 系列标签 + `colspan/rowspan` + `border-collapse`（B7） | `table-layout: auto` 按 fixed 算；`colgroup` 列宽声明没有 |
 | `filter` / `mix-blend-mode` / `mask` / 组 `opacity` | ✅ 离屏图层（M9.3） | `filter: url()`、`mask-position/repeat/composite`、`background-blend-mode` 报错；`filter` 链最长 6 个函数 |
 | `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
 | `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` + `rotate()`/`skew()`/`matrix()` + `transform-origin` | 3D（`perspective()`/`rotate3d()`/`matrix3d()`）报错；`rotate` 等依赖离屏图层包 |

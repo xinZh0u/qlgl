@@ -4,10 +4,10 @@
 #include "ui_app.h"
 
 static const QLUINode ui_app_nodes[] = {
-    /* tag                     parent first  next   style  text   hover  active focus  disabled checked placeholder ph-text flags */
-    { QL_UI_TAG_DIV         , 0xFFFF,     1, 0xFFFF,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
-    { QL_UI_TAG_IMG         ,     0, 0xFFFF,     2,     1,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
-    { QL_UI_TAG_SPAN        ,     0, 0xFFFF, 0xFFFF,     2,     1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 0x00 },
+    /* tag                     parent first  next   style  text   hover  active focus  disabled checked placeholder ph-text flags cspan rspan */
+    { QL_UI_TAG_DIV         , 0xFFFF,     1, 0xFFFF,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 1, 1 },
+    { QL_UI_TAG_IMG         ,     0, 0xFFFF,     2,     1,     0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 1, 1 },
+    { QL_UI_TAG_SPAN        ,     0, 0xFFFF, 0xFFFF,     2,     1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x00, 1, 1 },
 };
 
 static const uint16_t ui_app_font_sizes[] = { 16 };
@@ -59,7 +59,8 @@ static const QLUIStyle ui_app_styles[] = {
       .filter_n = 0, .filter_op = { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
       .ds_dx = 0, .ds_dy = 0, .ds_blur = 0, .ds_a = 0, .ds_color = 0x000000u,
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
-      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
+      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
+      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0 },
     { .bg_color = 0x000000, .text_color = 0x000000,
       .bg_color2 = 0x000000,
       .border_color4 = { 0x000000, 0x000000, 0x000000, 0x000000 },
@@ -106,7 +107,8 @@ static const QLUIStyle ui_app_styles[] = {
       .filter_n = 0, .filter_op = { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
       .ds_dx = 0, .ds_dy = 0, .ds_blur = 0, .ds_a = 0, .ds_color = 0x000000u,
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
-      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
+      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
+      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0 },
     { .bg_color = 0x000000, .text_color = 0x000000,
       .bg_color2 = 0x000000,
       .border_color4 = { 0x000000, 0x000000, 0x000000, 0x000000 },
@@ -153,7 +155,8 @@ static const QLUIStyle ui_app_styles[] = {
       .filter_n = 0, .filter_op = { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
       .ds_dx = 0, .ds_dy = 0, .ds_blur = 0, .ds_a = 0, .ds_color = 0x000000u,
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
-      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } } },
+      .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
+      .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0 },
 };
 
 static const char ui_app_text[] = "logo.bmp\000hi\000";

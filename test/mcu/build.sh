@@ -7,6 +7,7 @@
 # 参数通过环境变量覆盖：
 #   CPU=cortex-m4  BOARD=mps2-an386  FREQ_MHZ=200
 #   QL_FEAT_CSS_FILTER_LAYER=0|1   离屏图层（MCU 默认关：它要按元素尺寸吃 RAM）
+#   QL_FEAT_CSS_TABLE=0|1          表格（MCU 默认关：B7 的数据表格不在小核上跑）
 #   EXTRA_CFLAGS="..."             额外的 -D / 编译选项（量体积用）
 set -e
 
@@ -42,6 +43,7 @@ CFLAGS="-mcpu=$CPU -mthumb -O2 -g -std=c11 -ffreestanding -fno-common
         -DQL_CFG_UI_MAX_NODES=256 -DQL_CFG_UI_MAX_STYLES=256
         -DQL_CFG_UI_FLEX_MAX_ITEMS=64
         -DQL_FEAT_CSS_FILTER_LAYER=${QL_FEAT_CSS_FILTER_LAYER:-0}
+        -DQL_FEAT_CSS_TABLE=${QL_FEAT_CSS_TABLE:-0}
         ${EXTRA_CFLAGS:-}"
 
 # shellcheck disable=SC2086

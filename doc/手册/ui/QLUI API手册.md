@@ -925,12 +925,40 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 
 ---
 
+### 3.11.4 表格（`display: table` 全家）
+
+```css
+table { width: 520px; border-collapse: collapse }
+th, td { border: 1px solid #D0D7DE; padding: 5px 8px }
+```
+
+| 项 | 取值 |
+|---|---|
+| `display` | `table` / `inline-table`、`table-row`、`table-cell`、`table-caption`、`table-row-group`（`table-header-group` / `table-footer-group` 同义） |
+| 标签 | `<table>` `<caption>` `<thead>` `<tbody>` `<tfoot>` `<tr>` `<td>` `<th>`；`<colgroup>`/`<col>` 存在但 `display: none` |
+| `table-layout` | `fixed`（只做这个语义；`auto` 接受但同样按 fixed 算） |
+| `border-collapse` | `separate`（默认）/ `collapse` |
+| `border-spacing` | 1~2 个**非负 px**（横 [纵]） |
+| `colspan` / `rowspan` 属性 | 1~255 的十进制整数（非法值按 1） |
+| `vertical-align` | 单元格里支持 `top` / `middle` / `bottom`；其它元素仍只认 `baseline` / `sub` / `super` |
+
+**样式写在 `td` / `th` 上** —— `tr` / `thead` 不是盒子（与浏览器一致），
+写在上面的边框、背景、内边距不会生效。实现细节与代价见《CSS3 覆盖与裁剪》§18.12，
+教程见 [表格](../tutorial/22_table.md)。
+
+**构建期报错**：`table-layout: <fix/auto 之外>`、`border-collapse: <collapse/separate 之外>`、
+`border-spacing` 带 `%`、`display: table-column` / `table-column-group`、
+`QL_FEAT_CSS_TABLE=0` 时的 `<table>` 与 `display: table*`。
+
+---
+
 ### 3.12 不支持的写法一律报错
 
 ```
 float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
+display: table-column / colgroup 的列宽声明（表格本身已支持）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode

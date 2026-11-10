@@ -191,6 +191,18 @@ typedef enum {
     QL_UI_TAG_SUB,        /* 行内 + 下标（基线略降 + 字号缩小） */
     QL_UI_TAG_SUP,        /* 行内 + 上标（基线略升 + 字号缩小） */
     QL_UI_TAG_TEXTAREA,   /* 多行输入框（P5）：复用输入池的另一半 */
+
+    /* --- B7 表格（`QL_FEAT_CSS_TABLE`）：结构标签自己不画，只定 display 角色 --- */
+    QL_UI_TAG_TABLE,      /* display: table */
+    QL_UI_TAG_CAPTION,    /* display: table-caption（表格上方那一行说明） */
+    QL_UI_TAG_THEAD,      /* display: table-row-group */
+    QL_UI_TAG_TBODY,      /* display: table-row-group */
+    QL_UI_TAG_TFOOT,      /* display: table-row-group（与 thead/tbody 同义，见文档） */
+    QL_UI_TAG_TR,         /* display: table-row */
+    QL_UI_TAG_TD,         /* display: table-cell */
+    QL_UI_TAG_TH,         /* display: table-cell（UA：加粗 + 居中） */
+    QL_UI_TAG_COLGROUP,   /* display: none（列宽声明还没做，见文档） */
+    QL_UI_TAG_COL,        /* display: none */
     QL_UI_TAG_COUNT
 } QLUITag;
 
@@ -204,7 +216,24 @@ typedef enum {
     QL_UI_DISPLAY_INLINE_FLEX,
     QL_UI_DISPLAY_GRID,          /* B6 */
     QL_UI_DISPLAY_INLINE_GRID,   /* B6（布局上与 grid 同义） */
+    /*
+     * B7 表格的五个角色。浏览器把它们当成"内部 display"，外面会自动补
+     * anonymous 包装盒；本库不补（要求结构写规范），布局时按角色收集。
+     */
+    QL_UI_DISPLAY_TABLE,
+    QL_UI_DISPLAY_TABLE_ROW,
+    QL_UI_DISPLAY_TABLE_CELL,
+    QL_UI_DISPLAY_TABLE_CAPTION,
+    QL_UI_DISPLAY_TABLE_ROW_GROUP,   /* thead / tbody / tfoot 同义 */
 } QLUIDisplay;
+
+/* `vertical-align` 在**表格单元里**的取值（其它场合只认 baseline/sub/super） */
+typedef enum {
+    QL_UI_VALIGN_BASELINE = 0,
+    QL_UI_VALIGN_MIDDLE,
+    QL_UI_VALIGN_TOP,
+    QL_UI_VALIGN_BOTTOM,
+} QLUIVerticalAlign;
 
 typedef enum {
     QL_UI_FLEX_ROW = 0,
@@ -687,6 +716,22 @@ typedef struct {
      * `mask: url()` 目前只支持"按边框盒拉伸 + 用图片 alpha"这一种，
      * 覆盖 `mask-image` / `-size: 100% 100%` / `-mode: alpha` 三个默认值。
      */
+
+    /* ----- B7 表格（blob v31） -----
+     *
+     * 这三个只对"表格角色"的节点有意义（table / table-row / table-cell），
+     * 其它元素上写了也不生效（与浏览器一致：这些属性只属于表格模型）。
+     *
+     * `table_layout`：0 = auto（默认，本库按 fixed 语义近似处理），1 = fixed。
+     * `border_collapse`：0 = separate（默认），1 = collapse。
+     * `table_spacing`：`border-spacing` 的 x / y（px；separate 时才有意义）。
+     * `valign`：见 QLUIVerticalAlign —— 表格单元的垂直对齐。
+     */
+    uint8_t     table_layout;
+    uint8_t     border_collapse;
+    uint8_t     valign;
+    int16_t     table_spacing_x;
+    int16_t     table_spacing_y;
 } QLUIStyle;
 
 /* ============================== transform 矩阵（M9.4） ============================== */
@@ -1098,7 +1143,9 @@ typedef struct {
     /* `placeholder` 属性的文案（文本池下标，0xFFFF = 没有） */
     uint16_t placeholder;
     uint8_t  flags;        /* QL_UI_NODE_* */
-    uint8_t  reserved;
+    /* B7 表格：`colspan` / `rowspan` 属性（0 与 1 同义 = 不跨） */
+    uint8_t  colspan;
+    uint8_t  rowspan;
 } QLUINode;
 
 /* ----- 图像资源（doc 里的一条） ----- */
@@ -1766,7 +1813,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    30u
+#define QL_UI_BLOB_VERSION    31u
 
 typedef struct {
     uint32_t magic;

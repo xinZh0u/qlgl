@@ -1,0 +1,91 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">表格：display: table 全家 + colspan / rowspan</div>
+    <div class="badge">表头 / 跨列 / 跨行 / 合并边框</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. 基础表格：等分列宽 + caption + thead/th</div>
+    <table class="t1">
+      <caption>2026 年第一季度（万元）</caption>
+      <thead>
+        <tr>
+          <th class="w1">区域</th>
+          <th>一月</th>
+          <th>二月</th>
+          <th>三月</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>华东</td><td>128</td><td>143</td><td>151</td></tr>
+        <tr><td>华南</td><td>96</td><td>88</td><td>104</td></tr>
+        <tr><td>西北</td><td>42</td><td>39</td><td>51</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. <code>colspan</code> / <code>rowspan</code>：合并单元格</div>
+    <table class="t2">
+      <thead>
+        <tr><th class="w2">季度</th><th>月份</th><th>订单</th><th>备注</th></tr>
+      </thead>
+      <tbody>
+        <tr><td rowspan="2" class="q">Q1</td><td>一月</td><td>1,204</td>
+            <td rowspan="3" class="note">数据来自<br>内部报表</td></tr>
+        <tr><td>二月</td><td>1,318</td></tr>
+        <tr><td>Q2</td><td>三月</td><td>1,051</td></tr>
+        <tr><td colspan="3" class="sum">合计</td><td class="sum">3,573</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. <code>border-spacing</code>（分开）与 <code>border-collapse: collapse</code>（合并）</div>
+    <div class="row">
+      <table class="t3 sep">
+        <tr><th>分</th><th>开</th></tr>
+        <tr><td>1</td><td>2</td></tr>
+        <tr><td>3</td><td>4</td></tr>
+      </table>
+      <table class="t3 col">
+        <tr><th>合</th><th>并</th></tr>
+        <tr><td>1</td><td>2</td></tr>
+        <tr><td>3</td><td>4</td></tr>
+      </table>
+      <div class="hint">左边的格子之间留 <code>border-spacing: 4px</code>；
+        右边 <code>collapse</code>，相邻边框重叠成一条 1px 线</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. 单元格垂直对齐：<code>vertical-align: top / middle / bottom</code></div>
+    <table class="t4">
+      <tr>
+        <td class="va-top">top</td>
+        <td class="va-mid">middle</td>
+        <td class="va-bot">bottom</td>
+        <td class="tall">这一格内容多，<br>把整行撑高，<br>前三格才有余量对齐</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. 表格 + 图层特效：单元格里放圆角、渐变、阴影都照常</div>
+    <table class="t5">
+      <tr>
+        <td><div class="chip c1">渐变</div></td>
+        <td><div class="chip c2">圆角</div></td>
+        <td><div class="chip c3">阴影</div></td>
+        <td><div class="chip c4">透明度</div></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="note">
+    表格在 MCU 档是<b>可裁</b>的（<code>QL_FEAT_CSS_TABLE=0</code>，默认关）：关掉之后
+    <code>&lt;table&gt;</code> 与 <code>display: table*</code> 在构建期报错，
+    不会退化成"一堆块叠在一起"。PC/Mobile 档开着，一个 4×4 的表格只多一次
+    "量行高 + 摆放"的布局遍历。
+  </div>
+</div>

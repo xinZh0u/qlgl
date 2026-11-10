@@ -55,12 +55,13 @@
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 | **离屏图层**：`filter` 全家 / 真 group `opacity` / `mix-blend-mode` / `mask` | blob v29（见 §18.10） |
 | **旋转光栅**：`transform: rotate()` / `skew()` / `skewX/Y` / `matrix()` / `transform-origin` | blob v30（见 §18.11） |
+| **表格**：`display: table` 全家 + `<table>` 系列标签 + `colspan`/`rowspan` + `border-spacing`/`collapse` | blob v31（见 §18.12） |
 
 **还没做**，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：
 
 | 类 | 项 | 归宿 |
 |---|---|---|
-| **PC/Mobile 必做**（MCU 归能力包） | 表格、多栏（B7）；`@font-face` + 真字体栈、连字整形、双向（B8）；`clip-path` 的 `inset`/`ellipse`/`polygon` | §22 |
+| **PC/Mobile 必做**（MCU 归能力包） | 多栏（B7 后半）；`@font-face` + 真字体栈、连字整形、双向（B8）；`clip-path` 的 `inset`/`ellipse`/`polygon` | §22 |
 | **小件**（随时插队） | `text-align: justify`、阴影 `spread`、椭圆 `border-radius`（`10px / 20px`）、`font` 简写、`word-wrap` 别名、`::first-line` / `::first-letter`、`:empty`、`revert` | 各节 ⏳ |
 | **不排期** | 3D 变换（`perspective()` / `rotate3d()`）；bidi 的完整算法之外的冷门项；打印相关 | 各节 ❌ |
 
@@ -554,23 +555,26 @@ Grid 贵 —— 但仍是我们自己的代码，没有第三方依赖。
 
 ---
 
-## 16. 表格（B7：PC/Mobile 必做，MCU 归"大核"包）
+## 16. 表格（B7 前半 ✅ 已完成，MCU 归"大核"包）
 
-| 属性 | 批次 | 档位 | 备注 |
+| 属性 | 状态 | 档位 | 备注 |
 |---|---|---|---|
-| `display: table` / `table-row` / `table-cell` / `table-caption` … | B7 | 大核 | `<table>` `<tr>` `<td>` `<th>` `<thead>` `<tbody>` `<tfoot>` `<caption>` 一并打开 |
-| `table-layout: auto` | B7 | 大核 | 列宽按内容分配（要两遍：测 min/max-content，再分配） |
-| `table-layout: fixed` | B7 | 大核 | 一遍就够，先做这个 |
-| `border-collapse` / `border-spacing` | B7 | 大核 | `collapse` 要"半边边框"相加规则 |
-| `caption-side` / `empty-cells` / `vertical-align: middle`（表格单元格内） | B7 | 大核 | |
-| 跨行跨列 `rowspan` / `colspan` | B7 | 大核 | 占位格（被跨过的那格不画但占位置） |
-| `<colgroup>` / `<col>` | ❌ | — | `N`：用 CSS 给 `td` 写宽度即可 |
+| `display: table` / `table-row` / `table-cell` / `table-caption` / `table-row-group` | ✅ | 大核 | `<table>` `<tr>` `<td>` `<th>` `<thead>` `<tbody>` `<tfoot>` `<caption>` 一并可用（blob v31） |
+| `table-layout: fixed` | ✅ | 大核 | **首行显式 `width` 决定列宽，其余等分**；只排一遍 |
+| `table-layout: auto` | ⚠️ | 大核 | 值接受，但**按 fixed 算**（列宽不跟内容变宽）。真 auto 要两遍"量 min/max-content" |
+| `border-collapse` / `border-spacing` | ✅ | 大核 | `collapse` 用"朝左上挪半条边框 + 尺寸补回"实现，相邻边框重叠成一条 |
+| `rowspan` / `colspan` | ✅ | 大核 | 每列一个"还剩几行被占"的计数器（24 B），不看行数 |
+| `vertical-align: top/middle/bottom`（单元格内） | ✅ | 大核 | 非表格元素上仍然只认 `baseline/sub/super` |
+| `caption-side: bottom` | ❌ | — | 标题恒在上方 |
+| `<colgroup>` / `<col>` 列宽声明 | ❌ | — | 标签存在但 `display: none`；要列宽就给 `td` 写 `width` |
+| `empty-cells` / `table-row` 的背景 | ❌ | — | 行不是盒子（浏览器也一样） |
 
 **为什么不做了改成"要做"**：数据表格是**后台管理界面**的刚需，
 而"用嵌套 flex 拼表格"拼不出列宽对齐 —— 这是真实的表达力缺口，不是省事。
-PC/Mobile 档没有任何理由不做；MCU 档归"大核"包（`QL_FEAT_CSS_TABLE` 默认 0）。
+PC/Mobile 档没有任何理由不做；MCU 档归"大核"包（`QL_FEAT_CSS_TABLE` 默认 0，
+关掉时 `<table>` 与 `display: table*` **构建期报错**）。
 
-**替代方案**：用嵌套 flex 画表格（`display: flex` 每一行，单元格给固定宽度）。
+实现细节与坑见 §18.12；教程见 [22_table](../tutorial/22_table.md)。
 
 ---
 
@@ -1252,6 +1256,80 @@ CPU 侧的硬数字在 `test_transform`（63 项）：`rotate(90°)` 把 40×10 
 
 ---
 
+### 18.12 B7 落地：表格（`display: table` 全家）
+
+浏览器里表格是**两套 display 交叉**的结构，本库照搬：
+
+```
+table（有盒子） ← caption（有盒子，排在上方）
+                ← row-group（**没有盒子**）← row（**没有内容盒**）← cell（真正的盒子）
+```
+
+所以样式要写在 `td`/`th` 上 —— 写在 `tr`/`thead` 上不会有边框和背景，这一点与
+浏览器一致（不是偷懒）。
+
+#### 布局：五遍扫描，全部用"计数器"而非矩阵
+
+| 遍 | 做什么 |
+|---|---|
+| 1 | 收集行（展开 `thead`/`tbody`/`tfoot`），按 rowspan 顺延算出**真实列号**，得列数 |
+| 2 | 定列宽：首行显式 `width` 的单列单元格优先，其余列等分剩余宽度 |
+| 3 | 量行高：`rowspan == 1` 的单元格各排一次，取最大值 |
+| 4 | 跨行单元格：不够高就把差额补给覆盖范围内**最后一行** |
+| 5 | 摆放：按列宽/行高定位，再把单元格高度撑到整行、内容按 `vertical-align` 摆 |
+
+**关键数据结构是 24 字节**：`uint8_t live[QL_CFG_UI_TABLE_MAX_COLS]`
+—— "每列还被上面几行的 rowspan 占着"。行是按顺序处理的，行末把大于 0 的减一即可。
+不用 `rows × cols` 的占用矩阵（64×24 = 1.5 KB 栈，MCU 上不可接受）。
+
+**踩过的坑（都留了注释）**：
+
+1. **rowspan 之后的列号**。只看"本行第几个格子"会把第二行的第一个单元格排到第 0 列，
+   压住上一行跨行的那个格子（第一版就是这样，截图里 `Q1` 和 `二月` 叠在一起）。
+   必须按"跳过被占用的列"来分配起始列 —— 五遍扫描每一遍都要做同样的记账。
+2. **单元格不能用文字撑宽**。`border_width_of()` 里有一条"行内盒宽度由文本决定"的
+   快路，`display: table-cell` 不是 block，一开始就落进了那条快路 → 每个单元格只有
+   文字那么宽（34px）。现在把**所有表格角色**排除在"文本撑宽"之外。
+3. **`vertical-align` 的余量要用"自然内容高"算**。单元格自己写了 `height: 60px`
+   时 `border_box.h` 已经是 60，拿它当内容高就永远算不出余量（middle 和 top 一样）。
+   所以另写 `table_cell_content_h()`：有子节点取子树底边，纯文字按"折行后的行数 × 行高"。
+4. **文字直接挂在单元格上**时（没有子节点），平移子节点是空操作 —— 要挪的是
+   `content_box.y`，绘制时文字才会跟着走。
+5. **`collapse` 的相邻边框**：把每个单元格朝左上挪"自己那半条边框"、同时把尺寸补回
+   同样的量，两个边框就落在同一像素上；右/下边缘仍落在网格线上（不挪则外框会跑出去）。
+
+#### 明确不做的
+
+`table-layout: auto`（按 fixed 算）、`colgroup`/`col` 的列宽声明、`caption-side: bottom`、
+`empty-cells`、跨行内容超高时"按比例分配差额"。都在 §16 的表格里如实标着。
+
+#### 验证
+
+`test_table`（60 项）：标签 → 角色映射、等分/固定列宽、`colspan`/`rowspan` 的宽高、
+`border-spacing`、`collapse` 的像素级单线、`vertical-align` 三档（量第一行墨迹）、
+`caption` 宽度、5 条报错。
+
+#### 代价与裁剪
+
+| 项 | 值 |
+|---|---|
+| `QLUINode` | 28 → **30 B**（`colspan` / `rowspan`） |
+| `QLUIStyle` | 344 → **352 B**（`table_layout` / `border_collapse` / `valign` / `border-spacing`） |
+| 编译开关 | `QL_FEAT_CSS_TABLE`（**MCU 默认关**） |
+| 裁掉之后 | `<table>` 与 `display: table*` **构建期报错**；布局退回普通块流 |
+| 容量上限 | `QL_CFG_UI_TABLE_MAX_ROWS`(64) / `QL_CFG_UI_TABLE_MAX_COLS`(24) |
+
+**MCU 实测**（mps2-an386，与 §18.10 / §18.11 同一把尺子）：
+
+| 配置 | `.text` | `.bss` |
+|---|---|---|
+| `QL_FEAT_CSS_TABLE=0`（MCU 默认） | 140,728 B | 140,264 B |
+| `QL_FEAT_CSS_TABLE=1` | 143,884 B | 140,264 B |
+| **差额** | **+3,156 B（+2.2%）** | **0**（布局用 24 字节栈，不占静态 RAM） |
+
+比 Grid（4,528 B）便宜，比 border-image（2,176 B）贵一点 —— 主要成本在那个
+"每列还被占几行"的记账与五遍扫描的分支。
+
 ## 19. 覆盖率：两份实测 + 一份规范口径
 
 三个数回答三个不同的问题，别混着用。
@@ -1476,7 +1554,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_IMAGE_FIT` | `QL_FEAT_CSS_IMAGE_FIT` | `object-fit` / `object-position`（只在有图片管线时有意义） | ✅ | ❌ | `QL_FEAT_UI_IMAGE` | 与图像管线共用 |
 | `CSS_UI` | `QL_FEAT_CSS_UI` | **B5 之后**：`cursor` / `pointer-events` / `user-select` / `scrollbar-*` | ✅ | ❌ | BASE | — |
 | `CSS_GRID` | `QL_FEAT_CSS_GRID` | **B6 ✅**：`display: grid` 全家（轨道定尺 / 自动放置 / 跨格 / `justify-*`） | ✅ | **默认开**（可裁） | BASE | **实测 4,528 B**（−3.3%） |
-| `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7**：`display: table` 全家 + `<table>` 标签 + 列宽分配 + `border-collapse` | ✅ | **默认关** | BASE | 估 6–10 KB（`table-layout: auto` 要两遍测量） |
+| `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7 ✅**：`display: table` 全家 + `<table>` 标签 + 固定列宽 + `colspan/rowspan` + `border-collapse`（`table-layout: auto` 的内容自适应还没做，按 fixed 算） | ✅ | **默认关** | BASE | **实测 3,156 B**（见 §18.12 末） |
 | `CSS_COLUMNS` | `QL_FEAT_CSS_COLUMNS` | **B7**：`columns` / `column-rule`（列高平衡 = 排两遍） | ✅ | **默认关** | BASE | 估 8–15 KB（最贵的一项：要"盒内分裂"） |
 | `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6 ✅**：`border-image` 九宫格 | ✅ | **默认开**（可裁） | BASE + `QL_FEAT_UI_IMAGE` | **实测 2,176 B**（−1.6%） |
 | `CSS_FILTER_LAYER` | `QL_FEAT_CSS_FILTER_LAYER` | **M9.3 ✅**：离屏图层 = `filter` 全家 + `mix-blend-mode` + `mask` + 真 group opacity；**M9.4 ✅** 的 `transform: rotate/skew/matrix` 也挂在这个包上（它要靠离屏合成 + 重采样） | ✅ | **默认关** | BASE（+ `QL_FEAT_UI_IMAGE` 才有 `mask`） | **实测 Flash 15,344 B / RAM 676 B**（M9.3）+ **3,488 B**（M9.4，见 §18.11 末） |
@@ -1586,7 +1664,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
 | **B6 布局广度** ✅ **已完成（2026-11-10）** | **Grid**（`display: grid` 全家、`fr`/`minmax()`/`repeat()`/具名区域/自动放置/跨格/对齐）、**`border-image`** 九宫格 | `CSS_GRID` + `CSS_BORDER_IMAGE` | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | **是** → blob v28（`QLUIStyle` 272 → 312） | `test_grid`（74 项，含跨列/跨行/区域/负线号/9 条报错）+ 例程 29/30 |
-| **B7 数据排版**（PC/Mobile 必做） | **表格**（`table` 全家 + `<table>` 系列标签 + 列宽分配 + `border-collapse`）、**多栏**（`columns` 平衡列高） | `CSS_TABLE` + `CSS_COLUMNS` | 后台管理界面、长文正文 | 高：`auto` 列宽与列高平衡都要排两遍 | 是 | 新 `test_table` / `test_columns` + golden |
+| **B7 数据排版**（PC/Mobile 必做；**表格 ✅ 2026-11-11**，多栏待做） | **表格**（`table` 全家 + `<table>` 系列标签 + 固定列宽 + `colspan/rowspan` + `border-collapse`）✅、**多栏**（`columns` 平衡列高）⏳ | `CSS_TABLE` ✅ + `CSS_COLUMNS` ⏳ | 后台管理界面、长文正文 | 表格：中（已落地，实测 3,156 B）；多栏：高（列高平衡 = 排两遍） | 是 → blob v31（`QLUIStyle` 344 → 352、`QLUINode` 28 → 30） | `test_table`（60 项）+ 例程 33 ✅；多栏待做 |
 | **B8 文本栈**（PC/Mobile 必做，MCU 恒裁） | `@font-face`、自由 `font-family`、真字重/斜体、连字与字距、`direction`/`unicode-bidi` | `CSS_FONT_STACK` / `CSS_TEXT_SHAPE` / `CSS_BIDI` | **多语言真实页面**（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 `test_font_ft` / 新 `test_shape` |
 
 **另外几项单独立项**（成本与一批相当，但语义是"新子系统"）：
@@ -1599,7 +1677,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **`clip-path` 的任意形状**（`polygon()` / `path()` / `inset()`） | PC/Mobile | 要通用裁剪扫线（现在只有 `circle()` 的 SDF） | 中 |
 | **3D 变换**（`perspective()` / `rotate3d()`） | ❌ 不排期 | 要透视除法 + 深度排序 + 一个真正的合成器 | 极高，且与"一个节点一个盒"冲突 |
 
-**建议顺序**：B1–B6 已完成 → **M9.3 离屏图层 ✅ → M9.4 旋转光栅 ✅ → B7（表格 + 多栏）→ B8（文本栈）**。
+**建议顺序**：B1–B6 + M9.3/M9.4 已完成 → **B7 表格 ✅ → B7 多栏（`columns` + 列高平衡）→ B8（文本栈）**。
 每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。
 
 ---

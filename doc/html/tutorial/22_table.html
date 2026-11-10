@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>表格：`display: table` 全家 + `colspan` / `rowspan` · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html' class='active'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="display-table-colspan-rowspan">表格：<code>display: table</code> 全家 + <code>colspan</code> / <code>rowspan</code></h1>
+<p><img src="../img/33-table.png" alt="基础表格、跨行跨列、border-spacing 与 collapse、单元格垂直对齐" width="620"></p>
+<p>完整程序：<code>example/33_table/</code></p>
+<p>在这之前，想画一个表格只能拿嵌套的 <code>flex</code> 拼：一行一个容器、每个格子固定宽度，
+表头、跨行、跨列全得手算。B7 把真正的表格做进来了：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">table</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">caption</span><span class="p">&gt;</span>一季度<span class="p">&lt;/</span><span class="nt">caption</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">thead</span><span class="p">&gt;&lt;</span><span class="nt">tr</span><span class="p">&gt;&lt;</span><span class="nt">th</span><span class="p">&gt;</span>区域<span class="p">&lt;/</span><span class="nt">th</span><span class="p">&gt;&lt;</span><span class="nt">th</span><span class="p">&gt;</span>一月<span class="p">&lt;/</span><span class="nt">th</span><span class="p">&gt;&lt;/</span><span class="nt">tr</span><span class="p">&gt;&lt;/</span><span class="nt">thead</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">tbody</span><span class="p">&gt;&lt;</span><span class="nt">tr</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>华东<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>128<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;/</span><span class="nt">tr</span><span class="p">&gt;&lt;/</span><span class="nt">tbody</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">table</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="nt">table</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">520</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">border-collapse</span><span class="p">:</span><span class="w"> </span><span class="kc">collapse</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="nt">th</span><span class="o">,</span><span class="w"> </span><span class="nt">td</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#D0D7DE</span><span class="p">;</span><span class="w"> </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="kt">px</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">vertical-align</span><span class="p">:</span><span class="w"> </span><span class="kc">middle</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="1">1. 结构：只有"单元格"有盒子</h2>
+<p>浏览器里表格是<strong>两套 display 交叉</strong>的结构：</p>
+<div class="highlight"><pre><span></span><code>table           ← 表格本身（有盒子）
+ ├ caption      ← 表格标题（有盒子，排在表格上方）
+ ├ thead        ← 行组（**没有盒子**，只是分组）
+ │   └ tr       ← 行（**没有自己的内容盒**，只是分组）
+ │       └ td   ← 单元格（真正的盒子：有背景、边框、内边距）
+</code></pre></div>
+
+<p>本库照这个模型实现，所以有一条重要推论：<strong>样式要写在 <code>td</code> / <code>th</code> 上</strong>，
+写在 <code>tr</code> / <code>thead</code> 上不会有边框和背景（和浏览器一样）。</p>
+<table>
+<thead>
+<tr>
+<th>HTML 标签</th>
+<th><code>display</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;table&gt;</code></td>
+<td><code>table</code></td>
+</tr>
+<tr>
+<td><code>&lt;caption&gt;</code></td>
+<td><code>table-caption</code></td>
+</tr>
+<tr>
+<td><code>&lt;thead&gt;</code> / <code>&lt;tbody&gt;</code> / <code>&lt;tfoot&gt;</code></td>
+<td><code>table-row-group</code></td>
+</tr>
+<tr>
+<td><code>&lt;tr&gt;</code></td>
+<td><code>table-row</code></td>
+</tr>
+<tr>
+<td><code>&lt;td&gt;</code></td>
+<td><code>table-cell</code></td>
+</tr>
+<tr>
+<td><code>&lt;th&gt;</code></td>
+<td><code>table-cell</code> + 加粗 + 居中</td>
+</tr>
+<tr>
+<td><code>&lt;colgroup&gt;</code> / <code>&lt;col&gt;</code></td>
+<td><code>none</code>（列宽声明还没做，见 §6）</td>
+</tr>
+</tbody>
+</table>
+<p>也可以不写标签，直接用 CSS 的 <code>display: table / table-row / table-cell</code> 拼。</p>
+<hr />
+<h2 id="2-table-layout-fixed">2. 列宽怎么定：<code>table-layout: fixed</code></h2>
+<p>本库只做 <strong>fixed</strong> 语义（<code>table-layout: auto</code> 也按同一套算，见 §6）：</p>
+<ol>
+<li><strong>首行</strong>里显式写了 <code>width</code> 的单列单元格 → 这一列就是那个宽度；</li>
+<li>其余列<strong>等分</strong>剩下的宽度（余数给右边那几列）；</li>
+<li>表格宽度取 <code>width</code>（没写就是父容器的可用宽度）。</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="nt">table</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">520</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 4 列 → 每列 130px */</span>
+<span class="p">.</span><span class="nc">w1</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 第一列 120px，其余 3 列平分 400 → 133/133/134 */</span>
+</code></pre></div>
+
+<p>为什么先做 fixed：它<strong>只排一遍</strong>，而 auto 要先量每列的 <code>min/max-content</code> 再分配，
+布局成本翻倍（那是下一步的事，覆盖表里如实标着）。</p>
+<hr />
+<h2 id="3-colspan-rowspan">3. 跨行跨列：<code>colspan</code> / <code>rowspan</code></h2>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">tr</span><span class="p">&gt;&lt;</span><span class="nt">td</span> <span class="na">rowspan</span><span class="o">=</span><span class="s">&quot;2&quot;</span><span class="p">&gt;</span>Q1<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>一月<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>1,204<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;/</span><span class="nt">tr</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">tr</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>二月<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>1,318<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;/</span><span class="nt">tr</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">tr</span><span class="p">&gt;&lt;</span><span class="nt">td</span> <span class="na">colspan</span><span class="o">=</span><span class="s">&quot;3&quot;</span><span class="p">&gt;</span>合计<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>3,573<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;/</span><span class="nt">tr</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<ul>
+<li><code>colspan="N"</code>：这个单元格占 N 列的宽度（含中间的列间距）；</li>
+<li><code>rowspan="N"</code>：占 N 行的高度。<strong>下一行会少一个格子</strong>，后面的单元格自动右移 ——
+  这靠一个"每列还被占几行"的小计数器实现（24 字节，与行数无关）。</li>
+<li>跨行单元格的内容比这几行加起来还高时，<strong>差额补给覆盖的最后一行</strong>（与浏览器一致）。</li>
+</ul>
+<p>属性值只认十进制整数；写 <code>colspan="abc"</code> 按 1 处理（浏览器也是这么做的）。</p>
+<hr />
+<h2 id="4-border-spacing-vs-border-collapse">4. 间距与边框：<code>border-spacing</code> vs <code>border-collapse</code></h2>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>border-collapse: separate</code>（默认）</td>
+<td>每个单元格是独立盒子，格子之间留 <code>border-spacing</code> 的缝</td>
+</tr>
+<tr>
+<td><code>border-collapse: collapse</code></td>
+<td>相邻边框<strong>重叠成一条</strong>，不留缝</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">sep</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-spacing</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* 横竖各 4px（也可以写两个值：横 竖） */</span>
+<span class="p">.</span><span class="nc">col</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-collapse</span><span class="p">:</span><span class="w"> </span><span class="kc">collapse</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* 共享边只有 1px */</span>
+</code></pre></div>
+
+<p><code>collapse</code> 的做法很直接：把单元格朝左上挪"自己那半条边框"，同时把尺寸补回同样的量。
+于是两个相邻单元格的边框落在同一像素上（不是两条线），而右/下边缘仍落在网格线上。</p>
+<hr />
+<h2 id="5">5. 单元格垂直对齐</h2>
+<div class="highlight"><pre><span></span><code><span class="nt">td</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="kt">px</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">va-top</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">vertical-align</span><span class="p">:</span><span class="w"> </span><span class="kc">top</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">va-mid</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">vertical-align</span><span class="p">:</span><span class="w"> </span><span class="kc">middle</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 表格单元格的浏览器默认值 */</span>
+<span class="p">.</span><span class="nc">va-bot</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">vertical-align</span><span class="p">:</span><span class="w"> </span><span class="kc">bottom</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>行高由这一行里<strong>最高的单元格</strong>决定，矮的单元格再把内容按 <code>vertical-align</code> 摆：
+<code>middle</code> 居中、<code>bottom</code> 靠底、<code>top</code>（默认）贴顶。</p>
+<blockquote>
+<p>注意：<code>vertical-align</code> 在<strong>非表格</strong>元素上仍然只认 <code>baseline</code> / <code>sub</code> / <code>super</code>
+（那是行内对齐，属于行内格式化上下文，本库还没有）。</p>
+</blockquote>
+<hr />
+<h2 id="6">6. 明确不做的（诚实清单）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>table-layout: auto</code></td>
+<td>接受这个值，但按 <strong>fixed</strong> 算（列宽不会跟着内容变宽）</td>
+</tr>
+<tr>
+<td><code>colgroup</code> / <code>col</code> 的列宽声明</td>
+<td>标签存在但 <code>display: none</code>，不生效</td>
+</tr>
+<tr>
+<td><code>caption-side: bottom</code></td>
+<td>标题恒在上方</td>
+</tr>
+<tr>
+<td><code>table-header-group</code> 的"每页重复表头"</td>
+<td>没有分页，无所谓</td>
+</tr>
+<tr>
+<td>跨行单元格内容超高时的"按比例分配"</td>
+<td>差额全给覆盖的最后一行</td>
+</tr>
+<tr>
+<td><code>border-collapse</code> 的"半边边框相加"</td>
+<td>用重叠实现：前提是相邻单元格边框宽度相同（常见写法都满足）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7">7. 代价与裁剪</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每节点额外体积</td>
+<td><code>colspan</code> / <code>rowspan</code> 各 1 字节（<code>QLUINode</code> 28 → 30）</td>
+</tr>
+<tr>
+<td>每样式额外体积</td>
+<td>4 个字段共 8 字节（<code>QLUIStyle</code> 344 → 352）</td>
+</tr>
+<tr>
+<td>布局</td>
+<td>每个单元格多排一遍（量行高 + 定位），跨行单元格再多一遍</td>
+</tr>
+<tr>
+<td>编译开关</td>
+<td><code>QL_FEAT_CSS_TABLE</code>（<strong>MCU 默认关</strong>）</td>
+</tr>
+<tr>
+<td>裁掉之后</td>
+<td><code>&lt;table&gt;</code> 与 <code>display: table*</code> <strong>构建期报错</strong>，不退化成"一堆块叠在一起"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>不要用表格做整页布局</strong>：<code>&lt;table&gt;</code> 的定位/浮动语义与 block 流不同，
+整页布局请用 flex / grid；表格只用来显示<strong>二维数据</strong>。</p>
+<hr />
+<h2 id="8">8. 常见坑</h2>
+<ol>
+<li><strong>样式写在 <code>tr</code> / <code>thead</code> 上没效果</strong> —— 它们不是盒子。边框、背景、内边距都写
+   <code>td</code> / <code>th</code>。</li>
+<li><strong><code>width</code> 只认首行</strong>（fixed 语义）。第二行写 <code>width</code> 不会改列宽。</li>
+<li><strong><code>border-spacing</code> 不接受百分比</strong>（CSS 也不允许），只接受 px。</li>
+<li><strong>单元格里的 <code>&lt;br&gt;</code> 与折行</strong>：<code>white-space: normal</code> + 固定列宽就会折行；
+   默认 <code>nowrap</code> 会撑出格子（被裁掉），这是本库文本模型的既定行为。</li>
+<li><strong><code>th</code> 默认加粗居中</strong> —— 这是 UA 默认值，要改就自己写 <code>font-weight</code> / <code>text-align</code>。</li>
+</ol>
+<hr />
+<p>上一章：<a href="21_transform.html">旋转光栅：<code>transform: rotate()</code> / <code>skew()</code> / <code>matrix()</code></a> ｜
+下一章：<a href="17_perf.html">性能诊断与 MCU 基准</a></p>
+<div class='pager'>
+<a href='../tutorial/21_transform.html'><span class='dir'>上一页</span>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

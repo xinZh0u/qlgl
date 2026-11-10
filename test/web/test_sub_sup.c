@@ -163,9 +163,12 @@ QL_TEST_BEGIN("test_sub_sup")
                 ql_ui_doc_free(doc);
             }
         }
-        /* 不认的值明确报错 */
-        const char *bad[] = { "#r { vertical-align: middle }",
-                              "#r { vertical-align: top }" };
+        /*
+         * 不认的值明确报错。`top` / `middle` / `bottom` 从 B7 起是**合法值**
+         * （表格单元用它做垂直对齐），所以这里只剩真正的怪值。
+         */
+        const char *bad[] = { "#r { vertical-align: center }",
+                              "#r { vertical-align: text-top }" };
         for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
             QLUIDoc *doc = ql_ui_load_text("<div id=r>x</div>", bad[i]);
             QL_CHECK(doc == NULL);

@@ -262,7 +262,8 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [CSS 效果检阅：十五个例程](doc/tutorial/16_css_gallery.md) →
 [Grid 与 border-image](doc/tutorial/19_grid.md) →
 [离屏图层](doc/tutorial/20_filter.md) →
-**[旋转光栅](doc/tutorial/21_transform.md)** →
+[旋转光栅](doc/tutorial/21_transform.md) →
+**[表格](doc/tutorial/22_table.md)** →
 [性能诊断与 MCU 基准](doc/tutorial/17_perf.md)。
 
 模块手册：

@@ -88,9 +88,9 @@ QL_TEST_BEGIN("test_ui_blob")
 
     /* ---------- 1. 头结构与 ABI 自检 ---------- */
     QL_CHECK_EQ(sizeof(QLUIDocBlobHeader), 152);  /* v30：+ 变换矩阵池 */
-    QL_CHECK_EQ(sizeof(QLUINode), 28);   /* v27：+ disabled/checked/placeholder 变体与文案 */
+    QL_CHECK_EQ(sizeof(QLUINode), 30);   /* v31：+ colspan/rowspan（表格） */   /* v27：+ disabled/checked/placeholder 变体与文案 */
     /* v16：+ min/max-width/height（4 × QLUILength = 16 字节） */
-    QL_CHECK_EQ(sizeof(QLUIStyle), 344);   /* v30：+ transform 矩阵下标与原点 */
+    QL_CHECK_EQ(sizeof(QLUIStyle), 352);   /* v31：+ 表格四个字段 */
 
     /* ---------- 2. 静态 doc 没有 arena，释放是空操作 ---------- */
     QL_CHECK_EQ(ui_demo_doc.arena, NULL);

@@ -1,0 +1,223 @@
+/*
+ * B7 表格。白底浅色主题（见 ../README.md 的"约定"）。
+ *
+ * 表格的样式全部落在 cell 上（table / tr / thead 只是分组），
+ * 这一点与浏览器一致：`table` 上写 background-color 是整块底色。
+ */
+#root {
+  width: 764px;
+  padding: 20px 28px 24px 28px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  font-size: 10px;
+  color: #57606A;
+  background-color: #F6F8FA;
+  border-radius: 9px;
+  padding: 3px 8px;
+}
+
+.sec {
+  margin-bottom: 20px;
+}
+
+.cap {
+  font-size: 11px;
+  color: #57606A;
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 10px;
+  color: #6E7781;
+  margin-left: 14px;
+  white-space: normal;
+  width: 190px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+code {
+  color: #9A6700;
+}
+
+/* ---------- 1. 基础表格 ---------- */
+
+.t1 {
+  width: 520px;
+  border-collapse: collapse;
+}
+
+.t1 caption {
+  font-size: 11px;
+  color: #57606A;
+  padding-bottom: 6px;
+}
+
+.t1 th,
+.t1 td {
+  border: 1px solid #D0D7DE;
+  padding: 5px 8px;
+  height: 26px;
+  vertical-align: middle;
+}
+
+.t1 th {
+  background-color: #F6F8FA;
+  color: #57606A;
+  font-size: 11px;
+}
+
+.t1 .w1 {
+  width: 120px;
+  text-align: left;
+}
+
+/* ---------- 2. 跨行跨列 ---------- */
+
+.t2 {
+  width: 560px;
+  border-collapse: collapse;
+}
+
+.t2 th,
+.t2 td {
+  border: 1px solid #D0D7DE;
+  padding: 5px 8px;
+  height: 26px;
+  vertical-align: middle;
+}
+
+.t2 th {
+  background-color: #F6F8FA;
+  color: #57606A;
+  font-size: 11px;
+}
+
+.t2 .w2 {
+  width: 90px;
+}
+
+.t2 .q {
+  background-color: #F6F8FA;
+  text-align: center;
+}
+
+.t2 .note {
+  font-size: 10px;
+  color: #6E7781;
+  white-space: normal;
+}
+
+.t2 .sum {
+  background-color: #F6F8FA;
+  color: #0969DA;
+}
+
+/* ---------- 3. spacing vs collapse ---------- */
+
+.t3 {
+  width: 150px;
+  border-spacing: 4px;
+}
+
+.t3 th,
+.t3 td {
+  border: 1px solid #8C959F;
+  padding: 4px 6px;
+  text-align: center;
+  height: 22px;
+  vertical-align: middle;
+}
+
+.t3 th {
+  background-color: #F6F8FA;
+  font-size: 11px;
+  color: #57606A;
+}
+
+.t3.col {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* ---------- 4. vertical-align ---------- */
+
+.t4 {
+  width: 560px;
+  border-collapse: collapse;
+}
+
+.t4 td {
+  border: 1px solid #D0D7DE;
+  padding: 4px 8px;
+  height: 96px;
+  width: 120px;
+}
+
+.va-top { vertical-align: top; }
+.va-mid { vertical-align: middle; }
+.va-bot { vertical-align: bottom; }
+
+.t4 .tall {
+  width: 200px;
+  white-space: normal;
+  vertical-align: top;
+  font-size: 10px;
+  color: #6E7781;
+}
+
+/* ---------- 5. 单元格里的图层特效 ---------- */
+
+.t5 {
+  width: 520px;
+  border-spacing: 6px;
+}
+
+.t5 td {
+  border: 1px solid #D0D7DE;
+  padding: 8px;
+  height: 54px;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.chip {
+  height: 34px;
+  line-height: 34px;
+  border-radius: 6px;
+  color: #FFFFFF;
+  font-size: 10px;
+}
+
+.c1 { background-image: linear-gradient(90deg, #0969DA, #8250DF); }
+.c2 { background-color: #1A7F37; border-radius: 17px; }
+.c3 { background-color: #BC4C00; box-shadow: 0 3px 6px rgba(31, 35, 40, 0.35); }
+.c4 { background-color: #0969DA; opacity: 0.55; }
+
+.note {
+  white-space: normal;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #6E7781;
+  line-height: 17px;
+}
