@@ -408,6 +408,12 @@ typedef struct {
     uint8_t     flex_wrap;       /* 0 = nowrap，1 = wrap */
     int16_t     gap_row;
     int16_t     gap_col;
+    /*
+     * gap 的单位（低 4 位 = row，高 4 位 = column）：0 = px，1 = em，2 = rem。
+     * em/rem 时 `gap_row`/`gap_col` 存的是**百分之一 em**，解析末尾统一折成 px
+     * 并把这里清零 —— 布局期只可能看到 px。
+     */
+    uint8_t     gap_units;
 
     /* ----- flex 项 ----- */
     uint16_t    flex_grow;     /* 定点 /100：100 表示 flex-grow:1，默认 0 */
@@ -432,6 +438,16 @@ typedef struct {
      */
     uint16_t    trans_ms;
     uint8_t     trans_ease;    /* QLEasing */
+    /*
+     * `transition-delay`（毫秒）：起播前先干等多久。
+     * 过渡期里样式保持起点值（CSS 语义），不会"提前一点点开始动"。
+     */
+    uint16_t    trans_delay_ms;
+    /* `steps(n)`：>0 时覆盖 `trans_ease`（阶跃缓动） */
+    uint8_t     trans_steps;
+    /* 自定义 `cubic-bezier(x1,y1,x2,y2)`：单位为 1/1000，`trans_bez_on` 为真时生效 */
+    uint8_t     trans_bez_on;
+    int16_t     trans_bez[4];
     uint8_t     trans_props;   /* QL_UI_TRANS_* 位图 */
 
     /*
@@ -1189,7 +1205,11 @@ typedef struct {
     int16_t  clip_r;      /* clip-path 千分比（负 = 用基础值） */
     uint8_t  bg_alpha;
     uint8_t  reserved;
-} QLUIKeyframe;           /* 36 字节，blob 里顺序存放 */
+    /* 帧上的 `cubic-bezier(...)`（1/1000）；`bez_on` 为真时覆盖 `ease` */
+    int16_t  bez[4];
+    uint8_t  bez_on;
+    uint8_t  reserved2;
+} QLUIKeyframe;           /* 44 字节，blob 里顺序存放 */
 
 /* 一段 @keyframes：帧表 + 播放参数。运行期只读 */
 typedef struct {
@@ -1201,6 +1221,11 @@ typedef struct {
     uint8_t  direction;   /* QLUIAnimDirection */
     uint8_t  fill;        /* QLUIAnimFill */
     uint16_t delay_ms;    /* animation-delay：起播前干等多久 */
+    uint8_t  steps;       /* `steps(n)` 的台阶数；0 = 不用阶跃 */
+    uint8_t  bez_on;      /* 1 = 用下面的 bez（动画级默认缓动） */
+    /* 动画级默认 `cubic-bezier(...)`（1/1000）：帧上没写缓动时用它 */
+    int16_t  bez[4];
+    uint16_t reserved;
 } QLUIAnimation;
 
 /*
@@ -1561,6 +1586,16 @@ typedef struct {
     QLAnimKey          key;     /* 只用 v[0] 当进度 */
     uint8_t            active;
     uint8_t            props;   /* QL_UI_TRANS_* */
+    /*
+     * 延迟与缓动在这里自己算（不交给 qlanim）：qlanim 只按**线性**推进
+     * "延迟 + 时长"这段时间，真正的进度由 `trans_apply()` 按墙钟算出来再套缓动。
+     * 这样 delay / steps / cubic-bezier 都不用改动画引擎。
+     */
+    uint32_t           start_ms;   /* 延迟结束、真正开始动的时刻 */
+    uint16_t           dur_ms;
+    uint8_t            steps;
+    uint8_t            bez_on;
+    int16_t            bez[4];
 } QLUITrans;
 
 /*
@@ -2037,7 +2072,7 @@ int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *ou
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    34u
+#define QL_UI_BLOB_VERSION    36u
 
 typedef struct {
     uint32_t magic;
@@ -2106,7 +2141,7 @@ typedef struct {
 } QLUIDocBlobHeader;
 
 _Static_assert(sizeof(QLUIDocBlobHeader) == 180, "blob 头必须是 180 字节（v34）");
-_Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
+_Static_assert(sizeof(QLUIKeyframe) == 44, "关键帧必须是 44 字节（blob 顺序存放）");
 
 /*
  * 把 doc 编码成 blob。buf 为 NULL 或容量不足时只返回需要的字节数（不写）。

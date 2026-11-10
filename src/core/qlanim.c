@@ -84,6 +84,11 @@ static float bezier_solve(float x1, float y1, float x2, float y2, float x)
     return bezier_axis(t, y1, y2);
 }
 
+float ql_ease_bezier(float x1, float y1, float x2, float y2, float t)
+{
+    return bezier_solve(x1, y1, x2, y2, t);
+}
+
 float ql_ease_apply(uint8_t ease, uint8_t steps, float t)
 {
     if (t <= 0.0f)

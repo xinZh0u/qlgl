@@ -16,6 +16,9 @@
 
 typedef struct {
     int      ms;
+    int      delay_ms;
+    int      steps;
+    int      bez_on;
     int      ease;
     unsigned props;
 } Trans;
@@ -36,6 +39,9 @@ static int trans_of(const char *css, Trans *out)
     }
     const QLUIStyle *st = ql_ui_node_style(&ui->nodes[1]);
     out->ms = (int)st->trans_ms;
+    out->delay_ms = (int)st->trans_delay_ms;
+    out->steps = (int)st->trans_steps;
+    out->bez_on = (int)st->trans_bez_on;
     out->ease = (int)st->trans_ease;
     out->props = st->trans_props;
     ql_ui_free(ui);
@@ -105,9 +111,15 @@ QL_TEST_BEGIN("test_transition_shorthand")
     QL_CHECK(trans_of(css, &t));
     QL_CHECK_EQ((int)t.props, (int)QL_UI_TRANS_ALL);
 
-    /* ---------- 5. 两个时长才有资格叫 delay ---------- */
+    /* ---------- 5. 两个时长 = duration + delay ---------- */
     snprintf(css, sizeof(css), "%s #a { transition: background-color 200ms 50ms }", R);
-    QL_CHECK(rejects(css, "暂不支持 delay（'50ms'）"));
+    QL_CHECK(trans_of(css, &t));
+    QL_CHECK_EQ(t.ms, 200);
+    QL_CHECK_EQ(t.delay_ms, 50);
+    /* 三个时长就没有语义了，明确报错 */
+    snprintf(css, sizeof(css), "%s #a { transition: background-color 200ms 50ms 10ms }",
+             R);
+    QL_CHECK(rejects(css, "最多两个时长"));
 
     /* ---------- 6. 各段时长/缓动不一致：明确报错，不偷偷取一个 ---------- */
     snprintf(css, sizeof(css), "%s #a { transition: background-color 200ms, "

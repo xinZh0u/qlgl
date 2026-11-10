@@ -965,9 +965,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>@font-face</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>G</td>
-<td><strong>B8</strong>：PC/Mobile 档解析成"字体表条目"，喂给 FreeType/HarfBuzz；MCU 档裁掉（只留内建位图字体）</td>
+<td>B8：解析成"字体表条目"，喂给 FreeType/HarfBuzz；MCU 档裁掉（只留内建位图字体）</td>
 </tr>
 <tr>
 <td><code>@media (min-width / max-width)</code></td>
@@ -1087,9 +1087,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>fr</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>Grid 专用，随 B6 一起做（§11）；flex 里写了报错</td>
+<td>Grid 专用（B6，§11）；flex 里写了报错</td>
 </tr>
 <tr>
 <td><code>ch</code> / <code>ex</code> / <code>lh</code> / <code>rlh</code> / <code>cap</code></td>
@@ -1638,9 +1638,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>font</code>（简写）</td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>目前要分开写</td>
+<td>B9 落地（<code>font: bold 12px/1.5 serif</code>）</td>
 </tr>
 <tr>
 <td><code>font-variant-ligatures</code> / <code>font-feature-settings</code></td>
@@ -1759,9 +1759,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>word-wrap</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>L</td>
-<td>就是 <code>overflow-wrap</code> 的旧名字，加个别名即可</td>
+<td><code>overflow-wrap</code> 的旧名字，同一套解析</td>
 </tr>
 <tr>
 <td><code>hyphens</code></td>
@@ -2186,15 +2186,15 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 </tr>
 <tr>
 <td><code>transition-timing-function</code></td>
-<td>⚠️</td>
+<td>✅</td>
 <td>T</td>
-<td>只有具名缓动：<code>linear</code> / <code>ease</code> / <code>ease-in</code> / <code>ease-out</code> / <code>ease-in-out</code>；<code>cubic-bezier()</code> 报错（要一条三阶贝塞尔求值 + 反解，收益低）</td>
+<td>具名缓动 + <code>steps(n)</code> + <code>cubic-bezier(a,b,c,d)</code>（§18.16）</td>
 </tr>
 <tr>
 <td><code>transition-delay</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>T</td>
-<td></td>
+<td>支持长写与简写（<code>transition: opacity .3s ease .2s</code>），见 §18.16</td>
 </tr>
 <tr>
 <td><code>transition-behavior</code> / <code>-property: display</code></td>
@@ -4002,6 +4002,94 @@ opacity(k)    : 不动颜色，乘进 d2d-&gt;alpha
 </ol>
 <p>前两个只在"column flex + 文本"这种组合下出现，第三个只要"inline 子节点有 padding"就能看到 ——
 例程 <code>36_clip_filter</code> 同时踩中了三个。</p>
+<h4 id="1816-blob-v36">18.16 解析层收尾：真实页面写法（blob v36）</h4>
+<p>这一批不是新特性，而是<strong>解析器太窄</strong>——真实 CSS 里的常见写法被一律打回。全部修完，
+<code>test_css_syntax</code>（100 项）逐条钉住，每条都验到具体数值（样式字段 / 布局尺寸 / 颜色），
+不只验"能解析"。</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>以前</th>
+<th>现在</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.5</code> / <code>.5em</code> / <code>.5px</code>（前导小数）</td>
+<td>报"不是数字"（词法只认 <code>\d+</code>）</td>
+<td>与 <code>0.5</code> 完全等价；<code>1.</code> 仍非法</td>
+</tr>
+<tr>
+<td><code>hsl(120 50% 50%)</code> / <code>rgb(255 0 0 / .5)</code> / <code>rgb(100% 0% 0%)</code></td>
+<td>只认逗号</td>
+<td>逗号/空白两种都认，<code>/</code> 分隔 alpha，分量可写百分比</td>
+</tr>
+<tr>
+<td><code>hwb()</code> / <code>lab()</code> / <code>lch()</code> / <code>oklab()</code> / <code>oklch()</code> / <code>color(display-p3 …)</code></td>
+<td>报"不支持的颜色写法"</td>
+<td>按标准矩阵换算到 sRGB 再夹取（与浏览器降采样观感一致）</td>
+</tr>
+<tr>
+<td><code>box-shadow: inset 0 0 2px red</code> / <code>0 1px 2px black</code>（命名色）</td>
+<td>报"无法识别"</td>
+<td>颜色按 token 整段命中色表；<code>inset</code> 不再被当成颜色</td>
+</tr>
+<tr>
+<td><code>linear-gradient(red, blue)</code>（省略方向）</td>
+<td>报"需要 3 个参数"</td>
+<td>默认 <code>to bottom</code>（CSS 默认）</td>
+</tr>
+<tr>
+<td><code>linear-gradient(180deg, red 0%, blue 100%)</code></td>
+<td>报"不支持的颜色写法 'red 0%'"</td>
+<td>两端位置与不写等价，接受；<strong>中间位置/多色标</strong>明确报错（会改变画面，不做静默近似）</td>
+</tr>
+<tr>
+<td><code>gap: 1rem</code> / <code>1em</code></td>
+<td>只吃 px（<code>padding: 1rem</code> 却行）</td>
+<td>新增 <code>QLUIStyle.gap_units</code>，em/rem 在解析末尾折成 px；<code>%</code> / <code>vw</code> 仍明确报错</td>
+</tr>
+<tr>
+<td><code>line-height: 1.5em</code> / <code>150%</code></td>
+<td>报"不支持"</td>
+<td>按自己的字号折成 px</td>
+</tr>
+<tr>
+<td><code>border-width: 1em</code></td>
+<td>报"必须 0~64px"</td>
+<td>em 折成 px（rem 给明确提示）</td>
+</tr>
+<tr>
+<td><code>transition-delay</code> / <code>transition: … .2s</code></td>
+<td>报"暂不支持 delay"</td>
+<td>支持；过渡期样式停在起点值</td>
+</tr>
+<tr>
+<td><code>steps(n)</code> / <code>cubic-bezier(a,b,c,d)</code>（过渡与动画）</td>
+<td>报"暂不支持"</td>
+<td>都支持：过渡在客户端套缓动，动画在 <code>anim_apply</code> 里按"帧 &gt; 动画"优先级选</td>
+</tr>
+<tr>
+<td><code>padding-inline</code> / <code>margin-block</code> / <code>inset-inline-start</code> …</td>
+<td>报"不支持的属性"</td>
+<td>解析期改写成物理四边（<code>direction: rtl</code> 时 inline 左右互换）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>两个结构性限制（诚实记录）</strong>：</p>
+<ol>
+<li><code>margin</code> / <code>padding</code> 的 <strong>百分比</strong>与 <code>vw/vh</code> 仍不支持 —— 它们要在<strong>布局期</strong>相对包含块
+   求值，而 <code>QLUIEdges</code> 只存 int16 px。要做需要把四边换成 <code>QLUILength</code> 并在布局里
+   统一解析（<code>resolve_inset()</code> 已有现成算法），是一次独立的布局重构。</li>
+<li>逻辑属性只在<strong>元素自己写了</strong> <code>direction: rtl</code> 时交换左右；从祖先继承来的 RTL
+   看不到（解析期拿不到继承值），这类界面请直接写物理属性。</li>
+</ol>
+<p><strong>结构体与 blob</strong>：<code>QLUIStyle</code> 400 → <strong>416</strong>（<code>gap_units</code> + <code>trans_delay_ms</code> +
+<code>trans_steps</code> + <code>trans_bez_on</code> + <code>trans_bez[4]</code>），<code>QLUIKeyframe</code> 36 → <strong>44</strong>（帧级
+<code>bez[4]</code>/<code>bez_on</code>），<code>QLUIAnimation</code> 12 → <strong>22</strong>（<code>steps</code>/<code>bez[4]</code>/<code>bez_on</code>），
+blob <strong>v36</strong>；<code>qltext cc</code> 的 C 生成器与全部 golden 基准同步重建。</p>
+<hr />
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>

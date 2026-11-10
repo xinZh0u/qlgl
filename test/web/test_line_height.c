@@ -160,10 +160,31 @@ QL_TEST_BEGIN("test_line_height")
         }
     }
 
+    /* ---------- 6b. em / % 与无单位倍数等价（都按自己的字号折） ---------- */
+    {
+        const char *variants[] = {
+            "#r { line-height: 1.5 }",
+            "#r { line-height: 1.5em }",
+            "#r { line-height: 150% }",
+        };
+        int ref = -1;
+        for (size_t i = 0; i < sizeof(variants) / sizeof(variants[0]); i++) {
+            QLUIDoc *doc = ql_ui_load_text(html, variants[i]);
+            QL_CHECK(doc != NULL);
+            if (doc == NULL)
+                continue;
+            const int lh = doc->styles[0].line_h;
+            if (ref < 0)
+                ref = lh;
+            QL_CHECK_EQ(lh, ref);
+            ql_ui_doc_free(doc);
+        }
+        QL_CHECK(ref > 0);
+    }
+
     /* ---------- 7. 明确报错 ---------- */
     {
         struct { const char *css; } bad[] = {
-            { "#r { line-height: 1.5em }" },
             { "#r { line-height: 0 }" },
             { "#r { line-height: 40000px }" },
             { "#r { line-height: auto }" },

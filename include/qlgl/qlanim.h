@@ -102,4 +102,10 @@ void     ql_anim_reset(void);
 /* 缓动求值：t ∈ [0,1] → [0,1]。测试/复用用 */
 float    ql_ease_apply(uint8_t ease, uint8_t steps, float t);
 
+/*
+ * 自定义三次贝塞尔缓动（CSS `cubic-bezier(x1,y1,x2,y2)`）。
+ * x1/x2 必须在 [0,1]，y 可以越界（回弹曲线靠它）。
+ */
+float    ql_ease_bezier(float x1, float y1, float x2, float y2, float t);
+
 #endif /* QLGL_ANIM_H */

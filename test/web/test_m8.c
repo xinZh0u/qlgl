@@ -477,8 +477,8 @@ QL_TEST_BEGIN("test_m8")
      * 无块 at-rule（`@import`）同理：整份 CSS 只有 `@import` 时以前直接 break。
      */
     {
-        QL_CHECK(rejects("#a { transition-timing-function: cubic-bezier(0,0,1,1) }",
-                         "transition-timing-function"));
+        /* 非法**缓动名字**仍然报错（cubic-bezier 本身现在支持了） */
+        QL_CHECK(rejects("#a { transition-timing-function: bounce }", "不支持的缓动"));
         QL_CHECK(rejects("#a { transition-property: filter }", "transition-property"));
         QL_CHECK(rejects("@import \"x.css\";", "不支持 at-rule"));
         /* 合法值 / 尾部注释与分号不能被误伤 */

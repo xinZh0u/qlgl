@@ -72,7 +72,7 @@ static const RejectCase k_cases[] = {
     { 0, "<div id='a'></div>",
       "#a { display: grid; grid: 1fr 1fr }", "不支持 `grid` 简写" },
     { 0, "<div id='a'></div>",
-      "#a { transition: 200ms 300ms }", "transition: 暂不支持 delay（'300ms'）" },
+      "#a { transition: 200ms 300ms 100ms }", "最多两个时长" },
     { 0, "<div id='a'></div>",
       "#a { animation: pulse 1s 2s 3s }", "animation: 时长写了三个（'3s'）" },
     { 0, "<div id='a'></div>",
@@ -154,7 +154,7 @@ static const RejectCase k_cases[] = {
       " #a { animation: pulse 1s paused }", "animation-play-state: 暂不支持 paused" },
     { 0, "<div id='a'></div>",
       "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
-      " #a { animation: pulse 1s steps(3) }", "暂不支持 steps()" },
+      " #a { animation: pulse 1s steps(0) }", "steps() 的台阶数必须在 1~255" },
     { 0, "<div id='a'></div>",
       "@keyframes pulse { from { opacity: 0 } to { opacity: 1 } }"
       " #a { animation-name: pulse }", "有 animation-name 但没写 animation-duration" },

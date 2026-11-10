@@ -9242,7 +9242,30 @@ static void trans_apply(void *user, const QLAnimValue *v)
     if (t == NULL || t->node == NULL)
         return;
 
-    const float p = clamp01(v->v[0]);
+    /*
+     * 进度不直接用 qlanim 给的 v[0]（那是线性的"整段时间"），而是按墙钟
+     * 扣掉 delay 再除时长 —— 这样 `transition-delay` 期间样式一直停在起点，
+     * 缓动也能在客户端套（steps / cubic-bezier 不必改动画引擎）。
+     */
+    float p;
+    if (t->start_ms != 0) {
+        const uint32_t now = ql_anim_now_ms();
+        if ((int32_t)(now - t->start_ms) < 0) {
+            p = 0.0f;                      /* 还在 delay 里 */
+        } else {
+            const uint32_t el = now - t->start_ms;
+            p = (t->dur_ms > 0) ? clamp01((float)el / (float)t->dur_ms) : 1.0f;
+        }
+    } else {
+        p = clamp01(v->v[0]);
+    }
+    if (t->bez_on)
+        p = ql_ease_bezier((float)t->bez[0] / 1000.0f, (float)t->bez[1] / 1000.0f,
+                           (float)t->bez[2] / 1000.0f, (float)t->bez[3] / 1000.0f, p);
+    else if (t->steps > 0)
+        p = ql_ease_apply(QL_EASE_STEPS, t->steps, p);
+    else if (t->to.trans_ease != QL_EASE_LINEAR)
+        p = ql_ease_apply(t->to.trans_ease, 0, p);
 
     if ((t->props & QL_UI_TRANS_BG) != 0) {
         t->style.bg_color = lerp_color(t->from.bg_color, t->to.bg_color, p);
@@ -9374,16 +9397,28 @@ static void trans_retarget(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *befo
     }
 
     t->to = *target;
-    t->style = t->from;        /* 本帧先按起点画，下一帧才开始推进 */
+    t->style = t->from;        /* 本帧先按起点画 */
     t->props = target->trans_props;
+
+    /*
+     * 延迟 + 时长一起交给 qlanim 占住槽位（它只按线性推进"整段"），
+     * 真正的进度由 `trans_apply()` 按墙钟算，delay / steps / bezier 都在那儿生效。
+     */
+    t->dur_ms = target->trans_ms;
+    t->steps = target->trans_steps;
+    t->bez_on = target->trans_bez_on;
+    for (int i = 0; i < 4; i++)
+        t->bez[i] = target->trans_bez[i];
+    t->start_ms = ql_anim_now_ms() + (uint32_t)target->trans_delay_ms;
 
     QLAnimValue to;
     memset(&to, 0, sizeof(to));
-    to.v[0] = 1.0f;            /* 唯一的语义：进度 0 → 1 */
+    to.v[0] = 1.0f;
 
-    t->key.cur.v[0] = 0.0f;    /* 进度从 0 开始 */
-    if (ql_anim_start(&t->key, &to, target->trans_ms, target->trans_ease, 0, trans_apply,
-                      trans_done, t) != QL_OK) {
+    t->key.cur.v[0] = 0.0f;
+    if (ql_anim_start(&t->key, &to,
+                      (uint32_t)target->trans_ms + (uint32_t)target->trans_delay_ms,
+                      QL_EASE_LINEAR, 0, trans_apply, trans_done, t) != QL_OK) {
         /* 时长 0 / 池满：直接落到终点，不触发 animationend（没有真的播过） */
         if (t->active) {
             t->style = t->to;
@@ -9592,8 +9627,25 @@ static void anim_apply(QLUIAnimRun *run, float u)
     const QLUIKeyframe *f1 = ((uint16_t)(k + 1) < def->frame_count) ? &kf[k + 1] : f0;
 
     /* 帧上没写 timing-function 时用动画的默认缓动 */
-    uint8_t ease = (f0->ease == QL_UI_KF_EASE_INHERIT) ? def->ease : f0->ease;
-    float t = ql_ease_apply(ease, 0, local);
+    /*
+     * 缓动优先级：帧上的 cubic-bezier > 动画上的 cubic-bezier > 帧上的具名缓动
+     * > 动画上的具名缓动。`steps()` 只能写在动画级（帧级没有意义）。
+     */
+    float t;
+    if (f0->bez_on) {
+        t = ql_ease_bezier((float)f0->bez[0] / 1000.0f, (float)f0->bez[1] / 1000.0f,
+                           (float)f0->bez[2] / 1000.0f, (float)f0->bez[3] / 1000.0f,
+                           local);
+    } else if (f0->ease == QL_UI_KF_EASE_INHERIT && def->bez_on) {
+        t = ql_ease_bezier((float)def->bez[0] / 1000.0f, (float)def->bez[1] / 1000.0f,
+                           (float)def->bez[2] / 1000.0f, (float)def->bez[3] / 1000.0f,
+                           local);
+    } else if (f0->ease == QL_UI_KF_EASE_INHERIT && def->steps > 0) {
+        t = ql_ease_apply(QL_EASE_STEPS, def->steps, local);
+    } else {
+        const uint8_t ease = (f0->ease == QL_UI_KF_EASE_INHERIT) ? def->ease : f0->ease;
+        t = ql_ease_apply(ease, 0, local);
+    }
 
     QLUIKfValue a, b;
     kf_read(run, f0, &a);

@@ -198,15 +198,19 @@ static int match_number(const char *s, const char **end, double *out)
     while (*p >= '0' && *p <= '9')
         p++;
     int ndig = (int)(p - digits);
-    if (ndig == 0)
-        return 0;
+    /*
+     * 前导小数（`.5` / `-.5`）与 `0.5` 等价 —— 真实 CSS 里满篇都是 `.5`，
+     * 只认 `\d+` 会把它们全判成"不是数字"。
+     */
     if (*p == '.') {
         const char *frac = p + 1;
         while (*frac >= '0' && *frac <= '9')
             frac++;
         if (frac == p + 1)
-            return 0;              /* "1." 不合法（Python 侧的正则要求 \d+） */
+            return 0;              /* "1." / "." 后面没有数字：不合法 */
         p = frac;
+    } else if (ndig == 0) {
+        return 0;
     }
     if (end != NULL)
         *end = p;
@@ -252,6 +256,108 @@ static int hex_value(char c)
 }
 
 /* 返回 1 成功。rgb 写 0xRRGGBB，*alpha 写 0..255 */
+/* 线性 sRGB (0..1) → 8 位 sRGB（含 gamma 编码与夹取） */
+static uint8_t srgb8_from_linear(double v)
+{
+    if (v <= 0.0)
+        return 0;
+    if (v >= 1.0)
+        return 255;
+    const double s = (v <= 0.0031308) ? (12.92 * v) : (1.055 * pow(v, 1.0 / 2.4) - 0.055);
+    const int i = (int)py_round(s * 255.0);
+    return (uint8_t)((i < 0) ? 0 : ((i > 255) ? 255 : i));
+}
+
+/* 线性 sRGB 三分量 → 0xRRGGBB */
+static uint32_t rgb_from_linear(double r, double g, double b)
+{
+    return ((uint32_t)srgb8_from_linear(r) << 16) |
+           ((uint32_t)srgb8_from_linear(g) << 8) | (uint32_t)srgb8_from_linear(b);
+}
+
+/* OKLab/OKLCH → 线性 sRGB（Björn Ottosson 的标准矩阵） */
+static uint32_t oklab_to_rgb(double L, double a, double b)
+{
+    const double l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const double m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const double s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+    const double l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+    return rgb_from_linear(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+                           -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+                           -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+}
+
+/* CIE Lab → 线性 sRGB（D65 白点） */
+static uint32_t lab_to_rgb(double L, double a, double b)
+{
+    const double fy = (L + 16.0) / 116.0;
+    const double fx = fy + a / 500.0;
+    const double fz = fy - b / 200.0;
+    const double eps = 216.0 / 24389.0;
+    const double kappa = 24389.0 / 27.0;
+    const double xr = (fx * fx * fx > eps) ? (fx * fx * fx) : ((116.0 * fx - 16.0) / kappa);
+    const double yr = (L > kappa * eps) ? (fy * fy * fy) : (L / kappa);
+    const double zr = (fz * fz * fz > eps) ? (fz * fz * fz) : ((116.0 * fz - 16.0) / kappa);
+    const double X = xr * 0.95047, Y = yr * 1.0, Z = zr * 1.08883;
+    return rgb_from_linear(3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z,
+                           -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z,
+                           0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z);
+}
+
+/* Display-P3 → 线性 sRGB（超出 sRGB 的部分直接夹到 0/255） */
+static uint32_t p3_to_rgb(double r, double g, double b)
+{
+    return rgb_from_linear(1.2249401 * r - 0.2249404 * g,
+                           -0.0420569 * r + 1.0420571 * g,
+                           -0.0196376 * r - 0.0786361 * g + 1.0982735 * b);
+}
+
+/*
+ * 颜色函数（`rgb()`/`hsl()` 一族）的参数：返回个数，失败 -1。
+ *
+ * 现代 CSS 允许**空白分隔**并可选 `/` 分隔 alpha：
+ *     hsl(120 50% 50%)      hsl(120deg 50% 50% / 40%)
+ *     rgb(255 0 0 / .5)     rgb(100% 0% 0%)
+ * 老写法（逗号）照样认。
+ */
+static int parse_color_args(const char *p, const char *close, double *v,
+                            int *pct, int max_v)
+{
+    int nv = 0;
+    while (nv < max_v) {
+        p = skip_space(p);
+        if (p >= close)
+            break;
+        if (*p == '/') {                 /* alpha 分隔符 */
+            p++;
+            continue;
+        }
+        const char *end = NULL;
+        double num = 0;
+        if (!match_number(p, &end, &num))
+            return -1;
+        p = end;
+        pct[nv] = 0;
+        if (*p == '%') {
+            pct[nv] = 1;
+            p++;
+        } else if (end + 3 <= close &&
+                   (p[0] == 'd' || p[0] == 'D') &&
+                   (p[1] == 'e' || p[1] == 'E') &&
+                   (p[2] == 'g' || p[2] == 'G')) {
+            p += 3;                      /* deg：数值本身就是度数 */
+        }
+        v[nv++] = num;
+        p = skip_space(p);
+        if (p < close && *p == ',') {
+            p++;
+            p = skip_space(p);
+        }
+    }
+    p = skip_space(p);
+    return (p == close) ? nv : -1;
+}
+
 static int parse_color(const char *text, const char *where, uint32_t *rgb,
                        uint8_t *alpha)
 {
@@ -336,39 +442,163 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
         return 1;
     }
 
-    /* hsl(h, s%, l%) / hsla(h, s%, l%, a) */
+    /*
+     * 现代颜色函数：`hwb()` / `lab()` / `lch()` / `oklab()` / `oklch()` / `color(...)`。
+     *
+     * 上屏是 8 位 sRGB，所以这里做的是"按标准换算过来再夹取"。超出 sRGB 色域
+     * 的部分（P3、宽色域 Lab）会被夹到 0/255 —— 这与浏览器把宽色域降采样到 sRGB
+     * 时观感一致，不会出现"颜色写对了却显示成另一色"。
+     */
+    {
+        const char *fn = NULL;
+        int kind = 0;      /* 1=hwb 2=lab 3=lch 4=oklab 5=oklch 6=color() */
+        if (strncmp(t, "hwb(", 4) == 0) {
+            fn = "hwb";
+            kind = 1;
+        } else if (strncmp(t, "lab(", 4) == 0) {
+            fn = "lab";
+            kind = 2;
+        } else if (strncmp(t, "lch(", 4) == 0) {
+            fn = "lch";
+            kind = 3;
+        } else if (strncmp(t, "oklab(", 6) == 0) {
+            fn = "oklab";
+            kind = 4;
+        } else if (strncmp(t, "oklch(", 6) == 0) {
+            fn = "oklch";
+            kind = 5;
+        } else if (strncmp(t, "color(", 6) == 0) {
+            fn = "color";
+            kind = 6;
+        }
+        if (kind != 0) {
+            const char *open = strchr(t, '(');
+            const char *close = strrchr(t, ')');
+            if (open == NULL || close == NULL || close < open)
+                goto bad_modern;
+            double v[4] = { 0, 0, 0, 0 };
+            int pct[4] = { 0, 0, 0, 0 };
+            int nv = 0;
+            if (kind == 6) {
+                /* color(<空间> c1 c2 c3 [/ a])：空间名先吃掉 */
+                const char *sp = skip_space(open + 1);
+                const char *se = sp;
+                while (se < close && *se != ' ' && *se != '\t')
+                    se++;
+                char space[32];
+                size_t sl = (size_t)(se - sp);
+                if (sl == 0 || sl >= sizeof(space))
+                    goto bad_modern;
+                memcpy(space, sp, sl);
+                space[sl] = '\0';
+                char slow[32];
+                trim_lower(space, slow, sizeof(slow));
+                if (strcmp(slow, "srgb") != 0 && strcmp(slow, "display-p3") != 0)
+                    goto bad_modern;
+                kind = (strcmp(slow, "srgb") == 0) ? 7 : 8;
+                nv = parse_color_args(se, close, v, pct, 4);
+            } else {
+                nv = parse_color_args(open + 1, close, v, pct, 4);
+            }
+            if (nv != 3 && nv != 4)
+                goto bad_modern;
+            /* L 可以写成百分数（`oklch(70% .1 200)` = L 0.7）：统一折成 0..1 */
+            if ((kind == 4 || kind == 5) && pct[0])
+                v[0] /= 100.0;
+            uint32_t out_rgb = 0;
+            switch (kind) {
+            case 1: {   /* hwb(h w% b%) */
+                double w = v[1] / 100.0, bl = v[2] / 100.0;
+                if (w + bl >= 1.0) {
+                    const double grey = w / (w + bl);
+                    out_rgb = rgb_from_linear(grey, grey, grey);
+                } else {
+                    /* 先取该色相的全饱和色，再按 w/b 混进白/黑 */
+                    double hh = v[0];
+                    while (hh < 0)
+                        hh += 360.0;
+                    while (hh >= 360.0)
+                        hh -= 360.0;
+                    const double hp = hh / 60.0;
+                    const double x = 1.0 - fabs(fmod(hp, 2.0) - 1.0);
+                    double r1 = 0, g1 = 0, b1 = 0;
+                    if (hp < 1)      { r1 = 1; g1 = x; }
+                    else if (hp < 2) { r1 = x; g1 = 1; }
+                    else if (hp < 3) { g1 = 1; b1 = x; }
+                    else if (hp < 4) { g1 = x; b1 = 1; }
+                    else if (hp < 5) { r1 = x; b1 = 1; }
+                    else             { r1 = 1; b1 = x; }
+                    const double k = 1.0 - w - bl;
+                    const double add = w;
+                    /* hwb 的常数项是线性叠加，直接按 sRGB 值算（与浏览器一致） */
+                    out_rgb = ((uint32_t)(uint8_t)py_round((r1 * k + add) * 255.0) << 16) |
+                              ((uint32_t)(uint8_t)py_round((g1 * k + add) * 255.0) << 8) |
+                              (uint32_t)(uint8_t)py_round((b1 * k + add) * 255.0);
+                }
+                break;
+            }
+            case 2:     /* lab(L a b)：L 是 0..100 */
+                out_rgb = lab_to_rgb(v[0], v[1], v[2]);
+                break;
+            case 3: {   /* lch(L C H) */
+                const double rad = v[2] * 3.14159265358979323846 / 180.0;
+                out_rgb = lab_to_rgb(v[0], v[1] * cos(rad), v[1] * sin(rad));
+                break;
+            }
+            case 4:     /* oklab */
+                out_rgb = oklab_to_rgb(v[0], v[1], v[2]);
+                break;
+            case 5: {   /* oklch */
+                const double rad = v[2] * 3.14159265358979323846 / 180.0;
+                out_rgb = oklab_to_rgb(v[0], v[1] * cos(rad), v[1] * sin(rad));
+                break;
+            }
+            case 7:     /* color(srgb r g b) */
+            case 8: {   /* color(display-p3 r g b) */
+                double c[3];
+                for (int i = 0; i < 3; i++)
+                    c[i] = pct[i] ? v[i] / 100.0 : v[i];
+                out_rgb = (kind == 7) ? rgb_from_linear(c[0], c[1], c[2])
+                                      : p3_to_rgb(c[0], c[1], c[2]);
+                break;
+            }
+            default:
+                goto bad_modern;
+            }
+            *rgb = out_rgb & 0xFFFFFFu;
+            *alpha = 255u;
+            if (nv == 4) {
+                const int bad = pct[3] ? (v[3] < 0 || v[3] > 100) : (v[3] < 0 || v[3] > 1);
+                if (bad)
+                    goto bad_modern;
+                *alpha = (uint8_t)py_round(pct[3] ? (v[3] * 255.0 / 100.0)
+                                                  : (v[3] * 255.0));
+            }
+            return 1;
+        bad_modern:
+            set_error("%s: 不支持的颜色写法 '%s'（%s 的参数看不懂）", where, text,
+                      (fn != NULL) ? fn : "颜色");
+            return 0;
+        }
+    }
+
+    /* hsl(h, s%, l%) / hsl(h s% l%) / hsl(h s% l% / a) */
     if (strncmp(t, "hsl", 3) == 0 && (t[3] == '(' || t[3] == 'a')) {
-        int is_hsla = (t[3] == 'a');
         const char *open = strchr(t, '(');
         const char *close = strrchr(t, ')');
         if (open == NULL || close == NULL || close < open)
             goto bad_hsl;
         double v[4] = { 0, 0, 0, 0 };
-        int nv = 0;
-        const char *p = open + 1;
-        while (p < close && nv < 4) {
-            p = skip_space(p);
-            const char *end = NULL;
-            double num = 0;
-            if (!match_number(p, &end, &num))
-                break;
-            p = skip_space(end);
-            if (*p == '%')
-                p++;                  /* s / l 的百分号 */
-            else if (*p == 'd' && p[1] == 'e' && p[2] == 'g')
-                p += 3;               /* h 的 deg */
-            v[nv++] = num;
-            p = skip_space(p);
-            if (p < close && *p == ',')
-                p++;
-            else
-                break;
+        int pct[4] = { 0, 0, 0, 0 };
+        /* 逗号与空白两种写法都认，alpha 用 '/' 或第 4 个逗号分段 */
+        const int nv = parse_color_args(open + 1, close, v, pct, 4);
+        if (nv != 3 && nv != 4)
+            goto bad_hsl;
+        if (nv == 4) {
+            const int bad = pct[3] ? (v[3] < 0 || v[3] > 100) : (v[3] < 0 || v[3] > 1);
+            if (bad)
+                goto bad_hsl;
         }
-        p = skip_space(p);
-        if (nv != (is_hsla ? 4 : 3) || p != close)
-            goto bad_hsl;
-        if (is_hsla && (v[3] < 0 || v[3] > 1))
-            goto bad_hsl;
         if (v[1] < 0 || v[1] > 100 || v[2] < 0 || v[2] > 100)
             goto bad_hsl;
         /* HSL → RGB（标准算法，h 取模 360） */
@@ -394,17 +624,20 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
         const int bi = (int)py_round((b1 + m) * 255.0);
         *rgb = ((uint32_t)(ri & 0xFF) << 16) | ((uint32_t)(gi & 0xFF) << 8) |
                (uint32_t)(bi & 0xFF);
-        *alpha = is_hsla ? (uint8_t)py_round(v[3] * 255.0) : 255u;
+        *alpha = 255u;
+        if (nv == 4)
+            *alpha = (uint8_t)py_round(pct[3] ? (v[3] * 255.0 / 100.0)
+                                             : (v[3] * 255.0));
         return 1;
     bad_hsl:
-        set_error("%s: 不支持的颜色写法 '%s'（hsl 需要 hsl(h, s%%, l%%) / hsla(h, s%%, l%%, a)）",
+        set_error("%s: 不支持的颜色写法 '%s'（hsl 要写 hsl(h, s%%, l%%) 或 hsl(h s%% l%% / a)）",
                   where, text);
         return 0;
     }
 
     /* rgb(r, g, b) / rgba(r, g, b, a) */
+    /* rgb(r, g, b) / rgba(...) / rgb(r g b / a) / rgb(100% 0% 0%) */
     if (strncmp(t, "rgb", 3) == 0 && (t[3] == '(' || t[3] == 'a')) {
-        int is_rgba = (t[3] == 'a');
         const char *open = strchr(t, '(');
         const char *close = strrchr(t, ')');
         if (open == NULL || close == NULL || close < open) {
@@ -412,44 +645,37 @@ static int parse_color(const char *text, const char *where, uint32_t *rgb,
             return 0;
         }
         double v[4] = { 0, 0, 0, 0 };
-        int nv = 0;
-        const char *p = open + 1;
-        while (p < close && nv < 4) {
-            p = skip_space(p);
-            const char *end = NULL;
-            double num = 0;
-            if (!match_number(p, &end, &num))
-                break;
-            v[nv++] = num;
-            p = skip_space(end);
-            if (p < close && *p == ',')
-                p++;
-            else
-                break;
-        }
-        p = skip_space(p);
-        if (nv != (is_rgba ? 4 : 3) || p != close) {
+        int pct[4] = { 0, 0, 0, 0 };
+        const int nv = parse_color_args(open + 1, close, v, pct, 4);
+        if (nv != 3 && nv != 4) {
             set_error("%s: 不支持的颜色写法 '%s'", where, text);
             return 0;
         }
         for (int i = 0; i < 3; i++) {
+            if (pct[i])
+                v[i] = v[i] * 255.0 / 100.0;   /* rgb(100% 0% 0%) */
             if (v[i] < 0 || v[i] > 255) {
                 set_error("%s: rgb() 分量超范围 '%s'", where, text);
                 return 0;
             }
         }
-        if (is_rgba && (v[3] < 0 || v[3] > 1)) {
-            set_error("%s: rgba() 分量超范围 '%s'", where, text);
-            return 0;
+        if (nv == 4) {
+            const int bad = pct[3] ? (v[3] < 0 || v[3] > 100) : (v[3] < 0 || v[3] > 1);
+            if (bad) {
+                set_error("%s: rgba() 分量超范围 '%s'", where, text);
+                return 0;
+            }
+            *alpha = (uint8_t)py_round(pct[3] ? (v[3] * 255.0 / 100.0) : (v[3] * 255.0));
+        } else {
+            *alpha = 255u;
         }
-        *rgb = ((uint32_t)(long)v[0] << 16) | ((uint32_t)(long)v[1] << 8) |
-               (uint32_t)(long)v[2];
-        *alpha = is_rgba ? (uint8_t)py_round(v[3] * 255.0) : 255u;
+        *rgb = ((uint32_t)(long)py_round(v[0]) << 16) |
+               ((uint32_t)(long)py_round(v[1]) << 8) | (uint32_t)(long)py_round(v[2]);
         return 1;
     }
 
-    set_error("%s: 不支持的颜色写法 '%s'（支持 #rgb/#rrggbb/rgb()/rgba()/命名色）",
-              where, text);
+    set_error("%s: 不支持的颜色写法 '%s'（支持 #rgb/#rrggbb/rgb()/hsl()/hwb()/"
+              "lab()/lch()/oklab()/oklch()/color()/命名色）", where, text);
     return 0;
 }
 
@@ -1432,6 +1658,22 @@ static void resolve_edge_units(QLUIEdges *e, uint8_t *bits, int font_px, int roo
 static void resolve_length_units(QLUIStyle *s, int font_px, int root_px,
                                  CalcPool *calc)
 {
+    /* gap：em/rem 折成 px（值存的是百分之一 em） */
+    if (s->gap_units != 0) {
+        int16_t *v[2] = { &s->gap_row, &s->gap_col };
+        for (int i = 0; i < 2; i++) {
+            const uint8_t shift = (uint8_t)(i == 0 ? 0 : 4);
+            const uint8_t bits = (uint8_t)((s->gap_units >> shift) & 0xFu);
+            if (bits == 1 && font_px > 0) {
+                *v[i] = (int16_t)(((int32_t)*v[i] * font_px) / 100);
+                s->gap_units = (uint8_t)(s->gap_units & (uint8_t)~(uint8_t)(0xFu << shift));
+            } else if (bits == 2 && root_px > 0) {
+                *v[i] = (int16_t)(((int32_t)*v[i] * root_px) / 100);
+                s->gap_units = (uint8_t)(s->gap_units & (uint8_t)~(uint8_t)(0xFu << shift));
+            }
+        }
+    }
+
     QLUILength *all[10];
     all[0] = &s->width;
     all[1] = &s->height;
@@ -1471,6 +1713,28 @@ static void resolve_length_units(QLUIStyle *s, int font_px, int root_px,
     }
 }
 
+/*
+ * 把构建期就能定的长度折成 px（只给"存成 int16 px"的字段用：边框宽、字距、
+ * 圆角……）。em 用当前字号折，rem 不行 —— 根字号要等整棵树走完才知道。
+ */
+static int len_to_px(int *num, uint8_t unit, int font_px, const char *where,
+                     const char *prop)
+{
+    if (unit == QL_UI_UNIT_EM) {
+        *num = (int)py_round((double)*num * (double)font_px / 100.0);
+        return 1;
+    }
+    if (unit == QL_UI_UNIT_REM) {
+        set_error("%s: %s 不支持 rem（这里要构建期定值，用 px 或 em）", where, prop);
+        return 0;
+    }
+    if (unit != QL_UI_UNIT_PX) {
+        set_error("%s: %s 只支持 px / em（收到其它单位）", where, prop);
+        return 0;
+    }
+    return 1;
+}
+
 /* 渐变方向：返回 bg_grad_dir 的值（1 垂直 / 2 水平 / 3 径向） */
 static int gradient_dir_of(const char *token)
 {
@@ -1483,6 +1747,54 @@ static int gradient_dir_of(const char *token)
         strcmp(t, "to left") == 0)
         return 2;
     return 0;
+}
+
+/*
+ * 一个色标：`<color>` 或 `<color> <位置>`。
+ *
+ * 引擎只画"两个端色线性插值"（`bg_color` → `bg_color2` + 方向），所以位置只在
+ * **两端**（`0`/`0%`/`100%`）时与真实渲染等价，接受；中间位置会改变画面，
+ * 明确报错而不是悄悄忽略（静默降级是本库的红线）。
+ */
+static int parse_gradient_stop(const char *txt, const char *where, uint32_t *rgb)
+{
+    char buf[192];
+    size_t n = strlen(txt);
+    while (n > 0 && is_space(*txt)) {
+        txt++;
+        n--;
+    }
+    while (n > 0 && is_space(txt[n - 1]))
+        n--;
+    if (n >= sizeof(buf))
+        n = sizeof(buf) - 1u;
+    memcpy(buf, txt, n);
+    buf[n] = '\0';
+
+    uint8_t a = 0;
+    if (parse_color(buf, where, rgb, &a))
+        return 1;                       /* 没有位置 */
+
+    /* 剥掉末尾的位置 token 再试 */
+    char *sp = strrchr(buf, ' ');
+    if (sp == NULL) {
+        set_error("%s: 渐变色标看不懂 '%s'", where, txt);
+        return 0;
+    }
+    const char *pos = sp + 1;
+    const int ok_pos = (strcmp(pos, "0") == 0 || strcmp(pos, "0%") == 0 ||
+                        strcmp(pos, "100%") == 0);
+    *sp = '\0';
+    if (!ok_pos) {
+        set_error("%s: 渐变色标位置只支持 0%% 与 100%%（收到 '%s'）；"
+                  "中间位置会改变画面，本库不做静默近似", where, pos);
+        return 0;
+    }
+    if (!parse_color(buf, where, rgb, &a)) {
+        set_error("%s: 渐变色标看不懂 '%s'", where, txt);
+        return 0;
+    }
+    return 1;
 }
 
 /* linear-gradient(...) / radial-gradient(...) → 起色、止色、方向 */
@@ -1502,11 +1814,12 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
         return 0;
     }
 
-    /* 按逗号切三段（颜色里不会有逗号，因为有 alpha 时是 rgba(...) 形式——
-       这里用"括号深度"保护，与 Python 的 split(',') 行为一致的是：
-       rgba(0,0,0,.5) 里确实有逗号，所以必须先配对括号） */
-    const char *parts[3] = { NULL, NULL, NULL };
-    size_t lens[3] = { 0, 0, 0 };
+    /*
+     * 按顶层逗号切段（`rgba(0,0,0,.5)` 里的逗号不算），最多 10 段。
+     * 段数多出来不是错误 —— 后面按"色标个数"给出准确报错。
+     */
+    const char *parts[10] = { NULL };
+    size_t lens[10] = { 0 };
     int np = 0;
     const char *start = p;
     int depth = 0;
@@ -1515,7 +1828,7 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
             depth++;
         } else if (*q == ')') {
             if (depth == 0) {
-                if (np < 3) {
+                if (np < 10) {
                     parts[np] = start;
                     lens[np] = (size_t)(q - start);
                     np++;
@@ -1524,7 +1837,7 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
             }
             depth--;
         } else if (*q == ',' && depth == 0) {
-            if (np < 3) {
+            if (np < 10) {
                 parts[np] = start;
                 lens[np] = (size_t)(q - start);
                 np++;
@@ -1534,14 +1847,13 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
             break;
         }
     }
-    if (np != 3) {
-        set_error("%s: %s 需要 3 个参数（%s, 起色, 止色）", where,
-                  radial ? "radial-gradient" : "linear-gradient",
-                  radial ? "位置" : "方向");
+    if (np < 2) {
+        set_error("%s: %s 至少需要两个色标", where,
+                  radial ? "radial-gradient" : "linear-gradient");
         return 0;
     }
-    char seg[3][128];
-    for (int i = 0; i < 3; i++) {
+    char seg[10][128];
+    for (int i = 0; i < np; i++) {
         size_t n = lens[i];
         const char *s = parts[i];
         while (n > 0 && is_space(*s)) {
@@ -1556,35 +1868,73 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
         seg[i][n] = '\0';
     }
 
-    if (radial) {
-        char centre[64];
-        trim_lower(seg[0], centre, sizeof(centre));
-        /* 去掉空白后比较（Python 侧是 replace(" ","")） */
+    /*
+     * 第一段是方向/圆心还是色标？
+     * `linear-gradient(red, blue)`（省略方向，CSS 默认 to bottom）必须也能认。
+     */
+    int have_head = 0;
+    {
         char squeeze[64];
         size_t k = 0;
-        for (size_t i = 0; centre[i] != '\0' && k + 1u < sizeof(squeeze); i++)
-            if (!is_space(centre[i]))
-                squeeze[k++] = centre[i];
+        for (size_t i = 0; seg[0][i] != '\0' && k + 1u < sizeof(squeeze); i++)
+            if (!is_space(seg[0][i]))
+                squeeze[k++] = seg[0][i];
         squeeze[k] = '\0';
-        if (strcmp(squeeze, "circle") != 0 && strcmp(squeeze, "circleatcenter") != 0 &&
-            strcmp(squeeze, "ellipse") != 0 && strcmp(squeeze, "50%") != 0 &&
-            strcmp(squeeze, "center") != 0) {
-            set_error("%s: radial-gradient 只支持圆心在元素中心（收到 '%s'）", where,
-                      seg[0]);
-            return 0;
-        }
-        *dir = 3;
-    } else {
-        *dir = gradient_dir_of(seg[0]);
-        if (*dir == 0) {
-            set_error("%s: 不支持的渐变方向 '%s'（支持 to bottom/right、180deg/90deg）",
-                      where, seg[0]);
-            return 0;
+        if (radial) {
+            have_head = (strcmp(squeeze, "circle") == 0 ||
+                         strcmp(squeeze, "circleatcenter") == 0 ||
+                         strcmp(squeeze, "ellipse") == 0 ||
+                         strcmp(squeeze, "ellipseatcenter") == 0 ||
+                         strcmp(squeeze, "50%") == 0 || strcmp(squeeze, "center") == 0);
+            if (!have_head && (strstr(squeeze, " at ") != NULL ||
+                               strncmp(squeeze, "circleat", 8) == 0 ||
+                               strncmp(squeeze, "ellipseat", 9) == 0)) {
+                set_error("%s: radial-gradient 只支持圆心在元素中心（收到 '%s'）", where,
+                          seg[0]);
+                return 0;
+            }
+        } else {
+            const int d = gradient_dir_of(seg[0]);
+            if (d != 0) {
+                *dir = d;
+                have_head = 1;
+            } else {
+                /*
+                 * 看起来是方向（`to bottom right` / `45deg` / `0.25turn`）但引擎画不了
+                 * —— 对角线渐变的错误信息不能写成"色标个数不对"，否则查半天。
+                 */
+                const size_t sl = strlen(squeeze);
+                const int looks_dir =
+                    (squeeze[0] == 't' && squeeze[1] == 'o') ||
+                    (sl > 3 && strcmp(squeeze + sl - 3u, "deg") == 0) ||
+                    (sl > 4 && strcmp(squeeze + sl - 4u, "turn") == 0) ||
+                    (sl > 3 && strcmp(squeeze + sl - 3u, "rad") == 0);
+                if (looks_dir) {
+                    set_error("%s: 不支持的渐变方向 '%s'（只支持水平/垂直："
+                              "to bottom/top/right/left、180deg/90deg）", where, seg[0]);
+                    return 0;
+                }
+            }
         }
     }
+    if (!have_head) {
+        if (radial)
+            *dir = 3;              /* 默认圆心居中 */
+        else
+            *dir = 1;              /* CSS 默认 `to bottom` */
+    }
+    if (radial && *dir != 3)
+        *dir = 3;
 
-    uint8_t a0 = 0, a1 = 0;
-    if (!parse_color(seg[1], where, from, &a0) || !parse_color(seg[2], where, to, &a1))
+    const int nstop = np - (have_head ? 1 : 0);
+    if (nstop != 2) {
+        set_error("%s: 只支持两个色标（收到 %d 个）；多色标会改变画面，"
+                  "本库不做静默近似", where, nstop);
+        return 0;
+    }
+    const int b = have_head ? 1 : 0;
+    if (!parse_gradient_stop(seg[b], where, from) ||
+        !parse_gradient_stop(seg[b + 1], where, to))
         return 0;
     return 1;
 }
@@ -1656,29 +2006,48 @@ static int parse_shadow(const char *text, const char *where, int *dx, int *dy,
             }
         }
     }
-    if (clen == 0) {
-        /* #hex */
-        const char *hash = strchr(t, '#');
-        if (hash != NULL) {
-            size_t n = 1;
-            while (hex_value(hash[n]) >= 0)
-                n++;
-            if (n > 1) {
-                cstart = (size_t)(hash - t);
-                clen = n;
-            }
-        }
-    }
-    if (clen == 0) {
-        /* 第一段字母 */
-        for (const char *q = t; *q != '\0'; q++) {
-            if ((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')) {
-                size_t n = 0;
-                while (q[n] != '\0' &&
-                       ((q[n] >= 'a' && q[n] <= 'z') || (q[n] >= 'A' && q[n] <= 'Z')))
+    /*
+     * 颜色再按**空白分隔的 token** 找：#hex 或命名色。
+     *
+     * 不能用"第一段连续字母"：`0 1px 2px black` 的第一段字母是 `px`，
+     * `inset 0 0 2px red` 的第一段是 `inset` —— 两条都会把颜色认错，
+     * 于是 `box-shadow: 0 0 2px black` / `inset ... red` 一律报"无法识别"。
+     * 命名色必须整段 token 命中色表，光看"是不是字母"不够。
+     */
+    {
+        for (const char *q = t; *q != '\0';) {
+            while (is_space(*q))
+                q++;
+            if (*q == '\0')
+                break;
+            const char *start = q;
+            while (*q != '\0' && !is_space(*q))
+                q++;
+            const size_t len = (size_t)(q - start);
+            char tok[32];
+            if (len == 0 || len >= sizeof(tok))
+                continue;
+            memcpy(tok, start, len);
+            tok[len] = '\0';
+            char low[32];
+            trim_lower(tok, low, sizeof(low));
+            if (low[0] == '#') {
+                size_t n = 1;
+                while (hex_value(low[n]) >= 0)
                     n++;
-                cstart = (size_t)(q - t);
-                clen = n;
+                if (n > 1) {
+                    cstart = (size_t)(start - t);
+                    clen = n;
+                    break;
+                }
+                continue;
+            }
+            uint32_t dummy_rgb = 0;
+            uint8_t dummy_a = 0;
+            /* `transparent` 也是合法阴影色（画出来什么都没有，等价于没有这一层） */
+            if (parse_color(low, where, &dummy_rgb, &dummy_a)) {
+                cstart = (size_t)(start - t);
+                clen = len;
                 break;
             }
         }
@@ -2942,58 +3311,6 @@ static int parse_flex_shorthand(const char *text, const char *where, double *gro
 }
 
 /* gap: <row> [<col>] → 两个 px */
-static int parse_gap(const char *text, const char *where, int *gr, int *gc)
-{
-    char parts[2][64];
-    int np = 0;
-    const char *p = text;
-    while (*p != '\0' && np < 2) {
-        while (is_space(*p))
-            p++;
-        if (*p == '\0')
-            break;
-        const char *start = p;
-        while (*p != '\0' && !is_space(*p))
-            p++;
-        size_t len = (size_t)(p - start);
-        if (len >= sizeof(parts[0])) {
-            set_error("%s: gap 的值太长", where);
-            return 0;
-        }
-        memcpy(parts[np], start, len);
-        parts[np][len] = '\0';
-        np++;
-    }
-    if (np == 1) {
-        int kind = 0;
-        double v = 0;
-        if (!parse_number(parts[0], where, 0, 0, &kind, &v))
-            return 0;
-        if (kind == NUM_PCT) {
-            set_error("%s: gap 不支持百分比", where);
-            return 0;
-        }
-        *gr = *gc = (int)v;
-        return 1;
-    }
-    if (np == 2) {
-        int k1 = 0, k2 = 0;
-        double v1 = 0, v2 = 0;
-        if (!parse_number(parts[0], where, 0, 0, &k1, &v1) ||
-            !parse_number(parts[1], where, 0, 0, &k2, &v2))
-            return 0;
-        if (k1 == NUM_PCT || k2 == NUM_PCT) {
-            set_error("%s: gap 不支持百分比", where);
-            return 0;
-        }
-        *gr = (int)v1;
-        *gc = (int)v2;
-        return 1;
-    }
-    set_error("%s: gap 只支持 1~2 个值，收到 '%s'", where, text);
-    return 0;
-}
-
 /* ============================== ③ 声明集合 ============================== */
 
 typedef struct {
@@ -3334,6 +3651,111 @@ static int easing_value(const char *name, int *out)
     return 0;
 }
 
+/*
+ * 缓动函数：`linear` / `ease*` / `steps(n[, end|start])` / `cubic-bezier(a,b,c,d)`。
+ *
+ * 后两种以前直接报错，而现在真实页面几乎必用（`transition: transform .3s
+ * cubic-bezier(.34,1.56,.64,1)` 这种回弹）。三种结果都塞进同一组输出：
+ *   *ease   具名缓动（QL_Easing）
+ *   *steps  >0 时是阶跃缓动（覆盖 *ease）
+ *   bez     自定义贝塞尔（1/1000），*bez_on 置 1 时覆盖前两者
+ */
+static int timing_parse(const char *text, const char *where, int *ease, int *steps,
+                        int16_t bez[4], int *bez_on)
+{
+    char low[96];
+    trim_lower(text, low, sizeof(low));
+    *steps = 0;
+    *bez_on = 0;
+    bez[0] = bez[1] = bez[2] = bez[3] = 0;
+
+    if (easing_value(low, ease))
+        return 1;
+
+    if (strncmp(low, "steps(", 6) == 0) {
+        const char *p = skip_space(low + 6);
+        const char *end = NULL;
+        double n = 0;
+        if (!match_number(p, &end, &n)) {
+            set_error("%s: steps() 的台阶数不是数字（收到 '%s'）", where, text);
+            return 0;
+        }
+        p = skip_space(end);
+        if (*p == ',') {
+            p = skip_space(p + 1);
+            if (strncmp(p, "end", 3) == 0)
+                p += 3;
+            else if (strncmp(p, "start", 5) == 0) {
+                set_error("%s: 只支持 steps(n, end)（收到 '%s'）", where, text);
+                return 0;
+            }
+            p = skip_space(p);
+        }
+        if (*p != ')') {
+            set_error("%s: steps() 写法不对（收到 '%s'）", where, text);
+            return 0;
+        }
+        p = skip_space(p + 1);
+        if (*p != '\0') {
+            set_error("%s: steps() 后面还有内容（收到 '%s'）", where, text);
+            return 0;
+        }
+        const int v = (int)py_round(n);
+        if (v < 1 || v > 255) {
+            set_error("%s: steps() 的台阶数必须在 1~255（收到 '%s'）", where, text);
+            return 0;
+        }
+        *steps = v;
+        return 1;
+    }
+
+    if (strncmp(low, "cubic-bezier(", 13) == 0) {
+        const char *p = skip_space(low + 13);
+        double v[4];
+        int i = 0;
+        for (; i < 4; i++) {
+            p = skip_space(p);
+            if (i > 0) {
+                if (*p != ',') {
+                    set_error("%s: cubic-bezier() 需要 4 个数字（收到 '%s'）", where,
+                              text);
+                    return 0;
+                }
+                p = skip_space(p + 1);
+            }
+            const char *end = NULL;
+            if (!match_number(p, &end, &v[i])) {
+                set_error("%s: cubic-bezier() 需要 4 个数字（收到 '%s'）", where, text);
+                return 0;
+            }
+            p = skip_space(end);
+        }
+        if (*p != ')') {
+            set_error("%s: cubic-bezier() 写法不对（收到 '%s'）", where, text);
+            return 0;
+        }
+        p = skip_space(p + 1);
+        if (*p != '\0') {
+            set_error("%s: cubic-bezier() 后面还有内容（收到 '%s'）", where, text);
+            return 0;
+        }
+        /* x 必须落在 [0,1]，否则曲线不是函数（浏览器同样拒绝） */
+        if (v[0] < 0.0 || v[0] > 1.0 || v[2] < 0.0 || v[2] > 1.0) {
+            set_error("%s: cubic-bezier() 的第 1/3 个参数必须在 0~1（收到 '%s'）", where,
+                      text);
+            return 0;
+        }
+        for (int k = 0; k < 4; k++)
+            bez[k] = (int16_t)py_round(v[k] * 1000.0);
+        *bez_on = 1;
+        return 1;
+    }
+
+    set_error("%s: 不支持的缓动 '%s'（linear / ease / ease-in / ease-out / "
+              "ease-in-out / steps(n) / cubic-bezier(a,b,c,d)）", where, text);
+    return 0;
+}
+
 static int is_all_digits(const char *s)
 {
     if (*s == '\0')
@@ -3447,6 +3869,7 @@ static int expand_transition(Decls *ds)
 
     unsigned props = 0;
     char dur[128] = "";        /* 各组合并后的时长（各组必须相同） */
+    char delay[128] = "";      /* 同上：延迟 */
     char tf[128] = "";         /* 同上：缓动 */
     const char *p = v;
 
@@ -3454,8 +3877,18 @@ static int expand_transition(Decls *ds)
         while (is_space(*p))
             p++;
         const char *gstart = p;
-        while (*p != '\0' && *p != ',')
+        /*
+         * 按**顶层**逗号分组：`cubic-bezier(.34, 1.56, .64, 1)` 里的逗号不是
+         * 分隔符，切错了就会把 `1.56` 当成一个独立 token。
+         */
+        int gdepth = 0;
+        while (*p != '\0' && (gdepth > 0 || *p != ',')) {
+            if (*p == '(')
+                gdepth++;
+            else if (*p == ')' && gdepth > 0)
+                gdepth--;
             p++;
+        }
         const char *gend = p;
         while (gend > gstart && is_space(gend[-1]))
             gend--;
@@ -3469,6 +3902,7 @@ static int expand_transition(Decls *ds)
 
         /* 一组：属性 / 时长 / 缓动，顺序任意、各最多一个 */
         char gdur[128] = "";
+        char gdelay[128] = "";
         char gtf[128] = "";
         int group_has_prop = 0;
         const char *q = gstart;
@@ -3478,8 +3912,15 @@ static int expand_transition(Decls *ds)
             if (q >= gend)
                 break;
             const char *ts = q;
-            while (q < gend && !is_space(*q))
+            /* 括号内不切：`cubic-bezier(.34, 1.56, .64, 1)` 里带空格 */
+            int pdepth = 0;
+            while (q < gend && (pdepth > 0 || !is_space(*q))) {
+                if (*q == '(')
+                    pdepth++;
+                else if (*q == ')' && pdepth > 0)
+                    pdepth--;
                 q++;
+            }
             char tok[128], low[128];
             size_t len = (size_t)(q - ts);
             if (len >= sizeof(tok))
@@ -3492,15 +3933,21 @@ static int expand_transition(Decls *ds)
             if (bit >= 0) {
                 props |= (unsigned)bit;
                 group_has_prop = 1;
-            } else if (str_in(low, k_easings, 5)) {
+            } else if (str_in(low, k_easings, 5) ||
+                       strncmp(low, "steps(", 6) == 0 ||
+                       strncmp(low, "cubic-bezier(", 13) == 0) {
                 snprintf(gtf, sizeof(gtf), "%s", low);
             } else if (looks_like_duration(low)) {
-                if (gdur[0] != '\0') {
-                    /* CSS 里第二个时长是 delay —— 本库不实现，别静默忽略 */
-                    set_error("transition: 暂不支持 delay（'%s'）", tok);
+                /* CSS：第一个时长是 duration，第二个是 delay */
+                if (gdur[0] == '\0')
+                    snprintf(gdur, sizeof(gdur), "%s", low);
+                else if (gdelay[0] == '\0')
+                    snprintf(gdelay, sizeof(gdelay), "%s", low);
+                else {
+                    set_error("transition: 一组里最多两个时长（duration、delay），"
+                              "多出来的 '%s' 看不懂", tok);
                     return 0;
                 }
-                snprintf(gdur, sizeof(gdur), "%s", low);
             } else {
                 set_error("transition: 无法识别的部分 '%s'", tok);
                 return 0;
@@ -3519,6 +3966,15 @@ static int expand_transition(Decls *ds)
                 set_error("transition: 各段的时长必须相同（'%s' 与 '%s'）—— "
                           "本库只有一组过渡参数；要不同时长请拆成两层元素",
                           dur, gdur);
+                return 0;
+            }
+        }
+        if (gdelay[0] != '\0') {
+            if (delay[0] == '\0')
+                snprintf(delay, sizeof(delay), "%s", gdelay);
+            else if (strcmp(delay, gdelay) != 0) {
+                set_error("transition: 各段的延迟必须相同（'%s' 与 '%s'）—— "
+                          "本库只有一组过渡参数", delay, gdelay);
                 return 0;
             }
         }
@@ -3557,9 +4013,133 @@ static int expand_transition(Decls *ds)
     }
     if (dur[0] != '\0' && !decls_set(ds, "transition-duration", dur))
         return 0;
+    if (delay[0] != '\0' && !decls_set(ds, "transition-delay", delay))
+        return 0;
     if (tf[0] != '\0' && !decls_set(ds, "transition-timing-function", tf))
         return 0;
     (void)decls_remove(ds, "transition");
+    return 1;
+}
+
+/*
+ * 逻辑属性 → 物理属性（`padding-inline` / `margin-block` / `inset-inline` …）。
+ *
+ * 本库的布局只有物理四边，所以这一步是**纯改写成 left/right/top/bottom**：
+ *   inline  → 左右（LTR）/ 右左（元素自己写了 `direction: rtl`）
+ *   block   → 上下
+ * `-start` / `-end` 分别落到两端的第一个/第二个。
+ *
+ * 限制写清楚在这里：如果 `direction: rtl` 是从**祖先继承**来的，这条规则看到的
+ * 还是默认 LTR，映射不会交换 —— 需要真正双向的排版请直接写物理属性。
+ */
+static int expand_logical(Decls *ds)
+{
+    const char *lv = NULL;
+    static const char *const dirs[2] = { "inline", "block" };
+    static const char *const ends[2] = { "start", "end" };
+    int rtl = 0;
+    {
+        const char *d = decls_get(ds, "direction");
+        if (d != NULL) {
+            char low[16];
+            trim_lower(d, low, sizeof(low));
+            rtl = (strcmp(low, "rtl") == 0);
+        }
+    }
+
+    for (int di = 0; di < 2; di++) {
+        /* 两端（left/right 或 top/bottom） */
+        const char *lo = (dirs[di][0] == 'i') ? (rtl ? "right" : "left") : "top";
+        const char *hi = (dirs[di][0] == 'i') ? (rtl ? "left" : "right") : "bottom";
+
+        for (int ei = 0; ei < 2; ei++) {
+            char key[48];
+            snprintf(key, sizeof(key), "%s-%s-%s", "margin", dirs[di], ends[ei]);
+            const char *ev = decls_get(ds, key);
+            if (ev == NULL)
+                continue;
+            char phys[48];
+            snprintf(phys, sizeof(phys), "margin-%s", (ei == 0) ? lo : hi);
+            if (!decls_set(ds, phys, ev))
+                return 0;
+            (void)decls_remove(ds, key);
+        }
+        for (int ei = 0; ei < 2; ei++) {
+            char key[48];
+            snprintf(key, sizeof(key), "%s-%s-%s", "padding", dirs[di], ends[ei]);
+            const char *ev = decls_get(ds, key);
+            if (ev == NULL)
+                continue;
+            char phys[48];
+            snprintf(phys, sizeof(phys), "padding-%s", (ei == 0) ? lo : hi);
+            if (!decls_set(ds, phys, ev))
+                return 0;
+            (void)decls_remove(ds, key);
+        }
+        for (int ei = 0; ei < 2; ei++) {
+            char key[48];
+            snprintf(key, sizeof(key), "%s-%s-%s", "inset", dirs[di], ends[ei]);
+            const char *ev = decls_get(ds, key);
+            if (ev == NULL)
+                continue;
+            char phys[48];
+            snprintf(phys, sizeof(phys), "%s", (ei == 0) ? lo : hi);
+            if (!decls_set(ds, phys, ev))
+                return 0;
+            (void)decls_remove(ds, key);
+        }
+
+        /* 双值简写：`padding-inline: 4px 8px`（一个值时两端相同） */
+        char skey[48];
+        snprintf(skey, sizeof(skey), "margin-%s", dirs[di]);
+        if ((lv = decls_get(ds, skey)) != NULL) {
+            char seg[4][64];
+            const int n = split_top_spaces(lv, skey, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2) {
+                set_error("%s 需要 1~2 个值（收到 '%s'）", skey, lv);
+                return 0;
+            }
+            char p0[48], p1[48];
+            snprintf(p0, sizeof(p0), "margin-%s", lo);
+            snprintf(p1, sizeof(p1), "margin-%s", hi);
+            if (!decls_set(ds, p0, seg[0]) || !decls_set(ds, p1, seg[n == 1 ? 0 : 1]))
+                return 0;
+            (void)decls_remove(ds, skey);
+        }
+        snprintf(skey, sizeof(skey), "padding-%s", dirs[di]);
+        if ((lv = decls_get(ds, skey)) != NULL) {
+            char seg[4][64];
+            const int n = split_top_spaces(lv, skey, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2) {
+                set_error("%s 需要 1~2 个值（收到 '%s'）", skey, lv);
+                return 0;
+            }
+            char p0[48], p1[48];
+            snprintf(p0, sizeof(p0), "padding-%s", lo);
+            snprintf(p1, sizeof(p1), "padding-%s", hi);
+            if (!decls_set(ds, p0, seg[0]) || !decls_set(ds, p1, seg[n == 1 ? 0 : 1]))
+                return 0;
+            (void)decls_remove(ds, skey);
+        }
+        snprintf(skey, sizeof(skey), "inset-%s", dirs[di]);
+        if ((lv = decls_get(ds, skey)) != NULL) {
+            char seg[4][64];
+            const int n = split_top_spaces(lv, skey, seg, 4);
+            if (n < 0)
+                return 0;
+            if (n != 1 && n != 2) {
+                set_error("%s 需要 1~2 个值（收到 '%s'）", skey, lv);
+                return 0;
+            }
+            if (!decls_set(ds, lo, seg[0]) || !decls_set(ds, hi, seg[n == 1 ? 0 : 1]))
+                return 0;
+            (void)decls_remove(ds, skey);
+        }
+    }
     return 1;
 }
 
@@ -3567,15 +4147,13 @@ static int expand_shorthands(Decls *ds)
 {
     const char *v = NULL;
 
+    if (!expand_logical(ds))
+        return 0;
+
     if (!expand_transition(ds))
         return 0;
 
     if ((v = decls_get(ds, "animation")) != NULL) {
-        if (strstr(v, "steps(") != NULL || strstr(v, "cubic-bezier") != NULL) {
-            set_error("animation: 暂不支持 steps()/cubic-bezier()，"
-                      "请用 linear / ease / ease-in / ease-out / ease-in-out");
-            return 0;
-        }
         char buf[192];
         size_t n = strlen(v);
         if (n >= sizeof(buf))
@@ -3590,8 +4168,18 @@ static int expand_shorthands(Decls *ds)
             if (*p == '\0')
                 break;
             const char *start = p;
-            while (*p != '\0' && !is_space(*p))
+            /*
+             * `steps(3, end)` / `cubic-bezier(.1, .2, .3, .4)` 里**有空格**，
+             * 按空白切 token 会被切碎 —— 括号内不切。
+             */
+            int depth = 0;
+            while (*p != '\0' && (depth > 0 || !is_space(*p))) {
+                if (*p == '(')
+                    depth++;
+                else if (*p == ')' && depth > 0)
+                    depth--;
                 p++;
+            }
             char tok[128];
             size_t len = (size_t)(p - start);
             if (len >= sizeof(tok))
@@ -3615,7 +4203,9 @@ static int expand_shorthands(Decls *ds)
             } else if (strcmp(low, "infinite") == 0 || is_all_digits(low)) {
                 if (!decls_set(ds, "animation-iteration-count", low))
                     return 0;
-            } else if (str_in(low, k_easings, 5)) {
+            } else if (str_in(low, k_easings, 5) ||
+                       strncmp(low, "steps(", 6) == 0 ||
+                       strncmp(low, "cubic-bezier(", 13) == 0) {
                 if (!decls_set(ds, "animation-timing-function", low))
                     return 0;
             } else if (strcmp(low, "normal") == 0 || strcmp(low, "reverse") == 0 ||
@@ -3746,15 +4336,22 @@ static int expand_shorthands(Decls *ds)
     }
 
     if ((v = decls_get(ds, "gap")) != NULL) {
-        int gr = 0, gc = 0;
-        if (!parse_gap(v, "gap", &gr, &gc))
+        /*
+         * 只做拆分，**原样**把 token 抄给 row-gap / column-gap。
+         * 以前这里把值格式化成 "%dpx" 再写回去，`gap: 1rem` / `1em` 的单位
+         * 就在这一行被吃掉了（于是后面只认 px，直接报错）。
+         */
+        char seg[2][64];
+        const int n = split_top_spaces(v, "gap", seg, 2);
+        if (n < 0)
             return 0;
-        char nb[32];
-        snprintf(nb, sizeof(nb), "%dpx", gr);
-        if (!decls_set(ds, "row-gap", nb))
+        if (n != 1 && n != 2) {
+            set_error("gap 需要 1~2 个值，收到 '%s'", v);
             return 0;
-        snprintf(nb, sizeof(nb), "%dpx", gc);
-        if (!decls_set(ds, "column-gap", nb))
+        }
+        if (!decls_set(ds, "row-gap", seg[0]))
+            return 0;
+        if (!decls_set(ds, "column-gap", seg[n == 1 ? 0 : 1]))
             return 0;
         (void)decls_remove(ds, "gap");
     }
@@ -4045,7 +4642,14 @@ static const char *const k_supported_props[] = {
     /* 离屏图层（M9.3） */
     "filter", "mix-blend-mode", "mask", "mask-image",
     "transition", "transition-duration", "transition-timing-function",
-    "transition-property",
+    "transition-property", "transition-delay",
+    /* 逻辑属性：解析期就改写成物理属性（见 expand_logical） */
+    "padding-inline", "padding-block", "padding-inline-start", "padding-inline-end",
+    "padding-block-start", "padding-block-end",
+    "margin-inline", "margin-block", "margin-inline-start", "margin-inline-end",
+    "margin-block-start", "margin-block-end",
+    "inset-inline", "inset-block", "inset-inline-start", "inset-inline-end",
+    "inset-block-start", "inset-block-end",
     "animation", "animation-name", "animation-duration",
     "animation-timing-function", "animation-iteration-count",
     "animation-direction", "animation-fill-mode", "animation-delay",
@@ -8947,14 +9551,19 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
             }
 
             int ease = QL_UI_KF_EASE_INHERIT;
+            int kf_steps = 0, kf_bez_on = 0;
+            int16_t kf_bez[4] = { 0, 0, 0, 0 };
             const char *tf = decls_get(d, "animation-timing-function");
             if (tf != NULL) {
-                char low[32];
-                trim_lower(tf, low, sizeof(low));
                 int ev = 0;
-                if (!easing_value(low, &ev)) {
-                    set_error("%s: 暂不支持的 animation-timing-function '%s'", where,
-                              tf);
+                if (!timing_parse(tf, where, &ev, &kf_steps, kf_bez, &kf_bez_on)) {
+                    ql_mem_free(idx);
+                    return 0;
+                }
+                if (kf_steps != 0) {
+                    set_error("%s: steps() 只能写在动画级（animation-timing-function "
+                              "在 @keyframes 里直接用 %d 秒几段表达不了），"
+                              "请写在外面", where, kf_steps);
                     ql_mem_free(idx);
                     return 0;
                 }
@@ -8981,6 +9590,9 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
             memset(k, 0, sizeof(*k));
             k->offset = (uint16_t)raw->offset;
             k->ease = (uint8_t)ease;
+            for (int bi = 0; bi < 4; bi++)
+                k->bez[bi] = kf_bez[bi];
+            k->bez_on = (uint8_t)kf_bez_on;
             k->props = (uint8_t)props;
             k->bg_color = bg;
             k->bg_color2 = bg2;
@@ -9139,14 +9751,13 @@ static int anim_index_of(const Decls *st, const char *where, const KfRanges *ran
     }
 
     const char *tf = decls_get(st, "animation-timing-function");
-    char tf_low[32] = "ease";
-    if (tf != NULL)
-        trim_lower(tf, tf_low, sizeof(tf_low));
     int ease = 0;
-    if (!easing_value(tf_low, &ease)) {
-        set_error("%s: 暂不支持的 animation-timing-function '%s'", where, tf_low);
+    int anim_steps = 0;
+    int anim_bez_on = 0;
+    int16_t anim_bez[4] = { 0, 0, 0, 0 };
+    if (!timing_parse((tf != NULL) ? tf : "ease", where, &ease, &anim_steps, anim_bez,
+                      &anim_bez_on))
         return 0;
-    }
 
     const char *ic = decls_get(st, "animation-iteration-count");
     char ic_low[32] = "1";
@@ -9237,6 +9848,10 @@ static int anim_index_of(const Decls *st, const char *where, const KfRanges *ran
     a->frame_count = (uint16_t)rng->count;
     a->dur_ms = (uint16_t)dur;
     a->ease = (uint8_t)ease;
+    a->steps = (uint8_t)anim_steps;
+    a->bez_on = (uint8_t)anim_bez_on;
+    for (int bi = 0; bi < 4; bi++)
+        a->bez[bi] = anim_bez[bi];
     a->iterations = (uint8_t)iters;
     a->direction = (uint8_t)direction;
     a->fill = (uint8_t)fill;
@@ -10699,8 +11314,13 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                     px = mult * (double)font_px;      /* 无单位 = 字体大小的倍数 */
                 } else if (strcmp(end, "px") == 0) {
                     px = mult;
+                } else if (strcmp(end, "em") == 0) {
+                    px = mult * (double)font_px;      /* em 就是"自己的字号倍数" */
+                } else if (strcmp(end, "%") == 0) {
+                    px = mult / 100.0 * (double)font_px;
                 } else {
-                    set_error("%s: 不支持的 line-height '%s'（normal / <N>px / 无单位倍数）",
+                    set_error("%s: 不支持的 line-height '%s'"
+                              "（normal / <N>px / <N>em / <N>% / 无单位倍数）",
                               where, lh);
                     return 0;
                 }
@@ -10775,6 +11395,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                     return 0;
                 if (!length_wants_const(unit, where, "border-width"))
                     return 0;
+                if (!len_to_px(&num, unit, font_px, where, "border-width"))
+                    return 0;
                 if (num < 0 || num > 64) {
                     set_error("%s: border-width 必须在 0~64px（收到 '%s'）", where,
                               seg[i]);
@@ -10794,6 +11416,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 if (!parse_length(v, where, 0, calc, &unit, &num))
                     return 0;
                 if (!length_wants_const(unit, where, "border-width"))
+                    return 0;
+                if (!len_to_px(&num, unit, font_px, where, "border-width"))
                     return 0;
                 if (num < 0 || num > 64) {
                     set_error("%s: border-%s-width 必须在 0~64px（收到 '%s'）", where,
@@ -10974,6 +11598,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 return 0;
             if (!length_wants_const(unit, where, "outline-width"))
                 return 0;
+            if (!len_to_px(&num, unit, font_px, where, "outline-width"))
+                return 0;
             if (num < 0 || num > 64) {
                 set_error("%s: outline-width 必须在 0~64px（收到 '%s'）", where, v);
                 return 0;
@@ -11111,18 +11737,36 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     }
 
     int gap_r = 0, gap_c = 0;
+    uint8_t gap_units = 0;
     {
-        int kind = 0;
-        double num = 0;
-        if ((v = decls_get(st, "row-gap")) != NULL) {
-            if (!parse_number(v, where, 1, 1, &kind, &num))
+        const char *k[2] = { "row-gap", "column-gap" };
+        for (int i = 0; i < 2; i++) {
+            if ((v = decls_get(st, k[i])) == NULL)
+                continue;
+            uint8_t unit = 0;
+            int num = 0;
+            if (!parse_length(v, where, 0, calc, &unit, &num))
                 return 0;
-            gap_r = (int)num;
-        }
-        if ((v = decls_get(st, "column-gap")) != NULL) {
-            if (!parse_number(v, where, 1, 1, &kind, &num))
+            uint8_t bits = 0;
+            if (unit == QL_UI_UNIT_EM) {
+                bits = 1;                 /* value 已是百分之一 em */
+            } else if (unit == QL_UI_UNIT_REM) {
+                bits = 2;
+            } else if (unit != QL_UI_UNIT_PX) {
+                set_error("%s: %s 只支持 px / em / rem（收到 '%s'）", where, k[i], v);
                 return 0;
-            gap_c = (int)num;
+            }
+            if (bits != 0 && num < 0) {
+                set_error("%s: %s 不能为负", where, k[i]);
+                return 0;
+            }
+            if (i == 0) {
+                gap_r = num;
+                gap_units = (uint8_t)(gap_units | bits);
+            } else {
+                gap_c = num;
+                gap_units = (uint8_t)(gap_units | (uint8_t)(bits << 4));
+            }
         }
     }
 
@@ -11258,9 +11902,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
      * 静默吃掉（违反"不支持就报错"的红线）。
      */
     int trans_ms = 0, trans_props = 0, trans_ease = QL_EASE_LINEAR;
+    int trans_delay = 0, trans_steps = 0, trans_bez_on = 0;
+    int16_t trans_bez[4] = { 0, 0, 0, 0 };
     if ((v = decls_get(st, "transition-duration")) != NULL ||
         decls_get(st, "transition-property") != NULL ||
-        decls_get(st, "transition-timing-function") != NULL) {
+        decls_get(st, "transition-timing-function") != NULL ||
+        decls_get(st, "transition-delay") != NULL) {
         if (v != NULL && !parse_duration(v, where, "transition-duration", &trans_ms))
             return 0;
         /*
@@ -11299,13 +11946,14 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             }
         }
         const char *ttf = decls_get(st, "transition-timing-function");
-        char tlow[32] = "ease";
-        if (ttf != NULL)
-            trim_lower(ttf, tlow, sizeof(tlow));
-        if (!easing_value(tlow, &trans_ease)) {
-            set_error("%s: 暂不支持的 transition-timing-function '%s'", where, tlow);
+        const char *tdef = (ttf != NULL) ? ttf : "ease";
+        if (!timing_parse(tdef, where, &trans_ease, &trans_steps, trans_bez,
+                          &trans_bez_on))
             return 0;
-        }
+
+        const char *td = decls_get(st, "transition-delay");
+        if (td != NULL && !parse_duration(td, where, "transition-delay", &trans_delay))
+            return 0;
     }
 
     /* 毛玻璃 */
@@ -11990,6 +12638,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->flex_wrap = (uint8_t)wrap;
     out->gap_row = (int16_t)gap_r;
     out->gap_col = (int16_t)gap_c;
+    out->gap_units = gap_units;
     out->flex_grow = (uint16_t)grow;
     out->flex_shrink = (uint16_t)shrink;
     out->flex_basis = (int16_t)basis_px;
@@ -12001,6 +12650,11 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         out->inset[i] = inset[i];
     out->trans_ms = (uint16_t)trans_ms;
     out->trans_ease = (uint8_t)trans_ease;
+    out->trans_delay_ms = (uint16_t)trans_delay;
+    out->trans_steps = (uint8_t)trans_steps;
+    out->trans_bez_on = (uint8_t)trans_bez_on;
+    for (int i = 0; i < 4; i++)
+        out->trans_bez[i] = trans_bez[i];
     out->trans_props = (uint8_t)trans_props;
     out->clip_kind = (uint8_t)clip_kind;
     out->clip_r = (uint16_t)clip_r;

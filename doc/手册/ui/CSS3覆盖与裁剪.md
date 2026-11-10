@@ -243,7 +243,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | @ 规则 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `@keyframes` | ✅ | B | 编译期摊平成 `QLUIKeyframe[]` / `QLUIAnimation[]` 静态表 |
-| `@font-face` | ⏳ | G | **B8**：PC/Mobile 档解析成"字体表条目"，喂给 FreeType/HarfBuzz；MCU 档裁掉（只留内建位图字体） |
+| `@font-face` | ✅ | G | B8：解析成"字体表条目"，喂给 FreeType/HarfBuzz；MCU 档裁掉（只留内建位图字体） |
 | `@media (min-width / max-width)` | ✅ | — | **构建期切成视口宽区间**，每个区间编译一套样式；运行期只按宽度选下标（见 §18.2） |
 | `@media` 的其它条件（`orientation` / `prefers-*` / 分辨率 / `em` 单位） | ❌ | P | 需要运行期条件求值；`em` 单位要设备字号，明确报错。`print` 整块跳过 |
 | `@supports` | ❌ | P | 构建期就知道支持什么，没有"探测"的必要 |
@@ -268,7 +268,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `s` / `ms` | ✅ | T | `transition-duration` / `animation-duration` |
 | `deg` | ✅ | L | 渐变方向（`90deg`）与 `rotate()`/`skew()`/`hue-rotate()` |
 | `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上；`deg` 已经够表达，加三种写法只是多三条解析分支 |
-| `fr` | ⏳ | L | Grid 专用，随 B6 一起做（§11）；flex 里写了报错 |
+| `fr` | ✅ | L | Grid 专用（B6，§11）；flex 里写了报错 |
 | `ch` / `ex` / `lh` / `rlh` / `cap` | ❌ | N | 都要"字体度量 × 系数"，收益极低 |
 | `calc()` | ✅ | L | `+ - * /` 与括号；标量乘除在构建期折进每个操作数（见 §18.3） |
 | `min()` / `max()` / `clamp()` | ✅ | L | 参数是长度表达式，可嵌套 `calc()` |
@@ -385,7 +385,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `font-size` | ✅ | L | `px` / `%`（相对父级）/ `smaller` / `larger` |
 | `font-weight` | ✅ | G | PC/Mobile：按 `@font-face` 声明的字面挑**真字重**（挑不到才合成加粗）；MCU：合成 |
 | `font-style` | ✅ | G | 同上：PC/Mobile 用真斜体字面，MCU 合成倾斜 |
-| `font`（简写） | ⏳ | L | 目前要分开写 |
+| `font`（简写） | ✅ | L | B9 落地（`font: bold 12px/1.5 serif`） |
 | `font-variant-ligatures` / `font-feature-settings` | ⚠️ | G | 只认 `liga` / `clig` / `kern` 三个开关（其余特性**构建期报错**） |
 | `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums` | ✅ | G | B9：HarfBuzz 的 `smcp` / `tnum` 特性；**没有整形能力（`QL_FEAT_CSS_TEXT_SHAPE=0`）时构建期报错**，不静默降级。样式里只占 1 字节（`variant_flags`） |
 | `font-stretch` / `font-size-adjust` / `font-optical-sizing` | ❌ | X | 变量字体轴，B8 不做 |
@@ -408,7 +408,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `text-transform` | ✅ | B | `uppercase` / `lowercase` / `capitalize`；**建表期**改文本（与空白折叠同一处）。输入框/多行输入跳过（值是运行期的） |
 | `text-overflow: ellipsis` | ✅ | L | 一行比盒子宽时末尾换 `…`（字体没有 U+2026 时退回三个点）；**没有裁切盒也成立** —— 它只是"少画几个字"，不像浏览器必须配 `overflow: hidden` |
 | `word-break: break-all` / `overflow-wrap: break-word` | ✅ | L | 与原来的"只在空格/CJK 处断"共用一份折行；`keep-all` 目前等同 `normal` |
-| `word-wrap` | ⏳ | L | 就是 `overflow-wrap` 的旧名字，加个别名即可 |
+| `word-wrap` | ✅ | L | `overflow-wrap` 的旧名字，同一套解析 |
 | `hyphens` | ❌ | X | 要连字词典（各语言各一份） |
 | `text-shadow` | ✅ | R | 复用 `box-shadow` 的 SDF 路径（字形级） |
 | `text-justify` / `text-align-last` | ❌ | X | 只做 `text-align: justify`（最后一行的行为固定为"不拉伸"，与浏览器默认一致） |
@@ -513,8 +513,8 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | `transition`（简写） | ⚠️ | T | 可过渡：`background-color` `opacity` `color` `border-color` `border-radius` `transform` `clip-path`。逗号分组支持，但**各段必须共用同一组时长/缓动**（库里只有一份 `trans_ms`/`trans_ease`），不同时长报错 |
 | `transition-property` | ✅ | T | `all` 或上面那批，可列多个（位图） |
 | `transition-duration` | ✅ | T | |
-| `transition-timing-function` | ⚠️ | T | 只有具名缓动：`linear` / `ease` / `ease-in` / `ease-out` / `ease-in-out`；`cubic-bezier()` 报错（要一条三阶贝塞尔求值 + 反解，收益低） |
-| `transition-delay` | ⏳ | T | |
+| `transition-timing-function` | ✅ | T | 具名缓动 + `steps(n)` + `cubic-bezier(a,b,c,d)`（§18.16） |
+| `transition-delay` | ✅ | T | 支持长写与简写（`transition: opacity .3s ease .2s`），见 §18.16 |
 | `transition-behavior` / `-property: display` | ❌ | P | 离散属性过渡，与本库"帧间只改绘制值"冲突 |
 | `animation`（简写）+ 8 个子属性 | ✅ | T | `name/duration/timing-function/iteration-count/direction/fill-mode/delay/play-state` **全齐** |
 | `animation-composition` | ❌ | N | 多个动画叠加的合成规则，用得极少 |
@@ -1680,6 +1680,42 @@ opacity(k)    : 不动颜色，乘进 d2d->alpha
 
 前两个只在"column flex + 文本"这种组合下出现，第三个只要"inline 子节点有 padding"就能看到 ——
 例程 `36_clip_filter` 同时踩中了三个。
+
+#### 18.16 解析层收尾：真实页面写法（blob v36）
+
+这一批不是新特性，而是**解析器太窄**——真实 CSS 里的常见写法被一律打回。全部修完，
+`test_css_syntax`（100 项）逐条钉住，每条都验到具体数值（样式字段 / 布局尺寸 / 颜色），
+不只验"能解析"。
+
+| 写法 | 以前 | 现在 |
+|---|---|---|
+| `.5` / `.5em` / `.5px`（前导小数） | 报"不是数字"（词法只认 `\d+`） | 与 `0.5` 完全等价；`1.` 仍非法 |
+| `hsl(120 50% 50%)` / `rgb(255 0 0 / .5)` / `rgb(100% 0% 0%)` | 只认逗号 | 逗号/空白两种都认，`/` 分隔 alpha，分量可写百分比 |
+| `hwb()` / `lab()` / `lch()` / `oklab()` / `oklch()` / `color(display-p3 …)` | 报"不支持的颜色写法" | 按标准矩阵换算到 sRGB 再夹取（与浏览器降采样观感一致） |
+| `box-shadow: inset 0 0 2px red` / `0 1px 2px black`（命名色） | 报"无法识别" | 颜色按 token 整段命中色表；`inset` 不再被当成颜色 |
+| `linear-gradient(red, blue)`（省略方向） | 报"需要 3 个参数" | 默认 `to bottom`（CSS 默认） |
+| `linear-gradient(180deg, red 0%, blue 100%)` | 报"不支持的颜色写法 'red 0%'" | 两端位置与不写等价，接受；**中间位置/多色标**明确报错（会改变画面，不做静默近似） |
+| `gap: 1rem` / `1em` | 只吃 px（`padding: 1rem` 却行） | 新增 `QLUIStyle.gap_units`，em/rem 在解析末尾折成 px；`%` / `vw` 仍明确报错 |
+| `line-height: 1.5em` / `150%` | 报"不支持" | 按自己的字号折成 px |
+| `border-width: 1em` | 报"必须 0~64px" | em 折成 px（rem 给明确提示） |
+| `transition-delay` / `transition: … .2s` | 报"暂不支持 delay" | 支持；过渡期样式停在起点值 |
+| `steps(n)` / `cubic-bezier(a,b,c,d)`（过渡与动画） | 报"暂不支持" | 都支持：过渡在客户端套缓动，动画在 `anim_apply` 里按"帧 > 动画"优先级选 |
+| `padding-inline` / `margin-block` / `inset-inline-start` … | 报"不支持的属性" | 解析期改写成物理四边（`direction: rtl` 时 inline 左右互换） |
+
+**两个结构性限制（诚实记录）**：
+
+1. `margin` / `padding` 的 **百分比**与 `vw/vh` 仍不支持 —— 它们要在**布局期**相对包含块
+   求值，而 `QLUIEdges` 只存 int16 px。要做需要把四边换成 `QLUILength` 并在布局里
+   统一解析（`resolve_inset()` 已有现成算法），是一次独立的布局重构。
+2. 逻辑属性只在**元素自己写了** `direction: rtl` 时交换左右；从祖先继承来的 RTL
+   看不到（解析期拿不到继承值），这类界面请直接写物理属性。
+
+**结构体与 blob**：`QLUIStyle` 400 → **416**（`gap_units` + `trans_delay_ms` +
+`trans_steps` + `trans_bez_on` + `trans_bez[4]`），`QLUIKeyframe` 36 → **44**（帧级
+`bez[4]`/`bez_on`），`QLUIAnimation` 12 → **22**（`steps`/`bez[4]`/`bez_on`），
+blob **v36**；`qltext cc` 的 C 生成器与全部 golden 基准同步重建。
+
+---
 
 ---
 

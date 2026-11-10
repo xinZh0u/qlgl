@@ -961,20 +961,24 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                                    : ease_name(k->ease);
             fprintf(f,
                     "    { %4d, %-21s, 0x%02X, 0x%06X, 0x%06X, 0x%06X, 0x%06X,"
-                    " %4d, %4d, %5d, %5d, %5d, %5d, %3d, 0 },\n",
+                    " %4d, %4d, %5d, %5d, %5d, %5d, %3d, 0,"
+                    " { %5d, %5d, %5d, %5d }, %d, 0 },\n",
                     (int)k->offset, ease, (unsigned)k->props,
                     (unsigned)(k->bg_color & 0xFFFFFFu),
                     (unsigned)(k->bg_color2 & 0xFFFFFFu),
                     (unsigned)(k->text_color & 0xFFFFFFu),
                     (unsigned)(k->border_color & 0xFFFFFFu),
                     (int)k->tf_x, (int)k->tf_y, (int)k->sc_x, (int)k->sc_y,
-                    (int)k->radius, (int)k->clip_r, (int)k->bg_alpha);
+                    (int)k->radius, (int)k->clip_r, (int)k->bg_alpha,
+                    (int)k->bez[0], (int)k->bez[1], (int)k->bez[2], (int)k->bez[3],
+                    (int)k->bez_on);
         }
         fputs("};\n\n", f);
     } else {
         fprintf(f,
                 "static const QLUIKeyframe %s_keyframes[1] = {"
-                " { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0 } };\n\n",
+                " { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0,"
+                " { 0, 0, 0, 0 }, 0, 0 } };\n\n",
                 ident);
     }
 
@@ -988,7 +992,8 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         for (uint16_t i = 0; i < doc->anim_count; i++) {
             const QLUIAnimation *a = &doc->anims[i];
             fprintf(f,
-                    "    { %5u, %5u, %6u, %-11s, %10u, %-26s, %-22s, %5u },\n",
+                    "    { %5u, %5u, %6u, %-11s, %10u, %-26s, %-22s,"
+                    " %5u, %3u, %d, { %5d, %5d, %5d, %5d }, 0 },\n",
                     (unsigned)a->first_frame, (unsigned)a->frame_count,
                     (unsigned)a->dur_ms, ease_name(a->ease),
                     (unsigned)a->iterations,
@@ -996,13 +1001,14 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                               a->direction, "QLUIAnimDirection"),
                     enum_name(ANIM_FILL_NAMES, COUNT_OF(ANIM_FILL_NAMES), a->fill,
                               "QLUIAnimFill"),
-                    (unsigned)a->delay_ms);
+                    (unsigned)a->delay_ms, (unsigned)a->steps, (int)a->bez_on,
+                    (int)a->bez[0], (int)a->bez[1], (int)a->bez[2], (int)a->bez[3]);
         }
         fputs("};\n\n", f);
     } else {
         fprintf(f,
                 "static const QLUIAnimation %s_anims[1] = {"
-                " { 0, 0, 0, 0, 0, 0, 0, 0 } };\n\n",
+                " { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0, 0 }, 0 } };\n\n",
                 ident);
     }
 

@@ -3754,6 +3754,15 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <hr />
 <h2 id="8">8. 立即可开工（按性价比）</h2>
 <blockquote>
+<p><strong>2026-11-11 更新（解析层收尾批次）</strong>：真实页面里天天出现的写法全部补齐 ——
+前导小数 <code>.5</code>、<code>hsl()/rgb()</code> 的空白语法与 <code>/</code> alpha、<code>hwb()/lab()/lch()/oklab()/
+oklch()/color()</code>、阴影命名色、<code>linear-gradient</code> 省略方向与两端色标位置、
+<code>gap: 1rem</code>、<code>line-height: 1.5em/150%</code>、<code>border-width: 1em</code>、<code>transition-delay</code>、
+<code>steps()</code>/<code>cubic-bezier()</code>（过渡 + 动画）、逻辑属性（<code>padding-inline</code> 等）。
+blob <strong>v36</strong>；回归测试 <code>test_css_syntax</code>（100 项）。详见
+<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> §18.16。
+<strong>仍然缺的</strong>：<code>margin</code>/<code>padding</code> 的 <code>%</code>/<code>vw</code>/<code>vh</code>（要布局期相对包含块求值，
+属于独立的重构），以及继承来的 <code>direction: rtl</code> 下逻辑属性的左右互换。</p>
 <p><strong>2026-11-11 更新</strong>：第 0 层（<code>clip-path</code> 四种形状 / 纯颜色 <code>filter</code> 单批次 /
 字体变体）+ 第 1 层小件 + 第 2 层的 <code>style_copy</code> 按需、<code>install/export</code> + <code>pkg-config</code>、
 <code>qltext --platform</code> 已全部完成（见 M9.5 与 M7 表）。<strong>下一步</strong>：模板实例化、

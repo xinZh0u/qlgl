@@ -180,9 +180,9 @@ static const QLUIStyle ui_app_styles[] = {
 static const char ui_app_text[] = "logo.bmp\000hi\000";
 static const uint16_t ui_app_text_ofs[] = { 0, 9 };
 
-static const QLUIKeyframe ui_app_keyframes[1] = { { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0 } };
+static const QLUIKeyframe ui_app_keyframes[1] = { { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0, { 0, 0, 0, 0 }, 0, 0 } };
 
-static const QLUIAnimation ui_app_anims[1] = { { 0, 0, 0, 0, 0, 0, 0, 0 } };
+static const QLUIAnimation ui_app_anims[1] = { { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0, 0 }, 0 } };
 
 /* <img src> 的资源：构建期已解码并转成目标像素格式（RAW） */
 static const uint8_t ui_app_img_data[32] = {
