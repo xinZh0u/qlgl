@@ -616,6 +616,21 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
               "#b{position:absolute;left:30px;top:30px;width:100px;height:40px;"
               "color:#101010;font-size:15px;transform:rotate(12deg)}",
               "transform: rotate + 文字" },
+            /*
+             * clip-path: polygon()：解析遮罩（边上有抗锯齿）。
+             * 放进这张表是因为它曾经走"64×64 蒙版图拉伸"，CPU/GPU 各有各的糊法。
+             */
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:20px;top:20px;width:120px;height:80px;"
+              "background-color:#7A3FBF;clip-path:polygon(50% 0, 100% 100%, 0 100%)}",
+              "clip-path: polygon" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:20px;top:20px;width:120px;height:80px;"
+              "background-color:#1E7A4A;"
+              "clip-path:polygon(0 0, 100% 0, 82% 100%, 18% 100%)}",
+              "clip-path: polygon（梯形）" },
         };
 
         for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {

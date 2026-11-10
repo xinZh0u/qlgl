@@ -206,12 +206,8 @@ static inline uint16_t style_res_idx(const QLUIStyle *st, int which)
 }
 static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
-/* clip-path（v34）：形状长度换算 + 椭圆/多边形蒙版缓存 */
-struct QLUIClipMask {
-    const QLUINodeRT *node;   /* 缓存键：哪个节点（形状由它的样式决定） */
-    QLImage           img;    /* A8，QL_UI_CLIP_MASK_RES 见方 */
-    uint8_t          *px;     /* 归 root 所有 */
-};
+/* clip-path（v34）：形状长度换算（覆盖率由后端解析算，见 QLDraw2D::set_mask_*） */
+static int ui_has_clip_pts(const QLUIRoot *ui, const QLUIStyle *s);
 static ql_coord_t clip_len_to_px(QLUILength len, ql_coord_t span);
 static void draw_border_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
@@ -676,11 +672,6 @@ void ql_ui_free(QLUIRoot *ui)
     ql_mem_free(ui->ta_arena);
     ql_mem_free(ui->inputs);
     ql_mem_free(ui->selects);
-    if (ui->clip_masks != NULL) {
-        for (uint8_t i = 0; i < ui->clip_mask_n; i++)
-            ql_mem_free(ui->clip_masks[i].px);
-        ql_mem_free(ui->clip_masks);
-    }
     /* 模板实例化替 `{i}` 生成的文本 */
     if (ui->rep_texts != NULL) {
         for (uint16_t i = 0; i < ui->rep_count; i++)
@@ -7906,6 +7897,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
 
     const ql_coord_t saved_mx = d2d->mask_cx, saved_my = d2d->mask_cy;
     const ql_coord_t saved_mr = d2d->mask_r, saved_mry = d2d->mask_ry;
+    const uint8_t saved_pn = d2d->mask_pn;
     const QLRect clip_before_inset = node->owner->clip;
     int inset_clipped = 0;
     if (d2d->set_mask != NULL && s->clip_kind != QL_UI_CLIP_NONE) {
@@ -7930,6 +7922,28 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             else if (rx > 0 && ry > 0)
                 ql_draw2d_set_mask_ellipse(d2d, box.x + box.w / 2, box.y + box.h / 2,
                                            rx, ry);
+        } else if (s->clip_kind == QL_UI_CLIP_POLYGON) {
+            /*
+             * `polygon()`：同样是一条解析遮罩（顶点换算成绝对坐标交给后端）。
+             * 覆盖率按"到最近边的距离"算，所以边是抗锯齿的、和元素尺寸无关 ——
+             * 早先版本走"64×64 蒙版图拉伸"，几百像素宽的元素上边会糊成 3~4px。
+             */
+            if (saved_mr >= 0 || saved_pn >= 3) {
+                QL_LOGW("ui: nested clip-path is not supported (node #%u), keeping the "
+                        "outer shape", (unsigned)(node - node->owner->nodes));
+            } else if (ui_has_clip_pts(node->owner, s)) {
+                ql_coord_t px[QL_CFG_UI_CLIP_PTS_MAX];
+                ql_coord_t py[QL_CFG_UI_CLIP_PTS_MAX];
+                const QLClipPt *pt = &node->owner->doc->clip_pts[s->clip_pts];
+                int n = (int)s->clip_pt_n;
+                if (n > QL_CFG_UI_CLIP_PTS_MAX)
+                    n = QL_CFG_UI_CLIP_PTS_MAX;
+                for (int i = 0; i < n; i++) {
+                    px[i] = box.x + clip_len_to_px(pt[i].x, box.w);
+                    py[i] = box.y + clip_len_to_px(pt[i].y, box.h);
+                }
+                (void)ql_draw2d_set_mask_polygon(d2d, px, py, n);
+            }
         }
     }
     /*
@@ -8647,158 +8661,11 @@ static ql_coord_t clip_len_to_px(QLUILength len, ql_coord_t span)
     return (ql_coord_t)len.value;
 }
 
-/* ==================== clip-path 的椭圆/多边形蒙版（v34） ==================== */
-
-/*
- * 蒙版分辨率：固定 64×64，与元素尺寸无关（合成时按边框盒拉伸）。
- * 为什么不做成"按元素像素 1:1"：那要给每个元素按 DPR 分配缓冲，
- * 一个装饰形状配上 4K 屏就是 MB 级；64×64 拉伸后在视觉上看不出差别
- * （形状只有一些直线/弧线，没有高频细节）。
- */
-#define QL_UI_CLIP_MASK_RES 64
-
-/*
- * 把一条长度换算成"相对边框盒的比例"（0..1 表示 100%）。
- * 百分比：值是整数百分比（parse_length 的口径，50 = 50%）→ /100。
- * px     ：相对边长 → px / 边长。
- */
-static float cliplen01(QLUILength len, ql_coord_t span)
+/* 多边形顶点是否可用（点池 + 索引都在） */
+static int ui_has_clip_pts(const QLUIRoot *ui, const QLUIStyle *s)
 {
-    if (len.unit == QL_UI_UNIT_PERCENT)
-        return (float)len.value / 100.0f;
-    if (span <= 0)
-        return 0.0f;
-    return (float)len.value / (float)span;
-}
-
-/* (u,v) ∈ [0,1]^2 是否落在形状内（1 = 内） */
-typedef struct {
-    uint8_t kind;
-    float   rx, ry;                                 /* 椭圆半轴（0..1） */
-    int     n;
-    float   px[QL_CFG_UI_CLIP_PTS_MAX];
-    float   py[QL_CFG_UI_CLIP_PTS_MAX];
-} ClipShape01;
-
-static void clip_shape_prepare(const QLUIRoot *ui, const QLUINodeRT *node,
-                               const QLUIStyle *s, ClipShape01 *out)
-{
-    memset(out, 0, sizeof(*out));
-    out->kind = s->clip_kind;
-    const ql_coord_t bw = node->border_box.w;
-    const ql_coord_t bh = node->border_box.h;
-    if (s->clip_kind == QL_UI_CLIP_ELLIPSE) {
-        out->rx = cliplen01(s->clip_box[0], bw);
-        out->ry = cliplen01(s->clip_box[1], bh);
-        /* 缺省（没写）时按 50% 处理，与 CSS 的 `ellipse()` 初值一致 */
-        if (out->rx <= 0.0f && s->clip_box[0].unit == QL_UI_UNIT_PX)
-            out->rx = 0.5f;
-        if (out->ry <= 0.0f && s->clip_box[1].unit == QL_UI_UNIT_PX)
-            out->ry = 0.5f;
-    } else if (s->clip_kind == QL_UI_CLIP_POLYGON && ui != NULL && ui->doc != NULL &&
-               ui->doc->clip_pts != NULL && s->clip_pts != QL_UI_NO_CLIP_PTS) {
-        const QLClipPt *pt = &ui->doc->clip_pts[s->clip_pts];
-        int n = (int)s->clip_pt_n;
-        if (n > QL_CFG_UI_CLIP_PTS_MAX)
-            n = QL_CFG_UI_CLIP_PTS_MAX;
-        out->n = n;
-        for (int i = 0; i < n; i++) {
-            out->px[i] = cliplen01(pt[i].x, bw);
-            out->py[i] = cliplen01(pt[i].y, bh);
-        }
-    }
-}
-
-static int clip_shape_hit(const ClipShape01 *sh, float u, float v)
-{
-    if (sh->kind == QL_UI_CLIP_ELLIPSE) {
-        if (sh->rx <= 0.0f || sh->ry <= 0.0f)
-            return 0;
-        const float du = (u - 0.5f) / sh->rx;
-        const float dv = (v - 0.5f) / sh->ry;
-        return (du * du + dv * dv <= 1.0f) ? 1 : 0;
-    }
-    if (sh->kind == QL_UI_CLIP_POLYGON && sh->n >= 3) {
-        /* 非零环绕；本库的形状只有一层，与 evenodd 等价 */
-        int inside = 0;
-        for (int i = 0, j = sh->n - 1; i < sh->n; j = i++) {
-            if (((sh->py[i] > v) != (sh->py[j] > v)) &&
-                (u < (sh->px[j] - sh->px[i]) * (v - sh->py[i]) /
-                             (sh->py[j] - sh->py[i]) +
-                         sh->px[i]))
-                inside = !inside;
-        }
-        return inside;
-    }
-    return 0;
-}
-
-/*
- * 取（或生成）某个节点的 clip-path 蒙版。返回 NULL 表示"这个构建不支持"，
- * 调用方应当退回"不裁"（而不是裁错）。
- */
-static const QLImage *clip_mask_for(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *s)
-{
-#if !QL_FEAT_CSS_FILTER_LAYER
-    QL_UNUSED(ui);
-    QL_UNUSED(node);
-    QL_UNUSED(s);
-    return NULL;
-#else
-    if (s->clip_kind != QL_UI_CLIP_ELLIPSE && s->clip_kind != QL_UI_CLIP_POLYGON)
-        return NULL;
-    if (ui == NULL || node == NULL)
-        return NULL;
-
-    for (uint8_t i = 0; i < ui->clip_mask_n; i++)
-        if (ui->clip_masks[i].node == node)
-            return &ui->clip_masks[i].img;
-
-    if (ui->clip_mask_n >= ui->clip_mask_cap) {
-        const uint8_t cap = (uint8_t)(ui->clip_mask_cap == 0 ? 4 : ui->clip_mask_cap * 2);
-        struct QLUIClipMask *nm = (struct QLUIClipMask *)ql_mem_alloc(
-            (size_t)cap * sizeof(struct QLUIClipMask));
-        if (nm == NULL)
-            return NULL;
-        if (ui->clip_masks != NULL) {
-            for (uint8_t i = 0; i < ui->clip_mask_n; i++)
-                nm[i] = ui->clip_masks[i];
-            ql_mem_free(ui->clip_masks);
-        }
-        ui->clip_masks = nm;
-        ui->clip_mask_cap = cap;
-    }
-
-    const int R = QL_UI_CLIP_MASK_RES;
-    uint8_t *px = (uint8_t *)ql_mem_alloc((size_t)R * (size_t)R);
-    if (px == NULL)
-        return NULL;
-    ClipShape01 sh;
-    clip_shape_prepare(ui, node, s, &sh);
-    for (int y = 0; y < R; y++) {
-        for (int x = 0; x < R; x++) {
-            int hits = 0;
-            for (int sy = 0; sy < 2; sy++)
-                for (int sx = 0; sx < 2; sx++)
-                    hits += clip_shape_hit(
-                        &sh, ((float)x + 0.25f + 0.5f * (float)sx) / (float)R,
-                        ((float)y + 0.25f + 0.5f * (float)sy) / (float)R);
-            px[y * R + x] = (uint8_t)(hits * 255 / 4);
-        }
-    }
-
-    struct QLUIClipMask *m = &ui->clip_masks[ui->clip_mask_n++];
-    memset(m, 0, sizeof(*m));
-    m->node = node;
-    m->px = px;
-    m->img.px = px;
-    m->img.len = (uint32_t)(R * R);
-    m->img.w = (uint16_t)R;
-    m->img.h = (uint16_t)R;
-    m->img.stride = (uint16_t)R;
-    m->img.format = QL_IMAGE_A8;
-    return &m->img;
-#endif
+    return ui != NULL && ui->doc != NULL && ui->doc->clip_pts != NULL &&
+           s->clip_pts != QL_UI_NO_CLIP_PTS && s->clip_pt_n >= 3;
 }
 
 /* 这一层必须走离屏合成吗？（filter / 混合模式 / 遮罩 / 真 group opacity） */
@@ -8973,12 +8840,9 @@ static int style_needs_layer(const QLUIStyle *s, const QLUINodeRT *node)
     if (s->mask_image != QL_UI_NO_MASK)
         return 1;
     /*
-     * `clip-path: polygon()`：形状没有解析 SDF（逐边求距离塞不进单批次着色器），
-     * 所以走"生成 A8 蒙版 → 图层合成时乘 alpha"。circle/ellipse 不需要图层
-     * （它们是解析遮罩，见 render_node_inner），inset 更不需要（直接裁矩形）。
+     * `clip-path` 的三种形状都**不进图层**：circle/ellipse/polygon 是解析遮罩
+     * （见 render_node_inner），inset 直接裁矩形。
      */
-    if (s->clip_kind == QL_UI_CLIP_POLYGON)
-        return 1;
     /*
      * 旋转/斜切/矩阵：必须先把子树按原样合成，再整体重采样
      * （"transform 作用于元素的渲染结果"是 CSS 的语义，也是唯一能对得上
@@ -9057,12 +8921,6 @@ static void layer_fx_of(const QLUIStyle *s, QLUINodeRT *node, uint8_t inherited,
             fx->mask = image_by_name(ui, ui->doc->text_pool +
                                              ui->doc->text_offsets[s->mask_image]);
     }
-    /*
-     * `clip-path: polygon()`：蒙版与 `mask` 互斥（两条都写时按 CSS 语义叠加，
-     * 但本库只保留 clip-path —— 写法上同时用它们没有实际用例）。
-     */
-    if (s->clip_kind == QL_UI_CLIP_POLYGON && fx->mask == NULL)
-        fx->mask = clip_mask_for(node->owner, node, s);
 }
 
 /* 图层的绘制范围（CSS px）：自身盒子 ∪ 子树可能画到的范围，再按滤镜半径外扩 */

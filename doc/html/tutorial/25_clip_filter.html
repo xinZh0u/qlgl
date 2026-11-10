@@ -281,18 +281,17 @@ main img.shot { max-width: 100%; }
 <p><code>circle()</code> 与 <code>ellipse()</code> 都裁<strong>整棵子树</strong>（等价 CSS 语义）：例程里那根橙色横条
 故意画出父盒之外，一样被裁掉。</p>
 <hr />
-<h2 id="3-polygona8">3. <code>polygon()</code>：A8 蒙版 + 离屏图层（最贵，但仍然很小）</h2>
-<p>任意多边形没法塞进一个顶点级 SDF（要逐边求距离），所以走另一条路：</p>
+<h2 id="3-polygon">3. <code>polygon()</code>：解析覆盖率（零图层、零额外内存）</h2>
 <ol>
 <li>构建期把顶点存进 <strong>doc 的顶点池</strong>（同样形状只存一份，一排同款徽标共用一个），
    样式里只留 <code>clip_pts</code> 下标 + <code>clip_pt_n</code>；</li>
-<li>运行期第一次画到时生成一张 <strong>64×64 的 A8 蒙版</strong>（2×2 超采样做抗锯齿），
-   按节点缓存在 <code>QLUIRoot</code> 里，形状不变就一直复用；</li>
-<li>这一层<strong>强制走离屏图层</strong>，合成时用 <code>fx-&gt;mask</code> 把蒙版 alpha 乘上去 ——
-   这正是早就测过的 <code>mask: url()</code> 那条路径，所以 CPU 与 GPU 天然一致。</li>
+<li>绘制时把顶点换算成绝对坐标交给后端（<code>ql_draw2d_set_mask_polygon</code>），
+   覆盖率 = <strong>奇偶内点判定 + 到最近边的距离</strong>，再走 ±0.5px 的 smoothstep 抗锯齿；</li>
+<li>CPU 逐像素算（<code>qlcanvas.c</code> 的 <code>poly_cov</code>），GPU 在片元着色器里用 uniform
+   顶点表算（<code>u_pn</code> / <code>u_p[N]</code>），两边逐字对应。</li>
 </ol>
-<p>代价与"整块 RGBA 图层"相比很小：蒙版固定 64×64（<strong>与元素尺寸无关</strong>），
-拉伸到边框盒后看不出差别（形状里没有高频细节）。</p>
+<p>所以边的清晰度<strong>与元素尺寸无关</strong>，也没有 64×64 蒙版图 + 离屏图层那种开销：
+一张 800px 宽的三角形和 80px 宽的三角形，边上都只有 1px 左右的过渡带。</p>
 <p>约束（构建期报错，不做静默降级）：</p>
 <table>
 <thead>

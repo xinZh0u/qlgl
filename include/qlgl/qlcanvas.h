@@ -38,6 +38,16 @@ typedef struct {
     ql_coord_t mask_ry;
 
     /*
+     * 多边形遮罩（`clip-path: polygon()`，设备像素，绝对坐标）。
+     * `mask_pn >= 3` 时生效，此时椭圆遮罩必然关闭（两者互斥，只有一层）。
+     * 覆盖率按"到最近边的距离"算，所以边是解析抗锯齿的、与元素尺寸无关。
+     */
+    uint8_t    mask_pn;
+    float      mask_px[QL_CFG_UI_CLIP_PTS_MAX];
+    float      mask_py[QL_CFG_UI_CLIP_PTS_MAX];
+    float      mask_pmin_x, mask_pmin_y, mask_pmax_x, mask_pmax_y;   /* 包围盒 */
+
+    /*
      * 颜色矩阵（`filter: brightness()/contrast()/...` 的**单批次**实现）。
      * 3x4 行主序、16.16 定点：前 3 行是 rgb→rgb 的线性部分，第 4 列是偏移。
      * `cm_on == 0` 时完全不参与运算（快路径不受影响）。
@@ -89,6 +99,16 @@ void       ql_canvas_write_pixel(QLCanvas *canvas, ql_coord_t x, ql_coord_t y,
  */
 void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
                         ql_coord_t ry);
+
+/*
+ * 多边形遮罩（`clip-path: polygon()`）。`xs/ys` 是**设备像素绝对坐标**，n >= 3。
+ * 传 n = 0 关闭。与椭圆遮罩互斥（设置一个就关掉另一个）。
+ *
+ * 与"把形状画进一张 64×64 的蒙版图再拉伸"相比，解析覆盖率的边是干净的：
+ * 后者在几百像素宽的元素上会糊成 3~4px 的斜坡，而且每个元素还要多一遍离屏合成。
+ */
+void ql_canvas_set_mask_polygon(QLCanvas *canvas, const float *xs, const float *ys,
+                                int n);
 
 /*
  * 颜色矩阵：3x4 行主序、16.16 定点（`[r0 g0 b0 o0  r1 g1 b1 o1  r2 g2 b2 o2]`）。

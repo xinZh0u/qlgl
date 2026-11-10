@@ -2286,7 +2286,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>clip-path: polygon()</code></td>
 <td>✅</td>
 <td>F</td>
-<td>B9：顶点进 doc 池（同形状去重）→ 运行期生成 64×64 A8 蒙版 → 强制离屏图层走 <code>fx-&gt;mask</code>（复用 <code>mask: url()</code> 那条已测路径）</td>
+<td>B9：顶点进 doc 池（同形状去重）→ 绘制期解析覆盖率（奇偶内点 + 到最近边距离），CPU/GPU 同公式、零图层</td>
 </tr>
 <tr>
 <td><code>clip-path: path()</code> / <code>url()</code></td>
@@ -3894,15 +3894,16 @@ x86-64 上"碰巧"没事，但那是未定义行为。</p>
 </tr>
 <tr>
 <td><code>polygon(...)</code></td>
-<td>顶点进 doc 池 → 运行期生成 <strong>64×64 A8 蒙版</strong> → 强制离屏图层，合成时 <code>fx-&gt;mask</code> 乘 alpha</td>
-<td>4 KB/形状（<code>QL_CFG_UI_CLIP_PTS_MAX</code> 顶点上限）+ 一张 64×64 图</td>
-<td>1（图层）</td>
+<td>顶点进 doc 池 → 绘制时换算成绝对坐标 → <strong>解析覆盖率</strong>（奇偶内点 + 到最近边距离 + ±0.5px AA）；CPU 逐像素 <code>poly_cov</code>，GPU 用 uniform <code>u_pn</code>/<code>u_p[N]</code></td>
+<td>0</td>
+<td>0</td>
 </tr>
 </tbody>
 </table>
-<p>为什么要抬到图层：任意多边形塞不进"一个顶点级 SDF"（要逐边求距离），而
-"生成一张蒙版再整体乘 alpha"这条路<strong>早就为 <code>mask: url()</code> 测过</strong>，两个后端天然一致。
-蒙版固定 64×64、按边框盒拉伸，所以<strong>与元素尺寸无关</strong>，形状不改就一直复用。</p>
+<p>覆盖率是<strong>解析</strong>算的，不是"画进一张小蒙版再拉伸"：早先版本用 64×64 A8 蒙版图，
+按边框盒拉到大元素上会糊成 3~4px 的斜坡（而且每个元素多一遍离屏合成）。
+现在边的过渡带恒为 ~1px，CPU 与 GPU 同一条公式（<code>test_gl_vs_cpu</code> 的 polygon
+用例最大单通道差 1）。</p>
 <p>顶点池写在 doc 里（<code>clip_pts</code> / <code>clip_pt_count</code>，blob 新增一段），同值去重：
 一排同款徽标共用一个顶点表。</p>
 <p>明确报错的写法（不做静默降级）：<code>circle(… at x y)</code>（圆心恒居中）、<code>inset(… round R)</code>
@@ -5121,7 +5122,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td>~~<strong><code>clip-path</code> 的任意形状</strong>~~ ✅ <strong>B9 已完成</strong>（<code>inset</code>/<code>ellipse</code>/<code>polygon</code>；<code>path()</code> 仍 ❌）</td>
 <td>PC/Mobile</td>
-<td><code>inset</code> 求交、<code>ellipse</code> 扩 SDF、<code>polygon</code> 走 A8 蒙版 + 图层（见 §18.15.1）</td>
+<td><code>inset</code> 求交、<code>ellipse</code> 扩 SDF、<code>polygon</code> 走解析覆盖率（见 §18.15.1）</td>
 <td>已落地</td>
 </tr>
 <tr>

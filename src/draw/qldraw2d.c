@@ -686,6 +686,8 @@ static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
 
 static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
                          ql_coord_t ry);
+static void cpu_set_mask_polygon(QLDraw2D *self, const ql_coord_t *xs,
+                                 const ql_coord_t *ys, int n);
 static void cpu_set_cm(QLDraw2D *self, const int32_t m[12], int on);
 
 static void cpu_set_clip(QLDraw2D *self, QLRect clip)
@@ -710,6 +712,24 @@ static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_
     QLRect pt = ql_scale_rect(ql_rect_make(cx, cy, 0, 0), self->scale_fx);
     ql_canvas_set_mask(ctx->canvas, pt.x, pt.y, ql_scale_len(rx, self->scale_fx),
                        ql_scale_len(ry, self->scale_fx));
+}
+
+/* 多边形遮罩：CSS px → 设备像素（点坐标与矩形一样按边缩放） */
+static void cpu_set_mask_polygon(QLDraw2D *self, const ql_coord_t *xs,
+                                 const ql_coord_t *ys, int n)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (xs == NULL || ys == NULL || n < 3) {
+        ql_canvas_set_mask_polygon(ctx->canvas, NULL, NULL, 0);
+        return;
+    }
+    float px[QL_CFG_UI_CLIP_PTS_MAX], py[QL_CFG_UI_CLIP_PTS_MAX];
+    const ql_coord_t fx = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
+    for (int i = 0; i < n; i++) {
+        px[i] = (float)ql_scale_len(xs[i], fx);
+        py[i] = (float)ql_scale_len(ys[i], fx);
+    }
+    ql_canvas_set_mask_polygon(ctx->canvas, px, py, n);
 }
 
 /* 颜色矩阵：直接交给画布（逐像素生效，见 ql_canvas_set_color_matrix） */
@@ -1183,6 +1203,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
 
     out->set_clip = cpu_set_clip;
     out->set_mask = cpu_set_mask;
+    out->set_mask_polygon = cpu_set_mask_polygon;
     out->set_cm = cpu_set_cm;
     out->backdrop_blur = cpu_backdrop_blur;
     out->backdrop_blur_round = cpu_backdrop_blur_round;
@@ -1208,6 +1229,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->offset_y_fx = 0;
     out->mask_r = -1;
     out->mask_ry = -1;
+    out->mask_pn = 0;
     out->cm_on = 0;
     out->alpha = 255;          /* 默认不透明 */
     out->elem_x_fx = QL_SCALE_ONE;

@@ -182,6 +182,9 @@ struct QLGfxGL {
     /* 圆遮罩状态（设备像素） */
     float            mask_cx, mask_cy, mask_rx, mask_ry;
     int              mask_on;
+    /* 多边形遮罩状态（设备像素绝对坐标；poly_n < 3 表示关闭） */
+    int              poly_n;
+    float            poly_xy[QL_CFG_UI_CLIP_PTS_MAX * 2];
     /* 颜色矩阵（`filter` 的纯颜色函数）：16.16 定点，与 QLQC 同一份数据 */
     int32_t          cm[12];
     int              cm_on;
@@ -251,6 +254,8 @@ struct QLGfxGL {
     GLint            u_image;
     GLint            u_cm;      /* vec4[3]：颜色矩阵（3x4 行主序，0..1 归一） */
     GLint            u_cm_on;
+    GLint            u_pn;      /* int：多边形遮罩顶点数（< 3 = 关闭） */
+    GLint            u_p;       /* vec2[N]：多边形顶点（设备像素） */
 };
 
 
@@ -300,6 +305,10 @@ static const char *VS_SRC =
  *   mode 2 时 border 存的是 blur 半径，距离衰减与 CPU 的 shadow_coverage 同一公式，
  *          保证两条后端视觉一致（golden 测试容忍 40/通道）。
  */
+/* 把配置宏变成字符串字面量（着色器数组长度跟着 QL_CFG_UI_CLIP_PTS_MAX 走） */
+#define QL_STR2(x) #x
+#define QL_STR(x)  QL_STR2(x)
+
 static const char *FS_SRC =
     "#version 300 es\n"
     /*
@@ -328,6 +337,14 @@ static const char *FS_SRC =
      */
     "uniform vec4 u_cm[3];\n"
     "uniform int u_cm_on;\n"
+    /*
+     * 多边形遮罩（`clip-path: polygon()`）。顶点是**设备像素绝对坐标**，
+     * u_pn < 3 表示关闭。与 u_cm 一样是 uniform —— 改它之前必须先 flush。
+     *
+     * 覆盖率 = 内点判定 + 到最近边的距离，与 CPU 侧 poly_cov() 逐字对应。
+     */
+    "uniform int u_pn;\n"
+    "uniform vec2 u_p[" QL_STR(QL_CFG_UI_CLIP_PTS_MAX) "];\n"
     "out vec4 frag;\n"
     "float sdRoundBox(vec2 p, vec2 b, float r){\n"
     "  vec2 q = abs(p) - b + r;\n"
@@ -364,6 +381,28 @@ static const char *FS_SRC =
     "      float md = (length((fp - v_mask.xy) / rr) - 1.0) * min(rr.x, rr.y);\n"
     "      m = 1.0 - smoothstep(-0.5, 0.5, md);\n"
     "    }\n"
+    "  }\n"
+    /*
+     * 多边形遮罩：与 CPU 的 poly_cov() 同一套算术（奇偶内点 + 到最近边距离）。
+     * 用 gl_FragCoord 而不是插值量 —— 遮罩本来就是屏幕空间的。
+     */
+    "  if (u_pn >= 3) {\n"
+    "    vec2 fp = vec2(gl_FragCoord.x, u_viewport.y - gl_FragCoord.y);\n"
+    "    bool inside = false;\n"
+    "    float best = 1e9;\n"
+    "    for (int i = 0, j = u_pn - 1; i < u_pn; j = i++) {\n"
+    "      vec2 a = u_p[j];\n"
+    "      vec2 b = u_p[i];\n"
+    "      vec2 e = b - a;\n"
+    "      float t = dot(fp - a, e) / (dot(e, e) + 1e-6);\n"
+    "      t = clamp(t, 0.0, 1.0);\n"
+    "      best = min(best, length(fp - (a + e * t)));\n"
+    "      if (((a.y > fp.y) != (b.y > fp.y)) &&\n"
+    "          (fp.x < (b.x - a.x) * (fp.y - a.y) / ((b.y - a.y) + 1e-9) + a.x))\n"
+    "        inside = !inside;\n"
+    "    }\n"
+    "    float sd = inside ? -best : best;\n"
+    "    m *= 1.0 - smoothstep(-0.5, 0.5, sd);\n"
     "  }\n"
     /* 形状判定必须按 mode **从大到小**排，别再写成区间夹逼（容易漏档） */
     /*
@@ -498,6 +537,8 @@ static int build_program(QLGfxGL *g)
     g->u_image = glGetUniformLocation(g->program, "u_image");
     g->u_cm = glGetUniformLocation(g->program, "u_cm");
     g->u_cm_on = glGetUniformLocation(g->program, "u_cm_on");
+    g->u_pn = glGetUniformLocation(g->program, "u_pn");
+    g->u_p = glGetUniformLocation(g->program, "u_p[0]");
     return 1;
 }
 
@@ -1655,6 +1696,41 @@ static void gl_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t
     g->mask_rx = (float)gsl(g, rx);
     g->mask_ry = (float)gsl(g, ry);
     g->mask_on = 1;
+}
+
+/*
+ * 多边形遮罩。顶点是 uniform（不像圆遮罩那样能塞进顶点属性），所以换遮罩
+ * 之前必须先 flush，否则前面攒的那批顶点会用上新遮罩。
+ */
+static void gl_set_mask_polygon(QLDraw2D *self, const ql_coord_t *xs,
+                                const ql_coord_t *ys, int n)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    if (g == NULL)
+        return;
+    if (xs == NULL || ys == NULL || n < 3) {
+        if (g->poly_n == 0)
+            return;
+        flush_batch(g);
+        g->poly_n = 0;
+        return;
+    }
+    if (n > QL_CFG_UI_CLIP_PTS_MAX)
+        n = QL_CFG_UI_CLIP_PTS_MAX;
+    /* 同一份形状（一帧内每个子树都会重新设一次）就不要白 flush */
+    int same = (g->poly_n == n);
+    for (int i = 0; same && i < n; i++)
+        if (g->poly_xy[i * 2] != (float)gsl(g, xs[i]) ||
+            g->poly_xy[i * 2 + 1] != (float)gsl(g, ys[i]))
+            same = 0;
+    if (same)
+        return;
+    flush_batch(g);
+    g->poly_n = n;
+    for (int i = 0; i < n; i++) {
+        g->poly_xy[i * 2] = (float)gsl(g, xs[i]);
+        g->poly_xy[i * 2 + 1] = (float)gsl(g, ys[i]);
+    }
 }
 
 /*
@@ -3063,6 +3139,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 
     g->draw.set_clip = gl_set_clip;
     g->draw.set_mask = gl_set_mask;
+    g->draw.set_mask_polygon = gl_set_mask_polygon;
     g->draw.set_cm = gl_set_cm;
     g->draw.backdrop_blur = gl_backdrop_blur;
     g->draw.backdrop_blur_round = gl_backdrop_blur_round;
@@ -3299,9 +3376,11 @@ static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
     g->mask_on = 0;
     g->mask_rx = -1.0f;
     g->mask_ry = -1.0f;
+    g->poly_n = 0;
     g->cm_on = 0;
     g->draw.mask_r = -1;
     g->draw.mask_ry = -1;
+    g->draw.mask_pn = 0;
     g->draw.elem_x_fx = QL_SCALE_ONE;
     g->draw.elem_y_fx = QL_SCALE_ONE;
 }
@@ -3403,6 +3482,11 @@ static void flush_batch(QLGfxGL *g)
             }
             glUniform4fv(g->u_cm, 3, cmf);
             glUniform1i(g->u_cm_on, g->cm_on);
+        }
+        if (g->u_pn >= 0) {
+            glUniform1i(g->u_pn, g->poly_n);
+            if (g->poly_n >= 3)
+                glUniform2fv(g->u_p, g->poly_n, g->poly_xy);
         }
 
         glBindBuffer(GL_ARRAY_BUFFER, g->vbo);

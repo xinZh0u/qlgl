@@ -240,6 +240,26 @@ QL_TEST_BEGIN("b9")
             QL_CHECK_EQ(px(60, 92) & 0xFFFFFFu, 0x0000FFu);   /* 底部尖端附近：在 */
             QL_CHECK_EQ(px(24, 92) & 0xFFFFFFu, BG);          /* 左下角：外 */
             QL_CHECK_EQ(px(96, 92) & 0xFFFFFFu, BG);          /* 右下角：外 */
+            /*
+             * 抗锯齿带宽度：斜边上"既不是背景也不是纯色"的像素。
+             * 解析覆盖率只有 ±0.5px 的过渡带（每行 1~3 个），早先的
+             * "64×64 蒙版图按边框盒拉伸"版本这里是 10+ 个（糊成一片）。
+             */
+            {
+                int worst = 0;
+                for (int y = 22; y < 98; y++) {
+                    int cnt = 0;
+                    for (int x = 20; x < 100; x++) {
+                        const uint32_t v = (uint32_t)px(x, y) & 0xFFFFFFu;
+                        if (v != BG && v != 0x0000FFu)
+                            cnt++;
+                    }
+                    if (cnt > worst)
+                        worst = cnt;
+                }
+                QL_CHECK(worst > 0);        /* 确实有边缘 */
+                QL_CHECK(worst <= 3);       /* 而且边缘很窄（≤ 3px） */
+            }
         }
         release(ui);
     }

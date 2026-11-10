@@ -180,6 +180,13 @@ struct QLDraw2D {
     void (*set_mask)(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
                      ql_coord_t ry);
     /*
+     * 多边形遮罩（`clip-path: polygon()`，CSS px 绝对坐标）。n < 3 关闭。
+     * 与 set_mask 互斥（同一时刻只有一层遮罩）。
+     * NULL = 该后端不支持 —— 上层退回"不裁"（而不是裁错）。
+     */
+    void (*set_mask_polygon)(QLDraw2D *self, const ql_coord_t *xs,
+                             const ql_coord_t *ys, int n);
+    /*
      * 颜色矩阵（`filter` 的纯颜色函数，B9 起可**不进离屏图层**）。
      * m 是 3x4 行主序、16.16 定点；on = 0 关闭。NULL = 后端不支持（上层退回图层）。
      *
@@ -328,6 +335,10 @@ struct QLDraw2D {
     ql_coord_t mask_cy;
     ql_coord_t mask_r;      /* < 0 = 关闭（水平半径 / 圆的半径） */
     ql_coord_t mask_ry;     /* 垂直半径（圆时等于 mask_r） */
+    /* 多边形遮罩（CSS px 绝对坐标）；mask_pn >= 3 表示生效 */
+    uint8_t    mask_pn;
+    ql_coord_t mask_px[QL_CFG_UI_CLIP_PTS_MAX];
+    ql_coord_t mask_py[QL_CFG_UI_CLIP_PTS_MAX];
     /* 当前生效的颜色矩阵（16.16 定点，3x4 行主序）；cm_on = 0 表示没有 */
     int32_t    cm[12];
     uint8_t    cm_on;
@@ -501,6 +512,7 @@ static inline void ql_draw2d_set_mask_ellipse(QLDraw2D *d2d, ql_coord_t cx,
 {
     if (d2d == NULL)
         return;
+    d2d->mask_pn = 0;         /* 互斥：设置椭圆就关掉多边形 */
     if (rx < 0 || ry < 0) {
         d2d->mask_cx = cx;
         d2d->mask_cy = cy;
@@ -516,6 +528,33 @@ static inline void ql_draw2d_set_mask_ellipse(QLDraw2D *d2d, ql_coord_t cx,
     d2d->mask_ry = ry;
     if (d2d->set_mask != NULL)
         d2d->set_mask(d2d, cx, cy, rx, ry);
+}
+
+/*
+ * 多边形遮罩（`clip-path: polygon()`）。xs/ys 是 CSS px 绝对坐标，n >= 3；
+ * 传 n < 3 关闭。返回 0 表示后端不支持（调用方应按"不裁"处理）。
+ */
+static inline int ql_draw2d_set_mask_polygon(QLDraw2D *d2d, const ql_coord_t *xs,
+                                             const ql_coord_t *ys, int n)
+{
+    if (d2d == NULL || d2d->set_mask_polygon == NULL)
+        return 0;
+    if (xs == NULL || ys == NULL || n < 3) {
+        d2d->mask_pn = 0;
+        d2d->set_mask_polygon(d2d, NULL, NULL, 0);
+        return 1;
+    }
+    if (n > QL_CFG_UI_CLIP_PTS_MAX)
+        n = QL_CFG_UI_CLIP_PTS_MAX;
+    d2d->mask_r = -1;         /* 互斥：设置多边形就关掉椭圆 */
+    d2d->mask_ry = -1;
+    d2d->mask_pn = (uint8_t)n;
+    for (int i = 0; i < n; i++) {
+        d2d->mask_px[i] = xs[i];
+        d2d->mask_py[i] = ys[i];
+    }
+    d2d->set_mask_polygon(d2d, xs, ys, n);
+    return 1;
 }
 
 static inline void ql_draw2d_set_mask(QLDraw2D *d2d, ql_coord_t cx, ql_coord_t cy,

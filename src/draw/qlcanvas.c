@@ -138,6 +138,7 @@ ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect
     canvas->clip = ql_rect_intersect(clip, ql_rect_make(0, 0, driver->width, driver->height));
     canvas->mask_r = -1;      /* 默认关闭（memset 是 0，那会被当成"半径 0 = 全裁"） */
     canvas->mask_ry = -1;
+    canvas->mask_pn = 0;
     canvas->cm_on = 0;
     return QL_OK;
 }
@@ -191,10 +192,46 @@ void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord
         canvas->mask_ry = -1;
         return;
     }
+    canvas->mask_pn = 0;      /* 互斥：两种遮罩只有一层 */
     canvas->mask_cx = cx;
     canvas->mask_cy = cy;
     canvas->mask_r = rx;
     canvas->mask_ry = ry;
+}
+
+void ql_canvas_set_mask_polygon(QLCanvas *canvas, const float *xs, const float *ys,
+                                int n)
+{
+    if (canvas == NULL)
+        return;
+    if (xs == NULL || ys == NULL || n < 3) {
+        canvas->mask_pn = 0;
+        return;
+    }
+    if (n > QL_CFG_UI_CLIP_PTS_MAX)
+        n = QL_CFG_UI_CLIP_PTS_MAX;
+    canvas->mask_r = -1;      /* 互斥：多边形优先于椭圆 */
+    canvas->mask_ry = -1;
+    canvas->mask_pn = (uint8_t)n;
+    float minx = xs[0], maxx = xs[0], miny = ys[0], maxy = ys[0];
+    for (int i = 0; i < n; i++) {
+        canvas->mask_px[i] = xs[i];
+        canvas->mask_py[i] = ys[i];
+        if (xs[i] < minx) minx = xs[i];
+        if (xs[i] > maxx) maxx = xs[i];
+        if (ys[i] < miny) miny = ys[i];
+        if (ys[i] > maxy) maxy = ys[i];
+    }
+    canvas->mask_pmin_x = minx;
+    canvas->mask_pmin_y = miny;
+    canvas->mask_pmax_x = maxx;
+    canvas->mask_pmax_y = maxy;
+}
+
+/* 有没有任何遮罩在生效（椭圆或多边形） */
+static inline int mask_on(const QLCanvas *c)
+{
+    return c->mask_r >= 0 || c->mask_pn >= 3;
 }
 
 /* ------------------------------ 颜色矩阵 ------------------------------ */
@@ -227,7 +264,7 @@ static inline void cm_apply(const QLCanvas *c, uint8_t *r, uint8_t *g, uint8_t *
 
 int ql_canvas_mask_active(const QLCanvas *canvas)
 {
-    return canvas != NULL && canvas->mask_r >= 0;
+    return canvas != NULL && mask_on(canvas);
 }
 
 /* ------------------------------ 毛玻璃（backdrop blur） ------------------------------ */
@@ -527,9 +564,47 @@ static inline float ql_smoothstep(float e0, float e1, float x)
     return t * t * (3.0f - 2.0f * t);
 }
 
-/* 单个像素的圆覆盖率 0..255（无遮罩时恒 255） */
+/*
+ * 多边形覆盖率：先做奇偶内点判定，再算到最近边的距离。
+ * `d` 以内为正（边上 0），用 ±0.5px 的 smoothstep 做抗锯齿 —— 与 GL 片元着色器
+ * 里那段逐字对应，保证 CPU / GPU 的边一致。
+ */
+static inline float poly_cov(const QLCanvas *c, float px, float py)
+{
+    const int n = (int)c->mask_pn;
+    int inside = 0;
+    float best = 1e9f;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        const float ax = c->mask_px[j], ay = c->mask_py[j];
+        const float bx = c->mask_px[i], by = c->mask_py[i];
+        const float ex = bx - ax, ey = by - ay;
+        float t = ((px - ax) * ex + (py - ay) * ey) / (ex * ex + ey * ey + 1e-6f);
+        if (t < 0.0f)
+            t = 0.0f;
+        else if (t > 1.0f)
+            t = 1.0f;
+        const float dx = px - (ax + ex * t), dy = py - (ay + ey * t);
+        const float d = sqrtf(dx * dx + dy * dy);
+        if (d < best)
+            best = d;
+        if (((ay > py) != (by > py)) &&
+            (px < (bx - ax) * (py - ay) / ((by - ay) + 1e-9f) + ax))
+            inside = !inside;
+    }
+    const float sd = inside ? -best : best;
+    return 1.0f - ql_smoothstep(-0.5f, 0.5f, sd);
+}
+
+/* 单个像素的遮罩覆盖率 0..255（无遮罩时恒 255） */
 static inline uint32_t mask_cov_at(const QLCanvas *c, ql_coord_t x, ql_coord_t y)
 {
+    if (c->mask_pn >= 3) {
+        const float px = (float)x + 0.5f, py = (float)y + 0.5f;
+        if (px < c->mask_pmin_x - 1.0f || px > c->mask_pmax_x + 1.0f ||
+            py < c->mask_pmin_y - 1.0f || py > c->mask_pmax_y + 1.0f)
+            return 0u;
+        return (uint32_t)(poly_cov(c, px, py) * 255.0f + 0.5f);
+    }
     if (c->mask_r < 0)
         return 255u;
     if (c->mask_r == 0)
@@ -591,7 +666,7 @@ static int mask_row_span(const QLCanvas *c, ql_coord_t y, ql_coord_t *lo,
 static inline void put_px(QLCanvas *c, ql_coord_t x, ql_coord_t y,
                           ql_color_t color, uint8_t alpha)
 {
-    if (c->mask_r >= 0 && alpha > 0) {
+    if (mask_on(c) && alpha > 0) {
         uint32_t cov = mask_cov_at(c, x, y);
         if (cov == 0)
             return;
@@ -1290,6 +1365,15 @@ static void fill_row(QLCanvas *c, ql_coord_t x0, ql_coord_t x1, ql_coord_t y,
 {
     if (x1 < x0)
         return;
+    if (c->mask_pn >= 3) {
+        /*
+         * 多边形没有"整行都满覆盖"的区间（任意一行都可能在斜边上），
+         * 一律逐像素算覆盖率。只用在一个元素的一行像素上，代价可接受。
+         */
+        for (ql_coord_t x = x0; x <= x1; x++)
+            put_px(c, x, y, color, alpha);
+        return;
+    }
     if (c->mask_r < 0 && !c->cm_on) {
         fill_row_raw(c, x0, x1, y, color, alpha);
         return;
@@ -1352,7 +1436,7 @@ static inline void blend_px_masked(const QLCanvas *c, uint8_t *row, ql_coord_t x
                                    uint32_t cg, uint32_t cb, ql_color_t color,
                                    uint32_t a)
 {
-    if (c != NULL && c->mask_r >= 0) {
+    if (c != NULL && mask_on(c)) {
         uint32_t cov = mask_cov_at(c, x, y);
         if (cov == 0)
             return;

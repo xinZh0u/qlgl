@@ -1687,19 +1687,6 @@ struct QLUIRoot {
     ql_ui_area_cb  area_cb;          /* 热区点击回调（可为 NULL） */
     void          *area_user;
     /*
-     * `clip-path: polygon()` / `ellipse()` 的 A8 蒙版缓存（懒分配）。
-     *
-     * 这两种形状在 CPU/GPU 两个后端上**没有解析 SDF**（多边形要逐边求距离，
-     * 塞进单批次着色器代价太大），所以走"生成一张 A8 蒙版 → 强制离屏图层 →
-     * 用 fx->mask 合成"这条路 —— 两个后端早已支持的、经过测试的蒙版路径。
-     *
-     * 蒙版固定 64×64（按边框盒拉伸），所以**与元素尺寸无关**，只在形状变化时重算。
-     */
-    struct QLUIClipMask *clip_masks;
-    uint8_t        clip_mask_n;
-    uint8_t        clip_mask_cap;
-
-    /*
      * 模板实例化（`ql_ui_repeat`）替 `{i}` 生成的字符串。归 root 所有，
      * 因为 `QLUINodeRT.text` 只存指针（不复制）。
      */

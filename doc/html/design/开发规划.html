@@ -3406,7 +3406,7 @@ MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整�
 <tr>
 <td><code>clip-path</code> 的 <code>inset()</code> / <code>ellipse()</code> / <code>polygon()</code></td>
 <td>✅</td>
-<td><code>inset</code> 与裁剪矩形求交（零成本）；<code>ellipse</code> 把圆的 SDF 扩成两轴；<code>polygon</code> 顶点进 doc 池 → 64×64 A8 蒙版 → 强制离屏图层走 <code>fx-&gt;mask</code></td>
+<td><code>inset</code> 与裁剪矩形求交（零成本）；<code>ellipse</code> 把圆的 SDF 扩成两轴；<code>polygon</code> 顶点进 doc 池 → 绘制期解析覆盖率（奇偶内点 + 到最近边距离，CPU/GPU 同公式）</td>
 </tr>
 <tr>
 <td>纯颜色 <code>filter</code> <strong>不进离屏图层</strong></td>

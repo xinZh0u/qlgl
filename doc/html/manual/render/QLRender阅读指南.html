@@ -1055,8 +1055,8 @@ cov = 1 - smoothstep(0, blur, d)
 </tr>
 <tr>
 <td><code>polygon()</code></td>
-<td><strong>不用 SDF</strong>：生成 64×64 A8 蒙版，强制离屏图层，合成时走 <code>fx-&gt;mask</code></td>
-<td>逐边求距离塞不进单批次着色器；而 <code>mask: url()</code> 那条蒙版合成路径早就测过</td>
+<td>顶点表走 uniform（<code>u_pn</code> / <code>u_p[N]</code>），片元里算"内点判定 + 到最近边距离"</td>
+<td>边数 ≤ 16，逐片元的代价可忽略；换来<strong>解析</strong>抗锯齿，不再糊</td>
 </tr>
 </tbody>
 </table>

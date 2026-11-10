@@ -534,7 +534,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | `filter: url(#svg)` / `backdrop-filter` 的颜色函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur） |
 | `clip-path: circle()` / `ellipse()` | ✅ | R | 子树级**椭圆**遮罩（圆心恒在元素中心）；GPU 顶点属性带 `(cx,cy,rx,ry)`，CPU 同一公式 |
 | `clip-path: inset()` | ✅ | R | **与裁剪矩形求交**，两后端精确、零额外成本（B9） |
-| `clip-path: polygon()` | ✅ | F | B9：顶点进 doc 池（同形状去重）→ 运行期生成 64×64 A8 蒙版 → 强制离屏图层走 `fx->mask`（复用 `mask: url()` 那条已测路径） |
+| `clip-path: polygon()` | ✅ | F | B9：顶点进 doc 池（同形状去重）→ 绘制期解析覆盖率（奇偶内点 + 到最近边距离），CPU/GPU 同公式、零图层 |
 | `clip-path: path()` / `url()` | ❌ | X | 要 SVG 路径解析器；明确报错 |
 | `clip-path: circle(… at x y)` / `inset(… round R)` / `polygon(… evenodd)` | ❌ | F | 明确报错并给替代做法（圆心恒居中；圆角矩形裁剪请用 `border-radius` + `overflow: hidden`） |
 | `mask` / `mask-image` | ✅ | O | `url(<name>)` / `none`；只用图片 alpha，拉伸到边框盒（= `mask-size: 100% 100%` + `mask-mode: alpha`）。见 §18.10 |
@@ -1596,11 +1596,12 @@ x86-64 上"碰巧"没事，但那是未定义行为。
 | `inset(t r b l)` | **与裁剪矩形求交**，然后照原样画 | 0 | 0 |
 | `circle(p%)` | 解析椭圆 SDF（`rx == ry`），GPU 走顶点属性 `a_mask=(cx,cy,rx,ry)`，CPU 走 `mask_cov_at` + `mask_row_span` 快路径 | 0 | 0 |
 | `ellipse(rx ry)` | 与圆同一条路，两个轴分开 | 0 | 0 |
-| `polygon(...)` | 顶点进 doc 池 → 运行期生成 **64×64 A8 蒙版** → 强制离屏图层，合成时 `fx->mask` 乘 alpha | 4 KB/形状（`QL_CFG_UI_CLIP_PTS_MAX` 顶点上限）+ 一张 64×64 图 | 1（图层） |
+| `polygon(...)` | 顶点进 doc 池 → 绘制时换算成绝对坐标 → **解析覆盖率**（奇偶内点 + 到最近边距离 + ±0.5px AA）；CPU 逐像素 `poly_cov`，GPU 用 uniform `u_pn`/`u_p[N]` | 0 | 0 |
 
-为什么要抬到图层：任意多边形塞不进"一个顶点级 SDF"（要逐边求距离），而
-"生成一张蒙版再整体乘 alpha"这条路**早就为 `mask: url()` 测过**，两个后端天然一致。
-蒙版固定 64×64、按边框盒拉伸，所以**与元素尺寸无关**，形状不改就一直复用。
+覆盖率是**解析**算的，不是"画进一张小蒙版再拉伸"：早先版本用 64×64 A8 蒙版图，
+按边框盒拉到大元素上会糊成 3~4px 的斜坡（而且每个元素多一遍离屏合成）。
+现在边的过渡带恒为 ~1px，CPU 与 GPU 同一条公式（`test_gl_vs_cpu` 的 polygon
+用例最大单通道差 1）。
 
 顶点池写在 doc 里（`clip_pts` / `clip_pt_count`，blob 新增一段），同值去重：
 一排同款徽标共用一个顶点表。
@@ -2029,7 +2030,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | ~~**离屏图层**（`filter: blur()` / 真 group `opacity` / `mix-blend-mode`）~~ | ✅ 已完成（M9.3） | 三者共用同一块能力："子树先合成到一张图，再整体处理"（见 §18.10） | 实测 Flash +15,344 B / RAM +676 B |
 | ~~**`transform: rotate()` / `skew()` / `matrix()`**~~ | ✅ 已完成（M9.4） | 复用离屏图层：合成后做一次仿射重采样（见 §18.11） | 实测 Flash +3,488 B（开着图层包时）/ +804 B（只有解析器） |
 | ~~**`filter` 的颜色矩阵族**~~ ✅ **B9 已完成** | PC/Mobile | 折成 3×4 矩阵挂到 draw2d 上，**不进离屏图层**（见 §18.15.2） | CPU + GL 各一份，已落地 |
-| ~~**`clip-path` 的任意形状**~~ ✅ **B9 已完成**（`inset`/`ellipse`/`polygon`；`path()` 仍 ❌） | PC/Mobile | `inset` 求交、`ellipse` 扩 SDF、`polygon` 走 A8 蒙版 + 图层（见 §18.15.1） | 已落地 |
+| ~~**`clip-path` 的任意形状**~~ ✅ **B9 已完成**（`inset`/`ellipse`/`polygon`；`path()` 仍 ❌） | PC/Mobile | `inset` 求交、`ellipse` 扩 SDF、`polygon` 走解析覆盖率（见 §18.15.1） | 已落地 |
 | **3D 变换**（`perspective()` / `rotate3d()`） | ❌ 不排期 | 要透视除法 + 深度排序 + 一个真正的合成器 | 极高，且与"一个节点一个盒"冲突 |
 
 **建议顺序**：B1–B9 + M9.3/M9.4 **全部完成**。§22 上面"单独立项"那栏里的

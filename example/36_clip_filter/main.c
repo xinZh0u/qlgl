@@ -8,7 +8,7 @@
  * 这个例程想说明三件事：
  *   1. 四种 `clip-path` 形状里，`inset()` 是纯矩形求交（最便宜），
  *      `circle()`/`ellipse()` 是解析遮罩（GPU 一条 SDF），
- *      `polygon()` 走 A8 蒙版 + 离屏图层（最贵，但仍然只多一块 64×64 的图）；
+ *      `polygon()` 也是解析遮罩（逐边求距离 + 奇偶内点），边一样干净；
  *   2. 纯颜色的 `filter` **不进离屏图层** —— 折成一个 3×4 矩阵，
  *      CPU 逐像素过一遍、GPU 用 uniform 过一遍；
  *   3. `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums`
