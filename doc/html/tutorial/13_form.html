@@ -456,8 +456,20 @@ spot 用的是<strong>窗口内坐标</strong>（Xlib 手册 §13.5.6.13.3：相
 接一下即可：</p>
 <p><code>c
 ql_gfx_gl_attach_ime(gfx, ui);   /* 与 attach_clipboard 一样，建好窗口调一次 */</code>
-排障：<code>QLGL_TRACE_IM=1 ./example_10_input</code> 会把"哪个按键被输入法吃掉"打出来
-—— 全是 <code>filtered=0</code> 说明按键没进输入法（焦点/连接问题），不是界面层的锅。</p>
+<strong>两个必须知道的坑</strong>（都是实测撞出来的）：</p>
+<ol>
+<li><code>XIMPreeditDrawCallback</code> 的 call_data 是 <code>XIMPreeditDrawCallbackStruct</code>
+   <code>{caret, chg_first, chg_length, text}</code>，<strong>不是</strong> <code>XIMText</code>；<code>chg_first</code> /
+   <code>chg_length</code> 是<strong>码点</strong>级的片段改动（不是整串），按整串替换会丢字。</li>
+<li><code>XIMText.length</code> <strong>不能当字节数用</strong>：Xlib 手册说 multi_byte 的 <code>length</code> 是
+   字节数，但 ibus 实际给的是<strong>字符数</strong>（<code>length=1</code>，字符串是 <code>e4 b8 89</code> = "三"）。
+   照字节数拷就只剩 <code>0xE4</code>，半个汉字进缓冲 → 字体找不到字形 → 屏幕上一个个<strong>方框</strong>。
+   字符串本身是 NUL 结尾的，量长度最稳；拿到后还要过一遍 <code>ql_utf8_valid_len()</code>
+   把不合法的尾巴砍掉（界面层 <code>ql_ui_input_set_preedit()</code> 内部也会再挡一次）。</li>
+</ol>
+<p>排障：<code>QLGL_TRACE_IM=1 ./example_10_input</code> 会把"哪个按键被输入法吃掉"打出来
+—— 全是 <code>filtered=0</code> 说明按键没进输入法（焦点/连接问题），不是界面层的锅；
+<code>[IM] preedit "..." (chg a+b, caret n)</code> 能直接看出片段合并得对不对。</p>
 </blockquote>
 <h2 id="_8">与浏览器不同的地方</h2>
 <ol>

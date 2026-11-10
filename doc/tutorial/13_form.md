@@ -220,8 +220,20 @@ ql_ui_set_input_cb(ui, on_input, NULL);
 > ```c
 > ql_gfx_gl_attach_ime(gfx, ui);   /* 与 attach_clipboard 一样，建好窗口调一次 */
 > ```
+> **两个必须知道的坑**（都是实测撞出来的）：
+>
+> 1. `XIMPreeditDrawCallback` 的 call_data 是 `XIMPreeditDrawCallbackStruct`
+>    `{caret, chg_first, chg_length, text}`，**不是** `XIMText`；`chg_first` /
+>    `chg_length` 是**码点**级的片段改动（不是整串），按整串替换会丢字。
+> 2. `XIMText.length` **不能当字节数用**：Xlib 手册说 multi_byte 的 `length` 是
+>    字节数，但 ibus 实际给的是**字符数**（`length=1`，字符串是 `e4 b8 89` = "三"）。
+>    照字节数拷就只剩 `0xE4`，半个汉字进缓冲 → 字体找不到字形 → 屏幕上一个个**方框**。
+>    字符串本身是 NUL 结尾的，量长度最稳；拿到后还要过一遍 `ql_utf8_valid_len()`
+>    把不合法的尾巴砍掉（界面层 `ql_ui_input_set_preedit()` 内部也会再挡一次）。
+>
 > 排障：`QLGL_TRACE_IM=1 ./example_10_input` 会把"哪个按键被输入法吃掉"打出来
-> —— 全是 `filtered=0` 说明按键没进输入法（焦点/连接问题），不是界面层的锅。
+> —— 全是 `filtered=0` 说明按键没进输入法（焦点/连接问题），不是界面层的锅；
+> `[IM] preedit "..." (chg a+b, caret n)` 能直接看出片段合并得对不对。
 
 ## 与浏览器不同的地方
 

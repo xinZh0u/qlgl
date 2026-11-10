@@ -238,6 +238,34 @@ int32_t ql_utf8_decode(const char *text, uint32_t *codepoint)
     return need + 1;
 }
 
+size_t ql_utf8_valid_len(const char *text, size_t len)
+{
+    if (text == NULL)
+        return 0;
+    size_t i = 0;
+    while (i < len) {
+        const unsigned char c = (unsigned char)text[i];
+        size_t clen;
+        if (c < 0x80u)
+            clen = 1;
+        else if ((c & 0xE0u) == 0xC0u)
+            clen = 2;
+        else if ((c & 0xF0u) == 0xE0u)
+            clen = 3;
+        else if ((c & 0xF8u) == 0xF0u)
+            clen = 4;
+        else
+            return i;                  /* 孤儿续字节 / 非法首字节 */
+        if (i + clen > len)
+            return i;                  /* 尾巴被截断 */
+        for (size_t k = 1; k < clen; k++)
+            if (((unsigned char)text[i + k] & 0xC0u) != 0x80u)
+                return i;
+        i += clen;
+    }
+    return i;
+}
+
 int32_t ql_utf8_encode(uint32_t codepoint, char *buf)
 {
     if (buf == NULL)

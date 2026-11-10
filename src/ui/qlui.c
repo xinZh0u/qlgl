@@ -10214,15 +10214,19 @@ static uint16_t cp_index_to_bytes(const char *s, uint16_t len, int cp)
     return (i <= len) ? i : len;
 }
 
-/* 把一段 UTF-8 追加/拷贝进预编辑缓冲；保证不劈开多字节字符、不越界 */
+/*
+ * 把一段 UTF-8 追加/拷贝进预编辑缓冲；保证不劈开多字节字符、不越界，
+ * 并且**丢掉所有不合法的字节**。
+ *
+ * 最后这条不是洁癖：输入法（实测 ibus）给的 `XIMText.length` 是"字符数"
+ * 而不是 Xlib 手册说的"字节数"，按字节切一刀就只剩下汉字的第一字节 ——
+ * 那半个 UTF-8 会原样进缓冲，字体找不到字形，屏幕上就是一个方框。
+ */
 static uint16_t preedit_copy_in(char *dst, size_t cap, const char *src)
 {
-    size_t n = (src != NULL) ? strlen(src) : 0;
+    size_t n = (src != NULL) ? ql_utf8_valid_len(src, strlen(src)) : 0;
     if (n > cap - 1u)
-        n = cap - 1u;
-    /* 别把最后一个 UTF-8 序列劈成半个（截断落在续字节上就往前退） */
-    while (n > 0 && ((unsigned char)src[n] & 0xC0u) == 0x80u)
-        n--;
+        n = ql_utf8_valid_len(src, cap - 1u);   /* 截断处也别劈开字符 */
     if (n > 0)
         memcpy(dst, src, n);
     dst[n] = '\0';

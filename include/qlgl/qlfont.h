@@ -165,6 +165,13 @@ void ql_font_reset_defaults(void);
 /* UTF-8 解码：成功返回字节数（1..4），非法字节返回 1 且 *codepoint = 0xFFFD */
 int32_t ql_utf8_decode(const char *text, uint32_t *codepoint);
 
+/*
+ * `text[0..len)` 里**最长的合法 UTF-8 前缀**长度。
+ * 截断（`len` 落在字符中间）或出现非法字节时，返回最后一个完整字符的边界。
+ * 输入法给的文本、剪贴板来的半截字节，都该先过一道这个再用。
+ */
+size_t ql_utf8_valid_len(const char *text, size_t len);
+
 /* UTF-8 编码：返回写入字节数（最多 4），buf 至少 4 字节 */
 int32_t ql_utf8_encode(uint32_t codepoint, char *buf);
 

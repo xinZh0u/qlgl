@@ -2702,7 +2702,9 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <p>组字文本（preedit）用 <code>XIMPreeditCallbacks</code> 由我们绘制：<code>ql_ui_input_set_preedit()</code>
 把它<strong>拼进正文排版</strong>（推开后面的文字，字号/基线不变；单行加下划线，密码框显示圆点），
 <code>ql_ui_input_preedit_apply()</code> 处理 XIM 发来的 <code>chg_first</code>/<code>chg_length</code> 增量改动
-（码点级，按整串替换会丢字、劈开半个 UTF-8 → 方框）。候选窗定位用
+（码点级，按整串替换会丢字、劈开半个 UTF-8 → 方框）。传进来的文本会先过
+<code>ql_utf8_valid_len()</code>：<strong>不合法的尾巴一律丢掉</strong>，坏字节永远不会进缓冲 ——
+ibus 的 <code>XIMText.length</code> 是字符数而不是手册说的字节数，按字节切就是半个汉字。候选窗定位用
 <code>ql_ui_ime_spot()</code> + <code>ql_gfx_gl_set_ime_spot()</code>（窗口内坐标，不是根窗口）。</p>
 <p>拿不到 XIM 时不是错误，会静默降级成"只能打 Latin-1"（ASCII）。
 输入法一次提交超过 63 字节会被丢弃（不截半个汉字）—— 正常的词不会这么长。</p>

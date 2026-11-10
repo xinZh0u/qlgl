@@ -87,6 +87,18 @@ QL_TEST_BEGIN("test_font")
     QL_CHECK_EQ(cp, 0xFFFD);
     QL_CHECK_EQ(ql_utf8_decode(NULL, &cp), 0);
 
+    /* 7b. 合法前缀长度：截断/非法字节都停在上一个完整字符边界 */
+    QL_CHECK_EQ(ql_utf8_valid_len("ABC", 3), 3);
+    QL_CHECK_EQ(ql_utf8_valid_len("\xE4\xBD\xA0", 3), 3);   /* 你 */
+    QL_CHECK_EQ(ql_utf8_valid_len("\xE4\xBD\xA0", 2), 0);   /* 尾巴被截断 */
+    QL_CHECK_EQ(ql_utf8_valid_len("\xE4\xBD\xA0Z", 2), 0);
+    QL_CHECK_EQ(ql_utf8_valid_len("A\xB0", 2), 1);           /* 孤儿续字节 */
+    QL_CHECK_EQ(ql_utf8_valid_len("A\xE4\xBD", 3), 1);      /* 后面跟半截 */
+    QL_CHECK_EQ(ql_utf8_valid_len("A\xFF", 2), 1);
+    QL_CHECK_EQ(ql_utf8_valid_len("", 0), 0);
+    QL_CHECK_EQ(ql_utf8_valid_len(NULL, 5), 0);
+    QL_CHECK_EQ(ql_utf8_valid_len("\xF0\x9F\x98\x80", 3), 0); /* 4 字节只给 3 */
+
     /* 8. UTF-8 编码：与解码互逆 */
     char buf[8];
     static const uint32_t samples[] = { 'A', 0x00E9, 0x4F60, 0x1F600 };

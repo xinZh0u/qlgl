@@ -258,6 +258,24 @@ QL_TEST_BEGIN("test_input_edit")
                 if (pre != NULL)
                     QL_CHECK_STR(pre, "a好b");
             }
+
+            /*
+             * 输入法塞进来的半截 UTF-8 必须挡在门外。实测 ibus 的 XIMText
+             * `length` 是"字符数"不是"字节数"，按字节切一刀就只剩汉字的第一个
+             * 字节（0xE4）—— 那半个字符进缓冲后字体找不到字形，屏幕上就是方框。
+             */
+            {
+                ql_ui_input_set_preedit(ui, NULL, 0);
+                ql_ui_input_set_preedit(ui, "\xE4", 1);
+                QL_CHECK(ql_ui_input_preedit(ui, NULL) == NULL);      /* 半个字：丢掉 */
+                ql_ui_input_set_preedit(ui, "a\xE4\xBD", 2);
+                QL_CHECK_STR(ql_ui_input_preedit(ui, NULL), "a");     /* 尾巴被切：留 "a" */
+                ql_ui_input_preedit_apply(ui, 0, 0, "\xE4\xBD\xA0\xE4", 2);
+                QL_CHECK_STR(ql_ui_input_preedit(ui, NULL), "你a");   /* 只收完整的 */
+                /* 合法的正常用 */
+                ql_ui_input_set_preedit(ui, "\xE4\xBD\xA0", 1);
+                QL_CHECK_STR(ql_ui_input_preedit(ui, NULL), "你");
+            }
             ql_ui_input_set_preedit(ui, NULL, 0);
 
             ql_ui_free(ui);

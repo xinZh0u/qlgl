@@ -4027,19 +4027,32 @@ static void ime_preedit_done(XIC ic, XPointer client, XPointer call)
     ime_preedit_flush(g);
 }
 
-/* XIMText → UTF-8。属性（下划线/高亮）忽略：整段统一样式就够了 */
+/*
+ * XIMText → UTF-8。属性（下划线/高亮）忽略：整段统一样式就够了。
+ *
+ * **`length` 不能直接当字节数用。** Xlib 手册说 multi_byte 的 `length` 是
+ * 字节数，但 ibus 实际给的是**字符数**（实测：`length=1`，字符串是
+ * `e4 b8 89` = "三"）。照字节数拷就只剩 0xE4 —— 半个汉字，字体找不到字形，
+ * 屏幕上就是一个个方框。字符串是 NUL 结尾的，直接量长度最稳；量不到 NUL
+ * （真有按字节长度且不结尾的实现）再退回 `length`。
+ */
 static void ime_text_to_utf8(const XIMText *t, char *out, size_t cap, uint16_t *out_len)
 {
     out[0] = '\0';
     *out_len = 0;
-    if (t == NULL || t->string.multi_byte == NULL || t->length == 0)
+    if (t == NULL || t->string.multi_byte == NULL)
         return;
     size_t n = 0;
     if (!t->encoding_is_wchar) {
-        n = (size_t)t->length;
-        if (n > cap - 1u)
-            n = cap - 1u;
-        memcpy(out, t->string.multi_byte, n);
+        const char *mb = t->string.multi_byte;
+        size_t lim = cap - 1u;
+        if (lim > 1024u)
+            lim = 1024u;                 /* 组字串不可能这么长，防没结尾的串 */
+        while (n < lim && mb[n] != '\0')
+            n++;
+        if (n == lim && (size_t)t->length < n)
+            n = (size_t)t->length;       /* 没 NUL 结尾：当字节数用 */
+        memcpy(out, mb, n);
     } else {
         /* 宽字符：逐码点折成 UTF-8（XIM 说 length 是"字符数"） */
         const wchar_t *w = t->string.wide_char;
@@ -4062,9 +4075,7 @@ static void ime_text_to_utf8(const XIMText *t, char *out, size_t cap, uint16_t *
             }
         }
     }
-    /* 别把最后一个 UTF-8 序列劈开 */
-    while (n > 0 && ((unsigned char)out[n] & 0xC0u) == 0x80u)
-        n--;
+    n = ql_utf8_valid_len(out, n);        /* 被 cap 截断时别留下半个字符 */
     out[n] = '\0';
     *out_len = (uint16_t)n;
 }
@@ -4093,7 +4104,7 @@ static void ime_preedit_draw(XIC ic, XPointer client, XPointer call)
      */
     char ins[QL_CFG_UI_INPUT_LEN * 2];
     uint16_t ins_len = 0;
-    if (d->text != NULL && d->text->length > 0 && d->text->length <= 4096)
+    if (d->text != NULL)
         ime_text_to_utf8(d->text, ins, sizeof(ins), &ins_len);
 
     if (g->ime_ui != NULL) {
