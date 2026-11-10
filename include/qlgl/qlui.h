@@ -425,6 +425,20 @@ typedef struct {
      */
     int16_t     sc_x;
     int16_t     sc_y;
+    /*
+     * ----- 非轴对齐变换（M9.4，blob v30） -----
+     *
+     * `rotate()` / `skew()` / `matrix()`（以及它们与 translate/scale 的组合）
+     * 没法用"矩形 + 轴对齐缩放"表达，所以有它们时元素走**离屏图层 + 仿射重采样**：
+     * 整棵子树先按原样合成，再整体按矩阵画回去（与 CSS "transform 作用于元素的
+     * 渲染结果"语义一致）。
+     *
+     * `xform` 是 doc->xforms[] 的下标（同一份变换在池里只存一份）。
+     * 有 xform 时 `tf_*` / `sc_*` 不再单独生效 —— 它们已被折进矩阵。
+     */
+    int16_t     xform;
+    /* `transform-origin`：x / y（px，或 percent = 边框盒的千分比） */
+    QLUILength  origin[2];
 
     /* ----- 关键帧动画（@keyframes） -----
      * doc->anims 的下标，0xFFFF = 没有动画。动画在 ql_ui_build 时起播，
@@ -674,6 +688,24 @@ typedef struct {
      * 覆盖 `mask-image` / `-size: 100% 100%` / `-mode: alpha` 三个默认值。
      */
 } QLUIStyle;
+
+/* ============================== transform 矩阵（M9.4） ============================== */
+
+/*
+ * 一个 2x3 仿射矩阵，字段顺序与 CSS `matrix(a, b, c, d, e, f)` 一致：
+ *
+ *   [ a c e ]
+ *   [ b d f ]
+ *
+ * 所有量都是 **26.6 定点**：`a..d` 无量纲（64 = 1.0），`e/f` 是 CSS px（64 = 1px）。
+ * 为什么进"池"而不是塞进样式：一份文档里通常只有几个不同的 transform，
+ * 但样式表可能有几十条 —— 直接放样式里每个样式要长 24 字节（MCU 上是真金白银）。
+ */
+typedef struct {
+    int32_t a, b, c, d, e, f;
+} QLUIXform;
+
+#define QL_UI_NO_XFORM   ((int16_t)-1)
 
 /* ============================== 离屏图层（M9.3） ============================== */
 
@@ -1149,9 +1181,12 @@ typedef struct {
     uint16_t          grid_count;
     uint16_t          grid_track_count;
     uint16_t          grid_area_count;
+    /* transform 矩阵池（M9.4）：样式的 `xform` 是它的下标 */
+    uint16_t          xform_count;
     const QLUIGrid      *grids;
     const QLUIGridTrack *grid_tracks;
     const QLUIGridArea  *grid_areas;
+    const QLUIXform     *xforms;
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
@@ -1731,7 +1766,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    29u
+#define QL_UI_BLOB_VERSION    30u
 
 typedef struct {
     uint32_t magic;
@@ -1782,9 +1817,12 @@ typedef struct {
     uint32_t off_grids;           /* QLUIGrid[grid_count] */
     uint32_t off_grid_tracks;     /* QLUIGridTrack[grid_track_count] */
     uint32_t off_grid_areas;      /* QLUIGridArea[grid_area_count] */
+    uint16_t xform_count;         /* transform 矩阵条数（v30） */
+    uint16_t reserved_xform;      /* 对齐填充 */
+    uint32_t off_xforms;          /* QLUIXform[xform_count] */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 144, "blob 头必须是 144 字节（v28）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 152, "blob 头必须是 152 字节（v30）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

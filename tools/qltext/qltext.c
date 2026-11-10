@@ -504,6 +504,15 @@ static void fput_style(FILE *f, const QLUIStyle *s)
      * 不写的话静态初始化是 0，而 0 是"文本池第 0 条"这个合法下标 ——
      * 每个样式都会变成"带遮罩"，整棵树都去走离屏图层。
      */
+    fputs("      .xform = ", f);
+    if (s->xform < 0)
+        fputs("QL_UI_NO_XFORM", f);
+    else
+        fprintf(f, "%d", (int)s->xform);
+    fprintf(f, ", .origin = { { %d, %u, 0 }, { %d, %u, 0 } },\n",
+            (int)s->origin[0].value, (unsigned)s->origin[0].unit,
+            (int)s->origin[1].value, (unsigned)s->origin[1].unit);
+
     fputs("      .filter_n = ", f);
     fprintf(f, "%u", (unsigned)s->filter_n);
     fputs(", .filter_op = { ", f);
@@ -1054,6 +1063,19 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fputs("};\n\n", f);
     }
 
+    /* ---- transform 矩阵池（有才输出，M9.4） ---- */
+    if (doc->xform_count > 0 && doc->xforms != NULL) {
+        fprintf(f, "/* transform 矩阵（26.6 定点；a..d 无量纲、e/f 是 px） */\n");
+        fprintf(f, "static const QLUIXform %s_xforms[%u] = {\n", ident,
+                (unsigned)doc->xform_count);
+        for (uint16_t i = 0; i < doc->xform_count; i++) {
+            const QLUIXform *q = &doc->xforms[i];
+            fprintf(f, "    { %d, %d, %d, %d, %d, %d },\n", (int)q->a, (int)q->b,
+                    (int)q->c, (int)q->d, (int)q->e, (int)q->f);
+        }
+        fputs("};\n\n", f);
+    }
+
     /* ---- @media 断点（有才输出） ---- */
     if (doc->media_count > 0 && doc->media != NULL) {
         fprintf(f, "/* @media 断点区间（视口宽，闭区间；hi = 0xFFFF 表示无上界） */\n");
@@ -1127,6 +1149,14 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                 "    .node_media    = %s_node_media,\n"
                 "    .media_styles  = %s_media_styles,\n",
                 (unsigned)doc->media_count, ident, ident, ident);
+    }
+
+    /* transform 矩阵池：没有就一个字都不多 */
+    if (doc->xform_count > 0 && doc->xforms != NULL) {
+        fprintf(f,
+                "    .xform_count = %u,\n"
+                "    .xforms      = %s_xforms,\n",
+                (unsigned)doc->xform_count, ident);
     }
 
     /* Grid 三段池：没有 grid 时一个字都不多 */

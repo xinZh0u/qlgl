@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>旋转光栅：`transform: rotate()` / `skew()` / `matrix()` · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html' class='active'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="transform-rotate-skew-matrix">旋转光栅：<code>transform: rotate()</code> / <code>skew()</code> / <code>matrix()</code></h1>
+<p><img src="../img/32-transform.png" alt="旋转、斜切、矩阵、transform-origin 与旋转后的圆角" width="620"></p>
+<p>完整程序：<code>example/32_transform/</code></p>
+<p>到目前为止，<code>transform</code> 只做了两件事：<code>translate()</code>（加到绘制偏移上）和
+<code>scale()</code>（绘制期绕中心缩放）。它们都是"画的时候顺手改一下坐标"，
+一个图元画一次，零内存、零重采样。</p>
+<p><code>rotate()</code> / <code>skew()</code> / <code>matrix()</code> 不一样：<strong>它们转的是"已经画好的像素"</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">badge</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">15</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>这行 CSS 在浏览器里意味着：先把 <code>.badge</code> 整个（背景、圆角、边框、文字、
+子元素、滤镜结果）画成一张图，再把这张图<strong>转过去</strong>贴回来。所以</p>
+<ul>
+<li>转过的文字是"<strong>转过的文字</strong>"，不是重新排版一次（字距、折行都不变）；</li>
+<li>圆角转完还是圆的（不是转出一个方角）；</li>
+<li><code>filter: blur()</code> 的结果跟着一起转（而不是转完再糊一次）。</li>
+</ul>
+<hr />
+<h2 id="1">1. 为什么必须"先合成再转"</h2>
+<p>另一条路是"把每个图元按矩阵画一遍"（矩形转成四边形、文字逐字转）。
+听起来省一块缓冲，实际全是坑：</p>
+<table>
+<thead>
+<tr>
+<th>逐图元转</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文字</td>
+<td>每个字形单独转，笔画的抗锯齿错位 → 看起来像<strong>马赛克</strong>；行距、字距也不再遵循排版</td>
+</tr>
+<tr>
+<td>圆角 / 阴影</td>
+<td>圆角矩形转成"旋转后的四边形 + 原来的圆角半径" → 形状明显变形</td>
+</tr>
+<tr>
+<td><code>filter</code> / <code>mask</code> / 组 <code>opacity</code></td>
+<td>这些效果本身要求"先合成"，逐图元转会把它们拆散</td>
+</tr>
+</tbody>
+</table>
+<p>所以实现直接复用上一章的<strong>离屏图层</strong>：<code>style_needs_layer()</code> 里加一条
+"有 <code>xform</code> 就要图层"，剩下的重采样在合成阶段做一次。</p>
+<blockquote>
+<p>也就是说：<code>transform</code> 的旋转能力<strong>挂在离屏图层包上</strong>。
+把 <code>QL_FEAT_CSS_FILTER_LAYER</code> 裁掉之后，写 <code>rotate()</code> 会在<strong>构建期报错</strong>
+（不是悄悄不转 —— 那是最难查的一类问题）。</p>
+</blockquote>
+<hr />
+<h2 id="2">2. 支持哪些写法</h2>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rotate(&lt;角度&gt;)</code></td>
+<td>顺时针为正；<code>deg</code> 单位</td>
+</tr>
+<tr>
+<td><code>skew(&lt;ax&gt;[, &lt;ay&gt;])</code> / <code>skewX()</code> / <code>skewY()</code></td>
+<td>错切（正方形变平行四边形）</td>
+</tr>
+<tr>
+<td><code>matrix(a,b,c,d,e,f)</code></td>
+<td>2×3 矩阵，一次说完"线性部分 + 平移"</td>
+</tr>
+<tr>
+<td><code>translate()</code> / <code>scale()</code> 与上面混写</td>
+<td>一整串乘成<strong>一个</strong>矩阵（CSS 语义）</td>
+</tr>
+<tr>
+<td><code>transform-origin</code></td>
+<td><code>px</code> / 百分比 / <code>left</code> <code>center</code> <code>right</code> <code>top</code> <code>bottom</code>；默认元素中心</td>
+</tr>
+</tbody>
+</table>
+<p>不支持的（会报错，不会静默忽略）：<code>perspective()</code>、<code>rotate3d()</code>、<code>matrix3d()</code> ——
+它们要真 3D 管线（透视除法 + 深度排序），归"不排期"。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">a</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">30</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">90</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="k">transform-origin</span><span class="p">:</span><span class="w"> </span><span class="kc">left</span><span class="w"> </span><span class="kc">top</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 绕左上角转 */</span>
+<span class="p">.</span><span class="nc">c</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">skewX</span><span class="p">(</span><span class="mi">18</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">d</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">matrix</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mf">0.25</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.35</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">            </span><span class="c">/* 斜切 + 平移 */</span>
+<span class="p">.</span><span class="nc">e</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">10</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">12</span><span class="kt">deg</span><span class="p">)</span><span class="w"> </span><span class="nb">scale</span><span class="p">(</span><span class="mf">1.1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="c">/* 乘成一个矩阵 */</span>
+</code></pre></div>
+
+<hr />
+<h2 id="3-transform-origin">3. <code>transform-origin</code> 决定"绕哪根轴转"</h2>
+<p>默认是<strong>元素中心</strong>（<code>50% 50%</code>）。换成 <code>left top</code>，同一个角度会落到完全不同的位置：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">needle</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">28</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">30</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">o-center</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform-origin</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="kt">%</span><span class="w"> </span><span class="mi">50</span><span class="kt">%</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">o-topleft</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform-origin</span><span class="p">:</span><span class="w"> </span><span class="kc">left</span><span class="w"> </span><span class="kc">top</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">o-right</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">transform-origin</span><span class="p">:</span><span class="w"> </span><span class="kc">right</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>百分比是相对<strong>元素自己的边框盒</strong>算的。例程第 6 节的表盘指针就是这么做的：
+指针的 origin 放在"圆心那一端"，于是 <code>rotate()</code> 变成"绕轴转"。</p>
+<hr />
+<h2 id="4">4. 和图层特效叠加</h2>
+<p>因为旋转发生在合成阶段，顺序天然是 CSS 的语义：</p>
+<div class="highlight"><pre><span></span><code>子树（含 filter / opacity / mask）→ 合成  → 旋转重采样 → 贴回页面
+</code></pre></div>
+
+<p>于是下面三种写法都"看着对"：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">blur-rot</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">-12</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">2</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">      </span><span class="c">/* 先糊再转 */</span>
+<span class="p">.</span><span class="nc">shadow-rot</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">8</span><span class="kt">deg</span><span class="p">);</span><span class="w">  </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">drop-shadow</span><span class="p">(</span><span class="mi">3</span><span class="kt">px</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="mi">3</span><span class="kt">px</span><span class="w"> </span><span class="mh">#0006</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">round-rot</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">45</span><span class="kt">deg</span><span class="p">);</span><span class="w"> </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">32</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 先裁再转 */</span>
+</code></pre></div>
+
+<p><code>.round-rot</code> 那个最容易验：64×64 的方块加 32px 圆角就是<strong>圆</strong>，
+转 45° 之后看到的仍然是圆的边缘。如果实现是"先转再裁"，会立刻露出方角。</p>
+<hr />
+<h2 id="5">5. 命中测试也转了</h2>
+<p>旋转只影响<strong>绘制</strong>，不改变布局盒（<code>getBoundingClientRect</code> 在浏览器里也是原盒）。
+所以点中测试要把屏幕点按矩阵<strong>逆变换</strong>回局部空间再判：</p>
+<div class="highlight"><pre><span></span><code>点 → M⁻¹ → 元素未旋转时的坐标 → 原来的盒判断
+</code></pre></div>
+
+<p>嵌套旋转也没问题：每个节点的逆变换都在<strong>它自己的局部空间</strong>里做，
+逐层下降正好是仿射矩阵的连乘。</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* test_transform.c 里钉住这一条 */</span>
+<span class="n">ql_ui_hit_test</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">80</span><span class="p">,</span><span class="w"> </span><span class="mi">45</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 转了 90° 的竖条上 → 命中 */</span>
+<span class="n">ql_ui_hit_test</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">65</span><span class="p">,</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 原来的横条位置 → 命中不到它 */</span>
+</code></pre></div>
+
+<hr />
+<h2 id="6">6. 代价</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每样式的额外体积</td>
+<td>+8 B（矩阵下标 + 两个原点长度）</td>
+</tr>
+<tr>
+<td>矩阵存哪</td>
+<td>文档里的<strong>矩阵池</strong>（26.6 定点，同值去重，上限 32）</td>
+</tr>
+<tr>
+<td>运行期内存</td>
+<td>与离屏图层相同：元素盒大小的 RGBA 缓冲</td>
+</tr>
+<tr>
+<td>编译期开关</td>
+<td><code>QL_FEAT_CSS_FILTER_LAYER</code>（MCU 默认关）</td>
+</tr>
+<tr>
+<td>MCU 实测</td>
+<td>解析 + 矩阵运算只要 <strong>804 B</strong>；图层合成慢路 <strong>3,488 B</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>别给滚动列表的每一行都加 <code>rotate()</code></strong> —— 每行一个图层，等于每行多一次
+"合成 + 重采样"。旋转适合做徽章、贴纸、表盘、卡片倾斜这类少量装饰。</p>
+<hr />
+<h2 id="7">7. 常见坑</h2>
+<ol>
+<li><strong>元素转出父容器就被裁了</strong>。旋转不改变布局，父级的 <code>overflow: hidden</code>
+   仍然按<strong>原盒</strong>裁。给旋转的元素留点内边距，或者让父级 <code>overflow: visible</code>。</li>
+<li><strong>重采样会多出约 1 px 边缘</strong>。越界采样点走"边缘钳位"，所以旋转/平移后的
+   元素外沿会带一圈边缘色。CPU/GPU 一致，肉眼不可见 —— 但写像素断言时要算上。</li>
+<li><strong><code>scale()</code> 与 <code>rotate()</code> 一起写</strong>时整串进矩阵（不再走"绘制期缩放"那条快路），
+   所以会<strong>开图层</strong>。只写 <code>scale()</code> 则仍然零重采样。</li>
+<li><strong><code>@keyframes</code> 里不能写 <code>rotate()</code></strong>（关键帧只存 <code>translate</code>/<code>scale</code> 的整数值）。
+   需要转起来的动画请用 JS 改样式，或改用 <code>scale()</code> 做"假翻转"。</li>
+<li><strong><code>transform-origin</code> 的百分比是相对边框盒的</strong>，不是相对内容盒 ——
+   带 <code>padding</code> 时两者不同。</li>
+</ol>
+<hr />
+<p>上一章：<a href="20_filter.html">离屏图层：<code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code></a> ｜
+下一章：<a href="17_perf.html">性能诊断与 MCU 基准</a></p>
+<div class='pager'>
+<a href='../tutorial/20_filter.html'><span class='dir'>上一页</span>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -6164,7 +6164,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
      */
     const ql_coord_t saved_ox = d2d->offset_x_fx;
     const ql_coord_t saved_oy = d2d->offset_y_fx;
-    if (s->tf_x != 0 || s->tf_y != 0) {
+    if ((s->tf_x != 0 || s->tf_y != 0) && s->xform < 0) {
         /* 用乘法不用左移：tf 可能是负数，负数左移是 UB（UBSan 会报） */
         ql_draw2d_set_offset(d2d,
                              saved_ox + (ql_coord_t)s->tf_x * (ql_coord_t)QL_FX_ONE,
@@ -6185,7 +6185,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
     const ql_coord_t saved_efy = d2d->elem_y_fx;
     const ql_coord_t elem_cx = box.x + box.w / 2;
     const ql_coord_t elem_cy = box.y + box.h / 2;
-    if (s->sc_x != 1000 || s->sc_y != 1000)
+    if ((s->sc_x != 1000 || s->sc_y != 1000) && s->xform < 0)
         ql_draw2d_set_elem_scale_xy(
             d2d, (ql_coord_t)((int64_t)s->sc_x * QL_SCALE_ONE / 1000),
             (ql_coord_t)((int64_t)s->sc_y * QL_SCALE_ONE / 1000), elem_cx, elem_cy);
@@ -6598,6 +6598,8 @@ QLUINodeRT *ql_ui_find_by_tag(QLUIRoot *ui, QLUITag tag, uint16_t nth)
     return NULL;
 }
 
+static ql_coord_t resolve_origin_len(QLUILength len, ql_coord_t basis);
+
 /* 递归命中：子节点优先（子节点画在父之上），后出现的子节点优先（z 序已排好） */
 static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                                QLRect clip, ql_coord_t ox, ql_coord_t oy,
@@ -6627,6 +6629,32 @@ static QLUINodeRT *hit_walk_ui(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      * (ox, oy) 是祖先累积的平移，本节点自己还要再加一层自己的 transform——
      * 绘制时正是这么画的（render_node 先设偏移再画自己）。
      */
+    /*
+     * 旋转/斜切：把点**逆变换**回节点的布局空间，命中就在未旋转的盒子判。
+     * 绘制时旋转作用在合成结果上，所以这是最后一步逆变换；子节点接着走
+     * 平移/缩放那一套（每个节点的逆变换都在它自己的局部空间里做，逐层下降
+     * 正好是仿射矩阵的连乘）。
+     */
+    if (s->xform >= 0 && node->owner != NULL && node->owner->doc != NULL &&
+        node->owner->doc->xforms != NULL &&
+        s->xform < (int16_t)node->owner->doc->xform_count) {
+        const QLUIXform *q = &node->owner->doc->xforms[s->xform];
+        const QLRect bb = node->border_box;
+        const ql_coord_t px = bb.x + ox + resolve_origin_len(s->origin[0], bb.w);
+        const ql_coord_t py = bb.y + oy + resolve_origin_len(s->origin[1], bb.h);
+        const int64_t a = q->a, b = q->b, c = q->c, d = q->d;
+        const int64_t det = a * d - b * c;
+        if (det == 0)
+            return NULL;                     /* 退化矩阵：压成一条线，点不中 */
+        const int64_t ux = ((int64_t)x - px) * QL_FX_ONE;
+        const int64_t uy = ((int64_t)y - py) * QL_FX_ONE;
+        /* lx/ly 出来的单位已经是 CSS px（ux 先乘了 FX，det 是 FX²） */
+        const int64_t lx = (d * ux - c * uy) / det;
+        const int64_t ly = (a * uy - b * ux) / det;
+        x = px + (ql_coord_t)lx;
+        y = py + (ql_coord_t)ly;
+    }
+
     QLRect box = node->border_box;
     box.x += ox + s->tf_x;
     box.y += oy + s->tf_y;
@@ -6781,6 +6809,14 @@ void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
  */
 /* ------------------------------ 离屏图层（M9.3） ------------------------------ */
 
+/* `transform-origin` 的百分比是**千分比**（0..1000），与其它百分比的 /100 不同 */
+static ql_coord_t resolve_origin_len(QLUILength len, ql_coord_t basis)
+{
+    if (len.unit == QL_UI_UNIT_PERCENT)
+        return (ql_coord_t)(((int32_t)basis * (int32_t)len.value) / 1000);
+    return resolve_length(len, basis, 0);
+}
+
 /* 这一层必须走离屏合成吗？（filter / 混合模式 / 遮罩 / 真 group opacity） */
 static int style_needs_layer(const QLUIStyle *s, const QLUINodeRT *node)
 {
@@ -6794,6 +6830,13 @@ static int style_needs_layer(const QLUIStyle *s, const QLUINodeRT *node)
     if (s->mix_blend != QL_UI_BLEND_NORMAL)
         return 1;
     if (s->mask_image != QL_UI_NO_MASK)
+        return 1;
+    /*
+     * 旋转/斜切/矩阵：必须先把子树按原样合成，再整体重采样
+     * （"transform 作用于元素的渲染结果"是 CSS 的语义，也是唯一能对得上
+     * 浏览器观感的做法 —— 逐图元转会把文字和圆角转成马赛克）。
+     */
+    if (s->xform >= 0)
         return 1;
     /*
      * 真 group opacity：**有子节点**才需要图层。
@@ -6842,6 +6885,23 @@ static void layer_fx_of(const QLUIStyle *s, QLUINodeRT *node, uint8_t inherited,
             r = mx;
         fx->corner = (r > 0) ? r : 0;
     }
+    /* 非轴对齐变换：原点是"边框盒的百分比或 px"，这里结算成绝对 CSS 坐标 */
+    if (s->xform >= 0 && node->owner != NULL && node->owner->doc != NULL &&
+        node->owner->doc->xforms != NULL &&
+        s->xform < (int16_t)node->owner->doc->xform_count) {
+        const QLUIXform *q = &node->owner->doc->xforms[s->xform];
+        fx->has_xform = 1;
+        fx->mat[0] = q->a;
+        fx->mat[1] = q->b;
+        fx->mat[2] = q->c;
+        fx->mat[3] = q->d;
+        fx->mat[4] = q->e;
+        fx->mat[5] = q->f;
+        const QLRect b = node->border_box;
+        fx->origin_x = b.x + resolve_origin_len(s->origin[0], b.w);
+        fx->origin_y = b.y + resolve_origin_len(s->origin[1], b.h);
+    }
+
     if (s->mask_image != QL_UI_NO_MASK) {
         const QLUIRoot *ui = node->owner;
         if (ui != NULL && ui->doc != NULL && ui->doc->text_pool != NULL &&
@@ -6873,6 +6933,44 @@ static QLRect layer_bounds_of(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *s
     }
     if (pad > 0)
         b = ql_rect_make(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+
+    /*
+     * 旋转/斜切：外接矩形要按**变换后**的四角重算，否则转出来的角会被裁掉。
+     * 原点与矩阵都要在这里重新结算（layer_fx_of 已经算过一遍，这里只读它）。
+     */
+    if (s->xform >= 0 && ui != NULL && ui->doc != NULL && ui->doc->xforms != NULL &&
+        s->xform < (int16_t)ui->doc->xform_count) {
+        const QLUIXform *q = &ui->doc->xforms[s->xform];
+        const QLRect bb = node->border_box;
+        const ql_coord_t ox = bb.x + resolve_origin_len(s->origin[0], bb.w);
+        const ql_coord_t oy = bb.y + resolve_origin_len(s->origin[1], bb.h);
+        const double a = (double)q->a / (double)QL_FX_ONE;
+        const double bq = (double)q->b / (double)QL_FX_ONE;
+        const double c = (double)q->c / (double)QL_FX_ONE;
+        const double d = (double)q->d / (double)QL_FX_ONE;
+        const double e = (double)q->e / (double)QL_FX_ONE;
+        const double f = (double)q->f / (double)QL_FX_ONE;
+        const double xs[4] = { (double)bb.x, (double)bb.x + (double)bb.w,
+                               (double)bb.x + (double)bb.w, (double)bb.x };
+        const double ys[4] = { (double)bb.y, (double)bb.y,
+                               (double)bb.y + (double)bb.h,
+                               (double)bb.y + (double)bb.h };
+        double minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+        for (int k = 0; k < 4; k++) {
+            const double ux = xs[k] - (double)ox;
+            const double uy = ys[k] - (double)oy;
+            const double tx = (double)ox + a * ux + c * uy + e;
+            const double ty = (double)oy + bq * ux + d * uy + f;
+            if (tx < minx) minx = tx;
+            if (ty < miny) miny = ty;
+            if (tx > maxx) maxx = tx;
+            if (ty > maxy) maxy = ty;
+        }
+        const QLRect rb = ql_rect_make((ql_coord_t)minx, (ql_coord_t)miny,
+                                       (ql_coord_t)(maxx - minx + 1.0),
+                                       (ql_coord_t)(maxy - miny + 1.0));
+        b = ql_rect_union(b, rb);
+    }
     /* 别为屏幕外的东西分配缓冲 */
     if (ui != NULL && ui->clip.w > 0 && ui->clip.h > 0)
         b = ql_rect_intersect(b, ui->clip);
@@ -6887,6 +6985,7 @@ static void render_node_layered(QLUINodeRT *node, QLDraw2D *d2d, const QLUIStyle
     layer_fx_of(s, node, inherited, &fx);
 
     const QLRect bounds = layer_bounds_of(node->owner, node, s);
+    fx.bounds_css = bounds;
     if (ql_rect_is_empty(bounds) || d2d->layer_begin == NULL) {
         render_node_inner(node, d2d);
         return;

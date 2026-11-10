@@ -53,12 +53,14 @@
 | `word-spacing` / `tab-size` / `text-decoration-*` / `:disabled` / `:enabled` / `:checked` / `::placeholder` / `background-image: url()` | blob v27（见 §18.7） |
 | **Grid**（`display: grid` 全家 + 具名区域 + `fr`/`minmax()`/`repeat()`/自动放置/跨格/对齐）、**`border-image`** 九宫格 | blob v28（见 §18.9） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
+| **离屏图层**：`filter` 全家 / 真 group `opacity` / `mix-blend-mode` / `mask` | blob v29（见 §18.10） |
+| **旋转光栅**：`transform: rotate()` / `skew()` / `skewX/Y` / `matrix()` / `transform-origin` | blob v30（见 §18.11） |
 
 **还没做**，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：
 
 | 类 | 项 | 归宿 |
 |---|---|---|
-| **PC/Mobile 必做**（MCU 归能力包） | Grid、`border-image`（B6）；表格、多栏（B7）；`@font-face` + 真字体栈、连字整形、双向（B8）；离屏图层（`filter` / 真 group `opacity` / `mix-blend-mode` / `mask`）；`transform: rotate()`/`skew()`/`matrix()`；`clip-path` 的 `inset`/`ellipse`/`polygon` | §22 |
+| **PC/Mobile 必做**（MCU 归能力包） | 表格、多栏（B7）；`@font-face` + 真字体栈、连字整形、双向（B8）；`clip-path` 的 `inset`/`ellipse`/`polygon` | §22 |
 | **小件**（随时插队） | `text-align: justify`、阴影 `spread`、椭圆 `border-radius`（`10px / 20px`）、`font` 简写、`word-wrap` 别名、`::first-line` / `::first-letter`、`:empty`、`revert` | 各节 ⏳ |
 | **不排期** | 3D 变换（`perspective()` / `rotate3d()`）；bidi 的完整算法之外的冷门项；打印相关 | 各节 ❌ |
 
@@ -260,8 +262,8 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `vw` `vh` | ✅ | L | 相对视口；只有布局期才知道视口多大，所以在 `resolve_length()` 里解析（窗口缩放自动跟着变） |
 | `vmin` `vmax` | ✅ | L | 相对视口**短边 / 长边**；同样在布局期解析 |
 | `s` / `ms` | ✅ | T | `transition-duration` / `animation-duration` |
-| `deg` | ⚠️ | L | 只在渐变方向里（`90deg` / `180deg`），不进 `transform` |
-| `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而 `transform: rotate()` 还没做 |
+| `deg` | ✅ | L | 渐变方向（`90deg`）与 `rotate()`/`skew()`/`hue-rotate()` |
+| `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上；`deg` 已经够表达，加三种写法只是多三条解析分支 |
 | `fr` | ⏳ | L | Grid 专用，随 B6 一起做（§11）；flex 里写了报错 |
 | `ch` / `ex` / `lh` / `rlh` / `cap` | ❌ | N | 都要"字体度量 × 系数"，收益极低 |
 | `calc()` | ✅ | L | `+ - * /` 与括号；标量乘除在构建期折进每个操作数（见 §18.3） |
@@ -489,11 +491,12 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | `transform: translate()` | ✅ | R | 加到绘制偏移上，**不进布局**（零重排） |
 | `transform: scale()` | ✅ | R | 允许负值（几何压扁 + 镜像） |
 | `transform: scaleX()` / `scaleY()` | ✅ | R | 假 3D 翻转就靠它 |
-| `transform: rotate()` | ⏳ | **F** | **单独立项，PC/Mobile 必做**（§22）：要旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转）。MCU 档恒关 |
-| `transform: skew()` | ⏳ | F | 同上（与 `rotate` 同一份仿射路径，一起做几乎不加成本） |
-| `transform: matrix()` / `matrix3d()` | ⏳ | F | `matrix()` 随之解锁（`rotate`/`skew` 落地后只是"拆矩阵"）；`matrix3d()` 归 3D，不排期 |
+| `transform: rotate()` | ✅ | F | M9.4：离屏图层 + 仿射重采样（§18.11）。**依赖 `QL_FEAT_CSS_FILTER_LAYER`**，裁掉时构建期报错 |
+| `transform: skew()` / `skewX()` / `skewY()` | ✅ | F | 与 `rotate` 同一份仿射路径（错切矩阵） |
+| `transform: matrix()` | ✅ | F | 六参；与 `rotate` 一样进矩阵池 |
+| `transform: matrix3d()` | ❌ | S | 归 3D，不排期 |
 | `transform: perspective()` / `rotate3d()` 等 3D | ❌ | S | 要真 3D 管线（透视除法 + 深度排序）。PC 档也**不排期**：`scaleX` 已能近似"翻面"，而 3D 需要一整套矩阵 + 分层合成 |
-| `transform-origin` | ⏳ | R | 现在固定绕元素中心；随 `rotate` 一起做（有旋转才需要原点） |
+| `transform-origin` | ✅ | R | px / 千分比 / `left|center|right|top|bottom`；默认元素中心 |
 | `transform-style` / `backface-visibility` | ❌ | S | 3D 专用，同上 |
 
 ---
@@ -870,9 +873,10 @@ background-image: url(checker)  → 名字进文本池，样式里存 QL_UI_NO_I
 平铺时先把起点对齐到可见瓦片、再把裁剪设成边框盒 —— 不设裁剪会画到兄弟节点上
 （与"四边不同色"那次裁剪没恢复是同一类错误，这次提前防住了）。
 
-**没做的：`filter`**。颜色矩阵类（brightness/grayscale/...）技术上可行，
+**当时没做的：`filter`**。颜色矩阵类（brightness/grayscale/...）技术上可行，
 但 `blur()` / `drop-shadow()` 需要**离屏图层**（子树先合成到一张图再整体模糊），
-成本与 `transform: rotate()` 同级，所以一起留作单独立项 —— 覆盖表里如实标 ⏳。
+当时留作单独立项 —— 后来 M9.3 落地（§18.10），`transform: rotate` 也在这层上
+长出来（§18.11）。
 
 ### 18.8 B6/B7 的代价是怎么估出来的
 
@@ -1130,6 +1134,115 @@ CPU 原来那套"两趟盒式 ≈ 钟形"与 GL 的高斯形状不同，同一�
 离屏图层是这两者之和的**两倍多**，也解释了为什么它必须是一个独立的能力包
 （而不是塞进 BASE）。
 
+### 18.11 M9.4 落地：旋转光栅（`transform: rotate/skew/matrix` + `transform-origin`）
+
+CSS 的 `transform` 作用于**元素的渲染结果**，不是"把每个图元按矩阵画一遍"。
+这条语义决定了实现方式：
+
+```
+子树先按原样画进离屏图层  →  再按 2×3 矩阵做一次仿射重采样  →  贴回目标
+```
+
+逐图元转（另一种做法）会把文字转成马赛克、把圆角转成方角、把 `filter` 的结果
+转丢，所以从一开始就否掉了。好处是它**完全复用 M9.3 的图层基建**：
+`style_needs_layer()` 里只要多一条"有 xform 就要图层"。
+
+#### 数据：矩阵进 doc 池，样式只留下标
+
+| 项 | 做法 | 理由 |
+|---|---|---|
+| 矩阵存哪 | `QLUIDoc.xforms[]`（`QLUIXform` = 6 × int32，26.6 定点） | 24 B/样式在 MCU 上不可接受；同一份 CSS 里重复的 `rotate(15deg)` 只存一份（按值去重，池上限 32） |
+| 样式里存什么 | `int16_t xform`（`QL_UI_NO_XFORM = -1`）+ `QLUILength origin[2]` | 共 +8 B/样式（336 → **344**），blob **v30**、头 144 → 152 |
+| 坐标系 | 矩阵在 **CSS px 空间**定义 | 设备空间 = 同一份线性部分；平移与原点乘 dpr（等比缩放与线性变换可交换） |
+| `transform-origin` 的百分比 | **千分比**（0..1000） | 与宽度类的 `/100` 不同：这里用 1000 才能表达 1‰ 的微调，且与 `sc_x` 同一口径 |
+
+轴对齐的 `translate()` / `scale()` **不进**矩阵池（零重采样，走老的绘制期变换）。
+一条声明里只要出现 `rotate/skew/matrix`，整串（含 `translate`/`scale`）乘成一个矩阵
+—— 这是 CSS 的语义，也避免了"一半在布局期、一半在合成期"。
+
+#### CPU：逆向映射 + 双线性
+
+正向映射（把源像素搬到变换后的位置）会在放大时留空洞，所以按目标像素反查：
+
+```
+q（目标像素中心） → u = q - origin - t → p = origin + M⁻¹·u → 在图层缓冲里采样
+```
+
+圆角 / 遮罩用**局部（未旋转）坐标**判定，也就是"先裁再转"，与浏览器一致。
+轴对齐矩阵（含 `matrix(1,0,0,1,0,0)`）仍走原来的整块贴回快路。
+
+#### GPU：变换四角 + 一个 `u_local` 开关
+
+四边形还是 4 个顶点，只是把四角按矩阵摆过去。平行四边形上的 `v_uv` 线性插值
+**恰好等于**局部坐标，于是片元里一句就能换来正确的圆角判定点：
+
+```glsl
+lp = (u_local != 0) ? u_lbounds.xy + vec2(uv.x, 1.0 - uv.y) * u_lbounds.zw : dp;
+```
+
+#### 踩过的坑（最重要的两个）
+
+1. **图层合成整体上下翻转**（M9.3 就存在，M9.4 才暴露）。
+   内容是按"CSS y 向下"画进 FBO 的（主着色器里 `ndc.y = -ndc.y`），
+   所以纹理的 **v=1 才是元素顶边**；而合成四边形的 uv 一直按 v=0 在顶边取。
+   纯色、居中的规则方块上下对称，六个老用例全是绿的 —— 一旦图层里有"上红下蓝"
+   或者转过的文字，立刻原形毕露。现在四边形的 uv 顶边给 v=1，同时把依赖
+   `v_uv` 的三处一起翻正：遮罩图（`1-uv.y`）、背景纹理（直接按 `uv`）、
+   `drop-shadow` 的 y 偏移（改号）。
+2. **嵌套图层的位置**：内层的 `L->dev` 已经是"相对外层 FBO"的坐标（进图层时
+   offset 已经减过外层原点），再减一次外层 `dev` 就会整体上移。合成四边形的
+   归一化分母取当前目标的 `g->width/height` 即可，别再减原点。
+
+#### 命中测试
+
+把屏幕点按矩阵**逆变换**回局部空间再判盒，逐层下降正好是仿射连乘：
+
+```c
+det = a*d - b*c;                          /* =0：压成一条线，点不中 */
+lx  = (d*ux - c*uy) / det;   ly = (a*uy - b*ux) / det;   /* 出来就是 px */
+```
+
+（`ux/uy` 先乘 `QL_FX_ONE`，`det` 是 `FX²`，所以结果不用再除 —— 第一次写成了
+再除一次，表现是"原位置也能点中"。）
+
+#### 一致性（`test_gl_vs_cpu` 新增 7 个用例）
+
+| 用例 | 差异 | 备注 |
+|---|---|---|
+| 图层方向（上下不对称） | 0.00% | 专门守上面第 1 条 |
+| 图层内文字（混合状态） | 0.23% | 守 M9.3 的"图层结束后没还原混合状态" |
+| `rotate(90deg)` / `rotate(30deg)` | 0.00% / 0.00% | 轴对齐完全一致；30° 只有边缘 11 px 不同 |
+| `skewX` / `matrix` | 0.00% / 0.15% | 差异全在斜边那一个像素上 |
+| `rotate` + 文字 | 0.06% | 双线性 vs 逐像素覆盖率 |
+
+CPU 侧的硬数字在 `test_transform`（63 项）：`rotate(90°)` 把 40×10 的横条变成
+10×40 的竖条且像素数不变、`rotate(45°)` 面积 364 px、`skewX(45°)` 包围盒 40+10、
+`transform-origin: left top` 让顶边留在轴上、圆角 + 45° 仍是圆的边缘。
+
+> 重采样对越界点做**边缘钳位**，所以旋转/平移后的元素外沿会多出约 1 px
+> 的"边缘色"。两个后端一致，肉眼不可见，但写断言时要算上这一圈。
+
+#### 容量与裁剪
+
+| 项 | 值 |
+|---|---|
+| 矩阵池 | 32 个（超出报错，不静默丢） |
+| 每样式额外 | +8 B（`int16` 下标 + 两个 `QLUILength`） |
+| 编译开关 | 与 M9.3 同一个：`QL_FEAT_CSS_FILTER_LAYER` |
+| 裁掉之后的行为 | `rotate/skew/matrix` **构建期报错**（不做"悄悄不转"的降级） |
+
+**MCU 实测**（同一套 mps2-an386 基准，与 §18.10 同一把尺子）：
+
+| 配置 | `.text` | `.bss` |
+|---|---|---|
+| `QL_FEAT_CSS_FILTER_LAYER=0`（MCU 默认） | 139,740 → **140,544 B**（+804） | 140,264 B（不变） |
+| `QL_FEAT_CSS_FILTER_LAYER=1` | 155,084 → **158,572 B**（+3,488） | 140,940 → **141,148 B**（+208） |
+
+也就是说：**矩阵本身只要 804 B**（解析 + 定点运算），真正贵的是它能用的那张
+图层（3,488 B 的合成慢路）。原规划"比离屏图层便宜"的判断成立。
+
+---
+
 ---
 
 ## 19. 覆盖率：两份实测 + 一份规范口径
@@ -1269,7 +1382,8 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `box-shadow` | 单条 | 多重、`inset` 都不行 |
 | `opacity` | 逐图元降透明 | 子元素会一起淡，但**同一子树内部互相覆盖处会略透**（真 group 要离屏图层，见 §20.1） |
 | `transform` | 只有 `translate` / `scale` / `scaleX` / `scaleY` | `rotate` / `skew` / `matrix` 报错 |
-| `transform-origin` | **固定为元素中心** | 属性本身没实现 |
+| `transform: rotate/skew/matrix` | 只有**仿射**（2×2 + 平移） | 没有 3D / `perspective()`；`rotate()` 走"合成后重采样"，所以旋到一半的元素**不吃点击重排**（布局盒不动，命中按旋转后的形状算） |
+| `transform-origin` | px / 千分比 / 关键字 | 没有三值写法（`left top 10px`） |
 | flex 项的**主轴尺寸** | 用 `box-sizing: border-box` 时精确 | **content-box 时少算 padding + border**（`force_size` 把主轴尺寸按边框盒解释）—— flex 子项请写 `box-sizing: border-box`，这是真实页面的常规写法 |
 | `@media` | 只有宽度断点 | `orientation` / `prefers-*` / `em` 单位报错；`print` 整块跳过 |
 | `transition-timing-function` | 5 个具名缓动 | 没有 `cubic-bezier()` |
@@ -1358,7 +1472,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7**：`display: table` 全家 + `<table>` 标签 + 列宽分配 + `border-collapse` | ✅ | **默认关** | BASE | 估 6–10 KB（`table-layout: auto` 要两遍测量） |
 | `CSS_COLUMNS` | `QL_FEAT_CSS_COLUMNS` | **B7**：`columns` / `column-rule`（列高平衡 = 排两遍） | ✅ | **默认关** | BASE | 估 8–15 KB（最贵的一项：要"盒内分裂"） |
 | `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6 ✅**：`border-image` 九宫格 | ✅ | **默认开**（可裁） | BASE + `QL_FEAT_UI_IMAGE` | **实测 2,176 B**（−1.6%） |
-| `CSS_FILTER_LAYER` | `QL_FEAT_CSS_FILTER_LAYER` | **M9.3 ✅**：离屏图层 = `filter` 全家 + `mix-blend-mode` + `mask` + 真 group opacity | ✅ | **默认关** | BASE（+ `QL_FEAT_UI_IMAGE` 才有 `mask`） | **实测 Flash 15,344 B / RAM 676 B**（见 §18.10 末） |
+| `CSS_FILTER_LAYER` | `QL_FEAT_CSS_FILTER_LAYER` | **M9.3 ✅**：离屏图层 = `filter` 全家 + `mix-blend-mode` + `mask` + 真 group opacity；**M9.4 ✅** 的 `transform: rotate/skew/matrix` 也挂在这个包上（它要靠离屏合成 + 重采样） | ✅ | **默认关** | BASE（+ `QL_FEAT_UI_IMAGE` 才有 `mask`） | **实测 Flash 15,344 B / RAM 676 B**（M9.3）+ **3,488 B**（M9.4，见 §18.11 末） |
 | `CSS_FONT_STACK` | `QL_FEAT_CSS_FONT_STACK` | **B8**：`@font-face` + 自由 `font-family` + 真字重/斜体 —— 依赖 FreeType | ✅ | **恒关** | BASE + `QL_FEAT_FONT_FREETYPE` | 依赖库体积见 §2.1（FreeType 813 KB） |
 | `CSS_TEXT_SHAPE` | `QL_FEAT_CSS_TEXT_SHAPE` | **B8**：连字 / 字距 / `font-feature-settings` —— 依赖 HarfBuzz | ✅ | **恒关** | `CSS_FONT_STACK` | 依赖库体积见 §2.1（HarfBuzz 1,178 KB） |
 | `CSS_BIDI` | `QL_FEAT_CSS_BIDI` | **B8**：`direction` / `unicode-bidi` —— 依赖 SheenBidi（或 fribidi，106 KB） | ✅ | **恒关** | BASE | 依赖库体积见 §2.1 |
@@ -1448,19 +1562,20 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 ---
 
-## 22. 批次计划（B1–B5 已完成，B6–B8 是 PC/Mobile 档的主线）
+## 22. 批次计划（B1–B6 + M9.3/M9.4 已完成，B7–B8 是 PC/Mobile 档的主线）
 
 排序依据：**先补"真实页面没它写不出来"的，再补"锦上添花"的**；同一批内先做不动
 `QLUIStyle` 的（只动解析期），后做动结构体的（要抬 blob 版本 + 重生成 golden）。
 
-**B1–B5** 是"补细节"（已完成）；**B6–B8** 是"补架构"（PC/Mobile 档，MCU 归能力包）。
+**B1–B5** 是"补细节"（已完成）；**B6–B8** 是"补架构"（PC/Mobile 档，MCU 归能力包）；
+**M9.3 / M9.4** 是两轮"新光栅路径"（离屏图层 → 旋转），已完成，见 §18.10 / §18.11。
 
 | 批 | 内容（对应上面各节） | 归属能力包 | 收益 | 风险 | 动 `QLUIStyle` | 验收 |
 |---|---|---|---|---|---|---|
 | **B1 值与尺寸**（已完成：`min/max-*`、`!important`、`hsl()`、`#rrggbbaa`、`currentColor/inherit/initial`、`em`/`rem`/`vw`/`vh`/`vmin`/`vmax`、`margin: auto`、`aspect-ratio`；**剩 `border-radius` 四角**） | `min/max-*`、`em`/`rem`/`vw`/`vh`、`calc()`/`min()`/`max()`、`margin: auto`、`inherit`/`initial`/`currentColor`、`!important`、`border-radius` 四角、`aspect-ratio`、`hsl()`、`#rrggbbaa` | BASE（少量进 RADIUS） | 真实页面的**基础语法** | 中：动级联与宽度求解 | **是** → blob v16 | 新 `test_css_units` + golden |
 | **B2 选择器**（✅ 已完成：结构伪类 / `[attr]` 系列 / `:not()` / `*` / `::before`+`::after`+`content` / `:disabled` / `:enabled` / `:checked` / `::placeholder`（含复选框控件），见 §18.7） | `:first/last/nth-child(an+b)/only-child/of-type`、`:not()`、`[attr]` 系列、`*`、`::before/::after`+`content`、`:disabled/:checked`、`::placeholder` | `CSS_SELECTOR_ADV` | **兼容性收益最大**（12.5% 声明 + 25% 选择器） | **低**：全在构建期展开，运行期零成本 | **否**（伪元素在构建期变成真节点） | `test_pseudo_text` / `test_selectors` + golden |
 | **B3 文本细节**（✅ 已完成：`letter-spacing` / `text-indent` / `text-transform` / `text-overflow: ellipsis` / `word-break`（v20）、`word-spacing` / `tab-size` / `text-decoration-*`（v27，见 §18.7）） | `letter-spacing`、`word-spacing`、`text-indent`、`text-transform`、`text-overflow: ellipsis`、`word-break`/`overflow-wrap`、`tab-size`、`text-decoration-*` | `CSS_TEXT_ADV` | 列表、标题、长 URL | 中：动 `ql_text_wrap()`（见 §20.3） | **是** → blob v20 | 新 `test_text_adv`（25 项，含像素层）+ golden |
-| **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）、`background-image: url()` + `size/position/repeat`（§18.7）。**只剩 `filter`**（颜色矩阵可做，`blur()` 需离屏图层 —— 与 `rotate` 同级，单独立项） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
+| **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）、`background-image: url()` + `size/position/repeat`（§18.7）。**`filter` 已由 M9.3 补上**（§18.10） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
 | **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
 | **B6 布局广度** ✅ **已完成（2026-11-10）** | **Grid**（`display: grid` 全家、`fr`/`minmax()`/`repeat()`/具名区域/自动放置/跨格/对齐）、**`border-image`** 九宫格 | `CSS_GRID` + `CSS_BORDER_IMAGE` | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | **是** → blob v28（`QLUIStyle` 272 → 312） | `test_grid`（74 项，含跨列/跨行/区域/负线号/9 条报错）+ 例程 29/30 |
@@ -1471,14 +1586,13 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 | 项 | 目标档 | 为什么单独立项 | 成本 |
 |---|---|---|---|
-| **离屏图层**（`filter: blur()` / 真 group `opacity` / `mix-blend-mode`） | **PC/Mobile 必做** | 三者共用同一块能力："子树先合成到一张图，再整体处理"。做完它，这三样一起解锁（见 §20.1） | 高：CPU 要一块临时缓冲 + 一次合成；GL 要 FBO 复用 + 纹理采样。RAM 成本 = 一个元素盒子大小的 RGBA 缓冲 |
-| **`transform: rotate()` / `skew()`** | **PC/Mobile 必做** | 要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转 + 裁剪盒变换） | 中高：与 flex 求解器不同量级，但比离屏图层便宜（不需要额外缓冲） |
+| ~~**离屏图层**（`filter: blur()` / 真 group `opacity` / `mix-blend-mode`）~~ | ✅ 已完成（M9.3） | 三者共用同一块能力："子树先合成到一张图，再整体处理"（见 §18.10） | 实测 Flash +15,344 B / RAM +676 B |
+| ~~**`transform: rotate()` / `skew()` / `matrix()`**~~ | ✅ 已完成（M9.4） | 复用离屏图层：合成后做一次仿射重采样（见 §18.11） | 实测 Flash +3,488 B（开着图层包时）/ +804 B（只有解析器） |
 | **`filter` 的颜色矩阵族**（brightness/contrast/saturate/grayscale…） | **PC/Mobile 必做** | 不一定要离屏：单色乘法可以直接融进每个绘制入口（CPU 乘、GL 用一个 uniform）。但要保证"子树整体"语义才准 | 中：CPU + GL 各一份 |
 | **`clip-path` 的任意形状**（`polygon()` / `path()` / `inset()`） | PC/Mobile | 要通用裁剪扫线（现在只有 `circle()` 的 SDF） | 中 |
 | **3D 变换**（`perspective()` / `rotate3d()`） | ❌ 不排期 | 要透视除法 + 深度排序 + 一个真正的合成器 | 极高，且与"一个节点一个盒"冲突 |
 
-**建议顺序**：B1–B5 已完成 → **B6（Grid + `border-image`）→ B7（表格 + 多栏）→ B8（文本栈）**；
-`离屏图层` 可以插在 B6 之后（它一次解锁三样，性价比最高）。
+**建议顺序**：B1–B6 已完成 → **M9.3 离屏图层 ✅ → M9.4 旋转光栅 ✅ → B7（表格 + 多栏）→ B8（文本栈）**。
 每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。
 
 ---

@@ -502,8 +502,82 @@ static uint32_t mask_alpha_at(const QLImage *m, QLRect box, ql_coord_t x, ql_coo
     }
 }
 
+/* 预乘 RGBA 的双线性采样（越界钳到边缘）。返回 0 表示完全透明 */
+static int sample_bilinear(const uint8_t *rgba, int w, int h, float fx, float fy,
+                           uint8_t out[4])
+{
+    if (fx < -0.5f || fy < -0.5f || fx > (float)w - 0.5f || fy > (float)h - 0.5f)
+        return 0;
+    float x0f = fx - 0.5f;
+    float y0f = fy - 0.5f;
+    int x0 = (int)floorf(x0f);
+    int y0 = (int)floorf(y0f);
+    const float tx = x0f - (float)x0;
+    const float ty = y0f - (float)y0;
+    int x1 = x0 + 1, y1 = y0 + 1;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x0 >= w) x0 = w - 1;
+    if (y0 >= h) y0 = h - 1;
+    if (x1 >= w) x1 = w - 1;
+    if (y1 >= h) y1 = h - 1;
+
+    const uint8_t *p00 = rgba + ((size_t)y0 * (size_t)w + (size_t)x0) * 4u;
+    const uint8_t *p10 = rgba + ((size_t)y0 * (size_t)w + (size_t)x1) * 4u;
+    const uint8_t *p01 = rgba + ((size_t)y1 * (size_t)w + (size_t)x0) * 4u;
+    const uint8_t *p11 = rgba + ((size_t)y1 * (size_t)w + (size_t)x1) * 4u;
+    const float w00 = (1.0f - tx) * (1.0f - ty);
+    const float w10 = tx * (1.0f - ty);
+    const float w01 = (1.0f - tx) * ty;
+    const float w11 = tx * ty;
+    uint32_t a = 0;
+    for (int c = 0; c < 4; c++) {
+        const float v = (float)p00[c] * w00 + (float)p10[c] * w10 +
+                        (float)p01[c] * w01 + (float)p11[c] * w11;
+        const int iv = (int)(v + 0.5f);
+        out[c] = (uint8_t)(iv < 0 ? 0 : (iv > 255 ? 255 : iv));
+        if (c == 3)
+            a = (uint32_t)out[c];
+    }
+    return (a != 0);
+}
+
+/* 把一个已经取好的源像素按 opacity / 圆角覆盖率 / 混合模式落到 dst 上 */
+static void blend_one(QLCanvas *dst, ql_coord_t x, ql_coord_t y, const uint8_t src[4],
+                      uint32_t gop, uint32_t cov, uint8_t mode)
+{
+    uint32_t a = (uint32_t)src[3] * gop / 255u;
+    a = a * cov / 255u;
+    if (a == 0)
+        return;
+
+    uint8_t d[3];
+    dst_get(dst, x, y, d);
+    uint8_t o[3];
+    /*
+     * 只有**普通混合**才走"预乘 src-over"这条快路。
+     * 别把 `a == 255` 也并进来：混合模式跟源的不透明度无关，
+     * 不透明图层同样要和背景相乘/相加（写成 or 的话混合模式等于没实现）。
+     */
+    if (mode == QL_UI_BLEND_NORMAL) {
+        for (int c = 0; c < 3; c++) {
+            const uint32_t s2 = (uint32_t)src[c] * gop / 255u * cov / 255u;
+            o[c] = (uint8_t)(s2 + (uint32_t)d[c] * (255u - a) / 255u);
+        }
+    } else {
+        for (int c = 0; c < 3; c++) {
+            const uint32_t cs = (uint32_t)src[c] * 255u / src[3];
+            const uint32_t bs = (uint32_t)blend_ch(mode, d[c], (int32_t)cs);
+            o[c] = (uint8_t)(((uint32_t)d[c] * (255u - a) + a * bs) / 255u);
+        }
+    }
+    dst_set(dst, x, y, o);
+}
+
 void ql_layer_composite(QLCanvas *dst, const uint8_t *rgba, int w, int h, QLRect at,
-                        const QLDraw2DLayerFx *fx)
+                        const QLDraw2DLayerFx *fx, ql_coord_t dpr_fx)
 {
     if (dst == NULL || rgba == NULL || w <= 0 || h <= 0 || dst->buffer == NULL)
         return;
@@ -517,54 +591,97 @@ void ql_layer_composite(QLCanvas *dst, const uint8_t *rgba, int w, int h, QLRect
     const QLImage *mask = (fx != NULL) ? fx->mask : NULL;
     const QLRect box = (fx != NULL) ? fx->box : at;
     const ql_coord_t corner = (fx != NULL) ? fx->corner : 0;
+    const ql_coord_t dpr = (dpr_fx > 0) ? dpr_fx : QL_SCALE_ONE;
+
+    if (fx == NULL || !fx->has_xform) {
+        /* ---- 快路：轴对齐贴回（绝大多数图层走这里） ---- */
+        for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
+            const int sy = (int)(y - at.y);
+            for (ql_coord_t x = area.x; x < ql_rect_right(area); x++) {
+                const int sx = (int)(x - at.x);
+                const uint8_t *sp = rgba + ((size_t)sy * (size_t)w + (size_t)sx) * 4u;
+                if (sp[3] == 0)
+                    continue;
+                uint32_t cov = 255u;
+                if (corner > 0)
+                    cov = ql_layer_round_cov(box, corner, x, y);
+                if (cov == 0u)
+                    continue;
+                if (mask != NULL) {
+                    const uint32_t m2 = mask_alpha_at(mask, box, x, y);
+                    if (m2 == 0u)
+                        continue;
+                    cov = cov * m2 / 255u;
+                }
+                blend_one(dst, x, y, sp, gop, cov, mode);
+            }
+        }
+        return;
+    }
+
+    /*
+     * ---- 慢路：仿射重采样 ----
+     *
+     * 矩阵在 CSS px 空间定义；统一换算到**设备像素**：
+     * 线性部分不变，平移与原点乘 dpr（等比缩放与线性变换可交换）。
+     * 然后对每个目标像素做**逆映射**，回到图层局部的设备坐标取样
+     * —— 正向映射会让旋转后的图出现空洞。
+     */
+    const double s = (double)dpr / (double)QL_SCALE_ONE;
+    const double fa = (double)fx->mat[0] / (double)QL_FX_ONE;
+    const double fb = (double)fx->mat[1] / (double)QL_FX_ONE;
+    const double fc = (double)fx->mat[2] / (double)QL_FX_ONE;
+    const double fd = (double)fx->mat[3] / (double)QL_FX_ONE;
+    const double fe = (double)fx->mat[4] / (double)QL_FX_ONE * s;
+    const double ff = (double)fx->mat[5] / (double)QL_FX_ONE * s;
+    const double det = fa * fd - fb * fc;
+    if (det > -1e-9 && det < 1e-9)
+        return;                        /* 退化矩阵：什么也画不出来 */
+    const double ia = fd / det, ib = -fb / det, ic = -fc / det, id = fa / det;
+
+    const double ox = (double)fx->origin_x * s;   /* 原点也在设备空间 */
+    const double oy = (double)fx->origin_y * s;
+    const double l0x = (double)at.x;              /* 图层局部原点的设备坐标 */
+    const double l0y = (double)at.y;
+
+    /* 圆角与遮罩都在**局部 CSS** 空间判定（先裁再转，与 CSS 一致） */
 
     for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++) {
-        const int sy = (int)(y - at.y);
         for (ql_coord_t x = area.x; x < ql_rect_right(area); x++) {
-            const int sx = (int)(x - at.x);
-            const uint8_t *s = rgba + ((size_t)sy * (size_t)w + (size_t)sx) * 4u;
-            uint32_t a = s[3];
-            if (a == 0)
+            const double qx = (double)x + 0.5;
+            const double qy = (double)y + 0.5;
+            const double ux = qx - ox - fe;
+            const double uy = qy - oy - ff;
+            const double lx = ia * ux + ic * uy;      /* 相对原点的局部设备坐标 */
+            const double ly = ib * ux + id * uy;
+            const double px = ox + lx - l0x;          /* 图层缓冲里的位置 */
+            const double py = oy + ly - l0y;
+
+            uint8_t sp[4];
+            if (!sample_bilinear(rgba, w, h, (float)px, (float)py, sp))
                 continue;
+
+            /*
+             * 局部 CSS 坐标（圆角 / 遮罩用）：设备坐标 ÷ dpr。
+             * 用**未旋转**的局部位置去判圆角 —— 先裁再转，与 CSS 一致。
+             */
+            const ql_coord_t lc_x =
+                (ql_coord_t)(((double)at.x + (ox + lx - l0x)) / s);
+            const ql_coord_t lc_y =
+                (ql_coord_t)(((double)at.y + (oy + ly - l0y)) / s);
 
             uint32_t cov = 255u;
             if (corner > 0)
-                cov = ql_layer_round_cov(box, corner, x, y);
+                cov = ql_layer_round_cov(box, corner, lc_x, lc_y);
             if (cov == 0u)
                 continue;
             if (mask != NULL) {
-                const uint32_t m2 = mask_alpha_at(mask, box, x, y);
+                const uint32_t m2 = mask_alpha_at(mask, box, lc_x, lc_y);
                 if (m2 == 0u)
                     continue;
                 cov = cov * m2 / 255u;
             }
-            a = a * gop / 255u;
-            a = a * cov / 255u;
-            if (a == 0)
-                continue;
-
-            uint8_t d[3];
-            dst_get(dst, x, y, d);
-            uint8_t o[3];
-            /*
-             * 只有**普通混合**才走"预乘 src-over"这条快路。
-             * 别把 `a == 255` 也并进来：混合模式跟源的不透明度无关，
-             * 不透明图层同样要和背景相乘/相加（写成 or 的话混合模式等于没实现）。
-             */
-            if (mode == QL_UI_BLEND_NORMAL) {
-                for (int c = 0; c < 3; c++) {
-                    const uint32_t src = s[c] * gop / 255u * cov / 255u;
-                    o[c] = (uint8_t)(src + (uint32_t)d[c] * (255u - a) / 255u);
-                }
-            } else {
-                /* 直通色 → 混合 → 再按 alpha 回混 */
-                for (int c = 0; c < 3; c++) {
-                    const uint32_t cs = s[c] * 255u / s[3];
-                    const uint32_t bs = (uint32_t)blend_ch(mode, d[c], (int32_t)cs);
-                    o[c] = (uint8_t)(((uint32_t)d[c] * (255u - a) + a * bs) / 255u);
-                }
-            }
-            dst_set(dst, x, y, o);
+            blend_one(dst, x, y, sp, gop, cov, mode);
         }
     }
 }

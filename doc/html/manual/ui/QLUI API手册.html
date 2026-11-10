@@ -184,6 +184,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1336,16 +1337,41 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <td>✅ <strong>假 3D 翻转</strong>就靠这个</td>
 </tr>
 <tr>
+<td><code>rotate(&lt;deg&gt;)</code></td>
+<td>✅ 顺时针为正；<strong>要离屏图层</strong>（<code>QL_FEAT_CSS_FILTER_LAYER</code>）</td>
+</tr>
+<tr>
+<td><code>skew(&lt;ax&gt;[, &lt;ay&gt;])</code> / <code>skewX()</code> / <code>skewY()</code></td>
+<td>✅ 同上</td>
+</tr>
+<tr>
+<td><code>matrix(a,b,c,d,e,f)</code></td>
+<td>✅ 同上（六参）</td>
+</tr>
+<tr>
+<td><code>transform-origin</code></td>
+<td>✅ <code>px</code> / 千分比 / <code>left|center|right|top|bottom</code>，默认中心</td>
+</tr>
+<tr>
 <td><code>none</code></td>
 <td>✅</td>
 </tr>
 <tr>
-<td><code>rotate()</code> / <code>skew()</code> / <code>matrix()</code> / 3d</td>
-<td>❌ <strong>构建期报错</strong></td>
+<td><code>perspective()</code> / <code>rotate3d()</code> / <code>matrix3d()</code></td>
+<td>❌ <strong>构建期报错</strong>（3D 不排期）</td>
 </tr>
 </tbody>
 </table>
 <p>可以组合：<code>transform: translate(4px, 6px) scale(2)</code>。</p>
+<p><strong><code>rotate</code> / <code>skew</code> / <code>matrix</code> 与上面两个的画法不同</strong>：它们是"<strong>先合成再重采样</strong>"，
+所以会开一层离屏图层（RAM = 元素盒大小的 RGBA 缓冲）。一整串 <code>transform</code> 只要
+出现这三个之一，整串就乘成<strong>一个</strong>矩阵：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">tilt</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translate</span><span class="p">(</span><span class="mi">10</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">rotate</span><span class="p">(</span><span class="mi">12</span><span class="kt">deg</span><span class="p">)</span><span class="w"> </span><span class="nb">scale</span><span class="p">(</span><span class="mf">1.1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p><code>@keyframes</code> 里<strong>不能</strong>写 <code>rotate()</code>/<code>skew()</code>/<code>matrix()</code>（关键帧只存
+<code>translate</code>/<code>scale</code> 的整数值），写了报错。把 <code>QL_FEAT_CSS_FILTER_LAYER</code> 裁掉时，
+这三个函数同样在<strong>构建期报错</strong>（不静默降级）。</p>
 <p><strong><code>scale()</code> 的三条行为</strong>：</p>
 <ol>
 <li><strong>不进布局</strong>：<code>flex</code> / <code>border_box</code> 看不到它，邻居不会被挤开（与 CSS 一致）。</li>
@@ -1711,7 +1737,9 @@ z-index 相同则保持文档顺序（稳定）。</p>
 </code></pre></div>
 
 <p>这三条和"组 <code>opacity</code>"共用同一块基建：<strong>先把子树合成到一张临时图，再整体处理</strong>。
-支持范围与公式见《CSS3 覆盖与裁剪》§18.10，教程见 <a href="../tutorial/20_filter.md">离屏图层</a>。</p>
+支持范围与公式见《CSS3 覆盖与裁剪》§18.10，教程见 <a href="../tutorial/20_filter.md">离屏图层</a>。
+<code>transform: rotate()/skew()/matrix()</code> 也长在这块基建上（§3.10 / §18.11），
+教程见 <a href="../tutorial/21_transform.md">旋转光栅</a>。</p>
 <table>
 <thead>
 <tr>
@@ -1742,7 +1770,7 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <h3 id="312">3.12 不支持的写法一律报错</h3>
 <div class="highlight"><pre><span></span><code>float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
-rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
+perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode

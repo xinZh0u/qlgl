@@ -1,0 +1,239 @@
+/*
+ * M9.4：旋转光栅。白底浅色主题（见 ../README.md 的"约定"）。
+ *
+ * 带 transform（rotate/skew/matrix）的元素走"离屏图层 + 仿射重采样"：
+ * 子树先按原样画进临时图，再整体转过去。所以文字、圆角、滤镜都跟着转。
+ */
+#root {
+  width: 704px;
+  padding: 20px 28px 24px 28px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  font-size: 10px;
+  color: #57606A;
+  background-color: #F6F8FA;
+  border-radius: 9px;
+  padding: 3px 8px;
+}
+
+.sec {
+  margin-bottom: 24px;
+}
+
+.cap {
+  font-size: 11px;
+  color: #57606A;
+  margin-bottom: 10px;
+}
+
+.hint {
+  font-size: 10px;
+  color: #6E7781;
+  margin-top: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  /* 旋转后的元素会超出自己的盒子，行高留大一点，别和上下文字挤在一起 */
+  min-height: 56px;
+}
+
+code {
+  color: #9A6700;
+}
+
+/* ---------- 1. 纯旋转 ---------- */
+
+.tag {
+  width: 64px;
+  height: 40px;
+  line-height: 40px;
+  text-align: center;
+  border-radius: 8px;
+  background-color: #0969DA;
+  color: #FFFFFF;
+  font-size: 10px;
+}
+
+/* 每个标签留出转动的空间，不然转到框外就被裁掉了 */
+.r15 { transform: rotate(15deg); }
+
+.r45 { transform: rotate(45deg); }
+.r90 { transform: rotate(90deg); }
+.r180 { transform: rotate(180deg); }
+
+/* ---------- 2. transform-origin ---------- */
+
+.origin-row {
+  align-items: flex-start;
+  min-height: 120px;
+}
+
+.orig {
+  width: 110px;
+  height: 84px;
+  border: 1px dashed #D0D7DE;
+  border-radius: 6px;
+  position: relative;
+}
+
+.needle {
+  position: absolute;
+  left: 35px;
+  top: 28px;
+  width: 40px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  border-radius: 5px;
+  background-color: #1A7F37;
+  color: #FFFFFF;
+  font-size: 9px;
+  transform: rotate(30deg);
+}
+
+.o-center { transform-origin: 50% 50%; }
+.o-topleft { transform-origin: left top; }
+.o-right { transform-origin: right center; }
+
+/* ---------- 3. skew ---------- */
+
+.sk {
+  width: 150px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skbox {
+  width: 120px;
+  height: 34px;
+  line-height: 34px;
+  text-align: center;
+  border-radius: 6px;
+  background-color: #8250DF;
+  color: #FFFFFF;
+  font-size: 10px;
+}
+
+.sx { transform: skewX(18deg); }
+.sy { transform: skewY(18deg); }
+.sx2 { transform: skewX(-18deg); }
+
+/* ---------- 4. matrix ---------- */
+
+.row.mx-row {
+  min-height: 84px;
+}
+
+.mx {
+  width: 160px;
+  height: 44px;
+  line-height: 44px;
+  text-align: center;
+  border-radius: 8px;
+  background-color: #BC4C00;
+  color: #FFFFFF;
+  font-size: 10px;
+  transform: matrix(1, 0.25, -0.35, 1, 10, 6);
+}
+
+.mx2 {
+  background-color: #0969DA;
+  transform: matrix(0.9, -0.3, 0.3, 0.9, 0, 0);
+}
+
+/* ---------- 5. 与图层特效叠加 ---------- */
+
+.fx {
+  width: 96px;
+  height: 52px;
+  line-height: 52px;
+  text-align: center;
+  border-radius: 10px;
+  color: #FFFFFF;
+  font-size: 10px;
+  background-color: #0969DA;
+}
+
+.card-blur {
+  transform: rotate(-12deg);
+  filter: blur(2px);
+}
+
+.card-shadow {
+  background-color: #FFFFFF;
+  color: #1F2328;
+  border: 1px solid #D0D7DE;
+  transform: rotate(8deg);
+  filter: drop-shadow(3px 4px 3px rgba(31, 35, 40, 0.35));
+}
+
+.card-round {
+  /* 圆角 + 旋转：先裁成圆的，再转 45° */
+  width: 64px;
+  height: 64px;
+  line-height: 64px;
+  border-radius: 32px;
+  background-color: #1A7F37;
+  transform: rotate(45deg);
+}
+
+/* ---------- 6. 表盘 ---------- */
+
+.gauge-row {
+  align-items: flex-start;
+  min-height: 84px;
+}
+
+.gauge {
+  width: 76px;
+  height: 76px;
+  border-radius: 38px;
+  border: 1px solid #D0D7DE;
+  background-color: #F6F8FA;
+  position: relative;
+}
+
+.arm {
+  position: absolute;
+  left: 36px;
+  top: 8px;
+  width: 4px;
+  height: 30px;
+  border-radius: 2px;
+  background-color: #CF222E;
+  transform-origin: 50% 30px;
+}
+
+.g1 { transform: rotate(-50deg); }
+.g2 { transform: rotate(-10deg); }
+.g3 { transform: rotate(30deg); }
+.g4 { transform: rotate(70deg); }
+
+.note {
+  white-space: normal;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #6E7781;
+  line-height: 17px;
+}

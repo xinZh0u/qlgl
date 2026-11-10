@@ -80,6 +80,19 @@ typedef struct {
     uint8_t      ds_blur;
     uint8_t      ds_a;        /* 0 = 用 ds_color 自己的 alpha */
     uint32_t     ds_color;    /* 0 = currentColor（用 text_color） */
+    /*
+     * 非轴对齐变换（M9.4）：`has_xform` 为真时，图层要按这个 2x3 仿射画回去
+     * （旋转 / 斜切 / `matrix()`）。字段是 26.6 定点、**CSS px 空间**，
+     * 与 `QLUIXform` 完全同构；`origin_*` 是 `transform-origin`（CSS px 绝对坐标）。
+     *
+     * 语义与 CSS 一致：**先按原样合成整棵子树，再整体按矩阵重采样**。
+     */
+    uint8_t      has_xform;
+    uint8_t      xform_res[3];
+    int32_t      mat[6];
+    ql_coord_t   origin_x, origin_y;
+    QLRect       bounds_css;  /* 图层矩形（CSS px，未旋转）：GPU 侧把 v_uv 换回局部坐标用 */
+
     QLRect       box;         /* 元素的边框盒（CSS px）：圆角裁剪与遮罩拉伸都以它为准 */
     ql_coord_t   corner;      /* 图层的圆角半径（CSS px，0 = 直角） */
     const QLImage *mask;      /* `mask: url()` 解出来的图（NULL = 无） */

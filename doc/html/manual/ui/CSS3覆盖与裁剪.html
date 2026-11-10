@@ -184,6 +184,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -347,6 +348,14 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
 <td>编译成<strong>后缀字节码</strong>存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉</td>
 </tr>
+<tr>
+<td><strong>离屏图层</strong>：<code>filter</code> 全家 / 真 group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code></td>
+<td>blob v29（见 §18.10）</td>
+</tr>
+<tr>
+<td><strong>旋转光栅</strong>：<code>transform: rotate()</code> / <code>skew()</code> / <code>skewX/Y</code> / <code>matrix()</code> / <code>transform-origin</code></td>
+<td>blob v30（见 §18.11）</td>
+</tr>
 </tbody>
 </table>
 <p><strong>还没做</strong>，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：</p>
@@ -361,7 +370,7 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <tbody>
 <tr>
 <td><strong>PC/Mobile 必做</strong>（MCU 归能力包）</td>
-<td>Grid、<code>border-image</code>（B6）；表格、多栏（B7）；<code>@font-face</code> + 真字体栈、连字整形、双向（B8）；离屏图层（<code>filter</code> / 真 group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code>）；<code>transform: rotate()</code>/<code>skew()</code>/<code>matrix()</code>；<code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code></td>
+<td>表格、多栏（B7）；<code>@font-face</code> + 真字体栈、连字整形、双向（B8）；<code>clip-path</code> 的 <code>inset</code>/<code>ellipse</code>/<code>polygon</code></td>
 <td>§22</td>
 </tr>
 <tr>
@@ -1044,15 +1053,15 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tr>
 <tr>
 <td><code>deg</code></td>
-<td>⚠️</td>
+<td>✅</td>
 <td>L</td>
-<td>只在渐变方向里（<code>90deg</code> / <code>180deg</code>），不进 <code>transform</code></td>
+<td>渐变方向（<code>90deg</code>）与 <code>rotate()</code>/<code>skew()</code>/<code>hue-rotate()</code></td>
 </tr>
 <tr>
 <td><code>turn</code> / <code>rad</code> / <code>grad</code></td>
 <td>❌</td>
 <td>N</td>
-<td>只有旋转用得上，而 <code>transform: rotate()</code> 还没做</td>
+<td>只有旋转用得上；<code>deg</code> 已经够表达，加三种写法只是多三条解析分支</td>
 </tr>
 <tr>
 <td><code>fr</code></td>
@@ -2075,21 +2084,27 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 </tr>
 <tr>
 <td><code>transform: rotate()</code></td>
-<td>⏳</td>
-<td><strong>F</strong></td>
-<td><strong>单独立项，PC/Mobile 必做</strong>（§22）：要旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转）。MCU 档恒关</td>
+<td>✅</td>
+<td>F</td>
+<td>M9.4：离屏图层 + 仿射重采样（§18.11）。<strong>依赖 <code>QL_FEAT_CSS_FILTER_LAYER</code></strong>，裁掉时构建期报错</td>
 </tr>
 <tr>
-<td><code>transform: skew()</code></td>
-<td>⏳</td>
+<td><code>transform: skew()</code> / <code>skewX()</code> / <code>skewY()</code></td>
+<td>✅</td>
 <td>F</td>
-<td>同上（与 <code>rotate</code> 同一份仿射路径，一起做几乎不加成本）</td>
+<td>与 <code>rotate</code> 同一份仿射路径（错切矩阵）</td>
 </tr>
 <tr>
-<td><code>transform: matrix()</code> / <code>matrix3d()</code></td>
-<td>⏳</td>
+<td><code>transform: matrix()</code></td>
+<td>✅</td>
 <td>F</td>
-<td><code>matrix()</code> 随之解锁（<code>rotate</code>/<code>skew</code> 落地后只是"拆矩阵"）；<code>matrix3d()</code> 归 3D，不排期</td>
+<td>六参；与 <code>rotate</code> 一样进矩阵池</td>
+</tr>
+<tr>
+<td><code>transform: matrix3d()</code></td>
+<td>❌</td>
+<td>S</td>
+<td>归 3D，不排期</td>
 </tr>
 <tr>
 <td><code>transform: perspective()</code> / <code>rotate3d()</code> 等 3D</td>
@@ -2099,9 +2114,9 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 </tr>
 <tr>
 <td><code>transform-origin</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>R</td>
-<td>现在固定绕元素中心；随 <code>rotate</code> 一起做（有旋转才需要原点）</td>
+<td>px / 千分比 / <code>left|center|right|top|bottom</code>；默认元素中心</td>
 </tr>
 <tr>
 <td><code>transform-style</code> / <code>backface-visibility</code></td>
@@ -2833,9 +2848,10 @@ flags: QL_UI_NODE_CHECKBOX / _CHECKED / _DISABLED
 
 <p>平铺时先把起点对齐到可见瓦片、再把裁剪设成边框盒 —— 不设裁剪会画到兄弟节点上
 （与"四边不同色"那次裁剪没恢复是同一类错误，这次提前防住了）。</p>
-<p><strong>没做的：<code>filter</code></strong>。颜色矩阵类（brightness/grayscale/...）技术上可行，
+<p><strong>当时没做的：<code>filter</code></strong>。颜色矩阵类（brightness/grayscale/...）技术上可行，
 但 <code>blur()</code> / <code>drop-shadow()</code> 需要<strong>离屏图层</strong>（子树先合成到一张图再整体模糊），
-成本与 <code>transform: rotate()</code> 同级，所以一起留作单独立项 —— 覆盖表里如实标 ⏳。</p>
+当时留作单独立项 —— 后来 M9.3 落地（§18.10），<code>transform: rotate</code> 也在这层上
+长出来（§18.11）。</p>
 <h3 id="188-b6b7">18.8 B6/B7 的代价是怎么估出来的</h3>
 <p>新批次（Grid / 表格 / 多栏 / <code>border-image</code>）都要在"进 MCU 能力包"之前先说清代价。
 这一节说明<strong>怎么量</strong>，数字见 §2.1。</p>
@@ -3136,6 +3152,180 @@ CPU 原来那套"两趟盒式 ≈ 钟形"与 GL 的高斯形状不同，同一�
 <p>对比一下：<code>CSS_GRID</code> 是 <strong>4,528 B</strong>、<code>CSS_BORDER_IMAGE</code> 是 <strong>2,176 B</strong> ——
 离屏图层是这两者之和的<strong>两倍多</strong>，也解释了为什么它必须是一个独立的能力包
 （而不是塞进 BASE）。</p>
+<h3 id="1811-m94-transform-rotateskewmatrix-transform-origin">18.11 M9.4 落地：旋转光栅（<code>transform: rotate/skew/matrix</code> + <code>transform-origin</code>）</h3>
+<p>CSS 的 <code>transform</code> 作用于<strong>元素的渲染结果</strong>，不是"把每个图元按矩阵画一遍"。
+这条语义决定了实现方式：</p>
+<div class="highlight"><pre><span></span><code>子树先按原样画进离屏图层  →  再按 2×3 矩阵做一次仿射重采样  →  贴回目标
+</code></pre></div>
+
+<p>逐图元转（另一种做法）会把文字转成马赛克、把圆角转成方角、把 <code>filter</code> 的结果
+转丢，所以从一开始就否掉了。好处是它<strong>完全复用 M9.3 的图层基建</strong>：
+<code>style_needs_layer()</code> 里只要多一条"有 xform 就要图层"。</p>
+<h4 id="doc">数据：矩阵进 doc 池，样式只留下标</h4>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>做法</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>矩阵存哪</td>
+<td><code>QLUIDoc.xforms[]</code>（<code>QLUIXform</code> = 6 × int32，26.6 定点）</td>
+<td>24 B/样式在 MCU 上不可接受；同一份 CSS 里重复的 <code>rotate(15deg)</code> 只存一份（按值去重，池上限 32）</td>
+</tr>
+<tr>
+<td>样式里存什么</td>
+<td><code>int16_t xform</code>（<code>QL_UI_NO_XFORM = -1</code>）+ <code>QLUILength origin[2]</code></td>
+<td>共 +8 B/样式（336 → <strong>344</strong>），blob <strong>v30</strong>、头 144 → 152</td>
+</tr>
+<tr>
+<td>坐标系</td>
+<td>矩阵在 <strong>CSS px 空间</strong>定义</td>
+<td>设备空间 = 同一份线性部分；平移与原点乘 dpr（等比缩放与线性变换可交换）</td>
+</tr>
+<tr>
+<td><code>transform-origin</code> 的百分比</td>
+<td><strong>千分比</strong>（0..1000）</td>
+<td>与宽度类的 <code>/100</code> 不同：这里用 1000 才能表达 1‰ 的微调，且与 <code>sc_x</code> 同一口径</td>
+</tr>
+</tbody>
+</table>
+<p>轴对齐的 <code>translate()</code> / <code>scale()</code> <strong>不进</strong>矩阵池（零重采样，走老的绘制期变换）。
+一条声明里只要出现 <code>rotate/skew/matrix</code>，整串（含 <code>translate</code>/<code>scale</code>）乘成一个矩阵
+—— 这是 CSS 的语义，也避免了"一半在布局期、一半在合成期"。</p>
+<h4 id="cpu_1">CPU：逆向映射 + 双线性</h4>
+<p>正向映射（把源像素搬到变换后的位置）会在放大时留空洞，所以按目标像素反查：</p>
+<div class="highlight"><pre><span></span><code>q（目标像素中心） → u = q - origin - t → p = origin + M⁻¹·u → 在图层缓冲里采样
+</code></pre></div>
+
+<p>圆角 / 遮罩用<strong>局部（未旋转）坐标</strong>判定，也就是"先裁再转"，与浏览器一致。
+轴对齐矩阵（含 <code>matrix(1,0,0,1,0,0)</code>）仍走原来的整块贴回快路。</p>
+<h4 id="gpu-u_local">GPU：变换四角 + 一个 <code>u_local</code> 开关</h4>
+<p>四边形还是 4 个顶点，只是把四角按矩阵摆过去。平行四边形上的 <code>v_uv</code> 线性插值
+<strong>恰好等于</strong>局部坐标，于是片元里一句就能换来正确的圆角判定点：</p>
+<div class="highlight"><pre><span></span><code><span class="n">lp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">u_local</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mo">0</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">u_lbounds</span><span class="p">.</span><span class="n">xy</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="kt">vec2</span><span class="p">(</span><span class="n">uv</span><span class="p">.</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">uv</span><span class="p">.</span><span class="n">y</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">u_lbounds</span><span class="p">.</span><span class="n">zw</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">dp</span><span class="p">;</span>
+</code></pre></div>
+
+<h4 id="_4">踩过的坑（最重要的两个）</h4>
+<ol>
+<li><strong>图层合成整体上下翻转</strong>（M9.3 就存在，M9.4 才暴露）。
+   内容是按"CSS y 向下"画进 FBO 的（主着色器里 <code>ndc.y = -ndc.y</code>），
+   所以纹理的 <strong>v=1 才是元素顶边</strong>；而合成四边形的 uv 一直按 v=0 在顶边取。
+   纯色、居中的规则方块上下对称，六个老用例全是绿的 —— 一旦图层里有"上红下蓝"
+   或者转过的文字，立刻原形毕露。现在四边形的 uv 顶边给 v=1，同时把依赖
+   <code>v_uv</code> 的三处一起翻正：遮罩图（<code>1-uv.y</code>）、背景纹理（直接按 <code>uv</code>）、
+   <code>drop-shadow</code> 的 y 偏移（改号）。</li>
+<li><strong>嵌套图层的位置</strong>：内层的 <code>L-&gt;dev</code> 已经是"相对外层 FBO"的坐标（进图层时
+   offset 已经减过外层原点），再减一次外层 <code>dev</code> 就会整体上移。合成四边形的
+   归一化分母取当前目标的 <code>g-&gt;width/height</code> 即可，别再减原点。</li>
+</ol>
+<h4 id="_5">命中测试</h4>
+<p>把屏幕点按矩阵<strong>逆变换</strong>回局部空间再判盒，逐层下降正好是仿射连乘：</p>
+<div class="highlight"><pre><span></span><code><span class="n">det</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">a</span><span class="o">*</span><span class="n">d</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">b</span><span class="o">*</span><span class="n">c</span><span class="p">;</span><span class="w">                          </span><span class="cm">/* =0：压成一条线，点不中 */</span>
+<span class="n">lx</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">d</span><span class="o">*</span><span class="n">ux</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">c</span><span class="o">*</span><span class="n">uy</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">det</span><span class="p">;</span><span class="w">   </span><span class="n">ly</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">a</span><span class="o">*</span><span class="n">uy</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">b</span><span class="o">*</span><span class="n">ux</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">det</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 出来就是 px */</span>
+</code></pre></div>
+
+<p>（<code>ux/uy</code> 先乘 <code>QL_FX_ONE</code>，<code>det</code> 是 <code>FX²</code>，所以结果不用再除 —— 第一次写成了
+再除一次，表现是"原位置也能点中"。）</p>
+<h4 id="test_gl_vs_cpu-7">一致性（<code>test_gl_vs_cpu</code> 新增 7 个用例）</h4>
+<table>
+<thead>
+<tr>
+<th>用例</th>
+<th>差异</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>图层方向（上下不对称）</td>
+<td>0.00%</td>
+<td>专门守上面第 1 条</td>
+</tr>
+<tr>
+<td>图层内文字（混合状态）</td>
+<td>0.23%</td>
+<td>守 M9.3 的"图层结束后没还原混合状态"</td>
+</tr>
+<tr>
+<td><code>rotate(90deg)</code> / <code>rotate(30deg)</code></td>
+<td>0.00% / 0.00%</td>
+<td>轴对齐完全一致；30° 只有边缘 11 px 不同</td>
+</tr>
+<tr>
+<td><code>skewX</code> / <code>matrix</code></td>
+<td>0.00% / 0.15%</td>
+<td>差异全在斜边那一个像素上</td>
+</tr>
+<tr>
+<td><code>rotate</code> + 文字</td>
+<td>0.06%</td>
+<td>双线性 vs 逐像素覆盖率</td>
+</tr>
+</tbody>
+</table>
+<p>CPU 侧的硬数字在 <code>test_transform</code>（63 项）：<code>rotate(90°)</code> 把 40×10 的横条变成
+10×40 的竖条且像素数不变、<code>rotate(45°)</code> 面积 364 px、<code>skewX(45°)</code> 包围盒 40+10、
+<code>transform-origin: left top</code> 让顶边留在轴上、圆角 + 45° 仍是圆的边缘。</p>
+<blockquote>
+<p>重采样对越界点做<strong>边缘钳位</strong>，所以旋转/平移后的元素外沿会多出约 1 px
+的"边缘色"。两个后端一致，肉眼不可见，但写断言时要算上这一圈。</p>
+</blockquote>
+<h4 id="_6">容量与裁剪</h4>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>矩阵池</td>
+<td>32 个（超出报错，不静默丢）</td>
+</tr>
+<tr>
+<td>每样式额外</td>
+<td>+8 B（<code>int16</code> 下标 + 两个 <code>QLUILength</code>）</td>
+</tr>
+<tr>
+<td>编译开关</td>
+<td>与 M9.3 同一个：<code>QL_FEAT_CSS_FILTER_LAYER</code></td>
+</tr>
+<tr>
+<td>裁掉之后的行为</td>
+<td><code>rotate/skew/matrix</code> <strong>构建期报错</strong>（不做"悄悄不转"的降级）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MCU 实测</strong>（同一套 mps2-an386 基准，与 §18.10 同一把尺子）：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code>.text</code></th>
+<th><code>.bss</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_FEAT_CSS_FILTER_LAYER=0</code>（MCU 默认）</td>
+<td>139,740 → <strong>140,544 B</strong>（+804）</td>
+<td>140,264 B（不变）</td>
+</tr>
+<tr>
+<td><code>QL_FEAT_CSS_FILTER_LAYER=1</code></td>
+<td>155,084 → <strong>158,572 B</strong>（+3,488）</td>
+<td>140,940 → <strong>141,148 B</strong>（+208）</td>
+</tr>
+</tbody>
+</table>
+<p>也就是说：<strong>矩阵本身只要 804 B</strong>（解析 + 定点运算），真正贵的是它能用的那张
+图层（3,488 B 的合成慢路）。原规划"比离屏图层便宜"的判断成立。</p>
+<hr />
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -3584,9 +3774,14 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>rotate</code> / <code>skew</code> / <code>matrix</code> 报错</td>
 </tr>
 <tr>
+<td><code>transform: rotate/skew/matrix</code></td>
+<td>只有<strong>仿射</strong>（2×2 + 平移）</td>
+<td>没有 3D / <code>perspective()</code>；<code>rotate()</code> 走"合成后重采样"，所以旋到一半的元素<strong>不吃点击重排</strong>（布局盒不动，命中按旋转后的形状算）</td>
+</tr>
+<tr>
 <td><code>transform-origin</code></td>
-<td><strong>固定为元素中心</strong></td>
-<td>属性本身没实现</td>
+<td>px / 千分比 / 关键字</td>
+<td>没有三值写法（<code>left top 10px</code>）</td>
 </tr>
 <tr>
 <td>flex 项的<strong>主轴尺寸</strong></td>
@@ -3939,11 +4134,11 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td><code>CSS_FILTER_LAYER</code></td>
 <td><code>QL_FEAT_CSS_FILTER_LAYER</code></td>
-<td><strong>M9.3 ✅</strong>：离屏图层 = <code>filter</code> 全家 + <code>mix-blend-mode</code> + <code>mask</code> + 真 group opacity</td>
+<td><strong>M9.3 ✅</strong>：离屏图层 = <code>filter</code> 全家 + <code>mix-blend-mode</code> + <code>mask</code> + 真 group opacity；<strong>M9.4 ✅</strong> 的 <code>transform: rotate/skew/matrix</code> 也挂在这个包上（它要靠离屏合成 + 重采样）</td>
 <td>✅</td>
 <td><strong>默认关</strong></td>
 <td>BASE（+ <code>QL_FEAT_UI_IMAGE</code> 才有 <code>mask</code>）</td>
-<td><strong>实测 Flash 15,344 B / RAM 676 B</strong>（见 §18.10 末）</td>
+<td><strong>实测 Flash 15,344 B / RAM 676 B</strong>（M9.3）+ <strong>3,488 B</strong>（M9.4，见 §18.11 末）</td>
 </tr>
 <tr>
 <td><code>CSS_FONT_STACK</code></td>
@@ -4124,10 +4319,11 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <li><strong>两端一致</strong>：包开着时 <code>test_gl_vs_cpu</code> 逐像素一致（绘制类包强制）。</li>
 </ol>
 <hr />
-<h2 id="22-b1b5-b6b8-pcmobile">22. 批次计划（B1–B5 已完成，B6–B8 是 PC/Mobile 档的主线）</h2>
+<h2 id="22-b1b6-m93m94-b7b8-pcmobile">22. 批次计划（B1–B6 + M9.3/M9.4 已完成，B7–B8 是 PC/Mobile 档的主线）</h2>
 <p>排序依据：<strong>先补"真实页面没它写不出来"的，再补"锦上添花"的</strong>；同一批内先做不动
 <code>QLUIStyle</code> 的（只动解析期），后做动结构体的（要抬 blob 版本 + 重生成 golden）。</p>
-<p><strong>B1–B5</strong> 是"补细节"（已完成）；<strong>B6–B8</strong> 是"补架构"（PC/Mobile 档，MCU 归能力包）。</p>
+<p><strong>B1–B5</strong> 是"补细节"（已完成）；<strong>B6–B8</strong> 是"补架构"（PC/Mobile 档，MCU 归能力包）；
+<strong>M9.3 / M9.4</strong> 是两轮"新光栅路径"（离屏图层 → 旋转），已完成，见 §18.10 / §18.11。</p>
 <table>
 <thead>
 <tr>
@@ -4169,7 +4365,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td>新 <code>test_text_adv</code>（25 项，含像素层）+ golden</td>
 </tr>
 <tr>
-<td><strong>B4 绘制细节</strong>（✅ 已完成：<code>border-style: dashed/dotted</code> + <code>outline</code>（§18.5）、四边独立 <code>border-*</code>、四角 <code>border-*-radius</code>、两层 + <code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>、<code>object-position</code>（§18.6）、<code>background-image: url()</code> + <code>size/position/repeat</code>（§18.7）。<strong>只剩 <code>filter</code></strong>（颜色矩阵可做，<code>blur()</code> 需离屏图层 —— 与 <code>rotate</code> 同级，单独立项）</td>
+<td><strong>B4 绘制细节</strong>（✅ 已完成：<code>border-style: dashed/dotted</code> + <code>outline</code>（§18.5）、四边独立 <code>border-*</code>、四角 <code>border-*-radius</code>、两层 + <code>inset</code> 阴影、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code>、<code>object-position</code>（§18.6）、<code>background-image: url()</code> + <code>size/position/repeat</code>（§18.7）。<strong><code>filter</code> 已由 M9.3 补上</strong>（§18.10）</td>
 <td><code>border-style: dashed/dotted</code>、四边独立 <code>border-*</code>、多重/<code>inset</code> 阴影、<code>outline</code>、<code>background-size/position</code>、<code>object-position</code>、<code>text-shadow</code>、<code>image-rendering</code>、<code>scrollbar-*</code></td>
 <td><code>CSS_BORDER_STYLE</code> + <code>CSS_SHADOW</code> / <code>CSS_GRADIENT</code></td>
 <td>视觉还原度</td>
@@ -4203,16 +4399,16 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </thead>
 <tbody>
 <tr>
-<td><strong>离屏图层</strong>（<code>filter: blur()</code> / 真 group <code>opacity</code> / <code>mix-blend-mode</code>）</td>
-<td><strong>PC/Mobile 必做</strong></td>
-<td>三者共用同一块能力："子树先合成到一张图，再整体处理"。做完它，这三样一起解锁（见 §20.1）</td>
-<td>高：CPU 要一块临时缓冲 + 一次合成；GL 要 FBO 复用 + 纹理采样。RAM 成本 = 一个元素盒子大小的 RGBA 缓冲</td>
+<td>~~<strong>离屏图层</strong>（<code>filter: blur()</code> / 真 group <code>opacity</code> / <code>mix-blend-mode</code>）~~</td>
+<td>✅ 已完成（M9.3）</td>
+<td>三者共用同一块能力："子树先合成到一张图，再整体处理"（见 §18.10）</td>
+<td>实测 Flash +15,344 B / RAM +676 B</td>
 </tr>
 <tr>
-<td><strong><code>transform: rotate()</code> / <code>skew()</code></strong></td>
-<td><strong>PC/Mobile 必做</strong></td>
-<td>要一条旋转光栅路径（CPU 逐像素仿射 + GL 顶点变换 + 字形旋转 + 裁剪盒变换）</td>
-<td>中高：与 flex 求解器不同量级，但比离屏图层便宜（不需要额外缓冲）</td>
+<td>~~<strong><code>transform: rotate()</code> / <code>skew()</code> / <code>matrix()</code></strong>~~</td>
+<td>✅ 已完成（M9.4）</td>
+<td>复用离屏图层：合成后做一次仿射重采样（见 §18.11）</td>
+<td>实测 Flash +3,488 B（开着图层包时）/ +804 B（只有解析器）</td>
 </tr>
 <tr>
 <td><strong><code>filter</code> 的颜色矩阵族</strong>（brightness/contrast/saturate/grayscale…）</td>
@@ -4234,8 +4430,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </tr>
 </tbody>
 </table>
-<p><strong>建议顺序</strong>：B1–B5 已完成 → <strong>B6（Grid + <code>border-image</code>）→ B7（表格 + 多栏）→ B8（文本栈）</strong>；
-<code>离屏图层</code> 可以插在 B6 之后（它一次解锁三样，性价比最高）。
+<p><strong>建议顺序</strong>：B1–B6 已完成 → <strong>M9.3 离屏图层 ✅ → M9.4 旋转光栅 ✅ → B7（表格 + 多栏）→ B8（文本栈）</strong>。
 每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。</p>
 <hr />
 <h2 id="23-css">23. 怎么新增一个 CSS 属性（检查清单）</h2>

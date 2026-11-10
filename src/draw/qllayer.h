@@ -58,7 +58,7 @@ void ql_layer_blur(uint8_t *rgba, int w, int h, int radius);
  *   - `fx->corner` 把结果裁进圆角矩形。
  */
 void ql_layer_composite(QLCanvas *dst, const uint8_t *rgba, int w, int h, QLRect at,
-                        const QLDraw2DLayerFx *fx);
+                        const QLDraw2DLayerFx *fx, ql_coord_t dpr_fx);
 
 /* 单个像素点的圆角覆盖率（0..255），合成时用；与 qlcanvas 的圆角同一公式 */
 uint32_t ql_layer_round_cov(QLRect box, ql_coord_t corner, ql_coord_t x, ql_coord_t y);

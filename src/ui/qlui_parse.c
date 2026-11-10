@@ -1940,15 +1940,241 @@ static int tf_scale(const char *token, const char *where, const char *fn, int *o
     return 1;
 }
 
+/* ------------------------------ transform 矩阵（M9.4） ------------------------------ */
+
 /*
- * transform：translate / translateX / translateY / scale / scaleX / scaleY。
- * rotate/skew/matrix/3d 需要非轴对齐光栅化，明确报错（不静默降级）。
+ * 2x3 仿射，与 CSS `matrix(a,b,c,d,e,f)` 同布局：
+ *   [ a c e ]
+ *   [ b d f ]
+ * 解析期用 double 累乘（精度够且不用担心定点溢出），最后一次性转 26.6 定点。
+ */
+static void xf_identity(double m[6])
+{
+    m[0] = 1.0;
+    m[1] = 0.0;
+    m[2] = 0.0;
+    m[3] = 1.0;
+    m[4] = 0.0;
+    m[5] = 0.0;
+}
+
+/* m = m * n（列向量约定：p' = m * (n * p)，与 CSS 的书写顺序一致） */
+static void xf_mul(double m[6], const double n[6])
+{
+    const double a = m[0] * n[0] + m[2] * n[1];
+    const double b = m[1] * n[0] + m[3] * n[1];
+    const double c = m[0] * n[2] + m[2] * n[3];
+    const double d = m[1] * n[2] + m[3] * n[3];
+    const double e = m[0] * n[4] + m[2] * n[5] + m[4];
+    const double f = m[1] * n[4] + m[3] * n[5] + m[5];
+    m[0] = a;
+    m[1] = b;
+    m[2] = c;
+    m[3] = d;
+    m[4] = e;
+    m[5] = f;
+}
+
+static int32_t xf_fixed(double v)
+{
+    const double x = v * (double)QL_FX_ONE;
+    if (x > 2147483000.0)
+        return 2147483000;
+    if (x < -2147483000.0)
+        return -2147483000;
+    return (int32_t)py_round(x);
+}
+
+/* 矩阵池：同一份变换只存一份（样式的 `xform` 是下标） */
+#define QL_CFG_UI_MAX_XFORMS 32
+static QLUIXform s_xform_pool[QL_CFG_UI_MAX_XFORMS];
+static int       s_xform_n;
+
+static int xform_intern_fixed(const QLUIXform *q, int16_t *out, const char *where)
+{
+    for (int i = 0; i < s_xform_n; i++) {
+        if (memcmp(&s_xform_pool[i], q, sizeof(*q)) == 0) {
+            *out = (int16_t)i;
+            return 1;
+        }
+    }
+    if (s_xform_n >= QL_CFG_UI_MAX_XFORMS) {
+        set_error("%s: transform 的不同取值超过上限 %d（同一份变换会共用一条）", where,
+                  QL_CFG_UI_MAX_XFORMS);
+        return 0;
+    }
+    s_xform_pool[s_xform_n] = *q;
+    *out = (int16_t)s_xform_n;
+    s_xform_n++;
+    return 1;
+}
+
+/* 角度：`<num>deg` / `<num>rad` / `<num>turn` / `<num>grad` / 无单位 */
+static int tf_angle(const char *token, const char *where, const char *fn, double *out)
+{
+    const char *p = skip_space(token);
+    const char *end = NULL;
+    double v = 0;
+    if (!match_number(p, &end, &v)) {
+        set_error("%s: %s 的角度不是数字（收到 '%s'）", where, fn, token);
+        return 0;
+    }
+    end = skip_space(end);
+    double rad = 0;
+    if (*end == '\0')
+        rad = v * 3.14159265358979323846 / 180.0;
+    else if (strcmp(end, "deg") == 0)
+        rad = v * 3.14159265358979323846 / 180.0;
+    else if (strcmp(end, "rad") == 0)
+        rad = v;
+    else if (strcmp(end, "turn") == 0)
+        rad = v * 2.0 * 3.14159265358979323846;
+    else if (strcmp(end, "grad") == 0)
+        rad = v * 3.14159265358979323846 / 200.0;
+    else {
+        set_error("%s: %s 的角度单位只支持 deg/rad/turn/grad（收到 '%s'）", where, fn,
+                  token);
+        return 0;
+    }
+    *out = rad;
+    return 1;
+}
+
+/*
+ * `transform-origin: <x> <y>`（一个值时 y 取 center）。
+ * 每一边可以是：长度（px）、百分比（边框盒的）、关键字
+ * （x: left/center/right，y: top/center/bottom）。
+ * 结果存成 QLUILength：px 直接存，百分比存成千分比（percent 单位）。
+ */
+static int tf_origin_side(const char *token, const char *where, int is_x,
+                          QLUILength *out)
+{
+    char t[64];
+    trim_lower(token, t, sizeof(t));
+
+    if (strcmp(t, "center") == 0) {
+        out->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        out->value = 500;
+        return 1;
+    }
+    if (is_x && strcmp(t, "left") == 0) {
+        out->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        out->value = 0;
+        return 1;
+    }
+    if (is_x && strcmp(t, "right") == 0) {
+        out->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        out->value = 1000;
+        return 1;
+    }
+    if (!is_x && strcmp(t, "top") == 0) {
+        out->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        out->value = 0;
+        return 1;
+    }
+    if (!is_x && strcmp(t, "bottom") == 0) {
+        out->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        out->value = 1000;
+        return 1;
+    }
+
+    const size_t n = strlen(t);
+    if (n > 1u && t[n - 1u] == '%') {
+        char num[64];
+        memcpy(num, t, n - 1u);
+        num[n - 1u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (!match_number(num, &end, &v) || *end != '\0' || v < -1000.0 ||
+            v > 1000.0) {
+            set_error("%s: transform-origin 的百分比不合法（收到 '%s'）", where, token);
+            return 0;
+        }
+        out->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        out->value = (int16_t)py_round(v * 10.0);
+        return 1;
+    }
+    if (n > 2u && strcmp(t + n - 2u, "px") == 0) {
+        char num[64];
+        memcpy(num, t, n - 2u);
+        num[n - 2u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (!match_number(num, &end, &v) || *end != '\0') {
+            set_error("%s: transform-origin 的长度不合法（收到 '%s'）", where, token);
+            return 0;
+        }
+        out->unit = (uint8_t)QL_UI_UNIT_PX;
+        out->value = (int16_t)py_round(v);
+        return 1;
+    }
+    if (strcmp(t, "0") == 0) {
+        out->unit = (uint8_t)QL_UI_UNIT_PX;
+        out->value = 0;
+        return 1;
+    }
+    set_error("%s: transform-origin 只支持 px / %% / 关键字（收到 '%s'）", where, token);
+    return 0;
+}
+
+static int parse_transform_origin(const char *text, const char *where,
+                                  QLUILength *ox, QLUILength *oy)
+{
+    char a[64], b[64];
+    int n = 0;
+    const char *p = skip_space(text);
+    while (*p != '\0' && n < 2) {
+        const char *st = p;
+        while (*p != '\0' && !is_space(*p))
+            p++;
+        size_t len = (size_t)(p - st);
+        if (len >= sizeof(a)) {
+            set_error("%s: transform-origin 的参数太长", where);
+            return 0;
+        }
+        memcpy(n ? b : a, st, len);
+        (n ? b : a)[len] = '\0';
+        n++;
+        p = skip_space(p);
+    }
+    if (n == 0 || *p != '\0') {
+        set_error("%s: transform-origin 只接受 1~2 个值（收到 '%s'）", where, text);
+        return 0;
+    }
+    if (!tf_origin_side(a, where, 1, ox))
+        return 0;
+    if (n > 1) {
+        if (!tf_origin_side(b, where, 0, oy))
+            return 0;
+    } else {
+        oy->unit = (uint8_t)QL_UI_UNIT_PERCENT;
+        oy->value = 500;      /* 一个值时另一个按 center */
+    }
+    return 1;
+}
+
+/*
+ * transform：translate / translateX / translateY / scale / scaleX / scaleY /
+ *            rotate / skew / skewX / skewY / matrix。
+ *
+ * `allow_matrix == 0`（关键帧动画里）只接受轴对齐的子集 —— 帧表里存的是
+ * `tf_x/tf_y/sc_x/sc_y` 四个整数，没有矩阵的位置。
+ *
+ * 输出：`*has_mat` 为真时 `out_mat` 是完整矩阵（translate/scale 也已折进去），
+ * 调用方应当**忽略** tx/ty/scx/scy 走离屏图层。
  */
 static int parse_transform(const char *text, const char *where, int *tx, int *ty,
-                           int *scx, int *scy)
+                           int *scx, int *scy, QLUIXform *out_mat, int *has_mat,
+                           int allow_matrix)
 {
     *tx = *ty = 0;
     *scx = *scy = 1000;
+    if (has_mat != NULL)
+        *has_mat = 0;
+
+    double mat[6];
+    xf_identity(mat);
+    int want_mat = 0;
 
     char t[192];
     size_t k = 0;
@@ -1999,10 +2225,10 @@ static int parse_transform(const char *text, const char *where, int *tx, int *ty
         fn[fnlen] = '\0';
 
         /* 参数按 ',' 切 */
-        char args[4][64];
+        char args[6][64];      /* matrix() 要 6 个 */
         int nargs = 0;
         const char *ap = p + 1;
-        while (ap <= close && nargs < 4) {
+        while (ap <= close && nargs < 6) {
             const char *comma = ap;
             while (comma < close && *comma != ',')
                 comma++;
@@ -2053,18 +2279,163 @@ static int parse_transform(const char *text, const char *where, int *tx, int *ty
         } else if (strcmp(fn, "scaley") == 0) {
             if (nargs < 1 || !tf_scale(args[0], where, "scaleY", scy))
                 return 0;
+        } else if (strcmp(fn, "rotate") == 0) {
+            if (nargs < 1)
+                return 0;
+            if (!allow_matrix) {
+                set_error("%s: rotate() 不能用在 @keyframes 里（关键帧只存 "
+                          "translate/scale）", where);
+                return 0;
+            }
+            double rad = 0;
+            if (!tf_angle(args[0], where, "rotate", &rad))
+                return 0;
+            const double f[6] = { cos(rad), sin(rad), -sin(rad), cos(rad), 0.0, 0.0 };
+            want_mat = 1;
+            xf_mul(mat, f);
+            seen++;
+            p = close + 1;
+            continue;
+        } else if (strcmp(fn, "skewx") == 0) {
+            if (nargs < 1)
+                return 0;
+            if (!allow_matrix) {
+                set_error("%s: skewX() 不能用在 @keyframes 里", where);
+                return 0;
+            }
+            double ax = 0;
+            if (!tf_angle(args[0], where, "skewX", &ax))
+                return 0;
+            const double f[6] = { 1.0, 0.0, tan(ax), 1.0, 0.0, 0.0 };
+            want_mat = 1;
+            xf_mul(mat, f);
+            seen++;
+            p = close + 1;
+            continue;
+        } else if (strcmp(fn, "skewy") == 0) {
+            if (nargs < 1)
+                return 0;
+            if (!allow_matrix) {
+                set_error("%s: skewY() 不能用在 @keyframes 里", where);
+                return 0;
+            }
+            double ay = 0;
+            if (!tf_angle(args[0], where, "skewY", &ay))
+                return 0;
+            const double f[6] = { 1.0, tan(ay), 0.0, 1.0, 0.0, 0.0 };
+            want_mat = 1;
+            xf_mul(mat, f);
+            seen++;
+            p = close + 1;
+            continue;
+        } else if (strcmp(fn, "skew") == 0) {
+            if (nargs < 1)
+                return 0;
+            if (!allow_matrix) {
+                set_error("%s: skew() 不能用在 @keyframes 里", where);
+                return 0;
+            }
+            double ax = 0, ay = 0;
+            if (!tf_angle(args[0], where, "skew", &ax))
+                return 0;
+            if (nargs > 1) {
+                if (!tf_angle(args[1], where, "skew", &ay))
+                    return 0;
+            }
+            const double f[6] = { 1.0, tan(ay), tan(ax), 1.0, 0.0, 0.0 };
+            want_mat = 1;
+            xf_mul(mat, f);
+            seen++;
+            p = close + 1;
+            continue;
+        } else if (strcmp(fn, "matrix") == 0) {
+            if (nargs != 6) {
+                set_error("%s: matrix() 需要 6 个参数（收到 %d 个）", where, nargs);
+                return 0;
+            }
+            if (!allow_matrix) {
+                set_error("%s: matrix() 不能用在 @keyframes 里", where);
+                return 0;
+            }
+            double mv[6];
+            for (int i = 0; i < 6; i++) {
+                const char *end = NULL;
+                if (!match_number(skip_space(args[i]), &end, &mv[i]) ||
+                    *skip_space(end) != '\0') {
+                    set_error("%s: matrix() 的参数必须是数字（收到 '%s'）", where,
+                              args[i]);
+                    return 0;
+                }
+            }
+            want_mat = 1;
+            xf_mul(mat, mv);
+            seen++;
+            p = close + 1;
+            continue;
         } else {
-            set_error("%s: transform 只支持 translate()/scale()/scaleX()/scaleY()"
-                      "（收到 '%s'）", where, fn);
+            set_error("%s: 暂不支持的 transform 函数 '%s'（支持 translate/translateX/"
+                      "translateY/scale/scaleX/scaleY/rotate/skew/skewX/skewY/matrix）",
+                      where, fn);
             return 0;
         }
         seen++;
         p = close + 1;
+
+        /*
+         * 轴对齐的那几个也要进矩阵：一旦这条声明里出现了 rotate/skew/matrix，
+         * 整串就得按矩阵算（CSS 是把整串乘成一个矩阵再作用）。
+         */
+        if (want_mat) {
+            double f[6];
+            xf_identity(f);
+            if (strcmp(fn, "translate") == 0) {
+                f[4] = *tx;
+                f[5] = *ty;
+            } else if (strcmp(fn, "translatex") == 0) {
+                f[4] = *tx;
+            } else if (strcmp(fn, "translatey") == 0) {
+                f[5] = *ty;
+            } else if (strcmp(fn, "scale") == 0) {
+                f[0] = (double)*scx / 1000.0;
+                f[3] = (double)*scy / 1000.0;
+            } else if (strcmp(fn, "scalex") == 0) {
+                f[0] = (double)*scx / 1000.0;
+            } else if (strcmp(fn, "scaley") == 0) {
+                f[3] = (double)*scy / 1000.0;
+            }
+            xf_mul(mat, f);
+        }
     }
 
     if (seen == 0)
         set_error("%s: 无法解析的 transform '%s'", where, text);
-    return seen > 0;
+    if (seen == 0)
+        return 0;
+
+    if (want_mat) {
+        if (out_mat == NULL || has_mat == NULL) {
+            set_error("%s: transform 里不能出现 rotate/skew/matrix（这里只能用 "
+                      "translate/scale）", where);
+            return 0;
+        }
+#if !QL_FEAT_CSS_FILTER_LAYER
+        /*
+         * 旋转/斜切走的是"离屏图层 + 仿射重采样"，图层包被裁掉就没法画。
+         * 这里直接报错，**不能**悄悄退回"不旋转"（那是最难查的一类问题）。
+         */
+        set_error("%s: rotate/skew/matrix 需要离屏图层"
+                  "（这个构建关了 QL_FEAT_CSS_FILTER_LAYER）", where);
+        return 0;
+#endif
+        out_mat->a = xf_fixed(mat[0]);
+        out_mat->b = xf_fixed(mat[1]);
+        out_mat->c = xf_fixed(mat[2]);
+        out_mat->d = xf_fixed(mat[3]);
+        out_mat->e = xf_fixed(mat[4]);
+        out_mat->f = xf_fixed(mat[5]);
+        *has_mat = 1;
+    }
+    return 1;
 }
 
 /* clip-path: circle(<pct>%) → (kind, 千分比) */
@@ -3293,7 +3664,7 @@ static const char *const k_supported_props[] = {
     "border-image", "border-image-source", "border-image-slice",
     "border-image-width", "border-image-repeat", "border-image-outset",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
-    "transform", "clip-path", "backdrop-filter",
+    "transform", "transform-origin", "clip-path", "backdrop-filter",
     /* 离屏图层（M9.3） */
     "filter", "mix-blend-mode", "mask", "mask-image",
     "transition", "transition-duration", "transition-timing-function",
@@ -7630,7 +8001,7 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
 
             if ((props & KF_TRANS) != 0) {
                 if (!parse_transform(decls_get(d, "transform"), where, &tfx, &tfy, &scx,
-                                     &scy)) {
+                                     &scy, NULL, NULL, 0)) {
                     ql_mem_free(idx);
                     return 0;
                 }
@@ -10111,9 +10482,23 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         return 0;
 
     int tf_x = 0, tf_y = 0, sc_x = 1000, sc_y = 1000;
+    QLUIXform xform;
+    int has_xform = 0;
+    memset(&xform, 0, sizeof(xform));
     if (!parse_transform((v = decls_get(st, "transform")) != NULL ? v : "none", where,
-                         &tf_x, &tf_y, &sc_x, &sc_y))
+                         &tf_x, &tf_y, &sc_x, &sc_y, &xform, &has_xform, 1))
         return 0;
+
+    /* `transform-origin`：默认 50% 50%（元素中心），与 CSS 一致 */
+    QLUILength origin_x, origin_y;
+    origin_x.unit = (uint8_t)QL_UI_UNIT_PERCENT;
+    origin_x.value = 500;
+    origin_x.reserved = 0;
+    origin_y = origin_x;
+    if ((v = decls_get(st, "transform-origin")) != NULL) {
+        if (!parse_transform_origin(v, where, &origin_x, &origin_y))
+            return 0;
+    }
 
     int anim_idx = 0xFFFF;
     if (!anim_index_of(st, where, ranges, kftab, anims, &anim_idx))
@@ -10151,6 +10536,14 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->max_height.value = (int16_t)mxhv;
     out->max_height.unit = mxhu;
     out->opacity = (uint8_t)opacity;
+    out->origin[0] = origin_x;
+    out->origin[1] = origin_y;
+    if (has_xform) {
+        if (!xform_intern_fixed(&xform, &out->xform, where))
+            return 0;
+    } else {
+        out->xform = QL_UI_NO_XFORM;
+    }
     out->aspect_w = aspect_w;
     out->aspect_h = aspect_h;
     out->letter_spacing = (int16_t)ls_v;
@@ -12397,6 +12790,7 @@ static int grid_resolve_all(Flat *flat, int nflat, StyleTab *tab, TextPool *pool
 QLUIDoc *ql_ui_load_text(const char *html, const char *css)
 {
     s_error[0] = '\0';
+    s_xform_n = 0;      /* 矩阵池每次加载从零开始（同一次加载内去重） */
     s_degraded_tags = 0;
     if (html == NULL)
         html = "";
@@ -12981,6 +13375,9 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const size_t off_grid_areas = off;
         if (grid_pool.an > 0)
             off += QL_UI_ALIGN8((size_t)grid_pool.an * sizeof(QLUIGridArea));
+        const size_t off_xforms = off;
+        if (s_xform_n > 0)
+            off += QL_UI_ALIGN8((size_t)s_xform_n * sizeof(QLUIXform));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -13125,6 +13522,12 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         doc->grids = (grid_pool.gn > 0) ? grd : NULL;
         doc->grid_tracks = (grid_pool.tn > 0) ? gtr : NULL;
         doc->grid_areas = (grid_pool.an > 0) ? gar : NULL;
+        doc->xform_count = (uint16_t)s_xform_n;
+        if (s_xform_n > 0) {
+            QLUIXform *xfd = (QLUIXform *)(void *)(base + off_xforms);
+            memcpy(xfd, s_xform_pool, (size_t)s_xform_n * sizeof(QLUIXform));
+            doc->xforms = xfd;
+        }
         doc->arena = arena;
         arena = NULL;         /* 所有权交给 doc */
     }

@@ -184,6 +184,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -3274,22 +3275,54 @@ blob v10 → <strong>v11</strong>。</p>
 加起来还多一倍多，所以它必须是一个独立能力包。</p>
 <p><strong>为什么一次做四样</strong>：它们的共同前提是同一块能力；分四次做等于把图层基建写四遍。
 RAM 成本 = 一个元素盒子的 RGBA 缓冲（PC/Mobile 档可接受，MCU 档恒关）。</p>
-<h4 id="m94">M9.4 · 旋转光栅</h4>
+<h4 id="m94-2026-11-11">M9.4 · 旋转光栅 —— <strong>已完成（2026-11-11）</strong></h4>
 <table>
 <thead>
 <tr>
 <th>任务</th>
+<th>状态</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>transform: rotate()</code> / <code>skew()</code> / <code>matrix()</code> / <code>transform-origin</code></td>
-<td>CPU 逐像素仿射 + GL 顶点变换 + 字形旋转 + 裁剪盒变换</td>
+<td><code>transform: rotate()</code> / <code>skew()</code> / <code>skewX/skewY</code> / <code>matrix()</code></td>
+<td>✅</td>
+<td>拆成 2×3 矩阵存进 <strong>doc 池</strong>（同值去重），样式只留 <code>int16</code> 下标</td>
+</tr>
+<tr>
+<td><code>transform-origin</code></td>
+<td>✅</td>
+<td>px / 千分比 / <code>left|center|right|top|bottom</code>；默认元素中心</td>
+</tr>
+<tr>
+<td>离屏合成 + 仿射重采样</td>
+<td>✅</td>
+<td>复用 M9.3 的图层：CPU 逆向映射 + 双线性，GL 用变换后的四角顶点</td>
+</tr>
+<tr>
+<td>点中测试</td>
+<td>✅</td>
+<td>把点按矩阵<strong>逆变换</strong>回局部空间（逐层下降 = 仿射连乘）</td>
+</tr>
+<tr>
+<td>与 <code>filter</code>/<code>opacity</code>/<code>mask</code> 叠加</td>
+<td>✅</td>
+<td>同一层的合成里"先裁圆角/遮罩，再重采样"（CSS 语义）</td>
 </tr>
 </tbody>
 </table>
-<p>比离屏图层便宜（不需要额外缓冲），但同样是一条新的光栅路径。</p>
+<p><strong>落地数据</strong>：<code>QLUIStyle</code> 336 → <strong>344</strong>、blob <strong>v30</strong>、头 144 → 152；
+<code>test_transform</code> 63 项断言；<code>test_gl_vs_cpu</code> 新增 7 个用例（旋转/斜切/矩阵/
+与文字叠加/图层方向）；例程 <code>32_transform</code>；教程 <code>21_transform.md</code>。</p>
+<p><strong>MCU 实测</strong>（同一套 mps2-an386 基准）：<code>QL_FEAT_CSS_FILTER_LAYER=0</code> 时
+<code>.text</code> 139,740 → 140,544（<strong>+804 B</strong>，只有解析器里那一小段矩阵运算）；
+开图层时 155,084 → 158,572（<strong>+3,488 B</strong>，含合成慢路），<code>.bss</code> +208 B。
+和原规划"比离屏图层便宜"的判断基本一致 —— 真正贵的是<strong>图层</strong>，不是矩阵。</p>
+<p><strong>关键决定</strong>：① 矩阵进 doc 池而不是进样式（24 B/样式在 MCU 上不可接受）；
+② 走"合成后重采样"而不是逐图元转（否则文字成马赛克、圆角变方）；
+③ 关掉 <code>QL_FEAT_CSS_FILTER_LAYER</code> 时 <code>rotate/skew/matrix</code> <strong>构建期报错</strong>，
+不做"悄悄不转"的降级。</p>
 <hr />
 <h3 id="m10-pcmobile-mcu-2026-11-10">M10 · 文本栈（PC/Mobile 主线，MCU 恒裁）—— <strong>规划（2026-11-10 定档）</strong></h3>
 <table>

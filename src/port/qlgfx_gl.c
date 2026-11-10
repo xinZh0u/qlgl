@@ -209,7 +209,7 @@ struct QLGfxGL {
     GLuint           layer_vbo;
     GLint            lu_tex, lu_blur, lu_backdrop, lu_mask;
     GLint            lu_viewport, lu_texel, lu_opacity, lu_mode, lu_box, lu_radius;
-    GLint            lu_uv_tex, lu_uv_blur;
+    GLint            lu_uv_tex, lu_uv_blur, lu_local, lu_lbounds;
     /* 图层用的 4 通道模糊（预乘保 alpha）。不能复用毛玻璃那套：
      * 它的片元固定输出 alpha=1（背后是不透明的页面），拿来糊图层会把
      * "透明区域"糊成不透明黑 —— 图层边缘立刻出现黑边。 */
@@ -1901,6 +1901,8 @@ static const char *LAYER_FS =
     "uniform vec3  u_ds_color;\n"
     "uniform int   u_pass;\n"
     "uniform int   u_flipy;\n"
+    "uniform int   u_local;\n"          /* 1 = 用局部 CSS 坐标判圆角/遮罩（有旋转时） */
+    "uniform vec4  u_lbounds;\n"        /* 图层矩形（CSS px：x,y,w,h，未旋转） */
     "in vec2 v_uv;\n"
     "out vec4 frag;\n"
 
@@ -1969,13 +1971,27 @@ static const char *LAYER_FS =
      * 目标表面的设备坐标（y 向下）。画到最终目标时要翻（内容是按翻转的投影
      * 画的），画到外层图层的 FBO 时不翻 —— 与顶点那边同一个开关。
      */
+    /*
+     * v_uv 的方向：v=1 在**顶边**、v=0 在底边（与图层纹理一致 —— 内容是按
+     * "CSS y 向下"画进 FBO 的，GL 纹理的第 0 行在下面，所以顶边落在 v≈1）。
+     * 因此凡是要"设备 y 向下"的量（遮罩图、局部坐标、阴影偏移）都要自己翻。
+     */
     "  float fyd = (u_flipy != 0) ? (u_viewport.y - gl_FragCoord.y) : gl_FragCoord.y;\n"
     "  vec2 dp = vec2(gl_FragCoord.x, fyd);\n"
+    /*
+     * 圆角 / 遮罩的判定点：
+     *   · 没有旋转时用目标设备坐标（与 CPU 侧快路逐像素一致）；
+     *   · 有旋转时目标坐标会被转歪，必须换成**局部 CSS 坐标** ——
+     *     四边形是平行四边形，仿射量（v_uv）在它上面线性插值正好就是局部坐标。
+     */
     "  vec2 uv = v_uv;\n"
+    "  vec2 lp = dp;\n"
+    "  if (u_local != 0)\n"
+    "    lp = u_lbounds.xy + vec2(uv.x, 1.0 - uv.y) * u_lbounds.zw;\n"
     "  float cov = 1.0;\n"
     "  if (u_radius > 0.0) {\n"
     "    vec2 c = u_box.xy + u_box.zw * 0.5;\n"
-    "    float d = sdRoundBox(dp - c, u_box.zw * 0.5, u_radius);\n"
+    "    float d = sdRoundBox(lp - c, u_box.zw * 0.5, u_radius);\n"
     "    cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
     "    if (cov <= 0.0) { frag = vec4(0.0); return; }\n"
     "  }\n"
@@ -1983,7 +1999,8 @@ static const char *LAYER_FS =
     "  vec4 src;\n"
     "  if (u_pass == 0) {\n"
     /* 阴影：取（已模糊的）图层 alpha，按偏移采样，染色 */
-    "    vec2 suv = (uv - u_ds.xy * u_texel) * u_uv_blur;\n"
+    "    vec2 suv = vec2(uv.x - u_ds.x * u_texel.x, uv.y + u_ds.y * u_texel.y)\n"
+    "                   * u_uv_blur;\n"
     "    float a = texture(u_blur, suv).a * u_ds.w * u_opacity;\n"
     "    src = vec4(u_ds_color * a, a);\n"
     "  } else {\n"
@@ -1999,7 +2016,7 @@ static const char *LAYER_FS =
     "  }\n"
 
     "  if ((u_flags & 4) != 0) {\n"
-    "    float ma = texture(u_mask, uv).a;\n"
+    "    float ma = texture(u_mask, vec2(uv.x, 1.0 - uv.y)).a;\n"
     "    src *= ma;\n"
     "  }\n"
     "  src *= cov;\n"
@@ -2010,7 +2027,7 @@ static const char *LAYER_FS =
     "    return;\n"
     "  }\n"
     /* 非普通混合：从背景纹理取色，按 CSS 公式算，再与 src 的 alpha 合成 */
-    "  vec4 bd = texture(u_backdrop, vec2(v_uv.x, 1.0 - v_uv.y));\n"
+    "  vec4 bd = texture(u_backdrop, uv);\n"
     "  vec3 cb = bd.rgb;\n"
     "  vec3 cs = src.rgb / max(src.a, 1e-5);\n"
     "  vec3 bb = vec3(blend_ch(cb.r, cs.r, u_mode), blend_ch(cb.g, cs.g, u_mode),\n"
@@ -2422,10 +2439,10 @@ static void gl_layer_draw(QLGfxGL *g, int i, int pass, GLuint tex, GLuint blur_t
 {
     struct QLGLLayer *L = &g->layer[i];
     const QLDraw2DLayerFx *fx = &L->fx;
-    const int to_layer = (i > 0);   /* 目标是不是外层图层的 FBO */
 
     glUseProgram(g->layer_prog);
-    glUniform1i(g->lu_flipy, to_layer ? 0 : 1);
+    /* dp 一律取"相对目标表面的设备 y（向下）"：图层目标就是它自己的 FBO 坐标 */
+    glUniform1i(g->lu_flipy, 1);
     glUniform2f(g->lu_viewport, (GLfloat)g->width, (GLfloat)g->height);
     glUniform2f(g->lu_texel,
                 1.0f / (GLfloat)((L->dev.w > 0) ? L->dev.w : 1),
@@ -2497,6 +2514,12 @@ static void gl_layer_draw(QLGfxGL *g, int i, int pass, GLuint tex, GLuint blur_t
     }
 
     /* 四边形覆盖图层矩形：用 uv 0..1 与目标设备坐标都算得出来 */
+    /* 有非轴对齐变换时：圆角/遮罩改在局部坐标里判，四边形用变换后的四角 */
+    const int use_xform = (fx->has_xform != 0);
+    glUniform1i(g->lu_local, use_xform ? 1 : 0);
+    glUniform4f(g->lu_lbounds, (GLfloat)fx->bounds_css.x, (GLfloat)fx->bounds_css.y,
+                (GLfloat)fx->bounds_css.w, (GLfloat)fx->bounds_css.h);
+
     {
         /*
          * 顶点是**归一化表面坐标**（BLUR_VS 里再 *2-1 转成 NDC），不是设备像素。
@@ -2504,29 +2527,58 @@ static void gl_layer_draw(QLGfxGL *g, int i, int pass, GLuint tex, GLuint blur_t
          * 正是 CSS 的顶边（渲染进 FBO 时 y=0 落在纹理底部），所以 uv.y=0
          * 对应 CSS 顶边 —— 两边一致，不需要额外的 uv 翻转。
          */
+        /*
+         * 目标是窗口本身还是外层图层的 FBO，两者的尺寸都已经落在 g->width/height
+         * 里；图层矩形也是相对当前目标的（进图层时 offset 已经减掉了外层原点）。
+         */
         const float vw = (float)((g->width > 0) ? g->width : 1);
         const float vh = (float)((g->height > 0) ? g->height : 1);
         const float u0 = (float)L->dev.x / vw;
         const float u1 = (float)(L->dev.x + L->dev.w) / vw;
         /*
-         * 主顶点着色器（FS 那套）在 VS 里做了 `ndc.y = -ndc.y`，而 BLUR_VS 没有；
-         * 所以"画到最终目标"和"画到图层 FBO"两种情形 y 方向的处理不一样：
-         * 图层 FBO 里的内容行号 = 设备 y，直接按设备 y 归一化即可；
-         * 画到最终目标时要显式翻一下。
+         * y 要翻：BLUR_VS 把 [0,1] 的表面坐标映射成 NDC（+1 在上），而目标的
+         * 内容是按"CSS y 向下"画的（主 VS 里 `ndc.y = -ndc.y`），所以设备顶边
+         * 落在表面坐标的 1 那一侧。
          */
-        const float ty0 = to_layer ? (float)L->dev.y / vh
-                                   : 1.0f - (float)L->dev.y / vh;
-        const float ty1 = to_layer ? (float)(L->dev.y + L->dev.h) / vh
-                                   : 1.0f - (float)(L->dev.y + L->dev.h) / vh;
-        const float t0 = ty0;
-        const float t1 = ty1;
-        const float quad[16] = {
-            u0, t0, 0.0f, 0.0f,
-            u1, t0, 1.0f, 0.0f,
-            u0, t1, 0.0f, 1.0f,
-            u1, t1, 1.0f, 1.0f,
+        const float t0 = 1.0f - (float)L->dev.y / vh;
+        const float t1 = 1.0f - (float)(L->dev.y + L->dev.h) / vh;
+        float quad[16] = {
+            u0, t0, 0.0f, 1.0f,
+            u1, t0, 1.0f, 1.0f,
+            u0, t1, 0.0f, 0.0f,
+            u1, t1, 1.0f, 0.0f,
         };
-        (void)0;
+        if (use_xform) {
+            /*
+             * 旋转 / 斜切：把四个角按矩阵摆过去。
+             * 矩阵定义在 CSS px 空间；设备空间是同一份线性变换，只是平移与原点
+             * 要乘 dpr（等比缩放与线性变换可交换）。
+             * 四边形仍是平行四边形，所以 uv 在它上面的双线性插值 = 精确的仿射映射。
+             */
+            const float dpr = (g->scale_fx > 0) ? (float)g->scale_fx / (float)QL_SCALE_ONE
+                                                : 1.0f;
+            const float ma = (float)fx->mat[0] / (float)QL_FX_ONE;
+            const float mb = (float)fx->mat[1] / (float)QL_FX_ONE;
+            const float mc = (float)fx->mat[2] / (float)QL_FX_ONE;
+            const float md = (float)fx->mat[3] / (float)QL_FX_ONE;
+            const float me = (float)fx->mat[4] / (float)QL_FX_ONE * dpr;
+            const float mf = (float)fx->mat[5] / (float)QL_FX_ONE * dpr;
+            const float ox = (float)fx->origin_x * dpr;
+            const float oy = (float)fx->origin_y * dpr;
+            const float dx[4] = { (float)L->dev.x, (float)(L->dev.x + L->dev.w),
+                                  (float)L->dev.x, (float)(L->dev.x + L->dev.w) };
+            const float dy[4] = { (float)L->dev.y, (float)L->dev.y,
+                                  (float)(L->dev.y + L->dev.h),
+                                  (float)(L->dev.y + L->dev.h) };
+            for (int k = 0; k < 4; k++) {
+                const float ux = dx[k] - ox;
+                const float uy = dy[k] - oy;
+                const float nx = ox + ma * ux + mc * uy + me;
+                const float ny = oy + mb * ux + md * uy + mf;
+                quad[k * 4 + 0] = nx / vw;
+                quad[k * 4 + 1] = 1.0f - ny / vh;
+            }
+        }
         glBindBuffer(GL_ARRAY_BUFFER, g->layer_vbo);
         glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_STREAM_DRAW);
         glEnableVertexAttribArray(0);
@@ -2553,7 +2605,6 @@ static int gl_layer_end(QLDraw2D *self)
     const QLDraw2DLayerFx fx = L->fx;
 
     flush_batch(g);           /* 图层内容全部写进 FBO */
-
     /* 恢复目标表面与坐标（嵌套时这里要回到外层图层的 FBO，不是主表面） */
     g->cur_target = L->saved_fbo;
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)L->saved_fbo);
@@ -2616,7 +2667,18 @@ static int gl_layer_end(QLDraw2D *self)
                   fx.blend != QL_UI_BLEND_NORMAL,
                   (src_blur != 0) ? (GLuint)g->blur_w : 0,
                   (src_blur != 0) ? (GLuint)g->blur_h : 0);
-    glDisable(GL_BLEND);
+
+    /*
+     * 把混合状态**还给主批次**：图层合成用的是"预乘"公式
+     * （ONE / ONE_MINUS_SRC_ALPHA），而主批次是"直通色"公式
+     * （SRC_ALPHA / ONE_MINUS_SRC_ALPHA）。
+     *
+     * 这里曾经直接 `glDisable(GL_BLEND)`，结果图层之后画的**所有文字都变成
+     * 实心色块**（字形覆盖率乘不上去了）—— 而且只在真窗口里看得出：
+     * 离屏对拍的用例里没有文字，一直是绿的。
+     */
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     L->fx.has_drop = 0;
     g->layer_depth = i;
@@ -2892,6 +2954,8 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         g->lu_texel = glGetUniformLocation(g->layer_prog, "u_texel");
         g->lu_uv_tex = glGetUniformLocation(g->layer_prog, "u_uv_tex");
         g->lu_uv_blur = glGetUniformLocation(g->layer_prog, "u_uv_blur");
+        g->lu_local = glGetUniformLocation(g->layer_prog, "u_local");
+        g->lu_lbounds = glGetUniformLocation(g->layer_prog, "u_lbounds");
         g->lu_opacity = glGetUniformLocation(g->layer_prog, "u_opacity");
         g->lu_mode = glGetUniformLocation(g->layer_prog, "u_mode");
         g->lu_flags = glGetUniformLocation(g->layer_prog, "u_flags");

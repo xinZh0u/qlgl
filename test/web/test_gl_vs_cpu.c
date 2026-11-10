@@ -570,6 +570,52 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
               "#b{position:absolute;left:0;top:0;width:44px;height:34px;"
               "background-color:#E04020;border-radius:10px;filter:saturate(0.4)}",
               "嵌套两层图层" },
+            /*
+             * 图层方向：上下**不对称**的内容。合成时四边形 y 方向搞反的话，
+             * 这一格立刻红——纯色方块上下对称，以前的用例看不出翻转。
+             */
+            { "<div id=r><div id=o><div class=a></div><div class=b></div></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#o{position:absolute;left:30px;top:20px;width:80px;height:70px;"
+              "filter:brightness(1)}"
+              ".a{position:absolute;left:0;top:0;width:60px;height:14px;"
+              "background-color:#E02010}"
+              ".b{position:absolute;left:10px;top:50px;width:34px;height:12px;"
+              "background-color:#1040D0}",
+              "图层方向（上下不对称）" },
+            /* 图层里有文字：合成时若把混合状态改了，文字会变成实心色块 */
+            { "<div id=r><div id=o>Hello 0123</div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#o{position:absolute;left:10px;top:10px;width:140px;height:40px;"
+              "color:#101010;font-size:16px;filter:brightness(1)}",
+              "图层内文字（混合状态）" },
+            /* ---- M9.4：旋转/斜切/矩阵（离屏图层 + 仿射重采样） ---- */
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:60px;top:55px;width:40px;height:10px;"
+              "background-color:#E04020;transform:rotate(90deg)}",
+              "transform: rotate(90deg)" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:50px;top:40px;width:60px;height:30px;"
+              "background-color:#2080C0;transform:rotate(30deg)}",
+              "transform: rotate(30deg)" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:45px;top:45px;width:60px;height:30px;"
+              "background-color:#2080C0;transform:skewX(20deg)}",
+              "transform: skewX" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:40px;top:40px;width:60px;height:40px;"
+              "background-color:#E04020;border-radius:12px;"
+              "transform:matrix(1.1,0.3,-0.35,0.9,6,4)}",
+              "transform: matrix" },
+            { "<div id=r><div id=b>Hi 42</div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:30px;top:30px;width:100px;height:40px;"
+              "color:#101010;font-size:15px;transform:rotate(12deg)}",
+              "transform: rotate + 文字" },
         };
 
         for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {

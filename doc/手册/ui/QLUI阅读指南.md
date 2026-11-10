@@ -177,7 +177,7 @@ UA 默认样式（UA_DEFAULTS）
 | at-rule | `@supports` / `@font-face`（认 `@keyframes`，`@media` 只认宽度断点） |
 | 选择器 | `:has()`、属性选择器的复杂匹配（`+` / `~` / `::before` 已支持） |
 | 简写值个数 | `margin: 1px 2px 3px`（只接受 1/2/4 个） |
-| transform | `rotate()` / `skew()` / `matrix()`；`scale` 超出 `0~32.767` |
+| transform | `perspective()` / `rotate3d()` / `matrix3d()`；`scale` 超出 `0~32.767`；`rotate/skew/matrix` 在 `QL_FEAT_CSS_FILTER_LAYER=0` 的构建里报错 |
 | 关键帧 | 百分比重复/越界、各帧属性不一致、帧里写了不支持的属性 |
 | animation | 没写 `duration`、`duration: 0`、`steps()`/`cubic-bezier()`、`paused`、三处时长 |
 | transition | 延迟（`transition-delay`）仍不支持；`transition` 简写里各段的时长/缓动必须一致 |
@@ -957,6 +957,18 @@ layout_flex_children(容器):
 `render_node_inner` 而不是 `render_node`**，否则第二次进去又会开一层新图层，
 无限递归。
 
+#### 旋转/斜切：图层里再补一次重采样
+
+`transform: rotate/skew/matrix` 走同一条 `render_node_layered()`：图层里把子树
+**按原样**画完，`layer_end()` 合成时按样式里的矩阵下标取出 `QLUIXform`
+（`doc->xforms[]`，26.6 定点，同值去重），对**目标像素做逆映射**再双线性采样。
+所以那条分支上 `render_node_inner()` 会跳过 `tf_*` / `sc_*`（它们已经乘进矩阵），
+而 `layer_bounds_of()` 要把旋转后的四角 AABB 并进图层矩形，
+否则转出来的角会被裁掉。
+
+命中的对应实现在 `hit_walk_ui()`：先把点按 `M⁻¹` 变回局部空间再判盒，
+逐层下降正好是仿射连乘（`qx = 60, 45° 旋转` 这类用例在 `test_transform` 里）。
+
 #### overflow
 
 `render_node` 进入 overflow 容器时 `set_clip(intersect(saved, box))`，退出恢复；
@@ -995,7 +1007,7 @@ layout_flex_children(容器):
 | `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
 | `filter` / `mix-blend-mode` / `mask` / 组 `opacity` | ✅ 离屏图层（M9.3） | `filter: url()`、`mask-position/repeat/composite`、`background-blend-mode` 报错；`filter` 链最长 6 个函数 |
 | `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
-| `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` | `rotate`/`skew`/`matrix`/3d 报错 |
+| `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` + `rotate()`/`skew()`/`matrix()` + `transform-origin` | 3D（`perspective()`/`rotate3d()`/`matrix3d()`）报错；`rotate` 等依赖离屏图层包 |
 | `radial-gradient` | ✅ 圆心固定在元素中心 | `at 偏移` / 自定义半径 / stop 位置报错 |
 | `clip-path` | ✅ 只有 `circle(<pct>%)` | 圆心固定元素中心；只支持一层；其它形状报错 |
 | CSS 变量 / media query | ✅ `var()` 构建期替换；`@media` 只有宽度断点 | 其它断点特性（`prefers-*`/`orientation`）报错 |

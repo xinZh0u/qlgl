@@ -1062,8 +1062,9 @@ static int cpu_layer_end(QLDraw2D *self)
         ql_layer_apply_color_ops(rgba, dev.w, dev.h, &fx);
         if (fx.has_drop)
             ql_layer_drop_shadow(rgba, dev.w, dev.h, &fx);
-        ql_layer_composite(dst, rgba, dev.w, dev.h, ql_rect_make(dev.x, dev.y, dev.w, dev.h),
-                           &fx);
+        ql_layer_composite(dst, rgba, dev.w, dev.h,
+                           ql_rect_make(dev.x, dev.y, dev.w, dev.h), &fx,
+                           (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE);
         ql_mem_free(rgba);
     }
 

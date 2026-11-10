@@ -184,6 +184,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -520,7 +521,7 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 </tr>
 <tr>
 <td>transform</td>
-<td><code>rotate()</code> / <code>skew()</code> / <code>matrix()</code>；<code>scale</code> 超出 <code>0~32.767</code></td>
+<td><code>perspective()</code> / <code>rotate3d()</code> / <code>matrix3d()</code>；<code>scale</code> 超出 <code>0~32.767</code>；<code>rotate/skew/matrix</code> 在 <code>QL_FEAT_CSS_FILTER_LAYER=0</code> 的构建里报错</td>
 </tr>
 <tr>
 <td>关键帧</td>
@@ -1493,11 +1494,20 @@ index.html + index.css ──qltext cc──┤
 <code>layer_begin</code> + <code>render_node_inner</code> + <code>layer_end</code>。<strong>画子树必须走
 <code>render_node_inner</code> 而不是 <code>render_node</code></strong>，否则第二次进去又会开一层新图层，
 无限递归。</p>
+<h4 id="_8">旋转/斜切：图层里再补一次重采样</h4>
+<p><code>transform: rotate/skew/matrix</code> 走同一条 <code>render_node_layered()</code>：图层里把子树
+<strong>按原样</strong>画完，<code>layer_end()</code> 合成时按样式里的矩阵下标取出 <code>QLUIXform</code>
+（<code>doc-&gt;xforms[]</code>，26.6 定点，同值去重），对<strong>目标像素做逆映射</strong>再双线性采样。
+所以那条分支上 <code>render_node_inner()</code> 会跳过 <code>tf_*</code> / <code>sc_*</code>（它们已经乘进矩阵），
+而 <code>layer_bounds_of()</code> 要把旋转后的四角 AABB 并进图层矩形，
+否则转出来的角会被裁掉。</p>
+<p>命中的对应实现在 <code>hit_walk_ui()</code>：先把点按 <code>M⁻¹</code> 变回局部空间再判盒，
+逐层下降正好是仿射连乘（<code>qx = 60, 45° 旋转</code> 这类用例在 <code>test_transform</code> 里）。</p>
 <h4 id="overflow">overflow</h4>
 <p><code>render_node</code> 进入 overflow 容器时 <code>set_clip(intersect(saved, box))</code>，退出恢复；
 <code>hit_walk_ui</code> 传一个 <code>clip</code> 参数做同样的事。两处必须同步，否则会出现
 "看不见但能点到"。</p>
-<h4 id="_8">混合内容：在生成期消解</h4>
+<h4 id="_9">混合内容：在生成期消解</h4>
 <div class="highlight"><pre><span></span><code>&lt;p&gt;Hello &lt;b&gt;bold&lt;/b&gt;!&lt;/p&gt;
    ↓ qlui_parse.c 的扁平化
 &lt;p&gt;&lt;span&gt;Hello &lt;/span&gt;&lt;b&gt;bold&lt;/b&gt;&lt;span&gt;!&lt;/span&gt;&lt;/p&gt;
@@ -1589,8 +1599,8 @@ index.html + index.css ──qltext cc──┤
 </tr>
 <tr>
 <td><code>transform</code></td>
-<td>✅ <code>translate()</code> + <code>scale()</code>/<code>scaleX()</code>/<code>scaleY()</code></td>
-<td><code>rotate</code>/<code>skew</code>/<code>matrix</code>/3d 报错</td>
+<td>✅ <code>translate()</code> + <code>scale()</code>/<code>scaleX()</code>/<code>scaleY()</code> + <code>rotate()</code>/<code>skew()</code>/<code>matrix()</code> + <code>transform-origin</code></td>
+<td>3D（<code>perspective()</code>/<code>rotate3d()</code>/<code>matrix3d()</code>）报错；<code>rotate</code> 等依赖离屏图层包</td>
 </tr>
 <tr>
 <td><code>radial-gradient</code></td>

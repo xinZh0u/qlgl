@@ -637,10 +637,26 @@ if (dirty_count > 0) {
 | `scale(<倍数>)` | ✅ 绕元素中心 |
 | `scale(sx)` / `scale(sx, sy)` | ✅ 轴对齐的非等比（见下） |
 | `scaleX(s)` / `scaleY(s)` | ✅ **假 3D 翻转**就靠这个 |
+| `rotate(<deg>)` | ✅ 顺时针为正；**要离屏图层**（`QL_FEAT_CSS_FILTER_LAYER`） |
+| `skew(<ax>[, <ay>])` / `skewX()` / `skewY()` | ✅ 同上 |
+| `matrix(a,b,c,d,e,f)` | ✅ 同上（六参） |
+| `transform-origin` | ✅ `px` / 千分比 / `left|center|right|top|bottom`，默认中心 |
 | `none` | ✅ |
-| `rotate()` / `skew()` / `matrix()` / 3d | ❌ **构建期报错** |
+| `perspective()` / `rotate3d()` / `matrix3d()` | ❌ **构建期报错**（3D 不排期） |
 
 可以组合：`transform: translate(4px, 6px) scale(2)`。
+
+**`rotate` / `skew` / `matrix` 与上面两个的画法不同**：它们是"**先合成再重采样**"，
+所以会开一层离屏图层（RAM = 元素盒大小的 RGBA 缓冲）。一整串 `transform` 只要
+出现这三个之一，整串就乘成**一个**矩阵：
+
+```css
+.tilt { transform: translate(10px, 4px) rotate(12deg) scale(1.1); }
+```
+
+`@keyframes` 里**不能**写 `rotate()`/`skew()`/`matrix()`（关键帧只存
+`translate`/`scale` 的整数值），写了报错。把 `QL_FEAT_CSS_FILTER_LAYER` 裁掉时，
+这三个函数同样在**构建期报错**（不静默降级）。
 
 **`scale()` 的三条行为**：
 
@@ -892,6 +908,8 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 
 这三条和"组 `opacity`"共用同一块基建：**先把子树合成到一张临时图，再整体处理**。
 支持范围与公式见《CSS3 覆盖与裁剪》§18.10，教程见 [离屏图层](../tutorial/20_filter.md)。
+`transform: rotate()/skew()/matrix()` 也长在这块基建上（§3.10 / §18.11），
+教程见 [旋转光栅](../tutorial/21_transform.md)。
 
 | 属性 | 取值 |
 |---|---|
@@ -912,7 +930,7 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 ```
 float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
-rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
+perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode

@@ -1,0 +1,87 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">旋转光栅：transform 的 rotate / skew / matrix</div>
+    <div class="badge">先合成再重采样</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. <code>rotate()</code> —— 转的是"渲染结果"，文字和圆角一起转</div>
+    <div class="row">
+      <div class="tag">0°</div>
+      <div class="tag r15">15°</div>
+      <div class="tag r45">45°</div>
+      <div class="tag r90">90°</div>
+      <div class="tag r180">180°</div>
+    </div>
+    <div class="hint">每个标签都是一整个元素（含文字、圆角），转完再贴回去</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. <code>transform-origin</code> —— 换个旋转中心，同样的角度落在不同地方</div>
+    <div class="row origin-row">
+      <div class="orig">
+        <div class="needle o-center">中心</div>
+      </div>
+      <div class="orig">
+        <div class="needle o-topleft">左上</div>
+      </div>
+      <div class="orig">
+        <div class="needle o-right">右中</div>
+      </div>
+    </div>
+    <div class="hint">都是 <code>rotate(30deg)</code>，只有 <code>transform-origin</code> 不同</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. <code>skewX()</code> / <code>skewY()</code> —— 斜切，就是错切矩阵</div>
+    <div class="row">
+      <div class="sk">
+        <div class="skbox sx">skewX(18deg)</div>
+      </div>
+      <div class="sk">
+        <div class="skbox sy">skewY(18deg)</div>
+      </div>
+      <div class="sk">
+        <div class="skbox sx2">skewX(-18deg)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. <code>matrix(a,b,c,d,e,f)</code> —— 旋转 + 斜切 + 平移一次说完</div>
+    <div class="row mx-row">
+      <div class="mx">matrix(1,0.25,-0.35,1,10,6)</div>
+      <div class="mx mx2">matrix(0.9,-0.3,0.3,0.9,0,0)</div>
+    </div>
+    <div class="hint">第一个是"斜切 + 平移"，第二个是 <code>rotate(-18deg)</code> 的矩阵写法</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. 和图层特效叠加：旋转 + 模糊 / 旋转 + 阴影 / 旋转 + 圆角裁切</div>
+    <div class="row">
+      <div class="fx card-blur">blur</div>
+      <div class="fx card-shadow">shadow</div>
+      <div class="fx card-round">round</div>
+    </div>
+    <div class="hint">圆角是"先裁再转"（CSS 语义），所以转 45° 看到的是圆的边缘，不是方形的角</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">6. 表盘指针：同一套样式，只改一个角度</div>
+    <div class="row gauge-row">
+      <div class="gauge"><div class="arm g1"></div></div>
+      <div class="gauge"><div class="arm g2"></div></div>
+      <div class="gauge"><div class="arm g3"></div></div>
+      <div class="gauge"><div class="arm g4"></div></div>
+    </div>
+    <div class="hint">指针的 <code>transform-origin</code> 在圆心那一端，所以是"绕轴转"</div>
+  </div>
+
+  <div class="note">
+    实现方式：带 <code>transform</code>（旋转/斜切/矩阵）的元素先把自己的子树
+    正常画进一块临时 RGBA 图，再按 3×3 矩阵做一次**仿射重采样**贴回去。
+    所以 <code>rotate</code> 出来的文字是"转过的文字"（不是重新排一次版），
+    代价是一块元素大小的缓冲 + 一次双线性采样；MCU 档可以把整套
+    <code>transform</code> 重采样裁掉，只留 <code>translate/scale</code>。
+  </div>
+</div>
