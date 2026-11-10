@@ -2901,6 +2901,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     QLGfxGL *g = (QLGfxGL *)ql_mem_calloc(1, sizeof(QLGfxGL));
     if (g == NULL)
         return NULL;
+    g->trace_im = getenv("QLGL_TRACE_IM") != NULL;   /* 建 IC 时就要用，先设 */
 
     g->width = width;
     g->height = height;
@@ -3082,9 +3083,9 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
              * 于是屏幕上出现两个预览（一个在框里、一个在候选窗顶部）。
              * 输入法不支持 callbacks 就退回 nothing。
              */
-            int use_cb = 0;
+            int use_cb = (getenv("QLGL_IME_NOCB") == NULL);
             XIMStyles *styles = NULL;
-            if (XGetIMValues(g->xim, XNQueryInputStyle, &styles, NULL) == NULL &&
+            if (use_cb && XGetIMValues(g->xim, XNQueryInputStyle, &styles, NULL) == NULL &&
                 styles != NULL) {
                 for (int i = 0; i < styles->count_styles; i++)
                     if (styles->supported_styles[i] ==
@@ -3093,7 +3094,8 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
                 XFree(styles);
             }
             if (use_cb) {
-                XIMCallback cb_start, cb_done, cb_draw, cb_caret;
+                /* 静态存储：Xlib 会在 IC 生命周期里持有这些回调，别用栈上的 */
+                static XIMCallback cb_start, cb_done, cb_draw, cb_caret;
                 cb_start.client_data = (XPointer)g;
                 cb_start.callback = IM_PROC(ime_preedit_start);
                 cb_done.client_data = (XPointer)g;
@@ -3123,7 +3125,12 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
                                    XNClientWindow, g->win,
                                    XNFocusWindow, g->win,
                                    NULL);
+                use_cb = 0;
             }
+            if (g->trace_im)
+                fprintf(stderr, "[IM] 输入上下文风格：%s\n",
+                        use_cb ? "XIMPreeditCallbacks（组字文本我们画）"
+                               : "XIMPreeditNothing（组字文本输入法画）");
         }
         if (g->xic != NULL) {
             /*
@@ -3188,7 +3195,6 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
      * 设 QLGL_KEEP_VSYNC=1 就退回"拖动时也跟 vblank"。
      */
     g->keep_vsync_on_resize = getenv("QLGL_KEEP_VSYNC") != NULL;
-    g->trace_im = getenv("QLGL_TRACE_IM") != NULL;
     g->lag_debug = getenv("QLGL_LAG_DEBUG") != NULL;
     if (!g->offscreen)
         eglSwapInterval(g->egdpy, 1);
@@ -3976,7 +3982,12 @@ static int ime_preedit_start(XIC ic, XPointer client, XPointer call)
     g->ime_pre_caret = 0;
     g->ime_pre[0] = '\0';
     ime_preedit_flush(g);
-    return -1;      /* -1 = 没有长度限制（我们自己做截断） */
+    /*
+     * 返回值是"客户端最多能接受多少**字节**的预编辑"。这里必须给正数：
+     * 返回 -1（"没有限制"）时有些输入法会把它当成无符号长度去分配，
+     * 结果是组第一个字就崩。
+     */
+    return (int)sizeof(g->ime_pre) - 1;
 }
 
 static void ime_preedit_done(XIC ic, XPointer client, XPointer call)
@@ -4042,7 +4053,8 @@ static void ime_preedit_draw(XIC ic, XPointer client, XPointer call)
     if (g == NULL)
         return;
     const XIMText *t = (const XIMText *)call;
-    if (t == NULL) {
+    if (t == NULL || t->length <= 0 || t->length > 4096) {
+        /* NULL = 清空；长度离谱说明结构不对，宁可清空也不要越界读 */
         g->ime_pre_len = 0;
         g->ime_pre[0] = '\0';
     } else {
