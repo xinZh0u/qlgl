@@ -10275,9 +10275,15 @@ void ql_ui_input_preedit_apply(QLUIRoot *ui, int chg_first, int chg_len,
     {   /* 后段接上（装不下就截掉尾巴，宁可少显示也不越界） */
         size_t room = sizeof(ui->preedit) - 1u - (size_t)n;
         uint16_t k = (tail_len < room) ? tail_len : (uint16_t)room;
-        /* 同样别劈开多字节字符 */
-        while (k > 0 && ((unsigned char)tail[k] & 0xC0u) == 0x80u)
-            k--;
+        /*
+         * 只在**真的截断**时才看"被切掉的第一个字节"：`tail[k]` 在 k == tail_len
+         * 时是未初始化的（读到栈上垃圾会让循环随机少拷一个字节，测试里表现为
+         * "时好时坏"）。整段都装得下就不需要任何调整。
+         */
+        if (k < tail_len) {
+            while (k > 0 && ((unsigned char)tail[k] & 0xC0u) == 0x80u)
+                k--;
+        }
         if (k > 0)
             memcpy(ui->preedit + n, tail, k);
         n = (uint16_t)(n + k);
