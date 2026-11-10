@@ -327,6 +327,9 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                 ql_gfx_gl_size(gfx, &cw, &ch);
                 if (cw > 0 && ch > 0) {
                     ql_ui_layout(ui, cw, ch);
+                    /* 记下真实尺寸：`--dump` 和 QL_EX_WINDOW_DUMP 都按它出图 */
+                    w = cw;
+                    h = ch;
                     need_full = 1;
                 }
             }

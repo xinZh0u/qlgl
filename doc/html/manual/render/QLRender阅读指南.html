@@ -375,6 +375,12 @@ GPU 每个像素只算一次距离场。</p>
 <td>GL 原点在左下</td>
 <td>顶点着色器里 <code>ndc.y = -ndc.y</code>；<code>glReadPixels</code> 后按行翻转</td>
 </tr>
+<tr>
+<td><strong>EGL 窗口表面不会跟着窗口变</strong></td>
+<td>刚开窗时顶部黑一条、内容贴底；<strong>拖一下窗口就正常</strong></td>
+<td><code>eglCreateWindowSurface</code> 按创建时的窗口几何定尺寸，WM 之后改窗口大小不会改表面；我们把 viewport 设成新尺寸却画进老尺寸的缓冲</td>
+<td><code>surface_sync()</code>：尺寸一变就 <code>eglDestroySurface</code> + <code>eglCreateWindowSurface</code> + 重新 <code>eglMakeCurrent</code>（见 §8）</td>
+</tr>
 </tbody>
 </table>
 <p><strong>教训</strong>：GPU 后端最容易错的是"数据布局"和"坐标/平台约定"，而不是图形学本身。

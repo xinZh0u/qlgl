@@ -99,6 +99,14 @@ struct QLGfxGL {
     EGLDisplay       egdpy;
     EGLSurface       surface;
     EGLContext       ctx;
+    /*
+     * X11 窗口表面的尺寸。EGL 窗口表面**不会**跟着 X 窗口自己变：
+     * 窗口被 WM 改大/改小之后旧表面还是老尺寸，于是 `glViewport(w,h)` 画进一块
+     * 尺寸不对的缓冲 —— 画面整体贴底、顶上留一条黑（"调整大小后才正常"）。
+     * 所以尺寸一变就得重建（eglDestroySurface + eglCreateWindowSurface）。
+     */
+    EGLConfig        cfg;
+    ql_coord_t       surface_w, surface_h;
     int              offscreen;
     int              closed;
     uint8_t          buttons;      /* 当前按住的鼠标按钮位图 */
@@ -3026,7 +3034,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
             QL_LOGI("gl: 没有可用的 XIM 输入法，只能输入 Latin-1（中文请装 fcitx/ibus 并 setlocale）");
 
         g->surface = eglCreateWindowSurface(g->egdpy, cfg, (EGLNativeWindowType)g->win, NULL);
+        g->surface_w = width;
+        g->surface_h = height;
     }
+    g->cfg = cfg;
 
     if (g->surface == EGL_NO_SURFACE) {
         QL_LOGE("gl: eglCreateSurface failed (0x%x)", (unsigned)eglGetError());
@@ -3334,9 +3345,52 @@ static void sync_window_background(QLGfxGL *g, ql_color_t clear_color)
     g->bg_pixel_set = 1;
 }
 
+/*
+ * 窗口表面尺寸跟窗口对不上就重建。
+ *
+ * EGL 的 X11 窗口表面尺寸是**创建时定死的**（eglCreateWindowSurface 按当时
+ * 窗口几何建）。窗口管理器把窗口改大/改小之后，表面不会自己跟着变，于是
+ * 我们把 viewport 设成新尺寸、却画进一块老尺寸的缓冲：内容是有的，但**贴着
+ * 底边**，上面留一条黑。用户看到的就是"刚打开时上面黑一块，拖一下窗口才好"。
+ *
+ * 重建要重新 makeCurrent（旧表面被销毁了，当前上下文就悬空了）。
+ */
+static int surface_sync(QLGfxGL *g)
+{
+    if (g->offscreen || g->egdpy == EGL_NO_DISPLAY || g->win == 0)
+        return 1;
+    if (g->width <= 0 || g->height <= 0)
+        return 1;                 /* 还没拿到真实尺寸，等下一帧 */
+    if (g->surface != EGL_NO_SURFACE && g->surface_w == g->width &&
+        g->surface_h == g->height)
+        return 1;
+
+    eglMakeCurrent(g->egdpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (g->surface != EGL_NO_SURFACE) {
+        eglDestroySurface(g->egdpy, g->surface);
+        g->surface = EGL_NO_SURFACE;
+    }
+    g->surface = eglCreateWindowSurface(g->egdpy, g->cfg, (EGLNativeWindowType)g->win,
+                                        NULL);
+    if (g->surface == EGL_NO_SURFACE) {
+        QL_LOGE("gl: 重建窗口表面失败 (0x%x)", (unsigned)eglGetError());
+        return 0;
+    }
+    if (!eglMakeCurrent(g->egdpy, g->surface, g->surface, g->ctx)) {
+        QL_LOGE("gl: 重建表面后 eglMakeCurrent 失败 (0x%x)", (unsigned)eglGetError());
+        return 0;
+    }
+    if (g->vsync_eff >= 0 && !g->offscreen)
+        eglSwapInterval(g->egdpy, g->vsync_eff);
+    g->surface_w = g->width;
+    g->surface_h = g->height;
+    return 1;
+}
+
 /* 绑定目标帧缓冲并设置视口（保留模式绑 FBO，否则绑默认） */
 static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
 {
+    (void)surface_sync(g);
     sync_window_background(g, clear_color);
 
     /*

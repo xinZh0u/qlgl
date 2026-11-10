@@ -284,6 +284,12 @@ QLRect ql_ui_paint_bounds(const QLUIRoot *ui);   /* = 根节点的 paint_box */
 `ql_ui_render_rect` 把 d2d 裁剪设成 `dirty ∩ 视口`，然后靠 `paint_box` 剪枝。
 契约是硬性的：**在 dirty 区域内的结果必须与全量 `ql_ui_render` 逐像素相同**。
 
+脏区的来源全是"节点 `flags |= QL_UI_RT_DIRTY`"，集中在一处最容易漏的是
+**状态位变化**（`set_state_chain`）：`:hover/:active/:focus` 切换后节点必须重画，
+否则旧样子会留在保留式画布上 —— 典型表现是"点几个输入框之后屏幕上好几个光标"
+（光标只在 `ui->focus == node` 时画，失焦的输入框不重画→它那个 1px 竖线一直在）。
+`test/web/test_caret_dirty.c` 守这条：全程只用脏区重绘，最后与整屏重绘逐像素比对。
+
 #### 高 DPI：布局永远是 CSS px
 
 `ql_ui_layout(ui, w, h)` 的 `w/h` 是 **CSS px**，与 DPR 无关。

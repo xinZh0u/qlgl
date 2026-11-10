@@ -103,6 +103,7 @@ ql_gfx_gl_end(gfx);                      // 上传顶点 + 一次 draw + eglSwap
 | **顶点字段顺序** | 部分文字变成黑色实心方块 | `u,v` 夹在 `border` 与 `use_tex` 之间，`a_params`（vec4）读到的是 `(radius,border,u,v)`，导致 `use_tex = u` | 把 `radius/border/use_tex/pad` 排在一起，`u,v` 单独一段 |
 | `clock_gettime` 未声明 | `-std=c11` 下编译失败 | 需要 `_POSIX_C_SOURCE` | 文件顶部定义（只在 port 层） |
 | 竖坐标 | 画面上下颠倒 | GL 原点在左下 | 顶点着色器里 `ndc.y = -ndc.y`；`glReadPixels` 后按行翻转 |
+| **EGL 窗口表面不会跟着窗口变** | 刚开窗时顶部黑一条、内容贴底；**拖一下窗口就正常** | `eglCreateWindowSurface` 按创建时的窗口几何定尺寸，WM 之后改窗口大小不会改表面；我们把 viewport 设成新尺寸却画进老尺寸的缓冲 | `surface_sync()`：尺寸一变就 `eglDestroySurface` + `eglCreateWindowSurface` + 重新 `eglMakeCurrent`（见 §8） |
 
 **教训**：GPU 后端最容易错的是"数据布局"和"坐标/平台约定"，而不是图形学本身。
 所以每一个都要有测试（见 §6）。

@@ -633,6 +633,11 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 
 <p><code>ql_ui_render_rect</code> 把 d2d 裁剪设成 <code>dirty ∩ 视口</code>，然后靠 <code>paint_box</code> 剪枝。
 契约是硬性的：<strong>在 dirty 区域内的结果必须与全量 <code>ql_ui_render</code> 逐像素相同</strong>。</p>
+<p>脏区的来源全是"节点 <code>flags |= QL_UI_RT_DIRTY</code>"，集中在一处最容易漏的是
+<strong>状态位变化</strong>（<code>set_state_chain</code>）：<code>:hover/:active/:focus</code> 切换后节点必须重画，
+否则旧样子会留在保留式画布上 —— 典型表现是"点几个输入框之后屏幕上好几个光标"
+（光标只在 <code>ui-&gt;focus == node</code> 时画，失焦的输入框不重画→它那个 1px 竖线一直在）。
+<code>test/web/test_caret_dirty.c</code> 守这条：全程只用脏区重绘，最后与整屏重绘逐像素比对。</p>
 <h4 id="dpi-css-px">高 DPI：布局永远是 CSS px</h4>
 <p><code>ql_ui_layout(ui, w, h)</code> 的 <code>w/h</code> 是 <strong>CSS px</strong>，与 DPR 无关。
 设备尺寸由表面决定，换算由 <code>QLDraw2D</code> 后端统一完成（见 render 手册 §10.7）：</p>

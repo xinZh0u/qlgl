@@ -9890,13 +9890,33 @@ static void set_state_chain(QLUINodeRT *node, uint8_t mask, int on)
     for (QLUINodeRT *n = node; n != NULL; n = n->parent) {
         /* 先记下变化前的生效样式：过渡的起点必须是"屏幕上正在显示的那个值" */
         const QLUIStyle *before = ql_ui_node_style(n);
+        const uint8_t was = n->flags;
         if (on)
             n->flags = (uint8_t)(n->flags | mask);
         else
             n->flags = (uint8_t)(n->flags & ~mask);
-        /* 状态位变了：让有 transition 的节点起/改道渐变 */
-        if (n->owner != NULL)
-            trans_retarget(n->owner, n, before);
+        /*
+         * **状态位真的变了就得重画**（脏区模式的动作来源）。
+         *
+         * 漏掉这一句的后果是"光标留在已经失焦的输入框里"：光标只在
+         * `ui->focus == node` 时画，失焦时那个节点不重画 → 旧光标一直留在
+         * 保留式画布上，点几次就有好几个光标同时闪。同理 `:hover`/`:active`
+         * 的边框也会残留。有 transition 的节点本来由 trans 标脏，这里补的是
+         * "没有 transition 的纯状态切换"。
+         */
+        if (n->flags != was) {
+            /*
+             * 标脏范围：目标节点**一定**重画（光标/选中态这类东西不在样式里，
+             * 样式指针可能一点没变）；祖先只在**自己的生效样式真的变了**时重画
+             * —— 子元素 hover 时父容器也算 hover，`.card:hover` 就属于这种。
+             * 无条件把整条链标脏会让每次 hover 变化都变成整屏重绘。
+             */
+            if (n == node || ql_ui_node_style(n) != before)
+                n->flags = (uint8_t)(n->flags | QL_UI_RT_DIRTY);
+            /* 状态位变了：让有 transition 的节点起/改道渐变 */
+            if (n->owner != NULL)
+                trans_retarget(n->owner, n, before);
+        }
     }
 }
 
