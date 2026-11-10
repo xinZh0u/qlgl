@@ -148,16 +148,22 @@ QLGL_GOLDEN_UPDATE=1 ./build/test_golden   # 确认画面无误后重建基准
 ./build/example_window --frames 120       # 跑 120 帧后自动退出
 ```
 
-依赖：CMake ≥ 3.16、C11 编译器。
+依赖：CMake ≥ 3.16、C11 编译器。**全部可选**，最小构建**零外部依赖**。
 
 | 可选后端 | 依赖（Debian/Ubuntu） | 关闭选项 |
 |---|---|---|
+| 矢量字体（中文/任意字号） | `libfreetype-dev` | `-DQLGL_BUILD_FREETYPE=OFF` |
 | X11 | `libx11-dev` | `-DQLGL_BUILD_X11=OFF` |
-| Wayland | `libwayland-dev wayland-protocols`（`wayland-scanner`） | `-DQLGL_BUILD_WAYLAND=OFF` |
+| Wayland | `libwayland-dev`（`wayland-scanner`） | `-DQLGL_BUILD_WAYLAND=OFF` |
 | GPU (GLES3) | `libegl1-mesa-dev libgles2-mesa-dev` | `-DQLGL_BUILD_GL=OFF` |
+| JPEG | `libjpeg-dev`（找不到自动跳过） | `-DQLGL_BUILD_JPEG=OFF` |
+| 复杂文字整形 | `libharfbuzz0b`（**只需运行库**，没有头文件也行） | `-DQL_FEAT_CSS_TEXT_SHAPE=0` |
+| 双向文字 / RTL | `libfribidi0`（**只需运行库**） | `-DQL_FEAT_CSS_BIDI=0` |
 
-两者都没有时仍可正常构建，程序自动降级到内存显示（可导出 PPM）。
+一个后端都没有时仍可正常构建，程序自动降级到内存显示（可导出 PPM）。
 `xdg-shell.xml` 已随仓库提供，不需要系统安装 wayland-protocols 的头文件。
+
+> 用到的每个库"干什么、什么许可、为什么是它"：见 [第三方依赖与许可](doc/第三方依赖.md)。
 
 要求：CMake ≥ 3.16、支持 C11 的编译器（构建使用 `-std=c11`，不依赖 POSIX 扩展）。
 

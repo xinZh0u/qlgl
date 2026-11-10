@@ -105,10 +105,24 @@ if(QLGL_BUILD_FREETYPE)
         target_include_directories(qlgl PUBLIC ${FREETYPE_INCLUDE_DIRS})
         target_compile_definitions(qlgl PUBLIC QLGL_ENABLE_FREETYPE=1)
         target_link_libraries(qlgl PUBLIC ${FREETYPE_LIBRARIES})
+        set(QLGL_FREETYPE_ENABLED 1)
         message(STATUS "QLGL: FreeType 矢量字体后端已启用")
     else()
         message(STATUS "QLGL: 未找到 FreeType，只用内置位图字体")
     endif()
+endif()
+
+# 文本栈（B8 的 @font-face / font-family 家族列表）**必须有 FreeType**：
+# 没有它的构建要自动把它关掉，否则库自己就编不过（qlfont_ft.h 里的 #error 是给
+# 直接 include 头文件的用户看的，不该被 CMake 造出来）。
+if(NOT QLGL_FREETYPE_ENABLED)
+    if(DEFINED QL_FEAT_CSS_FONT_STACK AND QL_FEAT_CSS_FONT_STACK)
+        message(FATAL_ERROR
+            "QL_FEAT_CSS_FONT_STACK=1 需要 FreeType：请打开 QLGL_BUILD_FREETYPE，"
+            "或同时定义 -DQL_FEAT_CSS_FONT_STACK=0")
+    endif()
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_CSS_FONT_STACK=0)
+    message(STATUS "QLGL: 没有 FreeType → 文本栈（@font-face / 家族列表）已强制关闭")
 endif()
 
 # ---- B8 的第三方库：构建期探测 HarfBuzz / fribidi ----

@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>第三方依赖与许可 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item active' href='../design/第三方依赖.html'>第三方依赖与许可</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="_1">第三方依赖与许可</h1>
+<blockquote>
+<p>状态：<strong>现行清单（2026-12 核对）</strong>。目标读者：打包/发版的人、评估"能不能用它"的人、
+以及被法务问"你们用了什么开源库"的人。数据都是本机（Ubuntu 24.04、x86_64）实测。</p>
+</blockquote>
+<p>一句话结论：<strong>主库 MIT；最小构建零外部依赖；PC/Mobile 全量档只有 7 个运行期库，
+而且全部是动态库（不占我们的二进制、可被系统替换）；MCU 档一个都不需要。</strong></p>
+<hr />
+<h2 id="0">0. 一览表</h2>
+<h3 id="01">0.1 运行期依赖（会进进程、可能被链接进产物）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>库</th>
+<th>语言</th>
+<th>用途</th>
+<th>适用平台</th>
+<th>许可</th>
+<th>引入方式</th>
+<th>裁剪开关</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>FreeType</strong> 2.14</td>
+<td>C</td>
+<td>TTF/OTF/TTC 解析 + 任意字号字形光栅化（中文靠它）</td>
+<td>全平台（Linux/Android/iOS/Win/macOS）</td>
+<td>FTL 或 GPLv2（<strong>我们取 FTL</strong>）</td>
+<td>链接动态库</td>
+<td><code>QLGL_BUILD_FREETYPE=OFF</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>libjpeg-turbo</strong> 2.1</td>
+<td>C + SIMD 汇编</td>
+<td>JPEG 基线解码（<code>&lt;img src=x.jpg&gt;</code>）</td>
+<td>Linux/Android/iOS/macOS</td>
+<td>IJG / BSD-3 / zlib（三重）</td>
+<td>链接动态库</td>
+<td><code>QLGL_BUILD_JPEG=OFF</code>、<code>QL_FEAT_IMG_LIBJPEG=0</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>libX11</strong> 1.8.13</td>
+<td>C</td>
+<td>X11 窗口、键鼠、剪贴板、Xft.dpi</td>
+<td>Linux/X11</td>
+<td>MIT</td>
+<td>链接动态库</td>
+<td><code>QLGL_BUILD_X11=OFF</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>wayland-client</strong> 1.24</td>
+<td>C</td>
+<td>Wayland 窗口、键鼠、剪贴板</td>
+<td>Linux/Wayland</td>
+<td>MIT</td>
+<td>链接动态库（<code>xdg-shell</code> 协议代码由 <code>wayland-scanner</code> 生成）</td>
+<td><code>QLGL_BUILD_WAYLAND=OFF</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>EGL</strong> + <strong>GLESv2</strong>（Mesa/厂商驱动）</td>
+<td>C</td>
+<td>GPU 后端：纹理图集、单次 <code>glDrawArrays</code></td>
+<td>Linux/Android/RPi…（任何有 GLES3 的）</td>
+<td>MIT（Mesa；厂商驱动另计）</td>
+<td>链接动态库</td>
+<td><code>QLGL_BUILD_GL=OFF</code>、<code>QL_FEAT_GL=0</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>HarfBuzz</strong> 12.3</td>
+<td>C++</td>
+<td>复杂文字整形（连字、字距、阿拉伯/印度语系、<code>smcp</code>/<code>tnum</code>）</td>
+<td>PC/Mobile（MCU 不用）</td>
+<td>MIT（"Old MIT"）</td>
+<td><strong>dlopen</strong> <code>libharfbuzz.so.0</code>；有头文件时直连（CMake 探测）</td>
+<td><code>QL_FEAT_CSS_TEXT_SHAPE=0</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>fribidi</strong> 1.0.16</td>
+<td>C</td>
+<td>Unicode 双向算法（<code>direction</code> / <code>unicode-bidi</code> / RTL 重排）</td>
+<td>PC/Mobile</td>
+<td><strong>LGPL-2.1+</strong></td>
+<td><strong>dlopen</strong> <code>libfribidi.so.0</code>；有头文件时直连</td>
+<td><code>QL_FEAT_CSS_BIDI=0</code></td>
+</tr>
+</tbody>
+</table>
+<p>另有三个"永远存在但不是第三方"的链接项：<code>libm</code>（数学）、<code>libdl</code>（<code>CMAKE_DL_LIBS</code>，仅 dlopen 路径）、
+<code>libc</code>（glibc / musl）。它们属于 C 运行库，见 §2.8。</p>
+<h3 id="02">0.2 构建期 / 开发期工具（<strong>不进产物</strong>）</h3>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>语言</th>
+<th>用途</th>
+<th>许可</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CMake ≥ 3.16</td>
+<td>C++</td>
+<td>构建系统</td>
+<td>BSD-3-Clause</td>
+</tr>
+<tr>
+<td>Ninja（可选）</td>
+<td>C++</td>
+<td>生成器</td>
+<td>Apache-2.0</td>
+</tr>
+<tr>
+<td>GCC / Clang</td>
+<td>—</td>
+<td>编译器（注意 <code>-lm</code> 的运行时例外）</td>
+<td>GPLv3 + GCC Runtime Library Exception</td>
+</tr>
+<tr>
+<td>Python 3</td>
+<td>Python</td>
+<td>跑 <code>tools/</code> 下的生成器</td>
+<td>PSF-2.0</td>
+</tr>
+<tr>
+<td><code>markdown</code> + <code>Pygments</code></td>
+<td>Python</td>
+<td>文档站 <code>tools/doc/gen_html.py</code></td>
+<td>BSD-3 / BSD-2</td>
+</tr>
+<tr>
+<td>Pillow (PIL)</td>
+<td>Python</td>
+<td><code>tools/qlfontgen/gen_bitmap_font.py</code> 渲染内置位图字体</td>
+<td>HPND</td>
+</tr>
+<tr>
+<td><code>wayland-scanner</code></td>
+<td>C</td>
+<td>把 <code>xdg-shell.xml</code> 生成为 C 代码</td>
+<td>MIT</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1">1. 能不能引入一个库：三条红线</h2>
+<p>QLGL 是 MIT 的 C11 库，跑得起来的机器从 640 KB RAM 的 MCU 到桌面。任何一个第三方库进来都要过这三关：</p>
+<ol>
+<li><strong>外来数据必须有界。</strong> 解码器/解析器面对的是别人给的文件。库必须有明确的"最大尺寸"语义、
+   失败必须能<strong>干净退出</strong>（不许 <code>abort</code>、不许无限分配）。这是 §2.2 里 libjpeg 要包一层
+   <code>setjmp/longjmp</code> 的原因 —— libjpeg 错误路径默认直接 <code>exit()</code>。</li>
+<li><strong>必须能在 MCU 上裁成 0。</strong> 不是"关掉功能"，而是<strong>关掉之后连符号都不进固件</strong>。
+   清单里 7 个库除了 <code>libm</code> 全部是真开关（见 §7 的体积账：MCU 全档 144,808 B，一个外部库都没链）。</li>
+<li><strong>许可不能传染 MIT 主库。</strong> 强 copyleft（GPL/AGPL）一律不走链接。目前唯一沾边的是
+   fribidi（LGPL），处理方式见 §5.2。</li>
+</ol>
+<p>反过来，<strong>"能自己写就自己写"</strong> 也是红线的一部分 —— 我们自己写了 DEFLATE、PNG、GIF LZW、
+QOI、BMP、位图字体、UAX#9 子集（见 §4）。判断标准只有一条：</p>
+<blockquote>
+<p><strong>自己写的代码出错时，后果是"解不出来"还是"看起来对但其实不对"？</strong></p>
+</blockquote>
+<p>PNG 的 DEFLATE 写错 → 校验和不过、直接失败，所以自己写（435 行）。
+JPEG 写错 → 图能出来但颜色/块效应微妙不对，且要面对 20 年的霍夫曼+IDCT+色度上采样坑，
+所以交给 libjpeg-turbo。字体同理：TTF 解析 + hinting + CJK 是几年工程，交给 FreeType。</p>
+<hr />
+<h2 id="2">2. 运行期依赖逐个说明</h2>
+<h3 id="21-freetype">2.1 FreeType —— 矢量字体与任意字号</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>C（自带 C 接口即原始接口）</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>2.14.2，<code>libfreetype.so.6</code> <strong>852 KB</strong></td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/text/qlfont_ft.c">qlfont_ft.c</a>（唯一接触 <code>ft2build.h</code> 的地方）、<a href="../include/qlgl/qlfont_ft.h">qlfont_ft.h</a></td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td><code>FT_Init_FreeType</code>（全局共享一个）、<code>FT_New_Memory_Face</code>（TTC 逐字面试探）、<code>FT_Set_Pixel_Sizes</code>、<code>FT_Get_Char_Index</code> / <code>FT_Load_Glyph</code>、<code>FT_Render_Glyph</code>（<code>FT_RENDER_MODE_NORMAL</code> → 8bpp 灰度）、<code>face-&gt;style_flags</code>（读 <code>FT_STYLE_FLAG_BOLD/ITALIC</code> 判断字面自带粗斜体）、<code>FT_Done_Face</code></td>
+</tr>
+<tr>
+<td>我们不用它的</td>
+<td>字距/连字（那是 HarfBuzz 的事）、<code>FT_Cache</code>（我们自己按字号做 glyph 缓存）、<code>FT_Outline</code> 自绘、bitmap/PCF/BDF 驱动、<code>FT_GlyphSlot</code> 的彩色位图（emoji）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是它</strong>：它已经是"读 TTF/OTF/TTC、按像素尺寸出灰度位图"这件事的事实标准，
+Windows 的 <code>DirectWrite</code>、macOS 的 <code>CoreText</code>、Android 的 <code>Minikin</code>、浏览器的字体栈底层全是它的同类实现。
+STB 类单头库（<code>stb_truetype</code>）只做 TrueType、不做 CFF/OTF 与 TTC、没有 hinting，
+中文 TTC 直接不行 —— 这正是我们的主用例（<code>NotoSansCJK-Regular.ttc</code>）。</p>
+<p><strong>为什么是"可选 + 动态"</strong>：
+- MCU 档关掉（<code>QLGL_BUILD_FREETYPE=OFF</code>），退回 <code>qlfont_ascii.c</code> 的内置 4bpp 位图字体（654 行，零依赖）。
+- 关掉后 <code>@font-face</code> / <code>font-family: &lt;家族名&gt;</code> 在<strong>构建期报错</strong>，不会给你一个"运行期才好"的惊喜。
+- 它只有 852 KB 动态库，桌面/Android 必然已经有（Android 直连系统 <code>libft2</code>），
+  静态链进产物是最坏选择（体积翻 4 倍，还不带 CJK 字面）。</p>
+<p><strong>许可义务</strong>：FTL 是 BSD 风格但<strong>带署名条款</strong> —— 二进制分发时必须随附 FreeType 的版权与许可声明
+（见 §5.1）。FreeType 是 <strong>FTL 或 GPLv2 双许可</strong>，我们只能走 FTL：MIT 主库和 GPLv2 不能共存。</p>
+<h3 id="22-libjpeg-turbo-jpeg">2.2 libjpeg-turbo —— JPEG 解码</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>C 内核 + x86/ARM 的 SIMD（NASM 或 intrinsics）</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>2.1.5（<code>libjpeg.so.8</code>，<strong>604 KB</strong>）</td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/port/qlimage_jpeg.c">qlimage_jpeg.c</a>（201 行，含 <code>setjmp</code> 包装）</td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td><code>jpeg_mem_src</code>（内存当输入）、强制输出 <code>JCS_EXT_RGBA</code>、<code>jpeg_read_scanlines</code></td>
+</tr>
+<tr>
+<td>我们不用它的</td>
+<td>编码器、渐进式以外的扩展、色彩管理（ICC）、12/16 bit</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是它</strong>：JPEG 的<strong>解码器</strong>是所有格式里最不该自己写的 —— 霍夫曼 + 反量化 + IDCT +
+YCbCr→RGB 每一步都有"看起来能出图、实际偏差 2%"的坑，而 libjpeg-turbo 的 SIMD 路径比任何
+C 手写快 3~5 倍。反过来 JPEG 的<strong>编码器</strong>我们完全不需要（构建期转码用 <code>qltext</code>，不产出 JPEG）。</p>
+<p><strong>为什么包一层 <code>longjmp</code></strong>：libjpeg 的默认错误处理器调 <code>error_exit</code> → <code>exit()</code>。
+在 GUI 库里这等于"用户给了一张坏图，进程没了"。所以 <code>qlimage_jpeg.c</code> 里
+<code>jpeg_error_mgr</code> 换成 <code>longjmp</code> 回调用点（注意像素缓冲必须在 <code>setjmp</code> <strong>之前</strong>声明，
+否则 <code>longjmp</code> 回来它的值是不确定的），并把 libjpeg 的原始文案原样带出去，
+上层变成一条明确的"这张图解不出来"错误 —— <strong>宁可明确报错，也不给半张灰图</strong>：
+libjpeg 对"数据提前结束"的处理是<strong>把缺的行填灰</strong>，我们把它判为失败。</p>
+<p><strong>许可义务</strong>：libjpeg-turbo 是 <strong>IJG / BSD-3 / zlib 三重许可</strong>，选任意一个即可，无传染性。
+注意：<strong>不要</strong>把 <code>jpeg_*</code> 的符号暴露到公共头文件里 —— 保持"我们只依赖它、
+用户的代码不必依赖它"（<code>qlimage_jpeg.c</code> 是目前唯一 <code>#include &lt;jpeglib.h&gt;</code> 的文件）。</p>
+<h3 id="23-libx11-linuxx11">2.3 libX11 —— Linux/X11 窗口后端</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>C</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>1.8.13，<code>libX11.so.6</code> <strong>1.3 MB</strong>（含 locale/IM 支持）</td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/port/qldisp_x11.c">qldisp_x11.c</a>、<a href="../src/port/qlinput_x11.h">qlinput_x11.h</a>、<a href="../src/port/qlclipboard_x11.h">qlclipboard_x11.h</a></td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td><code>XOpenDisplay</code>/<code>XCreateWindow</code>/<code>XCreateImage</code> + <code>XPutImage</code>（每帧一次；<strong>不用</strong> MIT-SHM：省掉协商与失败回退两种代码路径）、<code>XNextEvent</code>、<code>XLookupString</code>、<code>XInternAtom</code>（剪贴板）、<code>XrmGetResource("Xft.dpi")</code>（High-DPI 缩放）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是它</strong>：X11 是 Linux 桌面的既成事实，协议层直接用 Xlib 比
+SDL/GLFW/SFML 这类"窗口抽象层"代价小得多 —— 那些库每个都要 1~3 MB 并自带事件循环和渲染器，
+而我们的定位正是<strong>替代它们</strong>。<code>XrmGetResource("Xft.dpi")</code> 那种小事（读 High-DPI 缩放）
+也就是 8 行，不值得引入 <code>fontconfig</code>。</p>
+<p><strong>为什么不引进 <code>xcb</code></strong>：<code>libxcb</code> 更底层、更快，但 API 面大 3 倍、剪贴板与 IM 要自己拼；
+我们的窗口层每帧只做一次 <code>PutImage</code>，Xlib 的开销在噪声里。</p>
+<h3 id="24-wayland-client-linuxwayland">2.4 wayland-client —— Linux/Wayland 窗口后端</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>C</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>1.24.0，<code>libwayland-client.so.0</code> <strong>72 KB</strong></td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/port/qldisp_wayland.c">qldisp_wayland.c</a>、<code>src/port/protocols/xdg-shell.xml</code> → 构建期由 <code>wayland-scanner</code> 生成</td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td><code>wl_display</code>/<code>wl_registry</code>/<code>wl_compositor</code>/<code>wl_shm</code>/<code>wl_seat</code>/<code>xdg_wm_base</code>，事件循环用裸 <code>poll()</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是它</strong>：Wayland 的协议没有稳定 ABI 的 C 绑定替代品 —— 客户端协议代码必须由
+<code>wayland-scanner</code> 从我们<strong>自己仓库里那份 <code>xdg-shell.xml</code></strong> 生成（这也是为什么我们把它 vendor 进
+<code>src/port/protocols/</code>：不依赖 <code>wayland-protocols</code> 包的版本）。</p>
+<p><strong>已知取舍</strong>：<strong>不链接 <code>xkbcommon</code></strong>。Wayland 的 <code>wl_keyboard.keymap</code> 我们忽略，
+按键直接按 Linux evdev 码映射（<code>qlinput_evdev.h</code>），可打印字符按 US 布局近似 ——
+代价是非 US 键盘布局在 Wayland 下输入字符不准。这是刻意的：<code>xkbcommon</code> 会带来
+一个 XML 编译器依赖和数据文件，而我们 99% 的界面是鼠标/触摸。</p>
+<h3 id="25-egl-glesv2-gpu">2.5 EGL + GLESv2 —— GPU 后端</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>C（Mesa 实现；厂商驱动闭源）</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>EGL 1.5 / GLES 3.2 头文件；<code>libEGL.so.1</code> 72 KB、<code>libGLESv2.so.2</code> 72 KB（这只是 glvnd 分发壳，<strong>真正的 Mesa 驱动</strong>在 <code>/usr/lib/x86_64-linux-gnu/dri/</code>，llvmpipe 数 MB）</td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/port/qlgfx_gl.c">qlgfx_gl.c</a>（唯一 <code>#include &lt;GLES3/gl3.h&gt;</code> 的文件）</td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td>GLES 3.0 的极小子集：一个 VAO/VBO + 一个纹理图集 + 三种 <code>mode</code> 的着色器分派、<code>glScissor</code>、FBO（离屏图层/滤镜）、A8 蒙版的 <code>R8</code> 纹理</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是它</strong>：EGL/GLES 是<strong>唯一在 Linux、Android、RPi、嵌入式 GPU 上都存在</strong>的图形 API。
+不用 Vulkan（驱动覆盖率、代码量都不合适），不用 SDL 的 <code>SDL_Renderer</code>（那会把后端选择权交出去，
+我们就失去"CPU/GPU 双后端像素级一致"这个卖点）。
+<code>QLGL_BUILD_GL=OFF</code> 后整个 GPU 路径消失，只剩 CPU 光栅，<strong>行为完全一样</strong>（golden 测试双向对拍）。</p>
+<p><strong>为什么要 GPU 后端</strong>：CPU 光栅在 4K 上填充率吃不消；GPU 路径把整棵树的矩形/圆角/
+渐变/图片<strong>合批成一次 <code>glDrawArrays</code></strong>（见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3覆盖与裁剪</a> §22）。</p>
+<h3 id="26-harfbuzz-b8">2.6 HarfBuzz —— 复杂文字整形（B8）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td><strong>C++</strong>（对外是纯 C 的 <code>hb_*.h</code> 接口）</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>12.3.2，<code>libharfbuzz.so.0</code> <strong>1.2 MB</strong></td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/text/qltextshape.c">qltextshape.c</a>（640 行，含内建兜底整形）、<a href="../src/core/qldl.c">qldl.c</a></td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td><strong>11 个符号</strong>：<code>hb_ft_font_create_referenced</code>、<code>hb_font_destroy</code>、<code>hb_font_set_scale</code>、<code>hb_buffer_create/destroy/add_utf8/guess_segment_properties/set_direction</code>、<code>hb_shape</code>、<code>hb_buffer_get_glyph_infos</code>/<code>hb_buffer_get_glyph_positions</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是它</strong>：整形（shaping）需要 Unicode 数据库（字素簇、连字、字距、阿拉伯呈现形式、
+印度语系的音节重排）。这不是"写几百行"能解决的，是<strong>每年都在更新的数据表</strong>。
+HarfBuzz 是 Android/Chrome/Firefox/GTK/Qt 的共同选择，MIT 许可，C 接口。</p>
+<p><strong>为什么用 <code>dlopen</code> 而不是直接链接</strong>：
+1. 这台机器（以及很多发行版的最小安装）<strong>只有 <code>libharfbuzz.so.0</code> 运行库，没有 <code>-dev</code> 头文件</strong>。
+   直接链接会让构建失败，<code>dlopen</code> 则"有就用、没有就退回内建"。
+2. 它是<strong>可选增强</strong>：拿不到它，文本仍逐码位输出（与 B8 之前逐像素一致）。
+3. <code>dlopen</code> 天然满足"可替换、可裁剪"，MCU 上 <code>QL_CFG_HAVE_DLOPEN=0</code> 一关就整段消失。</p>
+<p>CMake 会探测头文件：<strong>有头文件就走直连</strong>（<code>QLGL_HAVE_HARFBUZZ=1</code>，编译期用
+<code>_Static_assert</code> 钉住 <code>hb_glyph_info_t</code>/<code>hb_glyph_position_t</code> 的布局），没有才走 <code>dlopen</code>。
+两条路径产物相同（测试 <code>test_text_shape</code> 双向覆盖）。</p>
+<p><strong>为什么不用 SheenBidi / ICU</strong>：ICU 一个库 30 MB 起，SheenBidi 只管 bidi 不管整形。
+HarfBuzz + fribidi 是最小完备组合。</p>
+<h3 id="27-fribidi-unicode-b8">2.7 fribidi —— Unicode 双向算法（B8）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>C</td>
+</tr>
+<tr>
+<td>版本（本机）</td>
+<td>1.0.16，<code>libfribidi.so.0</code> <strong>120 KB</strong></td>
+</tr>
+<tr>
+<td>代码位置</td>
+<td><a href="../src/text/qltextbidi.c">qltextbidi.c</a>（404 行内建 UAX#9 子集兜底）</td>
+</tr>
+<tr>
+<td>我们只用它的</td>
+<td><code>fribidi_get_par_embedding_levels_ex</code> + <code>fribidi_reorder_line</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么不用 <code>fribidi_log2vis</code></strong>：它会顺手做<strong>阿拉伯呈现形式替换</strong>（presentation forms），
+和 HarfBuzz 的整形重复 —— 两者叠加会把阿拉伯字母变成孤立形（B8 里踩过这个坑）。
+所以只取"级别 + 重排"两步，整形完全交给 HarfBuzz。
+<strong>为什么需要它</strong>：UAX#9 是纯算法、可以自己写（我们写了 404 行的子集），
+但完整实现的边界情况（括号配对、显式嵌入/覆盖、L1 重置）多到不值得重写一遍。</p>
+<p><strong><code>dlopen</code> 的理由同 HarfBuzz</strong>（只有 <code>libfribidi.so.0</code>、没有头文件的那台机器）。</p>
+<p><strong>许可</strong>：<strong>LGPL-2.1+</strong> —— 清单里唯一的 copyleft，处理方式见 §5.2。</p>
+<h3 id="28-libm-libdl-libc">2.8 libm / libdl / libc</h3>
+<ul>
+<li><code>libm</code>：<code>find_library(QL_LIBM m)</code>，用于 <code>sqrtf</code>/<code>sinf</code>/<code>powf</code>（圆角 SDF、渐变插值、缓动）。</li>
+<li><code>libdl</code>：<code>${CMAKE_DL_LIBS}</code>，只在 <code>QL_CFG_HAVE_DLOPEN=1</code> 时需要；glibc ≥ 2.34 已并入 <code>libc</code>。</li>
+<li><code>libc</code>（glibc / musl）：<code>malloc</code>/<code>memcpy</code>/<code>snprintf</code> 等。</li>
+</ul>
+<p>glibc 是 LGPL-2.1 + 链接例外（正常动态链接不受影响）；musl 是 MIT。
+<strong>我们没有 <code>pthread</code> 依赖</strong> —— 全库单线程，事件循环由用户驱动。</p>
+<hr />
+<h2 id="3">3. 构建期与开发期工具</h2>
+<p>这些<strong>不进产物</strong>，只是"想从源码构建/生成文档"时才需要：</p>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>版本（本机）</th>
+<th>用途</th>
+<th>许可</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CMake</td>
+<td>4.2.3（<code>CMakeLists.txt</code> 要求 ≥ 3.16）</td>
+<td>构建、探测第三方库、生成 golden 测试</td>
+<td>BSD-3-Clause</td>
+</tr>
+<tr>
+<td>Ninja</td>
+<td>1.13</td>
+<td>可选生成器（CI 用）</td>
+<td>Apache-2.0</td>
+</tr>
+<tr>
+<td>GCC</td>
+<td>15.2</td>
+<td>编译器；另跑 <code>-Werror -Wpedantic -Wconversion</code> 档</td>
+<td>GPLv3 + Runtime Library Exception</td>
+</tr>
+<tr>
+<td>Python 3</td>
+<td>3.14</td>
+<td>跑 <code>tools/</code> 下的生成器（注意：<code>tools/qltext</code> 本身是<strong>纯 C</strong>，见 §3 末）</td>
+<td>PSF-2.0</td>
+</tr>
+<tr>
+<td><code>markdown</code> 3.10、<code>Pygments</code> 2.19</td>
+<td>Python</td>
+<td>文档站代码高亮（缺了也能跑，只是没高亮）</td>
+<td>BSD-3 / BSD-2</td>
+</tr>
+<tr>
+<td>Pillow 12.1</td>
+<td>Python</td>
+<td><code>gen_bitmap_font.py</code> 用系统字体渲染出内置 4bpp 位图字体（一次性，产物已入库）</td>
+<td>HPND</td>
+</tr>
+<tr>
+<td><code>wayland-scanner</code></td>
+<td>1.24</td>
+<td>生成 <code>xdg-shell</code> 客户端协议代码</td>
+<td>MIT</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>构建期第三方库的边界</strong>：<code>tools/qltext</code>（把 HTML/CSS 编译成静态 blob 的编译器）是
+<strong>纯 C + 零依赖</strong>的，它的产物是 C 数组，目标机不需要任何东西。这是刻意的设计：
+"PC 编译、MCU 运行"的链路里，编译器不能用一堆 Python 包。</p>
+</blockquote>
+<hr />
+<h2 id="4">4. 明确<strong>不</strong>引入的库（以及我们写了什么替代）</h2>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>社区常见选择</th>
+<th>我们的做法</th>
+<th>行数</th>
+<th>为什么能自己写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DEFLATE 解压</td>
+<td>zlib</td>
+<td><code>qlinflate.c</code> 自研 inflate（+ 固定/动态霍夫曼、<code>fail</code> 语义）</td>
+<td>435</td>
+<td>写错 = 校验和不过，不会静默出错</td>
+</tr>
+<tr>
+<td>PNG</td>
+<td>libpng</td>
+<td><code>qlimage.c::decode_png</code>（去交错、<code>tRNS</code>/<code>PLTE</code>/<code>gAMA</code>、CRC）</td>
+<td>~389</td>
+<td>容器只是块拼接，难点已由 inflate 解决</td>
+</tr>
+<tr>
+<td>GIF</td>
+<td>giflib</td>
+<td><code>qlimage.c::decode_gif</code>（自研 LZW，<strong>只取首帧</strong>）</td>
+<td>~278</td>
+<td>首帧解码 300 行；动画是另一件事，明确不做</td>
+</tr>
+<tr>
+<td>BMP / QOI</td>
+<td>—</td>
+<td><code>decode_bmp</code> / <code>decode_qoi</code></td>
+<td>124 / 306</td>
+<td>格式本身就是"照文档抄"</td>
+</tr>
+<tr>
+<td>位图字体</td>
+<td>FreeType/位图字体库</td>
+<td><code>qlfont_ascii.c</code>（表驱动 4bpp）+ <code>tools/qlfontgen</code></td>
+<td>654</td>
+<td>MCU 档不能带 852 KB 的 .so</td>
+</tr>
+<tr>
+<td>文本整形兜底</td>
+<td>ICU</td>
+<td><code>qltextshape.c</code> 内建逐码位 + 连字近似</td>
+<td>（含在 640 行内）</td>
+<td>只在没有 HarfBuzz 时兜底，不追求复杂脚本正确</td>
+</tr>
+<tr>
+<td>双向算法兜底</td>
+<td>ICU / SheenBidi</td>
+<td><code>qltextbidi.c</code> 内建 UAX#9 子集</td>
+<td>404</td>
+<td>纯算法，RTL 常用路径可覆盖</td>
+</tr>
+<tr>
+<td>窗口/输入抽象</td>
+<td>SDL2 / GLFW / SFML</td>
+<td><code>src/port/qldisp_*.c</code> + <code>qlinput_*.h</code></td>
+<td>—</td>
+<td>我们就是要<strong>替代</strong>它们，不能自己依赖</td>
+</tr>
+<tr>
+<td>2D 渲染器</td>
+<td>Cairo / Skia / pixman</td>
+<td><code>qlcanvas.c</code> + <code>qlgfx_gl.c</code></td>
+<td>—</td>
+<td>同上；而且需要 CPU/GPU 像素级一致</td>
+</tr>
+<tr>
+<td>字体发现</td>
+<td>fontconfig</td>
+<td><code>@font-face</code> + 运行期注册（<code>ql_font_ft_register_*</code>）</td>
+<td>—</td>
+<td>fontconfig 的匹配规则是另一套语义，且要读系统配置</td>
+</tr>
+<tr>
+<td>键盘布局</td>
+<td>xkbcommon</td>
+<td>evdev 码直映射（US 近似）</td>
+<td>—</td>
+<td>见 §2.4 的取舍</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么"少一个依赖"值钱</strong>：每一个被砍掉的库，都让"从源码到能跑"的路径少一个可能失败的环节，
+也让 MCU 档的体积账保持可控（§7）。</p>
+<hr />
+<h2 id="5-4">5. 许可合规清单（发版前必须过的 4 条）</h2>
+<h3 id="51">5.1 署名与声明</h3>
+<p>MIT 主库（<a href="../LICENSE">LICENSE</a>）本身只要求保留我们的版权声明。但<strong>二进制分发</strong>时还需要随附：</p>
+<ul>
+<li><strong>FreeType</strong> 的 FTL 许可全文 + 版权声明（FTL 的署名条款要求"文档或随附材料中必须出现"）。</li>
+<li><strong>libjpeg-turbo</strong>（IJG/BSD-3）的版权与免责声明。</li>
+<li>其余（X11/Wayland/Mesa/HarfBuzz）都是 MIT 系，同样需要保留声明，但无额外义务。</li>
+</ul>
+<p>做法：发版包里附一份 <code>THIRD-PARTY-NOTICES.txt</code>，逐库抄它们的 <code>LICENSE</code>/<code>COPYING</code>。
+（<strong>动态链接不等于免除署名义务</strong> —— 免除的是源码开放义务。）</p>
+<h3 id="52-fribidi-lgpl-21">5.2 fribidi 是 LGPL-2.1+：三条硬约束</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>是否合规</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认路径：<code>dlopen("libfribidi.so.0")</code> 用系统库</td>
+<td>✅</td>
+<td>我们<strong>不分发</strong> fribidi 的代码；用户可自由替换系统库</td>
+</tr>
+<tr>
+<td><code>QLGL_HAVE_FRIBIDI=1</code> 直连<strong>动态</strong>库</td>
+<td>✅</td>
+<td>LGPL 允许动态链接，只要保留"可替换"（用户能换 <code>.so</code>）</td>
+</tr>
+<tr>
+<td>直连并<strong>静态</strong>链接进闭源产物</td>
+<td>⚠️ <strong>不合规</strong></td>
+<td>静态链接 LGPL 要求提供目标文件或重链接手段，闭源分发做不到</td>
+</tr>
+</tbody>
+</table>
+<p>因此：默认配置永远是 <code>dlopen</code> 或动态链接；如果有人要用静态链接，<strong>必须</strong>
+<code>-DQL_FEAT_CSS_BIDI=0</code>（走内建 UAX#9 子集，功能略减但零依赖）。这条写进了 §5.3 的检查清单。</p>
+<h3 id="53-checklist">5.3 发版前 checklist</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1) 产物里到底链了谁（不允许出现意外库）</span>
+readelf<span class="w"> </span>-d<span class="w"> </span>build/example/example_01_window<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>NEEDED
+<span class="c1"># 期望：libc libm + 你启用的那几个（freetype/jpeg/X11/wayland-client/EGL/GLESv2）。</span>
+<span class="c1">#   · 不得出现 libstdc++ / libharfbuzz / libfribidi（走 dlopen 就一个都不该有）；</span>
+<span class="c1">#   · 没被用到符号的库不会出现（Ubuntu 默认 --as-needed），所以&quot;少一个&quot;不是问题；</span>
+<span class="c1">#   · libz / libbz2 / libpng / libbrotli 是 FreeType 自己的传递依赖，不关我们的事。</span>
+
+<span class="c1"># 2) 静态库形态（libqlgl.a）里不能有第三方符号</span>
+nm<span class="w"> </span>-g<span class="w"> </span>--defined-only<span class="w"> </span>build/libqlgl.a<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39; (FT_|jpeg_|hb_|fribidi_|X[A-Z]|wl_|gl[A-Z])&#39;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;违规！&quot;</span>
+
+<span class="c1"># 3) 确认 fribidi 没有被静态链接</span>
+readelf<span class="w"> </span>-d<span class="w"> </span>build/example/example_01_window<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>fribidi<span class="w">   </span><span class="c1"># 应该没有（dlopen 不进 NEEDED）</span>
+
+<span class="c1"># 4) MCU 档必须零外部依赖：链接完的 ELF 里不该有任何未定义符号（实测 0 个）</span>
+<span class="nv">OUT</span><span class="o">=</span>/tmp/mcu<span class="w"> </span>./test/mcu/build.sh<span class="w"> </span>--no-run
+nm<span class="w"> </span>/tmp/mcu/bench.elf<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">&#39; U &#39;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;违规！&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;OK：零外部符号&quot;</span>
+arm-none-eabi-size<span class="w"> </span>/tmp/mcu/bench.elf<span class="w">     </span><span class="c1"># 实测 text 144,808 / data 108 / bss 144,368</span>
+</code></pre></div>
+
+<hr />
+<h2 id="6">6. 平台矩阵（<strong>当前实现状态</strong>，不吹牛）</h2>
+<table>
+<thead>
+<tr>
+<th>平台</th>
+<th>窗口</th>
+<th>GPU</th>
+<th>矢量字体</th>
+<th>JPEG</th>
+<th>整形/双向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux/X11</td>
+<td>✅ libX11</td>
+<td>✅ EGL/GLES（Mesa）</td>
+<td>✅ FreeType</td>
+<td>✅ libjpeg-turbo</td>
+<td>✅ HarfBuzz+fribidi（dlopen）</td>
+</tr>
+<tr>
+<td>Linux/Wayland</td>
+<td>✅ wayland-client</td>
+<td>✅ EGL/GLES</td>
+<td>✅ FreeType</td>
+<td>✅ libjpeg-turbo</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>无窗口（<code>--dump</code>/嵌入式）</td>
+<td>✅ 内存显示后端</td>
+<td>—</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>MCU 裸机</strong></td>
+<td>✅ 内存显示 / 用户提供 flush</td>
+<td>—</td>
+<td>❌（内置 4bpp 位图字体 654 行）</td>
+<td>❌（构建期转码成 RAW）</td>
+<td>❌（内建兜底）</td>
+</tr>
+<tr>
+<td>Android / iOS / Windows / macOS</td>
+<td>⛔ <strong>接口已定义、后端未实现</strong></td>
+<td>计划：EGL / Metal / D3D11</td>
+<td>计划：<code>BitmapFactory</code>/<code>CoreText</code>/<code>DirectWrite</code></td>
+<td>计划：<code>BitmapFactory</code>/<code>ImageIO</code>/WIC</td>
+<td>同左</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>最后一行的意思是：<strong>设计上留了位置，代码还没写</strong>。见
+<a href="开发规划.html">开发规划</a> 与 <a href="EMBED后端设计.html">EMBED后端设计</a>。
+表格里写"计划"的格子，不要当成"能用"。</p>
+</blockquote>
+<hr />
+<h2 id="7">7. 体积与内存账（本机实测）</h2>
+<h3 id="71">7.1 第三方动态库有多大（<strong>不计入我们的产物</strong>，但用户会看到磁盘占用）</h3>
+<table>
+<thead>
+<tr>
+<th>库</th>
+<th>本机 <code>.so</code></th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>libfreetype.so.6</code></td>
+<td><strong>852 KB</strong></td>
+<td>含 CFF/TrueType/Type1/位图驱动</td>
+</tr>
+<tr>
+<td><code>libharfbuzz.so.0</code></td>
+<td><strong>1.2 MB</strong></td>
+<td>含全部 OpenType 表与 Unicode 数据</td>
+</tr>
+<tr>
+<td><code>libjpeg.so.8</code></td>
+<td><strong>604 KB</strong></td>
+<td>libjpeg-turbo + SIMD</td>
+</tr>
+<tr>
+<td><code>libfribidi.so.0</code></td>
+<td><strong>120 KB</strong></td>
+<td></td>
+</tr>
+<tr>
+<td><code>libX11.so.6</code></td>
+<td><strong>1.3 MB</strong></td>
+<td>含 XIM/locale</td>
+</tr>
+<tr>
+<td><code>libwayland-client.so.0</code></td>
+<td>72 KB</td>
+<td></td>
+</tr>
+<tr>
+<td><code>libEGL</code> / <code>libGLESv2</code></td>
+<td>72 KB / 72 KB</td>
+<td><strong>只是 glvnd 分发壳</strong>；真驱动（Mesa llvmpipe）在 <code>/usr/lib/.../dri/</code>，数 MB 级</td>
+</tr>
+</tbody>
+</table>
+<h3 id="72">7.2 我们的产物</h3>
+<p>（2026-12 重测；命令就是 <a href="对比与取舍.html">对比与取舍</a> §11.1 里那两条）</p>
+<table>
+<thead>
+<tr>
+<th>构建</th>
+<th>text</th>
+<th>data</th>
+<th>bss</th>
+<th>磁盘二进制</th>
+<th>峰值 RSS</th>
+<th>第三方</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>最小</strong>（位图字体、内存显示、无运行期解析/图像）</td>
+<td><strong>348,317 B</strong>（340 KB）</td>
+<td>5,622 B</td>
+<td>28,368 B</td>
+<td>386 KB</td>
+<td><strong>3.2 MB</strong></td>
+<td><strong>0 个</strong></td>
+</tr>
+<tr>
+<td><strong>全量</strong>（FreeType + libjpeg + GL + X11 + Wayland + 解析 + 图像）</td>
+<td><strong>710,052 B</strong>（693 KB）</td>
+<td>6,682 B</td>
+<td>102,256 B</td>
+<td>743 KB</td>
+<td>140 MB（其中 19 MB 是 CJK 字体文件 mmap，大头是 Mesa 软件光栅）</td>
+<td>7 个，全动态</td>
+</tr>
+<tr>
+<td><strong>MCU</strong>（<code>test/mcu/build.sh</code> 默认档：PC 特性全关）</td>
+<td><strong>144,808 B</strong></td>
+<td>108 B</td>
+<td>144,368 B</td>
+<td>—</td>
+<td>—</td>
+<td><strong>0 个</strong>（ELF 里未定义符号数 = 0；<code>-lm</code> 由 newlib 静态提供）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>两次测量的对比意义：最小档 340 KB 里<strong>没有一个是第三方库的代码</strong> —— 差的那 1.9~2.4 MB
+（FreeType + HarfBuzz + Mesa）全在动态库里。</p>
+<p>B8 的结论：<code>QL_FEAT_CSS_FONT_STACK</code> / <code>TEXT_SHAPE</code> / <code>BIDI</code> 三个开关<strong>开关前后体积差 +0 B</strong> ——
+因为这三项的实现全部落在 FreeType 与 dlopen 上，MCU 编译时整段不存在，
+只剩 3,184 B 的共享注册表代码。</p>
+</blockquote>
+<p>细节见 <a href="对比与取舍.html">对比与取舍</a> §11 与 <a href="开发规划.html">开发规划</a> 的 M9/M10 分期。</p>
+<hr />
+<h2 id="8">8. 一句话问答（给评审用）</h2>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>你们到底依赖几个第三方库？</td>
+<td><strong>运行时最多 7 个，全部可选、全部动态；最小构建 0 个。</strong></td>
+</tr>
+<tr>
+<td>用了什么 license 的？</td>
+<td>6 个 MIT/BSD 系，1 个 LGPL（fribidi，仅 dlopen，不分发）。主库 MIT。</td>
+</tr>
+<tr>
+<td>会不会传染我的闭源商业产品？</td>
+<td><strong>不会</strong>（默认配置）。主库 MIT；唯一 copyleft 的 fribidi 走 <code>dlopen</code>、不捆绑、不进 <code>NEEDED</code>，闭源分发合法。搞成静态链接才会踩线 —— 详见 §9。</td>
+</tr>
+<tr>
+<td>为什么不用 SDL/GLFW？</td>
+<td>我们的定位就是<strong>替代</strong>它们；依赖它们会失去 CPU/GPU 双后端一致性，也会让 MCU 档无路可走。</td>
+</tr>
+<tr>
+<td>为什么 PNG/GIF/zlib 自己写？</td>
+<td>435 + 389 + 278 行，出错即失败（可检测）；换来"零外部依赖 + MCU 可用"。</td>
+</tr>
+<tr>
+<td>为什么 JPEG 不自己写？</td>
+<td>20 年的 IDCT/霍夫曼坑，写错是"看起来对但其实不对"，而且 SIMD 差 3~5 倍。</td>
+</tr>
+<tr>
+<td>为什么 HarfBuzz/fribidi 要 dlopen？</td>
+<td>很多机器只有运行库没有头文件；且它们是可选增强，拿不到要能干净退回内建。</td>
+</tr>
+<tr>
+<td>有没有 GPL 的库？</td>
+<td>没有。FreeType 是 FTL/<strong>GPLv2 双许可</strong>，我们明确走 FTL，绝不启用 GPL 分支。</td>
+</tr>
+<tr>
+<td>我要做闭源商业产品，能用哪几项？</td>
+<td>全部能用（默认配置）。唯一需要留意的是 fribidi(LGPL)：动态加载即可；要静态链接就先 <code>-DQL_FEAT_CSS_BIDI=0</code>。见 §9.5。</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-gpl-lgpl">9. 闭源商业产品能用吗？（GPL / LGPL 会不会传染）</h2>
+<blockquote>
+<p>⚠️ <strong>本节是工程与合规层面的分析，不是法律意见。</strong> 真要发版请让法务看一遍
+（尤其 §9.6 的 iOS 场景）。但下面每一条都能在仓库里对着代码/CMake 验证。</p>
+</blockquote>
+<p><strong>一句话</strong>：<strong>默认配置下不会。</strong> 唯一有 copyleft 的是 fribidi（LGPL-2.1+），
+它走 <code>dlopen</code> 动态加载、你我都不分发它的代码；其余 6 个库是 MIT/BSD/FTL 系，
+只需"保留声明"。真正会出事的只有三种姿势：<strong>静态链接 fribidi</strong>、
+<strong>用 GPL 分支的 FreeType</strong>、<strong>把库源码拷进自己仓库</strong>。三种都能靠一个编译开关避开（§9.5）。</p>
+<h3 id="91">9.1 先分清两件事：<strong>主库</strong> 和 <strong>依赖</strong></h3>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>许可</th>
+<th>对闭源商业产品的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>QLGL 本身</td>
+<td><strong>MIT</strong>（<a href="../LICENSE">LICENSE</a>）</td>
+<td>无。可闭源、可商用、可改、可静态链，只需保留我们的版权声明</td>
+</tr>
+<tr>
+<td>依赖库</td>
+<td>见 §0.1</td>
+<td><strong>只有 fribidi 是 LGPL，其余全部宽松许可</strong></td>
+</tr>
+<tr>
+<td>只构建期用到的工具（CMake/Python/GCC/scanner）</td>
+<td>—</td>
+<td>无。它们的产物（<code>.o</code>/<code>.a</code>/生成的 <code>.c</code>）不受感染；GCC 有 Runtime Library Exception</td>
+</tr>
+</tbody>
+</table>
+<p>所以问题不是"QLGL 能不能商用"（能），而是"<strong>你链接的那几个 <code>.so</code> 能不能闭源分发</strong>"。</p>
+<h3 id="92-freetype-ftl-gpl">9.2 FreeType：它是<strong>双许可</strong>，我们永远选 FTL —— 千万别选 GPL</h3>
+<p>FreeType 发两个许可，用户二选一：<strong>FTL</strong>（FreeType License，BSD 风格 + 署名条款）
+或 <strong>GPLv2</strong>。这不是"看你高兴"，而是<strong>你拿到的那份构建选的是哪一个</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用发行版自带的 <code>libfreetype.so</code>（Debian/Ubuntu/Fedora/Android/macOS 全是 FTL）</td>
+<td>✅ 闭源商用完全没问题，只需在"关于/第三方声明"里附 FTL 全文 + 版权行</td>
+</tr>
+<tr>
+<td>自己从源码编 FreeType，配置成 FTL</td>
+<td>✅ 同上（静态链接也可以，FTL 没有传染性）</td>
+</tr>
+<tr>
+<td>自己编 FreeType 时开了 GPL 分支（<code>--with-gpl</code> 之类），或用了某个 GPL 构建</td>
+<td>❌ <strong>你的整个程序必须 GPL 开源</strong> —— 这才是真正的"传染"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核查一行就够</strong>：</p>
+<div class="highlight"><pre><span></span><code>grep<span class="w"> </span>-l<span class="w"> </span><span class="s2">&quot;License: FTL&quot;</span><span class="w"> </span>/usr/share/doc/libfreetype6/copyright<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;FTL，安全&quot;</span>
+ldd<span class="w"> </span>build/example/example_01_window<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>freetype<span class="w">   </span><span class="c1"># 动态库 → 连署名都只需放文档里</span>
+</code></pre></div>
+
+<blockquote>
+<p>顺带说清：<strong>静态链接 FTL 的 FreeType 不违法</strong>，只是 FTL 的署名条款要求
+"在文档或随附材料中复现版权声明与许可全文" —— 闭源产品里通常就是"关于"对话框里那一页。</p>
+</blockquote>
+<h3 id="93-fribidilgpl-21">9.3 fribidi：LGPL-2.1+ 的三条硬约束（本节是重点）</h3>
+<p>LGPL 允许闭源程序使用它，但要求<strong>终端用户能替换这个库</strong>。落到工程上就是三件事：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>要求</th>
+<th>我们默认满足吗</th>
+<th>怎么验证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>动态链接 / 动态加载（不是把代码编进你的二进制）</td>
+<td>✅ <code>dlopen("libfribidi.so.0")</code>，连 <code>NEEDED</code> 都不进</td>
+<td><code>readelf -d app \| grep -i fribidi</code> → <strong>应该没有输出</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>用户能换成自己编的同名库</td>
+<td>✅ 就是从系统路径 <code>dlopen</code>，换 <code>.so</code> 立刻生效</td>
+<td>换掉 <code>/usr/lib/.../libfribidi.so.0</code> 试试</td>
+</tr>
+<tr>
+<td>3</td>
+<td>告知 + 提供该库源码（你没改它的话，指向上游即可）</td>
+<td>✅ 放进 <code>THIRD-PARTY-NOTICES.txt</code>，写清版本 + 上游地址</td>
+<td>见 §5.1</td>
+</tr>
+</tbody>
+</table>
+<p><strong>这几种做法会踩线（都在自己掌控内，避免即可）</strong>：</p>
+<ul>
+<li>❌ 把 <code>fribidi</code> 的 <code>.c</code> 拷进 <code>src/</code> 一起编（= 静态链接，闭源分发做不到"可重链接"）；</li>
+<li>❌ <code>-static</code> 全静态构建、<code>-Wl,--whole-archive</code>、LTO 把静态库融进你的可执行文件；</li>
+<li>❌ 在固件里烧进 fribidi（嵌入式静态固件同样要求提供可重链接的目标文件）；</li>
+<li>❌ 修改 fribidi 源码却不公开修改（它自己的改动必须仍按 LGPL 发布）；</li>
+<li>⚠️ 混淆/加壳到"用户无法替换该库"的程度。</li>
+</ul>
+<p><strong>两条常被忽略的免费豁免</strong>：</p>
+<ol>
+<li><strong>不分发就不触发。</strong> LGPL 的义务挂在"分发（distribution / convey）"上。
+   内部工具、公司内网部署、纯服务端（用户拿不到二进制）—— <strong>一条义务都没有</strong>。</li>
+<li><strong>只依赖系统库、不捆绑它</strong> —— 你根本没有"分发 fribidi"，义务仅剩"声明你在用它"。</li>
+</ol>
+<h3 id="94-5">9.4 其余 5 个：宽松许可，只有"署名"义务</h3>
+<table>
+<thead>
+<tr>
+<th>库</th>
+<th>许可</th>
+<th>闭源商用</th>
+<th>需要做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>libjpeg-turbo</td>
+<td>IJG / BSD-3 / zlib 三选一</td>
+<td>✅</td>
+<td>保留版权与免责声明</td>
+</tr>
+<tr>
+<td>libX11</td>
+<td>MIT</td>
+<td>✅</td>
+<td>保留声明</td>
+</tr>
+<tr>
+<td>wayland-client（+ 我们 vendor 的 <code>xdg-shell.xml</code>）</td>
+<td>MIT</td>
+<td>✅</td>
+<td>保留声明（xml 文件头里已有）</td>
+</tr>
+<tr>
+<td>Mesa（EGL/GLES 实现）</td>
+<td>MIT</td>
+<td>✅</td>
+<td>若<strong>捆绑</strong>了 Mesa 的 <code>.so</code> 才需要带上声明；用系统驱动则不用</td>
+</tr>
+<tr>
+<td>HarfBuzz</td>
+<td>MIT（"Old MIT"）</td>
+<td>✅</td>
+<td>保留声明</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>我们没用到任何 GPL/AGPL 的库，也没有一个库是"必须开源你的代码"的。
+那张 <code>nm -g --defined-only build/libqlgl.a</code> 的检查（§5.3 第 2 条）就是用来证明
+<strong><code>libqlgl.a</code> 里没有一个第三方符号</strong> —— 静态链 QLGL 不会把任何库拖进来。</p>
+</blockquote>
+<h3 id="95-copyleft">9.5 想彻底零 copyleft？一个开关的事</h3>
+<table>
+<thead>
+<tr>
+<th>目标</th>
+<th>做法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>完全不想碰 LGPL</strong>（fribidi）</td>
+<td><code>-DQL_FEAT_CSS_BIDI=0</code></td>
+<td>改用内建 UAX#9 子集（<code>qltextbidi.c</code>，404 行）：常用 RTL/数字/混合方向正确，<strong>极端嵌套/显式嵌入的边界情况</strong>可能与完整 fribidi 有差异</td>
+</tr>
+<tr>
+<td>完全不想碰 FreeType</td>
+<td><code>-DQLGL_BUILD_FREETYPE=OFF</code>（文本栈自动关）</td>
+<td>只剩内置 4bpp 位图字体，没有任意字号/中文</td>
+</tr>
+<tr>
+<td>完全不想碰任何第三方</td>
+<td>§7 的"最小构建"命令</td>
+<td>体积 340 KB，零外部依赖（实测）</td>
+</tr>
+<tr>
+<td>想静态链接 HarfBuzz/fribidi（例如 iOS/主机游戏机）</td>
+<td>先确认许可：HarfBuzz MIT ✅；<strong>fribidi LGPL ❌</strong>（要么换内建，要么买商业授权，要么动态加载）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>一句话记忆法：<strong>MIT/BSD/FTL = 留着声明就行；LGPL = 别编进去、让它能被换掉；GPL = 别碰。</strong></p>
+<h3 id="96">9.6 分平台的现实提醒</h3>
+<table>
+<thead>
+<tr>
+<th>平台</th>
+<th>现实情况</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux 桌面（动态链接系统库）</td>
+<td>最省事</td>
+<td>默认配置即可</td>
+</tr>
+<tr>
+<td>Windows（MSVC 静态链接）</td>
+<td>静态链接很常见，fribidi 会成问题</td>
+<td><code>QL_FEAT_CSS_BIDI=0</code>，或把 fribidi 编成 DLL</td>
+</tr>
+<tr>
+<td>Android（APK 里捆 <code>.so</code>）</td>
+<td>LGPL 允许，但<strong>你就在分发它</strong></td>
+<td>附 LGPL 全文 + 提供 fribidi 源码（或上游链接 + 版本哈希），别混淆 <code>.so</code></td>
+</tr>
+<tr>
+<td><strong>iOS</strong></td>
+<td>生态以<strong>静态</strong>链接为主；App Store 对"可替换"不友好，LGPL 静态链接在这里最容易出事</td>
+<td><strong>默认关掉 BIDI</strong>（内建兜底），或改用上游商业授权；HarfBuzz(MIT) 静态链接没问题</td>
+</tr>
+<tr>
+<td>MCU 固件（闭源烧录）</td>
+<td>固件无法"重链接"，LGPL 静态链接不可接受</td>
+<td>我们在 MCU 档<strong>根本不含</strong> fribidi（§7：0 个外部库）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="97">9.7 发版最低动作（三行清单）</h3>
+<ol>
+<li>附一份 <code>THIRD-PARTY-NOTICES.txt</code>：FreeType(FTL) + libjpeg-turbo + X11 + Wayland + Mesa + HarfBuzz
+   的版权/许可全文；<strong>若用了 fribidi，加它的 LGPL-2.1 全文 + 上游地址 + 你用的版本号</strong>。</li>
+<li>在"关于"对话框里给出一句可读的说明（<code>MIT</code> 主库 + "本产品使用了 FreeType / HarfBuzz 等开源组件"）。</li>
+<li>跑一遍 §5.3 的四条命令，确认 <code>NEEDED</code> 里没有 <code>libfribidi</code>/<code>libharfbuzz</code>/<code>libstdc++</code>。</li>
+</ol>
+<hr />
+<h2 id="10">10. 维护这份清单</h2>
+<p>改了依赖就在<strong>同一个提交里</strong>更新这里：</p>
+<ol>
+<li>增删库 → 改 §0.1 表 + 加/删一节 + 更新 §7 体积。</li>
+<li><code>CMakeLists.txt</code> 里的 <code>find_package</code> / <code>pkg_check_modules</code> 有变动 → 检查 §5.3 的四条命令。</li>
+<li>新增平台后端（Android/iOS/Win）→ 把 §6 的"计划"改成"✅"并写清用的是哪个系统库。</li>
+<li>校验：<code>python3 tools/doc/gen_html.py</code> 里本页能正常渲染（表格里的相对链接都指向存在的文件）。</li>
+</ol>
+<div class='pager'>
+<a href='../design/底层实现设计.html'><span class='dir'>上一页</span>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='next' href='../design/Web兼容设计.html'><span class='dir'>下一页</span>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+</div>
+</main>
+</div>
+</body>
+</html>
