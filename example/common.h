@@ -150,6 +150,8 @@ static void ex_load_font(void)
 /*
  * 把界面渲染成一帧 PPM（没有窗口/没有 GPU 也能验证结果，也方便文档配图）。
  */
+static ql_color_t ex_clear_color(QLUIRoot *ui);
+
 static int ex_dump_ppm(QLUIRoot *ui, int w, int h, const char *path)
 {
     QLDispDriver *disp = ql_disp_mem_create((ql_coord_t)w, (ql_coord_t)h,
@@ -161,7 +163,9 @@ static int ex_dump_ppm(QLUIRoot *ui, int w, int h, const char *path)
         ql_disp_mem_destroy(disp);
         return 0;
     }
-    ql_canvas_clear(&canvas, 0x000000);
+    /* 清除色 = 根元素背景色（与真实窗口一致）：否则没被页面盖住的区域是黑块 ——
+     * 深色主题看不出来，换成白底立刻露馅（也违反了"例程统一白底"的约定）。 */
+    ql_canvas_clear(&canvas, ex_clear_color(ui));
     ql_ui_render_canvas(ui, &canvas);
     const int ok = (ql_disp_mem_save_ppm(disp, path) == QL_OK);
     ql_disp_mem_destroy(disp);

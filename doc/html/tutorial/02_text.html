@@ -276,6 +276,16 @@ main img.shot { max-width: 100%; }
 <h2 id="text-align">规则三：<code>text-align</code> 控制水平对齐</h2>
 <p>只有三个值：<code>left</code> / <code>center</code> / <code>right</code>。对齐是在<strong>元素的内容盒</strong>里做的
 （<code>content_box</code> = 边框盒减掉 <code>padding</code> 与 <code>border</code>）。</p>
+<p>对齐的对象不只是"这个元素自己的文字"，还包括<strong>行内子节点</strong>
+（<code>display: inline</code> / <code>inline-block</code>）—— 也就是说：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;tile&quot;</span><span class="p">&gt;&lt;</span><span class="nt">span</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;label&quot;</span><span class="p">&gt;</span>cover<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">tile</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* 标签在格子里居中；写 right 就贴右 */</span>
+</code></pre></div>
+
+<p>行内子节点一行放不下会换行，换行之后<strong>每一行各自按剩余空间对齐</strong>，
+不是把整个块当成一坨居中。</p>
 <h2 id="line-height">规则三·补：<code>line-height</code> 控制竖直位置（按钮里"字对不齐"的答案）</h2>
 <p>这是新手最常见的一个坑：写了个按钮，加了 <code>text-align: center</code>，字还是贴在顶上。</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">56</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">26</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">text-align</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* ❌ 字贴顶 */</span>

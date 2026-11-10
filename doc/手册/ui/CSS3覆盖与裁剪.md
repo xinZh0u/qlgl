@@ -387,7 +387,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `text-align` | ✅ | L | `left` / `center` / `right`（没有 `justify`） |
+| `text-align` | ✅ | L | `left` / `center` / `right`（没有 `justify`）；也作用于行内子节点，换行后每行各自对齐 |
 | `text-align: justify` | ❌ | B | 要改行内分配算法；中文排版里常用但成本不低，且断行是布局/绘制共用的一份实现 |
 | `line-height` | ✅ | L | `normal` / `px` / 无单位倍数 |
 | `white-space` | ✅ | L | `normal` / `nowrap` / `pre` / `pre-wrap` / `pre-line` |
@@ -1154,7 +1154,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `font-weight` / `font-style` | **合成**（画两遍 / 按行剪切） | 不加载第二份字体文件 |
 | `text-decoration` | `underline` / `overline` / `line-through` | 没有 `wavy` 线型 |
 | `vertical-align` | `baseline` / `sub` / `super` | 没有 `middle` / 长度值 |
-| `text-align` | `left` / `center` / `right` | 没有 `justify` |
+| `text-align` | `left` / `center` / `right` | 没有 `justify`；行内子节点一起对齐 |
 | `overflow` | 一个值管两轴 | 没有 `overflow-x/y` |
 | `flex-wrap` | `nowrap` / `wrap` | 没有 `wrap-reverse` |
 | `display` | `block` / `inline` / `inline-block` / `flex` / `inline-flex` / `none` | 没有 `grid` / `table` / `contents` |

@@ -133,12 +133,12 @@
 
 .quote::before {
   content: "“";
-  color: #BFC7D1;
+  color: #8C959F;
 }
 
 .quote::after {
   content: "”";
-  color: #BFC7D1;
+  color: #8C959F;
 }
 
 /* ---------- 兄弟组合符 ---------- */

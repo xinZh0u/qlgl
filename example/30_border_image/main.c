@@ -19,6 +19,12 @@
 #define IMG 24
 static uint32_t s_frame[IMG * IMG];   /* RGBA8888，非预乘 */
 
+/* 内存字节序是 R,G,B,A（小端下 uint32 的**低字节**是 R），
+ * 直接写 0xAABBGGRR 容易把红蓝写反 —— 用这个宏按 惯用的 R,G,B 顺序拼。 */
+#define RGBA8888(r, g, b) \
+    ((uint32_t)0xFF000000u | ((uint32_t)(b) << 16) | ((uint32_t)(g) << 8) | \
+     (uint32_t)(r))
+
 static void build_frame(void)
 {
     for (int y = 0; y < IMG; y++) {
@@ -27,9 +33,9 @@ static void build_frame(void)
             const int edge = (x < 8 || x >= 16) || (y < 8 || y >= 16);
             uint32_t c;
             if (corner)
-                c = 0xFF0000FFu;          /* 红，不透明 */
+                c = RGBA8888(0xB4, 0x23, 0x18);   /* 红 */
             else if (edge)
-                c = 0xFF00FF00u;          /* 绿，不透明 */
+                c = RGBA8888(0x1A, 0x7F, 0x37);   /* 绿 */
             else
                 c = 0x00000000u;          /* 中间完全透明 */
             s_frame[y * IMG + x] = c;

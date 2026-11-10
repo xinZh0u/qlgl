@@ -223,7 +223,8 @@ layout_node(node, x, y, avail_w):
     content 位置 = box + border + padding
     if 有子节点:
         block 子节点纵向堆叠；
-        inline/inline-block 子节点横向排布，超出宽度换行
+        inline/inline-block 子节点横向排布，超出宽度换行；
+        一行收尾时按容器的 text-align 平移整行（align_inline_row）
         content_h = 游标推进量
     else if 有文本:
         content_h = 行高
@@ -235,6 +236,10 @@ layout_node(node, x, y, avail_w):
 要点：
 
 - **宽度先算**：`%` 相对父**内容宽**，`auto` 时 block 撑满、inline 按文本量；
+- **行内对齐是"事后平移"**：行内盒排完才知道这一行用了多宽，所以 `text-align`
+  不参与排布，而是在一行收尾时 `translate_subtree` 把整行推过去（只推 inline 子节点，
+  `display:none` / 绝对定位的不算）。比按新 `x` 重排一遍便宜，也不用担心
+  "重排一次算出不同结果"；
 - **`box-sizing: border-box`** 时 `width` 指边框盒（浏览器默认是 `content-box`，
   所以 `width:100%` + `padding` 会溢出 —— 这是对的，别以为是 bug）；
 - **高度**：没有百分比高度，所以一趟就够；

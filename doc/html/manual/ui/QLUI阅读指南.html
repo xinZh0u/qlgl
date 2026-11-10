@@ -574,7 +574,8 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
     content 位置 = box + border + padding
     if 有子节点:
         block 子节点纵向堆叠；
-        inline/inline-block 子节点横向排布，超出宽度换行
+        inline/inline-block 子节点横向排布，超出宽度换行；
+        一行收尾时按容器的 text-align 平移整行（align_inline_row）
         content_h = 游标推进量
     else if 有文本:
         content_h = 行高
@@ -586,6 +587,10 @@ CSS  ──④ CSS 词法────▶ 规则表 ─┘        │
 <p>要点：</p>
 <ul>
 <li><strong>宽度先算</strong>：<code>%</code> 相对父<strong>内容宽</strong>，<code>auto</code> 时 block 撑满、inline 按文本量；</li>
+<li><strong>行内对齐是"事后平移"</strong>：行内盒排完才知道这一行用了多宽，所以 <code>text-align</code>
+  不参与排布，而是在一行收尾时 <code>translate_subtree</code> 把整行推过去（只推 inline 子节点，
+  <code>display:none</code> / 绝对定位的不算）。比按新 <code>x</code> 重排一遍便宜，也不用担心
+  "重排一次算出不同结果"；</li>
 <li><strong><code>box-sizing: border-box</code></strong> 时 <code>width</code> 指边框盒（浏览器默认是 <code>content-box</code>，
   所以 <code>width:100%</code> + <code>padding</code> 会溢出 —— 这是对的，别以为是 bug）；</li>
 <li><strong>高度</strong>：没有百分比高度，所以一趟就够；</li>

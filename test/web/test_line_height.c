@@ -176,6 +176,80 @@ QL_TEST_BEGIN("test_line_height")
         }
     }
 
+    /*
+     * ---------- 8. `text-align` 也管行内子节点，不只管子节点里的文本 ----------
+     *
+     * 踩过的坑：`<div text-align:center><span class=label>x</span></div>`
+     * 里的标签贴在左边 —— 因为行内盒的排布只按 cursor_x 累积，压根没看
+     * 容器的 text-align。浏览器里 inline-level 子节点同样是水平对齐的对象。
+     */
+    {
+        struct { const char *ta; int want_x0; } cases[] = {
+            { "left",   0   },
+            { "center", 80  },
+            { "right",  160 },
+        };
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css),
+                     "#r { width: 200px; text-align: %s; }"
+                     ".b { display: inline-block; width: 20px; height: 10px;"
+                     " background-color: #FFFFFF; }", cases[i].ta);
+            QLUIDoc *doc = ql_ui_load_text(
+                "<div id=r><span class=b></span><span class=b></span></div>", css);
+            QL_CHECK(doc != NULL);
+            if (doc == NULL)
+                continue;
+            QLUIRoot *ui = ql_ui_build(doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                ql_ui_layout(ui, W, H);
+                QLUINodeRT *n1 = ql_ui_root_node(ui)->first_child;
+                QL_CHECK(n1 != NULL);
+                if (n1 != NULL) {
+                    const QLRect r1 = ql_ui_node_rect(n1);
+                    const QLRect r2 = ql_ui_node_rect(n1->next_sibling);
+                    QL_CHECK_EQ(r1.x, cases[i].want_x0);
+                    QL_CHECK_EQ(r2.x, cases[i].want_x0 + 20);  /* 兄弟跟着一起走 */
+                    QL_CHECK_EQ(r1.y, r2.y);                   /* 仍在同一行 */
+                }
+                ql_ui_free(ui);
+            }
+            ql_ui_doc_free(doc);
+        }
+    }
+
+    /* ---------- 9. 换行时**每一行各自**按剩余空间居中 ---------- */
+    {
+        QLUIDoc *doc = ql_ui_load_text(
+            "<div id=r><span class=b></span><span class=b></span>"
+            "<span class=b></span></div>",
+            "#r { width: 200px; text-align: center; }"
+            ".b { display: inline-block; width: 90px; height: 10px;"
+            " background-color: #FFFFFF; }");
+        QL_CHECK(doc != NULL);
+        if (doc != NULL) {
+            QLUIRoot *ui = ql_ui_build(doc);
+            QL_CHECK(ui != NULL);
+            if (ui != NULL) {
+                ql_ui_layout(ui, W, H);
+                QLUINodeRT *n = ql_ui_root_node(ui)->first_child;
+                QL_CHECK(n != NULL);
+                if (n != NULL) {
+                    const QLRect r1 = ql_ui_node_rect(n);
+                    const QLRect r2 = ql_ui_node_rect(n->next_sibling);
+                    const QLRect r3 = ql_ui_node_rect(n->next_sibling->next_sibling);
+                    QL_CHECK_EQ(r1.x, 10);    /* 一行两个，剩 20 分两半 */
+                    QL_CHECK_EQ(r2.x, 100);
+                    QL_CHECK_EQ(r3.x, 55);    /* 第二行只有一个，剩 110 分两半 */
+                    QL_CHECK(r3.y > r1.y);    /* 真的换行了 */
+                }
+                ql_ui_free(ui);
+            }
+            ql_ui_doc_free(doc);
+        }
+    }
+
     ql_disp_mem_destroy(s_disp);
 
 QL_TEST_END()

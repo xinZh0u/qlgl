@@ -12,21 +12,21 @@
   height: 100%;
   box-sizing: border-box;
   padding: 10px;
-  background-color: #0E1116;
-  color: #E6EDF3;
+  background-color: #FFFFFF;
+  color: #1F2328;
   font-size: 12px;
 }
 
 .title {
   height: 20px;
-  color: #7CE0FF;
+  color: #0969DA;
   font-size: 13px;
 }
 
 /* ---------- ① 具名区域 ---------- */
 .frame {
   display: grid;
-  height: 84px;
+  height: 88px;
   margin-top: 6px;
   gap: 4px;
   grid-template-areas:
@@ -34,17 +34,20 @@
     "sb mn"
     "ft ft";
   grid-template-columns: 96px 1fr;
-  grid-template-rows: 20px 1fr 16px;
-  background-color: #0B0E13;
+  grid-template-rows: 20px 1fr 20px;
+  background-color: #FFFFFF;
 }
 .frame > div {
   border-radius: 4px;
-  padding: 4px;
+  padding: 0 6px;
+  line-height: 20px;   /* 与 grid-template-rows 的头/尾行等高，文字不裁 */
 }
-.hd { grid-area: hd; background-color: #2E6BE6; }
-.sb { grid-area: sb; background-color: #3B4553; }
-.mn { grid-area: mn; background-color: #1F2937; }
-.ft { grid-area: ft; background-color: #10B981; }
+/* 深色块上的字要显式写白：白底主题下继承来的文字色是深色 */
+.hd, .ft { color: #FFFFFF; }
+.hd { grid-area: hd; background-color: #0969DA; }
+.sb { grid-area: sb; background-color: #D0D7DE; }
+.mn { grid-area: mn; background-color: #F6F8FA; }
+.ft { grid-area: ft; background-color: #1A7F37; }
 
 /* ---------- ② 12 列栅格 ---------- */
 .cards {
@@ -58,15 +61,15 @@
   line-height: 26px;
   text-align: center;
   border-radius: 4px;
-  background-color: #1F2937;
+  background-color: #F6F8FA;
   border-width: 1px;
   border-style: solid;
-  border-color: #374151;
+  border-color: #D0D7DE;
 }
 .c3 { grid-column: span 3; }
 .c4 { grid-column: span 4; }
 .c6 { grid-column: span 6; }
-.full { grid-column: 1 / -1; background-color: #4B5563; }
+.full { grid-column: 1 / -1; background-color: #AFB8C1; color: #1F2328; }
 
 /* ---------- ③ 自动放置 + 跨行 ---------- */
 .auto {
@@ -77,15 +80,16 @@
   grid-auto-rows: 24px;
 }
 .tile {
-  background-color: #7C3AED;
+  background-color: #8250DF;
+  color: #FFFFFF;
   border-radius: 4px;
   text-align: center;
   line-height: 24px;
 }
 .tall {
   grid-row: span 2;
-  background-color: #F59E0B;
-  color: #201400;
+  background-color: #9A6700;
+  color: #FFFFFF;
   /* 跨两行 → 高度由两行 + 间距撑出来，不需要写 height */
   height: auto;
   line-height: 52px;
@@ -102,13 +106,14 @@
   align-items: center;
 }
 .m {
+  color: #FFFFFF;
   width: 48px;
   height: 18px;
   line-height: 18px;
   text-align: center;
   border-radius: 3px;
-  background-color: #10B981;
-  color: #04231A;
+  background-color: #1A7F37;
+  color: #FFFFFF;
 }
 .start { justify-self: start; }
 .center { justify-self: center; }
@@ -116,7 +121,7 @@
 
 .note {
   margin-top: 8px;
-  color: #8B98A5;
+  color: #6E7781;
   white-space: normal;
   line-height: 16px;
 }

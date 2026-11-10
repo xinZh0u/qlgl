@@ -77,6 +77,20 @@
 只有三个值：`left` / `center` / `right`。对齐是在**元素的内容盒**里做的
 （`content_box` = 边框盒减掉 `padding` 与 `border`）。
 
+对齐的对象不只是"这个元素自己的文字"，还包括**行内子节点**
+（`display: inline` / `inline-block`）—— 也就是说：
+
+```html
+<div class="tile"><span class="label">cover</span></div>
+```
+
+```css
+.tile { text-align: center; }   /* 标签在格子里居中；写 right 就贴右 */
+```
+
+行内子节点一行放不下会换行，换行之后**每一行各自按剩余空间对齐**，
+不是把整个块当成一坨居中。
+
 ## 规则三·补：`line-height` 控制竖直位置（按钮里"字对不齐"的答案）
 
 这是新手最常见的一个坑：写了个按钮，加了 `text-align: center`，字还是贴在顶上。

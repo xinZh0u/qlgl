@@ -2129,6 +2129,36 @@ static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
             translate_subtree(c, -node->scroll_x, -node->scroll_y);
 }
 
+/*
+ * 行内盒排满一行之后，按容器的 `text-align` 把整行推到中间或右边。
+ *
+ * 行内盒没有"剩余空间分配"的概念（那是 flex/grid 的事），所以对齐就是平移
+ * 已经布好的子树——比按新 x 重排一遍便宜，也保证子节点内部
+ * （百分比宽度、绝对定位的包含块）都跟着走。
+ *
+ * `first` 是本行第一个参与排布的子节点，`stop` 是下一行的第一个子节点
+ * （NULL 表示本行是最后一行）。
+ */
+static void align_inline_row(QLUINodeRT *first, QLUINodeRT *stop,
+                             ql_coord_t row_w, ql_coord_t used, uint8_t align)
+{
+    if (first == NULL || align == QL_TEXT_ALIGN_LEFT)
+        return;
+    const ql_coord_t free_w = row_w - used;
+    if (free_w <= 0)
+        return;
+    const ql_coord_t dx = (align == QL_TEXT_ALIGN_CENTER) ? (free_w / 2) : free_w;
+    if (dx == 0)
+        return;
+    for (QLUINodeRT *c = first; c != stop; c = c->next_sibling) {
+        if (c->style->display == QL_UI_DISPLAY_NONE)
+            continue;
+        if (is_out_of_flow(c->style))
+            continue;
+        translate_subtree(c, dx, 0);
+    }
+}
+
 /* ------------------------------ 主布局 ------------------------------ */
 
 static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
@@ -2242,6 +2272,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         ql_coord_t cursor_y = content_y;
         ql_coord_t cursor_x = content_x;
         ql_coord_t row_h = 0;
+        QLUINodeRT *row_first = NULL;   /* 本行第一个行内子节点 */
         int in_row = 0;
 
         for (QLUINodeRT *child = node->first_child; child != NULL;
@@ -2254,9 +2285,12 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
 
             if (d == QL_UI_DISPLAY_BLOCK) {
                 if (in_row) {           /* 结束当前行 */
+                    align_inline_row(row_first, child, content_w,
+                                     cursor_x - content_x, s->text_align);
                     cursor_y += row_h;
                     cursor_x = content_x;
                     row_h = 0;
+                    row_first = NULL;
                     in_row = 0;
                 }
                 cursor_y += layout_node(child, content_x, cursor_y, content_w,
@@ -2266,10 +2300,16 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                 ql_coord_t child_w = border_width_of(child, content_w) +
                                      child->style->margin.left + child->style->margin.right;
                 if (in_row && cursor_x + child_w > content_x + content_w) {
+                    align_inline_row(row_first, child, content_w,
+                                     cursor_x - content_x, s->text_align);
                     cursor_y += row_h;  /* 换行 */
                     cursor_x = content_x;
                     row_h = 0;
+                    row_first = NULL;
+                    in_row = 0;
                 }
+                if (!in_row)
+                    row_first = child;
                 ql_coord_t h = layout_node(child, cursor_x, cursor_y, child_avail,
                                            decl_h);
                 cursor_x += outer_width_of(child);
@@ -2279,8 +2319,11 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
             }
         }
 
-        if (in_row)
+        if (in_row) {
+            align_inline_row(row_first, NULL, content_w, cursor_x - content_x,
+                             s->text_align);
             cursor_y += row_h;
+        }
         content_h = cursor_y - content_y;
     } else if (has_shown_text(node)) {
         const ql_coord_t lh = text_line_h_of(s, font);

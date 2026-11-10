@@ -52,7 +52,7 @@ h2 {
 
 .row:first-child::before {
   content: "★ ";
-  color: #E6C34A;
+  color: #BF8700;
 }
 
 /* 属性选择器：按 data-state 出颜色 */

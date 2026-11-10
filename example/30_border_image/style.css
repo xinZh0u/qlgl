@@ -12,14 +12,14 @@
   height: 100%;
   box-sizing: border-box;
   padding: 10px;
-  background-color: #0E1116;
-  color: #E6EDF3;
+  background-color: #FFFFFF;
+  color: #1F2328;
   font-size: 12px;
 }
 
 .title {
   height: 20px;
-  color: #7CE0FF;
+  color: #0969DA;
   font-size: 13px;
 }
 
@@ -51,11 +51,11 @@
 
 .note {
   margin-top: 10px;
-  color: #8B98A5;
+  color: #6E7781;
   white-space: normal;
   line-height: 16px;
 }
 
 code {
-  color: #F59E0B;
+  color: #9A6700;
 }
