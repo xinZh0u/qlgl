@@ -105,6 +105,61 @@
 #define QL_CFG_UI_TABLE_MAX_COLS    24
 #endif
 
+/*
+ * 运行期动态加载（dlopen / LoadLibrary）。
+ *
+ * 只有"B8 的第三方库可选"这条路需要它：HarfBuzz / fribidi 在**没有开发头文件**
+ * 的机器上也能用（见 QL_FEAT_CSS_TEXT_SHAPE / QL_FEAT_CSS_BIDI）。
+ * MCU 裸机没有动态加载，构建时定义 `-DQL_CFG_HAVE_DLOPEN=0`。
+ */
+#ifndef QL_CFG_HAVE_DLOPEN
+#if defined(QLGL_MCU) || defined(__arm__) || defined(__riscv) || defined(__AVR__)
+#define QL_CFG_HAVE_DLOPEN          0
+#else
+#define QL_CFG_HAVE_DLOPEN          1
+#endif
+#endif
+
+/* ----- 文本栈（B8 能力包）：@font-face + 自由 font-family + 真字重/真斜体 -----
+ *
+ * PC / Mobile 默认**开**（这一档不缺空间，第三方库还能动态链接：见下面的 SHAPE/BIDI）。
+ * MCU 默认关（`-DQL_FEAT_CSS_FONT_STACK=0`）：一份全量 CJK TTF 是整块固件的 160 倍。
+ * 关掉之后 `@font-face` 与 `font-family` 的家族名在**构建期报错**
+ * （只剩内置位图字体 + 单一矢量字体）。
+ */
+#ifndef QL_FEAT_CSS_FONT_STACK
+#define QL_FEAT_CSS_FONT_STACK      1
+#endif
+/* 一个字族最多几张字面（regular/bold/italic/bold-italic ≈ 4 张，留余量） */
+#ifndef QL_CFG_UI_FONT_FACE_MAX
+#define QL_CFG_UI_FONT_FACE_MAX     64
+#endif
+/* 一个 font-family 列表最多几个名字（`A, B, monospace` 是 3 个） */
+#ifndef QL_CFG_UI_FONT_LIST_MAX
+#define QL_CFG_UI_FONT_LIST_MAX     8
+#endif
+
+/* ----- 整形（B8 能力包）：连字 / 字距 / 复杂文字 -----
+ *
+ * PC / Mobile 默认开：**优先用 HarfBuzz**（构建期检测到头文件就直连，
+ * 否则运行期 dlopen "libharfbuzz.so.0"），两者都没有时退回内建逐字形整形
+ * （没有连字与字距，行为与本项关闭时一致）。
+ * MCU 默认关：HarfBuzz 一个库就是整块固件的好几倍。
+ */
+#ifndef QL_FEAT_CSS_TEXT_SHAPE
+#define QL_FEAT_CSS_TEXT_SHAPE      1
+#endif
+
+/* ----- 双向文本（B8 能力包）：direction / unicode-bidi / RTL 排版 -----
+ *
+ * PC / Mobile 默认开：优先 fribidi（直连或 dlopen），没有就用内建简化 UAX#9
+ * （覆盖阿拉伯/希伯来文的常见段落，不做嵌套嵌入）。
+ * MCU 默认关。
+ */
+#ifndef QL_FEAT_CSS_BIDI
+#define QL_FEAT_CSS_BIDI            1
+#endif
+
 /* ----- 多栏（B7 后半的能力包）：column-count / column-width / column-rule -----
  *
  * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_COLUMNS=0`）。

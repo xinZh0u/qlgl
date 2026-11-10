@@ -978,6 +978,61 @@ th, td { border: 1px solid #D0D7DE; padding: 5px 8px }
 
 ---
 
+### 3.11.6 文本栈（`@font-face` / `font-family` / 整形 / 双向）
+
+```css
+@font-face { font-family: "My Sans"; src: url(/usr/share/fonts/.../DejaVuSans.ttf);
+             font-weight: 400 }
+@font-face { font-family: "My Sans"; src: url(...-Bold.ttf); font-weight: 700 }
+
+.article {
+  font-family: "My Sans", "Noto Sans CJK SC", sans-serif;   /* 逐字回退 */
+  font-weight: 700;                                          /* 用真粗体字面 */
+  font-variant-ligatures: normal;                            /* 连字（默认开） */
+}
+.arabic { direction: rtl; }                                  /* 段落基准方向 */
+```
+
+| 项 | 取值 |
+|---|---|
+| `@font-face` | `font-family` / `src: url(...)` / `font-weight`（100..900、`normal`、`bold`）/ `font-style`（`normal`/`italic`/`oblique`）。**必须是绝对路径或运行期登记过的资源名** |
+| `font-family` | 逗号分隔的列表；`monospace` / `serif` / `sans-serif` / `system-ui` / `cursive` / `fantasy` 是通用族名，其余查注册表 |
+| `font-weight` | 数字或 `normal`/`bold`；**有对应字面就用真字重**，没有则合成加粗 |
+| `font-style` | `normal` / `italic`（`oblique` 同义）：同上，有真斜体就用 |
+| `font-variant-ligatures` | `normal` / `none` / `common-ligatures` / `no-common-ligatures` |
+| `font-feature-settings` | 只认 `"liga"` / `"clig"` / `"kern"` 的 0/1 开关 |
+| `direction` | `ltr`（默认）/ `rtl`；`rtl` 时整行按视觉顺序排、并把 `text-align: start/end` 翻过来 |
+| `unicode-bidi` | `normal` / `embed` / `isolate` / `bidi-override`（当前都按"单层"处理） |
+
+**运行期接口**（不想用 CSS 里的路径时）：
+
+```c
+/* 把一个家族名绑到字体文件；同 (家族, 字重, 斜体) 重复注册会覆盖 */
+ql_font_family_register("My Sans", "/opt/fonts/MySans.ttf", 400, 0);
+/* 内存里的字体（打进了二进制或从资源包解出来） */
+ql_font_family_register_mem("My Sans", bytes, size, 700, 0);
+
+/* 整形 / 双向当前用的是哪条实现（"harfbuzz"/"fribidi" 或 "builtin"） */
+printf("%s %s\n", ql_text_shape_backend(), ql_text_bidi_backend());
+```
+
+**生命周期**：字体注册表跟着**当前文档**走 —— `ql_ui_build()` 时按 doc 的
+`@font-face` 重建，`ql_ui_free()` 时释放。所以手动 `ql_font_family_register()`
+要放在 build 之后（或者干脆在 CSS 里写 `@font-face`）。
+
+**构建期报错**：`@font-face` 的 `src` 不是 `url()`、写了 `unicode-range` /
+`font-display` / `local()`、`font-feature-settings` 里出现 liga/clig/kern 之外的特性、
+`QL_FEAT_CSS_FONT_STACK=0` 时的 `@font-face` 与家族名、
+`QL_FEAT_CSS_BIDI=0` 时的 `direction: rtl`、
+`QL_FEAT_CSS_TEXT_SHAPE=0` 时关连字/字距。
+
+实现细节与体积见《CSS3 覆盖与裁剪》§18.14，教程见 [文本栈](../tutorial/24_text_stack.md)。
+
+**环境变量（排查用）**：`QL_TEXT_SHAPE=builtin` 强制用内建整形；
+`QL_TEXT_BIDI=builtin` 强制用内建 UAX#9 子集。
+
+---
+
 ### 3.12 不支持的写法一律报错
 
 ```
@@ -986,9 +1041,11 @@ float / align-content: baseline
 perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
 column-span / column-fill / break-inside（多栏的其它属性）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
+@font-face 的 unicode-range / local()   font-feature-settings 里 liga/clig/kern 之外
+font-variant: small-caps / tabular-nums  unicode-bidi 的嵌套隔离
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode
-list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
+list-style / @supports                   overscroll-behavior / scroll-snap-*
 text-align: justify                     transition-delay
 backface-visibility（假翻转没有背面）
 ```

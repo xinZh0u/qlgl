@@ -552,6 +552,13 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->table_layout, (unsigned)s->border_collapse,
             (unsigned)s->valign, (int)s->table_spacing_x, (int)s->table_spacing_y);
 
+    /* 文本栈与双向（blob v33） */
+    fprintf(f,
+            ",\n      .direction = %u, .unicode_bidi = %u,"
+            " .ligatures = %u, .kerning = %u",
+            (unsigned)s->direction, (unsigned)s->unicode_bidi,
+            (unsigned)s->ligatures, (unsigned)s->kerning);
+
     /* 多栏（blob v32） */
     fprintf(f,
             ",\n      .column_count = %u, .column_rule_w = %u,"
@@ -1100,6 +1107,36 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fputs("};\n\n", f);
     }
 
+    /* ---- 文本栈（B8）：@font-face 与 font-family 列表（有才输出） ---- */
+    if (doc->font_face_count > 0 && doc->font_faces != NULL) {
+        fprintf(f, "/* @font-face 声明（family / src 都是文本池下标） */\n");
+        fprintf(f, "static const QLUIFontFace %s_font_faces[%u] = {\n", ident,
+                (unsigned)doc->font_face_count);
+        for (uint16_t i = 0; i < doc->font_face_count; i++) {
+            const QLUIFontFace *ff = &doc->font_faces[i];
+            fprintf(f, "    { %u, %u, %u, %u },\n", (unsigned)ff->family,
+                    (unsigned)ff->src, (unsigned)ff->weight, (unsigned)ff->italic);
+        }
+        fputs("};\n\n", f);
+    }
+    if (doc->font_list_count > 0 && doc->font_lists != NULL) {
+        fprintf(f, "/* font-family 列表：names[first .. first+count) 是文本池下标 */\n");
+        fprintf(f, "static const QLUIFontList %s_font_lists[%u] = {\n", ident,
+                (unsigned)doc->font_list_count);
+        for (uint16_t i = 0; i < doc->font_list_count; i++)
+            fprintf(f, "    { %u, %u },\n", (unsigned)doc->font_lists[i].first,
+                    (unsigned)doc->font_lists[i].count);
+        fputs("};\n", f);
+        if (doc->font_name_count > 0 && doc->font_names != NULL) {
+            fprintf(f, "static const uint16_t %s_font_names[%u] = {", ident,
+                    (unsigned)doc->font_name_count);
+            for (uint16_t i = 0; i < doc->font_name_count; i++)
+                fprintf(f, " %u,", (unsigned)doc->font_names[i]);
+            fputs(" };\n", f);
+        }
+        fputs("\n", f);
+    }
+
     /* ---- @media 断点（有才输出） ---- */
     if (doc->media_count > 0 && doc->media != NULL) {
         fprintf(f, "/* @media 断点区间（视口宽，闭区间；hi = 0xFFFF 表示无上界） */\n");
@@ -1181,6 +1218,23 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                 "    .xform_count = %u,\n"
                 "    .xforms      = %s_xforms,\n",
                 (unsigned)doc->xform_count, ident);
+    }
+
+    /* 文本栈：没有 @font-face / 家族列表时一个字都不多 */
+    if (doc->font_face_count > 0 && doc->font_faces != NULL) {
+        fprintf(f,
+                "    .font_face_count  = %u,\n"
+                "    .font_faces       = %s_font_faces,\n",
+                (unsigned)doc->font_face_count, ident);
+    }
+    if (doc->font_list_count > 0 && doc->font_lists != NULL) {
+        fprintf(f,
+                "    .font_list_count  = %u,\n"
+                "    .font_name_count  = %u,\n"
+                "    .font_lists       = %s_font_lists,\n"
+                "    .font_names       = %s_font_names,\n",
+                (unsigned)doc->font_list_count, (unsigned)doc->font_name_count, ident,
+                ident);
     }
 
     /* Grid 三段池：没有 grid 时一个字都不多 */

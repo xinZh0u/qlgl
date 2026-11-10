@@ -987,6 +987,27 @@ layout_flex_children(容器):
 3. **`column-rule` 的 solid 不能走 `paint_dash_run()`**（它把 solid 也切成
    `3w + 2w` 的虚线），要单独 `fill_rect`。
 
+#### 文本栈：字号之外还有"哪张字面"和"什么顺序"（B8）
+
+排版相关的解析分三层，读代码时按这个顺序找：
+
+1. **`font_of_style()`**（`qlui.c`）：家族列表 → 回退链。
+   链上每一节都是**包装体**（`is_chain_wrapper`），因为注册表里的字体按
+   (字面, 字号) 共享，直接改共享字体的 `fallback_font` 会让两条链互相污染。
+   链缓存在 `s_chains[16]`，按 (文档, 列表, 字号, 字重, 斜体) 命中。
+2. **`ql_text_shape()`**（`qltextshape.c`）：一行 → 视觉顺序的字形序列。
+   **量宽度和画字形都走它**，所以连字/字距不会造成"量的和画的不一致"。
+   HarfBuzz 是 `dlopen` 进来的（不是链接依赖），拿不到就走内建逐码位路径。
+3. **双向**：整形里按"字体 + 方向"切段，段落 RTL 时倒段顺序。
+   **千万不要先 bidi 重排文本再整形** —— 阿拉伯字母会变成一串孤立形
+   （第一版就是这么错的，例程 35 一跑就现形）。
+
+两个绘制层的细节：
+- 真字面自带粗/斜体时只跳过合成（`ts->bold && !font->is_bold`），
+  否则真粗体会被"再抹粗一遍"；
+- 字形缓存按 `QL_GLYPH_ID_BASE + gid` 这个**合成码位**存，复用原来的有序数组与
+  二分查找（真实码位 ≤ 0x10FFFF，撞不上）。
+
 #### 一个只在脏区重绘时出现的坑：blit 也受 scissor 影响
 
 混合模式要读"图层的背景"，做法是先把目标表面上那一块 `glBlitFramebuffer` 到
@@ -1045,6 +1066,7 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 | `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
 | 表格 | ✅ `display: table` 全家 + `<table>` 系列标签 + `table-layout: auto/fixed` + `colspan/rowspan` + `border-collapse` + `<colgroup>/<col>`（B7） | `caption-side: bottom`、`empty-cells` 没有 |
 | 多栏 | ✅ `column-count` / `column-width` / `columns` / `column-gap` / `column-rule*`（B7 后半，贪心分栏） | `column-span: all`、真·跨栏分裂没有 |
+| 文本栈 | ✅ `@font-face` + 家族列表 + 逐字回退 + 真字重/斜体 + HarfBuzz 整形 + `direction`/RTL（B8） | `unicode-range`、`local()`、小体大写、嵌套 bidi 隔离没有 |
 | `filter` / `mix-blend-mode` / `mask` / 组 `opacity` | ✅ 离屏图层（M9.3） | `filter: url()`、`mask-position/repeat/composite`、`background-blend-mode` 报错；`filter` 链最长 6 个函数 |
 | `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
 | `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` + `rotate()`/`skew()`/`matrix()` + `transform-origin` | 3D（`perspective()`/`rotate3d()`/`matrix3d()`）报错；`rotate` 等依赖离屏图层包 |

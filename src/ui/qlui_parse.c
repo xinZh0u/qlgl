@@ -3693,6 +3693,8 @@ static const char *const k_supported_props[] = {
     /* B7 后半：多栏 */
     "columns", "column-count", "column-width",
     "column-rule", "column-rule-width", "column-rule-style", "column-rule-color",
+    /* B8 文本栈与双向 */
+    "direction", "unicode-bidi", "font-feature-settings", "font-variant-ligatures",
 };
 
 /* @keyframes 里允许的属性（与 Python 的 KEYFRAME_PROPS 一致） */
@@ -3943,6 +3945,151 @@ typedef struct {
     int   n;
     int   cap;
 } Rules;
+
+/* ============================ 文本栈（B8）的构建期收集 ============================ */
+
+/*
+ * `@font-face` 与 `font-family` 在**构建期**只收集"声明"，不进 blob 的字符串：
+ * 家族名 / 资源名最后统一进文本池（与其它字符串一样，去重后有 16 位下标）。
+ *
+ * 用文件静态变量收集（解析是单线程的，与 s_media_on / s_degraded_tags 同一套做法）：
+ * 这样不用给 parse_css_block / 样式编译那一串函数都加一个参数。
+ */
+typedef struct {
+    char *family;      /* 家族名（已去引号） */
+    char *src;         /* 资源名 / 路径 */
+    int   weight;
+    int   italic;
+} FaceDef;
+
+typedef struct {
+    FaceDef *d;
+    int      n;
+    int      cap;
+} FaceDefs;
+
+typedef struct {
+    char *names[QL_CFG_UI_FONT_LIST_MAX];
+    int   n;
+} FontListDef;
+
+static FaceDefs     s_face_defs;
+static FontListDef *s_font_lists;
+static int          s_font_list_n;
+static int          s_font_list_cap;
+
+static void face_defs_free(FaceDefs *f)
+{
+    for (int i = 0; i < f->n; i++) {
+        ql_mem_free(f->d[i].family);
+        ql_mem_free(f->d[i].src);
+    }
+    ql_mem_free(f->d);
+    memset(f, 0, sizeof(*f));
+}
+
+static void font_lists_free(void)
+{
+    for (int i = 0; i < s_font_list_n; i++)
+        for (int j = 0; j < s_font_lists[i].n; j++)
+            ql_mem_free(s_font_lists[i].names[j]);
+    ql_mem_free(s_font_lists);
+    s_font_lists = NULL;
+    s_font_list_n = 0;
+    s_font_list_cap = 0;
+}
+
+/* 去掉两侧空白与引号（家族名可以是 "Noto Sans"，也可以裸写 Noto Sans） */
+static char *unquote_name(const char *p, size_t len)
+{
+    while (len > 0 && is_space(*p)) {
+        p++;
+        len--;
+    }
+    while (len > 0 && is_space(p[len - 1]))
+        len--;
+    if (len >= 2 && (p[0] == '"' || p[0] == '\'') && p[len - 1] == p[0]) {
+        p++;
+        len -= 2;
+    }
+    return xstrndup(p, len);
+}
+
+/* 把一条 `font-family` 的取值解析成家族列表并**intern**，返回下标（0 = 默认） */
+static int font_list_intern(const char *value, const char *where)
+{
+    FontListDef def;
+    memset(&def, 0, sizeof(def));
+
+    const char *p = value;
+    while (*p != '\0') {
+        const char *e = p;
+        int depth = 0;
+        while (*e != '\0' && (depth > 0 || *e != ',')) {
+            if (*e == '(')
+                depth++;
+            else if (*e == ')' && depth > 0)
+                depth--;
+            e++;
+        }
+        char *name = unquote_name(p, (size_t)(e - p));
+        if (name == NULL)
+            goto fail;
+        if (name[0] != '\0') {
+            if (def.n >= (int)QL_CFG_UI_FONT_LIST_MAX) {
+                ql_mem_free(name);
+                set_error("%s: font-family 最多 %d 个名字", where,
+                          (int)QL_CFG_UI_FONT_LIST_MAX);
+                goto fail;
+            }
+            def.names[def.n++] = name;
+        } else {
+            ql_mem_free(name);
+        }
+        p = (*e == ',') ? e + 1 : e;
+    }
+
+    if (def.n == 0)
+        return 0;      /* `font-family: ""` 之类：当成默认，不占池 */
+
+    /* 去重：同一份列表只存一次 */
+    for (int i = 1; i < s_font_list_n; i++) {
+        if (s_font_lists[i].n != def.n)
+            continue;
+        int same = 1;
+        for (int j = 0; j < def.n && same; j++)
+            if (strcmp(s_font_lists[i].names[j], def.names[j]) != 0)
+                same = 0;
+        if (same) {
+            for (int j = 0; j < def.n; j++)
+                ql_mem_free(def.names[j]);
+            return i;
+        }
+    }
+
+    if (s_font_list_n >= 255) {
+        set_error("%s: font-family 列表种类超过 255 种", where);
+        goto fail;
+    }
+    if (s_font_list_n == s_font_list_cap) {
+        const int cap = (s_font_list_cap > 0) ? s_font_list_cap * 2 : 8;
+        FontListDef *nd =
+            (FontListDef *)ql_mem_realloc(s_font_lists, (size_t)cap * sizeof(*nd));
+        if (nd == NULL) {
+            set_error("%s: out of memory", where);
+            goto fail;
+        }
+        s_font_lists = nd;
+        s_font_list_cap = cap;
+    }
+    s_font_lists[s_font_list_n] = def;
+    return s_font_list_n++;
+
+fail:
+    for (int j = 0; j < def.n; j++)
+        ql_mem_free(def.names[j]);
+    return -1;
+}
 
 static void selpart_free(SelPart *p)
 {
@@ -4798,6 +4945,8 @@ static int parse_media_prelude(const char *pre, const char *where, MediaConds *m
  * 解析一段规则（可以是整份 CSS，也可以是 `@media` 的块体）。
  * `media` = 这些规则所属的断点下标（-1 = 不在媒体块里）。
  */
+static int parse_font_face(const char *body, size_t blen, const char *where);
+
 static int parse_css_block(const char *text, size_t len, Rules *rules, KfDefs *kfs,
                            MediaConds *mc, int media, int *order_io)
 {
@@ -4911,9 +5060,29 @@ static int parse_css_block(const char *text, size_t len, Rules *rules, KfDefs *k
                 pos = (size_t)end + 1u;
                 continue;
             }
+            /* @font-face { <声明> }：文本栈（B8） */
+            if (strncmp(nm, "font-face", 9) == 0 &&
+                (nm[9] == '\0' || is_space(nm[9]))) {
+#if !QL_FEAT_CSS_FONT_STACK
+                set_error("%s: 这个构建关掉了文本栈（QL_FEAT_CSS_FONT_STACK=0），"
+                          "不支持 @font-face", where);
+                ql_mem_free(prelude);
+                ok = 0;
+                break;
+#else
+                if (!parse_font_face(body, blen, where)) {
+                    ql_mem_free(prelude);
+                    ok = 0;
+                    break;
+                }
+                ql_mem_free(prelude);
+                pos = (size_t)end + 1u;
+                continue;
+#endif
+            }
             if (strncmp(nm, kw, kwlen) != 0) {
-                set_error("%s: 不支持 at-rule '%s'（支持 @keyframes / @media）", where,
-                          prelude);
+                set_error("%s: 不支持 at-rule '%s'（支持 @keyframes / @media / @font-face）",
+                          where, prelude);
                 ql_mem_free(prelude);
                 ok = 0;
                 break;
@@ -5052,9 +5221,180 @@ static int parse_css_block(const char *text, size_t len, Rules *rules, KfDefs *k
     return ok;
 }
 
+/* 每次解析 CSS 前清空文本栈的收集器；下标 0 永远是"默认列表"（空） */
+static void font_collect_reset(void)
+{
+    face_defs_free(&s_face_defs);
+    font_lists_free();
+    /* 0 号槽位：默认（没有任何家族名） */
+    s_font_list_cap = 8;
+    s_font_lists = (FontListDef *)ql_mem_calloc((size_t)s_font_list_cap,
+                                                sizeof(FontListDef));
+    s_font_list_n = (s_font_lists != NULL) ? 1 : 0;
+    if (s_font_lists != NULL)
+        memset(&s_font_lists[0], 0, sizeof(FontListDef));
+}
+
+/*
+ * `@font-face { font-family: X; src: url(p); font-weight: 700; font-style: italic }`
+ *
+ * 只认这四样：家族名、第一个 `url()`、字重、斜体。其余声明
+ * （`unicode-range` / `font-display` / `src: local(...)`）**构建期报错**，
+ * 不做"悄悄忽略"。
+ */
+static int parse_font_face(const char *body, size_t blen, const char *where)
+{
+    char *family = NULL;
+    char *src = NULL;
+    int weight = 400;
+    int italic = 0;
+
+    size_t pos = 0;
+    while (pos < blen) {
+        /* 切一条 `prop: value` */
+        size_t semi = pos;
+        int depth = 0;
+        while (semi < blen) {
+            const char ch = body[semi];
+            if (ch == '(')
+                depth++;
+            else if (ch == ')' && depth > 0)
+                depth--;
+            else if (ch == ';' && depth == 0)
+                break;
+            semi++;
+        }
+        const char *decl = body + pos;
+        const size_t dlen = semi - pos;
+        pos = semi + 1;
+
+        const char *colon = memchr(decl, ':', dlen);
+        if (colon == NULL) {
+            /* 允许块尾的空片段 */
+            size_t i = 0;
+            while (i < dlen && is_space(decl[i]))
+                i++;
+            if (i == dlen)
+                continue;
+            set_error("%s: @font-face 里的声明缺少 ':'", where);
+            goto fail;
+        }
+        char *prop = unquote_name(decl, (size_t)(colon - decl));
+        char *val = unquote_name(colon + 1, dlen - (size_t)(colon - decl) - 1u);
+        if (prop == NULL || val == NULL) {
+            ql_mem_free(prop);
+            ql_mem_free(val);
+            set_error("%s: out of memory", where);
+            goto fail;
+        }
+        char plow[32];
+        trim_lower(prop, plow, sizeof(plow));
+
+        if (strcmp(plow, "font-family") == 0) {
+            ql_mem_free(family);
+            family = xstrdup(val);
+        } else if (strcmp(plow, "src") == 0) {
+            /*
+             * 取第一个 `url(...)`；`local(...)` 需要系统字体查找（fontconfig），
+             * 本库没有这条依赖，所以明确报错。
+             */
+            const char *u = strstr(val, "url(");
+            if (u == NULL) {
+                set_error("%s: @font-face 的 src 只支持 url(...)（收到 '%s'）", where, val);
+                ql_mem_free(prop);
+                ql_mem_free(val);
+                goto fail;
+            }
+            u += 4;
+            while (*u == ' ' || *u == '"' || *u == '\'')
+                u++;
+            const char *ue = u;
+            while (*ue != '\0' && *ue != ')' && *ue != '"' && *ue != '\'')
+                ue++;
+            ql_mem_free(src);
+            src = xstrndup(u, (size_t)(ue - u));
+        } else if (strcmp(plow, "font-weight") == 0) {
+            double d = 0;
+            const char *end = NULL;
+            if (strcmp(val, "bold") == 0) {
+                weight = 700;
+            } else if (strcmp(val, "normal") == 0) {
+                weight = 400;
+            } else if (match_number(val, &end, &d) && *end == '\0') {
+                weight = (int)py_round(d);
+            } else {
+                set_error("%s: @font-face 的 font-weight 只支持 100..900 / normal / bold",
+                          where);
+                ql_mem_free(prop);
+                ql_mem_free(val);
+                goto fail;
+            }
+        } else if (strcmp(plow, "font-style") == 0) {
+            char vlow[16];
+            trim_lower(val, vlow, sizeof(vlow));
+            if (strcmp(vlow, "italic") == 0 || strcmp(vlow, "oblique") == 0)
+                italic = 1;
+            else if (strcmp(vlow, "normal") == 0)
+                italic = 0;
+            else {
+                set_error("%s: @font-face 的 font-style 只支持 normal / italic / oblique",
+                          where);
+                ql_mem_free(prop);
+                ql_mem_free(val);
+                goto fail;
+            }
+        } else {
+            set_error("%s: @font-face 不支持 '%s'（只认 font-family / src / "
+                      "font-weight / font-style）", where, prop);
+            ql_mem_free(prop);
+            ql_mem_free(val);
+            goto fail;
+        }
+        ql_mem_free(prop);
+        ql_mem_free(val);
+    }
+
+    if (family == NULL || family[0] == '\0') {
+        set_error("%s: @font-face 缺少 font-family", where);
+        goto fail;
+    }
+    if (src == NULL || src[0] == '\0') {
+        set_error("%s: @font-face 缺少 src: url(...)", where);
+        goto fail;
+    }
+    if (s_face_defs.n >= (int)QL_CFG_UI_FONT_FACE_MAX) {
+        set_error("%s: @font-face 条数超过上限 %d", where,
+                  (int)QL_CFG_UI_FONT_FACE_MAX);
+        goto fail;
+    }
+    if (s_face_defs.n == s_face_defs.cap) {
+        const int cap = (s_face_defs.cap > 0) ? s_face_defs.cap * 2 : 8;
+        FaceDef *nd =
+            (FaceDef *)ql_mem_realloc(s_face_defs.d, (size_t)cap * sizeof(*nd));
+        if (nd == NULL) {
+            set_error("%s: out of memory", where);
+            goto fail;
+        }
+        s_face_defs.d = nd;
+        s_face_defs.cap = cap;
+    }
+    s_face_defs.d[s_face_defs.n].family = family;
+    s_face_defs.d[s_face_defs.n].src = src;
+    s_face_defs.d[s_face_defs.n].weight = weight;
+    s_face_defs.d[s_face_defs.n].italic = italic;
+    s_face_defs.n++;
+    return 1;
+
+fail:
+    ql_mem_free(family);
+    ql_mem_free(src);
+    return 0;
+}
+
 /* 解析整份 CSS：包一层 block 调用 */
 static int parse_css(const char *css, Rules *rules, KfDefs *kfs, MediaConds *mc)
 {
+    font_collect_reset();
     char *text = strip_comments(css);
     if (text == NULL)
         return 0;
@@ -9439,16 +9779,28 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->valign = (uint8_t)valign;
 
     /*
-     * `font-family`：本库只有**两级**（正文 / 等宽）。
-     * 认 `monospace` 一族；其他常见族名一律落到正文，不报错 ——
-     * 写 `font-family: Arial, sans-serif` 的页面不该因为"没有 Arial"编译不过。
-     * 要真正分家，得先 `ql_font_set_mono_factory()` 注册等宽字体。
+     * `font-family`：B8 起是**真的家族列表**（`font-family: A, B, monospace`）。
+     *
+     * 解析出的名字在构建期 intern 成一份列表（同一份列表只存一次），样式里存
+     * 列表下标。运行期按顺序找第一个"装得上"的家族，找不到就继续往后 ——
+     * 所以"写了一个这台机器上没有的字体"不会报错，只是落到下一个。
+     *
+     * 关闭文本栈（`QL_FEAT_CSS_FONT_STACK=0`）时退回两级（正文 / 等宽）。
      */
     uint8_t font_family = QL_UI_FAMILY_DEFAULT;
     {
         const char *ffv = decls_get(st, "font-family");
-        if (ffv != NULL && strstr(ffv, "mono") != NULL)
-            font_family = QL_UI_FAMILY_MONO;
+        if (ffv != NULL) {
+#if QL_FEAT_CSS_FONT_STACK
+            const int idx = font_list_intern(ffv, where);
+            if (idx < 0)
+                return 0;
+            font_family = (uint8_t)idx;
+#else
+            if (strstr(ffv, "mono") != NULL)
+                font_family = QL_UI_FAMILY_MONO;
+#endif
+        }
     }
 
     /*
@@ -10605,6 +10957,119 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 return 0;
             }
         }
+    }
+
+    /* ----- 双向文本与字形特性（B8）：direction / unicode-bidi / 连字与字距 ----- */
+    {
+        const char *dv = decls_get(st, "direction");
+        if (dv != NULL) {
+            char low[16];
+            trim_lower(dv, low, sizeof(low));
+            if (strcmp(low, "ltr") == 0) {
+                out->direction = 0;
+            } else if (strcmp(low, "rtl") == 0) {
+                out->direction = 1;
+            } else {
+                set_error("%s: direction 只支持 ltr / rtl（收到 '%s'）", where, dv);
+                return 0;
+            }
+        }
+#if !QL_FEAT_CSS_BIDI
+        if (out->direction != 0) {
+            set_error("%s: 这个构建关掉了双向文本（QL_FEAT_CSS_BIDI=0），"
+                      "不支持 direction: rtl", where);
+            return 0;
+        }
+#endif
+
+        const char *ub = decls_get(st, "unicode-bidi");
+        if (ub != NULL) {
+            char low[24];
+            trim_lower(ub, low, sizeof(low));
+            if (strcmp(low, "normal") == 0) {
+                out->unicode_bidi = 0;
+            } else if (strcmp(low, "embed") == 0 || strcmp(low, "isolate") == 0) {
+                /* 单一嵌入层：与 normal 同义（不做嵌套），见文档 */
+                out->unicode_bidi = 1;
+            } else if (strcmp(low, "bidi-override") == 0 ||
+                       strcmp(low, "isolate-override") == 0) {
+                out->unicode_bidi = 2;
+            } else {
+                set_error("%s: unicode-bidi 只支持 normal / embed / isolate / "
+                          "bidi-override（收到 '%s'）", where, ub);
+                return 0;
+            }
+        }
+
+        /* 连字与字距：默认都开；关掉对应 HarfBuzz 的 OpenType 特性 */
+        out->ligatures = 1;
+        out->kerning = 1;
+        const char *fv2 = decls_get(st, "font-variant-ligatures");
+        if (fv2 != NULL) {
+            char low[32];
+            trim_lower(fv2, low, sizeof(low));
+            if (strcmp(low, "none") == 0 || strcmp(low, "no-common-ligatures") == 0) {
+                out->ligatures = 0;
+            } else if (strcmp(low, "normal") == 0 ||
+                       strcmp(low, "common-ligatures") == 0) {
+                out->ligatures = 1;
+            } else {
+                set_error("%s: font-variant-ligatures 只支持 normal / none / "
+                          "common-ligatures / no-common-ligatures（收到 '%s'）",
+                          where, fv2);
+                return 0;
+            }
+        }
+        const char *ffs = decls_get(st, "font-feature-settings");
+        if (ffs != NULL) {
+            /* 只认 liga / clig / kern 三个开关，其它特性明确报错 */
+            char low[128];
+            trim_lower(ffs, low, sizeof(low));
+            if (strcmp(low, "normal") == 0) {
+                out->ligatures = 1;
+                out->kerning = 1;
+            } else {
+                const char *p = low;
+                while (*p != '\0') {
+                    while (*p == ' ' || *p == ',')
+                        p++;
+                    char tag[8] = { 0 };
+                    int ti = 0;
+                    if (*p == '"' || *p == '\'')
+                        p++;
+                    while (*p != '\0' && *p != '"' && *p != '\'' && *p != ' ' &&
+                           *p != ',' && ti < 7)
+                        tag[ti++] = *p++;
+                    if (*p == '"' || *p == '\'')
+                        p++;
+                    while (*p == ' ')
+                        p++;
+                    int on = 1;
+                    if (*p == '0' || *p == '1') {
+                        on = (*p == '1') ? 1 : 0;
+                        p++;
+                    }
+                    if (ti == 0)
+                        continue;
+                    if (strcmp(tag, "liga") == 0 || strcmp(tag, "clig") == 0)
+                        out->ligatures = (uint8_t)on;
+                    else if (strcmp(tag, "kern") == 0)
+                        out->kerning = (uint8_t)on;
+                    else {
+                        set_error("%s: font-feature-settings 只支持 liga / clig / kern"
+                                  "（收到 '%s'）", where, tag);
+                        return 0;
+                    }
+                }
+            }
+        }
+#if !QL_FEAT_CSS_TEXT_SHAPE
+        if (out->ligatures == 0 || out->kerning == 0) {
+            set_error("%s: 这个构建关掉了整形（QL_FEAT_CSS_TEXT_SHAPE=0），"
+                      "不支持关连字/字距", where);
+            return 0;
+        }
+#endif
     }
 
     /* ----- 多栏：column-count / column-width / columns / column-rule* ----- */
@@ -13728,6 +14193,66 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const char *nm = (g_doc_name != NULL) ? g_doc_name : "text";
         const size_t name_len = strlen(nm) + 1u;
 
+        /*
+         * 文本栈（B8）：把 @font-face 声明与 font-family 列表搬进文本池，
+         * 变成 doc 里的两段小表。字号/家族名都进池去重，所以"同一族 4 张字面"
+         * 只占一份名字。
+         */
+        const int n_faces = s_face_defs.n;
+        const int n_names = (s_font_list_n > 0) ? s_font_list_n : 1;
+        QLUIFontFace *face_tab = NULL;
+        QLUIFontList *list_tab = NULL;
+        uint16_t *name_tab = NULL;
+        uint16_t name_count = 0;
+        int font_mem_ok = 1;
+
+        if (n_faces > 0) {
+            face_tab = (QLUIFontFace *)ql_mem_calloc((size_t)n_faces, sizeof(QLUIFontFace));
+            if (face_tab == NULL)
+                font_mem_ok = 0;
+            for (int i = 0; font_mem_ok && i < n_faces; i++) {
+                uint16_t fi = 0, si = 0;
+                if (!text_pool_intern(&pool, s_face_defs.d[i].family, &fi) ||
+                    !text_pool_intern(&pool, s_face_defs.d[i].src, &si))
+                    font_mem_ok = 0;
+                face_tab[i].family = fi;
+                face_tab[i].src = si;
+                face_tab[i].weight = (uint16_t)s_face_defs.d[i].weight;
+                face_tab[i].italic = (uint8_t)(s_face_defs.d[i].italic ? 1 : 0);
+            }
+        }
+        if (font_mem_ok && s_font_list_n > 0) {
+            list_tab = (QLUIFontList *)ql_mem_calloc((size_t)n_names, sizeof(QLUIFontList));
+            int total_names = 0;
+            for (int i = 0; i < s_font_list_n; i++)
+                total_names += s_font_lists[i].n;
+            if (total_names > 0)
+                name_tab = (uint16_t *)ql_mem_calloc((size_t)total_names, sizeof(uint16_t));
+            if (list_tab == NULL || (total_names > 0 && name_tab == NULL)) {
+                font_mem_ok = 0;
+            } else {
+                for (int i = 0; font_mem_ok && i < s_font_list_n; i++) {
+                    list_tab[i].first = name_count;
+                    list_tab[i].count = (uint16_t)s_font_lists[i].n;
+                    for (int j = 0; j < s_font_lists[i].n; j++) {
+                        uint16_t ni = 0;
+                        if (!text_pool_intern(&pool, s_font_lists[i].names[j], &ni)) {
+                            font_mem_ok = 0;
+                            break;
+                        }
+                        name_tab[name_count++] = ni;
+                    }
+                }
+            }
+        }
+        if (!font_mem_ok) {
+            set_error("out of memory");
+            ql_mem_free(face_tab);
+            ql_mem_free(list_tab);
+            ql_mem_free(name_tab);
+            goto done;
+        }
+
         size_t off = 0;
         const size_t off_nodes = off;
         off += QL_UI_ALIGN8((size_t)nflat * sizeof(QLUINode));
@@ -13770,6 +14295,15 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const size_t off_xforms = off;
         if (s_xform_n > 0)
             off += QL_UI_ALIGN8((size_t)s_xform_n * sizeof(QLUIXform));
+        const size_t off_font_faces = off;
+        if (n_faces > 0)
+            off += QL_UI_ALIGN8((size_t)n_faces * sizeof(QLUIFontFace));
+        const size_t off_font_lists = off;
+        if (s_font_list_n > 0)
+            off += QL_UI_ALIGN8((size_t)n_names * sizeof(QLUIFontList));
+        const size_t off_font_names = off;
+        if (name_count > 0)
+            off += QL_UI_ALIGN8((size_t)name_count * sizeof(uint16_t));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -13927,11 +14461,43 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
             memcpy(xfd, s_xform_pool, (size_t)s_xform_n * sizeof(QLUIXform));
             doc->xforms = xfd;
         }
+        doc->font_face_count = (uint16_t)n_faces;
+        /*
+         * 0 号列表恒为"默认（空）"，只有真的出现过 `font-family` 才把列表表写进 doc
+         * —— 否则每份文档都白背一条空列表（而且 `font_names` 会是一条空数组）。
+         */
+        doc->font_list_count = (uint16_t)((s_font_list_n > 1) ? s_font_list_n : 0);
+        doc->font_name_count = name_count;
+        if (n_faces > 0) {
+            QLUIFontFace *fdst = (QLUIFontFace *)(void *)(base + off_font_faces);
+            memcpy(fdst, face_tab, (size_t)n_faces * sizeof(QLUIFontFace));
+            doc->font_faces = fdst;
+        }
+        if (s_font_list_n > 0) {
+            QLUIFontList *ldst = (QLUIFontList *)(void *)(base + off_font_lists);
+            memcpy(ldst, list_tab, (size_t)n_names * sizeof(QLUIFontList));
+            doc->font_lists = ldst;
+        }
+        if (name_count > 0) {
+            uint16_t *ndst = (uint16_t *)(void *)(base + off_font_names);
+            memcpy(ndst, name_tab, (size_t)name_count * sizeof(uint16_t));
+            doc->font_names = ndst;
+        }
+        ql_mem_free(face_tab);
+        ql_mem_free(list_tab);
+        ql_mem_free(name_tab);
+        face_tab = NULL;
+        list_tab = NULL;
+        name_tab = NULL;
+
         doc->arena = arena;
         arena = NULL;         /* 所有权交给 doc */
     }
 
 done:
+    /* 文本栈的构建期收集器：内容已经搬进 doc（或本次解析失败），这里清掉 */
+    face_defs_free(&s_face_defs);
+    font_lists_free();
     s_styles_pool = NULL;
     for (int i = 0; i < s_grid_raw_cap; i++) {
         GridRaw *gr = &s_grid_raw[i];

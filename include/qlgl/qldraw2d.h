@@ -139,6 +139,15 @@ typedef struct {
     uint8_t    tab_size;        /* '\t' 折算成几个空格；0 = 不折算（B3） */
     uint8_t    break_any;       /* 1 = 任意字符之间都能断行（`word-break: break-all`） */
     uint8_t    ellipsis;        /* 1 = 一行放不下时末尾换省略号（`text-overflow: ellipsis`） */
+    /*
+     * `direction: rtl`（B8）：段落基准方向。为 1 时每行先按 bidi 重排成视觉顺序，
+     * 再照旧从左往右画；文本里出现强 RTL 字符时**无论这个值**都会重排
+     * （UAX#9 的 `unicode-bidi: normal` 语义）。
+     */
+    uint8_t    rtl;
+    /* 连字 / 字距开关（`font-variant-ligatures` / `font-feature-settings`），默认 1 */
+    uint8_t    ligatures;
+    uint8_t    kerning;
 
     /*
      * `text-decoration-*`（B3）：线长什么样。

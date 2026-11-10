@@ -74,6 +74,14 @@ ql_err_t qlgl_init(void)
 
 void qlgl_shutdown(void)
 {
+    /*
+     * 顺序要紧：整形句柄引用字形面 → 先放整形缓存；字体注册表里的字体
+     * 引用 FreeType face → 再放注册表；最后才放默认字体缓存。
+     */
+    ql_text_shape_reset();
+#if QL_FEAT_CSS_FONT_STACK
+    ql_font_family_reset();
+#endif
     ql_font_reset_defaults();
     ql_event_pool_init();
     ql_input_reset();

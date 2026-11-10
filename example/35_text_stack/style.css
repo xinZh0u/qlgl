@@ -1,0 +1,76 @@
+/*
+ * B8 文本栈。白底浅色主题（见 ../README.md 的"约定"）。
+ *
+ * 字体文件路径由 main.c 在运行期探测后**拼在 CSS 前面**（见 `@font-face` 那一段），
+ * 所以这里直接引用两个"虚拟家族名"：Example Sans / Example Serif。
+ */
+#root {
+  width: 800px;
+  padding: 20px 24px 24px 24px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 13px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  font-size: 10px;
+  color: #57606A;
+  background-color: #F6F8FA;
+  border-radius: 9px;
+  padding: 3px 8px;
+}
+
+.sec {
+  margin-bottom: 16px;
+}
+
+.cap {
+  font-size: 11px;
+  color: #57606A;
+  margin-bottom: 6px;
+}
+
+.hint {
+  font-size: 10px;
+  color: #6E7781;
+  margin-top: 5px;
+  white-space: normal;
+  line-height: 16px;
+}
+
+code {
+  color: #9A6700;
+}
+
+.demo {
+  font-size: 17px;
+  line-height: 26px;
+  margin-bottom: 2px;
+}
+
+.serif { font-family: "Example Serif", serif; }
+.sans  { font-family: "Example Sans", sans-serif; }
+.bold  { font-weight: 700; }
+.italic { font-style: italic; }
+.noliga { font-variant-ligatures: none; }
+.arabic { font-family: "Example Sans", sans-serif; direction: rtl; text-align: right; font-size: 20px; line-height: 30px; }
+.arabic.left { text-align: left; }
+
+.note {
+  white-space: normal;
+  font-size: 10px;
+  color: #6E7781;
+  line-height: 17px;
+}

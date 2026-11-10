@@ -81,6 +81,9 @@ typedef struct {
     size_t grid_tracks;
     size_t grid_areas;
     size_t xforms;
+    size_t font_faces;
+    size_t font_lists;
+    size_t font_names;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -97,7 +100,8 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t media_count, uint32_t media_pool_count,
                            uint16_t calc_op_count, uint16_t grid_count,
                            uint16_t grid_track_count, uint16_t grid_area_count,
-                           uint16_t xform_count,
+                           uint16_t xform_count, uint16_t font_face_count,
+                           uint16_t font_list_count, uint16_t font_name_count,
                            size_t pool_size, size_t name_len, QLUIBlobLayout *out)
 {
     memset(out, 0, sizeof(*out));
@@ -172,6 +176,18 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     if (xform_count > 0)
         off = QL_UI_ALIGN8(off + (size_t)xform_count * sizeof(QLUIXform));
 
+    out->font_faces = off;
+    if (font_face_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)font_face_count * sizeof(QLUIFontFace));
+
+    out->font_lists = off;
+    if (font_list_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)font_list_count * sizeof(QLUIFontList));
+
+    out->font_names = off;
+    if (font_name_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)font_name_count * sizeof(uint16_t));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -228,6 +244,14 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     const uint16_t grid_track_count = doc->grid_track_count;
     const uint16_t grid_area_count = doc->grid_area_count;
     const uint16_t xform_count = doc->xform_count;
+    const uint16_t font_face_count = doc->font_face_count;
+    const uint16_t font_list_count = doc->font_list_count;
+    const uint16_t font_name_count = doc->font_name_count;
+    if ((font_face_count > 0 && doc->font_faces == NULL) ||
+        (font_list_count > 0 && doc->font_lists == NULL) ||
+        (font_name_count > 0 && doc->font_names == NULL) ||
+        (font_list_count > 0 && font_name_count == 0))
+        return 0;
 
     QLUIBlobLayout lay;
     compute_layout(doc->node_count, doc->style_count, doc->text_count,
@@ -235,7 +259,7 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
                    doc->image_count, image_data_size, doc->area_count,
                    doc->area_coord_count, media_count, media_pool_count,
                    calc_op_count, grid_count, grid_track_count, grid_area_count,
-                   xform_count,
+                   xform_count, font_face_count, font_list_count, font_name_count,
                    pool_size, name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
@@ -292,6 +316,12 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.off_grid_areas = (uint32_t)lay.grid_areas;
     head.xform_count = xform_count;
     head.off_xforms = (uint32_t)lay.xforms;
+    head.font_face_count = font_face_count;
+    head.font_list_count = font_list_count;
+    head.font_name_count = font_name_count;
+    head.off_font_faces = (uint32_t)lay.font_faces;
+    head.off_font_lists = (uint32_t)lay.font_lists;
+    head.off_font_names = (uint32_t)lay.font_names;
 
     if (doc->node_count > 0)
         memcpy(base + lay.nodes, doc->nodes,
@@ -348,6 +378,15 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (xform_count > 0)
         memcpy(base + lay.xforms, doc->xforms,
                (size_t)xform_count * sizeof(QLUIXform));
+    if (font_face_count > 0)
+        memcpy(base + lay.font_faces, doc->font_faces,
+               (size_t)font_face_count * sizeof(QLUIFontFace));
+    if (font_list_count > 0)
+        memcpy(base + lay.font_lists, doc->font_lists,
+               (size_t)font_list_count * sizeof(QLUIFontList));
+    if (font_name_count > 0)
+        memcpy(base + lay.font_names, doc->font_names,
+               (size_t)font_name_count * sizeof(uint16_t));
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -542,8 +581,9 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
                    head.image_count, head.image_data_size, head.area_count,
                    head.area_coord_count, head.media_count, head.media_pool_count,
                    head.calc_op_count, head.grid_count, head.grid_track_count,
-                   head.grid_area_count, head.xform_count, pool_size, head.name_len,
-                   &lay);
+                   head.grid_area_count, head.xform_count, head.font_face_count,
+                   head.font_list_count, head.font_name_count, pool_size,
+                   head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
@@ -558,7 +598,9 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         head.off_calc_ops != lay.calc_ops ||
         head.off_grids != lay.grids || head.off_grid_tracks != lay.grid_tracks ||
         head.off_grid_areas != lay.grid_areas || head.off_xforms != lay.xforms ||
-        head.off_name != lay.name) {
+        head.off_font_faces != lay.font_faces ||
+        head.off_font_lists != lay.font_lists ||
+        head.off_font_names != lay.font_names || head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
     }
@@ -637,6 +679,50 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
     doc->calc_op_count = head.calc_op_count;
     doc->calc_ops =
         (head.calc_op_count > 0) ? (const QLUICalcOp *)(p + lay.calc_ops) : NULL;
+    doc->font_face_count = head.font_face_count;
+    doc->font_list_count = head.font_list_count;
+    doc->font_name_count = head.font_name_count;
+    doc->font_faces = (head.font_face_count > 0)
+                          ? (const QLUIFontFace *)(const void *)(p + lay.font_faces)
+                          : NULL;
+    doc->font_lists = (head.font_list_count > 0)
+                          ? (const QLUIFontList *)(const void *)(p + lay.font_lists)
+                          : NULL;
+    doc->font_names = (head.font_name_count > 0)
+                          ? (const uint16_t *)(const void *)(p + lay.font_names)
+                          : NULL;
+
+    /* 文本栈的边界校验：名字下标必须落在文本池里，列表区间不许越界 */
+    if ((doc->font_list_count > 0) != (doc->font_names != NULL) ||
+        (doc->font_list_count > 0 && doc->font_name_count == 0) ||
+        (doc->font_face_count > 0 && doc->font_faces == NULL)) {
+        set_error_str("font tables are inconsistent");
+        ql_mem_free(doc);
+        return NULL;
+    }
+    for (uint16_t i = 0; i < doc->font_face_count; i++) {
+        if (doc->font_faces[i].family >= doc->text_count ||
+            doc->font_faces[i].src >= doc->text_count) {
+            set_error_str("@font-face entry out of range");
+            ql_mem_free(doc);
+            return NULL;
+        }
+    }
+    for (uint16_t i = 0; i < doc->font_list_count; i++) {
+        if ((uint32_t)doc->font_lists[i].first + doc->font_lists[i].count >
+            doc->font_name_count) {
+            set_error_str("font-family list out of range");
+            ql_mem_free(doc);
+            return NULL;
+        }
+        for (uint16_t k = 0; k < doc->font_lists[i].count; k++) {
+            if (doc->font_names[doc->font_lists[i].first + k] >= doc->text_count) {
+                set_error_str("font-family name out of range");
+                ql_mem_free(doc);
+                return NULL;
+            }
+        }
+    }
 
     /* 热区：img 必须真的是 <img>，坐标区间必须落在 coords 段内 */
     for (uint16_t i = 0; i < doc->area_count; i++) {

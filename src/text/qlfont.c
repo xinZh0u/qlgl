@@ -38,7 +38,16 @@ const QLGlyph *ql_font_find_glyph(const QLFont *font, uint32_t codepoint)
         const QLGlyph *hit = find_dynamic((QLFont *)(uintptr_t)font, codepoint);
         if (hit != NULL)
             return hit;
-        /* 动态字体也没有这个字：走 fallback */
+        /*
+         * 动态字体也没有这个字：先问**回退链**（字体栈：正文 → 等宽 → 默认），
+         * 再走"缺字替换码位"（U+FFFD 之类）。
+         * 顺序很重要：回退链能画真字形，替换码位只能画一个框。
+         */
+        if (font->fallback_font != NULL && font->fallback_font != font) {
+            const QLGlyph *fb = ql_font_find_glyph(font->fallback_font, codepoint);
+            if (fb != NULL)
+                return fb;
+        }
         if (font->fallback != 0 && font->fallback != codepoint)
             return ql_font_find_glyph(font, font->fallback);
         return NULL;
@@ -60,10 +69,71 @@ const QLGlyph *ql_font_find_glyph(const QLFont *font, uint32_t codepoint)
             hi = mid;
     }
 
-    /* 缺字：退回 fallback 字形；fallback 为 0 时返回 NULL */
+    /* 缺字：先回退链，再退回 fallback 字形；都没有就返回 NULL */
+    if (font->fallback_font != NULL && font->fallback_font != font) {
+        const QLGlyph *fb = ql_font_find_glyph(font->fallback_font, codepoint);
+        if (fb != NULL)
+            return fb;
+    }
     if (font->fallback != 0 && font->fallback != codepoint)
         return ql_font_find_glyph(font, font->fallback);
     return NULL;
+}
+
+const QLGlyph *ql_font_find_glyph_id(const QLFont *font, uint32_t glyph_id)
+{
+    if (font == NULL || font->backend == NULL || font->backend->ensure_glyph_id == NULL)
+        return NULL;
+
+    const uint32_t key = QL_GLYPH_ID_BASE + glyph_id;
+    /* 先查缓存（同一个字形一行里会出现多次），再让后端光栅化 */
+    uint32_t lo = 0, hi = font->glyph_count;
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        if (font->glyphs[mid].codepoint == key)
+            return &font->glyphs[mid];
+        if (font->glyphs[mid].codepoint < key)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return font->backend->ensure_glyph_id((QLFont *)(uintptr_t)font, glyph_id);
+}
+
+int ql_font_has_glyph(const QLFont *font, uint32_t codepoint, const QLFont **out_font)
+{
+    if (out_font != NULL)
+        *out_font = font;
+    if (font == NULL)
+        return 0;
+
+    /* 走查找但**不吃回退的替换码位**：只看本字体（或回退链）真的有没有 */
+    if (font->backend != NULL) {
+        if (find_dynamic((QLFont *)(uintptr_t)font, codepoint) != NULL)
+            return 1;
+        if (font->fallback_font != NULL && font->fallback_font != font) {
+            const QLFont *hit = NULL;
+            if (ql_font_has_glyph(font->fallback_font, codepoint, &hit)) {
+                if (out_font != NULL)
+                    *out_font = hit;
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if (font->glyphs == NULL)
+        return 0;
+    uint32_t lo = 0, hi = font->glyph_count;
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        if (font->glyphs[mid].codepoint == codepoint)
+            return 1;
+        if (font->glyphs[mid].codepoint < codepoint)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return 0;
 }
 
 uint32_t ql_font_glyph_stride(const QLFont *font, const QLGlyph *glyph)
@@ -195,27 +265,14 @@ int32_t ql_utf8_encode(uint32_t codepoint, char *buf)
     return 4;
 }
 
-ql_coord_t ql_font_line_width_ls(const QLFont *font, const char *text, int32_t len,
-                                 ql_coord_t letter_spacing)
-{
-    if (font == NULL || text == NULL)
-        return 0;
-
-    ql_coord_t width = 0;
-    int32_t i = 0;
-    while ((len < 0 ? text[i] != '\0' : i < len) && text[i] != '\0') {
-        uint32_t cp = 0;
-        int32_t used = ql_utf8_decode(text + i, &cp);
-        if (used <= 0)
-            break;
-        const QLGlyph *glyph = ql_font_find_glyph(font, cp);
-        width += (glyph != NULL) ? glyph->adv_w : 0;
-        width += letter_spacing;      /* 每个字符之后都加，含最后一个（与 CSS 一致） */
-        i += used;
-    }
-    return width;
-}
-
+/*
+ * B3 之前这里是手写的逐码位加法；B8 起改成走**整形**（`ql_text_shape`），
+ * 这样"量出来的宽度"与"画出来的位置"共用同一条路径 —— 连字/字距一旦生效，
+ * 两边同时变，不会出现"量的是 3 个字符、画的是 1 个连字"这种错位。
+ *
+ * 整形关闭（或没有 HarfBuzz）时内建整形与旧的逐码位加法**逐像素一致**：
+ * 每个字符 +letter_spacing、空格再 +word_spacing、'\t' 按 N 个空格。
+ */
 ql_coord_t ql_font_line_width_ls2(const QLFont *font, const char *text, int32_t len,
                                   ql_coord_t letter_spacing, ql_coord_t word_spacing,
                                   uint8_t tab_size)
@@ -223,30 +280,22 @@ ql_coord_t ql_font_line_width_ls2(const QLFont *font, const char *text, int32_t 
     if (font == NULL || text == NULL)
         return 0;
 
+    QLShapeOpt opt;
+    opt.letter_spacing = letter_spacing;
+    opt.word_spacing = word_spacing;
+    opt.tab_size = tab_size;
+    opt.ligatures = 1;
+    opt.kerning = 1;
+
     ql_coord_t width = 0;
-    int32_t i = 0;
-    const QLGlyph *space = (word_spacing != 0 || tab_size != 0)
-                               ? ql_font_find_glyph(font, ' ')
-                               : NULL;
-    while ((len < 0 ? text[i] != '\0' : i < len) && text[i] != '\0') {
-        uint32_t cp = 0;
-        int32_t used = ql_utf8_decode(text + i, &cp);
-        if (used <= 0)
-            break;
-        if (cp == (uint32_t)'\t' && tab_size != 0) {
-            const ql_coord_t sw = (space != NULL) ? space->adv_w : 0;
-            width += sw * (ql_coord_t)tab_size + letter_spacing;
-            i += used;
-            continue;
-        }
-        const QLGlyph *glyph = ql_font_find_glyph(font, cp);
-        width += (glyph != NULL) ? glyph->adv_w : 0;
-        width += letter_spacing;
-        if (cp == (uint32_t)' ')
-            width += word_spacing;
-        i += used;
-    }
+    (void)ql_text_shape(font, text, len, &opt, NULL, 0, &width);
     return width;
+}
+
+ql_coord_t ql_font_line_width_ls(const QLFont *font, const char *text, int32_t len,
+                                 ql_coord_t letter_spacing)
+{
+    return ql_font_line_width_ls2(font, text, len, letter_spacing, 0, 0);
 }
 
 ql_coord_t ql_font_line_width(const QLFont *font, const char *text, int32_t len)
@@ -315,6 +364,8 @@ void ql_font_destroy(QLFont *font)
 {
     if (font == NULL || font->backend == NULL)
         return;
+    /* 整形句柄引用着字体内部的面，必须先放（见 ql_text_shape_forget） */
+    ql_text_shape_forget(font);
     if (font->backend->destroy != NULL)
         font->backend->destroy(font);
 }
@@ -418,4 +469,41 @@ void ql_font_reset_defaults(void)
 {
     cache_reset(&s_cache_default);
     cache_reset(&s_cache_mono);
+}
+
+/*
+ * 按字号重取"同一个来源"的字体。
+ *
+ * 三种来源要分开处理，不然 DPR 放大之后字族会悄悄变：
+ *   1. 文本栈里的家族（`family_id != 0`）→ 交给上层挂的钩子按家族列表重取；
+ *   2. 等宽工厂 → 用等宽工厂；
+ *   3. 其它 → 默认工厂。
+ * 钩子由 qlui 在第一次构建文档时挂上（它才知道家族列表），这样绘制层
+ * 不用认识 doc。
+ */
+static const QLFont *(*s_scale_hook)(const QLFont *font, int pixel_size);
+
+void ql_font_set_scale_hook(const QLFont *(*hook)(const QLFont *font, int pixel_size))
+{
+    s_scale_hook = hook;
+}
+
+const QLFont *ql_font_scale(const QLFont *font, int pixel_size)
+{
+    if (pixel_size <= 0)
+        return font;
+    if (font == NULL)
+        return ql_font_default(pixel_size);
+
+    if (s_scale_hook != NULL) {
+        const QLFont *scaled = s_scale_hook(font, pixel_size);
+        if (scaled != NULL)
+            return scaled;
+    }
+    if (font->backend == NULL)
+        return font;                  /* 位图字体不能缩放（MCU 上的固有限制） */
+    if (font->family_id == 0 && s_cache_mono.factory != NULL &&
+        font == ql_font_mono((int)font->pixel_size))
+        return ql_font_mono(pixel_size);
+    return ql_font_default(pixel_size);
 }

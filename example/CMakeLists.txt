@@ -58,6 +58,7 @@ set(QL_EXAMPLES
     32_transform
     33_table
     34_columns
+    35_text_stack
 )
 
 foreach(e ${QL_EXAMPLES})

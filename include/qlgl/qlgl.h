@@ -65,6 +65,7 @@ void ql_log(int level, const char *fmt, ...);
 /* 子模块头文件放在末尾，保证上面这些定义先就位 */
 #include "qltype_gen.h"
 #include "qlmem.h"
+#include "qldl.h"
 #include "qlvalue.h"
 #include "qlstr.h"
 #include "qlevent.h"
@@ -77,6 +78,8 @@ void ql_log(int level, const char *fmt, ...);
 #include "qlanim.h"
 #include "qlfont.h"
 #include "qlfont_ft.h"
+#include "qltextshape.h"
+#include "qltextbidi.h"
 #include "qlimage.h"
 #include "qlcanvas.h"
 #include "qldraw2d.h"

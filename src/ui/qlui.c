@@ -209,6 +209,13 @@ static void draw_border_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
 /* ------------------------------ 构建 ------------------------------ */
 
+#if QL_FEAT_CSS_FONT_STACK
+static void font_chains_reset(void);
+static void fonts_register_from_doc(QLUIRoot *ui);
+static const QLFont *lbl_scale_hook(const QLFont *font, int px);
+static QLUIDoc *s_last_doc;
+#endif
+
 static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
 {
     if (doc == NULL || doc->node_count == 0 || doc->nodes == NULL)
@@ -227,6 +234,17 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
     ui->doc = doc;
     ui->owns_doc = (uint8_t)(owns_doc ? 1 : 0);
     ui->node_count = doc->node_count;
+
+#if QL_FEAT_CSS_FONT_STACK
+    /*
+     * 文本栈：把 doc 里的 @font-face 注册进字体注册表，并把"按家族列表重取字体"
+     * 的钩子挂给绘制层（DPR 放大时要按同一个列表重取整条回退链）。
+     * 放在这里而不是 doc 加载时：注册表是**进程级**的，doc 可以换。
+     */
+    font_chains_reset();
+    fonts_register_from_doc(ui);
+    ql_font_set_scale_hook(lbl_scale_hook);
+#endif
 
     /* 生成器保证 nodes[] 是深度优先顺序，parent 下标一定小于子节点 */
     for (uint16_t i = 0; i < doc->node_count; i++) {
@@ -609,6 +627,18 @@ void ql_ui_free(QLUIRoot *ui)
 {
     if (ui == NULL)
         return;
+#if QL_FEAT_CSS_FONT_STACK
+    /*
+     * 字体回退链与字体注册表都是"当前文档"的缓存：文档走了就一起放掉
+     * （注册表里的字体是 @font-face 读进来的，不跟着文档走就是进程级泄漏）。
+     * 顺序：先链（它引用了注册表里的 face），再注册表。
+     */
+    if (s_last_doc != NULL && ui->doc == s_last_doc) {
+        font_chains_reset();
+        ql_font_family_reset();
+        s_last_doc = NULL;
+    }
+#endif
     /* 输入汇里还握着这个指针，必须先摘掉，否则下一次事件就是 use-after-free */
     if (s_input_target == ui)
         ql_ui_detach_input();
@@ -833,18 +863,251 @@ static ql_coord_t height_of_style(const QLUIStyle *s, ql_coord_t basis_h,
 }
 
 /* 样式 → 字体：字号来自生成期的 font_sizes 表，具体字体由字体系统按字号给 */
+/* ---------------------- 文本栈（B8）：家族列表 → 回退链 ---------------------- */
+
+#if QL_FEAT_CSS_FONT_STACK
+/* 一条回退链的缓存槽（字号 / 列表 / 字重 / 斜体 决定一条链） */
+#define QL_FONT_CHAIN_SLOTS  16
+typedef struct {
+    const QLUIDoc *doc;
+    uint16_t list;
+    uint16_t px;
+    uint8_t  bold;
+    uint8_t  italic;
+    QLFont  *head;      /* 链头（每节都是一个包装体，最后一节的 fallback 是默认字体） */
+} FontChainSlot;
+static FontChainSlot s_chains[QL_FONT_CHAIN_SLOTS];
+static int s_chain_next;
+
+/*
+ * 放掉一条链：**只放包装体**。
+ * 链尾是注册表里的字体（或内置位图字体）：注册表自己的缓存由
+ * `ql_font_family_reset()` 负责，这里动了它就会 double free + 打乱别人的缓存。
+ */
+static void chain_free(QLFont *head)
+{
+    QLFont *w = head;
+    while (w != NULL && w->is_chain_wrapper) {
+        QLFont *next = (QLFont *)(uintptr_t)w->fallback_font;
+        ql_font_destroy(w);
+        w = next;
+    }
+}
+
+static void font_chains_reset(void)
+{
+    for (int i = 0; i < QL_FONT_CHAIN_SLOTS; i++) {
+        chain_free(s_chains[i].head);
+        memset(&s_chains[i], 0, sizeof(s_chains[i]));
+    }
+    s_chain_next = 0;
+}
+
+/* 文本池里的字符串（家族名 / 资源名） */
+static const char *doc_pool_str(const QLUIDoc *doc, uint16_t idx)
+{
+    if (doc == NULL || doc->text_pool == NULL || doc->text_offsets == NULL)
+        return NULL;
+    return doc->text_pool + doc->text_offsets[idx];
+}
+
+/* 通用家族名（CSS 关键字）落到本库的"正文 / 等宽" */
+static const QLFont *family_generic(const char *name, int px)
+{
+    if (strcmp(name, "monospace") == 0)
+        return ql_font_mono(px);
+    if (strcmp(name, "sans-serif") == 0 || strcmp(name, "serif") == 0 ||
+        strcmp(name, "system-ui") == 0 || strcmp(name, "cursive") == 0 ||
+        strcmp(name, "fantasy") == 0)
+        return ql_font_default(px);
+    return NULL;
+}
+
+static const QLFont *family_resolve(const char *name, int weight, int italic, int px)
+{
+    const QLFont *f = family_generic(name, px);
+    if (f != NULL)
+        return f;
+    const int id = ql_font_family_id(name);
+    if (id > 0)
+        return ql_font_family_font(id, weight, italic, px);
+    return NULL;                  /* 这台机器上没有这个家族：继续往后找 */
+}
+
+/*
+ * 把一个已注册的字体包成"链节点"。
+ *
+ * 为什么要包装：`QLFont.fallback_font` 是**字体自己的**字段，而注册表里的字体是
+ * 按 (家族, 字号) 共享的 —— 同一张字面可能被两条不同的链（`A, monospace` 与
+ * `A, B`）用到。直接改共享字体的 fallback 会让两条链互相污染。
+ * 包装体只"借"后端与 impl，字形缓存是自己的（互不干扰），销毁时只放自己的部分。
+ */
+static QLFont *chain_wrap(const QLFont *src, const QLFont *tail, uint16_t list)
+{
+    if (src == NULL)
+        return NULL;
+    QLFont *w = (QLFont *)ql_mem_calloc(1, sizeof(QLFont));
+    if (w == NULL)
+        return NULL;
+    w->name = src->name;
+    w->bpp = src->bpp;
+    w->line_height = src->line_height;
+    w->ascent = src->ascent;
+    w->descent = src->descent;
+    w->fallback = src->fallback;
+    w->glyphs = NULL;
+    w->glyph_count = 0;
+    w->glyph_capacity = 0;
+    w->bitmap = NULL;
+    w->glyph_bitmaps = NULL;
+    w->backend = src->backend;
+    w->impl = src->impl;
+    w->pixel_size = src->pixel_size;
+    w->is_bold = src->is_bold;
+    w->is_italic = src->is_italic;
+    w->family_id = src->family_id;
+    w->list_id = list;
+    w->is_chain_wrapper = 1;
+    w->fallback_font = tail;
+    return w;
+}
+
+/* 按 (doc, 列表, 字号, 字重, 斜体) 取（并缓存）一条回退链的链头 */
+static const QLFont *font_chain_get(const QLUIDoc *doc, int list, int px, int weight,
+                                    int italic)
+{
+    const uint8_t bold = (uint8_t)((weight >= 600) ? 1 : 0);
+    const uint8_t ital = (uint8_t)(italic ? 1 : 0);
+    for (int i = 0; i < QL_FONT_CHAIN_SLOTS; i++) {
+        const FontChainSlot *c = &s_chains[i];
+        if (c->head != NULL && c->doc == doc && c->list == (uint16_t)list &&
+            c->px == (uint16_t)px && c->bold == bold && c->italic == ital)
+            return c->head;
+    }
+
+    if (doc == NULL || doc->font_lists == NULL || doc->font_names == NULL ||
+        list <= 0 || list >= (int)doc->font_list_count)
+        return NULL;
+
+    const QLUIFontList *fl = &doc->font_lists[list];
+    const int n = (int)fl->count;
+    if (n <= 0)
+        return NULL;
+
+    /*
+     * 从后往前串：最后一个家族的回退是"默认字体"。
+     *
+     * 三种情况不进链：
+     *   - 家族没注册（这台机器上没有）→ 跳过，就是 CSS 的 fallback；
+     *   - 解析结果与链尾是同一个字体（例如 `sans-serif` 就是默认字体）→ 跳过，
+     *     否则会包出一个"自己回退到自己"的节点；
+     *   - 静态位图字体（`backend == NULL`）→ 它自己不需要包装，直接当链尾
+     *     （`ql_font_find_glyph` 的回退链对静态字体同样有效）。
+     */
+    const QLFont *def = ql_font_default(px);
+    const QLFont *tail = def;
+    for (int k = n - 1; k >= 0; k--) {
+        const uint16_t ni = (uint16_t)(fl->first + k);
+        if (ni >= doc->font_name_count)
+            continue;
+        const char *nm = doc_pool_str(doc, doc->font_names[ni]);
+        if (nm == NULL || nm[0] == '\0')
+            continue;
+        const QLFont *f = family_resolve(nm, weight, italic, px);
+        if (f == NULL || f == tail)
+            continue;
+        if (f->backend == NULL) {
+            tail = f;
+            continue;
+        }
+        const QLFont *w = chain_wrap(f, tail, (uint16_t)list);
+        if (w != NULL)
+            tail = w;
+    }
+
+    /* 一个家族都没装上：直接用默认字体（但要把列表下标记住，DPR 缩放才有依据） */
+    if (tail == def)
+        return tail;
+
+    FontChainSlot *slot = &s_chains[s_chain_next];
+    s_chain_next = (s_chain_next + 1) % QL_FONT_CHAIN_SLOTS;
+    chain_free(slot->head);
+    slot->doc = doc;
+    slot->list = (uint16_t)list;
+    slot->px = (uint16_t)px;
+    slot->bold = bold;
+    slot->italic = ital;
+    slot->head = (QLFont *)(uintptr_t)tail;
+    return tail;
+}
+
+/* DPR 缩放钩子：按同一个家族列表重取（见 ql_font_set_scale_hook） */
+
+#endif /* QL_FEAT_CSS_FONT_STACK */
+
+/* 文档里的家族列表解析出的字体（含逐字回退链） */
 static const QLFont *font_of_style(const QLUINodeRT *node, const QLUIStyle *style)
 {
     int size = 0;
-    if (node != NULL && node->owner != NULL && node->owner->doc != NULL) {
-        const QLUIDoc *doc = node->owner->doc;
+    const QLUIDoc *doc = (node != NULL && node->owner != NULL) ? node->owner->doc : NULL;
+    if (doc != NULL) {
         if (doc->font_sizes != NULL && style->font_id < doc->font_size_count)
             size = (int)doc->font_sizes[style->font_id];
     }
     const int px = (size > 0) ? size : 16;
+
+#if QL_FEAT_CSS_FONT_STACK
+    if (doc != NULL && style->font_family != 0) {
+        const int weight = ((style->font_flags & QL_UI_FONT_BOLD) != 0) ? 700 : 400;
+        const int italic = ((style->font_flags & QL_UI_FONT_ITALIC) != 0) ? 1 : 0;
+        const QLFont *f = font_chain_get(doc, (int)style->font_family, px, weight, italic);
+        if (f != NULL)
+            return f;
+    }
+#endif
     return (style->font_family == QL_UI_FAMILY_MONO) ? ql_font_mono(px)
                                                     : ql_font_default(px);
 }
+
+#if QL_FEAT_CSS_FONT_STACK
+/* 缩放钩子的实现：认识列表号就用列表重取，否则交给默认工厂 */
+static const QLFont *lbl_scale_hook(const QLFont *font, int px)
+{
+    if (font == NULL)
+        return NULL;
+    if (font->list_id != 0 && s_last_doc != NULL) {
+        const int weight = font->is_bold ? 700 : 400;
+        const QLFont *f =
+            font_chain_get(s_last_doc, (int)font->list_id, px, weight, font->is_italic ? 1 : 0);
+        if (f != NULL && f->backend != NULL)
+            return f;
+    }
+    return NULL;      /* 让 ql_font_scale 走它自己的默认分支 */
+}
+
+static void fonts_register_from_doc(QLUIRoot *ui)
+{
+    const QLUIDoc *doc = (ui != NULL) ? ui->doc : NULL;
+    /*
+     * 换了文档才重建注册表：注册表是进程级的，同一个 doc 反复 build 时
+     * 重复注册只会白读一遍字体文件。
+     */
+    if (s_last_doc != doc)
+        ql_font_family_reset();
+    s_last_doc = (QLUIDoc *)doc;
+    if (doc == NULL || doc->font_faces == NULL)
+        return;
+    for (uint16_t i = 0; i < doc->font_face_count; i++) {
+        const QLUIFontFace *fc = &doc->font_faces[i];
+        const char *family = doc_pool_str(doc, fc->family);
+        const char *src = doc_pool_str(doc, fc->src);
+        if (family == NULL || src == NULL)
+            continue;
+        (void)ql_font_family_register(family, src, (int)fc->weight, (int)fc->italic);
+    }
+}
+#endif
+
 
 static ql_coord_t inner_width_of(const QLUIStyle *style, ql_coord_t content_w)
 {
@@ -7487,6 +7750,8 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         ts.baseline_dy = (ql_coord_t)s->baseline_dy;
         ts.bold = (uint8_t)((s->font_flags & QL_UI_FONT_BOLD) != 0);
         ts.italic = (uint8_t)((s->font_flags & QL_UI_FONT_ITALIC) != 0);
+        /* B8：段落方向 + 连字/字距开关（整形用） */
+        ts.rtl = (uint8_t)(s->direction != 0);
         ts.deco = (uint8_t)(((s->font_flags & QL_UI_FONT_UNDERLINE) ? QL_TEXT_DECO_UNDERLINE
                                                                    : 0u) |
                             ((s->font_flags & QL_UI_FONT_LINE_THROUGH)
@@ -7496,6 +7761,8 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
                                                                   : 0u));
         /* 输入框的行尾空格要占宽（和 input_visual_lines 保持一致） */
         ts.keep_trailing = (uint8_t)(in != NULL);
+        ts.ligatures = (uint8_t)(s->ligatures ? 1 : 0);
+        ts.kerning = (uint8_t)(s->kerning ? 1 : 0);
         /*
          * 文本细节：输入框/多行输入里**不套**字间距与缩进 —— 光标位置是按
          * `ql_font_line_width` 算的（见 input_visual_lines），多一个字距就会

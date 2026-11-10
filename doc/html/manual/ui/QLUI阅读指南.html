@@ -187,6 +187,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1520,6 +1521,25 @@ index.html + index.css ──qltext cc──┤
    全都要引入"盒内分裂"——与 MCU 目标冲突。塞不下就换栏，最后一栏放不下就溢出；
 3. <strong><code>column-rule</code> 的 solid 不能走 <code>paint_dash_run()</code></strong>（它把 solid 也切成
    <code>3w + 2w</code> 的虚线），要单独 <code>fill_rect</code>。</p>
+<h4 id="b8">文本栈：字号之外还有"哪张字面"和"什么顺序"（B8）</h4>
+<p>排版相关的解析分三层，读代码时按这个顺序找：</p>
+<ol>
+<li><strong><code>font_of_style()</code></strong>（<code>qlui.c</code>）：家族列表 → 回退链。
+   链上每一节都是<strong>包装体</strong>（<code>is_chain_wrapper</code>），因为注册表里的字体按
+   (字面, 字号) 共享，直接改共享字体的 <code>fallback_font</code> 会让两条链互相污染。
+   链缓存在 <code>s_chains[16]</code>，按 (文档, 列表, 字号, 字重, 斜体) 命中。</li>
+<li><strong><code>ql_text_shape()</code></strong>（<code>qltextshape.c</code>）：一行 → 视觉顺序的字形序列。
+   <strong>量宽度和画字形都走它</strong>，所以连字/字距不会造成"量的和画的不一致"。
+   HarfBuzz 是 <code>dlopen</code> 进来的（不是链接依赖），拿不到就走内建逐码位路径。</li>
+<li><strong>双向</strong>：整形里按"字体 + 方向"切段，段落 RTL 时倒段顺序。
+   <strong>千万不要先 bidi 重排文本再整形</strong> —— 阿拉伯字母会变成一串孤立形
+   （第一版就是这么错的，例程 35 一跑就现形）。</li>
+</ol>
+<p>两个绘制层的细节：
+- 真字面自带粗/斜体时只跳过合成（<code>ts-&gt;bold &amp;&amp; !font-&gt;is_bold</code>），
+  否则真粗体会被"再抹粗一遍"；
+- 字形缓存按 <code>QL_GLYPH_ID_BASE + gid</code> 这个<strong>合成码位</strong>存，复用原来的有序数组与
+  二分查找（真实码位 ≤ 0x10FFFF，撞不上）。</p>
 <h4 id="blit-scissor">一个只在脏区重绘时出现的坑：blit 也受 scissor 影响</h4>
 <p>混合模式要读"图层的背景"，做法是先把目标表面上那一块 <code>glBlitFramebuffer</code> 到
 一张纹理。<strong>blit 会被 scissor 裁</strong>，而背景纹理的目标矩形在 <code>(0,0)</code>、脏区重绘时
@@ -1628,6 +1648,11 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 <td>多栏</td>
 <td>✅ <code>column-count</code> / <code>column-width</code> / <code>columns</code> / <code>column-gap</code> / <code>column-rule*</code>（B7 后半，贪心分栏）</td>
 <td><code>column-span: all</code>、真·跨栏分裂没有</td>
+</tr>
+<tr>
+<td>文本栈</td>
+<td>✅ <code>@font-face</code> + 家族列表 + 逐字回退 + 真字重/斜体 + HarfBuzz 整形 + <code>direction</code>/RTL（B8）</td>
+<td><code>unicode-range</code>、<code>local()</code>、小体大写、嵌套 bidi 隔离没有</td>
 </tr>
 <tr>
 <td><code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> / 组 <code>opacity</code></td>

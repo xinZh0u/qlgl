@@ -321,6 +321,11 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
     /* `baseline_dy` 只挪基线，不影响行盒（与浏览器一样：行高不会因上标而变） */
     ql_coord_t baseline = box.y + half_lead + font->ascent + ts->baseline_dy;
     for (int li = 0; li < count; li++) {
+        /*
+         * 双向与整形都在 `ql_text_shape()` 里（B8）：它按"字体 + 方向"切段，
+         * 段落 RTL 时把各段按从右往左摆，返回的已经是**视觉顺序**的字形序列。
+         * 所以这里照旧从左往右累加笔位即可，不需要自己重排文本。
+         */
         const char *lt = lines[li].start;
         int32_t llen = lines[li].len;
         /* 首行缩进：只影响第一行的起点（折行那边同时按缩进减了可用宽度） */
@@ -372,29 +377,63 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
         const ql_coord_t line_x0 = pen_x;
 
-        int32_t j = 0;
-        while (j < llen) {
-            uint32_t cp = 0;
-            int32_t used = ql_utf8_decode(lt + j, &cp);
-            if (used <= 0)
-                break;
-            const QLGlyph *glyph = ql_font_find_glyph(font, cp);
-            if (cp == (uint32_t)'\t' && ts->tab_size != 0) {
-                /* 制表符：按 N 个空格的宽度推进，不画字形 */
-                const QLGlyph *sp = ql_font_find_glyph(font, ' ');
-                pen_x += ((sp != NULL) ? sp->adv_w : 0) * (ql_coord_t)ts->tab_size +
-                         ts->letter_spacing;
-                j += used;
-                continue;
+        /*
+         * 逐字形发射改成**先整形再画**（B8）：连字/字距/阿拉伯文连写都是
+         * 上下文相关的，逐码位取字形在原理上做不到。
+         *
+         * 内建整形（没有 HarfBuzz）给出的位置与旧的逐码位循环完全一致，
+         * 所以"没装 HarfBuzz"时像素行为不变。
+         */
+        {
+            QLTextStyle tsg = *ts;
+            QLShapeOpt sopt;
+            sopt.letter_spacing = ts->letter_spacing;
+            sopt.word_spacing = ts->word_spacing;
+            sopt.tab_size = ts->tab_size;
+            sopt.ligatures = ts->ligatures;
+            sopt.kerning = ts->kerning;
+            sopt.par_rtl = ts->rtl;
+
+            /*
+             * 分块整形：一块最多 QL_TEXT_SHAPE_MAX 个字形。跨块的连字会断
+             * （一块 256 个字形远多于一行能显示的字数），换来的是零动态分配。
+             */
+            static QLShapeGlyph shaped[QL_TEXT_SHAPE_MAX];
+            int32_t off = 0;
+            while (off < llen) {
+                int32_t end = off + (int32_t)QL_TEXT_SHAPE_MAX;
+                if (end > llen)
+                    end = llen;
+                /* 块边界必须落在 UTF-8 字符边界上 */
+                while (end > off && end < llen && ((unsigned char)lt[end] & 0xC0u) == 0x80u)
+                    end--;
+
+                ql_coord_t chunk_w = 0;
+                int32_t nsh = ql_text_shape(font, lt + off, end - off, &sopt, shaped,
+                                            (int32_t)QL_TEXT_SHAPE_MAX, &chunk_w);
+                if (nsh > (int32_t)QL_TEXT_SHAPE_MAX)
+                    nsh = (int32_t)QL_TEXT_SHAPE_MAX;
+
+                ql_coord_t pen = pen_x;
+                for (int32_t k = 0; k < nsh; k++) {
+                    const QLShapeGlyph *sg = &shaped[k];
+                    pen += (ql_coord_t)sg->dx;
+                    if (sg->glyph != NULL && sg->glyph->box_w > 0) {
+                        /* 真字面已经有粗/斜体了，就不要再合成一遍 */
+                        const QLFont *gf = (sg->font != NULL) ? sg->font : font;
+                        tsg.bold = (uint8_t)((ts->bold && !gf->is_bold) ? 1 : 0);
+                        tsg.italic = (uint8_t)((ts->italic && !gf->is_italic) ? 1 : 0);
+                        emit_glyph(self, gf, sg->glyph, pen, baseline, &tsg);
+                    }
+                    pen += (ql_coord_t)sg->adv;
+                }
+                if (!draw_ellipsis)
+                    pen_x = pen;        /* 省略号路径自己会摆到截断点 */
+                else
+                    pen_x = pen;
+                (void)chunk_w;
+                off = end;
             }
-            if (glyph != NULL && glyph->box_w > 0)
-                emit_glyph(self, font, glyph, pen_x, baseline, ts);
-            if (glyph != NULL) {
-                pen_x += glyph->adv_w + ts->letter_spacing;
-                if (cp == (uint32_t)' ')
-                    pen_x += ts->word_spacing;
-            }
-            j += used;
         }
         if (draw_ellipsis)
             emit_ellipsis(self, font, &pen_x, baseline, ts, emit_glyph);

@@ -187,6 +187,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1865,15 +1866,94 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <code>column-rule: &lt;wavy 等非 solid/dashed/dotted/none&gt;</code>、<code>column-span</code> 整个属性、
 <code>QL_FEAT_CSS_COLUMNS=0</code> 时上述任一属性。</p>
 <hr />
+<h3 id="3116-font-face-font-family">3.11.6 文本栈（<code>@font-face</code> / <code>font-family</code> / 整形 / 双向）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">font-face</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">font-family</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;My Sans&quot;</span><span class="o">;</span><span class="w"> </span><span class="nt">src</span><span class="o">:</span><span class="w"> </span><span class="nt">url</span><span class="o">(/</span><span class="nt">usr</span><span class="o">/</span><span class="nt">share</span><span class="o">/</span><span class="nt">fonts</span><span class="o">/.../</span><span class="nt">DejaVuSans</span><span class="p">.</span><span class="nc">ttf</span><span class="o">);</span>
+<span class="w">             </span><span class="nt">font-weight</span><span class="o">:</span><span class="w"> </span><span class="nt">400</span><span class="w"> </span><span class="p">}</span>
+<span class="p">@</span><span class="k">font-face</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">font-family</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;My Sans&quot;</span><span class="o">;</span><span class="w"> </span><span class="nt">src</span><span class="o">:</span><span class="w"> </span><span class="nt">url</span><span class="o">(..</span><span class="p">.</span><span class="nc">-Bold</span><span class="p">.</span><span class="nc">ttf</span><span class="o">);</span><span class="w"> </span><span class="nt">font-weight</span><span class="o">:</span><span class="w"> </span><span class="nt">700</span><span class="w"> </span><span class="p">}</span>
+
+<span class="p">.</span><span class="nc">article</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">font-family</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Sans&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Noto Sans CJK SC&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">sans-serif</span><span class="p">;</span><span class="w">   </span><span class="c">/* 逐字回退 */</span>
+<span class="w">  </span><span class="k">font-weight</span><span class="p">:</span><span class="w"> </span><span class="mi">700</span><span class="p">;</span><span class="w">                                          </span><span class="c">/* 用真粗体字面 */</span>
+<span class="w">  </span><span class="k">font-variant-ligatures</span><span class="p">:</span><span class="w"> </span><span class="kc">normal</span><span class="p">;</span><span class="w">                            </span><span class="c">/* 连字（默认开） */</span>
+<span class="p">}</span>
+<span class="p">.</span><span class="nc">arabic</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">direction</span><span class="p">:</span><span class="w"> </span><span class="kc">rtl</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                                  </span><span class="c">/* 段落基准方向 */</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@font-face</code></td>
+<td><code>font-family</code> / <code>src: url(...)</code> / <code>font-weight</code>（100..900、<code>normal</code>、<code>bold</code>）/ <code>font-style</code>（<code>normal</code>/<code>italic</code>/<code>oblique</code>）。<strong>必须是绝对路径或运行期登记过的资源名</strong></td>
+</tr>
+<tr>
+<td><code>font-family</code></td>
+<td>逗号分隔的列表；<code>monospace</code> / <code>serif</code> / <code>sans-serif</code> / <code>system-ui</code> / <code>cursive</code> / <code>fantasy</code> 是通用族名，其余查注册表</td>
+</tr>
+<tr>
+<td><code>font-weight</code></td>
+<td>数字或 <code>normal</code>/<code>bold</code>；<strong>有对应字面就用真字重</strong>，没有则合成加粗</td>
+</tr>
+<tr>
+<td><code>font-style</code></td>
+<td><code>normal</code> / <code>italic</code>（<code>oblique</code> 同义）：同上，有真斜体就用</td>
+</tr>
+<tr>
+<td><code>font-variant-ligatures</code></td>
+<td><code>normal</code> / <code>none</code> / <code>common-ligatures</code> / <code>no-common-ligatures</code></td>
+</tr>
+<tr>
+<td><code>font-feature-settings</code></td>
+<td>只认 <code>"liga"</code> / <code>"clig"</code> / <code>"kern"</code> 的 0/1 开关</td>
+</tr>
+<tr>
+<td><code>direction</code></td>
+<td><code>ltr</code>（默认）/ <code>rtl</code>；<code>rtl</code> 时整行按视觉顺序排、并把 <code>text-align: start/end</code> 翻过来</td>
+</tr>
+<tr>
+<td><code>unicode-bidi</code></td>
+<td><code>normal</code> / <code>embed</code> / <code>isolate</code> / <code>bidi-override</code>（当前都按"单层"处理）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>运行期接口</strong>（不想用 CSS 里的路径时）：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 把一个家族名绑到字体文件；同 (家族, 字重, 斜体) 重复注册会覆盖 */</span>
+<span class="n">ql_font_family_register</span><span class="p">(</span><span class="s">&quot;My Sans&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/opt/fonts/MySans.ttf&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">400</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<span class="cm">/* 内存里的字体（打进了二进制或从资源包解出来） */</span>
+<span class="n">ql_font_family_register_mem</span><span class="p">(</span><span class="s">&quot;My Sans&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">bytes</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="mi">700</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+
+<span class="cm">/* 整形 / 双向当前用的是哪条实现（&quot;harfbuzz&quot;/&quot;fribidi&quot; 或 &quot;builtin&quot;） */</span>
+<span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_text_shape_backend</span><span class="p">(),</span><span class="w"> </span><span class="n">ql_text_bidi_backend</span><span class="p">());</span>
+</code></pre></div>
+
+<p><strong>生命周期</strong>：字体注册表跟着<strong>当前文档</strong>走 —— <code>ql_ui_build()</code> 时按 doc 的
+<code>@font-face</code> 重建，<code>ql_ui_free()</code> 时释放。所以手动 <code>ql_font_family_register()</code>
+要放在 build 之后（或者干脆在 CSS 里写 <code>@font-face</code>）。</p>
+<p><strong>构建期报错</strong>：<code>@font-face</code> 的 <code>src</code> 不是 <code>url()</code>、写了 <code>unicode-range</code> /
+<code>font-display</code> / <code>local()</code>、<code>font-feature-settings</code> 里出现 liga/clig/kern 之外的特性、
+<code>QL_FEAT_CSS_FONT_STACK=0</code> 时的 <code>@font-face</code> 与家族名、
+<code>QL_FEAT_CSS_BIDI=0</code> 时的 <code>direction: rtl</code>、
+<code>QL_FEAT_CSS_TEXT_SHAPE=0</code> 时关连字/字距。</p>
+<p>实现细节与体积见《CSS3 覆盖与裁剪》§18.14，教程见 <a href="../tutorial/24_text_stack.md">文本栈</a>。</p>
+<p><strong>环境变量（排查用）</strong>：<code>QL_TEXT_SHAPE=builtin</code> 强制用内建整形；
+<code>QL_TEXT_BIDI=builtin</code> 强制用内建 UAX#9 子集。</p>
+<hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
 <div class="highlight"><pre><span></span><code>float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 perspective() / rotate3d() / matrix3d()（3D 不排期；rotate/skew/matrix 已支持）
 column-span / column-fill / break-inside（多栏的其它属性）
 filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
+@font-face 的 unicode-range / local()   font-feature-settings 里 liga/clig/kern 之外
+font-variant: small-caps / tabular-nums  unicode-bidi 的嵌套隔离
 mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
 background-blend-mode
-list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
+list-style / @supports                   overscroll-behavior / scroll-snap-*
 text-align: justify                     transition-delay
 backface-visibility（假翻转没有背面）
 </code></pre></div>

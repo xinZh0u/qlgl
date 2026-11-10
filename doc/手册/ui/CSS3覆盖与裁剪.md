@@ -57,12 +57,13 @@
 | **旋转光栅**：`transform: rotate()` / `skew()` / `skewX/Y` / `matrix()` / `transform-origin` | blob v30（见 §18.11） |
 | **表格**：`display: table` 全家 + `<table>` 系列标签 + `table-layout: auto/fixed` + `colspan`/`rowspan` + `border-spacing`/`collapse` + `<colgroup>/<col>` | blob v31（见 §18.12） |
 | **多栏**：`column-count` / `column-width` / `columns` / `column-gap` / `column-rule*`（贪心分栏 + 等高平衡） | blob v32（见 §18.13） |
+| **文本栈**：`@font-face` / 自由 `font-family` 列表 + 逐字回退 / 真字重与真斜体 / HarfBuzz 整形（连字、字距、复杂文字）/ `direction` + RTL（fribidi 或内建 UAX#9） | blob v33（见 §18.14） |
 
 **还没做**，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：
 
 | 类 | 项 | 归宿 |
 |---|---|---|
-| **PC/Mobile 必做**（MCU 归能力包） | `@font-face` + 真字体栈、连字整形、双向（B8）；`clip-path` 的 `inset`/`ellipse`/`polygon` | §22 |
+| **PC/Mobile 必做**（MCU 归能力包） | `clip-path` 的 `inset`/`ellipse`/`polygon`；`font-variant: small-caps` / `tabular-nums` | §22 |
 | **小件**（随时插队） | `text-align: justify`、阴影 `spread`、椭圆 `border-radius`（`10px / 20px`）、`font` 简写、`word-wrap` 别名、`::first-line` / `::first-letter`、`:empty`、`revert` | 各节 ⏳ |
 | **不排期** | 3D 变换（`perspective()` / `rotate3d()`）；bidi 的完整算法之外的冷门项；打印相关 | 各节 ❌ |
 
@@ -379,14 +380,14 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `font-family` | ⚠️ | G | 现在是 `DEFAULT` / `MONO` 两族（矢量 + 内建位图）。**B8 起 PC/Mobile 档变成自由列表**（`@font-face` 注册）；MCU 档仍是两族 |
+| `font-family` | ✅ | G | **B8 起是真列表**（`A, B, monospace`）：按顺序找第一个装得上的家族，逐字回退到后面的家族。blob v33 |
 | `font-size` | ✅ | L | `px` / `%`（相对父级）/ `smaller` / `larger` |
-| `font-weight` | ⚠️ | G | 现在是**合成**加粗（画两遍右移 1px）。**B8 起 PC/Mobile 档**按 `font-weight` 选真实字重（`@font-face` + FreeType）；MCU 档保持合成 |
-| `font-style` | ⚠️ | G | 现在是**合成**斜体（按行剪切）。**B8 起 PC/Mobile 档**加载真斜体字面；MCU 档保持合成 |
+| `font-weight` | ✅ | G | PC/Mobile：按 `@font-face` 声明的字面挑**真字重**（挑不到才合成加粗）；MCU：合成 |
+| `font-style` | ✅ | G | 同上：PC/Mobile 用真斜体字面，MCU 合成倾斜 |
 | `font`（简写） | ⏳ | L | 目前要分开写 |
-| `font-variant` / `font-stretch` / `font-feature-settings` | ⏳ | G | **B8**：`small-caps` / `tabular-nums` 等由 HarfBuzz 特性位实现；MCU 档裁 |
-| `font-size-adjust` / `font-kerning` / `font-optical-sizing` | ❌ | X | 同上 |
-| `@font-face` | ⏳ | G | **B8**，见 §3.5 |
+| `font-variant-ligatures` / `font-feature-settings` | ⚠️ | G | 只认 `liga` / `clig` / `kern` 三个开关（其余特性**构建期报错**）；`small-caps` / `tabular-nums` 等还没做 |
+| `font-stretch` / `font-size-adjust` / `font-optical-sizing` | ❌ | X | 变量字体轴，B8 不做 |
+| `@font-face` | ✅ | G | `font-family` / `src: url()` / `font-weight` / `font-style` 四样；`unicode-range` / `local()` 构建期报错 |
 
 ### 9.2 文本
 
@@ -1442,6 +1443,133 @@ x 取缝的中点，高度取内容盒高；`column_rule_width == 0` 或 `style 
 两个都开：147,596 B（+5,972 B）。多栏比表格（+5,332 B）便宜一个数量级：
 没有列宽/行高那五遍扫描，只有"排一遍 + 二分 + 平移"。
 
+### 18.14 B8 落地：文本栈（`@font-face` / 家族列表 / 整形 / 双向）
+
+三段是**一件事的三个层次**，所以一起落地：
+
+```
+@font-face          → 注册表：家族 →（字重, 斜体）→ 字体文件
+font-family: A, B   → 回退链：逐字找"谁有这个字形"
+HarfBuzz / fribidi  → 一行怎么排：连字、字距、连接形、视觉顺序
+```
+
+#### 1. `@font-face`：构建期只存声明，运行期真读文件
+
+CSS 里写：
+
+```css
+@font-face { font-family: "My Sans"; src: url(/usr/share/fonts/.../DejaVuSans.ttf);
+             font-weight: 400 }
+@font-face { font-family: "My Sans"; src: url(...-Bold.ttf); font-weight: 700 }
+@font-face { font-family: "My Sans"; src: url(...-Oblique.ttf); font-style: italic }
+```
+
+构建期把它变成 doc 里的一张 8 字节的小表（家族名 / 资源名都是文本池下标），
+**不读字体文件、也不内嵌字体字节**。运行期 `ql_ui_build()` 时按表注册进
+字体注册表（`ql_font_family_register()`），注册表按 (文件, 字号) 缓存已加载的字面。
+
+只认四样：`font-family` / `src: url()` / `font-weight` / `font-style`。
+`unicode-range`（子集化）、`src: local(...)`（要 fontconfig）、`font-display`
+**一律构建期报错** —— 静默忽略会让"这段中文为什么用了别的字体"这类问题无迹可寻。
+
+#### 2. `font-family` 列表与逐字回退
+
+样式里的 `font_family` 现在是"家族列表"的下标（blob v33）。运行期：
+
+1. 按顺序取列表里的名字：`monospace` / `serif` / `sans-serif` / `system-ui` 落到
+   本库的正文/等宽字体；其余名字查注册表；
+2. 第一个"装得上"的家族当**主字体**，后面的接成 `QLFont.fallback_font` 链；
+3. 缺字时 `ql_font_find_glyph()` 沿链往下问 —— **逐字回退**，
+   所以"DejaVu + Noto CJK"这种混排不需要拆 `span`。
+
+**回退链为什么要包装体**：注册表里的字体按 (字面, 字号) 共享，同一张字面可能被
+两条不同的链用到（`A, monospace` 与 `A, B`）。直接改共享字体的 `fallback_font`
+会让两条链互相污染，所以链上每一节都是一个**只借后端与 impl 的包装体**
+（字形缓存是自己的，销毁时只放自己的部分；`ql_font_family_reset()` 负责真正的字体）。
+
+链的缓存按 (文档, 列表, 字号, 字重, 斜体) 记 16 槽，DPR 放大时按**同一个列表**重取
+（`ql_font_set_scale_hook`），否则放大后字族会悄悄变回默认。
+
+#### 3. 整形：HarfBuzz（直连或 `dlopen`）+ 内建兜底
+
+`ql_text_shape()` 是唯一的入口：**量宽度**与**画字形**都走它，所以"量出来 3 个字符、
+画出来 1 个连字"这种错位在原理上不会发生。
+
+- **有 HarfBuzz 时**：按"字体 + 方向"切段 → 每段 `hb_shape` → 取字形下标 →
+  用 `QL_GLYPH_ID_BASE + gid` 这个合成码位复用原来那套有序字形缓存
+  （真实码位 ≤ 0x10FFFF，撞不上）；
+- **没有 HarfBuzz 时**：逐码位查字形 + 逐字回退，行为与 B8 之前**逐像素一致**
+  （没有连字与字距）。
+
+**HarfBuzz 不写进链接依赖**：构建期找到头文件就直连是理想路径，但很多发行版
+只装运行库（`libharfbuzz.so.0`）而没有 `-dev`。所以这里用 `dlopen` + 手写的
+16 个符号白名单（`hb_glyph_info_t` / `hb_glyph_position_t` 的布局从 1.x 起没变），
+拿不到就退回内建 —— 用户装不装库都能跑。
+
+#### 4. 双向：先整形后重排，**不要先重排再整形**
+
+这是最容易写错的地方：
+
+```
+错：bidi 重排文本 → 交给 HarfBuzz 整形 → 阿拉伯字母变成一串孤立形
+对：按"字体 + 方向"切段 → 每段整形（HarfBuzz 按方向给出视觉顺序）→ 段落 RTL 时倒段
+```
+
+`direction: rtl` 的段落里，"阿拉伯文 + 数字"会切成两段：阿拉伯段按 RTL 整形
+（HarfBuzz 输出就是视觉顺序），数字段按 **LTR** 整形（UAX#9 里数字是"二级"，
+整体保持 LTR），最后把段顺序整体倒过来。
+
+内建路径（没有 HarfBuzz）没有连写能力，只能先把整行按 UAX#9 子集排成视觉顺序
+再逐字画 —— 顺序能读对，但没有连写。
+
+`unicode-bidi`：`normal` / `embed` / `isolate` 按同一层处理，`bidi-override` 记成
+"强制按段落方向排"。嵌套隔离与括号镜像**没做**（见 §9.2 表格）。
+
+#### 5. 真字重 / 真斜体
+
+`@font-face` 声明了 700 或 italic 字面时，`font_of_style()` 按"字重距离 + 斜体是否
+匹配"挑最接近的字面；挑到的字面如果本身就是粗/斜体（`QLFont.is_bold/is_italic`），
+绘制层就不再合成（`ts->bold && !font->is_bold` 才抹粗）。挑不到真字面时退回原来的
+合成加粗/倾斜 —— 这条兜底必须留着，否则"只装了一份 regular"的机器上粗体会消失。
+
+#### 6. 验证
+
+| 测试 | 项数 | 覆盖 |
+|---|---|---|
+| `test_font_stack` | 38 | 注册表按字重/斜体挑字面、家族列表顺序、逐字回退、`@font-face` 三条报错 |
+| `test_text_shape` | 27 | 字形数与字距、连字开/关、cap 分块、阿拉伯文连写、视觉顺序、RTL+数字、字形下标缓存 |
+
+两条后端都跑：`QL_TEXT_SHAPE=builtin` / `QL_TEXT_BIDI=builtin` 两个环境变量强制走内建路径
+（CI 里各跑一遍）。
+
+#### 7. 代价与裁剪
+
+| 项 | 值 |
+|---|---|
+| `QLUIStyle` | 364 → **368 B**（`direction` / `unicode_bidi` / `ligatures` / `kerning`） |
+| `QLUIDoc` | + 三段小表（`font_faces` / `font_lists` / `font_names`），没有 `@font-face` 时**一个字都不占** |
+| blob | **v33**，头 152 → **172 B** |
+| 编译开关 | `QL_FEAT_CSS_FONT_STACK` / `QL_FEAT_CSS_TEXT_SHAPE` / `QL_FEAT_CSS_BIDI`（**MCU 默认全关**） |
+| 关掉之后 | `@font-face`、家族名、`direction: rtl`、关连字 **构建期报错**；绘制退回逐码位路径 |
+
+**MCU 实测**（mps2-an386，与 §18.12 / §18.13 同一把尺子）：
+
+| 配置 | `.text` | `.bss` |
+|---|---|---|
+| B8 之前（B7 收尾） | 141,624 B | 140,268 B |
+| B8 之后，三个开关**全关**（MCU 默认） | **144,808 B** | 140,268 B |
+| 再开 `QL_FEAT_CSS_TEXT_SHAPE=1` | 144,808 B（**+0**） | 140,268 B |
+| 再开 `QL_FEAT_CSS_BIDI=1` | 144,808 B（**+0**） | 140,268 B |
+| `QL_FEAT_CSS_FONT_STACK=1` | **编译期报错**：它需要 FreeType，MCU 档根本没编 FT |
+
+也就是说：**三个能力开关在 MCU 上不额外花一个字节** —— 它们的实现要么要 FreeType、
+要么要 `dlopen`，MCU 上一条都不存在。真正涨的 3,184 B 是**共享**成本：
+内建整形循环（替换掉原来的逐码位加法）、内建 UAX#9 子集、样式变大 4 B、
+以及 blob v33 的读写路径。这份成本换来的是"PC/Mobile 上一行代码就能开整形与双向"。
+
+**为什么 MCU 不能开**：HarfBuzz 1,178 KB、fribidi 106 KB、一份全量 CJK TTF 20 MB 级；
+而整块 MCU 固件现在是 141 KB。这不是"再优化一下"，是数量级。
+
 ## 19. 覆盖率：两份实测 + 一份规范口径
 
 三个数回答三个不同的问题，别混着用。
@@ -1668,6 +1796,9 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_GRID` | `QL_FEAT_CSS_GRID` | **B6 ✅**：`display: grid` 全家（轨道定尺 / 自动放置 / 跨格 / `justify-*`） | ✅ | **默认开**（可裁） | BASE | **实测 4,528 B**（−3.3%） |
 | `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7 ✅**：`display: table` 全家 + `<table>` 标签 + `table-layout: auto/fixed` + `colspan/rowspan` + `border-collapse` + `<colgroup>/<col>` | ✅ | **默认关** | BASE | **实测 5,332 B**（见 §18.12 末） |
 | `CSS_COLUMNS` | `QL_FEAT_CSS_COLUMNS` | **B7 ✅**：`column-count` / `column-width` / `columns` / `column-gap` / `column-rule*`（贪心分栏 + 等高平衡） | ✅ | **默认关** | BASE | **实测 640 B**（见 §18.13 末） |
+| `CSS_FONT_STACK` | `QL_FEAT_CSS_FONT_STACK` | **B8 ✅**：`@font-face` + 自由 `font-family` 列表 + 逐字回退 + 真字重/真斜体 | ✅ | **默认关** | BASE + `QLGL_ENABLE_FREETYPE` | 与 FreeType 一起算；MCU 档根本没有 FT，开关只能关 |
+| `CSS_TEXT_SHAPE` | `QL_FEAT_CSS_TEXT_SHAPE` | **B8 ✅**：HarfBuzz 整形（连字 / 字距 / 复杂文字），`font-variant-ligatures` / `font-feature-settings`（liga/clig/kern） | ✅ | **默认关** | BASE（+ FreeType 才有真正的整形；运行期 `dlopen` libharfbuzz） | MCU 上 **+0 B**（实现依赖 FT/download，硬件上没有） |
+| `CSS_BIDI` | `QL_FEAT_CSS_BIDI` | **B8 ✅**：`direction` / `unicode-bidi` + RTL 排布（fribidi 或内建 UAX#9 子集） | ✅ | **默认关** | BASE（运行期 `dlopen` libfribidi） | MCU 上 **+0 B**（同上） |
 | `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6 ✅**：`border-image` 九宫格 | ✅ | **默认开**（可裁） | BASE + `QL_FEAT_UI_IMAGE` | **实测 2,176 B**（−1.6%） |
 | `CSS_FILTER_LAYER` | `QL_FEAT_CSS_FILTER_LAYER` | **M9.3 ✅**：离屏图层 = `filter` 全家 + `mix-blend-mode` + `mask` + 真 group opacity；**M9.4 ✅** 的 `transform: rotate/skew/matrix` 也挂在这个包上（它要靠离屏合成 + 重采样） | ✅ | **默认关** | BASE（+ `QL_FEAT_UI_IMAGE` 才有 `mask`） | **实测 Flash 15,344 B / RAM 676 B**（M9.3）+ **3,488 B**（M9.4，见 §18.11 末） |
 | `CSS_FONT_STACK` | `QL_FEAT_CSS_FONT_STACK` | **B8**：`@font-face` + 自由 `font-family` + 真字重/斜体 —— 依赖 FreeType | ✅ | **恒关** | BASE + `QL_FEAT_FONT_FREETYPE` | 依赖库体积见 §2.1（FreeType 813 KB） |
@@ -1759,7 +1890,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 ---
 
-## 22. 批次计划（B1–B6 + M9.3/M9.4 已完成，B7–B8 是 PC/Mobile 档的主线）
+## 22. 批次计划（B1–B8 + M9.3/M9.4 已完成）
 
 排序依据：**先补"真实页面没它写不出来"的，再补"锦上添花"的**；同一批内先做不动
 `QLUIStyle` 的（只动解析期），后做动结构体的（要抬 blob 版本 + 重生成 golden）。
@@ -1777,7 +1908,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 
 | **B6 布局广度** ✅ **已完成（2026-11-10）** | **Grid**（`display: grid` 全家、`fr`/`minmax()`/`repeat()`/具名区域/自动放置/跨格/对齐）、**`border-image`** 九宫格 | `CSS_GRID` + `CSS_BORDER_IMAGE` | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | **是** → blob v28（`QLUIStyle` 272 → 312） | `test_grid`（74 项，含跨列/跨行/区域/负线号/9 条报错）+ 例程 29/30 |
 | **B7 数据排版 ✅ 2026-11-11** | **表格**（`table` 全家 + `<table>` 系列标签 + `table-layout: auto/fixed` + `colspan/rowspan` + `border-collapse` + `<colgroup>/<col>`）✅、**多栏**（`column-count/width/rule`，贪心分栏 + 等高平衡）✅ | `CSS_TABLE` ✅ + `CSS_COLUMNS` ✅ | 后台管理界面、长文正文 | 表格：实测 5,332 B；多栏：实测 640 B（不做真分栏，所以没有"排两遍"） | 是 → blob v31/v32（`QLUIStyle` 344 → 364、`QLUINode` 28 → 30） | `test_table`（78 项）+ `test_columns`（34 项）+ 例程 33/34 ✅ |
-| **B8 文本栈**（PC/Mobile 必做，MCU 恒裁） | `@font-face`、自由 `font-family`、真字重/斜体、连字与字距、`direction`/`unicode-bidi` | `CSS_FONT_STACK` / `CSS_TEXT_SHAPE` / `CSS_BIDI` | **多语言真实页面**（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 `test_font_ft` / 新 `test_shape` |
+| **B8 文本栈 ✅ 2026-11-11** | `@font-face`、自由 `font-family` + 逐字回退、真字重/斜体、连字与字距、`direction`/`unicode-bidi` + RTL 排布 | `CSS_FONT_STACK` ✅ / `CSS_TEXT_SHAPE` ✅ / `CSS_BIDI` ✅ | **多语言真实页面**（中文、阿拉伯语、印度语系） | 中：HarfBuzz / fribidi 走**运行期 dlopen**，不是链接依赖；MCU 上三个开关 +0 B | 是 → blob v33（`QLUIStyle` 364 → 368） | `test_font_stack`（38 项）+ `test_text_shape`（27 项）+ 例程 35 ✅ |
 
 **另外几项单独立项**（成本与一批相当，但语义是"新子系统"）：
 
@@ -1789,7 +1920,8 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **`clip-path` 的任意形状**（`polygon()` / `path()` / `inset()`） | PC/Mobile | 要通用裁剪扫线（现在只有 `circle()` 的 SDF） | 中 |
 | **3D 变换**（`perspective()` / `rotate3d()`） | ❌ 不排期 | 要透视除法 + 深度排序 + 一个真正的合成器 | 极高，且与"一个节点一个盒"冲突 |
 
-**建议顺序**：B1–B6 + M9.3/M9.4 已完成 → **B7 表格 ✅ → B7 多栏（`columns` + 列高平衡）→ B8（文本栈）**。
+**建议顺序**：B1–B8 + M9.3/M9.4 **全部完成**。剩下的都是"单独立项"那一栏里的
+小件（`clip-path` 任意形状、`filter` 颜色矩阵、`font-variant` 的 small-caps/tabular-nums）。
 每一批都要同时给出"MCU 档裁掉后的数字"（§21.2 的"足迹"列），这是本库的老规矩。
 
 ---

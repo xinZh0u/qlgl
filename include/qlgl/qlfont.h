@@ -52,14 +52,52 @@ typedef struct QLFont {
     void           *impl;         /* 后端私有数据（FreeType 句柄/缓存） */
     uint16_t        glyph_capacity;
     uint16_t        pixel_size;   /* 该字体标称的字号（动态字体用） */
+
+    /* ----- B8 文本栈 ----- */
+    /*
+     * 逐字形回退链：本字体缺某个字（`ensure_glyph` 返回 NULL）时依次问
+     * `fallback_font`。字体栈就是靠它实现的 —— 查找接口不用改，
+     * 测量/绘制/折行三条循环全都自动受益。
+     * 由 ql_font_* 的家族解析负责接好，调用方不要自己改。
+     */
+    const struct QLFont *fallback_font;
+    /*
+     * 这个字面**本身就是**粗体/斜体（来自 @font-face 或字体文件自带的字面）。
+     * 绘制时 `ts->bold && !font->is_bold` 才做合成加粗，否则真字面会被"再抹粗一遍"。
+     */
+    uint8_t         is_bold;
+    uint8_t         is_italic;
+    /*
+     * 解析来源：家族下标（0 = 默认/未注册）。DPR 缩放时按同一个家族重新取字体，
+     * 否则放大后字族会悄悄变成默认字体。
+     */
+    uint16_t        family_id;
+    /*
+     * 这个字体属于哪个 `font-family` 列表（qlui 的列表下标，0 = 默认）。
+     * DPR 缩放要按同一个列表重取整条回退链 —— 只按 family_id 重取会丢掉链。
+     */
+    uint16_t        list_id;
+    /*
+     * 1 = 这是"链头包装体"：`backend` / `impl` 是借来的，销毁时只放自己的
+     * 字形缓存与结构体，**不放 impl**（那个归原字体）。
+     */
+    uint8_t         is_chain_wrapper;
 } QLFont;
 
 /* 动态字体后端：只负责"给我某个 codepoint 的字形"和"销毁" */
 struct QLFontBackend {
     /* 取字形，必要时光栅化 + 插入（保持 glyphs 按 codepoint 有序）；失败返回 NULL */
     const QLGlyph *(*ensure_glyph)(QLFont *font, uint32_t codepoint);
+    /*
+     * 按字形下标取（整形后端给的是下标，不是码位）。没有整形后端时为 NULL，
+     * 此时 `ql_font_find_glyph_id` 返回 NULL，整形自动退回逐码位路径。
+     */
+    const QLGlyph *(*ensure_glyph_id)(QLFont *font, uint32_t glyph_id);
     void (*destroy)(QLFont *font);
 };
+
+/* 字形下标在缓存里用的"合成码位"基址（真实码位 <= 0x10FFFF，不会撞车） */
+#define QL_GLYPH_ID_BASE  0x20000000u
 
 /* 内置字体（由 tools/qlfontgen 生成） */
 extern const QLFont ql_font_mono_12;
@@ -67,6 +105,25 @@ extern const QLFont ql_font_mono_16;
 
 /* 查找字形；找不到时返回 fallback 字形，再找不到返回 NULL */
 const QLGlyph *ql_font_find_glyph(const QLFont *font, uint32_t codepoint);
+
+/*
+ * 按**字形下标**（FreeType 的 glyph index）取字形 —— 整形（HarfBuzz）输出的就是下标。
+ * 没有整形后端时返回 NULL。内部用 `0x20000000 + gid` 这个"合成码位"复用同一套
+ * 有序缓存，所以不会和真实码位撞车（真实码位 <= 0x10FFFF）。
+ */
+const QLGlyph *ql_font_find_glyph_id(const QLFont *font, uint32_t glyph_id);
+
+/* 该字体（含回退链）有没有这个字？*out_font 返回真正提供的那个字体 */
+int ql_font_has_glyph(const QLFont *font, uint32_t codepoint, const QLFont **out_font);
+
+/*
+ * 按字号重新取"同一个家族 + 同一个字重/斜体"的字体（DPR 缩放、绘制层用）。
+ * 拿不到时返回原字体。
+ */
+const QLFont *ql_font_scale(const QLFont *font, int pixel_size);
+
+/* 内部接线：上层（qlui）挂上"按家族列表重取字体"的钩子，ql_font_scale 用它 */
+void ql_font_set_scale_hook(const QLFont *(*hook)(const QLFont *font, int pixel_size));
 
 /* 单个字形的位图行字节数 */
 uint32_t ql_font_glyph_stride(const QLFont *font, const QLGlyph *glyph);

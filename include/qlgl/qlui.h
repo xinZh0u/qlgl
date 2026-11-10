@@ -753,6 +753,20 @@ typedef struct {
     uint8_t     column_reserved;
     uint32_t    column_rule_color;
     QLUILength  column_width;
+
+    /* ----- 文本栈与双向文本（B8，blob v33） -----
+     *
+     * `direction`：0 = ltr（默认），1 = rtl。它决定段落基准方向，
+     *   也决定 `text-align: start/end` 落在哪一边。
+     * `unicode_bidi`：0 = normal，1 = embed（当前与 normal 等价），
+     *   2 = bidi-override（整段按 `direction` 强制排）。
+     * `ligatures` / `kerning`：0 = 关（`font-variant-ligatures: none` /
+     *   `font-feature-settings: "liga" 0`），默认 1 = 开。
+     */
+    uint8_t     direction;
+    uint8_t     unicode_bidi;
+    uint8_t     ligatures;
+    uint8_t     kerning;
 } QLUIStyle;
 
 /* ============================== transform 矩阵（M9.4） ============================== */
@@ -1204,6 +1218,24 @@ typedef struct {
     uint8_t  ncoord;     /* coords 个数（RECT=4 / CIRCLE=3 / POLY=偶数 / DEFAULT=0） */
 } QLUIArea;              /* 10 字节 */
 
+/*
+ * 一张字面（`@font-face` 一条，B8）。运行期按 (family, weight, italic) 注册到
+ * 字体注册表，再按字号取字体 —— 所以这里存的只是"声明"，不含任何字形数据。
+ */
+typedef struct {
+    uint16_t family;   /* 家族名（文本池下标） */
+    uint16_t src;      /* 资源名（文本池下标）：路径或 `ql_ui_register_font()` 登记的名字 */
+    uint16_t weight;   /* 100..900 */
+    uint8_t  italic;
+    uint8_t  reserved;
+} QLUIFontFace;        /* 8 字节 */
+
+/* 一个 `font-family` 列表：names[first .. first+count) 指向文本池下标 */
+typedef struct {
+    uint16_t first;
+    uint16_t count;
+} QLUIFontList;
+
 typedef struct {
     const char       *name;
     uint16_t          node_count;
@@ -1249,6 +1281,18 @@ typedef struct {
     uint16_t          grid_count;
     uint16_t          grid_track_count;
     uint16_t          grid_area_count;
+    /*
+     * 文本栈（B8）：font_faces 是 @font-face 声明；font_lists 是
+     * `font-family` 解析出来的家族列表（样式里的 font_family 是它的下标，
+     * 0 恒为"默认"空列表）。
+     */
+    uint16_t          font_face_count;
+    uint16_t          font_list_count;
+    uint16_t          font_name_count;
+    const QLUIFontFace *font_faces;
+    const QLUIFontList *font_lists;
+    const uint16_t     *font_names;   /* 文本池下标序列 */
+
     /* transform 矩阵池（M9.4）：样式的 `xform` 是它的下标 */
     uint16_t          xform_count;
     const QLUIGrid      *grids;
@@ -1819,6 +1863,10 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ grids      ] grid_count       * sizeof(QLUIGrid)        （v28）
  *   [ grid_tracks] grid_track_count * sizeof(QLUIGridTrack)   （v28）
  *   [ grid_areas ] grid_area_count  * sizeof(QLUIGridArea)    （v28）
+ *   [ xforms     ] xform_count      * sizeof(QLUIXform)       （v30）
+ *   [ font_faces ] font_face_count  * sizeof(QLUIFontFace)    （v33）
+ *   [ font_lists ] font_list_count  * sizeof(QLUIFontList)    （v33）
+ *   [ font_names ] font_name_count  * uint16                  （v33）
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -1838,12 +1886,12 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    32u
+#define QL_UI_BLOB_VERSION    33u
 
 typedef struct {
     uint32_t magic;
     uint16_t version;
-    uint16_t header_size;         /* 固定 124 */
+    uint16_t header_size;         /* 固定 172（v33） */
     uint16_t node_count;
     uint16_t style_count;
     uint16_t text_count;
@@ -1889,12 +1937,20 @@ typedef struct {
     uint32_t off_grids;           /* QLUIGrid[grid_count] */
     uint32_t off_grid_tracks;     /* QLUIGridTrack[grid_track_count] */
     uint32_t off_grid_areas;      /* QLUIGridArea[grid_area_count] */
+    /* 文本栈（B8，v33） */
+    uint16_t font_face_count;     /* @font-face 条数 */
+    uint16_t font_list_count;     /* font-family 列表条数（不含 0 号默认） */
+    uint16_t font_name_count;     /* font_names[] 的元素个数 */
+    uint16_t reserved_font;       /* 对齐填充 */
+    uint32_t off_font_faces;      /* QLUIFontFace[font_face_count] */
+    uint32_t off_font_lists;      /* QLUIFontList[font_list_count] */
+    uint32_t off_font_names;      /* uint16[font_name_count] */
     uint16_t xform_count;         /* transform 矩阵条数（v30） */
     uint16_t reserved_xform;      /* 对齐填充 */
     uint32_t off_xforms;          /* QLUIXform[xform_count] */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 152, "blob 头必须是 152 字节（v30）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 172, "blob 头必须是 172 字节（v33）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

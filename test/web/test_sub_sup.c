@@ -177,7 +177,7 @@ QL_TEST_BEGIN("test_sub_sup")
         }
     }
 
-    /* ---------- 4. font-family：两级，未知族名不报错 ---------- */
+    /* ---------- 4. font-family：B8 起是家族**列表**，未知族名不报错 ---------- */
     {
         QLUIRoot *ui = NULL;
         QLUIDoc *doc = mk("<div id=r><code>x</code><pre>y</pre></div>", "", &ui);
@@ -186,28 +186,44 @@ QL_TEST_BEGIN("test_sub_sup")
             QLUINodeRT *c = find_tag(ui, "code", 0);
             QLUINodeRT *p = find_tag(ui, "pre", 0);
             QL_CHECK(c != NULL && p != NULL);
-            if (c != NULL)
-                QL_CHECK_EQ((int)c->style->font_family, (int)QL_UI_FAMILY_MONO);
-            if (p != NULL)
-                QL_CHECK_EQ((int)p->style->font_family, (int)QL_UI_FAMILY_MONO);
+            /* `<code>` / `<pre>` 的 UA 默认是 `font-family: monospace`：
+               列表里应该只有一个名字，而且就是 monospace */
+            if (c != NULL && doc != NULL) {
+                const QLUIFontList *fl = &doc->font_lists[c->style->font_family];
+                QL_CHECK_EQ((int)fl->count, 1);
+                const char *nm = doc->text_pool + doc->text_offsets[doc->font_names[fl->first]];
+                QL_CHECK(strcmp(nm, "monospace") == 0);
+            }
+            if (p != NULL && doc != NULL) {
+                const QLUIFontList *fl = &doc->font_lists[p->style->font_family];
+                QL_CHECK_EQ((int)fl->count, 1);
+            }
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
-        /* 未知族名落到正文，**不报错**（写 Arial 的页面不该编译不过） */
+        /* 未知族名原样保留在列表里（运行期找不到就落到下一个），**不报错** */
         ui = NULL;
         doc = mk("<div id=r>x</div>", "#r { font-family: Arial, sans-serif }", &ui);
         QL_CHECK(ui != NULL);
-        if (ui != NULL) {
-            QL_CHECK_EQ((int)ui->nodes[0].style->font_family, (int)QL_UI_FAMILY_DEFAULT);
+        if (ui != NULL && doc != NULL) {
+            const uint8_t li = ui->nodes[0].style->font_family;
+            const QLUIFontList *fl = &doc->font_lists[li];
+            QL_CHECK_EQ((int)fl->count, 2);
+            const char *n0 = doc->text_pool + doc->text_offsets[doc->font_names[fl->first]];
+            QL_CHECK(strcmp(n0, "Arial") == 0);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
-        /* `monospace` 出现在候选表里就取等宽 */
+        /* `monospace` 出现在候选表里 → 列表里第二个名字是 monospace */
         ui = NULL;
         doc = mk("<div id=r>x</div>", "#r { font-family: Menlo, monospace }", &ui);
         QL_CHECK(ui != NULL);
-        if (ui != NULL) {
-            QL_CHECK_EQ((int)ui->nodes[0].style->font_family, (int)QL_UI_FAMILY_MONO);
+        if (ui != NULL && doc != NULL) {
+            const QLUIFontList *fl = &doc->font_lists[ui->nodes[0].style->font_family];
+            QL_CHECK_EQ((int)fl->count, 2);
+            const char *n1 =
+                doc->text_pool + doc->text_offsets[doc->font_names[fl->first + 1]];
+            QL_CHECK(strcmp(n1, "monospace") == 0);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }

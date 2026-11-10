@@ -61,6 +61,7 @@ static const QLUIStyle ui_app_styles[] = {
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
       .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0,
+      .direction = 0, .unicode_bidi = 0, .ligatures = 1, .kerning = 1,
       .column_count = 0, .column_rule_w = 0, .column_rule_style = 3, .column_rule_color = 0x000000u,
       .column_width = { 0, QL_UI_UNIT_AUTO } },
     { .bg_color = 0x000000, .text_color = 0x000000,
@@ -111,6 +112,7 @@ static const QLUIStyle ui_app_styles[] = {
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
       .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0,
+      .direction = 0, .unicode_bidi = 0, .ligatures = 1, .kerning = 1,
       .column_count = 0, .column_rule_w = 0, .column_rule_style = 3, .column_rule_color = 0x000000u,
       .column_width = { 0, QL_UI_UNIT_AUTO } },
     { .bg_color = 0x000000, .text_color = 0x000000,
@@ -161,6 +163,7 @@ static const QLUIStyle ui_app_styles[] = {
       .mix_blend = 0, .mask_image = QL_UI_NO_MASK,
       .inset = { { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO }, { 0, QL_UI_UNIT_AUTO } },
       .table_layout = 0, .border_collapse = 0, .valign = 0, .table_spacing_x = 0, .table_spacing_y = 0,
+      .direction = 0, .unicode_bidi = 0, .ligatures = 1, .kerning = 1,
       .column_count = 0, .column_rule_w = 0, .column_rule_style = 3, .column_rule_color = 0x000000u,
       .column_width = { 0, QL_UI_UNIT_AUTO } },
 };

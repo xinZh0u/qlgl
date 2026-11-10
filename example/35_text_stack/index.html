@@ -1,0 +1,57 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">文本栈：@font-face / font-family 列表 / 真字重 / 连字 / 双向</div>
+    <div class="badge">B8 · HarfBuzz + fribidi（可 dlopen）</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. 两个家族：<code>font-family</code> 列表按顺序选第一个装得上的</div>
+    <div class="demo serif">The quick brown fox jumps over the lazy dog</div>
+    <div class="demo sans">The quick brown fox jumps over the lazy dog</div>
+    <div class="hint">上：<code>font-family: "Example Serif", serif</code>；
+      下：<code>"Example Sans", sans-serif</code>。运行期找不到的家族直接跳过，
+      列表最后的 <code>serif</code> / <code>sans-serif</code> 落到本库的默认字体。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. 真字重 / 真斜体：<code>@font-face</code> 声明了粗体与斜体字面</div>
+    <div class="demo sans">Regular 400</div>
+    <div class="demo sans bold">Bold 700（真字面，不是合成加粗）</div>
+    <div class="demo sans italic">Italic（真字面，不是合成倾斜）</div>
+    <div class="hint">合成与真字面的区别在细节上：真粗体的笔画对比与字宽是字体设计师调过的，
+      合成加粗会把每个字形整体"抹粗"一圈，字宽不变、字腔被吃掉。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. 连字与字距：<code>font-variant-ligatures</code> / <code>font-feature-settings</code></div>
+    <div class="demo sans">office fjord affluent — 连字开（默认）</div>
+    <div class="demo sans noliga">office fjord affluent — 连字关</div>
+    <div class="hint">开的时候 <code>ffi</code> / <code>fj</code> / <code>fl</code> 被合成一个字形，
+      整行也更紧凑；这也是"量出来的宽度"与"画出来的位置"必须走同一条整形路径的原因。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. 阿拉伯文：连写 + 双向（<code>direction: rtl</code>）</div>
+    <div class="demo arabic">مرحبا بالعالم 12345</div>
+    <div class="demo arabic left">مرحبا بالعالم 12345</div>
+    <div class="hint">第一行 <code>direction: rtl</code> + 右对齐：从右往左读，数字保持 LTR；
+      第二行是同一个字符串、段落方向仍是 <code>rtl</code> 但 <code>text-align: left</code>，
+      字形顺序不变，只是整行贴左边。</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. 混排回退：拉丁家族里没有中文，逐字落到 CJK 字体</div>
+    <div class="demo sans">Mixed 中英混排 mixed 排版 test 测试</div>
+    <div class="hint">回退是<b>逐字</b>的：同一行里拉丁字母用第一个家族、汉字用后面的 CJK 家族，
+      行高取主字体 —— 这就是 CSS 的字体栈语义，不需要手工拆 span。</div>
+  </div>
+
+  <div class="note">
+    B8 在 PC/Mobile 档默认开（<code>QL_FEAT_CSS_FONT_STACK</code> /
+    <code>QL_FEAT_CSS_TEXT_SHAPE</code> / <code>QL_FEAT_CSS_BIDI</code>），
+    MCU 档恒关 —— 一份全量 CJK TTF 就是整块固件的 160 倍。<br>
+    HarfBuzz 与 fribidi **不是链接依赖**：构建期有头文件就直连，没有就运行期
+    <code>dlopen</code>，两个都没有时退回内建整形与内建 UAX#9 子集（能读对顺序，
+    没有连字）。
+  </div>
+</div>

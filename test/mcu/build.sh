@@ -9,6 +9,9 @@
 #   QL_FEAT_CSS_FILTER_LAYER=0|1   离屏图层（MCU 默认关：它要按元素尺寸吃 RAM）
 #   QL_FEAT_CSS_TABLE=0|1          表格（MCU 默认关：B7 的数据表格不在小核上跑）
 #   QL_FEAT_CSS_COLUMNS=0|1        多栏（MCU 默认关：B7 后半，与表格同一个大核包）
+#   QL_FEAT_CSS_FONT_STACK=0|1     文本栈 @font-face / 家族列表（MCU 恒关：要整份 TTF）
+#   QL_FEAT_CSS_TEXT_SHAPE=0|1     整形 HarfBuzz（MCU 恒关：库比整块固件还大）
+#   QL_FEAT_CSS_BIDI=0|1           双向 fribidi（MCU 恒关）
 #   EXTRA_CFLAGS="..."             额外的 -D / 编译选项（量体积用）
 set -e
 
@@ -37,6 +40,8 @@ SRCS="$ROOT/test/mcu/bench.c $ROOT/test/mcu/startup.c $ROOT/test/mcu/syscalls.c 
       $ROOT/src/draw/qlgeom.c \
       $ROOT/src/draw/qldisp.c $ROOT/src/draw/qlimage.c $ROOT/src/draw/qlinflate.c \
       $ROOT/src/text/qlfont.c $ROOT/src/text/qlfont_ascii.c \
+      $ROOT/src/text/qltextshape.c $ROOT/src/text/qltextbidi.c \
+      $ROOT/src/core/qldl.c \
       $ROOT/src/ui/qlui.c"
 
 CFLAGS="-mcpu=$CPU -mthumb -O2 -g -std=c11 -ffreestanding -fno-common
@@ -46,6 +51,9 @@ CFLAGS="-mcpu=$CPU -mthumb -O2 -g -std=c11 -ffreestanding -fno-common
         -DQL_FEAT_CSS_FILTER_LAYER=${QL_FEAT_CSS_FILTER_LAYER:-0}
         -DQL_FEAT_CSS_TABLE=${QL_FEAT_CSS_TABLE:-0}
         -DQL_FEAT_CSS_COLUMNS=${QL_FEAT_CSS_COLUMNS:-0}
+        -DQL_FEAT_CSS_FONT_STACK=${QL_FEAT_CSS_FONT_STACK:-0}
+        -DQL_FEAT_CSS_TEXT_SHAPE=${QL_FEAT_CSS_TEXT_SHAPE:-0}
+        -DQL_FEAT_CSS_BIDI=${QL_FEAT_CSS_BIDI:-0}
         ${EXTRA_CFLAGS:-}"
 
 # shellcheck disable=SC2086

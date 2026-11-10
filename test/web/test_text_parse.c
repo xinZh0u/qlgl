@@ -172,6 +172,13 @@ QL_TEST_BEGIN("test_text_parse")
                     size_t k = 0;
                     while (k < need_a && ba[k] == bb[k])
                         k++;
+                    /* 头里的 checksum（36..39）本来就是"后面的差异的指纹"：
+                       先跳过它，报出来的才是真正第一处不同 */
+                    if (k >= 36 && k < 40) {
+                        k = 40;
+                        while (k < need_a && ba[k] == bb[k])
+                            k++;
+                    }
                     printf("  [FAIL] %s: blob 第 %zu 字节不同（期望 %02X，实得 %02X）\n",
                            tc->name, k, ba[k], bb[k]);
                     ql_test_failures++;

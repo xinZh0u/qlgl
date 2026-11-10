@@ -187,6 +187,7 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
 <a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
 <a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -391,10 +392,10 @@ ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 <td><code>qlcanvas.c</code></td>
 </tr>
 <tr>
-<td>T3</td>
-<td><strong>无真字体栈</strong>（<code>@font-face</code> / 真字重 / 连字 / 双向）</td>
-<td>中文以外的语言与真排版不可用</td>
-<td>→ <strong>M10</strong>（PC/Mobile 主线，MCU 恒裁）</td>
+<td>~~T3~~</td>
+<td>~~<strong>无真字体栈</strong>（<code>@font-face</code> / 真字重 / 连字 / 双向）~~</td>
+<td>✅ 已完成（M10/B8）</td>
+<td>—</td>
 </tr>
 <tr>
 <td>L4</td>
@@ -3346,42 +3347,49 @@ RAM 成本 = 一个元素盒子的 RGBA 缓冲（PC/Mobile 档可接受，MCU �
 ③ 关掉 <code>QL_FEAT_CSS_FILTER_LAYER</code> 时 <code>rotate/skew/matrix</code> <strong>构建期报错</strong>，
 不做"悄悄不转"的降级。</p>
 <hr />
-<h3 id="m10-pcmobile-mcu-2026-11-10">M10 · 文本栈（PC/Mobile 主线，MCU 恒裁）—— <strong>规划（2026-11-10 定档）</strong></h3>
+<h3 id="m10-b8-2026-11-11">M10 · B8 文本栈 —— <strong>已完成（2026-11-11）</strong></h3>
 <table>
 <thead>
 <tr>
 <th>任务</th>
-<th>依赖</th>
-<th>说明</th>
+<th>状态</th>
+<th>实现要点</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>@font-face</code> + 自由 <code>font-family</code> 列表</td>
-<td>FreeType（<code>.text</code> 实测 813 KB）</td>
-<td>字体表存 doc 里；运行期按需加载/子集化</td>
+<td>✅</td>
+<td>构建期只收声明（家族名/资源名进文本池），运行期注册表按 (字面, 字号) 缓存；<strong>逐字回退</strong>用 <code>QLFont.fallback_font</code> 链，链上每一节是"借 impl 的包装体"</td>
 </tr>
 <tr>
 <td>真字重 / 真斜体</td>
-<td>同上一行 + 多字面字体文件</td>
-<td>取代现在的"合成加粗/斜体"</td>
+<td>✅</td>
+<td>按"字重距离 + 斜体匹配"挑最接近的字面；挑到真字面时绘制层跳过合成（挑不到仍合成，必须留兜底）</td>
 </tr>
 <tr>
 <td>连字 / 字距 / <code>font-feature-settings</code></td>
-<td>HarfBuzz（<code>.text</code> 实测 1,178 KB）</td>
-<td>复杂文字（阿拉伯语、印度语系）与 <code>tabular-nums</code> 全靠它</td>
+<td>✅</td>
+<td>HarfBuzz 整形，<strong>运行期 <code>dlopen</code></strong>（只有运行库的机器也能用），拿不到就退回内建逐码位（与 B8 之前逐像素一致）</td>
 </tr>
 <tr>
-<td><code>direction</code> / <code>unicode-bidi</code></td>
-<td>SheenBidi（或 fribidi，106 KB，但单独不解连字）</td>
-<td>RTL 布局；与镜像（<code>transform: scaleX(-1)</code> 不够）</td>
+<td><code>direction</code> / <code>unicode-bidi</code> / RTL</td>
+<td>✅</td>
+<td>fribidi（<code>get_par_embedding_levels_ex</code> + <code>reorder_line</code>，<strong>不用 <code>log2vis</code></strong>：它会顺手做阿拉伯呈现形式替换，和 HarfBuzz 重复整形）或内建 UAX#9 子集</td>
 </tr>
 </tbody>
 </table>
-<p><strong>一条硬数字</strong>：HarfBuzz 一个库就是当前整个 MCU 固件（131.5 KB）的 <strong>8.9 倍</strong>，
-一份全量 CJK TTF 是 <strong>160 倍</strong>。所以这一整段在 MCU 档是<strong>恒裁</strong>的
-（只保留内建 ASCII 位图字体 + 可选子集 TTF），这不是"偷懒"，是数量级决定的。</p>
-<hr />
+<p><strong>落地数据</strong>：<code>QLUIStyle</code> 364 → <strong>368</strong>、blob <strong>v33</strong>（头 152 → 172）；
+新增 <code>test_font_stack</code>（38 项）+ <code>test_text_shape</code>（27 项，两条后端各跑一遍）；
+例程 <code>35_text_stack</code>；教程 <code>24_text_stack.md</code>；实现要点见《CSS3 覆盖与裁剪》§18.14。</p>
+<p><strong>MCU</strong>：三个开关默认全关，且<strong>关/开对体积没有影响</strong>（实现要 FreeType / dlopen，
+MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整形循环 + 内建 UAX#9 + 样式 +4 B）。
+<code>QL_FEAT_CSS_FONT_STACK=1</code> 且没有 FreeType 时<strong>编译期报错</strong>（不给"链接期找不到符号"）。</p>
+<p><strong>坑</strong>：① 先 bidi 重排再整形 = 阿拉伯字母全变孤立形，正确顺序是"按段整形、段内视觉顺序、
+段落 RTL 时倒段"；② 数字要单独按 LTR 整形，否则 <code>12345</code> 会渲染成 <code>54321</code>；
+③ 逐段输出必须自己推进 <code>out</code> 指针（第一版每段都从 0 写）；④ 链上的包装体只能放自己的
+字形缓存，<code>impl</code> 归注册表（否则 double free）；⑤ <code>dlsym</code> 到函数指针要走 <code>memcpy</code>
+（<code>QL_DLSYM</code> 宏），直接强转在 <code>-Wpedantic</code> 下报错。</p>
 <h3 id="m7-golden-ci-2026-11-08">M7 · 工程化与生态（持续）—— <strong>golden 套件 + CI 已完成（2026-11-08）</strong></h3>
 <table>
 <thead>
@@ -3693,7 +3701,7 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <p><strong>2026-11-10 重新定档后的下一步</strong>（PC/Mobile 主线）：
 ① <strong>M9.1 Grid + <code>border-image</code></strong>（B6，估 4–7 KB Flash，且实测能降 MCU 布局时间）→
 ② <strong>M9.3 离屏图层</strong>（一次解锁 <code>filter</code> / group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code>）→
-③ <strong>M9.4 旋转光栅 ✅</strong> → ④ <strong>M9.2 表格 ✅ / 多栏 ✅</strong> → ⑤ <strong>M10 文本栈（B8）</strong>。
+③ <strong>M9.4 旋转光栅 ✅</strong> → ④ <strong>M9.2 表格 ✅ / 多栏 ✅</strong> → ⑤ <strong>M10 文本栈（B8）✅</strong>。
 每一批都要同时给出"MCU 档裁掉后的数字"，这是本库的老规矩。</p>
 </blockquote>
 <ol>
