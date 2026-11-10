@@ -3041,6 +3041,13 @@ libfribidi.so      106 KB   = 0.8 倍（fribidi 本身还勉强，但单独它�
 <li>CPU 侧 <code>ql_layer_drop_shadow()</code> 里写反了合成顺序
    （<code>shadow + layer*(1-shadow_a)</code> 是"影子盖住元素"），现在固定为
    <code>layer + shadow*(1-layer_a)</code>。</li>
+<li><strong><code>glBlitFramebuffer</code> 也受 scissor 影响</strong>（它是片元流水线之外的少数例外之一）。
+   混合模式要把"图层背后那一块"先 <code>blit</code> 进一张纹理，那张纹理的目标矩形在 <code>(0,0)</code>；
+   脏区重绘时 scissor 却是"屏幕上那一小块"，两块不重叠 → 整次拷贝被<strong>静默丢弃</strong>，
+   没有 GL 错误。表现：<code>multiply</code>/<code>overlay</code>/<code>darken</code> 全黑、<code>screen</code>/<code>difference</code>
+   退化成原色（首帧背景纹理刚建 = 黑；之后的帧会读到<strong>上一次</strong>抓的背景）。
+   整屏重绘时 scissor 恰好覆盖 <code>(0,0)</code>，所以只测整屏的用例永远是绿的 ——
+   回归用例必须让"背后的颜色变了、而只重画这一小块"（<code>test_gl_dirty</code> 第 5 节）。</li>
 </ol>
 <h4 id="_2">一致性</h4>
 <p><code>test_gl_vs_cpu</code> 里新增六个图层用例（blur / drop-shadow / 颜色矩阵链 /

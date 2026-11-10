@@ -1090,6 +1090,13 @@ GL 有 RGBA 帧缓冲，只画一遍。合成走 `LAYER_FS`：
 5. CPU 侧 `ql_layer_drop_shadow()` 里写反了合成顺序
    （`shadow + layer*(1-shadow_a)` 是"影子盖住元素"），现在固定为
    `layer + shadow*(1-layer_a)`。
+6. **`glBlitFramebuffer` 也受 scissor 影响**（它是片元流水线之外的少数例外之一）。
+   混合模式要把"图层背后那一块"先 `blit` 进一张纹理，那张纹理的目标矩形在 `(0,0)`；
+   脏区重绘时 scissor 却是"屏幕上那一小块"，两块不重叠 → 整次拷贝被**静默丢弃**，
+   没有 GL 错误。表现：`multiply`/`overlay`/`darken` 全黑、`screen`/`difference`
+   退化成原色（首帧背景纹理刚建 = 黑；之后的帧会读到**上一次**抓的背景）。
+   整屏重绘时 scissor 恰好覆盖 `(0,0)`，所以只测整屏的用例永远是绿的 ——
+   回归用例必须让"背后的颜色变了、而只重画这一小块"（`test_gl_dirty` 第 5 节）。
 
 #### 一致性
 

@@ -1494,6 +1494,12 @@ index.html + index.css ──qltext cc──┤
 <code>layer_begin</code> + <code>render_node_inner</code> + <code>layer_end</code>。<strong>画子树必须走
 <code>render_node_inner</code> 而不是 <code>render_node</code></strong>，否则第二次进去又会开一层新图层，
 无限递归。</p>
+<h4 id="blit-scissor">一个只在脏区重绘时出现的坑：blit 也受 scissor 影响</h4>
+<p>混合模式要读"图层的背景"，做法是先把目标表面上那一块 <code>glBlitFramebuffer</code> 到
+一张纹理。<strong>blit 会被 scissor 裁</strong>，而背景纹理的目标矩形在 <code>(0,0)</code>、脏区重绘时
+scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默丢弃（没有 GL 错误）。
+所以这三处 blit（毛玻璃降采样、图层背景抓取、帧末整块上屏）都必须先
+<code>glDisable(GL_SCISSOR_TEST)</code>。见 <code>test_gl_dirty</code> 第 5 节。</p>
 <h4 id="_8">旋转/斜切：图层里再补一次重采样</h4>
 <p><code>transform: rotate/skew/matrix</code> 走同一条 <code>render_node_layered()</code>：图层里把子树
 <strong>按原样</strong>画完，<code>layer_end()</code> 合成时按样式里的矩阵下标取出 <code>QLUIXform</code>

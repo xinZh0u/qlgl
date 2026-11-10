@@ -2628,12 +2628,22 @@ static int gl_layer_end(QLDraw2D *self)
     GLuint backdrop = 0;
     if (fx.blend != QL_UI_BLEND_NORMAL && layer_bd_ensure(g, (int)L->dev.w, (int)L->dev.h)) {
         const QLRect d = L->dev;
+        /*
+         * **blit 也会受 scissor 影响**（片元流水线之外的少数例外之一）。
+         * 脏区重绘时 scissor 是"这一小块脏区"的设备坐标，而这张背景纹理的
+         * 目标矩形在 (0,0)，两块不重叠 → 整次拷贝被静默丢弃，混合模式读到的
+         * 背景是黑的（multiply/overlay/darken 全黑、screen/difference 退化成原色）。
+         * 离屏全屏重绘时 scissor 恰好覆盖 (0,0)，所以对拍用例一直是绿的。
+         * 另外两处 blit（毛玻璃降采样、帧末整块上屏）早就这么做了，只有这里漏了。
+         */
+        glDisable(GL_SCISSOR_TEST);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)g->cur_target);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g->layer_bd_fbo);
         /* GL 的 y 轴朝上：把目标表面的 y 翻过来 */
         glBlitFramebuffer((int)d.x, (int)(g->height - (d.y + d.h)),
                           (int)(d.x + d.w), (int)(g->height - d.y), 0, 0, (int)d.w,
                           (int)d.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glEnable(GL_SCISSOR_TEST);
         glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g->cur_target);
         backdrop = g->layer_bd_tex;
     }

@@ -957,6 +957,14 @@ layout_flex_children(容器):
 `render_node_inner` 而不是 `render_node`**，否则第二次进去又会开一层新图层，
 无限递归。
 
+#### 一个只在脏区重绘时出现的坑：blit 也受 scissor 影响
+
+混合模式要读"图层的背景"，做法是先把目标表面上那一块 `glBlitFramebuffer` 到
+一张纹理。**blit 会被 scissor 裁**，而背景纹理的目标矩形在 `(0,0)`、脏区重绘时
+scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默丢弃（没有 GL 错误）。
+所以这三处 blit（毛玻璃降采样、图层背景抓取、帧末整块上屏）都必须先
+`glDisable(GL_SCISSOR_TEST)`。见 `test_gl_dirty` 第 5 节。
+
 #### 旋转/斜切：图层里再补一次重采样
 
 `transform: rotate/skew/matrix` 走同一条 `render_node_layered()`：图层里把子树
