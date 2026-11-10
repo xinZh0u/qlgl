@@ -3918,25 +3918,24 @@ void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h
      * 只送一条时踩过坑：候选窗出现在窗口下方/屏幕外，等于输入法根本不知道
      * 光标在哪。
      */
-    {
-        char *bad = NULL;
-        XVaNestedList preedit = XVaCreateNestedList(0, XNSpotLocation, &spot, NULL);
-        if (preedit != NULL) {
-            bad = XSetICValues(g->xic, XNPreeditAttributes, preedit, NULL);
-            XFree(preedit);
-        }
-        if (bad != NULL) {
-            /* 这个输入风格没有 preedit attributes：释放并退回顶层那条 */
-            XFree(bad);
-        }
+    char *bad = NULL;
+    XVaNestedList preedit = XVaCreateNestedList(0, XNSpotLocation, &spot, NULL);
+    if (preedit != NULL) {
+        /*
+         * 返回值是 Xlib 内部的字符串（"哪一个属性设不进去"），
+         * **不能 XFree** —— 那不是我们分配的内存，free 它会直接踩坏堆
+         * （现象就是退出时 `free(): invalid pointer`）。
+         */
+        bad = XSetICValues(g->xic, XNPreeditAttributes, preedit, NULL);
+        XFree(preedit);
     }
-    {
-        char *bad = XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
-        if (bad != NULL)
-            XFree(bad);
-        if (g->trace_im)
-            fprintf(stderr, "[IM] spot root=(%d,%d)\n", spot.x, spot.y);
+    if (bad != NULL) {
+        /* 这个输入风格没有 preedit attributes：只靠下面那条顶层值 */
     }
+    bad = XSetICValues(g->xic, XNSpotLocation, &spot, NULL);
+    if (g->trace_im)
+        fprintf(stderr, "[IM] spot root=(%d,%d)%s\n", spot.x, spot.y,
+                (bad != NULL) ? "（顶层 XNSpotLocation 未接受）" : "");
 }
 
 int ql_gfx_gl_resize_pending(QLGfxGL *g)
