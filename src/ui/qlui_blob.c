@@ -77,6 +77,9 @@ typedef struct {
     size_t node_media;
     size_t media_styles;
     size_t calc_ops;
+    size_t grids;
+    size_t grid_tracks;
+    size_t grid_areas;
     size_t name;
     size_t total;
 } QLUIBlobLayout;
@@ -91,8 +94,9 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
                            uint16_t image_count, size_t image_data_size,
                            uint16_t area_count, uint16_t area_coord_count,
                            uint16_t media_count, uint32_t media_pool_count,
-                           uint16_t calc_op_count, size_t pool_size, size_t name_len,
-                           QLUIBlobLayout *out)
+                           uint16_t calc_op_count, uint16_t grid_count,
+                           uint16_t grid_track_count, uint16_t grid_area_count,
+                           size_t pool_size, size_t name_len, QLUIBlobLayout *out)
 {
     memset(out, 0, sizeof(*out));
     size_t off = sizeof(QLUIDocBlobHeader);
@@ -150,6 +154,19 @@ static void compute_layout(uint16_t node_count, uint16_t style_count,
     if (calc_op_count > 0)
         off = QL_UI_ALIGN8(off + (size_t)calc_op_count * sizeof(QLUICalcOp));
 
+    /* Grid（B6）：三段池，没有 grid 的文档长度为 0 */
+    out->grids = off;
+    if (grid_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)grid_count * sizeof(QLUIGrid));
+
+    out->grid_tracks = off;
+    if (grid_track_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)grid_track_count * sizeof(QLUIGridTrack));
+
+    out->grid_areas = off;
+    if (grid_area_count > 0)
+        off = QL_UI_ALIGN8(off + (size_t)grid_area_count * sizeof(QLUIGridArea));
+
     out->name = off;
     off = QL_UI_ALIGN8(off + name_len);
 
@@ -197,12 +214,21 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
 
     const uint16_t calc_op_count = (doc->calc_ops != NULL) ? doc->calc_op_count : 0;
 
+    if (doc->grid_count > 0 &&
+        (doc->grids == NULL || (doc->grid_track_count > 0 && doc->grid_tracks == NULL) ||
+         (doc->grid_area_count > 0 && doc->grid_areas == NULL)))
+        return 0;
+    const uint16_t grid_count = doc->grid_count;
+    const uint16_t grid_track_count = doc->grid_track_count;
+    const uint16_t grid_area_count = doc->grid_area_count;
+
     QLUIBlobLayout lay;
     compute_layout(doc->node_count, doc->style_count, doc->text_count,
                    doc->font_size_count, doc->anim_count, doc->keyframe_count,
                    doc->image_count, image_data_size, doc->area_count,
                    doc->area_coord_count, media_count, media_pool_count,
-                   calc_op_count, pool_size, name_len, &lay);
+                   calc_op_count, grid_count, grid_track_count, grid_area_count,
+                   pool_size, name_len, &lay);
 
     if (buf == NULL || cap < lay.total)
         return lay.total;
@@ -250,6 +276,12 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     head.media_pool_count = media_pool_count;
     head.calc_op_count = calc_op_count;
     head.off_calc_ops = (uint32_t)lay.calc_ops;
+    head.grid_count = grid_count;
+    head.grid_track_count = grid_track_count;
+    head.grid_area_count = grid_area_count;
+    head.off_grids = (uint32_t)lay.grids;
+    head.off_grid_tracks = (uint32_t)lay.grid_tracks;
+    head.off_grid_areas = (uint32_t)lay.grid_areas;
 
     if (doc->node_count > 0)
         memcpy(base + lay.nodes, doc->nodes,
@@ -295,6 +327,14 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     if (calc_op_count > 0)
         memcpy(base + lay.calc_ops, doc->calc_ops,
                (size_t)calc_op_count * sizeof(QLUICalcOp));
+    if (grid_count > 0)
+        memcpy(base + lay.grids, doc->grids, (size_t)grid_count * sizeof(QLUIGrid));
+    if (grid_track_count > 0)
+        memcpy(base + lay.grid_tracks, doc->grid_tracks,
+               (size_t)grid_track_count * sizeof(QLUIGridTrack));
+    if (grid_area_count > 0)
+        memcpy(base + lay.grid_areas, doc->grid_areas,
+               (size_t)grid_area_count * sizeof(QLUIGridArea));
     if (name_len > 0)
         memcpy(base + lay.name, doc->name, name_len);
 
@@ -475,13 +515,20 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         set_error_str("too many calc() instructions (see QL_CFG_UI_MAX_CALC_OPS)");
         return NULL;
     }
+    if (head.grid_count > QL_CFG_UI_MAX_STYLES ||
+        head.grid_track_count > QL_CFG_UI_GRID_MAX_TRACKS_TOTAL ||
+        head.grid_area_count > QL_CFG_UI_GRID_MAX_AREAS_TOTAL) {
+        set_error_str("grid pools too large");
+        return NULL;
+    }
 
     QLUIBlobLayout lay;
     compute_layout(head.node_count, head.style_count, head.text_count,
                    head.font_size_count, head.anim_count, head.keyframe_count,
                    head.image_count, head.image_data_size, head.area_count,
                    head.area_coord_count, head.media_count, head.media_pool_count,
-                   head.calc_op_count, pool_size, head.name_len, &lay);
+                   head.calc_op_count, head.grid_count, head.grid_track_count,
+                   head.grid_area_count, pool_size, head.name_len, &lay);
 
     if (lay.total != head.total_size ||
         head.off_nodes != lay.nodes || head.off_styles != lay.styles ||
@@ -493,7 +540,9 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         head.off_areas != lay.areas || head.off_area_coords != lay.area_coords ||
         head.off_media != lay.media || head.off_node_media != lay.node_media ||
         head.off_media_styles != lay.media_styles ||
-        head.off_calc_ops != lay.calc_ops || head.off_name != lay.name) {
+        head.off_calc_ops != lay.calc_ops ||
+        head.off_grids != lay.grids || head.off_grid_tracks != lay.grid_tracks ||
+        head.off_grid_areas != lay.grid_areas || head.off_name != lay.name) {
         set_error_str("section offsets inconsistent with counts");
         return NULL;
     }
@@ -553,6 +602,18 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         (head.media_count > 0) ? (const uint16_t *)(p + lay.node_media) : NULL;
     doc->media_styles =
         (head.media_count > 0) ? (const uint16_t *)(p + lay.media_styles) : NULL;
+    doc->grid_count = head.grid_count;
+    doc->grid_track_count = head.grid_track_count;
+    doc->grid_area_count = head.grid_area_count;
+    doc->grids = (head.grid_count > 0)
+                     ? (const QLUIGrid *)(const void *)(p + lay.grids)
+                     : NULL;
+    doc->grid_tracks = (head.grid_track_count > 0)
+                           ? (const QLUIGridTrack *)(const void *)(p + lay.grid_tracks)
+                           : NULL;
+    doc->grid_areas = (head.grid_area_count > 0)
+                          ? (const QLUIGridArea *)(const void *)(p + lay.grid_areas)
+                          : NULL;
     doc->calc_op_count = head.calc_op_count;
     doc->calc_ops =
         (head.calc_op_count > 0) ? (const QLUICalcOp *)(p + lay.calc_ops) : NULL;

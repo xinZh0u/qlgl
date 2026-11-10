@@ -1,0 +1,61 @@
+/*
+ * B6：`border-image`。九宫格切片，一张图当四种边框用。
+ *
+ * 关键点：
+ *   ① 写了 `border-image` 就不再画 `border-style`（CSS 语义）；
+ *   ② `border-image-slice` 是**源图**上的像素（或百分比），
+ *      `border-width` / `border-image-width` 才是画出来的宽度；
+ *   ③ 四边怎么填由 `border-image-repeat` 决定：stretch / repeat / round / space。
+ */
+#root {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  background-color: #0E1116;
+  color: #E6EDF3;
+  font-size: 12px;
+}
+
+.title {
+  height: 20px;
+  color: #7CE0FF;
+  font-size: 13px;
+}
+
+.box {
+  /* 内容盒 = 42 - 8×2（上下边框由 border-image 的切片宽度决定） = 26 */
+  height: 42px;
+  line-height: 26px;
+  margin-top: 10px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  /* 边框"占位"由 border-width 决定；颜色/线型会被 border-image 顶掉 */
+  border-width: 10px;
+  border-style: solid;
+  border-color: transparent;
+  border-image: url(frame) 8;
+}
+
+/* 四边平铺：原尺寸瓦片，边缘可能被裁 */
+.repeat { border-image-repeat: repeat; }
+
+/* 缩放成整数个瓦片（不会出现半块） */
+.round { border-image-repeat: round; }
+
+/* 圆角只裁盒子本身；border-image 画在盒子里，所以看起来是直角 */
+.radius {
+  border-radius: 18px;
+  border-image-repeat: round;
+}
+
+.note {
+  margin-top: 10px;
+  color: #8B98A5;
+  white-space: normal;
+  line-height: 16px;
+}
+
+code {
+  color: #F59E0B;
+}

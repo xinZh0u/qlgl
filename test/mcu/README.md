@@ -39,8 +39,10 @@ CPU=cortex-m4 BOARD=mps2-an386 FREQ_MHZ=200 ./test/mcu/build.sh
 
 | 配置 | `text` |
 |---|---|
-| 全量 | **131,520 B** |
-| 关掉图像管线（`QL_FEAT_UI_IMAGE=0` + `QL_FEAT_IMG_*=0`） | 123,404 B（**−8,116 B，−6.2%**） |
+| 全量 | **139,260 B** |
+| 关掉图像管线（`QL_FEAT_UI_IMAGE=0` + `QL_FEAT_IMG_*=0`） | 131,144 B（**−8,116 B，−6.2%**） |
+| 关掉 Grid（`QL_FEAT_CSS_GRID=0`） | 134,732 B（**−4,528 B，−3.3%**） |
+| 再关掉 border-image（`QL_FEAT_CSS_BORDER_IMAGE=0`） | 132,556 B（**−2,176 B，−1.6%**） |
 
 内建 ASCII 位图字体（12px + 16px 的位图与字形表）≈ 9 KB。
 参考量级：`libharfbuzz.so` 的 `text` 是 1,178 KB（8.9 倍），`libfreetype.so` 813 KB，
@@ -63,6 +65,14 @@ CPU=cortex-m4 BOARD=mps2-an386 FREQ_MHZ=200 ./test/mcu/build.sh
 
 `240x160 RGB565`，21 个节点 / 11 条样式（`bench.html`：flex 三列卡片 +
 圆角 + 边框 + 线性渐变 + 文本折行 + 裁剪容器）：
+
+| 动作 | 虚拟 ns | M4@200MHz |
+|---|---|---|
+| `ql_ui_layout()` | ≈ 84 000 | **0.42 ms** |
+| 一帧整屏光栅（含 clear） | ≈ 1 600 000 | **8.0 ms** |
+| 1×1 脏区重绘 | ≈ 6 600 | **0.033 ms** |
+
+> 绝对值会随 QEMU 版本漂（本机两次差过 ~30%）；**同一批连着跑的相对比较**才可靠。
 
 | 动作 | 虚拟 ns | M4@200MHz | 说明 |
 |---|---|---|---|

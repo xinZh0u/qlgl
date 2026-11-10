@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>CSS 效果检阅：十三个例程 · QLGL</title>
+<title>CSS 效果检阅：十五个例程 · QLGL</title>
 <style>
 :root {
   --bg: #ffffff;
@@ -179,9 +179,10 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：十三个例程</a>
+<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：十五个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -216,9 +217,9 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
 </aside>
 <main>
-<h1 id="css">CSS 效果检阅：十三个例程</h1>
+<h1 id="css">CSS 效果检阅：十五个例程</h1>
 <p><img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480"></p>
-<p>完整程序：<code>example/16_css_units/</code> … <code>example/28_bg_image/</code>（每个例程一个文件夹）</p>
+<p>完整程序：<code>example/16_css_units/</code> … <code>example/30_border_image/</code>（每个例程一个文件夹）</p>
 <p>前几章是按"补了什么"讲的（<a href="14_css3.html">CSS3 补全</a>、<a href="15_backdrop.html">毛玻璃</a>）。
 这一章反过来：<strong>按"能看出效果的最小样本"讲</strong> —— 每一个已支持的 CSS 效果都摆成
 一格，旁边写着它该是什么值。跑起来一眼就能看出哪一格不对。</p>
@@ -700,7 +701,30 @@ main img.shot { max-width: 100%; }
 
 <p>资源与 <code>&lt;img src&gt;</code> 共用一张表：<code>ql_ui_register_image("checker", ...)</code> 填一次像素，
 背景与 <code>&lt;img&gt;</code> 都能用。</p>
-<h2 id="14">14. 这几个例程查出了什么</h2>
+<h2 id="14-29_grid">14. <code>29_grid</code>：二维布局</h2>
+<p><img src="../img/29-grid.png" alt="具名区域、12 列栅格、跨格与自动放置、justify-self 三种取值" width="480"></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">page</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="k">grid</span><span class="p">;</span><span class="w"> </span><span class="k">grid-template-areas</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hd hd&quot;</span><span class="w"> </span><span class="s2">&quot;sb mn&quot;</span><span class="w"> </span><span class="s2">&quot;ft ft&quot;</span><span class="p">;</span>
+<span class="w">          </span><span class="k">grid-template-columns</span><span class="p">:</span><span class="w"> </span><span class="mi">96</span><span class="kt">px</span><span class="w"> </span><span class="mi">1</span><span class="n">fr</span><span class="p">;</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">hd</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">grid-area</span><span class="p">:</span><span class="w"> </span><span class="n">hd</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">cards</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="k">grid</span><span class="p">;</span><span class="w"> </span><span class="k">grid-template-columns</span><span class="p">:</span><span class="w"> </span><span class="nf">repeat</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="n">fr</span><span class="p">);</span><span class="w"> </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">c4</span><span class="w">     </span><span class="p">{</span><span class="w"> </span><span class="k">grid-column</span><span class="p">:</span><span class="w"> </span><span class="n">span</span><span class="w"> </span><span class="mi">4</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">full</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">grid-column</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">tall</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="k">grid-row</span><span class="p">:</span><span class="w"> </span><span class="n">span</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">mix</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">grid-template-columns</span><span class="p">:</span><span class="w"> </span><span class="nf">minmax</span><span class="p">(</span><span class="mi">60</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="kc">auto</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="n">fr</span><span class="w"> </span><span class="mi">25</span><span class="kt">%</span><span class="p">;</span>
+<span class="w">          </span><span class="k">justify-items</span><span class="p">:</span><span class="w"> </span><span class="kc">center</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>一行 CSS 就是一屏页面骨架；12 列栅格按份数拼；<code>span 2</code> 让瓦片跨行。</p>
+<h2 id="15-30_border_image">15. <code>30_border_image</code>：一张九宫格图当边框</h2>
+<p><img src="../img/30-border-image.png" alt="stretch / round / repeat 三种填充方式" width="480"></p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">box</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-width</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">border-style</span><span class="p">:</span><span class="w"> </span><span class="kc">solid</span><span class="p">;</span>
+<span class="w">       </span><span class="k">border-image</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">frame</span><span class="p">)</span><span class="w"> </span><span class="mi">8</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">repeat</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">border-image-repeat</span><span class="p">:</span><span class="w"> </span><span class="kc">repeat</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">round</span><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="k">border-image-repeat</span><span class="p">:</span><span class="w"> </span><span class="kc">round</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>四角不变形、四边沿一个方向铺开 —— 这是"像素风 / 描边卡片"最常见的做法。</p>
+<h2 id="16">16. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

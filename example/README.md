@@ -85,6 +85,8 @@ python3 tools/qltext/qltext.py cc \
 | `26_css_states` | B2 状态：禁用变灰、复选框勾选、占位文字样式（`:disabled` / `:checked` / `::placeholder`） |
 | `27_css_text2` | B3 文本：词间距、制表符宽度、装饰线的形态/粗细/颜色/偏移 |
 | `28_bg_image` | B4 背景图：cover/contain/具体尺寸、九宫位置、平铺与圆角裁切 |
+| `29_grid` | B6 Grid：具名区域搭页面骨架、12 列栅格、`span` 跨行跨列、自动放置与对齐 |
+| `30_border_image` | B6 `border-image`：九宫格切片，stretch / repeat / round 三种填充 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 

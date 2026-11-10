@@ -74,6 +74,40 @@
  * 0 = 整套裁掉（写 calc() 会在构建期明确报错）。只有用到 calc 的文档才占空间，
  * 但池上限是**每份文档**的静态上界，MCU 上可以按实际页面调小。
  */
+/* ----- Grid / border-image（B6 能力包） ----- */
+/*
+ * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_GRID=0`）。
+ *
+ * 注意：Grid **不省运行期时间**，它省的是 Flash —— 实测网格类页面用 Grid
+ * 反而比"嵌套 flex 拼"快 46%（省掉 wrapper 层）。所以 Flash 够的板子建议留着。
+ */
+#ifndef QL_FEAT_CSS_GRID
+#define QL_FEAT_CSS_GRID            1
+#endif
+#ifndef QL_FEAT_CSS_BORDER_IMAGE
+#define QL_FEAT_CSS_BORDER_IMAGE    1
+#endif
+
+/* ----- Grid 的容量上限 ----- */
+/* 单个容器最多几条显式轨道（列和行各自）。12 列栅格 + 12 行已远超常见页面 */
+#ifndef QL_CFG_UI_GRID_MAX_TRACKS
+#define QL_CFG_UI_GRID_MAX_TRACKS   24
+#endif
+/* 一份文档里所有 grid 模板的轨道总数 / 具名区域总数（超了构建期报错） */
+#ifndef QL_CFG_UI_GRID_MAX_TRACKS_TOTAL
+#define QL_CFG_UI_GRID_MAX_TRACKS_TOTAL  512
+#endif
+#ifndef QL_CFG_UI_GRID_MAX_AREAS_TOTAL
+#define QL_CFG_UI_GRID_MAX_AREAS_TOTAL   256
+#endif
+/* 一个容器自动放置后最多多少行 / 多少列（含隐式轨道）；超了按块流退化并告警 */
+#ifndef QL_CFG_UI_GRID_MAX_ROWS
+#define QL_CFG_UI_GRID_MAX_ROWS     64
+#endif
+#ifndef QL_CFG_UI_GRID_MAX_COLS
+#define QL_CFG_UI_GRID_MAX_COLS     32
+#endif
+
 #ifndef QL_CFG_UI_MAX_CALC_OPS
 #define QL_CFG_UI_MAX_CALC_OPS      256
 #endif

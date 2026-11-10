@@ -1,0 +1,17 @@
+<div id="root">
+  <div class="title">border-image：一张九宫格图当边框</div>
+
+  <!-- 三种填充方式：默认 stretch、round（缩放成整数个）、repeat（原尺寸平铺） -->
+  <div class="box stretch">stretch（默认）</div>
+  <div class="box round">round（缩放成整数个）</div>
+  <div class="box repeat">repeat（原尺寸平铺）</div>
+
+  <!-- 与 border-radius 一起用：边框图不会跟着圆角裁（CSS 的行为） -->
+  <div class="box radius">border-radius 不影响 border-image</div>
+
+  <div class="note">
+    图是程序里现算的 24×24 三色方块：四角红、四边绿、中间蓝。
+    <code>border-image-slice: 8</code> 把它切成 9 块 ——
+    四角原样、四边沿一个方向拉伸/平铺、中间双向铺开。
+  </div>
+</div>

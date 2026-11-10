@@ -47,7 +47,7 @@
 | `<input type="text\|password">` | ✅ 单行输入（见下） |
 | `<select>` `<option>` | ✅ 覆盖式下拉面板（见下） |
 | `<textarea>` | ✅ 多行输入（独立 arena，按视觉行定位光标） |
-| `<table>` `<tr>` `<td>` | ⏳ **B7 排期**（PC/Mobile）；现在报错，用嵌套 flex 代替 |
+| `<table>` `<tr>` `<td>` | ⏳ B7 排期；现在报错，用嵌套 flex 代替 |
 | `<style>` | ✅ **整段跳过**（不进树）。样式仍然只来自构建期的 `.css` 文件 |
 | `<script>` | ✅ 占位盒，**内容不变成文字**；没有脚本引擎 |
 | `<canvas>` `<video>` `<audio>` `<iframe>` `<svg>` `<math>` 等 13 个 | ✅ 占位盒（能排版、不渲染内容，EMBED 包） |
@@ -210,7 +210,7 @@ css:12: 不支持的属性 'filter'
 | 没有 | 替代 |
 |---|---|
 | `float` / `clear` | 用 flex；文字环绕没有实现 |
-| `display: grid` | 还没做（PC/Mobile 档排期 B6）；现在用嵌套 flex 代替 |
+| `display: grid` | ✅ 已支持（B6）；只用嵌套 flex 也仍然可以 |
 | `filter: blur()` / `brightness()` 等 | 只有 `backdrop-filter: blur()`（模糊**背后**的内容） |
 | `transform: rotate()` / `skew()` / `matrix()` / 3D | 只有 `translate()` / `scale()` / `scaleX()` / `scaleY()` |
 | `clip-path` 的 `inset()` / `polygon()` / `path()` | 只有 `circle(<百分比>)` |
@@ -242,7 +242,7 @@ css:12: 不支持的属性 'filter'
 |---|---|
 | `flex-direction` / `justify-content` / `align-items` / `align-content` / `flex-wrap` / `gap` / `flex-grow` / `flex-shrink` / `flex-basis` | ✅ |
 | `order` / `align-self` / `flex-flow` | ✅ |
-| `grid` | ⏳ **B6 排期**（PC/Mobile）；现在用嵌套 flex。实测 Grid 落地后网格页面布局**更快**（省 wrapper 层） |
+| `grid` | ✅ `display: grid` 全家（轨道 / `fr` / `minmax()` / `repeat()` / 具名区域 / 跨格 / 自动放置 / 对齐）；实测比嵌套 flex 拼网格**快 46%** |
 | 行内布局 | 简化版：`vertical-align` 只有 `baseline`/`sub`/`super`，行盒按最大行高算 |
 | `margin` 折叠 | ❌ 不折叠（相邻块的外边距直接相加） |
 | 文本换行 | 只在 `white-space: normal` 时；断行规则见[文本](02_text.html) |

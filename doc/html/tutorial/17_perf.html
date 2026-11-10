@@ -179,9 +179,10 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
 <a href='../tutorial/17_perf.html' class='active'>性能诊断与 MCU 基准</a>
 <a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -500,29 +501,34 @@ src/ 同一份源码 ──────────────┼──▶ arm-
 <tbody>
 <tr>
 <td><code>ql_ui_layout()</code></td>
-<td>≈ 63 500</td>
-<td><strong>0.32 ms</strong></td>
+<td>≈ 84 000</td>
+<td><strong>0.42 ms</strong></td>
 <td>整树重排（改尺寸 / 断点切换时才跑）</td>
 </tr>
 <tr>
 <td>一帧整屏光栅</td>
-<td>≈ 1 200 000</td>
-<td><strong>6.0 ms</strong></td>
-<td>含清屏，38 400 px → 约 31 周期/px</td>
+<td>≈ 1 600 000</td>
+<td><strong>8.0 ms</strong></td>
+<td>含清屏，38 400 px → 约 42 周期/px</td>
 </tr>
 <tr>
 <td>1×1 脏区重绘</td>
-<td>≈ 4 700</td>
-<td><strong>0.024 ms</strong></td>
+<td>≈ 6 600</td>
+<td><strong>0.033 ms</strong></td>
 <td>静止时每帧的真实成本</td>
 </tr>
 </tbody>
 </table>
 <p>两条结论：</p>
 <ol>
-<li>60fps 的 16.7ms 预算里，"光栅 6.0 + 布局 0.3" 只占 <strong>36%</strong>；</li>
-<li><strong>局部更新只要 0.02ms</strong> —— MCU 上真正该做的是脏区重绘，不是每帧全画。</li>
+<li>60fps 的 16.7ms 预算里，"光栅 8.0 + 布局 0.4" 占 <strong>50%</strong>；要更快就得降填充率
+   （少画或缩小脏区），而不是优化布局；</li>
+<li><strong>局部更新只要 0.03ms</strong> —— MCU 上真正该做的是脏区重绘，不是每帧全画。</li>
 </ol>
+<blockquote>
+<p>绝对值会随 QEMU 版本漂（本机两次差过 ~30%）。<strong>横向比较</strong>（同一批连着跑）才可靠 ——
+下面"Grid vs 嵌套 flex"就是这么测的。</p>
+</blockquote>
 <h3 id="_5">拿它当"设计决策的依据"</h3>
 <p>同一个基准只改输入场景，就能回答"某个 CSS 能力值不值得给 MCU 档留"。
 下面这组是本轮实测量的（同一份 CSS，只改卡片数量 / 嵌套层数）：</p>
@@ -631,7 +637,7 @@ src/ 同一份源码 ──────────────┼──▶ arm-
 <p>完整的工具参数与设计取舍见 <a href="../design/性能诊断.html">性能诊断</a>；
 MCU 侧的文件清单见 <code>test/mcu/README.md</code>。</p>
 <div class='pager'>
-<a href='../tutorial/16_css_gallery.html'><span class='dir'>上一页</span>CSS 效果检阅：十三个例程</a>
+<a href='../tutorial/16_css_gallery.html'><span class='dir'>上一页</span>CSS 效果检阅：十五个例程</a>
 <a class='next' href='../tutorial/18_css3_more.html'><span class='dir'>下一页</span>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 </div>
 </main>

@@ -52,8 +52,9 @@ static const RejectCase k_cases[] = {
       "#a { clip-path: inset(10%) }", "t:style[0]: clip-path 只支持 circle(<百分比>)（0%~100%），收到 'inset(10%)'" },
     { 0, "<div id='a'></div>",
       "#a { z-index: 99999 }", "t:style[0]: z-index 超出 int16 范围" },
+    /* B6 起 grid 是支持的；这里改成"grid 简写还没做" */
     { 0, "<div id='a'></div>",
-      "#a { display: grid }", "t:style[0]: 不支持的 display 'grid'" },
+      "#a { display: grid; grid: 1fr 1fr }", "不支持 `grid` 简写" },
     { 0, "<div id='a'></div>",
       "#a { transition: 200ms 300ms }", "transition: 暂不支持 delay（'300ms'）" },
     { 0, "<div id='a'></div>",

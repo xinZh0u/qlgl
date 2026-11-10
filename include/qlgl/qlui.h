@@ -202,6 +202,8 @@ typedef enum {
     QL_UI_DISPLAY_NONE,
     QL_UI_DISPLAY_FLEX,
     QL_UI_DISPLAY_INLINE_FLEX,
+    QL_UI_DISPLAY_GRID,          /* B6 */
+    QL_UI_DISPLAY_INLINE_GRID,   /* B6（布局上与 grid 同义） */
 } QLUIDisplay;
 
 typedef enum {
@@ -623,7 +625,104 @@ typedef struct {
     uint8_t     bg_repeat;      /* 0 repeat、1 no-repeat、2 repeat-x、3 repeat-y */
     QLUILength  bg_size[2];     /* 宽 / 高（auto = 保持比例） */
     QLUILength  bg_pos[2];      /* 百分比（千分比）或 px */
+
+    /* ----- Grid（B6，blob v28） ----- */
+    /*
+     * 两侧：容器用 `grid`（模板下标）+ `grid_flow`；子项用四个 line/span。
+     * 全部在**构建期**算成整数（`grid-area: 名字`、`span 2`、`-1` 都已展开），
+     * 运行期不做任何字符串比较。
+     */
+    uint16_t    grid;           /* doc->grids[] 下标；QL_UI_NO_GRID = 不是 grid 容器 */
+    int16_t     grid_col;       /* 起始列线（1-based）；0 = 自动 */
+    int16_t     grid_row;       /* 起始行线（1-based）；0 = 自动 */
+    uint8_t     grid_col_span;  /* >= 1 */
+    uint8_t     grid_row_span;
+    uint8_t     grid_flow;      /* QLUIGridFlow */
+    uint8_t     justify_items;  /* QLUIAlign */
+    uint8_t     justify_self;   /* QLUIAlign，或 QL_UI_ALIGN_SELF_AUTO */
+    uint8_t     grid_reserved;
+    /* 隐式轨道（`grid-auto-rows/columns`）：只支持单个长度值；0 = auto */
+    int16_t     grid_auto_row;
+    int16_t     grid_auto_col;
+
+    /* ----- `border-image`（B6，blob v28） ----- */
+    uint16_t    border_image;   /* 资源名在文本池里的下标；QL_UI_NO_BORDER_IMAGE = 无 */
+    uint8_t     bi_slice_pct;   /* slice 是否按图片尺寸的千分比解释 */
+    uint8_t     bi_width_pct;   /* width 是否按千分比解释 */
+    uint8_t     bi_repeat;      /* QLUIBorderImageRepeat */
+    uint8_t     bi_reserved;
+    int16_t     bi_slice[4];    /* 上 右 下 左 */
+    int16_t     bi_width[4];    /* 边框宽度（0 = 用 slice） */
 } QLUIStyle;
+
+/* ============================== Grid（B6） ============================== */
+
+#define QL_UI_NO_GRID        0xFFFFu
+/* 负数网格线（`-1` = 最后一条线）在构建期就已换算成正数，运行期不会见到负值 */
+
+typedef enum {
+    QL_UI_GT_FIXED = 0,     /* value = px（% 是 QL_UI_GT_PERCENT） */
+    QL_UI_GT_PERCENT,       /* value = 千分比（列相对内容宽，行相对内容高） */
+    QL_UI_GT_FR,            /* value = fr 分子 */
+    QL_UI_GT_AUTO,          /* max-content（`min-content` / `max-content` 也归到这里） */
+} QLUIGridTrackKind;
+
+/*
+ * 一条轨道 = 一个 [min, max] 区间：
+ *   `100px`      → min = max = FIXED(100)
+ *   `1fr`        → min = AUTO(0)  , max = FR(1)
+ *   `auto`       → min = max = AUTO
+ *   `minmax(a,b)`→ min = a        , max = b
+ * 定尺时先满足 min，再把剩余空间按 max 侧的 "拉伸能力" 分配（FR 权重 / AUTO 取内容）。
+ */
+typedef struct {
+    uint8_t min_kind;   /* QLUIGridTrackKind */
+    uint8_t max_kind;
+    int16_t min_val;
+    int16_t max_val;
+} QLUIGridTrack;   /* 6 字节 */
+
+/* `grid-template-areas` 里的一个具名区域（行列号都是 1-based） */
+typedef struct {
+    uint16_t name;      /* 文本池下标 */
+    int16_t  col;       /* 起始列线 */
+    int16_t  row;       /* 起始行线 */
+    uint8_t  col_span;
+    uint8_t  row_span;
+} QLUIGridArea;   /* 10 字节 */
+
+/* `grid-auto-flow`：前两位给方向，dense 位单独一个 */
+typedef enum {
+    QL_UI_GRID_FLOW_ROW = 0,
+    QL_UI_GRID_FLOW_COLUMN = 1,
+    QL_UI_GRID_FLOW_ROW_DENSE = 2,
+    QL_UI_GRID_FLOW_COLUMN_DENSE = 3,
+} QLUIGridFlow;
+
+/* 一个 grid 容器的模板（所有 grid 容器共用 doc 里的一段池） */
+typedef struct {
+    uint16_t col_first;    /* 显式列轨道在 doc->grid_tracks[] 里的起点 */
+    uint16_t col_count;
+    uint16_t row_first;
+    uint16_t row_count;
+    uint16_t area_first;   /* 具名区域在 doc->grid_areas[] 里的起点 */
+    uint16_t area_count;
+    uint16_t col_hint;     /* 只有 areas 没写 template-columns 时，由区域推出来的列数 */
+    uint16_t row_hint;
+} QLUIGrid;   /* 16 字节 */
+
+/*
+ * `background-image` 之外，`border-image` 也用同一套资源表。
+ * 九宫格切片：`slice` / `width` 各 4 个值（上右下左），单位由 `*_mode` 决定：
+ *   0 = px、1 = 千分比（相对图片自身尺寸）
+ */
+#define QL_UI_NO_BORDER_IMAGE  0xFFFFu
+typedef enum {
+    QL_UI_BI_STRETCH = 0,   /* 默认：整条边拉伸 */
+    QL_UI_BI_REPEAT,        /* 平铺，边缘瓦片可被裁 */
+    QL_UI_BI_ROUND,         /* 平铺，缩放瓦片使恰好整数个 */
+    QL_UI_BI_SPACE,         /* 平铺，间距均分（不缩放） */
+} QLUIBorderImageRepeat;
 
 /*
  * `border-style` / `outline-style`。
@@ -1019,6 +1118,17 @@ typedef struct {
      */
     uint16_t          calc_op_count;
     const QLUICalcOp *calc_ops;
+    /*
+     * Grid（B6）：每条 QLUIStyle 的 `grid` 是 grids[] 的下标；轨道与具名区域
+     * 各自一段池，由所有 grid 容器共享（同一份模板经样式去重后只存一份）。
+     * 没有 grid 的文档三段都是 0 长度。
+     */
+    uint16_t          grid_count;
+    uint16_t          grid_track_count;
+    uint16_t          grid_area_count;
+    const QLUIGrid      *grids;
+    const QLUIGridTrack *grid_tracks;
+    const QLUIGridArea  *grid_areas;
     const QLUINode   *nodes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
@@ -1287,6 +1397,24 @@ struct QLUIRoot {
     QLUINodeRT    *scroll_drag;
     ql_coord_t     scroll_drag_y0;
     ql_coord_t     scroll_drag_scroll0;
+
+    /*
+     * Grid 布局的临时区（只增不减；文档里没有 grid 容器时全是 NULL）。
+     * 放这里而不是放栈上：一个 grid 容器最多 32 列 × 64 行，压在栈上会
+     * 跟"递归布局"叠乘起来。
+     *
+     * **按栈的纪律切分**：`*_used` 是当前的 bump 指针。grid 可以嵌套，
+     * 而测量阶段会递归进入内层 grid —— 共用一个固定数组的话，内层会把
+     * 外层刚算好的列宽冲掉（实测表现：内层列宽正确、外层整体缩小一半）。
+     * 所以每次进 `layout_grid_children` 先记下 used、用完再还原。
+     */
+    void          *grid_place;      /* 每项的 (col,row,cspan,rspan) */
+    uint16_t       grid_place_cap;
+    uint16_t       grid_place_used;
+    ql_coord_t    *grid_size;       /* [列宽][列起点][行高][行起点] */
+    uint32_t       grid_size_cap;   /* 容量（ql_coord_t 个数） */
+    uint32_t       grid_size_used;
+    uint8_t       *grid_occ;        /* 占用位图（列主序，只有放置阶段用） */
 
     /* 输入框池：doc 里没有 <input> 时为 NULL（零字节） */
     struct QLUIInput *inputs;      /* 输入框池（没有 <input>/<textarea> 时为 NULL） */
@@ -1558,6 +1686,9 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  *   [ node_media ] node_count      * uint16                   （v21）
  *   [ media_styles] media_pool_count * uint16                 （v21）
  *   [ calc_ops   ] calc_op_count    * sizeof(QLUICalcOp)      （v22）
+ *   [ grids      ] grid_count       * sizeof(QLUIGrid)        （v28）
+ *   [ grid_tracks] grid_track_count * sizeof(QLUIGridTrack)   （v28）
+ *   [ grid_areas ] grid_area_count  * sizeof(QLUIGridArea)    （v28）
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -1566,6 +1697,10 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  */
 #define QL_UI_BLOB_MAGIC      0x49554C51u   /* 'Q','L','U','I'（小端） */
 /*
+ * 28: + Grid（B6）：`grid` / `grid_col` / `grid_row` / `grid_*_span` / `grid_flow` /
+ *     `justify_items` / `justify_self` / `grid_auto_*`，新增 grids / grid_tracks /
+ *     grid_areas 三段池；+ `border-image`（源/切片/宽度/填充方式）。
+ *     QLUIStyle 272 → **312**
  * 27: + word-spacing / tab-size / text-decoration-*（B3）、
  *     :disabled / :checked / ::placeholder（B2），QLUINode 20 → 28
  * 26: 四边独立 border-*（宽/样式/色）、四角 radius、box-shadow 两层 + inset、
@@ -1573,7 +1708,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    27u
+#define QL_UI_BLOB_VERSION    28u
 
 typedef struct {
     uint32_t magic;
@@ -1617,9 +1752,16 @@ typedef struct {
     uint16_t calc_op_count;       /* calc() 字节码条数（0 = 没用 calc） */
     uint16_t reserved_calc;       /* 对齐填充 */
     uint32_t off_calc_ops;        /* QLUICalcOp[calc_op_count] */
+    uint16_t grid_count;          /* Grid 模板条数（v28） */
+    uint16_t grid_track_count;    /* 轨道总数（所有模板共用一段） */
+    uint16_t grid_area_count;     /* 具名区域总数 */
+    uint16_t reserved_grid;       /* 对齐填充 */
+    uint32_t off_grids;           /* QLUIGrid[grid_count] */
+    uint32_t off_grid_tracks;     /* QLUIGridTrack[grid_track_count] */
+    uint32_t off_grid_areas;      /* QLUIGridArea[grid_area_count] */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 124, "blob 头必须是 124 字节（v22）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 144, "blob 头必须是 144 字节（v28）");
 _Static_assert(sizeof(QLUIKeyframe) == 36, "关键帧必须是 36 字节（blob 顺序存放）");
 
 /*

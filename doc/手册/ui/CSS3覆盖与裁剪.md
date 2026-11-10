@@ -51,6 +51,7 @@
 | `border-style` / `outline` | blob v25（见 §18.5） |
 | 四边 `border-*` / 四角 `border-*-radius` / 两层 + inset 阴影 / `text-shadow` / `image-rendering` / `scrollbar-*` / `object-position` | blob v26（见 §18.6） |
 | `word-spacing` / `tab-size` / `text-decoration-*` / `:disabled` / `:enabled` / `:checked` / `::placeholder` / `background-image: url()` | blob v27（见 §18.7） |
+| **Grid**（`display: grid` 全家 + 具名区域 + `fr`/`minmax()`/`repeat()`/自动放置/跨格/对齐）、**`border-image`** 九宫格 | blob v28（见 §18.9） |
 | `calc()` / `min()` / `max()` / `clamp()` | 编译成**后缀字节码**存进文档，布局期求值（见 §18.3）；标量乘除在构建期折掉 |
 
 **还没做**，分两类看（下表仍标 ⏳ / ❌ 的就是全部）：
@@ -120,15 +121,18 @@
 
 | 项目 | 平台 / 配置 | 数值 |
 |---|---|---|
-| 全量固件 `text` | Cortex-M4 Thumb-2，`-O2`，240×160 RGB565（`test/mcu`） | **131,520 B** |
-| 同上，关掉图像管线（`QL_FEAT_IMG_*=0`） | 同上 | 123,404 B（**−8,116 B，−6.2%**） |
+| 全量固件 `text` | Cortex-M4 Thumb-2，`-O2`，240×160 RGB565（`test/mcu`） | **139,260 B**（含 B6） |
+| 同上，关掉图像管线（`QL_FEAT_IMG_*=0`） | 同上 | 131,144 B（**−8,116 B，−6.2%**） |
+| 同上，关掉 Grid（`QL_FEAT_CSS_GRID=0`） | 同上 | 134,732 B（**−4,528 B，−3.3%**） |
+| 同上，再关 border-image（`QL_FEAT_CSS_BORDER_IMAGE=0`） | 同上 | 132,556 B（**−2,176 B，−1.6%**） |
 | 内建 ASCII 位图字体（12px + 16px，全字节表） | 同上 | ≈9 KB |
-| 布局：12 节点 | QEMU `mps2-an386` `-icount` @200 MHz 折算 | 0.23 ms |
+| 布局：21 节点（`test/mcu` 的 bench 页） | QEMU `mps2-an386` `-icount` @200 MHz 折算 | **0.42 ms** |
+| 布局：12 节点 | 同上（同一批，相对比较有效） | 0.23 ms |
 | 布局：39 节点 | 同上 | 0.82 ms |
 | 布局：75 节点 | 同上 | 1.94 ms |
 | **布局边际成本** | 同上（三点拟合） | **≈4.4k 指令/节点 ≈ 22 µs/节点** |
 | **多一层 wrapper 容器**（15 节点嵌套 vs 12 节点扁平，视觉相同） | 同上 | **+0.20 ms（+86%）**，一层 ≈ 3 个叶子节点 |
-| 光栅一帧 240×160 RGB565 | 同上 | 6.1–7.8 ms（≈40 周期/像素） |
+| 光栅一帧 240×160 RGB565（21 节点页） | 同上 | **7.99 ms**（≈42 周期/像素） |
 | 重排 | x86-64 `-O3`（`bench --scene scroll`，302/902/1802 节点拟合） | **0.53 µs/节点** |
 | 整帧 `cards` 800×480 / 362 节点 | 同上，CPU 后端 | 0.72–0.77 ms |
 | `libharfbuzz.so` `text` | x86-64 系统库 | **1,178 KB** |
@@ -139,6 +143,9 @@
 > **口径**：MCU 那一列按 `test/mcu/README.md` 的换算——QEMU `-icount` 下"虚拟 ns ≈ 指令数"，
 > 换到 M4@200 MHz 乘 5。这是**乐观下界**（M4 无 cache，实际 IPC 常 0.6~0.8），
 > 真实板子上乘 1.5~2 更接近。库体积（`text`）是 ELF 实测，不含栈与堆。
+>
+> **横比优先于绝对值**：绝对值会随 QEMU 版本 / 编译选项漂（本机两次测量差过 ~30%），
+> 但"同一批、同一台机器、连着跑"的相对比较是可用的 —— 下文所有"快 xx%"都是这么来的。
 
 三条能直接推出结论的读数：
 
@@ -339,7 +346,8 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `border-{corner}-radius` | ✅ | R | 四角长写，可单独覆盖 |
 | `border-radius` 斜杠椭圆角 | ⏳ | R | `10px / 20px` 报错：椭圆角要改两套 SDF，收益低 |
 | 四边不同色 + 圆角 | ⚠️ | R | 四条边各自裁一次整圈描边；**角部归上/下边**（浏览器沿 45° 斜线切分） |
-| `border-image` | ⏳ | S | **B6**：九宫格切片 + 缩放，复用现有 `ql_canvas_blit_image`（§18.8） |
+| `border-image` + `-source` / `-slice` / `-width` / `-repeat`（`stretch`/`repeat`/`round`/`space`） | ✅ | R | **已完成（B6）**：九宫格切片，复用 `blit_image(dst, src)`（§18.9） |
+| `border-image-outset` | ❌ | N | 报错：边框图不向盒子外扩 |
 | `box-shadow`（单条） | ✅ | R | CPU SDF + GPU `mode=2` 各一份实现 |
 | `box-shadow`（多重 / `inset`） | ✅ | R | 最多**两层**（多写的报错，不静默丢弃）；`inset` 用反向 SDF（GPU `mode=7`）。`spread`（展开半径）报错 |
 | `text-shadow` | ✅ | R | 一层（多层的语义是叠色）；`blur` 用 5 次采样近似（0~16px） |
@@ -437,9 +445,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 
 ---
 
-## 11. Grid（B6：PC/Mobile 必做，MCU 归"大核"包）
+## 11. Grid（B6 ✅ 已完成，MCU 归"大核"包）
 
-**这一块从"不做"改成"要做"了**，理由是实测出来的：
+**这一块从"不做"改成"要做"、并且已经做完了**，理由是实测出来的：
 
 | 同一视觉：3×3 卡片格（240×160） | 节点数 | 布局耗时 @200 MHz |
 |---|---|---|
@@ -451,14 +459,18 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 （实测一层 wrapper ≈ 3 个叶子节点的代价）。它唯一的成本是 Flash 里的求解器代码，
 和 `layout_node`（6.1 KB）同量级 —— 在一个 MB 级预算的 PC 档里可以忽略。
 
-| 属性 | 批次 | 档位 | 备注 |
+| 属性 | 状态 | 档位 | 备注 |
 |---|---|---|---|
-| `display: grid` / `inline-grid` | B6 | 大核 | 单层轨道求解；不做 `subgrid` |
-| `grid-template-columns` / `-rows` / `-areas` | B6 | 大核 | `repeat()` / `minmax()` / `auto` / `fr` / 具名线 |
-| `grid-auto-columns` / `-rows` / `-flow` | B6 | 大核 | `row` / `column` / `dense` |
-| `grid-row` / `grid-column` / `grid-area`（含 `span`） | B6 | 大核 | 跨格 |
-| `justify-items` / `justify-self` / `place-*` | B6 | 大核 | 与现有的 `align-*` 对称 |
-| `gap` / `row-gap` / `column-gap` | ✅ 已有 | 双档 | flex 里已经生效，Grid 复用同一组字段 |
+| `display: grid` / `inline-grid` | ✅ | 大核 | 单层轨道求解（不支持 `subgrid`） |
+| `grid-template-columns` / `-rows` | ✅ | 大核 | `<长度>` / `%` / `fr` / `auto` / `min-content` / `max-content` / `minmax()` / `repeat(<n>, …)` |
+| `grid-template-areas` | ✅ | 大核 | 具名区域；**必须是矩形**（非矩形构建期报错） |
+| `grid-auto-columns` / `-rows` | ✅ | 大核 | 单个长度值（`auto` = 内容） |
+| `grid-auto-flow` | ⚠️ | 大核 | `row` / `row dense` 支持；**`column` 报错**（列流要转置整张网格，见 §19.1） |
+| `grid-row` / `grid-column` / `grid-area`（含 `span`） | ✅ | 大核 | 线号 / `span n` / `auto` / 区域名 / `区域名-start|end` / 负线号 |
+| `justify-items` / `justify-self` / `place-items` / `place-self` | ✅ | 大核 | 与现有的 `align-*` 对称；`place-*` 只取第一个词 |
+| `gap` / `row-gap` / `column-gap` | ✅ | 双档 | flex 与 grid 共用同一组字段 |
+| 具名网格线 `[name]` | ❌ | — | `S`：报错并提示改用 `grid-template-areas` |
+| `grid` / `grid-template` 简写 | ❌ | — | `N`：报错，分开写长写即可 |
 | `subgrid` / `masonry` | ❌ | — | `S`：要"子网格反向依赖父轨道"，收益远小于成本 |
 
 **为什么现在不做、但进批次**：它是一个**独立求解器**（轨道定尺 → 放置 → 对齐三段），
@@ -911,6 +923,89 @@ libfribidi.so      106 KB   = 0.8 倍（fribidi 本身还勉强，但单独它�
 
 ---
 
+### 18.9 B6 落地：Grid 与 border-image 是怎么做的
+
+#### ① 数据放哪：模板进池，摆放进样式
+
+`QLUIStyle` 只长了 40 字节（272 → **312**），因为**轨道列表不进样式**：
+
+```c
+/* QLUIStyle：容器 3 个字段、子项 4 个字段 */
+uint16_t grid;          /* doc->grids[] 下标；QL_UI_NO_GRID = 不是 grid 容器 */
+int16_t  grid_col, grid_row;        /* 起始线（1-based）；0 = 自动 */
+uint8_t  grid_col_span, grid_row_span;
+uint8_t  grid_flow, justify_items, justify_self;
+int16_t  grid_auto_row, grid_auto_col;
+
+/* doc 里三段池（所有容器共享；同一模板经样式去重后只存一份） */
+QLUIGrid      grids[];       /* col/row 轨道的起止下标 + 具名区域起止 */
+QLUIGridTrack grid_tracks[]; /* { min_kind, max_kind, min_val, max_val } */
+QLUIGridArea  grid_areas[];  /* { 名字, 列, 行, 列跨, 行跨 } */
+```
+
+一条轨道是 `[min, max]` 区间：`100px` → 两边都定长；`1fr` → `min=auto, max=fr`；
+`minmax(60px, auto)` → `min=60px, max=auto`。定尺时先满足 min，再把剩余按 max 侧的
+"拉伸能力"分配（`fr` 权重 / `auto` 取内容）。
+
+#### ② 摆放与模板搜索为什么在构建期
+
+`grid-area: main` 要查**父容器**的具名区域，`grid-column: 1 / -2` 要查父容器有几列 ——
+这些在样式编译时都还不知道（编译是逐节点、按声明集去重的）。所以分两趟：
+
+1. `compile_style()` 只把 Grid 属性的**原文**挂到"按样式下标"的侧表上；
+2. 整棵树都有了样式之后，`grid_resolve_all()` 统一解析：模板 → 池；
+   每个子项的线号/跨度 → 4 个整数写进样式。
+
+去重带来一个坑：同一个 `.cell` 可能被两个不同模板的容器使用，摆放值就不一样。
+这里用**写时复制**——样式第一次被占用时直接写，第二次要不同的值就复制一份样式
+（`sig = NULL`，不再参与去重）。运行期因此永远只读整数，没有任何字符串比较。
+
+#### ③ 布局：三段，全是整数
+
+```
+① 放置   ：显式位置 → 只给列 → 只给行 → 全自动（游标扫描，dense 时回原点）
+② 列定尺 ：min → 定长上限 → auto 取内容 max-content → fr 分剩余（累计推进）
+③ 行定尺 ：先按"列宽已定"把每项真排一遍拿高度 → auto 行取最大值 →
+           span>1 按差额均摊 → fr 行分剩余（容器高度确定时）
+④ 定位   ：按 justify-self / align-self 在格子里摆，默认双向 stretch
+```
+
+`fr` 的份额用**累计分子**（`num += 总额×权重; 份额 = num/权重和; num %= 权重和`），
+与 flex 的 grow 同一套 —— 三列 `1fr 1fr 1fr` 在 100px 里是 33+34+33，右边界严丝合缝。
+
+#### ④ 嵌套 grid 的临时区：按栈的纪律切
+
+轨道数组、列/行起点、每项的放置结果都是临时数据。**不能**用一份全局数组：
+测量阶段会递归进入内层 grid，把外层刚算好的列宽冲掉（实测：内层列宽对、外层整体
+缩小一半）。所以 `QLUIRoot` 里放一个只增不减的缓冲 + bump 指针：
+
+```c
+const uint16_t saved_place = ui->grid_place_used;
+const uint32_t saved_coord = ui->grid_size_used;
+... 用 ...
+ui->grid_place_used = saved_place;   /* 函数出口（含降级路径）都还原 */
+ui->grid_size_used  = saved_coord;
+```
+
+`ql_ui_layout()` 每次把两个指针归零，所以稳态下**零分配**（不违反"热路径不 malloc"）。
+
+#### ⑤ `border-image`：九宫格 = 9 次 blit
+
+后端早就有 `blit_image(dst, src)`（子矩形采样），所以九宫格不需要新图元：
+
+```
+四角：src 原样 → dst 角块（缩放）
+四边：src 单条 → dst 单条（stretch / repeat / round / space）
+中间：src 中心 → dst 中心（stretch，或裁剪后平铺）
+```
+
+切片值 `border-image-slice` 是**源图**上的像素（或百分比）；
+画出来的宽度用 `border-image-width`，默认等于切片值。
+写了 `border-image` 就不再画 `border-style`（CSS 语义）。
+
+资源走的是 `<img src>` / `background-image` 的**同一张表**：
+`ql_ui_register_image(ui, "frame", ...)` 填一次像素，三种用法共享。
+
 ---
 
 ## 19. 覆盖率：两份实测 + 一份规范口径
@@ -1041,6 +1136,11 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | `background`（简写） | 只认纯色或**单个**渐变 | `background: #fff url(a.png)` 报错；图片请用 `<img>` |
 | `linear-gradient()` | **必须写方向** | `to bottom right` 不支持；用 `to right` / `90deg` |
 | `border` / `border-style` | `solid` / `dashed` / `dotted` / `none` | `double` / `groove` / `ridge` / `inset` / `outset` 报错 |
+| `grid-auto-flow` | `row` / `row dense` | **`column` 报错**：列流要把整张网格转置，收益远小于成本 |
+| Grid 的 `min-content` / `max-content` | 按 `auto`（= max-content）处理 | 差异只在"内容比轨道大"时可见 |
+| Grid 跨列项的内容宽 | 超出的部分记到**它跨过的最后一列** | 浏览器按"各列按比例分摊"；两者只在"跨列项比各列内容之和还宽"时不同 |
+| Grid 自动放置 | 稀疏 + 圆角游标 | 与浏览器的 `dense` / 稀疏规则**行为一致**，只是没有实现 `masonry` |
+| `border-image` | 四角原样、四边/中间按 `repeat`/`round` | `space` 按 `repeat` 处理；`outset` 报错；不跟随 `border-radius` 裁 |
 | `border-radius` | 单值（px 或 %） | 四角 / 斜杠椭圆角都不行 |
 | `box-shadow` | 单条 | 多重、`inset` 都不行 |
 | `opacity` | 逐图元降透明 | 子元素会一起淡，但**同一子树内部互相覆盖处会略透**（真 group 要离屏图层，见 §20.1） |
@@ -1131,10 +1231,10 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_SELECTOR_ADV` | `QL_FEAT_CSS_SELECTOR_ADV` | **B2 之后**：`:nth-child` 等结构伪类、`[attr]`、`::before/::after` | ✅ | ⚠️ 见下 | BASE | 只省解析期 |
 | `CSS_IMAGE_FIT` | `QL_FEAT_CSS_IMAGE_FIT` | `object-fit` / `object-position`（只在有图片管线时有意义） | ✅ | ❌ | `QL_FEAT_UI_IMAGE` | 与图像管线共用 |
 | `CSS_UI` | `QL_FEAT_CSS_UI` | **B5 之后**：`cursor` / `pointer-events` / `user-select` / `scrollbar-*` | ✅ | ❌ | BASE | — |
-| `CSS_GRID` | `QL_FEAT_CSS_GRID` | **B6**：`display: grid` 全家（轨道定尺 / 自动放置 / 跨格 / `justify-*`） | ✅ | **默认关** | BASE | 估 2–4 KB（与 `layout_node` 6.1 KB 同量级，落地时实测） |
+| `CSS_GRID` | `QL_FEAT_CSS_GRID` | **B6 ✅**：`display: grid` 全家（轨道定尺 / 自动放置 / 跨格 / `justify-*`） | ✅ | **默认开**（可裁） | BASE | **实测 4,528 B**（−3.3%） |
 | `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7**：`display: table` 全家 + `<table>` 标签 + 列宽分配 + `border-collapse` | ✅ | **默认关** | BASE | 估 6–10 KB（`table-layout: auto` 要两遍测量） |
 | `CSS_COLUMNS` | `QL_FEAT_CSS_COLUMNS` | **B7**：`columns` / `column-rule`（列高平衡 = 排两遍） | ✅ | **默认关** | BASE | 估 8–15 KB（最贵的一项：要"盒内分裂"） |
-| `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6**：`border-image` 九宫格 | ✅ | **默认关** | BASE + `QL_FEAT_UI_IMAGE` | 估 2–3 KB（复用 blit） |
+| `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6 ✅**：`border-image` 九宫格 | ✅ | **默认开**（可裁） | BASE + `QL_FEAT_UI_IMAGE` | **实测 2,176 B**（−1.6%） |
 | `CSS_FONT_STACK` | `QL_FEAT_CSS_FONT_STACK` | **B8**：`@font-face` + 自由 `font-family` + 真字重/斜体 —— 依赖 FreeType | ✅ | **恒关** | BASE + `QL_FEAT_FONT_FREETYPE` | 依赖库体积见 §2.1（FreeType 813 KB） |
 | `CSS_TEXT_SHAPE` | `QL_FEAT_CSS_TEXT_SHAPE` | **B8**：连字 / 字距 / `font-feature-settings` —— 依赖 HarfBuzz | ✅ | **恒关** | `CSS_FONT_STACK` | 依赖库体积见 §2.1（HarfBuzz 1,178 KB） |
 | `CSS_BIDI` | `QL_FEAT_CSS_BIDI` | **B8**：`direction` / `unicode-bidi` —— 依赖 SheenBidi（或 fribidi，106 KB） | ✅ | **恒关** | BASE | 依赖库体积见 §2.1 |
@@ -1239,7 +1339,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | **B4 绘制细节**（✅ 已完成：`border-style: dashed/dotted` + `outline`（§18.5）、四边独立 `border-*`、四角 `border-*-radius`、两层 + `inset` 阴影、`text-shadow`、`image-rendering`、`scrollbar-*`、`object-position`（§18.6）、`background-image: url()` + `size/position/repeat`（§18.7）。**只剩 `filter`**（颜色矩阵可做，`blur()` 需离屏图层 —— 与 `rotate` 同级，单独立项） | `border-style: dashed/dotted`、四边独立 `border-*`、多重/`inset` 阴影、`outline`、`background-size/position`、`object-position`、`text-shadow`、`image-rendering`、`scrollbar-*` | `CSS_BORDER_STYLE` + `CSS_SHADOW` / `CSS_GRADIENT` | 视觉还原度 | **中高**：每个都要 CPU + GL 两份，必须过 `test_gl_vs_cpu` | 部分 | 扩 `test_effects` + `test_gl_vs_cpu` |
 | **B5 布局与交互**（✅ 已完成：`align-self`/`align-content`/`order`/`flex-flow`/`overflow-x/y`/`sticky`/`inset`/`visibility`/`pointer-events`/`cursor`/`user-select`/`scroll-behavior`，见 §18.4 与 §18.4.1） | 上列十二项 | `CSS_FLEX` 补全 + `CSS_UI` | 表达力 + 桌面手感 | 中：动 flex 求解器与命中测试 | 是 | 扩 `test_flex*` / `test_scroll` / `test_b5` |
 
-| **B6 布局广度**（PC/Mobile 必做） | **Grid**（`display: grid` 全家、`fr`/`minmax()`/`repeat()`/自动放置/跨格）、**`border-image`** | `CSS_GRID` + `CSS_BORDER_IMAGE` | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | 是（`QLUIStyle` 追加轨道字段） | 新 `test_grid`（含"Grid 比嵌套 flex 快"的性能断言）+ golden |
+| **B6 布局广度** ✅ **已完成（2026-11-10）** | **Grid**（`display: grid` 全家、`fr`/`minmax()`/`repeat()`/具名区域/自动放置/跨格/对齐）、**`border-image`** 九宫格 | `CSS_GRID` + `CSS_BORDER_IMAGE` | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | **是** → blob v28（`QLUIStyle` 272 → 312） | `test_grid`（74 项，含跨列/跨行/区域/负线号/9 条报错）+ 例程 29/30 |
 | **B7 数据排版**（PC/Mobile 必做） | **表格**（`table` 全家 + `<table>` 系列标签 + 列宽分配 + `border-collapse`）、**多栏**（`columns` 平衡列高） | `CSS_TABLE` + `CSS_COLUMNS` | 后台管理界面、长文正文 | 高：`auto` 列宽与列高平衡都要排两遍 | 是 | 新 `test_table` / `test_columns` + golden |
 | **B8 文本栈**（PC/Mobile 必做，MCU 恒裁） | `@font-face`、自由 `font-family`、真字重/斜体、连字与字距、`direction`/`unicode-bidi` | `CSS_FONT_STACK` / `CSS_TEXT_SHAPE` / `CSS_BIDI` | **多语言真实页面**（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 `test_font_ft` / 新 `test_shape` |
 

@@ -179,9 +179,10 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -3126,38 +3127,62 @@ blob v10 → <strong>v11</strong>。</p>
 不该变成 PC/Mobile 档"不做"的理由。判据与实测数据见
 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §0 / §2.1 / §2.2</a>。</p>
 </blockquote>
-<h4 id="m91-b6grid-border-image">M9.1 · B6：Grid 与 <code>border-image</code></h4>
+<h4 id="m91-b6grid-border-image-2026-11-10">M9.1 · B6：Grid 与 <code>border-image</code> —— <strong>已完成（2026-11-10）</strong></h4>
 <table>
 <thead>
 <tr>
 <th>任务</th>
+<th>状态</th>
 <th>说明</th>
-<th>代价（实测/估）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>display: grid</code> / <code>inline-grid</code></td>
-<td>轨道定尺 → 放置 → 对齐三段；<code>repeat()</code> / <code>minmax()</code> / <code>auto</code> / <code>fr</code> / 具名线</td>
-<td>估 2–4 KB Flash（与 <code>layout_node</code> 6.1 KB 同量级）</td>
+<td>✅</td>
+<td>轨道定尺 → 放置 → 对齐三段；<code>repeat()</code> / <code>minmax()</code> / <code>auto</code> / <code>fr</code> / <code>min-content</code> / <code>max-content</code></td>
 </tr>
 <tr>
-<td><code>grid-template-*</code> / <code>grid-auto-*</code> / <code>grid-area</code> / <code>grid-row</code>/<code>-column</code>（含 <code>span</code>）</td>
-<td>自动放置（稀疏/紧凑）、跨格</td>
-<td>同上</td>
+<td><code>grid-template-areas</code> + <code>grid-area: 名字</code></td>
+<td>✅</td>
+<td>具名区域；非矩形构建期报错</td>
+</tr>
+<tr>
+<td><code>grid-auto-flow</code> / <code>-rows</code> / <code>-columns</code></td>
+<td>⚠️</td>
+<td><code>row</code>/<code>row dense</code> 支持；<strong><code>column</code> 报错</strong>（要转置整张网格）</td>
+</tr>
+<tr>
+<td><code>grid-row</code> / <code>grid-column</code>（线号 / <code>span n</code> / 负线号）</td>
+<td>✅</td>
+<td>自动放置（稀疏 + dense），跨格</td>
 </tr>
 <tr>
 <td><code>justify-items</code> / <code>justify-self</code> / <code>place-*</code></td>
-<td>与现有 <code>align-*</code> 对称</td>
-<td>与 flex 共用枚举</td>
+<td>✅</td>
+<td>与 <code>align-*</code> 对称；默认双向 stretch</td>
 </tr>
 <tr>
-<td><code>border-image</code></td>
-<td>九宫格切片 + 缩放，复用 <code>ql_canvas_blit_image()</code></td>
-<td>估 2–3 KB（最便宜的一项）</td>
+<td><code>border-image</code> + <code>slice</code> / <code>width</code> / <code>repeat</code></td>
+<td>✅</td>
+<td>九宫格 = 9 次 <code>blit_image(dst, src)</code>；<code>outset</code> 报错</td>
+</tr>
+<tr>
+<td>具名网格线 <code>[name]</code> / <code>grid</code> 简写</td>
+<td>❌</td>
+<td>明确报错并给替代做法</td>
 </tr>
 </tbody>
 </table>
+<p><strong>落地数据</strong>：<code>QLUIStyle</code> 272 → <strong>312</strong>、blob <strong>v28</strong>；新增三段池
+（<code>grids</code> / <code>grid_tracks</code> / <code>grid_areas</code>）；<code>test_grid</code> 74 项断言；
+例程 <code>29_grid</code> / <code>30_border_image</code>；教程 <code>19_grid.md</code>。</p>
+<p><strong>Flash 实测</strong>：<code>QL_FEAT_CSS_GRID=0</code> 省 <strong>4,528 B</strong>（3.3%）、
+<code>QL_FEAT_CSS_BORDER_IMAGE=0</code> 再省 <strong>2,176 B</strong>（1.6%）。</p>
+<p><strong>实测（240×160，Cortex-M4@200 MHz 折算）</strong>：3×3 卡片用嵌套 flex 布局 0.427 ms，
+换 Grid（同一视觉）<strong>0.229 ms（−46%）</strong> —— 因为省掉了 wrapper 层
+（一层 wrapper ≈ 3 个叶子节点）。所以 Grid 在 MCU 上不是负担而是减负；
+建议留着，让同一份 HTML 两端通用。</p>
 <blockquote>
 <p><strong>反直觉的实测结论</strong>：Grid 落地后，网格类页面的 MCU 布局时间是<strong>下降</strong>的。
 3×3 卡片：嵌套 flex 15 节点 0.427 ms → Grid 12 节点 ≈0.229 ms（<strong>−46%</strong>，@200 MHz）。

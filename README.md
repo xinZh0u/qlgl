@@ -85,6 +85,8 @@ cmake --build build -j
 | `26_css_states` | B2：`:disabled` / `:enabled` / `:checked` / `::placeholder`（含复选框控件，纯 CSS 状态） |
 | `27_css_text2` | B3：`word-spacing` / `tab-size` / `text-decoration-*`（line/style/color/thickness/underline-offset） |
 | `28_bg_image` | B4：`background-image: url()` + `background-size/-position/-repeat`（与 `<img>` 共用资源表） |
+| `29_grid` | B6：CSS Grid —— 具名区域 / 12 列栅格 / `span` 跨格 / 自动放置 / `justify-self` |
+| `30_border_image` | B6：`border-image` 九宫格（`stretch` / `repeat` / `round`），一张图当边框 |
 
 ## 构建与测试
 
@@ -256,7 +258,7 @@ python3 tools/qlgen/qlgen.py --check  # CI 校验是否同步
 [输入控件](doc/tutorial/11_input.md) → [空白与上下标](doc/tutorial/12_text.md) →
 [多行输入与表单](doc/tutorial/13_form.md) → [CSS3 补全](doc/tutorial/14_css3.md) →
 [毛玻璃叠在动的背景上](doc/tutorial/15_backdrop.md) →
-[CSS 效果检阅：十三个例程](doc/tutorial/16_css_gallery.md) →
+[CSS 效果检阅：十五个例程](doc/tutorial/16_css_gallery.md) →
 **[性能诊断与 MCU 基准](doc/tutorial/17_perf.md)**。
 
 模块手册：

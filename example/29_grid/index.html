@@ -1,0 +1,38 @@
+<div id="root">
+  <div class="title">CSS Grid：具名区域 + 12 列栅格 + 跨格 + 对齐</div>
+
+  <!-- ① 具名区域：页面的"骨架"一屏写完 -->
+  <div class="frame">
+    <div class="hd">header（跨两列）</div>
+    <div class="sb">sidebar</div>
+    <div class="mn">main</div>
+    <div class="ft">footer（跨两列）</div>
+  </div>
+
+  <!-- ② 12 列栅格：卡片按 span 拼 -->
+  <div class="cards">
+    <div class="card c4">span 4</div>
+    <div class="card c4">span 4</div>
+    <div class="card c4">span 4</div>
+    <div class="card c6">span 6</div>
+    <div class="card c3">3</div>
+    <div class="card c3">3</div>
+    <div class="card full">span 12</div>
+  </div>
+
+  <!-- ③ 自动放置 + 跨行 -->
+  <div class="auto">
+    <div class="tile tall">跨两行</div>
+    <div class="tile">1</div>
+    <div class="tile">2</div>
+    <div class="tile">3</div>
+    <div class="tile">4</div>
+  </div>
+
+  <!-- ④ minmax / fr / 百分比混排 + 对齐 -->
+  <div class="mix">
+    <div class="m start">start</div>
+    <div class="m center">center</div>
+    <div class="m end">end</div>
+  </div>
+</div>

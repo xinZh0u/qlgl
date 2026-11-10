@@ -1,0 +1,122 @@
+/*
+ * B6：Grid。全部是"布局"能力 —— 没有一行 JS，位置全由 CSS 决定。
+ *
+ * 四种典型用法各来一段：
+ *   ① `grid-template-areas`：页面骨架（header / sidebar / main / footer）
+ *   ② 12 列栅格 + `grid-column: span N`：卡片按份数拼
+ *   ③ 自动放置 + `grid-row: span 2`：瀑布流式的瓦片
+ *   ④ `minmax()` / `fr` / 百分比混排 + `justify-items`
+ */
+#root {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  background-color: #0E1116;
+  color: #E6EDF3;
+  font-size: 12px;
+}
+
+.title {
+  height: 20px;
+  color: #7CE0FF;
+  font-size: 13px;
+}
+
+/* ---------- ① 具名区域 ---------- */
+.frame {
+  display: grid;
+  height: 84px;
+  margin-top: 6px;
+  gap: 4px;
+  grid-template-areas:
+    "hd hd"
+    "sb mn"
+    "ft ft";
+  grid-template-columns: 96px 1fr;
+  grid-template-rows: 20px 1fr 16px;
+  background-color: #0B0E13;
+}
+.frame > div {
+  border-radius: 4px;
+  padding: 4px;
+}
+.hd { grid-area: hd; background-color: #2E6BE6; }
+.sb { grid-area: sb; background-color: #3B4553; }
+.mn { grid-area: mn; background-color: #1F2937; }
+.ft { grid-area: ft; background-color: #10B981; }
+
+/* ---------- ② 12 列栅格 ---------- */
+.cards {
+  display: grid;
+  margin-top: 10px;
+  gap: 4px;
+  grid-template-columns: repeat(12, 1fr);
+}
+.card {
+  height: 26px;
+  line-height: 26px;
+  text-align: center;
+  border-radius: 4px;
+  background-color: #1F2937;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #374151;
+}
+.c3 { grid-column: span 3; }
+.c4 { grid-column: span 4; }
+.c6 { grid-column: span 6; }
+.full { grid-column: 1 / -1; background-color: #4B5563; }
+
+/* ---------- ③ 自动放置 + 跨行 ---------- */
+.auto {
+  display: grid;
+  margin-top: 10px;
+  gap: 4px;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 24px;
+}
+.tile {
+  background-color: #7C3AED;
+  border-radius: 4px;
+  text-align: center;
+  line-height: 24px;
+}
+.tall {
+  grid-row: span 2;
+  background-color: #F59E0B;
+  color: #201400;
+  /* 跨两行 → 高度由两行 + 间距撑出来，不需要写 height */
+  height: auto;
+  line-height: 52px;
+}
+
+/* ---------- ④ 混排 + 对齐 ---------- */
+.mix {
+  display: grid;
+  margin-top: 10px;
+  gap: 4px;
+  grid-template-columns: minmax(60px, auto) 1fr 25%;
+  grid-template-rows: 26px;
+  justify-items: center;
+  align-items: center;
+}
+.m {
+  width: 48px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 3px;
+  background-color: #10B981;
+  color: #04231A;
+}
+.start { justify-self: start; }
+.center { justify-self: center; }
+.end { justify-self: end; }
+
+.note {
+  margin-top: 8px;
+  color: #8B98A5;
+  white-space: normal;
+  line-height: 16px;
+}

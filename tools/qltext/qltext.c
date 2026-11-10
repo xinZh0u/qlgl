@@ -372,7 +372,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .image_rendering = %u, .scrollbar_width = %u,"
             " .scrollbar_alpha = %u, .scrollbar_color = 0x%06X,\n"
             "      .object_position = { { %d, %s }, { %d, %s } },\n"
-            "      .bg_image = %s, .bg_size_mode = %u, .bg_repeat = %u,\n"
+            "      .bg_size_mode = %u, .bg_repeat = %u,\n"
             "      .bg_size = { { %d, %s }, { %d, %s } },\n"
             "      .bg_pos = { { %d, %s }, { %d, %s } },\n"
             "      .anim = ",
@@ -442,7 +442,6 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (int)s->object_position[1].value,
             enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->object_position[1].unit,
                       "QLUIUnit"),
-            (s->bg_image == QL_UI_NO_IMAGE) ? "QL_UI_NO_IMAGE" : "(uint16_t)0",
             (unsigned)s->bg_size_mode, (unsigned)s->bg_repeat,
             (int)s->bg_size[0].value,
             enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_size[0].unit, "QLUIUnit"),
@@ -452,9 +451,55 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_pos[0].unit, "QLUIUnit"),
             (int)s->bg_pos[1].value,
             enum_name(UNIT_NAMES, COUNT_OF(UNIT_NAMES), s->bg_pos[1].unit, "QLUIUnit"));
+    /*
+     * 资源名在**文本池**里的下标：doc 里已经是最终值，直接原样写出来。
+     * （老代码这里写死成 `(uint16_t)0`，只有在"资源名恰好是池里第 0 条"时才对 ——
+     *  bg 与 border 两张图同时存在时立刻暴露。）
+     */
     if (s->anim == 0xFFFFu) fputs("0xFFFF", f);
     else fprintf(f, "0x%04X", (unsigned)s->anim);
-    fputs(",\n      .inset = { ", f);
+
+    /*
+     * 资源名 / 网格模板都是**池下标**，原样打出来。
+     * （老代码把 bg_image 写成 `(uint16_t)0`，只有在"资源名恰好是文本池第 0 条"
+     *  时才对；bg 与 border 两张图同时存在时立刻错位。）
+     */
+    fputs(",\n      .bg_image = ", f);
+    if (s->bg_image == QL_UI_NO_IMAGE)
+        fputs("QL_UI_NO_IMAGE", f);
+    else
+        fprintf(f, "%u", (unsigned)s->bg_image);
+
+    fputs(", .border_image = ", f);
+    if (s->border_image == QL_UI_NO_BORDER_IMAGE)
+        fputs("QL_UI_NO_BORDER_IMAGE", f);
+    else
+        fprintf(f, "%u", (unsigned)s->border_image);
+    fprintf(f,
+            ", .bi_slice_pct = %u, .bi_width_pct = %u, .bi_repeat = %u,\n"
+            "      .bi_slice = { %d, %d, %d, %d },"
+            " .bi_width = { %d, %d, %d, %d },\n",
+            (unsigned)s->bi_slice_pct, (unsigned)s->bi_width_pct,
+            (unsigned)s->bi_repeat, (int)s->bi_slice[0], (int)s->bi_slice[1],
+            (int)s->bi_slice[2], (int)s->bi_slice[3], (int)s->bi_width[0],
+            (int)s->bi_width[1], (int)s->bi_width[2], (int)s->bi_width[3]);
+
+    fputs("      .grid = ", f);
+    if (s->grid == QL_UI_NO_GRID)
+        fputs("QL_UI_NO_GRID", f);
+    else
+        fprintf(f, "%u", (unsigned)s->grid);
+    fprintf(f,
+            ", .grid_col = %d, .grid_row = %d, .grid_col_span = %u,"
+            " .grid_row_span = %u,\n"
+            "      .grid_flow = %u, .justify_items = %u, .justify_self = %u,"
+            " .grid_auto_row = %d, .grid_auto_col = %d,\n",
+            (int)s->grid_col, (int)s->grid_row, (unsigned)s->grid_col_span,
+            (unsigned)s->grid_row_span, (unsigned)s->grid_flow,
+            (unsigned)s->justify_items, (unsigned)s->justify_self,
+            (int)s->grid_auto_row, (int)s->grid_auto_col);
+
+    fputs("      .inset = { ", f);
     fput_length(f, s->inset[0]);
     fputs(", ", f);
     fput_length(f, s->inset[1]);
@@ -948,6 +993,45 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
         fputs("};\n\n", f);
     }
 
+    /* ---- Grid 三段池（有才输出） ---- */
+    if (doc->grid_count > 0 && doc->grids != NULL) {
+        fprintf(f, "/* grid 模板：col_first/row_first 是 %s_grid_tracks 的下标 */\n", ident);
+        fprintf(f, "static const QLUIGrid %s_grids[%u] = {\n", ident,
+                (unsigned)doc->grid_count);
+        for (uint16_t i = 0; i < doc->grid_count; i++) {
+            const QLUIGrid *gg = &doc->grids[i];
+            fprintf(f, "    { %u, %u, %u, %u, %u, %u, %u, %u },\n",
+                    (unsigned)gg->col_first, (unsigned)gg->col_count,
+                    (unsigned)gg->row_first, (unsigned)gg->row_count,
+                    (unsigned)gg->area_first, (unsigned)gg->area_count,
+                    (unsigned)gg->col_hint, (unsigned)gg->row_hint);
+        }
+        fputs("};\n\n", f);
+    }
+    if (doc->grid_track_count > 0 && doc->grid_tracks != NULL) {
+        fprintf(f, "/* grid 轨道：[min_kind, max_kind, min_val, max_val] */\n");
+        fprintf(f, "static const QLUIGridTrack %s_grid_tracks[%u] = {\n", ident,
+                (unsigned)doc->grid_track_count);
+        for (uint16_t i = 0; i < doc->grid_track_count; i++) {
+            const QLUIGridTrack *t = &doc->grid_tracks[i];
+            fprintf(f, "    { %u, %u, %6d, %6d },\n", (unsigned)t->min_kind,
+                    (unsigned)t->max_kind, (int)t->min_val, (int)t->max_val);
+        }
+        fputs("};\n\n", f);
+    }
+    if (doc->grid_area_count > 0 && doc->grid_areas != NULL) {
+        fprintf(f, "/* grid 具名区域（行列号 1-based） */\n");
+        fprintf(f, "static const QLUIGridArea %s_grid_areas[%u] = {\n", ident,
+                (unsigned)doc->grid_area_count);
+        for (uint16_t i = 0; i < doc->grid_area_count; i++) {
+            const QLUIGridArea *a2 = &doc->grid_areas[i];
+            fprintf(f, "    { %u, %d, %d, %u, %u },\n", (unsigned)a2->name,
+                    (int)a2->col, (int)a2->row, (unsigned)a2->col_span,
+                    (unsigned)a2->row_span);
+        }
+        fputs("};\n\n", f);
+    }
+
     /* ---- @media 断点（有才输出） ---- */
     if (doc->media_count > 0 && doc->media != NULL) {
         fprintf(f, "/* @media 断点区间（视口宽，闭区间；hi = 0xFFFF 表示无上界） */\n");
@@ -1021,6 +1105,19 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                 "    .node_media    = %s_node_media,\n"
                 "    .media_styles  = %s_media_styles,\n",
                 (unsigned)doc->media_count, ident, ident, ident);
+    }
+
+    /* Grid 三段池：没有 grid 时一个字都不多 */
+    if (doc->grid_count > 0 && doc->grids != NULL) {
+        fprintf(f,
+                "    .grid_count       = %u,\n"
+                "    .grid_track_count = %u,\n"
+                "    .grid_area_count  = %u,\n"
+                "    .grids            = %s_grids,\n"
+                "    .grid_tracks      = %s_grid_tracks,\n"
+                "    .grid_areas       = %s_grid_areas,\n",
+                (unsigned)doc->grid_count, (unsigned)doc->grid_track_count,
+                (unsigned)doc->grid_area_count, ident, ident, ident);
     }
 
     /* calc() 池：没用 calc 时一个字都不多 */

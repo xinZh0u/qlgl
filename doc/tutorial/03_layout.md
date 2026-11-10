@@ -161,7 +161,7 @@ for (uint16_t i = 0; i < ui->node_count; i++) {
 写错就是编译期报错，不会"凑合"：
 
 ```
-float / clear / display: grid / display: table
+float / clear / display: table
 flex-wrap: wrap-reverse       table 布局
 ```
 

@@ -179,9 +179,10 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -336,6 +337,10 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <tr>
 <td><code>word-spacing</code> / <code>tab-size</code> / <code>text-decoration-*</code> / <code>:disabled</code> / <code>:enabled</code> / <code>:checked</code> / <code>::placeholder</code> / <code>background-image: url()</code></td>
 <td>blob v27（见 §18.7）</td>
+</tr>
+<tr>
+<td><strong>Grid</strong>（<code>display: grid</code> 全家 + 具名区域 + <code>fr</code>/<code>minmax()</code>/<code>repeat()</code>/自动放置/跨格/对齐）、<strong><code>border-image</code></strong> 九宫格</td>
+<td>blob v28（见 §18.9）</td>
 </tr>
 <tr>
 <td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
@@ -527,12 +532,22 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <tr>
 <td>全量固件 <code>text</code></td>
 <td>Cortex-M4 Thumb-2，<code>-O2</code>，240×160 RGB565（<code>test/mcu</code>）</td>
-<td><strong>131,520 B</strong></td>
+<td><strong>139,260 B</strong>（含 B6）</td>
 </tr>
 <tr>
 <td>同上，关掉图像管线（<code>QL_FEAT_IMG_*=0</code>）</td>
 <td>同上</td>
-<td>123,404 B（<strong>−8,116 B，−6.2%</strong>）</td>
+<td>131,144 B（<strong>−8,116 B，−6.2%</strong>）</td>
+</tr>
+<tr>
+<td>同上，关掉 Grid（<code>QL_FEAT_CSS_GRID=0</code>）</td>
+<td>同上</td>
+<td>134,732 B（<strong>−4,528 B，−3.3%</strong>）</td>
+</tr>
+<tr>
+<td>同上，再关 border-image（<code>QL_FEAT_CSS_BORDER_IMAGE=0</code>）</td>
+<td>同上</td>
+<td>132,556 B（<strong>−2,176 B，−1.6%</strong>）</td>
 </tr>
 <tr>
 <td>内建 ASCII 位图字体（12px + 16px，全字节表）</td>
@@ -540,8 +555,13 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <td>≈9 KB</td>
 </tr>
 <tr>
-<td>布局：12 节点</td>
+<td>布局：21 节点（<code>test/mcu</code> 的 bench 页）</td>
 <td>QEMU <code>mps2-an386</code> <code>-icount</code> @200 MHz 折算</td>
+<td><strong>0.42 ms</strong></td>
+</tr>
+<tr>
+<td>布局：12 节点</td>
+<td>同上（同一批，相对比较有效）</td>
 <td>0.23 ms</td>
 </tr>
 <tr>
@@ -565,9 +585,9 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <td><strong>+0.20 ms（+86%）</strong>，一层 ≈ 3 个叶子节点</td>
 </tr>
 <tr>
-<td>光栅一帧 240×160 RGB565</td>
+<td>光栅一帧 240×160 RGB565（21 节点页）</td>
 <td>同上</td>
-<td>6.1–7.8 ms（≈40 周期/像素）</td>
+<td><strong>7.99 ms</strong>（≈42 周期/像素）</td>
 </tr>
 <tr>
 <td>重排</td>
@@ -605,6 +625,8 @@ MCU 档同步只做一件事：<strong>把这些新能力都做成可裁的能�
 <p><strong>口径</strong>：MCU 那一列按 <code>test/mcu/README.md</code> 的换算——QEMU <code>-icount</code> 下"虚拟 ns ≈ 指令数"，
 换到 M4@200 MHz 乘 5。这是<strong>乐观下界</strong>（M4 无 cache，实际 IPC 常 0.6~0.8），
 真实板子上乘 1.5~2 更接近。库体积（<code>text</code>）是 ELF 实测，不含栈与堆。</p>
+<p><strong>横比优先于绝对值</strong>：绝对值会随 QEMU 版本 / 编译选项漂（本机两次测量差过 ~30%），
+但"同一批、同一台机器、连着跑"的相对比较是可用的 —— 下文所有"快 xx%"都是这么来的。</p>
 </blockquote>
 <p>三条能直接推出结论的读数：</p>
 <ol>
@@ -1452,10 +1474,16 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td>四条边各自裁一次整圈描边；<strong>角部归上/下边</strong>（浏览器沿 45° 斜线切分）</td>
 </tr>
 <tr>
-<td><code>border-image</code></td>
-<td>⏳</td>
-<td>S</td>
-<td><strong>B6</strong>：九宫格切片 + 缩放，复用现有 <code>ql_canvas_blit_image</code>（§18.8）</td>
+<td><code>border-image</code> + <code>-source</code> / <code>-slice</code> / <code>-width</code> / <code>-repeat</code>（<code>stretch</code>/<code>repeat</code>/<code>round</code>/<code>space</code>）</td>
+<td>✅</td>
+<td>R</td>
+<td><strong>已完成（B6）</strong>：九宫格切片，复用 <code>blit_image(dst, src)</code>（§18.9）</td>
+</tr>
+<tr>
+<td><code>border-image-outset</code></td>
+<td>❌</td>
+<td>N</td>
+<td>报错：边框图不向盒子外扩</td>
 </tr>
 <tr>
 <td><code>box-shadow</code>（单条）</td>
@@ -1895,8 +1923,8 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 </tbody>
 </table>
 <hr />
-<h2 id="11-gridb6pcmobile-mcu">11. Grid（B6：PC/Mobile 必做，MCU 归"大核"包）</h2>
-<p><strong>这一块从"不做"改成"要做"了</strong>，理由是实测出来的：</p>
+<h2 id="11-gridb6-mcu">11. Grid（B6 ✅ 已完成，MCU 归"大核"包）</h2>
+<p><strong>这一块从"不做"改成"要做"、并且已经做完了</strong>，理由是实测出来的：</p>
 <table>
 <thead>
 <tr>
@@ -1930,7 +1958,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <thead>
 <tr>
 <th>属性</th>
-<th>批次</th>
+<th>状态</th>
 <th>档位</th>
 <th>备注</th>
 </tr>
@@ -1938,39 +1966,63 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <tbody>
 <tr>
 <td><code>display: grid</code> / <code>inline-grid</code></td>
-<td>B6</td>
+<td>✅</td>
 <td>大核</td>
-<td>单层轨道求解；不做 <code>subgrid</code></td>
+<td>单层轨道求解（不支持 <code>subgrid</code>）</td>
 </tr>
 <tr>
-<td><code>grid-template-columns</code> / <code>-rows</code> / <code>-areas</code></td>
-<td>B6</td>
+<td><code>grid-template-columns</code> / <code>-rows</code></td>
+<td>✅</td>
 <td>大核</td>
-<td><code>repeat()</code> / <code>minmax()</code> / <code>auto</code> / <code>fr</code> / 具名线</td>
+<td><code>&lt;长度&gt;</code> / <code>%</code> / <code>fr</code> / <code>auto</code> / <code>min-content</code> / <code>max-content</code> / <code>minmax()</code> / <code>repeat(&lt;n&gt;, …)</code></td>
 </tr>
 <tr>
-<td><code>grid-auto-columns</code> / <code>-rows</code> / <code>-flow</code></td>
-<td>B6</td>
+<td><code>grid-template-areas</code></td>
+<td>✅</td>
 <td>大核</td>
-<td><code>row</code> / <code>column</code> / <code>dense</code></td>
+<td>具名区域；<strong>必须是矩形</strong>（非矩形构建期报错）</td>
+</tr>
+<tr>
+<td><code>grid-auto-columns</code> / <code>-rows</code></td>
+<td>✅</td>
+<td>大核</td>
+<td>单个长度值（<code>auto</code> = 内容）</td>
+</tr>
+<tr>
+<td><code>grid-auto-flow</code></td>
+<td>⚠️</td>
+<td>大核</td>
+<td><code>row</code> / <code>row dense</code> 支持；<strong><code>column</code> 报错</strong>（列流要转置整张网格，见 §19.1）</td>
 </tr>
 <tr>
 <td><code>grid-row</code> / <code>grid-column</code> / <code>grid-area</code>（含 <code>span</code>）</td>
-<td>B6</td>
+<td>✅</td>
 <td>大核</td>
-<td>跨格</td>
+<td>线号 / <code>span n</code> / <code>auto</code> / 区域名 / <code>区域名-start|end</code> / 负线号</td>
 </tr>
 <tr>
-<td><code>justify-items</code> / <code>justify-self</code> / <code>place-*</code></td>
-<td>B6</td>
+<td><code>justify-items</code> / <code>justify-self</code> / <code>place-items</code> / <code>place-self</code></td>
+<td>✅</td>
 <td>大核</td>
-<td>与现有的 <code>align-*</code> 对称</td>
+<td>与现有的 <code>align-*</code> 对称；<code>place-*</code> 只取第一个词</td>
 </tr>
 <tr>
 <td><code>gap</code> / <code>row-gap</code> / <code>column-gap</code></td>
-<td>✅ 已有</td>
+<td>✅</td>
 <td>双档</td>
-<td>flex 里已经生效，Grid 复用同一组字段</td>
+<td>flex 与 grid 共用同一组字段</td>
+</tr>
+<tr>
+<td>具名网格线 <code>[name]</code></td>
+<td>❌</td>
+<td>—</td>
+<td><code>S</code>：报错并提示改用 <code>grid-template-areas</code></td>
+</tr>
+<tr>
+<td><code>grid</code> / <code>grid-template</code> 简写</td>
+<td>❌</td>
+<td>—</td>
+<td><code>N</code>：报错，分开写长写即可</td>
 </tr>
 <tr>
 <td><code>subgrid</code> / <code>masonry</code></td>
@@ -2799,6 +2851,70 @@ libfribidi.so      106 KB   = 0.8 倍（fribidi 本身还勉强，但单独它�
 在 MCU 档是<strong>必须裁的</strong>（裁掉后仍是内建 ASCII 位图字体 + 可选子集 TTF）。
 这就是 <code>G</code> 这个原因码存在的意义：<strong>它标的是"依赖关系"，不是"不做"</strong>。</p>
 <hr />
+<h3 id="189-b6-grid-border-image">18.9 B6 落地：Grid 与 border-image 是怎么做的</h3>
+<h4 id="1_1">① 数据放哪：模板进池，摆放进样式</h4>
+<p><code>QLUIStyle</code> 只长了 40 字节（272 → <strong>312</strong>），因为<strong>轨道列表不进样式</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLUIStyle：容器 3 个字段、子项 4 个字段 */</span>
+<span class="kt">uint16_t</span><span class="w"> </span><span class="n">grid</span><span class="p">;</span><span class="w">          </span><span class="cm">/* doc-&gt;grids[] 下标；QL_UI_NO_GRID = 不是 grid 容器 */</span>
+<span class="kt">int16_t</span><span class="w">  </span><span class="n">grid_col</span><span class="p">,</span><span class="w"> </span><span class="n">grid_row</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 起始线（1-based）；0 = 自动 */</span>
+<span class="kt">uint8_t</span><span class="w">  </span><span class="n">grid_col_span</span><span class="p">,</span><span class="w"> </span><span class="n">grid_row_span</span><span class="p">;</span>
+<span class="kt">uint8_t</span><span class="w">  </span><span class="n">grid_flow</span><span class="p">,</span><span class="w"> </span><span class="n">justify_items</span><span class="p">,</span><span class="w"> </span><span class="n">justify_self</span><span class="p">;</span>
+<span class="kt">int16_t</span><span class="w">  </span><span class="n">grid_auto_row</span><span class="p">,</span><span class="w"> </span><span class="n">grid_auto_col</span><span class="p">;</span>
+
+<span class="cm">/* doc 里三段池（所有容器共享；同一模板经样式去重后只存一份） */</span>
+<span class="n">QLUIGrid</span><span class="w">      </span><span class="n">grids</span><span class="p">[];</span><span class="w">       </span><span class="cm">/* col/row 轨道的起止下标 + 具名区域起止 */</span>
+<span class="n">QLUIGridTrack</span><span class="w"> </span><span class="n">grid_tracks</span><span class="p">[];</span><span class="w"> </span><span class="cm">/* { min_kind, max_kind, min_val, max_val } */</span>
+<span class="n">QLUIGridArea</span><span class="w">  </span><span class="n">grid_areas</span><span class="p">[];</span><span class="w">  </span><span class="cm">/* { 名字, 列, 行, 列跨, 行跨 } */</span>
+</code></pre></div>
+
+<p>一条轨道是 <code>[min, max]</code> 区间：<code>100px</code> → 两边都定长；<code>1fr</code> → <code>min=auto, max=fr</code>；
+<code>minmax(60px, auto)</code> → <code>min=60px, max=auto</code>。定尺时先满足 min，再把剩余按 max 侧的
+"拉伸能力"分配（<code>fr</code> 权重 / <code>auto</code> 取内容）。</p>
+<h4 id="2_1">② 摆放与模板搜索为什么在构建期</h4>
+<p><code>grid-area: main</code> 要查<strong>父容器</strong>的具名区域，<code>grid-column: 1 / -2</code> 要查父容器有几列 ——
+这些在样式编译时都还不知道（编译是逐节点、按声明集去重的）。所以分两趟：</p>
+<ol>
+<li><code>compile_style()</code> 只把 Grid 属性的<strong>原文</strong>挂到"按样式下标"的侧表上；</li>
+<li>整棵树都有了样式之后，<code>grid_resolve_all()</code> 统一解析：模板 → 池；
+   每个子项的线号/跨度 → 4 个整数写进样式。</li>
+</ol>
+<p>去重带来一个坑：同一个 <code>.cell</code> 可能被两个不同模板的容器使用，摆放值就不一样。
+这里用<strong>写时复制</strong>——样式第一次被占用时直接写，第二次要不同的值就复制一份样式
+（<code>sig = NULL</code>，不再参与去重）。运行期因此永远只读整数，没有任何字符串比较。</p>
+<h4 id="3_1">③ 布局：三段，全是整数</h4>
+<div class="highlight"><pre><span></span><code>① 放置   ：显式位置 → 只给列 → 只给行 → 全自动（游标扫描，dense 时回原点）
+② 列定尺 ：min → 定长上限 → auto 取内容 max-content → fr 分剩余（累计推进）
+③ 行定尺 ：先按&quot;列宽已定&quot;把每项真排一遍拿高度 → auto 行取最大值 →
+           span&gt;1 按差额均摊 → fr 行分剩余（容器高度确定时）
+④ 定位   ：按 justify-self / align-self 在格子里摆，默认双向 stretch
+</code></pre></div>
+
+<p><code>fr</code> 的份额用<strong>累计分子</strong>（<code>num += 总额×权重; 份额 = num/权重和; num %= 权重和</code>），
+与 flex 的 grow 同一套 —— 三列 <code>1fr 1fr 1fr</code> 在 100px 里是 33+34+33，右边界严丝合缝。</p>
+<h4 id="4-grid">④ 嵌套 grid 的临时区：按栈的纪律切</h4>
+<p>轨道数组、列/行起点、每项的放置结果都是临时数据。<strong>不能</strong>用一份全局数组：
+测量阶段会递归进入内层 grid，把外层刚算好的列宽冲掉（实测：内层列宽对、外层整体
+缩小一半）。所以 <code>QLUIRoot</code> 里放一个只增不减的缓冲 + bump 指针：</p>
+<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">saved_place</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui</span><span class="o">-&gt;</span><span class="n">grid_place_used</span><span class="p">;</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">saved_coord</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ui</span><span class="o">-&gt;</span><span class="n">grid_size_used</span><span class="p">;</span>
+<span class="p">...</span><span class="w"> </span><span class="n">用</span><span class="w"> </span><span class="p">...</span>
+<span class="n">ui</span><span class="o">-&gt;</span><span class="n">grid_place_used</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">saved_place</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 函数出口（含降级路径）都还原 */</span>
+<span class="n">ui</span><span class="o">-&gt;</span><span class="n">grid_size_used</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">saved_coord</span><span class="p">;</span>
+</code></pre></div>
+
+<p><code>ql_ui_layout()</code> 每次把两个指针归零，所以稳态下<strong>零分配</strong>（不违反"热路径不 malloc"）。</p>
+<h4 id="5-border-image-9-blit">⑤ <code>border-image</code>：九宫格 = 9 次 blit</h4>
+<p>后端早就有 <code>blit_image(dst, src)</code>（子矩形采样），所以九宫格不需要新图元：</p>
+<div class="highlight"><pre><span></span><code>四角：src 原样 → dst 角块（缩放）
+四边：src 单条 → dst 单条（stretch / repeat / round / space）
+中间：src 中心 → dst 中心（stretch，或裁剪后平铺）
+</code></pre></div>
+
+<p>切片值 <code>border-image-slice</code> 是<strong>源图</strong>上的像素（或百分比）；
+画出来的宽度用 <code>border-image-width</code>，默认等于切片值。
+写了 <code>border-image</code> 就不再画 <code>border-style</code>（CSS 语义）。</p>
+<p>资源走的是 <code>&lt;img src&gt;</code> / <code>background-image</code> 的<strong>同一张表</strong>：
+<code>ql_ui_register_image(ui, "frame", ...)</code> 填一次像素，三种用法共享。</p>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -3202,6 +3318,31 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <td><code>double</code> / <code>groove</code> / <code>ridge</code> / <code>inset</code> / <code>outset</code> 报错</td>
 </tr>
 <tr>
+<td><code>grid-auto-flow</code></td>
+<td><code>row</code> / <code>row dense</code></td>
+<td><strong><code>column</code> 报错</strong>：列流要把整张网格转置，收益远小于成本</td>
+</tr>
+<tr>
+<td>Grid 的 <code>min-content</code> / <code>max-content</code></td>
+<td>按 <code>auto</code>（= max-content）处理</td>
+<td>差异只在"内容比轨道大"时可见</td>
+</tr>
+<tr>
+<td>Grid 跨列项的内容宽</td>
+<td>超出的部分记到<strong>它跨过的最后一列</strong></td>
+<td>浏览器按"各列按比例分摊"；两者只在"跨列项比各列内容之和还宽"时不同</td>
+</tr>
+<tr>
+<td>Grid 自动放置</td>
+<td>稀疏 + 圆角游标</td>
+<td>与浏览器的 <code>dense</code> / 稀疏规则<strong>行为一致</strong>，只是没有实现 <code>masonry</code></td>
+</tr>
+<tr>
+<td><code>border-image</code></td>
+<td>四角原样、四边/中间按 <code>repeat</code>/<code>round</code></td>
+<td><code>space</code> 按 <code>repeat</code> 处理；<code>outset</code> 报错；不跟随 <code>border-radius</code> 裁</td>
+</tr>
+<tr>
 <td><code>border-radius</code></td>
 <td>单值（px 或 %）</td>
 <td>四角 / 斜杠椭圆角都不行</td>
@@ -3542,11 +3683,11 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td><code>CSS_GRID</code></td>
 <td><code>QL_FEAT_CSS_GRID</code></td>
-<td><strong>B6</strong>：<code>display: grid</code> 全家（轨道定尺 / 自动放置 / 跨格 / <code>justify-*</code>）</td>
+<td><strong>B6 ✅</strong>：<code>display: grid</code> 全家（轨道定尺 / 自动放置 / 跨格 / <code>justify-*</code>）</td>
 <td>✅</td>
-<td><strong>默认关</strong></td>
+<td><strong>默认开</strong>（可裁）</td>
 <td>BASE</td>
-<td>估 2–4 KB（与 <code>layout_node</code> 6.1 KB 同量级，落地时实测）</td>
+<td><strong>实测 4,528 B</strong>（−3.3%）</td>
 </tr>
 <tr>
 <td><code>CSS_TABLE</code></td>
@@ -3569,11 +3710,11 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <tr>
 <td><code>CSS_BORDER_IMAGE</code></td>
 <td><code>QL_FEAT_CSS_BORDER_IMAGE</code></td>
-<td><strong>B6</strong>：<code>border-image</code> 九宫格</td>
+<td><strong>B6 ✅</strong>：<code>border-image</code> 九宫格</td>
 <td>✅</td>
-<td><strong>默认关</strong></td>
+<td><strong>默认开</strong>（可裁）</td>
 <td>BASE + <code>QL_FEAT_UI_IMAGE</code></td>
-<td>估 2–3 KB（复用 blit）</td>
+<td><strong>实测 2,176 B</strong>（−1.6%）</td>
 </tr>
 <tr>
 <td><code>CSS_FONT_STACK</code></td>
@@ -3818,7 +3959,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 </tr>
 </tbody>
 </table>
-<p>| <strong>B6 布局广度</strong>（PC/Mobile 必做） | <strong>Grid</strong>（<code>display: grid</code> 全家、<code>fr</code>/<code>minmax()</code>/<code>repeat()</code>/自动放置/跨格）、<strong><code>border-image</code></strong> | <code>CSS_GRID</code> + <code>CSS_BORDER_IMAGE</code> | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | 是（<code>QLUIStyle</code> 追加轨道字段） | 新 <code>test_grid</code>（含"Grid 比嵌套 flex 快"的性能断言）+ golden |
+<p>| <strong>B6 布局广度</strong> ✅ <strong>已完成（2026-11-10）</strong> | <strong>Grid</strong>（<code>display: grid</code> 全家、<code>fr</code>/<code>minmax()</code>/<code>repeat()</code>/具名区域/自动放置/跨格/对齐）、<strong><code>border-image</code></strong> 九宫格 | <code>CSS_GRID</code> + <code>CSS_BORDER_IMAGE</code> | Bootstrap/Tailwind 栅格、卡片墙 | 中高：新求解器（§11 有实测对比） | <strong>是</strong> → blob v28（<code>QLUIStyle</code> 272 → 312） | <code>test_grid</code>（74 项，含跨列/跨行/区域/负线号/9 条报错）+ 例程 29/30 |
 | <strong>B7 数据排版</strong>（PC/Mobile 必做） | <strong>表格</strong>（<code>table</code> 全家 + <code>&lt;table&gt;</code> 系列标签 + 列宽分配 + <code>border-collapse</code>）、<strong>多栏</strong>（<code>columns</code> 平衡列高） | <code>CSS_TABLE</code> + <code>CSS_COLUMNS</code> | 后台管理界面、长文正文 | 高：<code>auto</code> 列宽与列高平衡都要排两遍 | 是 | 新 <code>test_table</code> / <code>test_columns</code> + golden |
 | <strong>B8 文本栈</strong>（PC/Mobile 必做，MCU 恒裁） | <code>@font-face</code>、自由 <code>font-family</code>、真字重/斜体、连字与字距、<code>direction</code>/<code>unicode-bidi</code> | <code>CSS_FONT_STACK</code> / <code>CSS_TEXT_SHAPE</code> / <code>CSS_BIDI</code> | <strong>多语言真实页面</strong>（中文、阿拉伯语、印度语系） | 高：引入 FreeType + HarfBuzz + SheenBidi（§2.1 有体积实测） | 是（字体表、整形缓存） | 扩 <code>test_font_ft</code> / 新 <code>test_shape</code> |</p>
 <p><strong>另外几项单独立项</strong>（成本与一批相当，但语义是"新子系统"）：</p>

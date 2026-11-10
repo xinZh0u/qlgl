@@ -52,6 +52,8 @@ set(QL_EXAMPLES
     26_css_states
     27_css_text2
     28_bg_image
+    29_grid
+    30_border_image
 )
 
 foreach(e ${QL_EXAMPLES})

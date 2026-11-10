@@ -1,8 +1,8 @@
-# CSS 效果检阅：十三个例程
+# CSS 效果检阅：十五个例程
 
 <img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480">
 
-完整程序：`example/16_css_units/` … `example/28_bg_image/`（每个例程一个文件夹）
+完整程序：`example/16_css_units/` … `example/30_border_image/`（每个例程一个文件夹）
 
 前几章是按"补了什么"讲的（[CSS3 补全](14_css3.md)、[毛玻璃](15_backdrop.md)）。
 这一章反过来：**按"能看出效果的最小样本"讲** —— 每一个已支持的 CSS 效果都摆成
@@ -368,7 +368,38 @@ pre { tab-size: 4; }
 资源与 `<img src>` 共用一张表：`ql_ui_register_image("checker", ...)` 填一次像素，
 背景与 `<img>` 都能用。
 
-## 14. 这几个例程查出了什么
+## 14. `29_grid`：二维布局
+
+<img src="../img/29-grid.png" alt="具名区域、12 列栅格、跨格与自动放置、justify-self 三种取值" width="480">
+
+```css
+.page   { display: grid; grid-template-areas: "hd hd" "sb mn" "ft ft";
+          grid-template-columns: 96px 1fr; gap: 4px; }
+.hd     { grid-area: hd; }
+.cards  { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+.c4     { grid-column: span 4; }
+.full   { grid-column: 1 / -1; }
+.tall   { grid-row: span 2; }
+.mix    { grid-template-columns: minmax(60px, auto) 1fr 25%;
+          justify-items: center; }
+```
+
+一行 CSS 就是一屏页面骨架；12 列栅格按份数拼；`span 2` 让瓦片跨行。
+
+## 15. `30_border_image`：一张九宫格图当边框
+
+<img src="../img/30-border-image.png" alt="stretch / round / repeat 三种填充方式" width="480">
+
+```css
+.box { border-width: 10px; border-style: solid;
+       border-image: url(frame) 8; }
+.repeat { border-image-repeat: repeat; }
+.round  { border-image-repeat: round; }
+```
+
+四角不变形、四边沿一个方向铺开 —— 这是"像素风 / 描边卡片"最常见的做法。
+
+## 16. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

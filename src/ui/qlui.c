@@ -31,6 +31,10 @@ static void anim_boot(QLUIRoot *ui);
 
 /* 定义在布局那一段；构建时判断"父节点是不是 flex 容器"要用 */
 static int is_flex_container(const QLUIStyle *s);
+static int is_grid_container(const QLUIStyle *s);
+static void sort_children_by_order(QLUINodeRT *node);
+static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t avail_w,
+                                   int depth);
 
 /* 下标 == QLUITag 枚举值，顺序必须与 qlui.h / qlui_parse.c 的 k_tags[] 一致 */
 static const char *const s_tag_names[QL_UI_TAG_COUNT] = {
@@ -176,6 +180,7 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d);
 static void render_children(QLUINodeRT *node, QLDraw2D *d2d);
 static const QLImage *image_by_name(const QLUIRoot *ui, const char *name);
 static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
+static void draw_border_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
 /* ------------------------------ 构建 ------------------------------ */
 
@@ -408,22 +413,31 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
     for (uint16_t i = 0; i < doc->node_count; i++)
         if (doc->nodes[i].tag == QL_UI_TAG_IMG)
             ui->image_count = (uint16_t)(ui->image_count + 1u);
-    /* 背景图（`background-image: url()`）也要占一个资源槽；同名只占一个 */
+    /*
+     * 背景图（`background-image: url()`）与 `border-image` 也要占资源槽；
+     * 同名只占一个（两者共用同一张图时只解码一次）。
+     */
     uint16_t bg_slots = 0;
     for (uint16_t i = 0; i < doc->style_count; i++) {
-        if (doc->styles[i].bg_image == QL_UI_NO_IMAGE)
-            continue;
-        const char *nm = doc->text_pool + doc->text_offsets[doc->styles[i].bg_image];
-        int dup = 0;
-        for (uint16_t j = 0; j < i && !dup; j++) {
-            if (doc->styles[j].bg_image == QL_UI_NO_IMAGE)
+        for (int which = 0; which < 2; which++) {
+            const uint16_t idx = (which == 0) ? doc->styles[i].bg_image
+                                              : doc->styles[i].border_image;
+            if (idx == QL_UI_NO_IMAGE)
                 continue;
-            const char *o = doc->text_pool + doc->text_offsets[doc->styles[j].bg_image];
-            if (strcmp(nm, o) == 0)
-                dup = 1;
+            const char *nm = doc->text_pool + doc->text_offsets[idx];
+            int dup = 0;
+            for (uint16_t j = 0; j < i && !dup; j++) {
+                const uint16_t oi = (which == 0) ? doc->styles[j].bg_image
+                                                 : doc->styles[j].border_image;
+                if (oi == QL_UI_NO_IMAGE)
+                    continue;
+                const char *o = doc->text_pool + doc->text_offsets[oi];
+                if (strcmp(nm, o) == 0)
+                    dup = 1;
+            }
+            if (!dup)
+                bg_slots++;
         }
-        if (!dup)
-            bg_slots++;
     }
     ui->image_count = (uint16_t)(ui->image_count + bg_slots);
     if (ui->image_count > 0) {
@@ -463,11 +477,14 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
             }
         }
 
-        /* 背景图资源（node == NULL，只按名字索引） */
+        /* 背景图 / 边框图资源（node == NULL，只按名字索引） */
         for (uint16_t i = 0; i < doc->style_count && k < ui->image_count; i++) {
-            if (doc->styles[i].bg_image == QL_UI_NO_IMAGE)
+          for (int which = 0; which < 2; which++) {
+            const uint16_t sidx = (which == 0) ? doc->styles[i].bg_image
+                                               : doc->styles[i].border_image;
+            if (sidx == QL_UI_NO_IMAGE)
                 continue;
-            const char *nm = doc->text_pool + doc->text_offsets[doc->styles[i].bg_image];
+            const char *nm = doc->text_pool + doc->text_offsets[sidx];
             int dup = 0;
             for (uint16_t j = 0; j < k && !dup; j++)
                 if (ui->images[j].name != NULL && strcmp(ui->images[j].name, nm) == 0)
@@ -494,6 +511,7 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
                     ir->failed = 1;
                 break;
             }
+          }
         }
     }
 
@@ -572,6 +590,13 @@ void ql_ui_free(QLUIRoot *ui)
     /* 输入汇里还握着这个指针，必须先摘掉，否则下一次事件就是 use-after-free */
     if (s_input_target == ui)
         ql_ui_detach_input();
+    /* Grid 布局的临时区（只增不减，直到这里才释放） */
+    ql_mem_free(ui->grid_place);
+    ql_mem_free(ui->grid_size);
+    ql_mem_free(ui->grid_occ);
+    ui->grid_place = NULL;
+    ui->grid_size = NULL;
+    ui->grid_occ = NULL;
     /* 先把还挂着的过渡动画摘掉，避免动画池里留着指向已释放节点的指针 */
     if (ui->trans != NULL) {
         for (int i = 0; i < QL_CFG_UI_TRANS_MAX; i++) {
@@ -983,6 +1008,10 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
 static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
                                        ql_coord_t content_y, ql_coord_t content_w,
                                        ql_coord_t avail_h, int definite_h);
+static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
+                                       ql_coord_t content_x, ql_coord_t content_y,
+                                       ql_coord_t content_w, ql_coord_t avail_h,
+                                       int definite_h);
 
 /* 父节点的内容宽/高（relative 定位的百分比基准） */
 static ql_coord_t parent_w_hint(const QLUINodeRT *node)
@@ -2174,7 +2203,22 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         }
     }
 
-    if (node->first_child != NULL && is_flex_container(s)) {
+    if (node->first_child != NULL && is_grid_container(s)) {
+        /* grid 容器：轨道定尺之后逐格摆放（见 layout_grid_children） */
+        int definite_h = height_is_definite(s, basis_h);
+        ql_coord_t avail_h = 0;
+        if (definite_h) {
+            ql_coord_t hv = height_of_style(s, basis_h, 0);
+            if (s->box_sizing == 1)
+                avail_h = hv - ql_ui_border_v(s) - s->padding.top - s->padding.bottom;
+            else
+                avail_h = hv;
+            if (avail_h < 0)
+                avail_h = 0;
+        }
+        content_h = layout_grid_children(node->owner, node, content_x, content_y,
+                                         content_w, avail_h, definite_h);
+    } else if (node->first_child != NULL && is_flex_container(s)) {
         /*
          * flex 容器：显式高度时才有剩余空间可分配（grow/shrink 才有意义）。
          * box-sizing：border-box 时 height 指边框盒，content-box 时指内容盒。
@@ -2289,8 +2333,9 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      *
      * 例外：flex 容器的高度已在上面算好（含剩余空间分配），这里不再覆盖。
      */
-    if (height_is_definite(s, basis_h) && !(node->first_child != NULL &&
-                                           is_flex_container(s))) {
+    if (height_is_definite(s, basis_h) &&
+        !(node->first_child != NULL &&
+          (is_flex_container(s) || is_grid_container(s)))) {
         ql_coord_t hv = height_of_style(s, basis_h, content_h);
         if (s->box_sizing == 1) {
             hv -= ql_ui_border_v(s) + s->padding.top + s->padding.bottom;
@@ -2390,6 +2435,580 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     return border_h + s->margin.top + s->margin.bottom;
 }
 
+
+/* ============================== Grid 布局（B6） ============================== */
+
+/*
+ * 与 flex 的分工：flex 是"一维 + 剩余空间按 grow/shrink 分"，grid 是
+ * "先把轨道定尺、再逐格摆放"。两者都只做**整数**运算，结果与后端无关。
+ *
+ * 定尺顺序（与 CSS 的意图一致，但只做"够用"的那一档）：
+ *   ① 每条轨道的 min（px / % 直接算；auto = 0）
+ *   ② max 是定长的（minmax 的上限）→ 取满
+ *   ③ max 是 auto → 取该列内容的最大 max-content
+ *   ④ max 是 fr → 把剩下的空间按 fr 权重分（累计推进，余数不丢）
+ *   ⑤ 行高：先按"列宽已定"把每项真排一遍拿到高度；auto 行取最大值；
+ *      span>1 的项按差额均摊；fr 行分剩余（容器高度确定时）
+ */
+
+/* Grid 容器判定：包关掉时恒为 0，所有分支自然退回块流 */
+static int is_grid_container(const QLUIStyle *s)
+{
+#if QL_FEAT_CSS_GRID
+    return s->display == QL_UI_DISPLAY_GRID || s->display == QL_UI_DISPLAY_INLINE_GRID;
+#else
+    (void)s;
+    return 0;
+#endif
+}
+
+#if QL_FEAT_CSS_GRID
+
+#define QL_GRID_OCC_COLS QL_CFG_UI_GRID_MAX_COLS
+/* 没写 fr 权重时的默认值（与 parser 的定点一致：fr×1000） */
+#define GRID_FR_ONE_DEF 1000
+#define QL_GRID_OCC_ROWS QL_CFG_UI_GRID_MAX_ROWS
+
+typedef struct {
+    int16_t col, row;   /* 0-based */
+    uint8_t cspan, rspan;
+} QLGridPlace;
+
+/*
+ * 临时区的**栈式**分配：一次布局里 grid 可以嵌套，所以每一层都要拿到
+ * 自己的那一段。`ql_ui_layout` 两端把 used 归零，内层返回时由调用方还原。
+ */
+static QLGridPlace *grid_take_place(QLUIRoot *ui, int nitems)
+{
+    if (ui->grid_occ == NULL) {
+        ui->grid_occ = (uint8_t *)ql_mem_calloc(
+            1, (size_t)QL_GRID_OCC_COLS * QL_GRID_OCC_ROWS);
+        if (ui->grid_occ == NULL)
+            return NULL;
+    }
+    const size_t need = (size_t)ui->grid_place_used + (size_t)nitems;
+    if (need > ui->grid_place_cap) {
+        const size_t cap = (need < 16u) ? 16u : need * 2u;
+        void *np = ql_mem_realloc(ui->grid_place, cap * sizeof(QLGridPlace));
+        if (np == NULL)
+            return NULL;
+        ui->grid_place = np;
+        ui->grid_place_cap = (uint16_t)((cap > 0xFFFFu) ? 0xFFFFu : cap);
+    }
+    QLGridPlace *p = (QLGridPlace *)ui->grid_place + ui->grid_place_used;
+    ui->grid_place_used = (uint16_t)(ui->grid_place_used + (uint16_t)nitems);
+    return p;
+}
+
+static ql_coord_t *grid_take_coords(QLUIRoot *ui, uint32_t n)
+{
+    const uint32_t need = ui->grid_size_used + n;
+    if (need > ui->grid_size_cap) {
+        const uint32_t cap = (need < 64u) ? 64u : need * 2u;
+        ql_coord_t *np = (ql_coord_t *)ql_mem_realloc(
+            ui->grid_size, (size_t)cap * sizeof(ql_coord_t));
+        if (np == NULL)
+            return NULL;
+        ui->grid_size = np;
+        ui->grid_size_cap = cap;
+    }
+    ql_coord_t *p = ui->grid_size + ui->grid_size_used;
+    ui->grid_size_used = need;
+    return p;
+}
+
+/* 一条轨道的 min / max 长度值（px）；百分比按 basis 折算 */
+static ql_coord_t grid_track_len(const QLUIGridTrack *t, int max_side,
+                                 ql_coord_t basis)
+{
+    const uint8_t kind = max_side ? t->max_kind : t->min_kind;
+    const int16_t val = max_side ? t->max_val : t->min_val;
+    switch (kind) {
+    case QL_UI_GT_FIXED:
+        return (ql_coord_t)val;
+    case QL_UI_GT_PERCENT:
+        return (basis > 0) ? (ql_coord_t)(((int32_t)basis * (int32_t)val) / 1000)
+                           : 0;
+    default:
+        return 0;      /* FR / AUTO 交给后面的分配阶段 */
+    }
+}
+
+/* 第 j 列的轨道（超出显式轨道 → 隐式轨道，用 `grid-auto-columns`） */
+static QLUIGridTrack grid_col_track(const QLUIDoc *doc, const QLUIGrid *g, int j,
+                                    const QLUIStyle *cs)
+{
+    QLUIGridTrack t;
+    memset(&t, 0, sizeof(t));
+    t.min_kind = QL_UI_GT_AUTO;
+    t.max_kind = QL_UI_GT_AUTO;
+    if (g != NULL && j < (int)g->col_count && doc->grid_tracks != NULL)
+        return doc->grid_tracks[g->col_first + j];
+    if (cs->grid_auto_col > 0) {
+        t.min_kind = t.max_kind = QL_UI_GT_FIXED;
+        t.min_val = t.max_val = cs->grid_auto_col;
+    }
+    return t;
+}
+
+static QLUIGridTrack grid_row_track(const QLUIDoc *doc, const QLUIGrid *g, int i,
+                                    const QLUIStyle *cs)
+{
+    QLUIGridTrack t;
+    memset(&t, 0, sizeof(t));
+    t.min_kind = QL_UI_GT_AUTO;
+    t.max_kind = QL_UI_GT_AUTO;
+    if (g != NULL && i < (int)g->row_count && doc->grid_tracks != NULL)
+        return doc->grid_tracks[g->row_first + i];
+    if (cs->grid_auto_row > 0) {
+        t.min_kind = t.max_kind = QL_UI_GT_FIXED;
+        t.min_val = t.max_val = cs->grid_auto_row;
+    }
+    return t;
+}
+
+/* 从 (r,c) 起 rs×cs 的格子是否全空 */
+static int grid_cells_free(const uint8_t *occ, int r, int c, int rs, int cs)
+{
+    if (r < 0 || c < 0 || r + rs > QL_GRID_OCC_ROWS || c + cs > QL_GRID_OCC_COLS)
+        return 0;
+    for (int i = 0; i < rs; i++)
+        for (int j = 0; j < cs; j++)
+            if (occ[(size_t)(r + i) * QL_GRID_OCC_COLS + (size_t)(c + j)] != 0)
+                return 0;
+    return 1;
+}
+
+static void grid_cells_mark(uint8_t *occ, int r, int c, int rs, int cs)
+{
+    for (int i = 0; i < rs; i++)
+        for (int j = 0; j < cs; j++)
+            occ[(size_t)(r + i) * QL_GRID_OCC_COLS + (size_t)(c + j)] = 1;
+}
+
+static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
+                                       ql_coord_t content_x, ql_coord_t content_y,
+                                       ql_coord_t content_w, ql_coord_t avail_h,
+                                       int definite_h)
+{
+    const QLUIStyle *cs = node->style;
+    const QLUIDoc *doc = ui->doc;
+    const QLUIGrid *g = NULL;
+    if (doc != NULL && doc->grids != NULL && cs->grid < doc->grid_count)
+        g = &doc->grids[cs->grid];
+
+    const ql_coord_t gap_c = (ql_coord_t)cs->gap_col;
+    const ql_coord_t gap_r = (ql_coord_t)cs->gap_row;
+
+    int ncol = (g != NULL) ? (int)g->col_count : 0;
+    if (ncol <= 0 && g != NULL)
+        ncol = (int)g->col_hint;
+    if (ncol <= 0)
+        ncol = 1;
+    if (ncol > QL_GRID_OCC_COLS)
+        ncol = QL_GRID_OCC_COLS;
+    int nrow_exp = (g != NULL) ? (int)g->row_count : 0;
+    if (nrow_exp <= 0 && g != NULL)
+        nrow_exp = (int)g->row_hint;
+    if (nrow_exp < 1)
+        nrow_exp = 1;
+
+    sort_children_by_order(node);
+
+    int nitems = 0;
+    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
+            continue;
+        nitems++;
+    }
+    if (nitems == 0)
+        return 0;
+    /* 记下 bump 指针：函数出口（含降级路径）都要还原，否则嵌套 grid 会互相踩 */
+    const uint16_t saved_place = ui->grid_place_used;
+    const uint32_t saved_coord = ui->grid_size_used;
+    QLGridPlace *pl = grid_take_place(ui, nitems);
+    ql_coord_t *coords = grid_take_coords(ui, 2u * QL_GRID_OCC_COLS +
+                                                 2u * QL_GRID_OCC_ROWS);
+    if (pl == NULL || coords == NULL) {
+        QL_LOGW("ui: grid 临时区分配失败，退回块流");
+        ui->grid_place_used = saved_place;
+        ui->grid_size_used = saved_coord;
+        goto block_fallback;
+    }
+
+    uint8_t *occ = ui->grid_occ;
+    memset(occ, 0, (size_t)QL_GRID_OCC_COLS * QL_GRID_OCC_ROWS);
+
+    /* ---------------- ① 放置 ---------------- */
+    const int dense = (cs->grid_flow & 2) != 0;
+    /*
+     * 自动放置的列边界 = **显式列数**。少了这一条，全自动项会一路往右排到
+     * 32 列上限去（隐式列），而模板里的 fr 列反而算不出宽度 ——
+     * 表现是"每格都只有内容那么宽，横向被撑出屏外"。
+     */
+    const int flow_cmax = ncol;
+    int cur_r = 0, cur_c = 0;
+    int used_cols = ncol, used_rows = nrow_exp;
+    {
+        int k = 0;
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            const QLUIStyle *is = c->style;
+            if (is->display == QL_UI_DISPLAY_NONE || is_out_of_flow(is))
+                continue;
+
+            int cspan = (is->grid_col_span > 0) ? (int)is->grid_col_span : 1;
+            int rspan = (is->grid_row_span > 0) ? (int)is->grid_row_span : 1;
+            if (cspan > QL_GRID_OCC_COLS)
+                cspan = QL_GRID_OCC_COLS;
+            if (rspan > QL_GRID_OCC_ROWS)
+                rspan = QL_GRID_OCC_ROWS;
+            int c0 = (is->grid_col > 0) ? (int)is->grid_col - 1 : -1;
+            int r0 = (is->grid_row > 0) ? (int)is->grid_row - 1 : -1;
+            if (c0 >= QL_GRID_OCC_COLS)
+                c0 = QL_GRID_OCC_COLS - 1;
+            if (r0 >= QL_GRID_OCC_ROWS)
+                r0 = QL_GRID_OCC_ROWS - 1;
+
+            int pr = 0, pc = 0;
+            if (c0 >= 0 && r0 >= 0) {
+                pr = r0;
+                pc = c0;
+            } else if (c0 >= 0) {
+                /* 只给了列：往下找第一个放得下的行 */
+                pr = dense ? 0 : cur_r;
+                while (pr <= QL_GRID_OCC_ROWS - rspan &&
+                       !grid_cells_free(occ, pr, c0, rspan, cspan))
+                    pr++;
+                if (pr > QL_GRID_OCC_ROWS - rspan)
+                    pr = QL_GRID_OCC_ROWS - rspan;
+                pc = c0;
+            } else if (r0 >= 0) {
+                /* 只给了行：往右找第一个放得下的列（列边界是显式列数） */
+                pc = 0;
+                while (pc <= flow_cmax - cspan &&
+                       !grid_cells_free(occ, r0, pc, rspan, cspan))
+                    pc++;
+                if (pc > flow_cmax - cspan)
+                    pc = flow_cmax - cspan;
+                if (pc < 0)
+                    pc = 0;
+                pr = r0;
+            } else {
+                /* 全自动：从游标开始扫（dense 从原点扫） */
+                int sr = dense ? 0 : cur_r;
+                int sc = dense ? 0 : cur_c;
+                int found = 0;
+                for (int r = sr; r <= QL_GRID_OCC_ROWS - rspan && !found; r++) {
+                    const int start_c = (r == sr) ? sc : 0;
+                    for (int cc = start_c; cc <= flow_cmax - cspan; cc++) {
+                        if (grid_cells_free(occ, r, cc, rspan, cspan)) {
+                            pr = r;
+                            pc = cc;
+                            found = 1;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    /* 放不下（超出上限）：挤到最后一格，宁可重叠也不丢内容 */
+                    pr = QL_GRID_OCC_ROWS - rspan;
+                    pc = QL_GRID_OCC_COLS - cspan;
+                    if (pr < 0)
+                        pr = 0;
+                    if (pc < 0)
+                        pc = 0;
+                }
+                if (!dense) {
+                    cur_r = pr;
+                    cur_c = pc + cspan;
+                }
+            }
+            grid_cells_mark(occ, pr, pc, rspan, cspan);
+            pl[k].col = (int16_t)pc;
+            pl[k].row = (int16_t)pr;
+            pl[k].cspan = (uint8_t)cspan;
+            pl[k].rspan = (uint8_t)rspan;
+            k++;
+
+            if (pc + cspan > used_cols)
+                used_cols = pc + cspan;
+            if (pr + rspan > used_rows)
+                used_rows = pr + rspan;
+            /* 显式给了位置时，游标也要跟着前进，避免后面的自动项插到前面去 */
+            if (!dense && (c0 >= 0 || r0 >= 0)) {
+                if (pr > cur_r) {
+                    cur_r = pr;
+                    cur_c = pc + cspan;
+                } else if (pr == cur_r && pc + cspan > cur_c) {
+                    cur_c = pc + cspan;
+                }
+            }
+        }
+    }
+    if (used_cols > QL_GRID_OCC_COLS)
+        used_cols = QL_GRID_OCC_COLS;
+    if (used_rows > QL_GRID_OCC_ROWS)
+        used_rows = QL_GRID_OCC_ROWS;
+    if (used_cols < 1)
+        used_cols = 1;
+    if (used_rows < 1)
+        used_rows = 1;
+
+    ql_coord_t *cw = coords;                                   /* [COLS] */
+    ql_coord_t *cx = coords + QL_GRID_OCC_COLS;                /* [COLS] */
+    ql_coord_t *rh = coords + 2 * QL_GRID_OCC_COLS;            /* [ROWS] */
+    ql_coord_t *ry = coords + 2 * QL_GRID_OCC_COLS + QL_GRID_OCC_ROWS;
+
+    /* ---------------- ② 列定尺 ---------------- */
+    {
+        int32_t total_fr = 0;
+        for (int j = 0; j < used_cols; j++) {
+            const QLUIGridTrack t = grid_col_track(doc, g, j, cs);
+            cw[j] = grid_track_len(&t, 0, content_w);
+            if (t.max_kind == QL_UI_GT_FR) {
+                total_fr += (t.max_val > 0) ? t.max_val : GRID_FR_ONE_DEF;
+            } else if (t.max_kind == QL_UI_GT_FIXED || t.max_kind == QL_UI_GT_PERCENT) {
+                const ql_coord_t mx = grid_track_len(&t, 1, content_w);
+                if (mx > cw[j])
+                    cw[j] = mx;
+            }
+        }
+        /* 内容定尺：max 是 auto 的列取该项的最大 max-content */
+        int k = 0;
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            const QLUIStyle *is = c->style;
+            if (is->display == QL_UI_DISPLAY_NONE || is_out_of_flow(is))
+                continue;
+            const QLGridPlace p = pl[k++];
+            const QLUIGridTrack t = grid_col_track(doc, g, p.col, cs);
+            if (t.max_kind != QL_UI_GT_AUTO)
+                continue;
+            const ql_coord_t mh = (ql_coord_t)(is->margin.left + is->margin.right);
+            const ql_coord_t need = max_content_main(c, 1, content_w, 0) - mh;
+            if (p.cspan == 1) {
+                if (need > cw[p.col])
+                    cw[p.col] = need;
+            } else {
+                /* 跨列：差额记到最后一列（简单且稳定；与浏览器同量级） */
+                const int jl = p.col + p.cspan - 1;
+                int32_t have = 0;
+                for (int j = p.col; j <= jl; j++)
+                    have += cw[j];
+                have += (int32_t)gap_c * (p.cspan - 1);
+                if (need > have)
+                    cw[jl] += need - have;
+            }
+        }
+        /* fr 列分剩余空间（累计推进） */
+        int32_t fixed = (int32_t)gap_c * (used_cols > 1 ? used_cols - 1 : 0);
+        for (int j = 0; j < used_cols; j++)
+            fixed += cw[j];
+        int32_t remaining = (int32_t)content_w - fixed;
+        if (remaining > 0 && total_fr > 0) {
+            int64_t num = 0;
+            for (int j = 0; j < used_cols; j++) {
+                const QLUIGridTrack t = grid_col_track(doc, g, j, cs);
+                if (t.max_kind != QL_UI_GT_FR)
+                    continue;
+                const int32_t w = (t.max_val > 0) ? t.max_val : GRID_FR_ONE_DEF;
+                num += (int64_t)remaining * (int64_t)w;
+                ql_coord_t add = (ql_coord_t)(num / (int64_t)total_fr);
+                num -= (int64_t)add * (int64_t)total_fr;
+                cw[j] += add;
+            }
+        }
+        /* 列起点 */
+        ql_coord_t x = content_x;
+        for (int j = 0; j < used_cols; j++) {
+            cx[j] = x;
+            x += cw[j] + gap_c;
+        }
+    }
+
+    /* ---------------- ③ 量高（列宽已定） ---------------- */
+    {
+        for (int i = 0; i < used_rows; i++) {
+            const QLUIGridTrack t = grid_row_track(doc, g, i, cs);
+            rh[i] = grid_track_len(&t, 0, definite_h ? avail_h : 0);
+            if (t.max_kind == QL_UI_GT_FIXED || t.max_kind == QL_UI_GT_PERCENT) {
+                const ql_coord_t mx = grid_track_len(&t, 1, definite_h ? avail_h : 0);
+                if (mx > rh[i])
+                    rh[i] = mx;
+            }
+        }
+        int k = 0;
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            const QLUIStyle *is = c->style;
+            if (is->display == QL_UI_DISPLAY_NONE || is_out_of_flow(is))
+                continue;
+            const QLGridPlace p = pl[k++];
+            ql_coord_t w = 0;
+            for (int j = p.col; j < p.col + p.cspan; j++)
+                w += cw[j];
+            w += gap_c * (p.cspan - 1);
+            const ql_coord_t h = layout_node(c, content_x, content_y, w, -1);
+            const QLUIGridTrack t = grid_row_track(doc, g, p.row, cs);
+            if (t.max_kind != QL_UI_GT_FIXED && t.max_kind != QL_UI_GT_PERCENT &&
+                p.rspan == 1) {
+                if (h > rh[p.row])
+                    rh[p.row] = h;
+            }
+        }
+        /* 跨行的项：把差额均摊到它跨过的那几行 */
+        k = 0;
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
+                continue;
+            const QLGridPlace p = pl[k++];
+            if (p.rspan <= 1)
+                continue;
+            ql_coord_t have = gap_r * (p.rspan - 1);
+            for (int i = p.row; i < p.row + p.rspan; i++)
+                have += rh[i];
+            const ql_coord_t need =
+                max_content_main(c, 0, content_w, 0) - c->style->margin.top -
+                c->style->margin.bottom;
+            if (need > have) {
+                const ql_coord_t add = (need - have) / (ql_coord_t)p.rspan;
+                for (int i = p.row; i < p.row + p.rspan; i++)
+                    rh[i] += add;
+            }
+        }
+        /* fr 行：容器高度确定时把剩余高度分掉 */
+        if (definite_h) {
+            int32_t total_fr = 0;
+            int32_t fixed = (int32_t)gap_r * (used_rows > 1 ? used_rows - 1 : 0);
+            for (int i = 0; i < used_rows; i++) {
+                const QLUIGridTrack t = grid_row_track(doc, g, i, cs);
+                fixed += rh[i];
+                if (t.max_kind == QL_UI_GT_FR)
+                    total_fr += (t.max_val > 0) ? t.max_val : GRID_FR_ONE_DEF;
+            }
+            int32_t remaining = (int32_t)avail_h - fixed;
+            if (remaining > 0 && total_fr > 0) {
+                int64_t num = 0;
+                for (int i = 0; i < used_rows; i++) {
+                    const QLUIGridTrack t = grid_row_track(doc, g, i, cs);
+                    if (t.max_kind != QL_UI_GT_FR)
+                        continue;
+                    const int32_t w = (t.max_val > 0) ? t.max_val : GRID_FR_ONE_DEF;
+                    num += (int64_t)remaining * (int64_t)w;
+                    ql_coord_t add = (ql_coord_t)(num / (int64_t)total_fr);
+                    num -= (int64_t)add * (int64_t)total_fr;
+                    rh[i] += add;
+                }
+            }
+        }
+        /* 行起点 */
+        ql_coord_t y = content_y;
+        for (int i = 0; i < used_rows; i++) {
+            ry[i] = y;
+            y += rh[i] + gap_r;
+        }
+    }
+
+    /* ---------------- ④ 定位 + 递归 ---------------- */
+    {
+        int k = 0;
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            const QLUIStyle *is = c->style;
+            if (is->display == QL_UI_DISPLAY_NONE || is_out_of_flow(is))
+                continue;
+            const QLGridPlace p = pl[k++];
+
+            ql_coord_t aw = 0, ah = 0;
+            for (int j = p.col; j < p.col + p.cspan; j++)
+                aw += cw[j];
+            aw += gap_c * (p.cspan - 1);
+            for (int i = p.row; i < p.row + p.rspan; i++)
+                ah += rh[i];
+            ah += gap_r * (p.rspan - 1);
+
+            const ql_coord_t mh = (ql_coord_t)(is->margin.left + is->margin.right);
+            const ql_coord_t mv = (ql_coord_t)(is->margin.top + is->margin.bottom);
+            const ql_coord_t cell_w = (aw - mh > 0) ? (aw - mh) : 0;
+            const ql_coord_t cell_h = (ah - mv > 0) ? (ah - mv) : 0;
+
+            /* 横向：`justify-self` → 容器的 `justify-items`；默认 stretch */
+            const uint8_t jit = (is->justify_self != QL_UI_ALIGN_SELF_AUTO)
+                                    ? is->justify_self
+                                    : cs->justify_items;
+            /* 纵向：`align-self` → 容器的 `align-items`；默认 stretch */
+            const uint8_t ait = (is->align_self != QL_UI_ALIGN_SELF_AUTO)
+                                    ? is->align_self
+                                    : cs->align_items;
+
+            ql_coord_t own_w = max_content_main(c, 1, cell_w, 0) - mh;
+            if (own_w < 0)
+                own_w = 0;
+            ql_coord_t own_h = c->border_box.h;   /* 量高那一趟留下的 */
+            if (own_h <= 0)
+                own_h = cell_h;
+
+            ql_coord_t fw = (jit == QL_UI_ALIGN_STRETCH) ? cell_w : own_w;
+            ql_coord_t fh = (ait == QL_UI_ALIGN_STRETCH) ? cell_h : own_h;
+            if (fw > cell_w)
+                fw = cell_w;
+            if (fh > cell_h && ait != QL_UI_ALIGN_STRETCH)
+                fh = cell_h;
+
+            ql_coord_t off_x = 0, off_y = 0;
+            if (jit == QL_UI_ALIGN_CENTER)
+                off_x = (cell_w - fw) / 2;
+            else if (jit == QL_UI_ALIGN_END)
+                off_x = cell_w - fw;
+            if (ait == QL_UI_ALIGN_CENTER)
+                off_y = (cell_h - fh) / 2;
+            else if (ait == QL_UI_ALIGN_END)
+                off_y = cell_h - fh;
+            if (off_x < 0)
+                off_x = 0;
+            if (off_y < 0)
+                off_y = 0;
+
+            force_size(c, fw, 1, 1, fh, 1);
+            (void)layout_node(c, cx[p.col] + is->margin.left + off_x,
+                              ry[p.row] + is->margin.top + off_y, fw, -1);
+        }
+    }
+
+    ui->grid_place_used = saved_place;
+    ui->grid_size_used = saved_coord;
+    return ry[used_rows - 1] + rh[used_rows - 1] - content_y;
+
+block_fallback:
+    {
+        ql_coord_t cy = content_y;
+        for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+            if (c->style->display == QL_UI_DISPLAY_NONE)
+                continue;
+            cy += layout_node(c, content_x, cy, content_w, definite_h ? avail_h : -1);
+        }
+        return cy - content_y;
+    }
+}
+
+#else   /* !QL_FEAT_CSS_GRID */
+
+static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
+                                       ql_coord_t content_x, ql_coord_t content_y,
+                                       ql_coord_t content_w, ql_coord_t avail_h,
+                                       int definite_h)
+{
+    (void)ui;
+    (void)avail_h;
+    (void)definite_h;
+    ql_coord_t cy = content_y;
+    for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
+        if (c->style->display == QL_UI_DISPLAY_NONE)
+            continue;
+        cy += layout_node(c, content_x, cy, content_w, -1);
+    }
+    return cy - content_y;
+}
+
+#endif  /* QL_FEAT_CSS_GRID */
+
 /* ------------------------------ flex 实现 ------------------------------ */
 
 /* 统计可见子项数；超过上限返回 -1（调用方降级为 block 流） */
@@ -2485,6 +3104,43 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
             own += pad_border;
         } else if (node->first_child == NULL) {
             own = pad_border;              /* 空盒子：内容 0 */
+        } else if (is_grid_container(s)) {
+            /*
+             * 网格容器的 max-content：
+             *   主轴水平 → 前 `列数` 个子项的 max-content 之和 + 间距（一行摆得下几个）；
+             *   主轴竖直 → 子项里最高的那个（列宽由容器决定）。
+             * 这是**估算**，只在"网格容器自己作为别人（flex/auto 列）的子项"时才用到。
+             */
+            const QLUIDoc *doc = node->owner != NULL ? node->owner->doc : NULL;
+            int gcol = 1;
+            if (doc != NULL && doc->grids != NULL && s->grid < doc->grid_count) {
+                const QLUIGrid *gg = &doc->grids[s->grid];
+                if (gg->col_count > 0)
+                    gcol = (int)gg->col_count;
+                else if (gg->col_hint > 0)
+                    gcol = (int)gg->col_hint;
+            }
+            const ql_coord_t gap = row ? (ql_coord_t)s->gap_col : (ql_coord_t)s->gap_row;
+            ql_coord_t sum = 0, mx = 0;
+            int n = 0;
+            for (QLUINodeRT *c = node->first_child; c != NULL && n < gcol;
+                 c = c->next_sibling) {
+                if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
+                    continue;
+                const ql_coord_t v =
+                    max_content_main(c, row, avail_w - pad_border, depth + 1);
+                sum += v;
+                if (v > mx)
+                    mx = v;
+                n++;
+            }
+            if (row) {
+                if (n > 1)
+                    sum += gap * (n - 1);
+                own = sum + pad_border;
+            } else {
+                own = mx + pad_border;
+            }
         } else if (is_flex_container(s) && flex_is_row(s) == row) {
             /* 同方向的 flex 容器：主轴上是"子项之和 + 间距" */
             ql_coord_t sum = 0;
@@ -3421,6 +4077,9 @@ void ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height)
 
     ui->width = width;
     ui->height = height;
+    /* Grid 临时区的 bump 指针每次布局从头开始（嵌套由各层自己还原） */
+    ui->grid_place_used = 0;
+    ui->grid_size_used = 0;
     s_viewport_w = width;
     s_viewport_h = height;
     s_calc_ops = ui->doc->calc_ops;
@@ -5083,6 +5742,210 @@ static void fill_rect_r4(QLDraw2D *d2d, QLRect rect, const ql_coord_t r4[4],
     d2d->fill_round_rect(d2d, rect, m, color, alpha);
 }
 
+
+#if QL_FEAT_CSS_BORDER_IMAGE
+
+/*
+ * `border-image` 的九宫格绘制。
+ *
+ * 一张图切 9 块：四角原样、四边单向缩放/平铺、中间双向缩放/平铺。
+ * 全部走 `blit_image(dst, src)`（后端已有子矩形采样），所以 CPU 与 GL
+ * 天然一致，也不需要新的着色器。
+ *
+ * 与 CSS 的差异（写进覆盖表）：不支持 `border-image-outset`（不向外扩），
+ * `border-image-width` 的百分比按**边框盒**对应边解释，`space` 按 `repeat` 处理。
+ */
+static void blit_band(QLDraw2D *d2d, const QLImage *img, QLRect dst, QLRect src,
+                      uint8_t repeat_mode, int horizontal)
+{
+    const ql_coord_t len = horizontal ? dst.w : dst.h;
+    const ql_coord_t tile = horizontal ? src.w : src.h;
+    if (len <= 0 || tile <= 0)
+        return;
+    if (repeat_mode == QL_UI_BI_STRETCH) {
+        d2d->blit_image(d2d, img, dst, &src, 0, 255);
+        return;
+    }
+    int n = 0;
+    ql_coord_t step = tile;
+    if (repeat_mode == QL_UI_BI_ROUND) {
+        n = (int)((len + tile / 2) / tile);
+        if (n < 1)
+            n = 1;
+        step = len / n;
+        if (step < 1)
+            step = 1;
+        n = (int)((len + step - 1) / step);
+    } else {
+        n = (int)((len + tile - 1) / tile);   /* repeat / space 都按满格铺 */
+    }
+    for (int i = 0; i < n; i++) {
+        const ql_coord_t off = (ql_coord_t)i * step;
+        ql_coord_t w = (horizontal) ? step : dst.w;
+        ql_coord_t h = (horizontal) ? dst.h : step;
+        if (off + w > len)
+            w = len - off;
+        if (w <= 0)
+            break;
+        QLRect d = horizontal ? ql_rect_make(dst.x + off, dst.y, w, dst.h)
+                              : ql_rect_make(dst.x, dst.y + off, dst.w, h);
+        d2d->blit_image(d2d, img, d, &src, 0, 255);
+    }
+}
+
+static void draw_border_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d)
+{
+    const QLUIStyle *s = ql_ui_node_style(node);
+    if (s == NULL || d2d == NULL || d2d->blit_image == NULL ||
+        s->border_image == QL_UI_NO_BORDER_IMAGE || ql_rect_is_empty(box))
+        return;
+    const QLUIRoot *ui = node->owner;
+    if (ui == NULL || ui->doc == NULL || ui->doc->text_pool == NULL ||
+        ui->doc->text_offsets == NULL)
+        return;
+    const char *nm = ui->doc->text_pool + ui->doc->text_offsets[s->border_image];
+    const QLImage *img = image_by_name(ui, nm);
+    if (img == NULL || img->w == 0 || img->h == 0)
+        return;
+
+    const ql_coord_t iw = (ql_coord_t)img->w;
+    const ql_coord_t ih = (ql_coord_t)img->h;
+
+    /* 切片（源图上的像素数） */
+    ql_coord_t sl[4];
+    for (int i = 0; i < 4; i++) {
+        int v = s->bi_slice[i];
+        if (v <= 0)
+            sl[i] = 0;
+        else if (s->bi_slice_pct)
+            sl[i] = (ql_coord_t)(((int32_t)((i == 1 || i == 3) ? iw : ih) * v) / 1000);
+        else
+            sl[i] = (ql_coord_t)v;
+    }
+    /* 左+右 / 上+下 不能超过图片本身 */
+    if (sl[1] + sl[3] > iw) {
+        const ql_coord_t over = sl[1] + sl[3] - iw;
+        sl[1] -= over / 2;
+        sl[3] -= over - over / 2;
+    }
+    if (sl[0] + sl[2] > ih) {
+        const ql_coord_t over = sl[0] + sl[2] - ih;
+        sl[0] -= over / 2;
+        sl[2] -= over - over / 2;
+    }
+    if (sl[0] < 0)
+        sl[0] = 0;
+    if (sl[1] < 0)
+        sl[1] = 0;
+    if (sl[2] < 0)
+        sl[2] = 0;
+    if (sl[3] < 0)
+        sl[3] = 0;
+
+    /* 目标边框宽度（布局 px） */
+    ql_coord_t wl[4];
+    for (int i = 0; i < 4; i++) {
+        int v = s->bi_width[i];
+        if (v <= 0)
+            wl[i] = sl[i];          /* 默认用切片值 */
+        else if (s->bi_width_pct)
+            wl[i] = (ql_coord_t)(((int32_t)((i == 1 || i == 3) ? box.w : box.h) * v) / 1000);
+        else
+            wl[i] = (ql_coord_t)v;
+        if (wl[i] < 0)
+            wl[i] = 0;
+    }
+    /* 目标也不能超过盒子 */
+    if (wl[1] + wl[3] > box.w) {
+        wl[1] = box.w / 2;
+        wl[3] = box.w - wl[1];
+    }
+    if (wl[0] + wl[2] > box.h) {
+        wl[0] = box.h / 2;
+        wl[2] = box.h - wl[0];
+    }
+
+    const ql_coord_t inner_w = box.w - wl[1] - wl[3];
+    const ql_coord_t inner_h = box.h - wl[0] - wl[2];
+    const ql_coord_t src_mid_w = iw - sl[1] - sl[3];
+    const ql_coord_t src_mid_h = ih - sl[0] - sl[2];
+    const uint8_t rep = s->bi_repeat;
+
+    /* 四角：原样缩放 */
+    const ql_coord_t sw[4] = { sl[3], sl[1], sl[3], sl[1] };  /* 左上 右上 左下 右下 */
+    const ql_coord_t sh[4] = { sl[0], sl[0], sl[2], sl[2] };
+    const ql_coord_t sx[4] = { 0, iw - sl[1], 0, iw - sl[1] };
+    const ql_coord_t sy[4] = { 0, 0, ih - sl[2], ih - sl[2] };
+    const ql_coord_t dx[4] = { box.x, box.x + box.w - wl[1], box.x,
+                               box.x + box.w - wl[1] };
+    const ql_coord_t dy[4] = { box.y, box.y, box.y + box.h - wl[2],
+                               box.y + box.h - wl[2] };
+    const ql_coord_t dw[4] = { wl[3], wl[1], wl[3], wl[1] };
+    const ql_coord_t dh[4] = { wl[0], wl[0], wl[2], wl[2] };
+    for (int i = 0; i < 4; i++) {
+        if (sw[i] <= 0 || sh[i] <= 0 || dw[i] <= 0 || dh[i] <= 0)
+            continue;
+        const QLRect src = ql_rect_make(sx[i], sy[i], sw[i], sh[i]);
+        const QLRect dst = ql_rect_make(dx[i], dy[i], dw[i], dh[i]);
+        d2d->blit_image(d2d, img, dst, &src, 0, 255);
+    }
+
+    /* 四条边 */
+    if (src_mid_w > 0) {
+        const QLRect src_t = ql_rect_make(sl[3], 0, src_mid_w, sl[0]);
+        const QLRect src_b = ql_rect_make(sl[3], ih - sl[2], src_mid_w, sl[2]);
+        if (wl[0] > 0 && inner_w > 0)
+            blit_band(d2d, img, ql_rect_make(box.x + wl[3], box.y, inner_w, wl[0]),
+                      src_t, rep, 1);
+        if (wl[2] > 0 && inner_w > 0)
+            blit_band(d2d, img,
+                      ql_rect_make(box.x + wl[3], box.y + box.h - wl[2], inner_w, wl[2]),
+                      src_b, rep, 1);
+    }
+    if (src_mid_h > 0) {
+        const QLRect src_l = ql_rect_make(0, sl[0], sl[3], src_mid_h);
+        const QLRect src_r = ql_rect_make(iw - sl[1], sl[0], sl[1], src_mid_h);
+        if (wl[3] > 0 && inner_h > 0)
+            blit_band(d2d, img, ql_rect_make(box.x, box.y + wl[0], wl[3], inner_h),
+                      src_l, rep, 0);
+        if (wl[1] > 0 && inner_h > 0)
+            blit_band(d2d, img,
+                      ql_rect_make(box.x + box.w - wl[1], box.y + wl[0], wl[1], inner_h),
+                      src_r, rep, 0);
+    }
+
+    /* 中间：有源区域就填（留空说明切片已经把图切完了） */
+    if (src_mid_w > 0 && src_mid_h > 0 && inner_w > 0 && inner_h > 0) {
+        const QLRect src_c = ql_rect_make(sl[3], sl[0], src_mid_w, src_mid_h);
+        const QLRect dst_c = ql_rect_make(box.x + wl[3], box.y + wl[0], inner_w, inner_h);
+        if (rep == QL_UI_BI_STRETCH) {
+            d2d->blit_image(d2d, img, dst_c, &src_c, 0, 255);
+        } else {
+            /* 平铺：先裁到中间区域，再按行列铺 */
+            const QLRect save = node->owner->clip;
+            if (d2d->set_clip != NULL)
+                d2d->set_clip(d2d, dst_c);
+            node->owner->clip = dst_c;
+            const ql_coord_t step_x = (rep == QL_UI_BI_ROUND)
+                                          ? (src_mid_w > 0 ? src_mid_w : 1)
+                                          : src_mid_w;
+            const ql_coord_t step_y = (rep == QL_UI_BI_ROUND)
+                                          ? (src_mid_h > 0 ? src_mid_h : 1)
+                                          : src_mid_h;
+            for (ql_coord_t y = 0; y < inner_h; y += step_y)
+                for (ql_coord_t x = 0; x < inner_w; x += step_x) {
+                    QLRect d = ql_rect_make(dst_c.x + x, dst_c.y + y, step_x, step_y);
+                    d2d->blit_image(d2d, img, d, &src_c, 0, 255);
+                }
+            node->owner->clip = save;
+            if (d2d->set_clip != NULL)
+                d2d->set_clip(d2d, save);
+        }
+    }
+}
+
+#endif  /* QL_FEAT_CSS_BORDER_IMAGE */
+
 /*
  * 画边框。三种情形：
  *
@@ -5332,6 +6195,19 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
     if (!inv && !ql_rect_is_empty(box) && s->bg_image != QL_UI_NO_IMAGE)
         draw_bg_image(node, box, d2d);
 
+#if QL_FEAT_CSS_BORDER_IMAGE
+    if (!inv && !ql_rect_is_empty(box) && s->border_image != QL_UI_NO_BORDER_IMAGE) {
+        /*
+         * CSS 语义：写了 `border-image` 就不再画 `border-style`。
+         * 同样要**原样恢复裁剪**（与 paint_border 的坑一样）。
+         */
+        const QLRect bi_clip = node->owner->clip;
+        draw_border_image(node, box, d2d);
+        if (d2d->set_clip != NULL)
+            d2d->set_clip(d2d, bi_clip);
+        node->owner->clip = bi_clip;
+    } else
+#endif
     if (!inv && !ql_rect_is_empty(box) && ql_ui_has_border(s)) {
         /*
          * 各边颜色/宽度不同时，paint_border 会临时改裁剪（每条边裁一次）。

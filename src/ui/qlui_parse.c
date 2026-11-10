@@ -3284,6 +3284,14 @@ static const char *const k_supported_props[] = {
     "box-shadow", "font-weight", "font-style", "text-decoration",
     "flex", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis",
     "justify-content", "align-items", "gap", "row-gap", "column-gap",
+    /* Grid（B6） */
+    "grid", "grid-template", "grid-template-columns", "grid-template-rows",
+    "grid-template-areas", "grid-auto-columns", "grid-auto-rows",
+    "grid-auto-flow", "grid-column", "grid-row", "grid-area",
+    "justify-items", "justify-self", "place-items", "place-self",
+    /* border-image（B6） */
+    "border-image", "border-image-source", "border-image-slice",
+    "border-image-width", "border-image-repeat", "border-image-outset",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
     "transform", "clip-path", "backdrop-filter",
     "transition", "transition-duration", "transition-timing-function",
@@ -7330,6 +7338,10 @@ static int intlist_add(IntList *l, int v)
 
 static int display_value(const char *s)
 {
+    if (strcmp(s, "grid") == 0)
+        return QL_UI_DISPLAY_GRID;
+    if (strcmp(s, "inline-grid") == 0)
+        return QL_UI_DISPLAY_INLINE_GRID;
     if (strcmp(s, "block") == 0)
         return QL_UI_DISPLAY_BLOCK;
     if (strcmp(s, "inline") == 0)
@@ -8017,13 +8029,70 @@ static int parse_border_style_kw(const char *text, const char *where, uint8_t *o
 }
 
 /* 把一份声明集合编译成 QLUIStyle。检查顺序与 Python 侧一致（第一个错就停） */
+/*
+ * `compile_style` 里有些属性**不能就地算成数字**，要留到"整棵树都有了样式"之后
+ * 才结算（它们要查父容器的模板 / 要往文本池里放名字）：
+ *
+ *   - `background-image: url()` → 资源名；
+ *   - Grid 的 `grid-template-*` / `grid-area` / `grid-row` / `grid-column`
+ *     （要解析轨道列表、要按父容器的具名区域换算行列号）；
+ *   - `border-image: url()` 的切片串。
+ *
+ * 所以它们以**原文字符串**的形式带出去，由调用方挂到"按样式下标"的侧表上，
+ * 最后统一 resolve。运行期只会见到整数。
+ */
+static char *dup_or_null(const char *s)
+{
+    if (s == NULL)
+        return NULL;
+    const size_t n = strlen(s) + 1u;
+    char *d = (char *)ql_mem_alloc(n);
+    if (d != NULL)
+        memcpy(d, s, n);
+    return d;
+}
+
+typedef struct {
+    char *bg_url;
+    char *grid_cols;      /* grid-template-columns */
+    char *grid_rows;      /* grid-template-rows */
+    char *grid_areas;     /* grid-template-areas */
+    char *grid_auto_rows; /* grid-auto-rows */
+    char *grid_auto_cols; /* grid-auto-columns */
+    char *item_col;       /* grid-column */
+    char *item_row;       /* grid-row */
+    char *item_area;      /* grid-area */
+    char *bi_url;         /* border-image-source 的 url() */
+    char *bi_slice;       /* border-image-slice */
+    char *bi_width;       /* border-image-width */
+    char *bi_repeat;      /* border-image-repeat */
+} CompileSide;
+
+static void compile_side_free(CompileSide *sd)
+{
+    ql_mem_free(sd->bg_url);
+    ql_mem_free(sd->grid_cols);
+    ql_mem_free(sd->grid_rows);
+    ql_mem_free(sd->grid_areas);
+    ql_mem_free(sd->grid_auto_rows);
+    ql_mem_free(sd->grid_auto_cols);
+    ql_mem_free(sd->item_col);
+    ql_mem_free(sd->item_row);
+    ql_mem_free(sd->item_area);
+    ql_mem_free(sd->bi_url);
+    ql_mem_free(sd->bi_slice);
+    ql_mem_free(sd->bi_width);
+    ql_mem_free(sd->bi_repeat);
+    memset(sd, 0, sizeof(*sd));
+}
+
 static int compile_style(const Decls *st, const char *where, const KfRanges *ranges,
                          const KfTable *kftab, AnimTable *anims, IntList *fonts,
-                         CalcPool *calc, QLUIStyle *out, char **out_bg_url)
+                         CalcPool *calc, QLUIStyle *out, CompileSide *side)
 {
     memset(out, 0, sizeof(*out));
-    if (out_bg_url != NULL)
-        *out_bg_url = NULL;
+    if (side != NULL)
+        memset(side, 0, sizeof(*side));
 
     uint32_t bg = 0, fg = 0, bd = 0;
     uint8_t bg_a = 0, a = 0;
@@ -8454,6 +8523,13 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                   (v != NULL) ? v : "block");
         return 0;
     }
+#if !QL_FEAT_CSS_GRID
+    if (disp == QL_UI_DISPLAY_GRID || disp == QL_UI_DISPLAY_INLINE_GRID) {
+        set_error("%s: display: grid 需要 QL_FEAT_CSS_GRID（这个能力包被裁掉了）",
+                  where);
+        return 0;
+    }
+#endif
     int align = text_align_value((v = decls_get(st, "text-align")) != NULL ? v : "left");
     if (align < 0) {
         set_error("%s: 不支持的 text-align '%s'", where, v);
@@ -9694,8 +9770,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->bg_grad_dir = (uint8_t)grad_dir;
     out->bg_image = QL_UI_NO_IMAGE;
     if (bg_url != NULL) {
-        if (out_bg_url != NULL)
-            *out_bg_url = bg_url;      /* 调用方负责入池并回填下标 */
+        if (side != NULL)
+            side->bg_url = bg_url;      /* 调用方负责入池并回填下标 */
         else
             ql_mem_free(bg_url);
     }
@@ -9827,6 +9903,242 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->baseline_dy = (int8_t)baseline_dy;
     out->font_family = font_family;
     out->font_flags = (uint8_t)(font_flags | (uint8_t)(object_fit << QL_UI_FIT_SHIFT));
+
+    /* ===================== Grid（B6） ===================== */
+    /*
+     * 这里只做两件事：
+     *   ① "本身就是数字"的部分就地算好（flow / 对齐 / 隐式轨道尺寸）；
+     *   ② 需要**查父容器**或**进文本池**的部分带出去（CompileSide 里的字符串）。
+     * 真正的模板解析与行列号换算在 `grid_resolve_all()`（整棵树走完之后）。
+     */
+#if !QL_FEAT_CSS_GRID
+    if (decls_get(st, "grid-template-columns") != NULL ||
+        decls_get(st, "grid-template-rows") != NULL ||
+        decls_get(st, "grid-template-areas") != NULL ||
+        decls_get(st, "grid-auto-flow") != NULL ||
+        decls_get(st, "grid-column") != NULL || decls_get(st, "grid-row") != NULL ||
+        decls_get(st, "grid-area") != NULL || decls_get(st, "justify-items") != NULL ||
+        decls_get(st, "justify-self") != NULL) {
+        set_error("%s: grid-* / justify-items 需要 QL_FEAT_CSS_GRID（这个能力包被裁掉了）",
+                  where);
+        return 0;
+    }
+#endif
+    out->grid = QL_UI_NO_GRID;
+    out->grid_col = 0;
+    out->grid_row = 0;
+    out->grid_col_span = 1;
+    out->grid_row_span = 1;
+    out->grid_flow = QL_UI_GRID_FLOW_ROW;
+    out->justify_items = QL_UI_ALIGN_STRETCH;
+    out->justify_self = QL_UI_ALIGN_SELF_AUTO;
+    out->grid_auto_row = 0;
+    out->grid_auto_col = 0;
+
+    if ((v = decls_get(st, "grid-auto-flow")) != NULL) {
+        char t[64];
+        trim_lower(v, t, sizeof(t));
+        int dense = 0, dir = 0, bad = 0;
+        for (const char *q = t;;) {
+            while (is_space(*q))
+                q++;
+            if (*q == '\0')
+                break;
+            const char *ts = q;
+            while (*q != '\0' && !is_space(*q))
+                q++;
+            if ((size_t)(q - ts) == 3u && strncmp(ts, "row", 3) == 0)
+                dir = 0;
+            else if ((size_t)(q - ts) == 6u && strncmp(ts, "column", 6) == 0)
+                dir = 1;
+            else if ((size_t)(q - ts) == 5u && strncmp(ts, "dense", 5) == 0)
+                dense = 1;
+            else
+                bad = 1;
+        }
+        if (bad) {
+            set_error("%s: 不支持的 grid-auto-flow '%s'（row / column / dense 的组合）",
+                      where, v);
+            return 0;
+        }
+        out->grid_flow = (uint8_t)(dir == 0 ? (dense ? QL_UI_GRID_FLOW_ROW_DENSE
+                                                      : QL_UI_GRID_FLOW_ROW)
+                                            : (dense ? QL_UI_GRID_FLOW_COLUMN_DENSE
+                                                     : QL_UI_GRID_FLOW_COLUMN));
+    }
+    /* `justify-items` / `justify-self` / `place-items` / `place-self` */
+    {
+        const char *ji = decls_get(st, "justify-items");
+        const char *js = decls_get(st, "justify-self");
+        const char *pi = decls_get(st, "place-items");
+        const char *ps = decls_get(st, "place-self");
+        if (ji == NULL && pi != NULL)
+            ji = pi;                 /* `place-items: <align> <justify>` 只取第一个词 */
+        if (js == NULL && ps != NULL)
+            js = ps;
+        if (ji != NULL) {
+            char t[64], one[64];
+            trim_lower(ji, t, sizeof(t));
+            /* `place-items: center center` → 取第一个词 */
+            size_t k = 0;
+            while (t[k] != '\0' && !is_space(t[k]) && k + 1u < sizeof(one)) {
+                one[k] = t[k];
+                k++;
+            }
+            one[k] = '\0';
+            const int a2 = align_value(one);
+            if (a2 < 0) {
+                set_error("%s: 不支持的 justify-items '%s'（stretch/start/center/end）",
+                          where, ji);
+                return 0;
+            }
+            out->justify_items = (uint8_t)a2;
+        }
+        if (js != NULL) {
+            char t[64], one[64];
+            trim_lower(js, t, sizeof(t));
+            size_t k = 0;
+            while (t[k] != '\0' && !is_space(t[k]) && k + 1u < sizeof(one)) {
+                one[k] = t[k];
+                k++;
+            }
+            one[k] = '\0';
+            if (strcmp(one, "auto") == 0) {
+                out->justify_self = QL_UI_ALIGN_SELF_AUTO;
+            } else {
+                const int a2 = align_value(one);
+                if (a2 < 0) {
+                    set_error("%s: 不支持的 justify-self '%s'（auto/stretch/start/center/end）",
+                              where, js);
+                    return 0;
+                }
+                out->justify_self = (uint8_t)a2;
+            }
+        }
+    }
+    /* 隐式轨道尺寸：只支持单个长度（px / % / em / rem / calc） */
+    {
+        static const char *const auto_names[2] = { "grid-auto-rows", "grid-auto-columns" };
+        for (int i = 0; i < 2; i++) {
+            v = decls_get(st, auto_names[i]);
+            if (v == NULL)
+                continue;
+            uint8_t u2 = 0;
+            int n2 = 0;
+            if (!parse_length(v, where, 1, calc, &u2, &n2))
+                return 0;
+            if (u2 == QL_UI_UNIT_AUTO) {
+                if (i == 0)
+                    out->grid_auto_row = 0;
+                else
+                    out->grid_auto_col = 0;
+                continue;
+            }
+            if (!length_wants_const(u2, where, auto_names[i]))
+                return 0;
+            if (i == 0)
+                out->grid_auto_row = (int16_t)n2;
+            else
+                out->grid_auto_col = (int16_t)n2;
+        }
+    }
+    /* 需要延后结算的：原样带出去 */
+    if (side != NULL) {
+        side->grid_cols = dup_or_null(decls_get(st, "grid-template-columns"));
+        side->grid_rows = dup_or_null(decls_get(st, "grid-template-rows"));
+        side->grid_areas = dup_or_null(decls_get(st, "grid-template-areas"));
+        side->grid_auto_rows = dup_or_null(decls_get(st, "grid-auto-rows"));
+        side->grid_auto_cols = dup_or_null(decls_get(st, "grid-auto-columns"));
+        side->item_col = dup_or_null(decls_get(st, "grid-column"));
+        side->item_row = dup_or_null(decls_get(st, "grid-row"));
+        side->item_area = dup_or_null(decls_get(st, "grid-area"));
+        if (decls_get(st, "grid-template") != NULL)
+            set_error("%s: 不支持 `grid-template` 简写（请分开写 "
+                      "grid-template-columns / -rows / -areas）", where);
+        if (decls_get(st, "grid") != NULL)
+            set_error("%s: 不支持 `grid` 简写（请分开写 grid-template-* 与 grid-auto-flow）",
+                      where);
+        if (decls_get(st, "grid-template") != NULL || decls_get(st, "grid") != NULL)
+            return 0;
+    }
+
+    /* ===================== border-image（B6） ===================== */
+#if !QL_FEAT_CSS_BORDER_IMAGE
+    if (decls_get(st, "border-image") != NULL ||
+        decls_get(st, "border-image-source") != NULL ||
+        decls_get(st, "border-image-slice") != NULL) {
+        set_error("%s: border-image 需要 QL_FEAT_CSS_BORDER_IMAGE（这个能力包被裁掉了）",
+                  where);
+        return 0;
+    }
+#endif
+    out->border_image = QL_UI_NO_BORDER_IMAGE;
+    out->bi_slice_pct = 0;
+    out->bi_width_pct = 0;
+    out->bi_repeat = QL_UI_BI_STRETCH;
+    for (int i = 0; i < 4; i++) {
+        out->bi_slice[i] = 0;
+        out->bi_width[i] = 0;
+    }
+    if (side != NULL) {
+        /* 简写 `border-image: <source> <slice>[/<width>] <repeat>` 拆成三段 */
+        const char *sh = decls_get(st, "border-image");
+        if (sh != NULL) {
+            char parts[8][64];
+            const int n = split_top_spaces(sh, where, parts, 8);
+            if (n < 0)
+                return 0;
+            for (int i = 0; i < n; i++) {
+                const char *p = parts[i];
+                if (strncmp(p, "url(", 4) == 0 || strcmp(p, "none") == 0)
+                    side->bi_url = dup_or_null(p);
+                else if (strcmp(p, "stretch") == 0 || strcmp(p, "repeat") == 0 ||
+                         strcmp(p, "round") == 0 || strcmp(p, "space") == 0)
+                    side->bi_repeat = dup_or_null(p);
+                else if (strchr(p, '/') != NULL) {
+                    /* `<slice> / <width>`：切成两段分别处理 */
+                    char a2[64], b2[64];
+                    const char *sl = strchr(p, '/');
+                    size_t al = (size_t)(sl - p);
+                    if (al >= sizeof(a2))
+                        al = sizeof(a2) - 1u;
+                    memcpy(a2, p, al);
+                    a2[al] = '\0';
+                    snprintf(b2, sizeof(b2), "%s", sl + 1);
+                    side->bi_slice = dup_or_null(a2);
+                    side->bi_width = dup_or_null(b2);
+                } else if (side->bi_slice == NULL) {
+                    side->bi_slice = dup_or_null(p);
+                } else if (side->bi_width == NULL) {
+                    side->bi_width = dup_or_null(p);
+                }
+            }
+        }
+        const char *src2 = decls_get(st, "border-image-source");
+        if (src2 != NULL) {
+            ql_mem_free(side->bi_url);
+            side->bi_url = dup_or_null(src2);
+        }
+        const char *s2 = decls_get(st, "border-image-slice");
+        if (s2 != NULL) {
+            ql_mem_free(side->bi_slice);
+            side->bi_slice = dup_or_null(s2);
+        }
+        const char *w2 = decls_get(st, "border-image-width");
+        if (w2 != NULL) {
+            ql_mem_free(side->bi_width);
+            side->bi_width = dup_or_null(w2);
+        }
+        const char *r2 = decls_get(st, "border-image-repeat");
+        if (r2 != NULL) {
+            ql_mem_free(side->bi_repeat);
+            side->bi_repeat = dup_or_null(r2);
+        }
+        if (decls_get(st, "border-image-outset") != NULL)
+            set_error("%s: 不支持 `border-image-outset`（边框图不向外扩）", where);
+        if (decls_get(st, "border-image-outset") != NULL)
+            return 0;
+    }
     return 1;
 }
 
@@ -9860,6 +10172,21 @@ typedef struct {
  * 在整个构建期间设好，返回前清掉。
  */
 static TextPool *s_styles_pool;
+
+/*
+ * Grid 的"原文侧表"：按**样式下标**存 delay-resolve 的字符串。
+ * 之所以按样式下标而不是按节点：样式是按 (属性,值) 去重的，同一份模板
+ * 只会编译一次；而"落在哪个格子里"依赖父容器，所以那部分在
+ * `grid_resolve_all()` 里按节点算，必要时给节点复制一份样式。
+ */
+typedef struct {
+    char *cols, *rows, *areas, *auto_rows, *auto_cols;
+    char *item_col, *item_row, *item_area;
+    char *bi_url, *bi_slice, *bi_width, *bi_repeat;
+} GridRaw;
+
+static GridRaw *s_grid_raw;
+static int      s_grid_raw_cap;
 
 static int text_pool_intern(TextPool *tp, const char *text, uint16_t *out);
 
@@ -9898,24 +10225,62 @@ static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
     }
     StyleEnt *e = &tab->e[tab->n];
     memset(e, 0, sizeof(*e));
-    char *bg_url = NULL;
+    CompileSide side;
     if (!compile_style(decls, where, ranges, kftab, anims, fonts, calc, &e->st,
-                       &bg_url)) {
+                       &side)) {
+        compile_side_free(&side);
         ql_mem_free(sig);
         return 0;
     }
-    if (bg_url != NULL) {
+    if (side.bg_url != NULL) {
         uint16_t uidx = 0xFFFF;
         const int ok = (s_styles_pool != NULL)
-                           ? text_pool_intern(s_styles_pool, bg_url, &uidx)
+                           ? text_pool_intern(s_styles_pool, side.bg_url, &uidx)
                            : ((uidx = 0xFFFF), 1);
-        ql_mem_free(bg_url);
         if (!ok) {
+            compile_side_free(&side);
             ql_mem_free(sig);
             return 0;
         }
         e->st.bg_image = uidx;
+        ql_mem_free(side.bg_url);      /* 名字已进池，这里必须立刻释放 */
+        side.bg_url = NULL;
     }
+    /* Grid：模板原文挂到"按样式下标"的侧表上（整棵树走完后统一 resolve） */
+    {
+        if (tab->n >= s_grid_raw_cap) {
+            const int cap = (tab->n + 16) * 2;
+            GridRaw *ng_row = NULL;
+            (void)ng_row;
+            GridRaw *nr = (GridRaw *)ql_mem_realloc(s_grid_raw,
+                                                    (size_t)cap * sizeof(GridRaw));
+            if (nr == NULL) {
+                compile_side_free(&side);
+                ql_mem_free(sig);
+                return 0;
+            }
+            memset(nr + s_grid_raw_cap, 0,
+                   (size_t)(cap - s_grid_raw_cap) * sizeof(GridRaw));
+            s_grid_raw = nr;
+            s_grid_raw_cap = cap;
+        }
+        GridRaw *gr = &s_grid_raw[tab->n];
+        memset(gr, 0, sizeof(*gr));
+        gr->cols = side.grid_cols;
+        gr->rows = side.grid_rows;
+        gr->areas = side.grid_areas;
+        gr->auto_rows = side.grid_auto_rows;
+        gr->auto_cols = side.grid_auto_cols;
+        gr->item_col = side.item_col;
+        gr->item_row = side.item_row;
+        gr->item_area = side.item_area;
+        gr->bi_url = side.bi_url;
+        gr->bi_slice = side.bi_slice;
+        gr->bi_width = side.bi_width;
+        gr->bi_repeat = side.bi_repeat;
+        memset(&side, 0, sizeof(side));   /* 所有权已转移 */
+    }
+    compile_side_free(&side);
     e->sig = sig;
     e->siglen = siglen;
     *out = (uint16_t)tab->n++;
@@ -10349,6 +10714,689 @@ static int build_areas(const Flat *flat, int nflat, TextPool *pool, AreaOut *out
     return ok;
 }
 
+
+/* ======================================================================
+ * Grid（B6）：模板解析 + 行列号结算
+ *
+ * 全部在**构建期**完成。运行期只看到 `QLUIStyle` 里的几个整数
+ * （`grid` / `grid_col` / `grid_row` / `*_span`）与 doc 里的三段池，
+ * 所以布局代码里没有任何字符串比较，MCU 上也不占栈。
+ * ====================================================================== */
+
+/* 一段轨道列表最多几段（`repeat()` 展开前的 token 数） */
+#define GRID_MAX_TOKENS 32
+/* `grid-template-areas` 里最多多少个互不相同的区域名 */
+#define GRID_MAX_AREA_NAMES 64
+#define GRID_AREA_NAME_LEN  24
+
+/* 千分比 / fr 的定点：fr 存 fr×1000，百分比存 pct×10 */
+#define GRID_FR_ONE   1000
+#define GRID_PCT_ONE  10
+
+/*
+ * 单条轨道 → QLUIGridTrack。
+ * 认：`<len>` / `<pct>` / `<n>fr` / `auto` / `min-content` / `max-content` /
+ *     `minmax(<min>, <max>)`
+ * `min-content` / `max-content` 归到 AUTO（差异只在"内容大于轨道"时可见，
+ * 见 §19.1 的语义受限表）。
+ */
+static int grid_track_token(const char *tok, const char *where, QLUIGridTrack *t)
+{
+    char s[96];
+    trim_lower(tok, s, sizeof(s));
+    if (s[0] == '\0') {
+        set_error("%s: grid 轨道里有空项", where);
+        return 0;
+    }
+    memset(t, 0, sizeof(*t));
+
+    /* minmax(a, b) */
+    if (strncmp(s, "minmax(", 7) == 0) {
+        const size_t n = strlen(s);
+        if (s[n - 1u] != ')') {
+            set_error("%s: minmax() 缺少右括号：'%s'", where, tok);
+            return 0;
+        }
+        char inner[96];
+        memcpy(inner, s + 7, n - 8u);
+        inner[n - 8u] = '\0';
+        char parts[2][64];
+        const int k = split_top_commas(inner, where, parts, 2);
+        if (k != 2) {
+            set_error("%s: minmax() 需要两个参数（收到 '%s'）", where, tok);
+            return 0;
+        }
+        QLUIGridTrack lo, hi;
+        if (!grid_track_token(parts[0], where, &lo) ||
+            !grid_track_token(parts[1], where, &hi))
+            return 0;
+        if (lo.min_kind == QL_UI_GT_FR || hi.min_kind == QL_UI_GT_FR) {
+            /* `minmax(1fr, 2fr)` 没有意义（fr 只能出现在 max 侧） */
+            if (lo.min_kind == QL_UI_GT_FR && lo.min_val != 0) {
+                set_error("%s: minmax() 的 min 不能是 fr（收到 '%s'）", where, tok);
+                return 0;
+            }
+        }
+        t->min_kind = lo.min_kind;
+        t->min_val = lo.min_val;
+        t->max_kind = hi.max_kind;
+        t->max_val = hi.max_val;
+        if (t->max_kind == QL_UI_GT_AUTO && t->min_kind != QL_UI_GT_AUTO) {
+            t->max_kind = t->min_kind;
+            t->max_val = t->min_val;
+        }
+        return 1;
+    }
+
+    if (strcmp(s, "auto") == 0 || strcmp(s, "min-content") == 0 ||
+        strcmp(s, "max-content") == 0) {
+        t->min_kind = QL_UI_GT_AUTO;
+        t->max_kind = QL_UI_GT_AUTO;
+        return 1;
+    }
+    /* `<n>fr` */
+    {
+        const size_t n = strlen(s);
+        if (n > 2u && strcmp(s + n - 2u, "fr") == 0) {
+            char num[64];
+            memcpy(num, s, n - 2u);
+            num[n - 2u] = '\0';
+            const char *end = NULL;
+            double v = 0;
+            if (match_number(num, &end, &v) && *end == '\0' && v > 0.0) {
+                t->min_kind = QL_UI_GT_AUTO;
+                t->min_val = 0;
+                t->max_kind = QL_UI_GT_FR;
+                t->max_val = (int16_t)py_round(v * GRID_FR_ONE);
+                return 1;
+            }
+        }
+    }
+    /* `%` */
+    {
+        const size_t n = strlen(s);
+        if (n > 1u && s[n - 1u] == '%') {
+            char num[64];
+            memcpy(num, s, n - 1u);
+            num[n - 1u] = '\0';
+            const char *end = NULL;
+            double v = 0;
+            if (match_number(num, &end, &v) && *end == '\0') {
+                t->min_kind = QL_UI_GT_PERCENT;
+                t->max_kind = QL_UI_GT_PERCENT;
+                t->min_val = (int16_t)py_round(v * GRID_PCT_ONE);
+                t->max_val = t->min_val;
+                return 1;
+            }
+        }
+    }
+    /* px（也接受裸数字 0） */
+    {
+        const size_t n = strlen(s);
+        if (n > 2u && strcmp(s + n - 2u, "px") == 0) {
+            char num[64];
+            memcpy(num, s, n - 2u);
+            num[n - 2u] = '\0';
+            const char *end = NULL;
+            double v = 0;
+            if (match_number(num, &end, &v) && *end == '\0') {
+                t->min_kind = QL_UI_GT_FIXED;
+                t->max_kind = QL_UI_GT_FIXED;
+                t->min_val = (int16_t)py_round(v);
+                t->max_val = t->min_val;
+                return 1;
+            }
+        }
+        if (strcmp(s, "0") == 0) {
+            t->min_kind = QL_UI_GT_FIXED;
+            t->max_kind = QL_UI_GT_FIXED;
+            return 1;
+        }
+    }
+    set_error("%s: 不支持的 grid 轨道 '%s'（px / %% / fr / auto / min-content / "
+              "max-content / minmax()；em/rem 请写成 px 或用 calc()）",
+              where, tok);
+    return 0;
+}
+
+/* 递归解析一段轨道列表（`repeat()` 在这里展开） */
+static int grid_track_list(const char *text, const char *where, QLUIGridTrack *out,
+                           int max, int *n_out, int depth)
+{
+    if (depth > 3) {
+        set_error("%s: repeat() 嵌套超过 3 层", where);
+        return 0;
+    }
+    char toks[GRID_MAX_TOKENS][64];
+    const int nt = split_top_spaces(text, where, toks, GRID_MAX_TOKENS);
+    if (nt < 0)
+        return 0;
+    int n = 0;
+    for (int i = 0; i < nt; i++) {
+        if (strncmp(toks[i], "repeat(", 7) == 0) {
+            const size_t len = strlen(toks[i]);
+            if (toks[i][len - 1u] != ')') {
+                set_error("%s: repeat() 缺少右括号：'%s'", where, toks[i]);
+                return 0;
+            }
+            char inner[128];
+            memcpy(inner, toks[i] + 7, len - 8u);
+            inner[len - 8u] = '\0';
+
+            /* 第一个顶层逗号之前是次数，之后是轨道列表 */
+            int d2 = 0;
+            const char *comma = NULL;
+            for (const char *q = inner; *q != '\0'; q++) {
+                if (*q == '(')
+                    d2++;
+                else if (*q == ')')
+                    d2--;
+                else if (*q == ',' && d2 == 0) {
+                    comma = q;
+                    break;
+                }
+            }
+            if (comma == NULL) {
+                set_error("%s: repeat() 需要 `repeat(<次数>, <轨道…>)`（收到 '%s'）",
+                          where, toks[i]);
+                return 0;
+            }
+            char cnt[32];
+            const size_t cl = (size_t)(comma - inner);
+            if (cl >= sizeof(cnt)) {
+                set_error("%s: repeat() 的次数写得不像数字", where);
+                return 0;
+            }
+            memcpy(cnt, inner, cl);
+            cnt[cl] = '\0';
+            char low[32];
+            trim_lower(cnt, low, sizeof(low));
+            if (strcmp(low, "auto-fill") == 0 || strcmp(low, "auto-fit") == 0) {
+                set_error("%s: 不支持 repeat(auto-fill/auto-fit) —— 显式轨道数必须能"
+                          "在构建期算出来", where);
+                return 0;
+            }
+            const char *end = NULL;
+            double cv = 0;
+            if (!match_number(low, &end, &cv) || *end != '\0' || cv < 1.0 ||
+                cv > (double)QL_CFG_UI_GRID_MAX_TRACKS) {
+                set_error("%s: repeat() 的次数必须是 1~%d 的整数（收到 '%s'）", where,
+                          (int)QL_CFG_UI_GRID_MAX_TRACKS, cnt);
+                return 0;
+            }
+            const int times = (int)cv;
+            QLUIGridTrack tmp[QL_CFG_UI_GRID_MAX_TRACKS];
+            int tn = 0;
+            if (!grid_track_list(comma + 1, where, tmp, (int)QL_CFG_UI_GRID_MAX_TRACKS,
+                                 &tn, depth + 1))
+                return 0;
+            if (tn <= 0) {
+                set_error("%s: repeat() 里没有轨道", where);
+                return 0;
+            }
+            for (int r = 0; r < times; r++) {
+                for (int q = 0; q < tn; q++) {
+                    if (n >= max) {
+                        set_error("%s: grid 轨道数超过上限 %d", where, max);
+                        return 0;
+                    }
+                    out[n++] = tmp[q];
+                }
+            }
+            continue;
+        }
+        /* 具名线 `[name]`：报错并给替代做法（名字解析在运行期没有意义） */
+        if (toks[i][0] == '[') {
+            set_error("%s: 不支持具名网格线 '%s'（请改用 grid-template-areas 的具名区域，"
+                      "或用显式行列号）", where, toks[i]);
+            return 0;
+        }
+        QLUIGridTrack t;
+        if (!grid_track_token(toks[i], where, &t))
+            return 0;
+        if (n >= max) {
+            set_error("%s: grid 轨道数超过上限 %d", where, max);
+            return 0;
+        }
+        out[n++] = t;
+    }
+    *n_out = n;
+    return 1;
+}
+
+/* ---- grid-template-areas ---- */
+
+/* 取第 r 行第 c 列的单元格名字；越界/格式不对返回 0。buf 收到名字或 "." */
+static int grid_area_cell(const char *src, int r, int c, char *buf, size_t cap)
+{
+    int row = 0;
+    const char *q = src;
+    for (;;) {
+        while (is_space(*q))
+            q++;
+        if (*q == '\0')
+            return 0;
+        if (*q != '"' && *q != '\'')
+            return 0;
+        const char quote = *q++;
+        const char *start = q;
+        while (*q != '\0' && *q != quote)
+            q++;
+        if (*q != quote)
+            return 0;
+        const char *end = q;
+        q++;                                  /* 跳过收尾引号 */
+        if (row == r) {
+            int col = 0;
+            const char *p = start;
+            for (;;) {
+                while (p < end && is_space(*p))
+                    p++;
+                if (p >= end)
+                    return 0;
+                const char *ts = p;
+                while (p < end && !is_space(*p))
+                    p++;
+                if (col == c) {
+                    const size_t n = (size_t)(p - ts);
+                    if (n + 1u > cap)
+                        return 0;
+                    memcpy(buf, ts, n);
+                    buf[n] = '\0';
+                    return 1;
+                }
+                col++;
+            }
+        }
+        row++;
+    }
+}
+
+/* 行列尺寸：返回 rows / cols（格式不对返回 0） */
+static int grid_area_dims(const char *src, const char *where, int *rows, int *cols)
+{
+    int r = 0, cols0 = 0;
+    char buf[GRID_AREA_NAME_LEN];
+    while (grid_area_cell(src, r, 0, buf, sizeof(buf))) {
+        int c = 0;
+        while (grid_area_cell(src, r, c, buf, sizeof(buf)))
+            c++;
+        if (r == 0)
+            cols0 = c;
+        else if (c != cols0) {
+            set_error("%s: grid-template-areas 每行的列数必须相同（第 %d 行是 %d 列，"
+                      "第 1 行是 %d 列）", where, r + 1, c, cols0);
+            return 0;
+        }
+        r++;
+        if (r > (int)QL_CFG_UI_GRID_MAX_ROWS) {
+            set_error("%s: grid-template-areas 的行数超过上限 %d", where,
+                      (int)QL_CFG_UI_GRID_MAX_ROWS);
+            return 0;
+        }
+    }
+    if (r == 0) {
+        set_error("%s: grid-template-areas 里没有带引号的行", where);
+        return 0;
+    }
+    if (cols0 > (int)QL_CFG_UI_GRID_MAX_COLS) {
+        set_error("%s: grid-template-areas 的列数超过上限 %d", where,
+                  (int)QL_CFG_UI_GRID_MAX_COLS);
+        return 0;
+    }
+    *rows = r;
+    *cols = cols0;
+    return 1;
+}
+
+/*
+ * 解析 `grid-template-areas`：每个区域必须是**矩形**，否则报错（与浏览器一致）。
+ * 名字按首次出现顺序写进 out；返回 -1 表示失败。
+ */
+static int grid_build_areas(const char *src, const char *where, TextPool *tp,
+                            QLUIGridArea *out, int max, int *rows_out,
+                            int *cols_out)
+{
+    int rows = 0, cols = 0;
+    if (!grid_area_dims(src, where, &rows, &cols))
+        return -1;
+
+    char (*names)[GRID_AREA_NAME_LEN] =
+        (char (*)[GRID_AREA_NAME_LEN])ql_mem_calloc(GRID_MAX_AREA_NAMES,
+                                                    GRID_AREA_NAME_LEN);
+    if (names == NULL) {
+        set_error("out of memory");
+        return -1;
+    }
+    int nnames = 0;
+    int ok = 1;
+
+    /* 收集去重后的名字（保持首次出现顺序） */
+    for (int r = 0; ok && r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            char buf[GRID_AREA_NAME_LEN];
+            if (!grid_area_cell(src, r, c, buf, sizeof(buf))) {
+                set_error("%s: grid-template-areas 第 %d 行第 %d 列读不出来", where,
+                          r + 1, c + 1);
+                ok = 0;
+                break;
+            }
+            if (strcmp(buf, ".") == 0)
+                continue;
+            int found = 0;
+            for (int i = 0; i < nnames; i++)
+                if (strcmp(names[i], buf) == 0) {
+                    found = 1;
+                    break;
+                }
+            if (found)
+                continue;
+            if (nnames >= GRID_MAX_AREA_NAMES) {
+                set_error("%s: grid-template-areas 的区域名超过上限 %d", where,
+                          GRID_MAX_AREA_NAMES);
+                ok = 0;
+                break;
+            }
+            snprintf(names[nnames], GRID_AREA_NAME_LEN, "%s", buf);
+            nnames++;
+        }
+    }
+
+    /* 逐个区域求外接矩形并验证矩形性 */
+    int n = 0;
+    for (int i = 0; ok && i < nnames; i++) {
+        int r0 = rows, r1 = -1, c0 = cols, c1 = -1, cnt = 0;
+        for (int r = 0; ok && r < rows; r++)
+            for (int c = 0; c < cols; c++) {
+                char buf[GRID_AREA_NAME_LEN];
+                if (!grid_area_cell(src, r, c, buf, sizeof(buf))) {
+                    ok = 0;
+                    break;
+                }
+                if (strcmp(buf, names[i]) != 0)
+                    continue;
+                cnt++;
+                if (r < r0)
+                    r0 = r;
+                if (r > r1)
+                    r1 = r;
+                if (c < c0)
+                    c0 = c;
+                if (c > c1)
+                    c1 = c;
+            }
+        if (!ok)
+            break;
+        if (cnt != (r1 - r0 + 1) * (c1 - c0 + 1)) {
+            set_error("%s: 区域名 '%s' 在 grid-template-areas 里不是矩形", where,
+                      names[i]);
+            ok = 0;
+            break;
+        }
+        if (n >= max) {
+            set_error("%s: 具名区域数超过上限 %d", where, max);
+            ok = 0;
+            break;
+        }
+        uint16_t idx = 0xFFFF;
+        if (!text_pool_intern(tp, names[i], &idx)) {
+            ok = 0;
+            break;
+        }
+        out[n].name = idx;
+        out[n].col = (int16_t)(c0 + 1);
+        out[n].row = (int16_t)(r0 + 1);
+        out[n].col_span = (uint8_t)(c1 - c0 + 1);
+        out[n].row_span = (uint8_t)(r1 - r0 + 1);
+        n++;
+    }
+    ql_mem_free(names);
+    if (!ok)
+        return -1;
+    *rows_out = rows;
+    *cols_out = cols;
+    return n;
+}
+
+/* ---- 单个子项的 grid-column / grid-row / grid-area 结算 ---- */
+
+typedef enum {
+    GRID_POS_AUTO = 0,
+    GRID_POS_LINE,
+    GRID_POS_SPAN,
+} GridPosKind;
+
+typedef struct {
+    GridPosKind kind;
+    int16_t     value;   /* LINE: 1-based 线号；SPAN: 跨几个格 */
+} GridPos;
+
+static const QLUIGridArea *grid_area_by_name(const QLUIGrid *g,
+                                             const QLUIGridArea *areas,
+                                             const char *text_pool,
+                                             const uint16_t *text_ofs, const char *nm,
+                                             size_t nmlen, int suffix)
+{
+    /* suffix: 0 = 整个区域名、1 = 只要 "-start"、2 = 只要 "-end" */
+    for (int i = 0; i < (int)g->area_count; i++) {
+        const QLUIGridArea *a = &areas[g->area_first + i];
+        const char *an = text_pool + text_ofs[a->name];
+        const size_t al = strlen(an);
+        if (suffix != 0) {
+            static const char *const sfx[2] = { "-start", "-end" };
+            const size_t sl = strlen(sfx[suffix - 1]);
+            if (al != nmlen + sl)
+                continue;
+            if (memcmp(an, nm, nmlen) != 0)
+                continue;
+            if (memcmp(an + nmlen, sfx[suffix - 1], sl) != 0)
+                continue;
+            return a;
+        }
+        if (al == nmlen && memcmp(an, nm, nmlen) == 0)
+            return a;
+        /* `grid-column: head` 里的 `head` 也可能是区域的 `head-start` 线名 */
+        if (al == nmlen + 6u && memcmp(an, nm, nmlen) == 0 &&
+            memcmp(an + nmlen, "-start", 6u) == 0)
+            return a;
+    }
+    return NULL;
+}
+
+/* 解析一段位置：`auto` / `<int>` / `span <int>` / `<区域名|区域名-start|区域名-end>` */
+static int grid_parse_pos(const char *spec, const char *where, const QLUIGrid *g,
+                          const QLUIGridArea *areas, const char *text_pool,
+                          const uint16_t *text_ofs, int is_col, int track_count,
+                          GridPos *out)
+{
+    char s[64];
+    trim_lower(spec, s, sizeof(s));
+    out->kind = GRID_POS_AUTO;
+    out->value = 0;
+    if (s[0] == '\0' || strcmp(s, "auto") == 0)
+        return 1;
+
+    if (strncmp(s, "span ", 5) == 0) {
+        const char *end = NULL;
+        double v = 0;
+        if (!match_number(skip_space(s + 5), &end, &v) || *skip_space(end) != '\0' ||
+            v < 1.0 || v > 255.0) {
+            set_error("%s: `span` 后面要跟 1~255 的整数（收到 '%s'）", where, spec);
+            return 0;
+        }
+        out->kind = GRID_POS_SPAN;
+        out->value = (int16_t)v;
+        return 1;
+    }
+    /* 数字线号 */
+    {
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(s, &end, &v) && *skip_space(end) == '\0') {
+            if (v == 0.0 || v > 10000.0 || v < -10000.0) {
+                set_error("%s: 网格线号不能是 0（收到 '%s'）", where, spec);
+                return 0;
+            }
+            int line = (int)v;
+            if (line < 0) {
+                /* 负号从末尾数：-1 = 最后一条线 */
+                const int cnt = (track_count > 0) ? track_count : 1;
+                line = cnt + 2 + line;
+                if (line < 1)
+                    line = 1;
+            }
+            out->kind = GRID_POS_LINE;
+            out->value = (int16_t)line;
+            return 1;
+        }
+    }
+    /* 区域名 / 区域名-start / 区域名-end */
+    if (g != NULL && g->area_count > 0) {
+        const char *nm = s;
+        size_t nmlen = strlen(s);
+        int suffix = 0;
+        if (nmlen > 6u && strcmp(s + nmlen - 6u, "-start") == 0) {
+            suffix = 1;
+            nmlen -= 6u;
+        } else if (nmlen > 4u && strcmp(s + nmlen - 4u, "-end") == 0) {
+            suffix = 2;
+            nmlen -= 4u;
+        }
+        const QLUIGridArea *a =
+            grid_area_by_name(g, areas, text_pool, text_ofs, nm, nmlen, suffix);
+        if (a != NULL) {
+            const int start = is_col ? a->col : a->row;
+            const int span = is_col ? a->col_span : a->row_span;
+            out->kind = GRID_POS_LINE;
+            out->value = (int16_t)((suffix == 2) ? (start + span) : start);
+            return 1;
+        }
+    }
+    set_error("%s: 不支持的网格位置 '%s'（auto / <行号> / span <n> / <区域名>），"
+              "具名网格线不支持", where, spec);
+    return 0;
+}
+
+/*
+ * `grid-column: A / B` → (起始线, 跨格数)。
+ * 两边都可能是 auto / 线号 / span。
+ */
+static int grid_parse_line_pair(const char *spec, const char *where, const QLUIGrid *g,
+                                const QLUIGridArea *areas, const char *text_pool,
+                                const uint16_t *text_ofs, int is_col, int track_count,
+                                int16_t *start_out, uint8_t *span_out)
+{
+    char parts[2][64];
+    int n = 0;
+    {
+        /* 按顶层 '/' 切成两段（不按逗号，因为 `span 2 / 3` 没有逗号） */
+        const char *p = spec;
+        int depth = 0;
+        const char *s0 = p;
+        for (; *p != '\0'; p++) {
+            if (*p == '(')
+                depth++;
+            else if (*p == ')')
+                depth--;
+            else if (*p == '/' && depth == 0) {
+                size_t l = (size_t)(p - s0);
+                if (l >= sizeof(parts[0]))
+                    l = sizeof(parts[0]) - 1u;
+                memcpy(parts[0], s0, l);
+                parts[0][l] = '\0';
+                snprintf(parts[1], sizeof(parts[1]), "%s", p + 1);
+                n = 2;
+                break;
+            }
+        }
+        if (n == 0) {
+            snprintf(parts[0], sizeof(parts[0]), "%s", spec);
+            parts[1][0] = '\0';
+            n = 1;
+        }
+    }
+    GridPos a, b;
+    if (!grid_parse_pos(parts[0], where, g, areas, text_pool, text_ofs, is_col,
+                        track_count, &a))
+        return 0;
+    if (n == 1) {
+        b.kind = GRID_POS_AUTO;
+        b.value = 0;
+    } else if (!grid_parse_pos(parts[1], where, g, areas, text_pool, text_ofs, is_col,
+                               track_count, &b)) {
+        return 0;
+    }
+
+    int16_t start = 0;
+    int16_t span = 1;
+    if (a.kind == GRID_POS_LINE && b.kind == GRID_POS_LINE) {
+        start = a.value;
+        span = (int16_t)(b.value - a.value);
+        if (span < 1) {
+            set_error("%s: 网格线的结束位置必须在起始位置之后（收到 '%s'）", where,
+                      spec);
+            return 0;
+        }
+    } else if (a.kind == GRID_POS_LINE && b.kind == GRID_POS_SPAN) {
+        start = a.value;
+        span = b.value;
+    } else if (a.kind == GRID_POS_SPAN && b.kind == GRID_POS_LINE) {
+        span = a.value;
+        start = (int16_t)(b.value - span);
+        if (start < 1)
+            start = 1;
+    } else if (a.kind == GRID_POS_SPAN && b.kind == GRID_POS_AUTO) {
+        span = a.value;
+    } else if (a.kind == GRID_POS_LINE && b.kind == GRID_POS_AUTO) {
+        start = a.value;
+    } else if (a.kind == GRID_POS_AUTO && b.kind == GRID_POS_SPAN) {
+        span = b.value;
+    } else if (a.kind == GRID_POS_AUTO && b.kind == GRID_POS_LINE) {
+        span = (int16_t)(b.value - 1);
+        if (span < 1)
+            span = 1;
+    }
+    if (span > 255)
+        span = 255;
+    *start_out = start;
+    *span_out = (uint8_t)span;
+    return 1;
+}
+
+/* 解析 `<len>` 或 `<pct>`（border-image 的 slice / width 用） */
+static int grid_bi_number(const char *tok, const char *where, int *value, int *is_pct)
+{
+    char s[64];
+    trim_lower(tok, s, sizeof(s));
+    const size_t n = strlen(s);
+    if (n > 1u && s[n - 1u] == '%') {
+        char num[64];
+        memcpy(num, s, n - 1u);
+        num[n - 1u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *end == '\0') {
+            *value = (int)py_round(v * GRID_PCT_ONE);
+            *is_pct = 1;
+            return 1;
+        }
+    }
+    {
+        char num[64];
+        memcpy(num, s, sizeof(num) < n + 1u ? sizeof(num) : n + 1u);
+        num[(n < sizeof(num)) ? n : sizeof(num) - 1u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *skip_space(end) == '\0') {
+            *value = (int)py_round(v);
+            *is_pct = 0;
+            return 1;
+        }
+    }
+    set_error("%s: border-image 的值要写成数字或百分比（收到 '%s'）", where, tok);
+    return 0;
+}
+
 /* 继承只带走这三个属性（与 Python 的 INHERITED 一致） */
 static const char *const k_inherited[] = { "color", "font-size", "text-align",
                                            "line-height", "white-space",
@@ -10376,6 +11424,531 @@ static int collect_inherited(const Decls *parent, Decls *out)
     return 1;
 }
 
+
+/* ---------------------- Grid / border-image 的统一结算 ---------------------- */
+
+typedef struct {
+    QLUIGrid      *g;
+    int            gn, gcap;
+    QLUIGridTrack *t;
+    int            tn, tcap;
+    QLUIGridArea  *a;
+    int            an, acap;
+} GridPool;
+
+static int grid_pool_room_g(GridPool *gp)
+{
+    if (gp->gn < gp->gcap)
+        return 1;
+    const int cap = (gp->gcap > 0) ? gp->gcap * 2 : 8;
+    QLUIGrid *nv = (QLUIGrid *)ql_mem_realloc(gp->g, (size_t)cap * sizeof(QLUIGrid));
+    if (nv == NULL)
+        return 0;
+    gp->g = nv;
+    gp->gcap = cap;
+    return 1;
+}
+
+static int grid_pool_room_t(GridPool *gp)
+{
+    if (gp->tn < gp->tcap)
+        return 1;
+    const int cap = (gp->tcap > 0) ? gp->tcap * 2 : 32;
+    QLUIGridTrack *nv =
+        (QLUIGridTrack *)ql_mem_realloc(gp->t, (size_t)cap * sizeof(QLUIGridTrack));
+    if (nv == NULL)
+        return 0;
+    gp->t = nv;
+    gp->tcap = cap;
+    return 1;
+}
+
+static int grid_pool_room_a(GridPool *gp)
+{
+    if (gp->an < gp->acap)
+        return 1;
+    const int cap = (gp->acap > 0) ? gp->acap * 2 : 16;
+    QLUIGridArea *nv =
+        (QLUIGridArea *)ql_mem_realloc(gp->a, (size_t)cap * sizeof(QLUIGridArea));
+    if (nv == NULL)
+        return 0;
+    gp->a = nv;
+    gp->acap = cap;
+    return 1;
+}
+
+/* `url(name)` → 新分配的名字；`none` → NULL（且 *is_none = 1） */
+static char *grid_parse_url(const char *v, const char *where, int *is_none)
+{
+    *is_none = 0;
+    if (v == NULL)
+        return NULL;
+    const char *u = strstr(v, "url(");
+    if (u == NULL) {
+        char t[32];
+        trim_lower(v, t, sizeof(t));
+        if (strcmp(t, "none") == 0) {
+            *is_none = 1;
+            return NULL;
+        }
+        set_error("%s: border-image 只支持 `url(<资源名>)` 或 `none`（收到 '%s'）", where,
+                  v);
+        return NULL;
+    }
+    u += 4;
+    while (*u == ' ' || *u == '"' || *u == '\'')
+        u++;
+    const char *e = u;
+    while (*e != '\0' && *e != ')' && *e != '"' && *e != '\'')
+        e++;
+    if (e == u) {
+        set_error("%s: border-image 的 url() 里没有文件名", where);
+        return NULL;
+    }
+    char *nm = (char *)ql_mem_calloc(1, (size_t)(e - u) + 1u);
+    if (nm != NULL)
+        memcpy(nm, u, (size_t)(e - u));
+    return nm;
+}
+
+/* `slice` / `width` 的 1~4 个值 → 上右下左 */
+static int grid_parse_four(const char *v, const char *where, int *out, int *is_pct)
+{
+    char toks[4][64];
+    const int n = split_top_spaces(v, where, toks, 4);
+    if (n < 0)
+        return 0;
+    if (n == 0) {
+        set_error("%s: 这里至少要一个值", where);
+        return 0;
+    }
+    int vals[4] = { 0, 0, 0, 0 };
+    int pcts[4] = { 0, 0, 0, 0 };
+    for (int i = 0; i < n; i++)
+        if (!grid_bi_number(toks[i], where, &vals[i], &pcts[i]))
+            return 0;
+    /* 单位必须一致（px 与 % 混写没法归一） */
+    for (int i = 1; i < n; i++)
+        if (pcts[i] != pcts[0]) {
+            set_error("%s: 这四个值不能混用 px 和百分号", where);
+            return 0;
+        }
+    int v4[4];
+    if (n == 1)
+        v4[0] = v4[1] = v4[2] = v4[3] = vals[0];
+    else if (n == 2) {
+        v4[0] = v4[2] = vals[0];
+        v4[1] = v4[3] = vals[1];
+    } else if (n == 3) {
+        v4[0] = vals[0];
+        v4[1] = v4[3] = vals[1];
+        v4[2] = vals[2];
+    } else {
+        for (int i = 0; i < 4; i++)
+            v4[i] = vals[i];
+    }
+    for (int i = 0; i < 4; i++) {
+        if (v4[i] < 0) {
+            set_error("%s: 值不能是负数", where);
+            return 0;
+        }
+        out[i] = v4[i];
+    }
+    *is_pct = pcts[0];
+    return 1;
+}
+
+/*
+ * 把一个样式的 **模板** 结算成 doc 池里的一条记录。
+ * 没有模板的样式直接跳过（绝大多数样式都是这样）。
+ */
+static int grid_resolve_template(GridRaw *raw, QLUIStyle *st, const char *where,
+                                 GridPool *gp, TextPool *pool)
+{
+    const int has_cols = (raw->cols != NULL);
+    const int has_rows = (raw->rows != NULL);
+    const int has_areas = (raw->areas != NULL);
+    if (!has_cols && !has_rows && !has_areas)
+        return 1;
+
+    QLUIGrid rec;
+    memset(&rec, 0, sizeof(rec));
+
+    /* 先解析区域：它会给出"没写 template-columns 时的列数" */
+    int area_rows = 0, area_cols = 0;
+    int narea = 0;
+    QLUIGridArea *tmp_areas = NULL;
+    if (has_areas) {
+        char t[32];
+        trim_lower(raw->areas, t, sizeof(t));
+        if (strcmp(t, "none") != 0) {
+            tmp_areas = (QLUIGridArea *)ql_mem_calloc(GRID_MAX_AREA_NAMES,
+                                                      sizeof(QLUIGridArea));
+            if (tmp_areas == NULL) {
+                set_error("out of memory");
+                return 0;
+            }
+            narea = grid_build_areas(raw->areas, where, pool, tmp_areas,
+                                     GRID_MAX_AREA_NAMES, &area_rows, &area_cols);
+            if (narea < 0) {
+                ql_mem_free(tmp_areas);
+                return 0;
+            }
+        }
+    }
+
+    QLUIGridTrack tracks[2 * QL_CFG_UI_GRID_MAX_TRACKS];
+    int ncol = 0, nrow = 0;
+    if (has_cols && raw->cols != NULL) {
+        char t[32];
+        trim_lower(raw->cols, t, sizeof(t));
+        if (strcmp(t, "none") != 0 &&
+            !grid_track_list(raw->cols, where, tracks, (int)QL_CFG_UI_GRID_MAX_TRACKS,
+                             &ncol, 0)) {
+            ql_mem_free(tmp_areas);
+            return 0;
+        }
+    }
+    if (has_rows && raw->rows != NULL) {
+        char t[32];
+        trim_lower(raw->rows, t, sizeof(t));
+        if (strcmp(t, "none") != 0 &&
+            !grid_track_list(raw->rows, where, tracks + ncol,
+                             (int)QL_CFG_UI_GRID_MAX_TRACKS, &nrow, 0)) {
+            ql_mem_free(tmp_areas);
+            return 0;
+        }
+    }
+    if (ncol == 0 && area_cols > 0)
+        ncol = area_cols;
+    if (nrow == 0 && area_rows > 0)
+        nrow = area_rows;
+
+    /* 写进池 */
+    rec.col_first = (uint16_t)gp->tn;
+    rec.col_count = (uint16_t)ncol;
+    rec.row_first = (uint16_t)(gp->tn + ncol);
+    rec.row_count = (uint16_t)nrow;
+    rec.area_first = (uint16_t)gp->an;
+    rec.area_count = (uint16_t)narea;
+    rec.col_hint = (uint16_t)area_cols;
+    rec.row_hint = (uint16_t)area_rows;
+
+    const int need_tracks = ncol + nrow;
+    for (int i = 0; i < need_tracks; i++) {
+        if (!grid_pool_room_t(gp)) {
+            ql_mem_free(tmp_areas);
+            set_error("out of memory");
+            return 0;
+        }
+        gp->t[gp->tn++] = tracks[i];
+    }
+    for (int i = 0; i < narea; i++) {
+        if (!grid_pool_room_a(gp)) {
+            ql_mem_free(tmp_areas);
+            set_error("out of memory");
+            return 0;
+        }
+        gp->a[gp->an++] = tmp_areas[i];
+    }
+    ql_mem_free(tmp_areas);
+
+    if (!grid_pool_room_g(gp)) {
+        set_error("out of memory");
+        return 0;
+    }
+    gp->g[gp->gn] = rec;
+    st->grid = (uint16_t)gp->gn;
+    gp->gn++;
+    return 1;
+}
+
+/* 结算 border-image（与父容器无关，纯查池） */
+static int bi_resolve(GridRaw *raw, QLUIStyle *st, const char *where, TextPool *pool)
+{
+    if (raw->bi_url != NULL) {
+        int is_none = 0;
+        char *nm = grid_parse_url(raw->bi_url, where, &is_none);
+        if (nm == NULL) {
+            if (!is_none)
+                return 0;
+            st->border_image = QL_UI_NO_BORDER_IMAGE;
+        } else {
+            uint16_t idx = 0xFFFF;
+            const int ok = text_pool_intern(pool, nm, &idx);
+            ql_mem_free(nm);
+            if (!ok)
+                return 0;
+            st->border_image = idx;
+        }
+    }
+    if (raw->bi_slice != NULL) {
+        int v4[4];
+        int pct = 0;
+        if (!grid_parse_four(raw->bi_slice, where, v4, &pct))
+            return 0;
+        st->bi_slice_pct = (uint8_t)(pct ? 1 : 0);
+        for (int i = 0; i < 4; i++)
+            st->bi_slice[i] = (int16_t)v4[i];
+    }
+    if (raw->bi_width != NULL) {
+        char t[32];
+        trim_lower(raw->bi_width, t, sizeof(t));
+        if (strcmp(t, "auto") == 0) {
+            for (int i = 0; i < 4; i++)
+                st->bi_width[i] = 0;      /* 0 = 用 slice */
+        } else {
+            int v4[4];
+            int pct = 0;
+            if (!grid_parse_four(raw->bi_width, where, v4, &pct))
+                return 0;
+            st->bi_width_pct = (uint8_t)(pct ? 1 : 0);
+            for (int i = 0; i < 4; i++)
+                st->bi_width[i] = (int16_t)v4[i];
+        }
+    }
+    if (raw->bi_repeat != NULL) {
+        char t[64], a2[32];
+        trim_lower(raw->bi_repeat, t, sizeof(t));
+        size_t k = 0;
+        while (t[k] != '\0' && !is_space(t[k]) && k + 1u < sizeof(a2)) {
+            a2[k] = t[k];
+            k++;
+        }
+        a2[k] = '\0';
+        if (strcmp(a2, "stretch") == 0)
+            st->bi_repeat = QL_UI_BI_STRETCH;
+        else if (strcmp(a2, "repeat") == 0)
+            st->bi_repeat = QL_UI_BI_REPEAT;
+        else if (strcmp(a2, "round") == 0)
+            st->bi_repeat = QL_UI_BI_ROUND;
+        else if (strcmp(a2, "space") == 0)
+            st->bi_repeat = QL_UI_BI_SPACE;
+        else {
+            set_error("%s: 不支持的 border-image-repeat '%s'（stretch / repeat / "
+                      "round / space）", where, raw->bi_repeat);
+            return 0;
+        }
+    }
+    if (st->border_image != QL_UI_NO_BORDER_IMAGE &&
+        st->bi_slice[0] == 0 && st->bi_slice[1] == 0 && st->bi_slice[2] == 0 &&
+        st->bi_slice[3] == 0) {
+        /* CSS 默认 100%（整张图当四条边，通常不是想要的）→ 这里明确要求写 slice */
+        set_error("%s: 有 border-image 必须写 `border-image-slice`（例如 "
+                  "`border-image-slice: 8`）", where);
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * 按顶层 '/' 切分（`r / c / r2 / c2`）；与 split_top_commas 同一套括号处理。
+ */
+static int split_top_slashes(const char *text, const char *where, char (*out)[64],
+                             int max)
+{
+    int n = 0, depth = 0;
+    size_t k = 0;
+    const char *s = text;
+    while (is_space(*s))
+        s++;
+    for (; *s != '\0'; s++) {
+        if (*s == '(')
+            depth++;
+        else if (*s == ')')
+            depth--;
+        if ((*s == '/' || *s == ',') && depth <= 0) {
+            while (k > 0 && is_space(out[n][k - 1]))
+                k--;
+            out[n][k] = '\0';
+            n++;
+            k = 0;
+            if (n >= max) {
+                set_error("%s: 最多支持 %d 段（收到更多）", where, max);
+                return -1;
+            }
+            continue;
+        }
+        if (k + 1u < sizeof(out[0]))
+            out[n][k++] = *s;
+    }
+    while (k > 0 && is_space(out[n][k - 1]))
+        k--;
+    out[n][k] = '\0';
+    if (out[n][0] != '\0')
+        n++;
+    return n;
+}
+
+/*
+ * 主结算：先逐个**样式**结算模板与 border-image，再逐个**节点**结算摆放。
+ *
+ * 为什么摆放要按节点：`grid-column: 3 / span 2` 里如果写的是区域名，
+ * 就得查**父容器**的具名区域；而样式是按 (属性,值) 去重的，同一个
+ * `.cell` 可能被两个不同模板的容器使用。所以这里用"写时复制"：
+ * 样式第一次被某个节点占用时直接写进去，第二个节点要不同的值就复制一份。
+ */
+static int grid_resolve_all(Flat *flat, int nflat, StyleTab *tab, TextPool *pool,
+                            GridPool *gp_out)
+{
+    GridPool gp;
+    memset(&gp, 0, sizeof(gp));
+    int ok = 1;
+
+    for (int i = 0; ok && i < tab->n; i++) {
+        if (i >= s_grid_raw_cap)
+            break;
+        GridRaw *raw = &s_grid_raw[i];
+        char where[96];
+        snprintf(where, sizeof(where), "<style #%d>", i);
+        if (!grid_resolve_template(raw, &tab->e[i].st, where, &gp, pool))
+            ok = 0;
+        if (ok && !bi_resolve(raw, &tab->e[i].st, where, pool))
+            ok = 0;
+    }
+
+    /*
+     * `owner[s]` = 哪个节点已经把这个样式的摆放值占住了（-1 = 还没人占）。
+     * 按最大样式数一次分配：结算过程中会**追加**样式（写时复制），
+     * 中途 realloc 会让指针失效。
+     */
+    int *owner = NULL;
+    if (ok) {
+        owner = (int *)ql_mem_alloc((size_t)QL_CFG_UI_MAX_STYLES * sizeof(int));
+        if (owner == NULL) {
+            set_error("out of memory");
+            ok = 0;
+        } else {
+            for (int i = 0; i < (int)QL_CFG_UI_MAX_STYLES; i++)
+                owner[i] = -1;
+        }
+    }
+
+    for (int i = 0; ok && i < nflat; i++) {
+        const int sidx = flat[i].style_index;
+        if (sidx < 0 || sidx >= s_grid_raw_cap)
+            continue;
+        GridRaw *raw = &s_grid_raw[sidx];
+        if (raw->item_col == NULL && raw->item_row == NULL && raw->item_area == NULL)
+            continue;
+
+        /* 父容器必须是 grid，否则这几个属性在 CSS 里本就无效 */
+        const int pidx = flat[i].parent;
+        const char *tag = (flat[i].node->tag != NULL) ? flat[i].node->tag : "?";
+        if (pidx < 0) {
+            set_error("<%s>: grid-column / grid-row / grid-area 用在根节点上", tag);
+            ok = 0;
+            break;
+        }
+        const QLUIStyle *pst = &tab->e[flat[pidx].style_index].st;
+        if (pst->grid == QL_UI_NO_GRID || pst->grid >= gp.gn) {
+            set_error("<%s>: grid-column / grid-row / grid-area 只能用在 "
+                      "display: grid 容器的直接子元素上（父级不是 grid）", tag);
+            ok = 0;
+            break;
+        }
+
+        const QLUIGrid *g = &gp.g[pst->grid];
+        const int ncol = (int)g->col_count;
+        const int nrow = (int)g->row_count;
+
+        char where[96];
+        snprintf(where, sizeof(where), "<%s #%d>", tag, i);
+
+        int16_t col = 0, row = 0;
+        uint8_t cspan = 1, rspan = 1;
+
+        if (raw->item_area != NULL) {
+            char t[64];
+            trim_lower(raw->item_area, t, sizeof(t));
+            size_t nslash = 0;
+            for (const char *q = t; *q != '\0'; q++)
+                if (*q == '/')
+                    nslash++;
+            if (nslash == 0) {
+                const QLUIGridArea *a =
+                    grid_area_by_name(g, gp.a, pool->pool, pool->ofs, t, strlen(t), 0);
+                if (a == NULL) {
+                    set_error("%s: 不认识的区域名 '%s'（先用 grid-template-areas 声明）",
+                              where, t);
+                    ok = 0;
+                    break;
+                }
+                col = a->col;
+                row = a->row;
+                cspan = a->col_span;
+                rspan = a->row_span;
+            } else {
+                char parts[4][64];
+                const int k = split_top_slashes(t, where, parts, 4);
+                if (k != 4) {
+                    set_error("%s: grid-area 只支持 `<区域名>` 或 `r / c / r2 / c2`",
+                              where);
+                    ok = 0;
+                    break;
+                }
+                if (!grid_parse_line_pair(parts[1], where, g, gp.a, pool->pool,
+                                          pool->ofs, 1, ncol, &col, &cspan) ||
+                    !grid_parse_line_pair(parts[0], where, g, gp.a, pool->pool,
+                                          pool->ofs, 0, nrow, &row, &rspan)) {
+                    ok = 0;
+                    break;
+                }
+            }
+        } else {
+            if (raw->item_col != NULL &&
+                !grid_parse_line_pair(raw->item_col, where, g, gp.a, pool->pool,
+                                      pool->ofs, 1, ncol, &col, &cspan)) {
+                ok = 0;
+                break;
+            }
+            if (raw->item_row != NULL &&
+                !grid_parse_line_pair(raw->item_row, where, g, gp.a, pool->pool,
+                                      pool->ofs, 0, nrow, &row, &rspan)) {
+                ok = 0;
+                break;
+            }
+        }
+
+        int target = sidx;
+        QLUIStyle *dst = &tab->e[target].st;
+        const int same = (owner[target] == -1) ||
+                         (dst->grid_col == col && dst->grid_row == row &&
+                          dst->grid_col_span == cspan && dst->grid_row_span == rspan);
+        if (!same) {
+            if (tab->n >= (int)QL_CFG_UI_MAX_STYLES) {
+                set_error("样式表超过上限 %d（grid 摆放值需要拆分样式）",
+                          (int)QL_CFG_UI_MAX_STYLES);
+                ok = 0;
+                break;
+            }
+            StyleEnt *ne = &tab->e[tab->n];
+            *ne = tab->e[sidx];
+            ne->sig = NULL;            /* 不再参与去重（不释放原 sig） */
+            ne->siglen = 0;
+            target = tab->n++;
+            flat[i].style_index = (uint16_t)target;
+            dst = &tab->e[target].st;
+        }
+        owner[target] = i;
+        dst->grid_col = col;
+        dst->grid_row = row;
+        dst->grid_col_span = cspan;
+        dst->grid_row_span = rspan;
+    }
+
+    ql_mem_free(owner);
+    if (ok) {
+        /* 成功时把池子交给调用方（arena 要用它）；失败时由调用方统一释放 */
+        *gp_out = gp;
+    } else {
+        ql_mem_free(gp.g);
+        ql_mem_free(gp.t);
+        ql_mem_free(gp.a);
+    }
+    return ok;
+}
+
 QLUIDoc *ql_ui_load_text(const char *html, const char *css)
 {
     s_error[0] = '\0';
@@ -10397,6 +11970,7 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     MediaConds medias;
     CalcPool calc;
     AreaOut areas;
+    GridPool grid_pool;
     Flat *flat = NULL;
     int nflat = 0;
     QLUIDoc *doc = NULL;
@@ -10423,6 +11997,10 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     memset(&medias, 0, sizeof(medias));
     memset(&calc, 0, sizeof(calc));
     memset(&areas, 0, sizeof(areas));
+    memset(&grid_pool, 0, sizeof(grid_pool));
+    /* Grid 的原文侧表：本次构建专用，返回前释放 */
+    s_grid_raw = NULL;
+    s_grid_raw_cap = 0;
 
     root = parse_html(html);
     if (root == NULL)
@@ -10903,6 +12481,13 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         }
     }
 
+    /*
+     * Grid / border-image 的结算必须在**文本池定稿之前**（具名区域与资源名
+     * 都要进池），并且在"整棵树都有了样式"之后（要查父容器的模板）。
+     */
+    if (!grid_resolve_all(flat, nflat, &styles, &pool, &grid_pool))
+        goto done;
+
     /* 热区要在文本池定稿之前收（href / alt 也要进池） */
     if (!build_areas(flat, nflat, &pool, &areas))
         goto done;
@@ -10942,6 +12527,15 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const size_t off_calc = off;
         if (calc.n > 0)
             off += QL_UI_ALIGN8((size_t)calc.n * sizeof(QLUICalcOp));
+        const size_t off_grids = off;
+        if (grid_pool.gn > 0)
+            off += QL_UI_ALIGN8((size_t)grid_pool.gn * sizeof(QLUIGrid));
+        const size_t off_grid_tracks = off;
+        if (grid_pool.tn > 0)
+            off += QL_UI_ALIGN8((size_t)grid_pool.tn * sizeof(QLUIGridTrack));
+        const size_t off_grid_areas = off;
+        if (grid_pool.an > 0)
+            off += QL_UI_ALIGN8((size_t)grid_pool.an * sizeof(QLUIGridArea));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -11031,6 +12625,16 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         for (int i = 0; i < calc.n; i++)
             cop[i] = calc.ops[i];
 
+        QLUIGrid *grd = (QLUIGrid *)(void *)(base + off_grids);
+        for (int i = 0; i < grid_pool.gn; i++)
+            grd[i] = grid_pool.g[i];
+        QLUIGridTrack *gtr = (QLUIGridTrack *)(void *)(base + off_grid_tracks);
+        for (int i = 0; i < grid_pool.tn; i++)
+            gtr[i] = grid_pool.t[i];
+        QLUIGridArea *gar = (QLUIGridArea *)(void *)(base + off_grid_areas);
+        for (int i = 0; i < grid_pool.an; i++)
+            gar[i] = grid_pool.a[i];
+
         char *nmd = (char *)(base + off_name);
         memcpy(nmd, nm, name_len);
 
@@ -11070,12 +12674,39 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         doc->media_styles = (nrange > 0) ? mst : NULL;
         doc->calc_op_count = (uint16_t)calc.n;
         doc->calc_ops = (calc.n > 0) ? cop : NULL;
+        doc->grid_count = (uint16_t)grid_pool.gn;
+        doc->grid_track_count = (uint16_t)grid_pool.tn;
+        doc->grid_area_count = (uint16_t)grid_pool.an;
+        doc->grids = (grid_pool.gn > 0) ? grd : NULL;
+        doc->grid_tracks = (grid_pool.tn > 0) ? gtr : NULL;
+        doc->grid_areas = (grid_pool.an > 0) ? gar : NULL;
         doc->arena = arena;
         arena = NULL;         /* 所有权交给 doc */
     }
 
 done:
     s_styles_pool = NULL;
+    for (int i = 0; i < s_grid_raw_cap; i++) {
+        GridRaw *gr = &s_grid_raw[i];
+        ql_mem_free(gr->cols);
+        ql_mem_free(gr->rows);
+        ql_mem_free(gr->areas);
+        ql_mem_free(gr->auto_rows);
+        ql_mem_free(gr->auto_cols);
+        ql_mem_free(gr->item_col);
+        ql_mem_free(gr->item_row);
+        ql_mem_free(gr->item_area);
+        ql_mem_free(gr->bi_url);
+        ql_mem_free(gr->bi_slice);
+        ql_mem_free(gr->bi_width);
+        ql_mem_free(gr->bi_repeat);
+    }
+    ql_mem_free(s_grid_raw);
+    s_grid_raw = NULL;
+    s_grid_raw_cap = 0;
+    ql_mem_free(grid_pool.g);
+    ql_mem_free(grid_pool.t);
+    ql_mem_free(grid_pool.a);
     ql_mem_free(medias.v);
     ql_mem_free(calc.ops);
     ql_mem_free(node_media_ofs);
