@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -224,6 +224,8 @@ main img.shot { max-width: 100%; }
 <h2 id="input"><code>&lt;input&gt;</code>：单行输入</h2>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">input</span> <span class="na">value</span><span class="o">=</span><span class="s">&quot;admin&quot;</span><span class="p">&gt;</span>                            <span class="cm">&lt;!-- 初始值 --&gt;</span>
 <span class="p">&lt;</span><span class="nt">input</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;password&quot;</span> <span class="na">value</span><span class="o">=</span><span class="s">&quot;123456&quot;</span><span class="p">&gt;</span>            <span class="cm">&lt;!-- 显示成圆点 --&gt;</span>
+<span class="p">&lt;</span><span class="nt">input</span> <span class="na">placeholder</span><span class="o">=</span><span class="s">&quot;请输入用户名&quot;</span><span class="p">&gt;</span>                 <span class="cm">&lt;!-- 空值时画占位文字 --&gt;</span>
+<span class="p">&lt;</span><span class="nt">input</span> <span class="na">value</span><span class="o">=</span><span class="s">&quot;只读展示&quot;</span> <span class="na">disabled</span><span class="p">&gt;</span>                  <span class="cm">&lt;!-- 不接焦点、不接输入 --&gt;</span>
 </code></pre></div>
 
 <div class="highlight"><pre><span></span><code><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* 找到那个节点 */</span><span class="p">;</span>
@@ -305,10 +307,6 @@ main img.shot { max-width: 100%; }
 </thead>
 <tbody>
 <tr>
-<td>剪贴板</td>
-<td>平台层不提供；等 <code>QL_INPUT_CLIPBOARD</code> 这类事件</td>
-</tr>
-<tr>
 <td>输入法（IME）</td>
 <td>平台层负责把上屏文本变成一个 <code>QL_INPUT_TEXT</code>；本库不猜候选框</td>
 </tr>
@@ -317,15 +315,113 @@ main img.shot { max-width: 100%; }
 <td>闪烁要求主循环一直醒着，省电优先</td>
 </tr>
 <tr>
-<td><code>placeholder</code> <code>disabled</code> <code>maxlength</code></td>
-<td>属性不影响渲染，静默忽略（见<a href="10_vs_web.html">与 Web 的差别</a>）</td>
+<td><code>maxlength</code> / <code>required</code> / <code>pattern</code></td>
+<td>属性不影响渲染，静默忽略；长度上限是 <code>QL_CFG_UI_INPUT_LEN</code></td>
 </tr>
 <tr>
-<td>多行</td>
-<td><code>&lt;textarea&gt;</code> 还没做</td>
+<td><code>readonly</code></td>
+<td>静默忽略 —— 要只读就别接 <code>input_cb</code>，或直接写 <code>disabled</code></td>
 </tr>
 </tbody>
 </table>
+<h3 id="placeholder"><code>placeholder</code>：一份独立的样式</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">inp</span><span class="p">::</span><span class="nd">placeholder</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#5E6B7A</span><span class="p">;</span><span class="w"> </span><span class="k">font-style</span><span class="p">:</span><span class="w"> </span><span class="kc">italic</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>构建期把 <code>::placeholder</code> 的声明<strong>合并进宿主样式</strong>，单独存一份"占位样式"，
+运行期只在值为空时用它画。所以占位文字能吃任何 CSS（颜色、字号、行高），
+但它不是节点，拿不到事件。</p>
+<h3 id="disabled"><code>disabled</code>：不是"变灰"，是"不接输入"</h3>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">button</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;btn&quot;</span> <span class="na">disabled</span><span class="p">&gt;</span>提交<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<p><code>disabled</code> 只做两件事：<strong>拿不到焦点</strong>（Tab 跳过）、<strong>不接点击和输入</strong>
+（输入框点了也不出光标）。"变灰"要自己写样式：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">disabled</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#2A3442</span><span class="p">;</span><span class="w"> </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#6C7783</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>运行期也能改：直接动 <code>node-&gt;flags</code> 上的 <code>QL_UI_RT_DISABLED</code> 位，然后标脏。
+<code>:disabled</code> / <code>:enabled</code> 是两份构建期编好的变体样式，运行期只翻一个位。</p>
+<h2 id="textarea"><code>&lt;textarea&gt;</code>：多行输入</h2>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">textarea</span><span class="p">&gt;</span>第一行文字
+第二行<span class="p">&lt;/</span><span class="nt">textarea</span><span class="p">&gt;</span>
+</code></pre></div>
+
+<blockquote>
+<p><code>rows</code> / <code>cols</code> <strong>属性不解析</strong>（HTML 属性进不了样式表），尺寸请写 CSS：
+<code>textarea { width: 320px; height: 96px; }</code>。默认是 200×60、等宽字体、
+<code>white-space: pre-wrap</code>。</p>
+</blockquote>
+<p>它复用输入框的<strong>同一套 API</strong>：<code>ql_ui_input_value()</code> 读值、
+<code>ql_ui_input_set_value()</code> 写值、<code>ql_ui_set_input_cb()</code> 接回调。
+差别只在排版与编辑：</p>
+<table>
+<thead>
+<tr>
+<th>差别</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文本存储</td>
+<td>不在单行框的池里，而是共享一块 <code>QL_CFG_UI_TEXTAREA_LEN</code> 的 arena（大得多）</td>
+</tr>
+<tr>
+<td>换行</td>
+<td>内容里的 <code>\n</code> 是硬换行；软换行按容器宽度算</td>
+</tr>
+<tr>
+<td>光标</td>
+<td>按 <code>(x, y)</code> 定位到<strong>视觉行</strong>，<code>↑</code> <code>↓</code> 跨行；拖出框外会自动滚</td>
+</tr>
+<tr>
+<td>空白</td>
+<td>和 <code>&lt;pre&gt;</code> 一样保留（<code>white-space: pre-wrap</code>）</td>
+</tr>
+</tbody>
+</table>
+<p>上限由 <code>QL_CFG_UI_TEXTAREA_LEN</code> 决定（默认 512 字节/个），超长插入静默截断。</p>
+<h2 id="input-typecheckbox-typeradio"><code>&lt;input type="checkbox"&gt;</code> / <code>type="radio"</code></h2>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">input</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;cb&quot;</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;checkbox&quot;</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">input</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;cb&quot;</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;checkbox&quot;</span> <span class="na">checked</span><span class="p">&gt;</span>          <span class="cm">&lt;!-- 初始勾选 --&gt;</span>
+<span class="p">&lt;</span><span class="nt">input</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;cb&quot;</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;checkbox&quot;</span> <span class="na">checked</span> <span class="na">disabled</span><span class="p">&gt;</span> <span class="cm">&lt;!-- 勾着且禁用 --&gt;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="cm">/* 点击回调里读状态：勾选位在运行期 flags 上 */</span>
+<span class="k">if</span><span class="w"> </span><span class="p">((</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="o">-&gt;</span><span class="n">flags</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="n">QL_UI_NODE_CHECKBOX</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">flags</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="n">QL_UI_RT_CHECKED</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">&quot;已勾选&quot;</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s">&quot;未勾选&quot;</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li>尺寸由 UA 默认给 16×16、没有内边距 —— 要改就写 <code>width</code> / <code>height</code>；</li>
+<li><strong>不进输入框池</strong>（它没有文本）；</li>
+<li>点一下切换 <code>QL_UI_RT_CHECKED</code> 并标脏，勾上时画两条斜线组成的 <code>√</code>；</li>
+<li>样式走 <code>:checked</code> 变体；<code>disabled</code> 之后点了不动；</li>
+<li><code>radio</code> 目前画成同样的方框（没有"同组互斥"语义），要单选组请自己维护状态。</li>
+</ul>
+<h2 id="ctrlc-v-x">剪贴板：Ctrl+C / V / X</h2>
+<p>界面层只定义<strong>后端接口</strong>，平台层去实现：</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_text</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">utf8</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* 1 = 内容已就绪；0 = 还没到（内部已发请求，下一帧再问） */</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">get_text</span><span class="p">)(</span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">cap</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIClipboard</span><span class="p">;</span>
+</code></pre></div>
+
+<p>GL/X11 后端一行接好：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_gfx_gl_attach_clipboard</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<p>X11 的剪贴板是<strong>点对点异步协议</strong>（粘贴要等对方回 <code>SelectionNotify</code>），
+所以 <code>get_text()</code> 可以返回 0 —— 界面层会记住这次粘贴，在 <code>ql_ui_anim_tick()</code>
+里重试。没装后端时 Ctrl+C/V 什么也不做（不报错，MCU 上就是这种情况）。</p>
+<p>也可以直接用 API：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_ui_clipboard_copy</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 当前焦点输入框的选区；没有选区时复制全文 */</span>
+<span class="n">ql_ui_clipboard_cut</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
+<span class="n">ql_ui_clipboard_paste</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 结果在下一帧到（异步） */</span>
+</code></pre></div>
+
 <h2 id="select"><code>&lt;select&gt;</code>：覆盖式下拉面板</h2>
 <div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">select</span><span class="p">&gt;</span>
   <span class="p">&lt;</span><span class="nt">option</span><span class="p">&gt;</span>管理员<span class="p">&lt;/</span><span class="nt">option</span><span class="p">&gt;</span>

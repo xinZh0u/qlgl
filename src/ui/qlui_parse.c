@@ -4420,9 +4420,52 @@ static int parse_css_block(const char *text, size_t len, Rules *rules, KfDefs *k
     int ok = 1;
 
     while (pos < len && ok) {
+        /*
+         * `@charset "utf-8";` 是真实 CSS 文件的第一行（编码声明），对渲染没有影响 ——
+         * 跳过它，别让"从别处拷来的样式表"第一行就崩。`@import` 不在此列：
+         * 跳过它会静默丢样式，所以照旧报错。
+         */
+        if (len - pos >= 8u && strncmp(text + pos, "@charset", 8u) == 0) {
+            const char *semi = memchr(text + pos, ';', len - pos);
+            if (semi != NULL) {
+                pos = (size_t)(semi - text) + 1u;
+                continue;
+            }
+        }
         const char *brace = memchr(text + pos, '{', len - pos);
-        if (brace == NULL)
+        if (brace == NULL) {
+            /*
+             * 没有 `{` 了：剩下的只能是空白 / 注释 / 多余的 `;`。
+             * 别的东西（`@import "x.css";` 这类无块 at-rule）**必须报错** ——
+             * 以前是直接 break，于是"整份 CSS 只有 @import"会被静默接受。
+             */
+            size_t i = pos;
+            while (i < len) {
+                if (is_space(text[i]) || text[i] == ';') {
+                    i++;
+                } else if (text[i] == '/' && i + 1u < len && text[i + 1u] == '*') {
+                    const char *e = strstr(text + i + 2u, "*/");
+                    if (e == NULL) {
+                        i = len;
+                        break;
+                    }
+                    i = (size_t)(e - text) + 2u;
+                } else {
+                    break;
+                }
+            }
+            if (i < len) {
+                size_t tail = len - i;
+                if (tail > 48u)
+                    tail = 48u;
+                char frag[64];
+                memcpy(frag, text + i, tail);
+                frag[tail] = '\0';
+                set_error("不支持 at-rule 或缺少规则块：'%s'", frag);
+                ok = 0;
+            }
             break;
+        }
         size_t bpos = (size_t)(brace - text);
 
         /* prelude = text[pos..bpos) 去空白 */
@@ -8293,7 +8336,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         char t[64];
         trim_lower(v, t, sizeof(t));
         if (strcmp(t, "auto") != 0) {
-            double a = 0, b = 1;
+            double ar_w = 0, ar_h = 1;
             char *slash = strchr(t, '/');
             int ok = 0;
             if (slash != NULL) {
@@ -8304,8 +8347,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                     *skip_space(e1) == '\0' &&
                     match_number(skip_space(slash + 1), &e2, &y) &&
                     *skip_space(e2) == '\0' && x > 0 && y > 0) {
-                    a = x;
-                    b = y;
+                    ar_w = x;
+                    ar_h = y;
                     ok = 1;
                 }
             } else {
@@ -8314,8 +8357,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 if (match_number(skip_space(t), &e1, &x) && *skip_space(e1) == '\0' &&
                     x > 0) {
                     /* `aspect-ratio: 1.5` = 1.5 / 1 */
-                    a = x;
-                    b = 1;
+                    ar_w = x;
+                    ar_h = 1;
                     ok = 1;
                 }
             }
@@ -8325,12 +8368,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 return 0;
             }
             /* 存千分比：16/9 → 1778/1000 太糊；直接存整数比，四舍五入到 1/100 */
-            if (a < 100.0 && b < 100.0) {
-                aspect_w = (uint16_t)py_round(a * 100.0);
-                aspect_h = (uint16_t)py_round(b * 100.0);
+            if (ar_w < 100.0 && ar_h < 100.0) {
+                aspect_w = (uint16_t)py_round(ar_w * 100.0);
+                aspect_h = (uint16_t)py_round(ar_h * 100.0);
             } else {
-                aspect_w = (uint16_t)py_round(a);
-                aspect_h = (uint16_t)py_round(b);
+                aspect_w = (uint16_t)py_round(ar_w);
+                aspect_h = (uint16_t)py_round(ar_h);
             }
         }
     }
@@ -9452,10 +9495,19 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         }
     }
 
-    /* 过渡 */
+    /*
+     * 过渡。
+     *
+     * 三条长写各自**独立校验**：只写 `transition-timing-function` 而不写
+     * `transition-duration` 在 CSS 里是合法的（时长默认 0s = 不过渡），但值本身
+     * 写错必须报错 —— 以前整块都在 `if (duration)` 里面，单写名字的非法值会被
+     * 静默吃掉（违反"不支持就报错"的红线）。
+     */
     int trans_ms = 0, trans_props = 0, trans_ease = QL_EASE_LINEAR;
-    if ((v = decls_get(st, "transition-duration")) != NULL) {
-        if (!parse_duration(v, where, "transition-duration", &trans_ms))
+    if ((v = decls_get(st, "transition-duration")) != NULL ||
+        decls_get(st, "transition-property") != NULL ||
+        decls_get(st, "transition-timing-function") != NULL) {
+        if (v != NULL && !parse_duration(v, where, "transition-duration", &trans_ms))
             return 0;
         /*
          * `transition-property` 可以写多个（逗号或空格分隔）：

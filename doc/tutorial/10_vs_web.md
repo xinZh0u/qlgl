@@ -35,7 +35,7 @@
 
 ---
 
-## 2. HTML：认 114 个标签，画 80 个
+## 2. HTML：认 114 个标签，画 101 个
 
 | 在浏览器里能写 | 在 QLGL 里 |
 |---|---|
@@ -46,18 +46,21 @@
 | `<img>` | ⚠️ 能画，但 `src` 是**资源名**：字节要靠 `ql_ui_register_image()` 或构建期转码给（没有文件系统/网络） |
 | `<input type="text\|password">` | ✅ 单行输入（见下） |
 | `<select>` `<option>` | ✅ 覆盖式下拉面板（见下） |
-| `<textarea>` | ❌ 还没有多行输入 |
-| `<table>` `<tr>` `<td>` | ❌ 用嵌套 flex 代替（表格布局还没做） |
-| `<style>` `<script>` | ❌ 没有样式表标签，也没有脚本 |
-| 其余 80 个标签 | ✅ 见[标签与语义](08_tags.html) |
+| `<textarea>` | ✅ 多行输入（独立 arena，按视觉行定位光标） |
+| `<table>` `<tr>` `<td>` | ❌ 报错：用嵌套 flex 代替（表格布局还没做） |
+| `<style>` | ✅ **整段跳过**（不进树）。样式仍然只来自构建期的 `.css` 文件 |
+| `<script>` | ✅ 占位盒，**内容不变成文字**；没有脚本引擎 |
+| `<canvas>` `<video>` `<audio>` `<iframe>` `<svg>` `<math>` 等 13 个 | ✅ 占位盒（能排版、不渲染内容，EMBED 包） |
+| 其余 101 个标签 | ✅ 见[标签与语义](08_tags.html) |
 
 > 完整的 114 个元素逐条状态（含 MCU 能力包裁剪）在
 > [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)。
 
-**属性只有五个有用**：`class` / `id` / `style` / `value` / `type`。其余（`data-*`、
-`aria-*`、`href`、`title`…）会被**静默忽略** —— 这是本库唯一"不报错的宽容"，
-因为属性不影响渲染。`value` / `type` 只管 `<input>`，`type` 写别的值会**报错**
-（`只支持 text / password`）。
+**影响渲染的属性只有这几个**：`class` / `id` / `style` / `value` / `type` /
+`placeholder` / `disabled` / `checked`（+ `<option>` 的 `selected`）。其余（`data-*`、
+`aria-*`、`href`、`title`、`maxlength`…）会被**静默忽略** —— 这是本库唯一"不报错的宽容"，
+因为属性不影响渲染。`type` 的合法值：`text` / `password` / `search` / `email` /
+`number` / `checkbox` / `radio`，别的值（如 `date`）**报错**。
 
 几个结构性差异：
 
@@ -78,15 +81,17 @@
 | 在浏览器里 | 在 QLGL 里 |
 |---|---|
 | `<form>` `submit` | ❌ 没有 `<form>`，也没有提交；用 `ql_ui_set_input_cb()` 接"值变了/按了回车" |
-| `placeholder` | ❌ 静默忽略；用 `<input value="...">` 或旁边放一行灰色提示 |
-| `disabled` / `readonly` | ❌ 静默忽略 |
+| `placeholder` | ✅ 空值时画占位文字，样式走 `::placeholder` |
+| `disabled` | ✅ 不接焦点、不接输入，样式走 `:disabled` |
+| `readonly` | ❌ 静默忽略（要只读就自己别接 `input_cb`） |
 | `required` / `pattern` / `maxlength` | ❌ 没有校验；长度上限是编译期常量 `QL_CFG_UI_INPUT_LEN` |
 | `<progress>` / `<meter>` | ✅ 画成一根条；`low`/`high`/`optimum` 分色没有 |
 | `<details>` / `<summary>` | ✅ 能折叠；**没有三角标记**（没有 `::marker`），自己写字符 |
 | `<dialog>` | ✅ 真浮层（居中 + 遮罩 + `Esc`/点外面关）；**没有焦点圈定**，也不支持嵌套模态 |
-| `type="date"` `type="number"` | ❌ 报错（只支持 `text` / `password`） |
+| `type="date"` `type="color"` 等 | ❌ 报错（支持 `text`/`password`/`search`/`email`/`number`/`checkbox`/`radio`） |
+| `type="checkbox"` `type="radio"` | ✅ 16×16 方框，勾态画 `√`；`:checked` 生效 |
 | `Tab` 切换焦点 | ✅ 在 `input` / `select` / `button` 之间按树序循环，到头绕回 |
-| 剪贴板（Ctrl+C/V） | ❌ 没有（平台层不提供） |
+| 剪贴板（Ctrl+C/V/X） | ✅ 平台后端接口 `QLUIClipboard`；GL/X11 用 `ql_gfx_gl_attach_clipboard()` 一次接好 |
 | 中文输入法（IME） | ⚠️ 要平台层把上屏文本翻译成 `QL_INPUT_TEXT` |
 | 光标闪烁 | ❌ 不闪（闪烁要求主循环一直醒着，省电优先） |
 | `<select>` 展开的面板 | ✅ 是**覆盖层**：不占布局、不被父级 `overflow` 裁剪、同一时刻只开一个 |
@@ -98,54 +103,71 @@
 
 ---
 
-## 3. CSS：选择器只有一小撮
+## 3. CSS：选择器是构建期的一小撮
 
-支持：
+支持（**全部在构建期求值**，运行期只剩"切一个样式下标"）：
 
 ```css
-div { }              /* 标签 */
-.card { }            /* 类 */
-#id { }              /* id */
-.nav .item { }       /* 后代 */
-.list > .row { }     /* 子代 */
-.btn:hover { }       /* :hover :active :focus */
+div { }                    /* 标签 */
+.card { }                  /* 类（.a.b 可叠加） */
+#id { }                    /* id */
+* { }                      /* 通配 */
+.nav .item { }             /* 后代 */
+.list > .row { }           /* 子代 */
+.a + .b { }   .a ~ .b { }  /* 相邻 / 兄弟 */
+input[type="text"] { }     /* [attr] / [attr=v] / [attr~=v] / [attr|=v] */
+a[href^="http"] { }        /* [attr^=v] / [attr$=v] / [attr*=v] */
+li:first-child { }         /* 结构伪类：first/last/only/nth-child(an+b)、*-of-type */
+.a:not(.b) { }             /* :not(<简单选择器>) */
+.btn:hover { }             /* :hover / :active / :focus */
+.btn:disabled { }          /* :disabled / :enabled / :checked */
+.inp::placeholder { }      /* ::placeholder */
+.card::before { content: "→"; }   /* ::before / ::after + 纯文本 content */
 ```
 
 不支持（都会报错）：
 
-| 写法 | 报错信息 |
+| 写法 | 为什么 |
 |---|---|
-| `* { }` | `不支持的简单选择器：'*'` |
-| `div[id]` | `不支持的简单选择器：'div[id]'` |
-| `.a + .b` / `.a ~ .b` | `不支持相邻/兄弟选择器 '+'` |
-| `:not(.a)` | `不支持的伪类 ':not'（只支持 :hover :active :focus）` |
-| `::before` / `::after` | `不支持的简单选择器` |
+| `:has()` / `:is()` / `:where()` / `:focus-within` / `:focus-visible` | L4 选择器；`has()` 会引入"反向依赖"，与构建期定型冲突 |
+| `::first-line` / `::first-letter` | 要能"只改一行的字形"，与逐行排版冲突 |
+| `::selection` / `::marker` | 选区是运行期状态；列表符号请自己写字符 |
+| `content: attr(x)` / `counter()` / `url()` | 等于引入一个小运行期求值器 |
+| `:nth-child(2n+1 of .a)` | `of` 子句未实现 |
 
-**没有生成内容**（`::before` / `::after` / `content`）是这条线最大的连锁影响：
-列表符号、装饰性分隔线、工具提示三角形，全都得写成真实元素。
+@ 规则与全局特性：
 
-还有几条整块缺失的：
-
-| 缺失 | 替代 |
+| 特性 | 情况 |
 |---|---|
-| `@media` / `@supports` / `@import` | 没有响应式；尺寸靠 `%` 或运行期改文本 |
-| CSS 变量 `--x` / `var()` | 要么重复写，要么构建期用一个脚本做替换 |
-| `!important` | 会当成值的一部分 → `不支持的颜色写法 'red !important'` |
-| `@font-face` | 只有一套字体（字号任意） |
+| `@media` | ✅ 但**只有宽度断点**（`min-width` / `max-width`，可用 `and` 串）；`print` 整块跳过 |
+| `@keyframes` | ✅ |
+| `@supports` / `@font-face` / `@import` / `@layer` | ❌ 报错 |
+| CSS 变量 `--x` / `var()` | ✅ 构建期替换（`var()` 可带 fallback） |
+| `!important` | ✅ 级联两趟：普通先应用，important 后应用 |
+| `calc()` / `min()` / `max()` / `clamp()` | ✅ 编译成后缀字节码，布局期求值 |
 
 ---
 
-## 4. 单位与数值：只有 px 和 %
+## 4. 单位与数值：px / % / 视口 / 计算值
 
 | 写法 | 结果 |
 |---|---|
 | `px` / `%` | ✅ |
 | `line-height: 1.5` | ✅ 无单位倍数（按 font-size 折算） |
-| `em` `rem` `vw` `vh` | ✅ 构建期折 px（`vw`/`vh` 在布局期按视口解析） |
-| `ch` `ex` `vmin` `vmax` | ❌ `不支持的长度 '2ch'` |
-| `calc()` | ❌ 同上 |
+| `em` `rem` `vw` `vh` `vmin` `vmax` | ✅ `em`/`rem` 构建期折 px；`vw`/`vh`/`vmin`/`vmax` 在布局期按视口解析 |
+| `calc()` / `min()` / `max()` / `clamp()` | ✅ 编译成后缀字节码，布局期求值；可互相嵌套 |
+| `ch` `ex` `lh` `rlh` | ❌ `不支持的长度 '2ch'`（要字符宽就得先有字体度量，构建期拿不准） |
 
-百分比**只相对父容器的内容宽**（`margin` / `padding` 的百分比不支持 —— 边距的百分比相对的是包含块宽度，算边距时还没有那个基准）。
+百分比的基准（和浏览器一样，只有两处例外）：
+
+| 属性 | `%` 相对谁 |
+|---|---|
+| `width` / `margin` / `padding`（横） | 包含块的**内容宽** |
+| `height` | 包含块的**内容高** —— **父级高度确定时才有解**（`height: auto` 的父级下按 0 处理） |
+| 根元素的 `width/height` | 视口（这就是整页自适应的写法） |
+
+`margin` / `padding` 的百分比**不支持**（JS 里算边距时还没有包含块宽这个基准），
+写 `margin: 10%` 报 `此处不支持百分比`。
 
 **三条例外要记牢**：
 
@@ -158,8 +180,10 @@ div { }              /* 标签 */
 
    `box-sizing: border-box` 很重要：`width: 100%` 是**内容盒**宽度，再加上
    padding 就会超出视口（和浏览器一样）。
-2. **`height` 上的百分比仍然不支持**（只有根元素例外）。
-   要让"子元素跟着窗口长高"，用**竖向 flex + `flex: 1 1 0px`**：
+2. **子元素的 `height: %` 要求父级高度已经确定**。`#root` 有了确定高度，
+   它下面一层就好办；但"父级是 `height: auto`、靠内容撑开"的那一层，
+   再往下写 `height: 50%` 会解析成 0 高 —— 和浏览器一致，不是 bug。
+   要让"子元素跟着窗口长高"仍然推荐**竖向 flex**：
 
    ```css
    #root { width: 100%; height: 100%; box-sizing: border-box;
@@ -169,7 +193,7 @@ div { }              /* 标签 */
 
    ⚠️ 必须是 `1 1 0px`，不能只写 `flex: 1` —— `flex: 1` 的 basis 是 `auto`
    （= 内容高度），内容一多就把容器撑爆、后面兄弟节点被挤出视口。
-3. `margin` 的百分比不支持。
+3. **`min-` / `max-` 也吃 `%`**（相对包含块），和 `width/height` 同一套解释。
 
 ---
 
@@ -178,34 +202,32 @@ div { }              /* 标签 */
 所有属性都过一张白名单，不在表里直接报错并给出行号：
 
 ```
-css:12: 不支持的属性 'outline'
+css:12: 不支持的属性 'filter'
 ```
 
 **没有**这些常见属性（都需要替代方案）：
 
 | 没有 | 替代 |
 |---|---|
-| `opacity` | 用 `rgba()` 背景色；关键帧里可以动 `opacity` |
-| `font-family` | 只有一套字体 |
-| `text-indent` / `letter-spacing` / `word-spacing` | 无 |
-| `text-overflow: ellipsis` | 无（超长会直接溢出） |
-| `overflow: scroll`（**总是**显示滚动条） | 只接受 `visible` / `hidden` / `auto`；写 `scroll` 等同 `auto`（不溢出就没有条） |
-| `outline` / `cursor` / `float` / `clear` | 无 |
+| `float` / `clear` | 用 flex；文字环绕没有实现 |
 | `display: grid` | 用嵌套 flex |
-| `position: sticky` | 只有 `static` / `relative` / `absolute` / `fixed` |
-| `filter: blur()` | 只有 `backdrop-filter: blur()`（模糊背景） |
+| `filter: blur()` / `brightness()` 等 | 只有 `backdrop-filter: blur()`（模糊**背后**的内容） |
+| `transform: rotate()` / `skew()` / `matrix()` / 3D | 只有 `translate()` / `scale()` / `scaleX()` / `scaleY()` |
+| `clip-path` 的 `inset()` / `polygon()` / `path()` | 只有 `circle(<百分比>)` |
+| `vertical-align: middle` / 长度值 | 只有 `baseline` / `sub` / `super` |
+| `flex-wrap: wrap-reverse` | 只有 `nowrap` / `wrap` |
+| `transition-delay` / `overscroll-behavior` / `scroll-snap-*` | 无 |
+| `list-style`（`::marker`） / `@supports` / `@font-face` | 自己写字符，或用构建期变量 |
 
-有值的限制：
+有值的限制（都是**实测**，不是猜的）：
 
 | 属性 | 限制 |
 |---|---|
-| `border` | 只支持 `solid` |
-| `box-shadow` | **必须给颜色**（不支持默认色） |
-| `background-image` | 只接 `linear-gradient(...)` / `radial-gradient(...)`，没有 `url()` |
-| `transform` | 只有 `translate()` / `scale()` / `scaleX()` / `scaleY()`（无 `rotate`、无 `matrix`） |
-| `clip-path` | 只有 `circle(<百分比>)` |
-| `text-decoration` | 只有 `underline` / `line-through`（无 `overline`） |
-| `animation-timing-function` | 没有 `steps()` / `cubic-bezier()` |
+| `border` | 四种线型都行：`solid` / `dashed` / `dotted` / `none` |
+| `box-shadow` | **必须给颜色**（不支持默认色）；最多两层，支持 `inset` |
+| `background-image` | `linear-gradient()` / `radial-gradient()` / `url(<资源名>)` |
+| `text-decoration` | `underline` / `overline` / `line-through`，线型 `solid`/`double`/`dotted`/`dashed`（`wavy` 报错） |
+| `animation-timing-function` / `transition-timing-function` | 5 个具名缓动；`steps()` / `cubic-bezier()` 报错 |
 
 `transition` 能过渡的属性是固定的七类：`background-color` / `opacity` / `color` /
 `border-color` / `border-radius` / `transform` / `clip-path`，而且**不支持 `delay`**。
@@ -214,19 +236,19 @@ css:12: 不支持的属性 'outline'
 
 ---
 
-## 6. 布局：flex 是子集，没有完整的行内排版引擎
+## 6. 布局：flex 是子集，行内排版是简化版
 
 | 项 | 情况 |
 |---|---|
-| `flex-direction` / `justify-content` / `align-items` / `flex-wrap` / `gap` / `flex-grow` / `flex-shrink` / `flex-basis` | ✅ |
-| `order` / `align-self` / `align-content` / `flex-flow` | ❌ 无 |
+| `flex-direction` / `justify-content` / `align-items` / `align-content` / `flex-wrap` / `gap` / `flex-grow` / `flex-shrink` / `flex-basis` | ✅ |
+| `order` / `align-self` / `flex-flow` | ✅ |
 | `grid` | ❌ 无 |
-| 行内布局 | 简化版：没有 `vertical-align`、没有基线对齐、没有完整 line box 概念 |
+| 行内布局 | 简化版：`vertical-align` 只有 `baseline`/`sub`/`super`，行盒按最大行高算 |
 | `margin` 折叠 | ❌ 不折叠（相邻块的外边距直接相加） |
 | 文本换行 | 只在 `white-space: normal` 时；断行规则见[文本](02_text.html) |
 
-**垂直居中**必须靠 `line-height`（和 `height` 相等）；flex 的 `align-items: center`
-只居中**盒子**，不居中一个盒子里的文字。
+**垂直居中**：单行的 flex 容器里 `align-items: center` 是能用的（单行的交叉尺寸
+会撑满容器）；纯块级盒子里的文字仍然靠 `line-height` 等于 `height`。
 
 ---
 

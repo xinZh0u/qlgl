@@ -882,12 +882,11 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 
 ```
 float / grid / align-content: baseline
-border-radius 四角与椭圆角              border-style: dashed / dotted
+椭圆 border-radius（`10px / 20px`）
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
 filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
 list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
-word-spacing / text-decoration: overline / text-align: justify
-transition-delay                        animation-play-state: paused
+text-align: justify                     transition-delay
 backface-visibility（假翻转没有背面）
 ```
 
@@ -902,21 +901,31 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 
 > 这份清单会随版本变化 —— `var()`、`@media`、`calc()`、`min/max-width`、
 > `em/rem/vw/vh`、`+`/`~` 选择器、`::before`、`align-self`、`order`、`flex-flow`、
-> `visibility`、`pointer-events` **都已经支持了**（早期版本把它们列在这里）。
+> `visibility`、`pointer-events`、四角/四边 `border-*`、`border-style: dashed/dotted`、
+> `outline`、`text-shadow`、多层与 `inset` 阴影、`word-spacing`、`tab-size`、
+> `text-decoration-*`（含 `overline`）、`background-image: url()` + `size/position/repeat`、
+> `:disabled` / `:enabled` / `:checked` / `::placeholder`、`animation-play-state`
+> **都已经支持了**（早期版本把它们列在这里）。
 
 ---
 
 ## 4. 生成的数据结构
 
 ```c
+/* 节选：H1–H6、语义块（header/footer/nav/main/article/aside/...）、
+   列表（ul/ol/li/dl/dt/dd）、行内（a/abbr/code/kbd/samp/var/q/cite/...）、
+   表单（input/select/option）、html/body 等共 70 余个，完整见 qlui.h */
 typedef enum {
     QL_UI_TAG_DIV, QL_UI_TAG_SECTION, QL_UI_TAG_P, QL_UI_TAG_SPAN,
     QL_UI_TAG_B, QL_UI_TAG_I, QL_UI_TAG_BUTTON,
-    QL_UI_TAG_H1, QL_UI_TAG_H2, QL_UI_TAG_H3, QL_UI_TAG_COUNT
+    QL_UI_TAG_H1, QL_UI_TAG_H2, QL_UI_TAG_H3, /* ... H4/H5/H6 */
+    /* ... */
+    QL_UI_TAG_COUNT
 } QLUITag;
 
 typedef enum { QL_UI_DISPLAY_BLOCK, QL_UI_DISPLAY_INLINE,
-               QL_UI_DISPLAY_INLINE_BLOCK, QL_UI_DISPLAY_NONE } QLUIDisplay;
+               QL_UI_DISPLAY_INLINE_BLOCK, QL_UI_DISPLAY_NONE,
+               QL_UI_DISPLAY_FLEX, QL_UI_DISPLAY_INLINE_FLEX } QLUIDisplay;
 
 /*
  * 长度单位。EM / REM 的 value 是**百分之一 em**（1.5em → 150），
@@ -949,13 +958,21 @@ typedef struct {
        outline 是 uint32_t outline_color + int8_t outline_width / outline_offset
                  + uint8_t outline_style（不占布局）；
        border_color4[4] 是四边颜色（上右下左）；另有
-       image_rendering / scrollbar_width / scrollbar_color / object_position[2] */
-} QLUIStyle;  /* sizeof == 240（blob v26） */
+       image_rendering / scrollbar_width / scrollbar_color / object_position[2]；
+       B3：int16_t word_spacing, tab_size 是 uint8_t, deco_style/deco_thickness/
+           deco_offset/deco_alpha/deco_color 是装饰线；
+       B4：bg_image（文本池下标，QL_UI_NO_IMAGE=0xFFFF）、bg_size_mode、
+           bg_repeat、int16_t bg_size[2]、int16_t bg_pos[2] */
+} QLUIStyle;  /* sizeof == 272（blob v27） */
 
 typedef struct {
     uint16_t tag, parent, first_child, next_sibling, style, text;
-    uint8_t  flags, reserved;      /* QL_UI_NODE_PASSWORD 等 */
-} QLUINode;  /* sizeof == 20（blob v19） */
+    /* 状态变体样式下标，0xFFFF = 该状态与基础样式完全一致 */
+    uint16_t style_hover, style_active, style_focus;
+    uint16_t style_disabled, style_checked, style_placeholder;  /* B2 */
+    uint16_t placeholder;   /* placeholder 属性的文案（文本池下标） */
+    uint8_t  flags, reserved;      /* QL_UI_NODE_PASSWORD / _CHECKBOX / _CHECKED / _DISABLED */
+} QLUINode;  /* sizeof == 28（blob v27） */
 
 typedef struct {
     const char *name;

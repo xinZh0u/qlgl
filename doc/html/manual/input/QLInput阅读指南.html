@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -458,8 +458,8 @@ X11 显示后端和 GL 后端共用，键码表只有一份。</p>
 <tbody>
 <tr>
 <td>Tab 键遍历焦点</td>
-<td>未实现，焦点由程序设</td>
-<td>M1.5</td>
+<td>✅ 界面层在 <code>input</code>/<code>select</code>/<code>button</code> 之间按树序循环（<code>Shift+Tab</code> 反向）；平台层只负责送 <code>QL_INPUT_KEY</code></td>
+<td>已完成</td>
 </tr>
 <tr>
 <td>双击 / 长按 / 拖拽手势</td>

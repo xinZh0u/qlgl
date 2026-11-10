@@ -2965,9 +2965,9 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
         } else if (cross_stretch_extra > 0) {
             /* 多行 + align-content: stretch：剩余空间平分给各行（累计推进） */
             stretch_num += (int64_t)cross_stretch_extra;
-            const int n = (nline > 0) ? nline : 1;
-            const ql_coord_t add = (ql_coord_t)(stretch_num / n);
-            stretch_num -= (int64_t)add * n;
+            const int nrow = (nline > 0) ? nline : 1;
+            const ql_coord_t add = (ql_coord_t)(stretch_num / nrow);
+            stretch_num -= (int64_t)add * nrow;
             line_cross += add;
         }
 

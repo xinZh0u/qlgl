@@ -161,12 +161,23 @@ for (uint16_t i = 0; i < ui->node_count; i++) {
 写错就是编译期报错，不会"凑合"：
 
 ```
-float / grid / align-self / align-content / order / flex-flow
-min-width / max-width / min-height / max-height
-em / rem / vh / vw / calc() / @media
+float / clear / display: grid / display: table
+flex-wrap: wrap-reverse       table 布局
 ```
 
-也不是全都缺 —— 你的界面真的需要这些时，多半说明结构可以简化。
+布局这块**已经补齐**的（早期版本列在上面那张清单里，别再照老文档写）：
+
+| 能力 | 备注 |
+|---|---|
+| `min-width` / `max-width` / `min-height` / `max-height` | px 与 `%` |
+| `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` | `em`/`rem` 构建期折 px |
+| `calc()` / `min()` / `max()` / `clamp()` | 编成后缀字节码，布局期求值 |
+| `@media (min-width/max-width)` | 只有宽度断点 |
+| `order` / `align-self` / `align-content` / `flex-flow` | 多行 `align-content` 六种取值都有 |
+| `position: sticky` / `absolute` / `fixed` / `z-index` | |
+| `overflow: auto` 的滚动 | 覆盖式滚动条，可以用 `scrollbar-width/color` 定制 |
+
+`float` 仍然不支持——本库没有"文字环绕"，需要并排就用 flex。
 
 ---
 

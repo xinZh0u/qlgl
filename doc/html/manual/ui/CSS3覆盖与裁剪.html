@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -796,7 +796,7 @@ main img.shot { max-width: 100%; }
 <td><code>turn</code> / <code>rad</code> / <code>grad</code></td>
 <td>❌</td>
 <td>N</td>
-<td>只有旋转用得上，而旋转本身还没做</td>
+<td>只有旋转用得上，而 <code>transform: rotate()</code> 还没做</td>
 </tr>
 <tr>
 <td><code>fr</code></td>
@@ -2919,7 +2919,7 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <tr>
 <td><code>align-items</code> / <code>align-self</code></td>
 <td>单行 + 交叉轴确定时行会撑满容器</td>
-<td>多行的 <code>align-content</code> 还没做（多行时行高仍按内容最大值）；<code>baseline</code> 不支持</td>
+<td>多行 <code>align-content</code> 支持 <code>stretch</code>/<code>center</code>/<code>end</code>/<code>space-between</code>/<code>space-around</code>/<code>space-evenly</code>；<code>baseline</code> 不支持</td>
 </tr>
 <tr>
 <td><code>order</code></td>
@@ -2929,7 +2929,12 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <tr>
 <td><code>pointer-events</code></td>
 <td>只有 <code>auto</code> / <code>none</code></td>
-<td>没有 <code>all</code> / <code>visiblePainted</code> 那套 SVG 取值；光标形状（<code>cursor</code>）还没做</td>
+<td>没有 <code>all</code> / <code>visiblePainted</code> 那套 SVG 取值</td>
+</tr>
+<tr>
+<td><code>cursor</code></td>
+<td>✅ <code>auto</code>/<code>default</code>/<code>pointer</code>/<code>text</code>/<code>move</code>/<code>not-allowed</code> 等</td>
+<td>只是<strong>意图</strong>：形状由宿主用 <code>ql_ui_cursor()</code> 取出来交给窗口系统</td>
 </tr>
 <tr>
 <td><code>visibility</code></td>

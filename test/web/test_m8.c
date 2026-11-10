@@ -112,6 +112,19 @@ static int rejects(const char *css, const char *needle)
     return 1;
 }
 
+/* 反向断言：这份 CSS **应当**编译通过（用来钉住"别把合法写法一起打掉"） */
+static int accepts(const char *css)
+{
+    const char *H = "<div id=r><div id=a>x</div></div>";
+    QLUIDoc *doc = ql_ui_load_text(H, css);
+    if (doc == NULL) {
+        printf("  本该通过却报错了：%s → %s\n", css, ql_ui_text_last_error());
+        return 0;
+    }
+    ql_ui_doc_free(doc);
+    return 1;
+}
+
 QL_TEST_BEGIN("test_m8")
 
     /* ===================== B2-1 `:disabled` 改样式 + 挡住焦点 ===================== */
@@ -454,6 +467,26 @@ QL_TEST_BEGIN("test_m8")
         QL_CHECK(rejects("#a { background-repeat: round }", "background-repeat"));
         QL_CHECK(rejects("#a { background-image: url() }", "没有文件名"));
         QL_CHECK(rejects("#a { word-spacing: 999px }", "word-spacing 超出"));
+    }
+
+    /*
+     * ============ "只写一条长写"也要报错（回归：以前静默吞掉） ============
+     *
+     * `transition-timing-function` / `transition-property` 以前整块逻辑都在
+     * `if (transition-duration)` 里面，于是**不写 duration 时非法值被静默吃**。
+     * 无块 at-rule（`@import`）同理：整份 CSS 只有 `@import` 时以前直接 break。
+     */
+    {
+        QL_CHECK(rejects("#a { transition-timing-function: cubic-bezier(0,0,1,1) }",
+                         "transition-timing-function"));
+        QL_CHECK(rejects("#a { transition-property: filter }", "transition-property"));
+        QL_CHECK(rejects("@import \"x.css\";", "不支持 at-rule"));
+        /* 合法值 / 尾部注释与分号不能被误伤 */
+        QL_CHECK(accepts("#a { transition-timing-function: ease-out }"));
+        QL_CHECK(accepts("#a { transition-property: color, opacity }"));
+        QL_CHECK(accepts("#a { color: red } ; /* tail */ "));
+        /* `@charset` 是真实 CSS 的第一行，跳过不报错 */
+        QL_CHECK(accepts("@charset \"utf-8\"; #a { color: red }"));
     }
 
     if (s_disp != NULL)

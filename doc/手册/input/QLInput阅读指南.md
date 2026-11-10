@@ -168,7 +168,7 @@ static void sink(const QLInputEvent *ev, void *user)
 
 | 项 | 现状 | 计划 |
 |---|---|---|
-| Tab 键遍历焦点 | 未实现，焦点由程序设 | M1.5 |
+| Tab 键遍历焦点 | ✅ 界面层在 `input`/`select`/`button` 之间按树序循环（`Shift+Tab` 反向）；平台层只负责送 `QL_INPUT_KEY` | 已完成 |
 | 双击 / 长按 / 拖拽手势 | 未合成（`time_ms` 字段已留） | M2 |
 | 触摸 / 多点 | 未定义 | M5 |
 | 祖先链的 ENTER/LEAVE | 只在目标上发，状态位已覆盖祖先 | 按需补 |

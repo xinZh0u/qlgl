@@ -12,6 +12,8 @@
 ```html
 <input value="admin">                            <!-- 初始值 -->
 <input type="password" value="123456">            <!-- 显示成圆点 -->
+<input placeholder="请输入用户名">                 <!-- 空值时画占位文字 -->
+<input value="只读展示" disabled>                  <!-- 不接焦点、不接输入 -->
 ```
 
 ```c
@@ -65,11 +67,110 @@ ql_ui_input_set_value(ui, user, "张三");           /* 写值（光标移到末
 
 | 缺 | 原因 / 替代 |
 |---|---|
-| 剪贴板 | 平台层不提供；等 `QL_INPUT_CLIPBOARD` 这类事件 |
 | 输入法（IME） | 平台层负责把上屏文本变成一个 `QL_INPUT_TEXT`；本库不猜候选框 |
 | 光标闪烁 | 闪烁要求主循环一直醒着，省电优先 |
-| `placeholder` `disabled` `maxlength` | 属性不影响渲染，静默忽略（见[与 Web 的差别](10_vs_web.html)） |
-| 多行 | `<textarea>` 还没做 |
+| `maxlength` / `required` / `pattern` | 属性不影响渲染，静默忽略；长度上限是 `QL_CFG_UI_INPUT_LEN` |
+| `readonly` | 静默忽略 —— 要只读就别接 `input_cb`，或直接写 `disabled` |
+
+### `placeholder`：一份独立的样式
+
+```css
+.inp::placeholder { color: #5E6B7A; font-style: italic; }
+```
+
+构建期把 `::placeholder` 的声明**合并进宿主样式**，单独存一份"占位样式"，
+运行期只在值为空时用它画。所以占位文字能吃任何 CSS（颜色、字号、行高），
+但它不是节点，拿不到事件。
+
+### `disabled`：不是"变灰"，是"不接输入"
+
+```html
+<button class="btn" disabled>提交</button>
+```
+
+`disabled` 只做两件事：**拿不到焦点**（Tab 跳过）、**不接点击和输入**
+（输入框点了也不出光标）。"变灰"要自己写样式：
+
+```css
+.btn:disabled { background-color: #2A3442; color: #6C7783; }
+```
+
+运行期也能改：直接动 `node->flags` 上的 `QL_UI_RT_DISABLED` 位，然后标脏。
+`:disabled` / `:enabled` 是两份构建期编好的变体样式，运行期只翻一个位。
+
+## `<textarea>`：多行输入
+
+```html
+<textarea>第一行文字
+第二行</textarea>
+```
+
+> `rows` / `cols` **属性不解析**（HTML 属性进不了样式表），尺寸请写 CSS：
+> `textarea { width: 320px; height: 96px; }`。默认是 200×60、等宽字体、
+> `white-space: pre-wrap`。
+
+它复用输入框的**同一套 API**：`ql_ui_input_value()` 读值、
+`ql_ui_input_set_value()` 写值、`ql_ui_set_input_cb()` 接回调。
+差别只在排版与编辑：
+
+| 差别 | 说明 |
+|---|---|
+| 文本存储 | 不在单行框的池里，而是共享一块 `QL_CFG_UI_TEXTAREA_LEN` 的 arena（大得多） |
+| 换行 | 内容里的 `\n` 是硬换行；软换行按容器宽度算 |
+| 光标 | 按 `(x, y)` 定位到**视觉行**，`↑` `↓` 跨行；拖出框外会自动滚 |
+| 空白 | 和 `<pre>` 一样保留（`white-space: pre-wrap`） |
+
+上限由 `QL_CFG_UI_TEXTAREA_LEN` 决定（默认 512 字节/个），超长插入静默截断。
+
+## `<input type="checkbox">` / `type="radio"`
+
+```html
+<input class="cb" type="checkbox">
+<input class="cb" type="checkbox" checked>          <!-- 初始勾选 -->
+<input class="cb" type="checkbox" checked disabled> <!-- 勾着且禁用 -->
+```
+
+```c
+/* 点击回调里读状态：勾选位在运行期 flags 上 */
+if ((node->src->flags & QL_UI_NODE_CHECKBOX) != 0)
+    printf("%s\n", (node->flags & QL_UI_RT_CHECKED) ? "已勾选" : "未勾选");
+```
+
+- 尺寸由 UA 默认给 16×16、没有内边距 —— 要改就写 `width` / `height`；
+- **不进输入框池**（它没有文本）；
+- 点一下切换 `QL_UI_RT_CHECKED` 并标脏，勾上时画两条斜线组成的 `√`；
+- 样式走 `:checked` 变体；`disabled` 之后点了不动；
+- `radio` 目前画成同样的方框（没有"同组互斥"语义），要单选组请自己维护状态。
+
+## 剪贴板：Ctrl+C / V / X
+
+界面层只定义**后端接口**，平台层去实现：
+
+```c
+typedef struct {
+    void (*set_text)(const char *utf8, void *user);
+    /* 1 = 内容已就绪；0 = 还没到（内部已发请求，下一帧再问） */
+    int  (*get_text)(char *buf, size_t cap, void *user);
+} QLUIClipboard;
+```
+
+GL/X11 后端一行接好：
+
+```c
+ql_gfx_gl_attach_clipboard(gfx, ui);
+```
+
+X11 的剪贴板是**点对点异步协议**（粘贴要等对方回 `SelectionNotify`），
+所以 `get_text()` 可以返回 0 —— 界面层会记住这次粘贴，在 `ql_ui_anim_tick()`
+里重试。没装后端时 Ctrl+C/V 什么也不做（不报错，MCU 上就是这种情况）。
+
+也可以直接用 API：
+
+```c
+ql_ui_clipboard_copy(ui);   /* 当前焦点输入框的选区；没有选区时复制全文 */
+ql_ui_clipboard_cut(ui);
+ql_ui_clipboard_paste(ui);  /* 结果在下一帧到（异步） */
+```
 
 ## `<select>`：覆盖式下拉面板
 

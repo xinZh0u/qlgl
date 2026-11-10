@@ -12,10 +12,12 @@
 所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。
 
-## 现支持的 80 个标签
+## 现在认 114 个、画 101 个
 
-HTML5 一共 114 个元素，本库现在认其中 **80 个**。全量清单（含每个标签的状态、能力包、
-MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)，这里只给常用分组：
+HTML5 一共 114 个元素（不含 obsolete），本库**解析层认全部 114 个**，其中
+**101 个能画**（13 个是占位盒，只排版不渲染内容）。全量清单（含每个标签的状态、
+能力包、MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)，
+这里只给常用分组：
 
 | 类 | 标签 |
 |---|---|
@@ -26,9 +28,10 @@ MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与
 | 行内（纯语义） | `a` `abbr` `code` `kbd` `samp` `var` `q` `dfn` `cite` `data` `time` `small` `bdi` `bdo` |
 | 列表 | `ul` `ol` `li` |
 | 空元素 | `hr` `br` `wbr` |
-| 控件 | `button` |
-| 输入 | `input`（`type` 只支持 `text` / `password`，见[输入控件](11_input.html)） |
+| 控件 | `button` `label` |
+| 输入 | `input`（`text`/`password`/`search`/`email`/`number`/`checkbox`/`radio`）、`textarea`（见[输入控件](11_input.html)） |
 | 下拉 | `select` `option` `optgroup`（后两个自动 `display: none`，见[输入控件](11_input.html)） |
+| 占位盒（EMBED） | `canvas` `video` `audio` `iframe` `embed` `object` `track` `script` `noscript` `slot` `template` `svg` `math`（能排版，不渲染内容；共 13 个） |
 | 表单外壳 | `form` `label` `fieldset` `legend`（**没有提交、没有校验**） |
 | 文档元数据 | `base` `head` `link` `meta` `style` `title`（**解析期整段跳过**，不进树） |
 | 进度 / 度量 | `progress` `meter`（见下面"进度条"）、`output`、`datalist`（不显示） |
@@ -50,10 +53,10 @@ MCU 裁剪）在 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与
 |---|---|
 | `a` | 没有 `href` 导航、没有光标；就是一段带颜色的文字 |
 | `abbr` | 没有 `title` tooltip |
-| `code` / `kbd` / `samp` | 没有等宽字体族（`font-family` 还没做） |
+| `code` / `kbd` / `samp` | 有等宽族（`font-family: monospace`），但只有一套位图等宽字体，没有字重/斜体变体 |
 | `q` | 没有生成引号（本库没有生成内容） |
 | `time` / `data` | `datetime` / `value` 属性被忽略 |
-| `small` | 没有相对字号单位（`em` / `smaller`） |
+| `small` | 没有 UA 默认字号（浏览器会缩小一档）；`font-size: smaller` / `larger` 关键字**是**支持的，自己写 |
 | `bdi` / `bdo` | 没有双向文本（RTL）支持 |
 | `wbr` | 没有"可选断点"（不影响折行） |
 | `form` / `label` / `legend` / `optgroup` | 纯排版盒子；`optgroup` 的组名不画 |
@@ -90,7 +93,7 @@ ql_ui_register_image(ui, &in);            /* 内部会重排 */
 | 布局的尺寸 | 来自**资源条目**的 `w/h`，所以图没解出来也占对位置 |
 | CSS 给了宽度、高度 auto | 按宽高比推高（整数运算） |
 | 没给任何尺寸 | 用图片的固有像素尺寸 |
-| `object-fit` | 只有 `fill`（拉伸）；其余四态还没做 |
+| `object-fit` | 五态都有（`fill` / `contain` / `cover` / `none` / `scale-down`）；`object-position` 也在 |
 | 格式 | 运行期注册只认 **RAW**；构建期（`--root`）能吃 **BMP / QOI**（PNG 待做） |
 | 名字对不上 / 格式不支持 | **明确报错**（`QL_ERR_INVAL` / `QL_ERR_UNSUPPORTED`），不静默画空白 |
 | 构建期找不到文件 / 解不了 | **构建失败**（信息带路径），不是运行时才发现 |

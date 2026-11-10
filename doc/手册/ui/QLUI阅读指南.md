@@ -60,7 +60,7 @@ tools/qltext/qltext.c  ┘                                     │
 | | ① 静态 C 数据 | ② `.qlui` blob | ③ 运行时文本（M3.5） |
 |---|---|---|---|
 | HTML/CSS 何时转 | 构建机 | 构建机 | **目标机运行时** |
-| 入口 | `ql_ui_build(&ui_x_doc)` | `ql_ui_load_file("x.qlui")` | `ql_ui_load_text()`（未实现） |
+| 入口 | `ql_ui_build(&ui_x_doc)` | `ql_ui_load_file("x.qlui")` | `ql_ui_load_text()`（`qluitext.h`，M3.5 已完成） |
 | 加载成本 | **0** | ~10µs（校验 + 设 6 个基址） | 50~200µs |
 | 渲染成本 | **相同** | **相同** | **相同** |
 | 换 UI 要重编译 | 要 | **不要** | 不要 |
@@ -963,23 +963,24 @@ layout_flex_children(容器):
 
 | 项 | 现状 | 影响 |
 |---|---|---|
-| flex 完整度 | 无 `align-self` / `align-content` / `order` / `flex-flow`；百分比高度不给 grow 用 | 大多数卡片/工具栏/表单布局够用 |
+| flex 完整度 | `flex-direction` / `flex-wrap`（无 `wrap-reverse`）/ `justify-content` / `align-items` / `align-content` / `order` / `align-self` / `flex-flow` / `gap` 都有；`flex-basis` 在 `box-sizing: content-box` 下少算 padding | 卡片/工具栏/表单布局够用 |
 | 绝对定位 | 无 "static position" 与完整 shrink-to-fit | 没给 inset 时贴左上角；非文本内容撑满 |
-| overflow | 只有裁剪，**没有滚动** | 长列表不能滚动（后续里程碑） |
-| 文本折行 | 只有 `\n`，不自动折行 | 长中文段落会溢出 |
-| flexbox / grid | ❌ 未实现 | 现代页面大量使用，是下一优先级 |
-| 伪类 `:hover`/`:active`/`:focus` | ✅ 构建期编译成状态变体样式表（M1） | 只支持单个伪类；`:hover:active` 组合报错 |
-| 混合内容 | ❌ 报错 | 需把文本包进 `<span>` |
-| 行内元素的基线对齐 | ❌ 按矩形顶对齐 | 中英文混排可能不齐 |
-| 文本换行 | 只有 `\n` | 长句不自动折行 |
-| `position` / `z-index` | ❌ | 弹窗做不了（`overflow` 只裁剪不滚动） |
-| `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path`（M5.5） | `box-shadow`/`delay` 报错 |
-| `backdrop-filter` | ✅ `blur(1~64px)`（M5.5 ⑨，PC 优先） | 其它 filter 函数报错 |
-| `@keyframes` / `animation` | ✅ 构建期编译成静态帧表（M5.5） | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()` |
+| `overflow` | ✅ 裁剪 + **滚动**（`auto` / `hidden` / `visible`；一个值管两轴） | 没有 `overflow-x/y` 分开写、没有惯性滚动 |
+| grid | ❌ 无 | 用嵌套 flex |
+| 表格 | ❌ 报错 | 用嵌套 flex |
+| 伪类 | ✅ `:hover/:active/:focus/:disabled/:enabled/:checked`、结构伪类、`:not()`、`[attr]*`、`::before/::after` | `:has()/:is()/:focus-visible` 无；组合伪类报错 |
+| 混合内容（块里裸文本 + 子元素） | ❌ 报错 | 需把文本包进 `<span>` |
+| 行内基线对齐 | 简化：`vertical-align` 只 `baseline`/`sub`/`super` | 中英文混排可能不齐 |
+| 文本折行 | ✅ `white-space: normal` 自动折行 + `word-break` / `text-overflow: ellipsis` | `text-align: justify` 不支持 |
+| `position` / `z-index` | ✅ `static`/`relative`/`absolute`/`fixed`/`sticky` + `z-index` | 弹窗靠 `absolute` + `z-index` 自己搭 |
+| `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path` | `box-shadow` 不参与过渡；`delay` 报错 |
+| `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错 |
+| `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
 | `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` | `rotate`/`skew`/`matrix`/3d 报错 |
-| `radial-gradient` | ✅ 圆心固定在元素中心（M5.5 ⑥） | `at 偏移` / 自定义半径 / stop 位置报错 |
+| `radial-gradient` | ✅ 圆心固定在元素中心 | `at 偏移` / 自定义半径 / stop 位置报错 |
 | `clip-path` | ✅ 只有 `circle(<pct>%)` | 圆心固定元素中心；只支持一层；其它形状报错 |
-| CSS 变量 / media query | ❌ | 明确不支持 |
+| CSS 变量 / media query | ✅ `var()` 构建期替换；`@media` 只有宽度断点 | 其它断点特性（`prefers-*`/`orientation`）报错 |
+| `filter` | ❌ 报错 | 只有 `backdrop-filter: blur()` |
 | JS | ❌（编译期无 JS） | 交互靠 C 回调 |
 
 > 这些差距是**刻意的**：MPU 档的目标是"设计师给的静态页面能渲染"，不是"跑任意网页"。

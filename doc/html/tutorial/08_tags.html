@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -227,9 +227,11 @@ main img.shot { max-width: 100%; }
 </ol>
 <p>所以"加一个标签"的代价几乎是零，而"标签不够用"的代价很实际：真实 HTML 片段贴进来
 直接报错。</p>
-<h2 id="80">现支持的 80 个标签</h2>
-<p>HTML5 一共 114 个元素，本库现在认其中 <strong>80 个</strong>。全量清单（含每个标签的状态、能力包、
-MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>，这里只给常用分组：</p>
+<h2 id="114-101">现在认 114 个、画 101 个</h2>
+<p>HTML5 一共 114 个元素（不含 obsolete），本库<strong>解析层认全部 114 个</strong>，其中
+<strong>101 个能画</strong>（13 个是占位盒，只排版不渲染内容）。全量清单（含每个标签的状态、
+能力包、MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>，
+这里只给常用分组：</p>
 <table>
 <thead>
 <tr>
@@ -268,15 +270,19 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 <tr>
 <td>控件</td>
-<td><code>button</code></td>
+<td><code>button</code> <code>label</code></td>
 </tr>
 <tr>
 <td>输入</td>
-<td><code>input</code>（<code>type</code> 只支持 <code>text</code> / <code>password</code>，见<a href="11_input.html">输入控件</a>）</td>
+<td><code>input</code>（<code>text</code>/<code>password</code>/<code>search</code>/<code>email</code>/<code>number</code>/<code>checkbox</code>/<code>radio</code>）、<code>textarea</code>（见<a href="11_input.html">输入控件</a>）</td>
 </tr>
 <tr>
 <td>下拉</td>
 <td><code>select</code> <code>option</code> <code>optgroup</code>（后两个自动 <code>display: none</code>，见<a href="11_input.html">输入控件</a>）</td>
+</tr>
+<tr>
+<td>占位盒（EMBED）</td>
+<td><code>canvas</code> <code>video</code> <code>audio</code> <code>iframe</code> <code>embed</code> <code>object</code> <code>track</code> <code>script</code> <code>noscript</code> <code>slot</code> <code>template</code> <code>svg</code> <code>math</code>（能排版，不渲染内容；共 13 个）</td>
 </tr>
 <tr>
 <td>表单外壳</td>
@@ -350,7 +356,7 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 <tr>
 <td><code>code</code> / <code>kbd</code> / <code>samp</code></td>
-<td>没有等宽字体族（<code>font-family</code> 还没做）</td>
+<td>有等宽族（<code>font-family: monospace</code>），但只有一套位图等宽字体，没有字重/斜体变体</td>
 </tr>
 <tr>
 <td><code>q</code></td>
@@ -362,7 +368,7 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 <tr>
 <td><code>small</code></td>
-<td>没有相对字号单位（<code>em</code> / <code>smaller</code>）</td>
+<td>没有 UA 默认字号（浏览器会缩小一档）；<code>font-size: smaller</code> / <code>larger</code> 关键字<strong>是</strong>支持的，自己写</td>
 </tr>
 <tr>
 <td><code>bdi</code> / <code>bdo</code></td>
@@ -422,7 +428,7 @@ MCU 裁剪）在 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 �
 </tr>
 <tr>
 <td><code>object-fit</code></td>
-<td>只有 <code>fill</code>（拉伸）；其余四态还没做</td>
+<td>五态都有（<code>fill</code> / <code>contain</code> / <code>cover</code> / <code>none</code> / <code>scale-down</code>）；<code>object-position</code> 也在</td>
 </tr>
 <tr>
 <td>格式</td>

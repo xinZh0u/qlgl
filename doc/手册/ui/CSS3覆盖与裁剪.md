@@ -163,7 +163,7 @@
 | `vmin` `vmax` | ✅ | L | 相对视口**短边 / 长边**；同样在布局期解析 |
 | `s` / `ms` | ✅ | T | `transition-duration` / `animation-duration` |
 | `deg` | ⚠️ | L | 只在渐变方向里（`90deg` / `180deg`），不进 `transform` |
-| `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而旋转本身还没做 |
+| `turn` / `rad` / `grad` | ❌ | N | 只有旋转用得上，而 `transform: rotate()` 还没做 |
 | `fr` | ❌ | M | Grid 专用 |
 | `ch` / `ex` / `lh` / `rlh` / `cap` | ❌ | N | 都要"字体度量 × 系数"，收益极低 |
 | `calc()` | ✅ | L | `+ - * /` 与括号；标量乘除在构建期折进每个操作数（见 §18.3） |
@@ -878,9 +878,10 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 | 长度单位 | `px` / `%` / `em` / `rem` / `vw` / `vh` / `vmin` / `vmax` / `calc()` | 没有 `ch` / `ex` / `lh` |
 | `calc()` 能用在哪些属性 | `width` / `height` / `min-*` / `max-*` / `top` / `right` / `bottom` / `left` | `font-size` / `border-*` / `letter-spacing` / `text-indent` / `margin` / `padding` 只接受**构建期就能折成 px** 的 `calc()`（其余报错） |
 | `calc()` 的标量乘除 | 构建期折进每个操作数 | 百分点精度会掉（`calc(100% / 3)` 是 33%，不是 33.33%）；长度 × 长度报错 |
-| `align-items` / `align-self` | 单行 + 交叉轴确定时行会撑满容器 | 多行的 `align-content` 还没做（多行时行高仍按内容最大值）；`baseline` 不支持 |
+| `align-items` / `align-self` | 单行 + 交叉轴确定时行会撑满容器 | 多行 `align-content` 支持 `stretch`/`center`/`end`/`space-between`/`space-around`/`space-evenly`；`baseline` 不支持 |
 | `order` | 就地排子链表 | 只对 **flex 容器的直接子项** 生效；与 `z-index` 同时出现时先按 order、再按 z（同 z 保持 order 顺序） |
-| `pointer-events` | 只有 `auto` / `none` | 没有 `all` / `visiblePainted` 那套 SVG 取值；光标形状（`cursor`）还没做 |
+| `pointer-events` | 只有 `auto` / `none` | 没有 `all` / `visiblePainted` 那套 SVG 取值 |
+| `cursor` | ✅ `auto`/`default`/`pointer`/`text`/`move`/`not-allowed` 等 | 只是**意图**：形状由宿主用 `ql_ui_cursor()` 取出来交给窗口系统 |
 | `visibility` | `visible` / `hidden`（`collapse` 当 hidden） | 只影响"画不画自己"与命中；布局照常（这正是与 `display:none` 的区别） |
 | `!important` | 两趟级联 | 支持 |
 

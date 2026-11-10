@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -302,9 +302,13 @@ main img.shot { max-width: 100%; }
 <p><strong><code>scroll_by</code> 会重排，<code>scroll_to</code> 不会</strong> —— 因为 <code>scroll_to</code> 是"设置状态"，
 连续设多次只该排一次；<code>scroll_by</code> 是"做一次操作"，用户按一下滚轮就该看到结果。</p>
 <h2 id="_5">滚动条</h2>
-<p>覆盖式画在容器右侧（宽 4px、半透明中灰），<strong>不占布局空间</strong>，也没法用 CSS 定制
-（<code>::-webkit-scrollbar</code> 那套还没做）。<code>overflow: hidden</code> 永远不画 —— 这正是
-<code>hidden</code> 与 <code>auto</code> 的唯一区别。</p>
+<p>覆盖式画在容器右侧（默认宽 4px、半透明中灰），<strong>不占布局空间</strong>。能用 CSS 调：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">list</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">scrollbar-width</span><span class="p">:</span><span class="w"> </span><span class="kc">thin</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">                     </span><span class="c">/* auto(4px) / thin(2px) / none */</span>
+<span class="p">.</span><span class="nc">list</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">scrollbar-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#4A5568</span><span class="w"> </span><span class="mh">#1A202C</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">          </span><span class="c">/* 滑块色 [轨道色] */</span>
+</code></pre></div>
+
+<p><code>::-webkit-scrollbar</code> 那套伪元素<strong>没有</strong>（本库不支持伪元素级滚动条）。轨道目前不画，
+只取滑块色。<code>overflow: hidden</code> 永远不画 —— 这正是 <code>hidden</code> 与 <code>auto</code> 的唯一区别。</p>
 <h2 id="_6">两个已知限制</h2>
 <ol>
 <li><strong>没有滚动惯性</strong>：松手就停。触屏上会显得"硬"。</li>

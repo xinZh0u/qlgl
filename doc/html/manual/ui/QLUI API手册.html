@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1678,12 +1678,11 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
 <div class="highlight"><pre><span></span><code>float / grid / align-content: baseline
-border-radius 四角与椭圆角              border-style: dashed / dotted
+椭圆 border-radius（`10px / 20px`）
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
 filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
 list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
-word-spacing / text-decoration: overline / text-align: justify
-transition-delay                        animation-play-state: paused
+text-align: justify                     transition-delay
 backface-visibility（假翻转没有背面）
 </code></pre></div>
 
@@ -1697,18 +1696,28 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <blockquote>
 <p>这份清单会随版本变化 —— <code>var()</code>、<code>@media</code>、<code>calc()</code>、<code>min/max-width</code>、
 <code>em/rem/vw/vh</code>、<code>+</code>/<code>~</code> 选择器、<code>::before</code>、<code>align-self</code>、<code>order</code>、<code>flex-flow</code>、
-<code>visibility</code>、<code>pointer-events</code> <strong>都已经支持了</strong>（早期版本把它们列在这里）。</p>
+<code>visibility</code>、<code>pointer-events</code>、四角/四边 <code>border-*</code>、<code>border-style: dashed/dotted</code>、
+<code>outline</code>、<code>text-shadow</code>、多层与 <code>inset</code> 阴影、<code>word-spacing</code>、<code>tab-size</code>、
+<code>text-decoration-*</code>（含 <code>overline</code>）、<code>background-image: url()</code> + <code>size/position/repeat</code>、
+<code>:disabled</code> / <code>:enabled</code> / <code>:checked</code> / <code>::placeholder</code>、<code>animation-play-state</code>
+<strong>都已经支持了</strong>（早期版本把它们列在这里）。</p>
 </blockquote>
 <hr />
 <h2 id="4">4. 生成的数据结构</h2>
-<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 节选：H1–H6、语义块（header/footer/nav/main/article/aside/...）、</span>
+<span class="cm">   列表（ul/ol/li/dl/dt/dd）、行内（a/abbr/code/kbd/samp/var/q/cite/...）、</span>
+<span class="cm">   表单（input/select/option）、html/body 等共 70 余个，完整见 qlui.h */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">QL_UI_TAG_DIV</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_SECTION</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_P</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_SPAN</span><span class="p">,</span>
 <span class="w">    </span><span class="n">QL_UI_TAG_B</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_I</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_BUTTON</span><span class="p">,</span>
-<span class="w">    </span><span class="n">QL_UI_TAG_H1</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_H2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_H3</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_COUNT</span>
+<span class="w">    </span><span class="n">QL_UI_TAG_H1</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_H2</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_H3</span><span class="p">,</span><span class="w"> </span><span class="cm">/* ... H4/H5/H6 */</span>
+<span class="w">    </span><span class="cm">/* ... */</span>
+<span class="w">    </span><span class="n">QL_UI_TAG_COUNT</span>
 <span class="p">}</span><span class="w"> </span><span class="n">QLUITag</span><span class="p">;</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_INLINE</span><span class="p">,</span>
-<span class="w">               </span><span class="n">QL_UI_DISPLAY_INLINE_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_NONE</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIDisplay</span><span class="p">;</span>
+<span class="w">               </span><span class="n">QL_UI_DISPLAY_INLINE_BLOCK</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_NONE</span><span class="p">,</span>
+<span class="w">               </span><span class="n">QL_UI_DISPLAY_FLEX</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_DISPLAY_INLINE_FLEX</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">QLUIDisplay</span><span class="p">;</span>
 
 <span class="cm">/*</span>
 <span class="cm"> * 长度单位。EM / REM 的 value 是**百分之一 em**（1.5em → 150），</span>
@@ -1741,13 +1750,21 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <span class="cm">       outline 是 uint32_t outline_color + int8_t outline_width / outline_offset</span>
 <span class="cm">                 + uint8_t outline_style（不占布局）；</span>
 <span class="cm">       border_color4[4] 是四边颜色（上右下左）；另有</span>
-<span class="cm">       image_rendering / scrollbar_width / scrollbar_color / object_position[2] */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 240（blob v26） */</span>
+<span class="cm">       image_rendering / scrollbar_width / scrollbar_color / object_position[2]；</span>
+<span class="cm">       B3：int16_t word_spacing, tab_size 是 uint8_t, deco_style/deco_thickness/</span>
+<span class="cm">           deco_offset/deco_alpha/deco_color 是装饰线；</span>
+<span class="cm">       B4：bg_image（文本池下标，QL_UI_NO_IMAGE=0xFFFF）、bg_size_mode、</span>
+<span class="cm">           bg_repeat、int16_t bg_size[2]、int16_t bg_pos[2] */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUIStyle</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 272（blob v27） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">tag</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">first_child</span><span class="p">,</span><span class="w"> </span><span class="n">next_sibling</span><span class="p">,</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">flags</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w">      </span><span class="cm">/* QL_UI_NODE_PASSWORD 等 */</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 20（blob v19） */</span>
+<span class="w">    </span><span class="cm">/* 状态变体样式下标，0xFFFF = 该状态与基础样式完全一致 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">style_hover</span><span class="p">,</span><span class="w"> </span><span class="n">style_active</span><span class="p">,</span><span class="w"> </span><span class="n">style_focus</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">style_disabled</span><span class="p">,</span><span class="w"> </span><span class="n">style_checked</span><span class="p">,</span><span class="w"> </span><span class="n">style_placeholder</span><span class="p">;</span><span class="w">  </span><span class="cm">/* B2 */</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">placeholder</span><span class="p">;</span><span class="w">   </span><span class="cm">/* placeholder 属性的文案（文本池下标） */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">flags</span><span class="p">,</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w">      </span><span class="cm">/* QL_UI_NODE_PASSWORD / _CHECKBOX / _CHECKED / _DISABLED */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLUINode</span><span class="p">;</span><span class="w">  </span><span class="cm">/* sizeof == 28（blob v27） */</span>
 
 <span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>

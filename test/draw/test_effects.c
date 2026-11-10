@@ -281,7 +281,6 @@ QL_TEST_BEGIN("test_effects")
     {
         const QLRect bg_box = ql_rect_make(10, 10, 60, 60);
         const ql_coord_t rad = 20;
-        const ql_color_t white = QL_COLOR_RGB(0xFF, 0xFF, 0xFF);
         const ql_color_t red = QL_COLOR_RGB(0xFF, 0x00, 0x00);
 
         /* 参考帧：只画硬边，不做任何模糊 */

@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html' class='active'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -371,41 +371,68 @@ main img.shot { max-width: 100%; }
 那就不再是"只重绘脏区"了。</p>
 <hr />
 <h2 id="8">8. 还没做的（别去试）</h2>
+<p>这一篇写的是 B2（选择器）。B3/B4/B5 后来都落地了 —— <code>em</code>/<code>rem</code>/<code>calc()</code>、
+四角 <code>border-radius</code>、<code>border-style: dashed</code>、<code>letter-spacing</code>、<code>text-overflow</code>
+<strong>现在都能用</strong>，见 <a href="18_css3_more.html">18. CSS3 补全收官</a>。</p>
+<p>截至今天仍然会报错的：</p>
 <table>
 <thead>
 <tr>
 <th>想写</th>
 <th>现在会得到</th>
+<th>为什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>::first-line</code> / <code>::marker</code> / <code>::selection</code></td>
+<td><code>::first-line</code> / <code>::first-letter</code> / <code>::marker</code> / <code>::selection</code></td>
 <td><code>不支持的伪元素</code></td>
+<td>都要改"逐行排版"本身，或依赖运行期选区状态</td>
 </tr>
 <tr>
 <td><code>content: attr(x)</code> / <code>counter()</code></td>
 <td>报错（只支持纯文本）</td>
+<td>等于引入一个小运行期求值器</td>
 </tr>
 <tr>
-<td><code>:nth-child(2n+1 of .a)</code></td>
-<td>报错（不支持 <code>of</code> 子句）</td>
+<td><code>:nth-child(2n+1 of .a)</code> / <code>:empty</code></td>
+<td>报错</td>
+<td>前者是 L4 语法，后者判据便宜但暂未排期</td>
 </tr>
 <tr>
-<td><code>em</code> / <code>rem</code> / <code>calc()</code></td>
-<td><code>不支持的长度</code>（B1 下一片）</td>
+<td><code>filter: blur()</code> / <code>brightness()</code> 等</td>
+<td><code>不支持的属性</code></td>
+<td><code>blur()</code> 要"元素自己离屏后再模糊"，与 <code>rotate</code> 同级</td>
 </tr>
 <tr>
-<td><code>border-radius</code> 四角</td>
-<td><code>不支持的长度</code>（B4）</td>
+<td><code>transform: rotate()</code> / <code>skew()</code></td>
+<td><code>只支持 translate()/scale()</code></td>
+<td>要旋转光栅路径（CPU 仿射 + GL 顶点 + 字形旋转）</td>
 </tr>
 <tr>
-<td><code>border-style: dashed</code></td>
-<td><code>只支持 solid 边框</code>（B4）</td>
+<td><code>text-align: justify</code></td>
+<td>报错</td>
+<td>要改行内分配算法（布局/绘制共用的一份实现）</td>
 </tr>
 <tr>
-<td><code>letter-spacing</code> / <code>text-overflow</code></td>
-<td><code>不支持的属性</code>（B3）</td>
+<td><code>box-shadow: … 0 0 4px 6px C</code>（<code>spread</code>）</td>
+<td>报了但不生效</td>
+<td>阴影的展开半径</td>
+</tr>
+<tr>
+<td><code>border-radius: 10px / 20px</code>（椭圆角）</td>
+<td><code>暂不支持</code></td>
+<td>要改两套 SDF</td>
+</tr>
+<tr>
+<td><code>font: 12px/1.5 MONO</code></td>
+<td><code>不支持的属性</code></td>
+<td>目前要分开写</td>
+</tr>
+<tr>
+<td><code>transition-delay</code> / <code>clip-path</code></td>
+<td><code>不支持的属性</code></td>
+<td>未排期</td>
 </tr>
 </tbody>
 </table>
@@ -413,6 +440,7 @@ main img.shot { max-width: 100%; }
 <hr />
 <h2 id="9">9. 下一步读什么</h2>
 <ul>
+<li><a href="18_css3_more.html">18. CSS3 补全收官</a> —— <code>:disabled/:checked</code>、文本细节、背景图</li>
 <li><a href="10_vs_web.html">与 Web 的差别</a> —— 哪些东西是<strong>故意不支持</strong>的</li>
 <li><a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> —— 按模块穷举 + 五批计划 + CSS 能力包</li>
 <li><a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> —— 标签侧的同一套口径</li>

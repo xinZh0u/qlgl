@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -358,7 +358,7 @@ tools/qltext/qltext.c  ┘                                     │
 <td>入口</td>
 <td><code>ql_ui_build(&amp;ui_x_doc)</code></td>
 <td><code>ql_ui_load_file("x.qlui")</code></td>
-<td><code>ql_ui_load_text()</code>（未实现）</td>
+<td><code>ql_ui_load_text()</code>（<code>qluitext.h</code>，M3.5 已完成）</td>
 </tr>
 <tr>
 <td>加载成本</td>
@@ -1502,8 +1502,8 @@ index.html + index.css ──qltext cc──┤
 <tbody>
 <tr>
 <td>flex 完整度</td>
-<td>无 <code>align-self</code> / <code>align-content</code> / <code>order</code> / <code>flex-flow</code>；百分比高度不给 grow 用</td>
-<td>大多数卡片/工具栏/表单布局够用</td>
+<td><code>flex-direction</code> / <code>flex-wrap</code>（无 <code>wrap-reverse</code>）/ <code>justify-content</code> / <code>align-items</code> / <code>align-content</code> / <code>order</code> / <code>align-self</code> / <code>flex-flow</code> / <code>gap</code> 都有；<code>flex-basis</code> 在 <code>box-sizing: content-box</code> 下少算 padding</td>
+<td>卡片/工具栏/表单布局够用</td>
 </tr>
 <tr>
 <td>绝对定位</td>
@@ -1511,59 +1511,59 @@ index.html + index.css ──qltext cc──┤
 <td>没给 inset 时贴左上角；非文本内容撑满</td>
 </tr>
 <tr>
-<td>overflow</td>
-<td>只有裁剪，<strong>没有滚动</strong></td>
-<td>长列表不能滚动（后续里程碑）</td>
+<td><code>overflow</code></td>
+<td>✅ 裁剪 + <strong>滚动</strong>（<code>auto</code> / <code>hidden</code> / <code>visible</code>；一个值管两轴）</td>
+<td>没有 <code>overflow-x/y</code> 分开写、没有惯性滚动</td>
 </tr>
 <tr>
-<td>文本折行</td>
-<td>只有 <code>\n</code>，不自动折行</td>
-<td>长中文段落会溢出</td>
+<td>grid</td>
+<td>❌ 无</td>
+<td>用嵌套 flex</td>
 </tr>
 <tr>
-<td>flexbox / grid</td>
-<td>❌ 未实现</td>
-<td>现代页面大量使用，是下一优先级</td>
+<td>表格</td>
+<td>❌ 报错</td>
+<td>用嵌套 flex</td>
 </tr>
 <tr>
-<td>伪类 <code>:hover</code>/<code>:active</code>/<code>:focus</code></td>
-<td>✅ 构建期编译成状态变体样式表（M1）</td>
-<td>只支持单个伪类；<code>:hover:active</code> 组合报错</td>
+<td>伪类</td>
+<td>✅ <code>:hover/:active/:focus/:disabled/:enabled/:checked</code>、结构伪类、<code>:not()</code>、<code>[attr]*</code>、<code>::before/::after</code></td>
+<td><code>:has()/:is()/:focus-visible</code> 无；组合伪类报错</td>
 </tr>
 <tr>
-<td>混合内容</td>
+<td>混合内容（块里裸文本 + 子元素）</td>
 <td>❌ 报错</td>
 <td>需把文本包进 <code>&lt;span&gt;</code></td>
 </tr>
 <tr>
-<td>行内元素的基线对齐</td>
-<td>❌ 按矩形顶对齐</td>
+<td>行内基线对齐</td>
+<td>简化：<code>vertical-align</code> 只 <code>baseline</code>/<code>sub</code>/<code>super</code></td>
 <td>中英文混排可能不齐</td>
 </tr>
 <tr>
-<td>文本换行</td>
-<td>只有 <code>\n</code></td>
-<td>长句不自动折行</td>
+<td>文本折行</td>
+<td>✅ <code>white-space: normal</code> 自动折行 + <code>word-break</code> / <code>text-overflow: ellipsis</code></td>
+<td><code>text-align: justify</code> 不支持</td>
 </tr>
 <tr>
 <td><code>position</code> / <code>z-index</code></td>
-<td>❌</td>
-<td>弹窗做不了（<code>overflow</code> 只裁剪不滚动）</td>
+<td>✅ <code>static</code>/<code>relative</code>/<code>absolute</code>/<code>fixed</code>/<code>sticky</code> + <code>z-index</code></td>
+<td>弹窗靠 <code>absolute</code> + <code>z-index</code> 自己搭</td>
 </tr>
 <tr>
 <td><code>transition</code></td>
-<td>✅ 背景色/alpha/文本色/边框色/圆角/<code>transform</code>/<code>clip-path</code>（M5.5）</td>
-<td><code>box-shadow</code>/<code>delay</code> 报错</td>
+<td>✅ 背景色/alpha/文本色/边框色/圆角/<code>transform</code>/<code>clip-path</code></td>
+<td><code>box-shadow</code> 不参与过渡；<code>delay</code> 报错</td>
 </tr>
 <tr>
 <td><code>backdrop-filter</code></td>
-<td>✅ <code>blur(1~64px)</code>（M5.5 ⑨，PC 优先）</td>
+<td>✅ <code>blur(1~64px)</code></td>
 <td>其它 filter 函数报错</td>
 </tr>
 <tr>
 <td><code>@keyframes</code> / <code>animation</code></td>
-<td>✅ 构建期编译成静态帧表（M5.5）</td>
-<td>关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 <code>steps()</code></td>
+<td>✅ 构建期编译成静态帧表</td>
+<td>关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 <code>steps()</code>/<code>cubic-bezier()</code></td>
 </tr>
 <tr>
 <td><code>transform</code></td>
@@ -1572,7 +1572,7 @@ index.html + index.css ──qltext cc──┤
 </tr>
 <tr>
 <td><code>radial-gradient</code></td>
-<td>✅ 圆心固定在元素中心（M5.5 ⑥）</td>
+<td>✅ 圆心固定在元素中心</td>
 <td><code>at 偏移</code> / 自定义半径 / stop 位置报错</td>
 </tr>
 <tr>
@@ -1582,8 +1582,13 @@ index.html + index.css ──qltext cc──┤
 </tr>
 <tr>
 <td>CSS 变量 / media query</td>
-<td>❌</td>
-<td>明确不支持</td>
+<td>✅ <code>var()</code> 构建期替换；<code>@media</code> 只有宽度断点</td>
+<td>其它断点特性（<code>prefers-*</code>/<code>orientation</code>）报错</td>
+</tr>
+<tr>
+<td><code>filter</code></td>
+<td>❌ 报错</td>
+<td>只有 <code>backdrop-filter: blur()</code></td>
 </tr>
 <tr>
 <td>JS</td>

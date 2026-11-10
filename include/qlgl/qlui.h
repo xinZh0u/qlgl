@@ -1369,8 +1369,11 @@ void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
  * `QL_CFG_UI_INPUT_LEN - 1` 字节（UTF-8）。这是本库唯一一处"运行期会变的文本"。
  *
  * 编辑：点击定位光标、拖动选字、Backspace/Delete/方向键/Home/End、
- * Shift+方向扩展选区、`QL_INPUT_TEXT` 插入字符。**没有剪贴板**（平台层不提供），
- * 光标也**不闪**（闪烁要主循环一直醒着，省电优先）。
+ * Shift+方向扩展选区、`QL_INPUT_TEXT` 插入字符。剪贴板走下面的
+ * `QLUIClipboard` 后端接口（没装就不响应 Ctrl+C/V，不报错）；
+ * 光标**不闪**（闪烁要主循环一直醒着，省电优先）。
+ *
+ * `<textarea>` 用**同一套** API，只是文本存在共享 arena 里、光标按视觉行定位。
  */
 /* 值变化 / 按回车时回调；cb 为 NULL 取消 */
 void        ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);

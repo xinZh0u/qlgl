@@ -179,9 +179,9 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：九个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十三个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../tutorial/18_css3_more.html'>18. CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -254,7 +254,7 @@ main img.shot { max-width: 100%; }
 默认改成 <code>normal</code> 会让已有界面在你没改任何东西时重新排版。详见
 <a href="02_text.html">文本</a>。</p>
 <hr />
-<h2 id="2-html-114-80">2. HTML：认 114 个标签，画 80 个</h2>
+<h2 id="2-html-114-101">2. HTML：认 114 个标签，画 101 个</h2>
 <table>
 <thead>
 <tr>
@@ -293,18 +293,26 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>&lt;textarea&gt;</code></td>
-<td>❌ 还没有多行输入</td>
+<td>✅ 多行输入（独立 arena，按视觉行定位光标）</td>
 </tr>
 <tr>
 <td><code>&lt;table&gt;</code> <code>&lt;tr&gt;</code> <code>&lt;td&gt;</code></td>
-<td>❌ 用嵌套 flex 代替（表格布局还没做）</td>
+<td>❌ 报错：用嵌套 flex 代替（表格布局还没做）</td>
 </tr>
 <tr>
-<td><code>&lt;style&gt;</code> <code>&lt;script&gt;</code></td>
-<td>❌ 没有样式表标签，也没有脚本</td>
+<td><code>&lt;style&gt;</code></td>
+<td>✅ <strong>整段跳过</strong>（不进树）。样式仍然只来自构建期的 <code>.css</code> 文件</td>
 </tr>
 <tr>
-<td>其余 80 个标签</td>
+<td><code>&lt;script&gt;</code></td>
+<td>✅ 占位盒，<strong>内容不变成文字</strong>；没有脚本引擎</td>
+</tr>
+<tr>
+<td><code>&lt;canvas&gt;</code> <code>&lt;video&gt;</code> <code>&lt;audio&gt;</code> <code>&lt;iframe&gt;</code> <code>&lt;svg&gt;</code> <code>&lt;math&gt;</code> 等 13 个</td>
+<td>✅ 占位盒（能排版、不渲染内容，EMBED 包）</td>
+</tr>
+<tr>
+<td>其余 101 个标签</td>
 <td>✅ 见<a href="08_tags.html">标签与语义</a></td>
 </tr>
 </tbody>
@@ -313,10 +321,11 @@ main img.shot { max-width: 100%; }
 <p>完整的 114 个元素逐条状态（含 MCU 能力包裁剪）在
 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>。</p>
 </blockquote>
-<p><strong>属性只有五个有用</strong>：<code>class</code> / <code>id</code> / <code>style</code> / <code>value</code> / <code>type</code>。其余（<code>data-*</code>、
-<code>aria-*</code>、<code>href</code>、<code>title</code>…）会被<strong>静默忽略</strong> —— 这是本库唯一"不报错的宽容"，
-因为属性不影响渲染。<code>value</code> / <code>type</code> 只管 <code>&lt;input&gt;</code>，<code>type</code> 写别的值会<strong>报错</strong>
-（<code>只支持 text / password</code>）。</p>
+<p><strong>影响渲染的属性只有这几个</strong>：<code>class</code> / <code>id</code> / <code>style</code> / <code>value</code> / <code>type</code> /
+<code>placeholder</code> / <code>disabled</code> / <code>checked</code>（+ <code>&lt;option&gt;</code> 的 <code>selected</code>）。其余（<code>data-*</code>、
+<code>aria-*</code>、<code>href</code>、<code>title</code>、<code>maxlength</code>…）会被<strong>静默忽略</strong> —— 这是本库唯一"不报错的宽容"，
+因为属性不影响渲染。<code>type</code> 的合法值：<code>text</code> / <code>password</code> / <code>search</code> / <code>email</code> /
+<code>number</code> / <code>checkbox</code> / <code>radio</code>，别的值（如 <code>date</code>）<strong>报错</strong>。</p>
 <p>几个结构性差异：</p>
 <table>
 <thead>
@@ -365,11 +374,15 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>placeholder</code></td>
-<td>❌ 静默忽略；用 <code>&lt;input value="..."&gt;</code> 或旁边放一行灰色提示</td>
+<td>✅ 空值时画占位文字，样式走 <code>::placeholder</code></td>
 </tr>
 <tr>
-<td><code>disabled</code> / <code>readonly</code></td>
-<td>❌ 静默忽略</td>
+<td><code>disabled</code></td>
+<td>✅ 不接焦点、不接输入，样式走 <code>:disabled</code></td>
+</tr>
+<tr>
+<td><code>readonly</code></td>
+<td>❌ 静默忽略（要只读就自己别接 <code>input_cb</code>）</td>
 </tr>
 <tr>
 <td><code>required</code> / <code>pattern</code> / <code>maxlength</code></td>
@@ -388,16 +401,20 @@ main img.shot { max-width: 100%; }
 <td>✅ 真浮层（居中 + 遮罩 + <code>Esc</code>/点外面关）；<strong>没有焦点圈定</strong>，也不支持嵌套模态</td>
 </tr>
 <tr>
-<td><code>type="date"</code> <code>type="number"</code></td>
-<td>❌ 报错（只支持 <code>text</code> / <code>password</code>）</td>
+<td><code>type="date"</code> <code>type="color"</code> 等</td>
+<td>❌ 报错（支持 <code>text</code>/<code>password</code>/<code>search</code>/<code>email</code>/<code>number</code>/<code>checkbox</code>/<code>radio</code>）</td>
+</tr>
+<tr>
+<td><code>type="checkbox"</code> <code>type="radio"</code></td>
+<td>✅ 16×16 方框，勾态画 <code>√</code>；<code>:checked</code> 生效</td>
 </tr>
 <tr>
 <td><code>Tab</code> 切换焦点</td>
 <td>✅ 在 <code>input</code> / <code>select</code> / <code>button</code> 之间按树序循环，到头绕回</td>
 </tr>
 <tr>
-<td>剪贴板（Ctrl+C/V）</td>
-<td>❌ 没有（平台层不提供）</td>
+<td>剪贴板（Ctrl+C/V/X）</td>
+<td>✅ 平台后端接口 <code>QLUIClipboard</code>；GL/X11 用 <code>ql_gfx_gl_attach_clipboard()</code> 一次接好</td>
 </tr>
 <tr>
 <td>中文输入法（IME）</td>
@@ -421,14 +438,23 @@ main img.shot { max-width: 100%; }
 输入框是唯一例外 —— 它有一条自己的池（<code>QL_CFG_UI_INPUT_MAX</code> 条 ×
 <code>QL_CFG_UI_INPUT_LEN</code> 字节），界面里没有 <code>&lt;input&gt;</code> 时是零字节。</p>
 <hr />
-<h2 id="3-css">3. CSS：选择器只有一小撮</h2>
-<p>支持：</p>
-<div class="highlight"><pre><span></span><code><span class="nt">div</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* 标签 */</span>
-<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">            </span><span class="c">/* 类 */</span>
-<span class="p">#</span><span class="nn">id</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">              </span><span class="c">/* id */</span>
-<span class="p">.</span><span class="nc">nav</span><span class="w"> </span><span class="p">.</span><span class="nc">item</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">       </span><span class="c">/* 后代 */</span>
-<span class="p">.</span><span class="nc">list</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="p">.</span><span class="nc">row</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* 子代 */</span>
-<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">       </span><span class="c">/* :hover :active :focus */</span>
+<h2 id="3-css">3. CSS：选择器是构建期的一小撮</h2>
+<p>支持（<strong>全部在构建期求值</strong>，运行期只剩"切一个样式下标"）：</p>
+<div class="highlight"><pre><span></span><code><span class="nt">div</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">                    </span><span class="c">/* 标签 */</span>
+<span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">                  </span><span class="c">/* 类（.a.b 可叠加） */</span>
+<span class="p">#</span><span class="nn">id</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">                    </span><span class="c">/* id */</span>
+<span class="o">*</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">                      </span><span class="c">/* 通配 */</span>
+<span class="p">.</span><span class="nc">nav</span><span class="w"> </span><span class="p">.</span><span class="nc">item</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* 后代 */</span>
+<span class="p">.</span><span class="nc">list</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="p">.</span><span class="nc">row</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">           </span><span class="c">/* 子代 */</span>
+<span class="p">.</span><span class="nc">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="p">.</span><span class="nc">a</span><span class="w"> </span><span class="o">~</span><span class="w"> </span><span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c">/* 相邻 / 兄弟 */</span>
+<span class="nt">input</span><span class="o">[</span><span class="nt">type</span><span class="o">=</span><span class="s2">&quot;text&quot;</span><span class="o">]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">     </span><span class="c">/* [attr] / [attr=v] / [attr~=v] / [attr|=v] */</span>
+<span class="nt">a</span><span class="o">[</span><span class="nt">href</span><span class="o">^=</span><span class="s2">&quot;http&quot;</span><span class="o">]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">        </span><span class="c">/* [attr^=v] / [attr$=v] / [attr*=v] */</span>
+<span class="nt">li</span><span class="p">:</span><span class="nd">first-child</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">         </span><span class="c">/* 结构伪类：first/last/only/nth-child(an+b)、*-of-type */</span>
+<span class="p">.</span><span class="nc">a</span><span class="p">:</span><span class="nd">not</span><span class="o">(</span><span class="p">.</span><span class="nc">b</span><span class="o">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* :not(&lt;简单选择器&gt;) */</span>
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">             </span><span class="c">/* :hover / :active / :focus */</span>
+<span class="p">.</span><span class="nc">btn</span><span class="p">:</span><span class="nd">disabled</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">          </span><span class="c">/* :disabled / :enabled / :checked */</span>
+<span class="p">.</span><span class="nc">inp</span><span class="p">::</span><span class="nd">placeholder</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span><span class="w">      </span><span class="c">/* ::placeholder */</span>
+<span class="p">.</span><span class="nc">card</span><span class="p">::</span><span class="nd">before</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">content</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;→&quot;</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c">/* ::before / ::after + 纯文本 content */</span>
 </code></pre></div>
 
 <p>不支持（都会报错）：</p>
@@ -436,63 +462,69 @@ main img.shot { max-width: 100%; }
 <thead>
 <tr>
 <th>写法</th>
-<th>报错信息</th>
+<th>为什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>* { }</code></td>
-<td><code>不支持的简单选择器：'*'</code></td>
+<td><code>:has()</code> / <code>:is()</code> / <code>:where()</code> / <code>:focus-within</code> / <code>:focus-visible</code></td>
+<td>L4 选择器；<code>has()</code> 会引入"反向依赖"，与构建期定型冲突</td>
 </tr>
 <tr>
-<td><code>div[id]</code></td>
-<td><code>不支持的简单选择器：'div[id]'</code></td>
+<td><code>::first-line</code> / <code>::first-letter</code></td>
+<td>要能"只改一行的字形"，与逐行排版冲突</td>
 </tr>
 <tr>
-<td><code>.a + .b</code> / <code>.a ~ .b</code></td>
-<td><code>不支持相邻/兄弟选择器 '+'</code></td>
+<td><code>::selection</code> / <code>::marker</code></td>
+<td>选区是运行期状态；列表符号请自己写字符</td>
 </tr>
 <tr>
-<td><code>:not(.a)</code></td>
-<td><code>不支持的伪类 ':not'（只支持 :hover :active :focus）</code></td>
+<td><code>content: attr(x)</code> / <code>counter()</code> / <code>url()</code></td>
+<td>等于引入一个小运行期求值器</td>
 </tr>
 <tr>
-<td><code>::before</code> / <code>::after</code></td>
-<td><code>不支持的简单选择器</code></td>
+<td><code>:nth-child(2n+1 of .a)</code></td>
+<td><code>of</code> 子句未实现</td>
 </tr>
 </tbody>
 </table>
-<p><strong>没有生成内容</strong>（<code>::before</code> / <code>::after</code> / <code>content</code>）是这条线最大的连锁影响：
-列表符号、装饰性分隔线、工具提示三角形，全都得写成真实元素。</p>
-<p>还有几条整块缺失的：</p>
+<p>@ 规则与全局特性：</p>
 <table>
 <thead>
 <tr>
-<th>缺失</th>
-<th>替代</th>
+<th>特性</th>
+<th>情况</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>@media</code> / <code>@supports</code> / <code>@import</code></td>
-<td>没有响应式；尺寸靠 <code>%</code> 或运行期改文本</td>
+<td><code>@media</code></td>
+<td>✅ 但<strong>只有宽度断点</strong>（<code>min-width</code> / <code>max-width</code>，可用 <code>and</code> 串）；<code>print</code> 整块跳过</td>
+</tr>
+<tr>
+<td><code>@keyframes</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>@supports</code> / <code>@font-face</code> / <code>@import</code> / <code>@layer</code></td>
+<td>❌ 报错</td>
 </tr>
 <tr>
 <td>CSS 变量 <code>--x</code> / <code>var()</code></td>
-<td>要么重复写，要么构建期用一个脚本做替换</td>
+<td>✅ 构建期替换（<code>var()</code> 可带 fallback）</td>
 </tr>
 <tr>
 <td><code>!important</code></td>
-<td>会当成值的一部分 → <code>不支持的颜色写法 'red !important'</code></td>
+<td>✅ 级联两趟：普通先应用，important 后应用</td>
 </tr>
 <tr>
-<td><code>@font-face</code></td>
-<td>只有一套字体（字号任意）</td>
+<td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
+<td>✅ 编译成后缀字节码，布局期求值</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="4-px">4. 单位与数值：只有 px 和 %</h2>
+<h2 id="4-px">4. 单位与数值：px / % / 视口 / 计算值</h2>
 <table>
 <thead>
 <tr>
@@ -510,20 +542,44 @@ main img.shot { max-width: 100%; }
 <td>✅ 无单位倍数（按 font-size 折算）</td>
 </tr>
 <tr>
-<td><code>em</code> <code>rem</code> <code>vw</code> <code>vh</code></td>
-<td>✅ 构建期折 px（<code>vw</code>/<code>vh</code> 在布局期按视口解析）</td>
+<td><code>em</code> <code>rem</code> <code>vw</code> <code>vh</code> <code>vmin</code> <code>vmax</code></td>
+<td>✅ <code>em</code>/<code>rem</code> 构建期折 px；<code>vw</code>/<code>vh</code>/<code>vmin</code>/<code>vmax</code> 在布局期按视口解析</td>
 </tr>
 <tr>
-<td><code>ch</code> <code>ex</code> <code>vmin</code> <code>vmax</code></td>
-<td>❌ <code>不支持的长度 '2ch'</code></td>
+<td><code>calc()</code> / <code>min()</code> / <code>max()</code> / <code>clamp()</code></td>
+<td>✅ 编译成后缀字节码，布局期求值；可互相嵌套</td>
 </tr>
 <tr>
-<td><code>calc()</code></td>
-<td>❌ 同上</td>
+<td><code>ch</code> <code>ex</code> <code>lh</code> <code>rlh</code></td>
+<td>❌ <code>不支持的长度 '2ch'</code>（要字符宽就得先有字体度量，构建期拿不准）</td>
 </tr>
 </tbody>
 </table>
-<p>百分比<strong>只相对父容器的内容宽</strong>（<code>margin</code> / <code>padding</code> 的百分比不支持 —— 边距的百分比相对的是包含块宽度，算边距时还没有那个基准）。</p>
+<p>百分比的基准（和浏览器一样，只有两处例外）：</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th><code>%</code> 相对谁</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>width</code> / <code>margin</code> / <code>padding</code>（横）</td>
+<td>包含块的<strong>内容宽</strong></td>
+</tr>
+<tr>
+<td><code>height</code></td>
+<td>包含块的<strong>内容高</strong> —— <strong>父级高度确定时才有解</strong>（<code>height: auto</code> 的父级下按 0 处理）</td>
+</tr>
+<tr>
+<td>根元素的 <code>width/height</code></td>
+<td>视口（这就是整页自适应的写法）</td>
+</tr>
+</tbody>
+</table>
+<p><code>margin</code> / <code>padding</code> 的百分比<strong>不支持</strong>（JS 里算边距时还没有包含块宽这个基准），
+写 <code>margin: 10%</code> 报 <code>此处不支持百分比</code>。</p>
 <p><strong>三条例外要记牢</strong>：</p>
 <ol>
 <li><strong>根元素的 <code>width/height: %</code> 按视口解析</strong> —— 这是让页面自适应窗口的做法。
@@ -533,19 +589,21 @@ main img.shot { max-width: 100%; }
    #root { width: 100%; height: 100%; box-sizing: border-box; }</code></p>
 <p><code>box-sizing: border-box</code> 很重要：<code>width: 100%</code> 是<strong>内容盒</strong>宽度，再加上
    padding 就会超出视口（和浏览器一样）。
-2. <strong><code>height</code> 上的百分比仍然不支持</strong>（只有根元素例外）。
-   要让"子元素跟着窗口长高"，用<strong>竖向 flex + <code>flex: 1 1 0px</code></strong>：</p>
+2. <strong>子元素的 <code>height: %</code> 要求父级高度已经确定</strong>。<code>#root</code> 有了确定高度，
+   它下面一层就好办；但"父级是 <code>height: auto</code>、靠内容撑开"的那一层，
+   再往下写 <code>height: 50%</code> 会解析成 0 高 —— 和浏览器一致，不是 bug。
+   要让"子元素跟着窗口长高"仍然推荐<strong>竖向 flex</strong>：</p>
 <p><code>css
    #root { width: 100%; height: 100%; box-sizing: border-box;
            display: flex; flex-direction: column; }
    .list { flex: 1 1 0px; overflow: auto; }   /* 吃掉剩余高度 */</code></p>
 <p>⚠️ 必须是 <code>1 1 0px</code>，不能只写 <code>flex: 1</code> —— <code>flex: 1</code> 的 basis 是 <code>auto</code>
    （= 内容高度），内容一多就把容器撑爆、后面兄弟节点被挤出视口。
-3. <code>margin</code> 的百分比不支持。</p>
+3. <strong><code>min-</code> / <code>max-</code> 也吃 <code>%</code></strong>（相对包含块），和 <code>width/height</code> 同一套解释。</p>
 <hr />
 <h2 id="5">5. 属性白名单：写错就报错</h2>
 <p>所有属性都过一张白名单，不在表里直接报错并给出行号：</p>
-<div class="highlight"><pre><span></span><code>css:12: 不支持的属性 &#39;outline&#39;
+<div class="highlight"><pre><span></span><code>css:12: 不支持的属性 &#39;filter&#39;
 </code></pre></div>
 
 <p><strong>没有</strong>这些常见属性（都需要替代方案）：</p>
@@ -558,44 +616,44 @@ main img.shot { max-width: 100%; }
 </thead>
 <tbody>
 <tr>
-<td><code>opacity</code></td>
-<td>用 <code>rgba()</code> 背景色；关键帧里可以动 <code>opacity</code></td>
-</tr>
-<tr>
-<td><code>font-family</code></td>
-<td>只有一套字体</td>
-</tr>
-<tr>
-<td><code>text-indent</code> / <code>letter-spacing</code> / <code>word-spacing</code></td>
-<td>无</td>
-</tr>
-<tr>
-<td><code>text-overflow: ellipsis</code></td>
-<td>无（超长会直接溢出）</td>
-</tr>
-<tr>
-<td><code>overflow: scroll</code>（<strong>总是</strong>显示滚动条）</td>
-<td>只接受 <code>visible</code> / <code>hidden</code> / <code>auto</code>；写 <code>scroll</code> 等同 <code>auto</code>（不溢出就没有条）</td>
-</tr>
-<tr>
-<td><code>outline</code> / <code>cursor</code> / <code>float</code> / <code>clear</code></td>
-<td>无</td>
+<td><code>float</code> / <code>clear</code></td>
+<td>用 flex；文字环绕没有实现</td>
 </tr>
 <tr>
 <td><code>display: grid</code></td>
 <td>用嵌套 flex</td>
 </tr>
 <tr>
-<td><code>position: sticky</code></td>
-<td>只有 <code>static</code> / <code>relative</code> / <code>absolute</code> / <code>fixed</code></td>
+<td><code>filter: blur()</code> / <code>brightness()</code> 等</td>
+<td>只有 <code>backdrop-filter: blur()</code>（模糊<strong>背后</strong>的内容）</td>
 </tr>
 <tr>
-<td><code>filter: blur()</code></td>
-<td>只有 <code>backdrop-filter: blur()</code>（模糊背景）</td>
+<td><code>transform: rotate()</code> / <code>skew()</code> / <code>matrix()</code> / 3D</td>
+<td>只有 <code>translate()</code> / <code>scale()</code> / <code>scaleX()</code> / <code>scaleY()</code></td>
+</tr>
+<tr>
+<td><code>clip-path</code> 的 <code>inset()</code> / <code>polygon()</code> / <code>path()</code></td>
+<td>只有 <code>circle(&lt;百分比&gt;)</code></td>
+</tr>
+<tr>
+<td><code>vertical-align: middle</code> / 长度值</td>
+<td>只有 <code>baseline</code> / <code>sub</code> / <code>super</code></td>
+</tr>
+<tr>
+<td><code>flex-wrap: wrap-reverse</code></td>
+<td>只有 <code>nowrap</code> / <code>wrap</code></td>
+</tr>
+<tr>
+<td><code>transition-delay</code> / <code>overscroll-behavior</code> / <code>scroll-snap-*</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>list-style</code>（<code>::marker</code>） / <code>@supports</code> / <code>@font-face</code></td>
+<td>自己写字符，或用构建期变量</td>
 </tr>
 </tbody>
 </table>
-<p>有值的限制：</p>
+<p>有值的限制（都是<strong>实测</strong>，不是猜的）：</p>
 <table>
 <thead>
 <tr>
@@ -606,31 +664,23 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td><code>border</code></td>
-<td>只支持 <code>solid</code></td>
+<td>四种线型都行：<code>solid</code> / <code>dashed</code> / <code>dotted</code> / <code>none</code></td>
 </tr>
 <tr>
 <td><code>box-shadow</code></td>
-<td><strong>必须给颜色</strong>（不支持默认色）</td>
+<td><strong>必须给颜色</strong>（不支持默认色）；最多两层，支持 <code>inset</code></td>
 </tr>
 <tr>
 <td><code>background-image</code></td>
-<td>只接 <code>linear-gradient(...)</code> / <code>radial-gradient(...)</code>，没有 <code>url()</code></td>
-</tr>
-<tr>
-<td><code>transform</code></td>
-<td>只有 <code>translate()</code> / <code>scale()</code> / <code>scaleX()</code> / <code>scaleY()</code>（无 <code>rotate</code>、无 <code>matrix</code>）</td>
-</tr>
-<tr>
-<td><code>clip-path</code></td>
-<td>只有 <code>circle(&lt;百分比&gt;)</code></td>
+<td><code>linear-gradient()</code> / <code>radial-gradient()</code> / <code>url(&lt;资源名&gt;)</code></td>
 </tr>
 <tr>
 <td><code>text-decoration</code></td>
-<td>只有 <code>underline</code> / <code>line-through</code>（无 <code>overline</code>）</td>
+<td><code>underline</code> / <code>overline</code> / <code>line-through</code>，线型 <code>solid</code>/<code>double</code>/<code>dotted</code>/<code>dashed</code>（<code>wavy</code> 报错）</td>
 </tr>
 <tr>
-<td><code>animation-timing-function</code></td>
-<td>没有 <code>steps()</code> / <code>cubic-bezier()</code></td>
+<td><code>animation-timing-function</code> / <code>transition-timing-function</code></td>
+<td>5 个具名缓动；<code>steps()</code> / <code>cubic-bezier()</code> 报错</td>
 </tr>
 </tbody>
 </table>
@@ -639,7 +689,7 @@ main img.shot { max-width: 100%; }
 逗号写法（<code>transition: a 200ms, b 200ms</code>）可以，但<strong>各段必须共用同一组时长与缓动</strong> ——
 库里只有一份 <code>trans_ms</code> / <code>trans_ease</code>；想要不同时长就把两层拆开写。</p>
 <hr />
-<h2 id="6-flex">6. 布局：flex 是子集，没有完整的行内排版引擎</h2>
+<h2 id="6-flex">6. 布局：flex 是子集，行内排版是简化版</h2>
 <table>
 <thead>
 <tr>
@@ -649,12 +699,12 @@ main img.shot { max-width: 100%; }
 </thead>
 <tbody>
 <tr>
-<td><code>flex-direction</code> / <code>justify-content</code> / <code>align-items</code> / <code>flex-wrap</code> / <code>gap</code> / <code>flex-grow</code> / <code>flex-shrink</code> / <code>flex-basis</code></td>
+<td><code>flex-direction</code> / <code>justify-content</code> / <code>align-items</code> / <code>align-content</code> / <code>flex-wrap</code> / <code>gap</code> / <code>flex-grow</code> / <code>flex-shrink</code> / <code>flex-basis</code></td>
 <td>✅</td>
 </tr>
 <tr>
-<td><code>order</code> / <code>align-self</code> / <code>align-content</code> / <code>flex-flow</code></td>
-<td>❌ 无</td>
+<td><code>order</code> / <code>align-self</code> / <code>flex-flow</code></td>
+<td>✅</td>
 </tr>
 <tr>
 <td><code>grid</code></td>
@@ -662,7 +712,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td>行内布局</td>
-<td>简化版：没有 <code>vertical-align</code>、没有基线对齐、没有完整 line box 概念</td>
+<td>简化版：<code>vertical-align</code> 只有 <code>baseline</code>/<code>sub</code>/<code>super</code>，行盒按最大行高算</td>
 </tr>
 <tr>
 <td><code>margin</code> 折叠</td>
@@ -674,8 +724,8 @@ main img.shot { max-width: 100%; }
 </tr>
 </tbody>
 </table>
-<p><strong>垂直居中</strong>必须靠 <code>line-height</code>（和 <code>height</code> 相等）；flex 的 <code>align-items: center</code>
-只居中<strong>盒子</strong>，不居中一个盒子里的文字。</p>
+<p><strong>垂直居中</strong>：单行的 flex 容器里 <code>align-items: center</code> 是能用的（单行的交叉尺寸
+会撑满容器）；纯块级盒子里的文字仍然靠 <code>line-height</code> 等于 <code>height</code>。</p>
 <hr />
 <h2 id="7-dom-js">7. 运行期：没有 DOM，也没有 JS</h2>
 <p>这是最大的心智差异。</p>

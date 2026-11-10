@@ -173,9 +173,9 @@
 `line-height` 在这里同时干两件事：单行居中（上一节）和多行行距（这一节）。
 `white-space` 也**会被继承**，所以可以在容器上写一次。
 
-> 还不支持的：`pre` / `pre-wrap` / `break-spaces`（要保留空白与制表符语义，
-> 本库不做），以及 `text-overflow: ellipsis`（"太长就省略号"）。写了会**报错**，
-> 不会静默降级。
+> `pre` / `pre-wrap` / `pre-line` 都支持（`break-spaces` 没有，报错）。
+> `text-overflow: ellipsis` 也支持 —— 而且**不要求** `overflow: hidden`，
+> 它只是"少画几个字、末尾换省略号"。制表符宽度用 `tab-size` 调。
 
 ## 运行期改文本
 

@@ -1,8 +1,8 @@
-# CSS 效果检阅：九个例程
+# CSS 效果检阅：十三个例程
 
 <img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480">
 
-完整程序：`example/16_css_units/` … `example/23_calc/`（每个例程一个文件夹）
+完整程序：`example/16_css_units/` … `example/28_bg_image/`（每个例程一个文件夹）
 
 前几章是按"补了什么"讲的（[CSS3 补全](14_css3.md)、[毛玻璃](15_backdrop.md)）。
 这一章反过来：**按"能看出效果的最小样本"讲** —— 每一个已支持的 CSS 效果都摆成
@@ -15,7 +15,7 @@ cmake --build build -j
 ./build/example/example_18_css_paint        # 绘制效果
 ```
 
-三张图、三份 `index.html` + `style.css`，都可以直接改、直接重跑 —— 例程在运行期
+每个例程一份 `index.html` + `style.css`，都可以直接改、直接重跑 —— 例程在运行期
 读文件，不重新编译。
 
 ---
@@ -267,7 +267,8 @@ calc 字节码 35 条（每条 4 字节）
   情况下完全没有效果 —— 单行的交叉尺寸取的是"各项最大值"，剩余空间恒为 0。
   CSS 的默认 `align-content: stretch` 要求单行撑满容器的交叉尺寸，补上之后
   `align-items` 才真的能用（golden 的 `align` 页因此变化，肉眼核对过：
-  两个方块现在在 120px 高的容器里居中）。多行的 `align-content` 仍然没做。
+  两个方块现在在 120px 高的容器里居中）。多行的 `align-content` 后来也补齐了
+  （`center` / `end` / `space-between` / `space-around` / `space-evenly` / `stretch`）。
 
 ## 10. `25_b4`：虚线边框、四边四角、阴影、滚动条
 

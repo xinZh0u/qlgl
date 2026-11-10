@@ -63,9 +63,15 @@ ql_ui_layout(ui, w, h);            /* scroll_to 不重排，要自己调 */
 
 ## 滚动条
 
-覆盖式画在容器右侧（宽 4px、半透明中灰），**不占布局空间**，也没法用 CSS 定制
-（`::-webkit-scrollbar` 那套还没做）。`overflow: hidden` 永远不画 —— 这正是
-`hidden` 与 `auto` 的唯一区别。
+覆盖式画在容器右侧（默认宽 4px、半透明中灰），**不占布局空间**。能用 CSS 调：
+
+```css
+.list { scrollbar-width: thin; }                     /* auto(4px) / thin(2px) / none */
+.list { scrollbar-color: #4A5568 #1A202C; }          /* 滑块色 [轨道色] */
+```
+
+`::-webkit-scrollbar` 那套伪元素**没有**（本库不支持伪元素级滚动条）。轨道目前不画，
+只取滑块色。`overflow: hidden` 永远不画 —— 这正是 `hidden` 与 `auto` 的唯一区别。
 
 ## 两个已知限制
 
