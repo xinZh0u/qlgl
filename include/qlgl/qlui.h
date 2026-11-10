@@ -1962,6 +1962,13 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 而画在输入法那边就会和候选窗里的预编辑行重复（两个预览框）。
  */
 void        ql_ui_input_set_preedit(QLUIRoot *ui, const char *utf8, int caret_cp);
+/*
+ * 增量修改预编辑（XIM 的 `XNPreeditDrawCallback` 语义）：把从第 `chg_first` 个
+ * **码点**开始的 `chg_len` 个码点替换成 `insert`（可为 NULL = 纯删除）。
+ * 输入法发来的是片段改动而不是整串，按整串处理会丢字、还可能劈开半个 UTF-8。
+ */
+void        ql_ui_input_preedit_apply(QLUIRoot *ui, int chg_first, int chg_len,
+                                      const char *insert, int caret_cp);
 /* 取当前的预编辑（没有则返回 NULL）；caret_cp 可为 NULL */
 const char *ql_ui_input_preedit(const QLUIRoot *ui, int *caret_cp);
 

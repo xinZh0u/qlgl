@@ -200,6 +200,56 @@ QL_TEST_BEGIN("test_input_edit")
             }
             ql_ui_input_set_preedit(ui, NULL, 0);
 
+            /*
+             * 增量改动（XIM 的 chg_first/chg_length 语义）：
+             * 输入法发来的是片段，按整串处理会丢字、还可能劈开半个 UTF-8
+             * （半个汉字 → 字体找不到字形 → 显示成方框）。
+             */
+            {
+                int cp = -1;
+                const char *pre = NULL;
+                /* a) 末尾追加 */
+                ql_ui_input_preedit_apply(ui, 0, 0, "ni", 2);
+                pre = ql_ui_input_preedit(ui, &cp);
+                QL_CHECK(pre != NULL);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "ni");
+                QL_CHECK_EQ(cp, 2);
+
+                /* b) 末尾再追加一段 */
+                ql_ui_input_preedit_apply(ui, 2, 0, "hao", 5);
+                pre = ql_ui_input_preedit(ui, &cp);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "nihao");
+
+                /* c) 替换中间两个码点：ni|ha|o → ni|XX|o */
+                ql_ui_input_preedit_apply(ui, 2, 2, "XY", 4);
+                pre = ql_ui_input_preedit(ui, NULL);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "niXYo");
+
+                /* d) 删除中间两个码点（insert == NULL） */
+                ql_ui_input_preedit_apply(ui, 2, 2, NULL, 2);
+                pre = ql_ui_input_preedit(ui, NULL);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "nio");
+
+                /* e) 中文按码点切：2 个汉字插在中间，不能劈坏任何一个 */
+                ql_ui_input_set_preedit(ui, "ab", 2);
+                ql_ui_input_preedit_apply(ui, 1, 0, "你好", 3);
+                pre = ql_ui_input_preedit(ui, &cp);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "a你好b");
+                QL_CHECK_EQ(cp, 3);
+
+                /* f) 删掉中间那个汉字（码点 1..2）→ "a好b" */
+                ql_ui_input_preedit_apply(ui, 1, 1, NULL, 1);
+                pre = ql_ui_input_preedit(ui, NULL);
+                if (pre != NULL)
+                    QL_CHECK_STR(pre, "a好b");
+            }
+            ql_ui_input_set_preedit(ui, NULL, 0);
+
             ql_ui_free(ui);
             ql_disp_mem_destroy(dd);
         }

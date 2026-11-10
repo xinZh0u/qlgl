@@ -3978,13 +3978,16 @@ void ql_gfx_gl_attach_clipboard(QLGfxGL *g, QLUIRoot *ui)
 /* ---------------- 输入法预编辑回调（XIMPreeditCallbacks） ---------------- */
 
 /* 把当前预编辑状态推给界面层（没接 ui 就只留在这层，安全） */
+/*
+ * 组字文本的**唯一所有者**是界面层（QLUIRoot 里的 preedit 缓冲），这样
+ * 增量改动、光标位置、重绘标记都只有一处逻辑。这里只在"开始/结束组字"时
+ * 负责清空，以及 caret 变化时把光标位置同步过去。
+ */
 static void ime_preedit_flush(QLGfxGL *g)
 {
     if (g->ime_ui == NULL)
         return;
-    if (g->ime_pre_active && g->ime_pre_len > 0)
-        ql_ui_input_set_preedit(g->ime_ui, g->ime_pre, (int)g->ime_pre_caret);
-    else
+    if (!g->ime_pre_active)
         ql_ui_input_set_preedit(g->ime_ui, NULL, 0);
 }
 
@@ -4019,6 +4022,8 @@ static void ime_preedit_done(XIC ic, XPointer client, XPointer call)
     g->ime_pre_len = 0;
     g->ime_pre_caret = 0;
     g->ime_pre[0] = '\0';
+    if (g->ime_ui != NULL)
+        ql_ui_input_set_preedit(g->ime_ui, NULL, 0);
     ime_preedit_flush(g);
 }
 
@@ -4081,18 +4086,35 @@ static void ime_preedit_draw(XIC ic, XPointer client, XPointer call)
         (const XIMPreeditDrawCallbackStruct *)call;
     if (d == NULL)
         return;
-    if (d->text == NULL || d->text->length <= 0 || d->text->length > 4096) {
-        /* text == NULL = 清空；长度离谱说明结构不对，宁可清空也不要越界读 */
+    /*
+     * 输入法发来的是**片段改动**：把从第 `chg_first` 个码点起的 `chg_length` 个
+     * 码点换成 `text`（NULL = 删除）。按整串替换会丢字，片段边界还可能落在
+     * UTF-8 字符中间 —— 字体找不到半个字的字形，屏幕上就是一个个方框。
+     */
+    char ins[QL_CFG_UI_INPUT_LEN * 2];
+    uint16_t ins_len = 0;
+    if (d->text != NULL && d->text->length > 0 && d->text->length <= 4096)
+        ime_text_to_utf8(d->text, ins, sizeof(ins), &ins_len);
+
+    if (g->ime_ui != NULL) {
+        ql_ui_input_preedit_apply(g->ime_ui, d->chg_first, d->chg_length,
+                                  (ins_len > 0) ? ins : NULL, d->caret);
+        /* 界面层自己维护缓冲：把结果抄回来，方便 trace 与后续 caret 换算 */
+        const char *cur = ql_ui_input_preedit(g->ime_ui, NULL);
         g->ime_pre_len = 0;
-        g->ime_pre[0] = '\0';
-    } else {
-        ime_text_to_utf8(d->text, g->ime_pre, sizeof(g->ime_pre), &g->ime_pre_len);
+        if (cur != NULL) {
+            g->ime_pre_len = (uint16_t)strlen(cur);
+            if (g->ime_pre_len >= (uint16_t)sizeof(g->ime_pre))
+                g->ime_pre_len = (uint16_t)sizeof(g->ime_pre) - 1u;
+            memcpy(g->ime_pre, cur, g->ime_pre_len);
+        }
+        g->ime_pre[g->ime_pre_len] = '\0';
     }
     if (d->caret >= 0)
         g->ime_pre_caret = (uint16_t)d->caret;
     if (g->trace_im)
-        fprintf(stderr, "[IM] preedit \"%s\"\n", g->ime_pre);
-    ime_preedit_flush(g);
+        fprintf(stderr, "[IM] preedit \"%s\" (chg %d+%d, caret %d)\n", g->ime_pre,
+                d->chg_first, d->chg_length, d->caret);
 }
 
 static void ime_preedit_caret(XIC ic, XPointer client, XPointer call)
@@ -4103,7 +4125,12 @@ static void ime_preedit_caret(XIC ic, XPointer client, XPointer call)
         return;
     const XIMPreeditCaretCallbackStruct *c = (const XIMPreeditCaretCallbackStruct *)call;
     g->ime_pre_caret = (uint16_t)((c != NULL && c->position >= 0) ? c->position : 0);
-    ime_preedit_flush(g);
+    if (g->ime_ui != NULL) {
+        /* 只挪光标：用一次空改动把 caret 同步给界面层（不改变文本） */
+        ql_ui_input_preedit_apply(g->ime_ui, 0, 0, NULL, (int)g->ime_pre_caret);
+    }
+    if (g->trace_im)
+        fprintf(stderr, "[IM] preedit caret=%u\n", (unsigned)g->ime_pre_caret);
 }
 
 void ql_gfx_gl_attach_ime(QLGfxGL *gfx, QLUIRoot *ui)

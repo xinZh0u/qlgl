@@ -10207,26 +10207,86 @@ static uint16_t cp_index_to_bytes(const char *s, uint16_t len, int cp)
     return (i <= len) ? i : len;
 }
 
+/* 把一段 UTF-8 追加/拷贝进预编辑缓冲；保证不劈开多字节字符、不越界 */
+static uint16_t preedit_copy_in(char *dst, size_t cap, const char *src)
+{
+    size_t n = (src != NULL) ? strlen(src) : 0;
+    if (n > cap - 1u)
+        n = cap - 1u;
+    /* 别把最后一个 UTF-8 序列劈成半个（截断落在续字节上就往前退） */
+    while (n > 0 && ((unsigned char)src[n] & 0xC0u) == 0x80u)
+        n--;
+    if (n > 0)
+        memcpy(dst, src, n);
+    dst[n] = '\0';
+    return (uint16_t)n;
+}
+
 void ql_ui_input_set_preedit(QLUIRoot *ui, const char *utf8, int caret_cp)
 {
     if (ui == NULL)
         return;
-    const size_t cap = sizeof(ui->preedit);
-    size_t n = 0;
-    if (utf8 != NULL) {
-        n = strlen(utf8);
-        if (n > cap - 1u)
-            n = cap - 1u;         /* 超长就截断：预编辑是瞬时状态，不能撑爆缓冲 */
-        /* 别把最后一个 UTF-8 序列劈成半个 */
-        while (n > 0 && ((unsigned char)utf8[n] & 0xC0u) == 0x80u)
-            n--;
-        memcpy(ui->preedit, utf8, n);
-    }
-    ui->preedit[n] = '\0';
-    ui->preedit_len = (uint16_t)n;
-    ui->preedit_caret = cp_index_to_bytes(ui->preedit, (uint16_t)n, caret_cp);
+    ui->preedit_len = preedit_copy_in(ui->preedit, sizeof(ui->preedit), utf8);
+    ui->preedit_caret = cp_index_to_bytes(ui->preedit, ui->preedit_len, caret_cp);
     if (ui->focus != NULL)
         ui->focus->flags |= QL_UI_RT_DIRTY;     /* 组字文本变了：那一块要重画 */
+}
+
+/*
+ * 增量修改预编辑：把第 `chg_first` 个码点起、`chg_len` 个码点换成 `insert`。
+ * 这正是 XIM `XIMPreeditDrawCallbackStruct{caret, chg_first, chg_length, text}`
+ * 的语义 —— 输入法发来的是**片段改动**，不是整串。
+ *
+ * 为什么必须按增量做：把每个片段当成整串，输入框里就只剩最后那段、而且片段
+ * 边界可能落在 UTF-8 字符中间（半个汉字 → 字体找不到字形 → 显示成方框）。
+ */
+void ql_ui_input_preedit_apply(QLUIRoot *ui, int chg_first, int chg_len,
+                               const char *insert, int caret_cp)
+{
+    if (ui == NULL)
+        return;
+    const uint16_t len = ui->preedit_len;
+    if (chg_first < 0)
+        chg_first = 0;
+    if (chg_len < 0)
+        chg_len = 0;
+    uint16_t b0 = cp_index_to_bytes(ui->preedit, len, chg_first);
+    uint16_t b1 = cp_index_to_bytes(ui->preedit, len, chg_first + chg_len);
+    if (b1 < b0)
+        b1 = b0;
+
+    char tail[sizeof(ui->preedit)];
+    const uint16_t tail_len = (uint16_t)(len - b1);
+    if (tail_len > 0)
+        memcpy(tail, ui->preedit + b1, tail_len);
+
+    uint16_t n = b0;
+    /* 前段原样保留（b0 一定落在字符边界上：上面是码点换算出来的） */
+    if (insert != NULL && insert[0] != '\0') {
+        const size_t cap = sizeof(ui->preedit) - (size_t)b0;
+        char ins[sizeof(ui->preedit)];
+        const uint16_t ins_len = preedit_copy_in(ins, sizeof(ins), insert);
+        size_t k = ins_len;
+        if (k > cap - 1u)
+            k = cap - 1u;
+        memcpy(ui->preedit + b0, ins, k);
+        n = (uint16_t)(b0 + k);
+    }
+    {   /* 后段接上（装不下就截掉尾巴，宁可少显示也不越界） */
+        size_t room = sizeof(ui->preedit) - 1u - (size_t)n;
+        uint16_t k = (tail_len < room) ? tail_len : (uint16_t)room;
+        /* 同样别劈开多字节字符 */
+        while (k > 0 && ((unsigned char)tail[k] & 0xC0u) == 0x80u)
+            k--;
+        if (k > 0)
+            memcpy(ui->preedit + n, tail, k);
+        n = (uint16_t)(n + k);
+    }
+    ui->preedit[n] = '\0';
+    ui->preedit_len = n;
+    ui->preedit_caret = cp_index_to_bytes(ui->preedit, n, caret_cp);
+    if (ui->focus != NULL)
+        ui->focus->flags |= QL_UI_RT_DIRTY;
 }
 
 const char *ql_ui_input_preedit(const QLUIRoot *ui, int *caret_cp)
