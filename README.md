@@ -99,6 +99,10 @@ ctest --test-dir build --output-on-failure
 cmake --build build --target doc_html      # 重新生成 doc/html/（需要 python3-markdown）
 ```
 
+GL 相关的用例（`test_golden` / `test_gl_vs_cpu` / `test_gl_dirty` / `test_dpr` / `test_subpx`）
+在拿不到 GL 上下文时默认**判失败**——否则着色器编译错误会被"静默 SKIP"成绿灯。
+确实没有 EGL/X11 的机器用 `QLGL_SKIP_GL=1 ctest --test-dir build` 显式放行。
+
 示例程序：
 
 ```bash

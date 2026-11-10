@@ -245,7 +245,7 @@ QL_TEST_BEGIN("test_subpx")
 
         QLGfxGL *gfx = ql_gfx_gl_create("subpx", W, H, QL_GFX_GL_OFFSCREEN);
         if (gfx == NULL) {
-            printf("  [SKIP] 亚像素 GPU 对比：无法创建 GL 上下文\n");
+            QL_TEST_GL_SKIP("亚像素 GPU 对比：无法创建 GL 上下文");
         } else {
             ql_gfx_gl_begin(gfx, bg);
             QLDraw2D *gl = ql_gfx_gl_draw(gfx);

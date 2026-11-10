@@ -440,7 +440,7 @@ QL_TEST_BEGIN("test_golden")
             if (gfx == NULL) {
                 /* 只在第一个用例上报一次，避免刷屏 */
                 if (ci == 0)
-                    printf("  [SKIP] CPU vs GPU：无法创建 GL 上下文\n");
+                    QL_TEST_GL_SKIP("CPU vs GPU：无法创建 GL 上下文");
             } else {
                 ql_gfx_gl_begin(gfx, 0x000000);
                 ql_ui_render(ui, ql_gfx_gl_draw(gfx));

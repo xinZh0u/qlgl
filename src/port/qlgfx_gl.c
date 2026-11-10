@@ -286,7 +286,7 @@ static const char *VS_SRC =
     "out vec2 v_local; out vec2 v_half; out vec4 v_params; out vec2 v_uv; out vec4 v_color;\n"
     "out vec4 v_mask;\n"
     "out vec4 v_radii;\n"
-    "vec4 shade(){\n"
+    "void main(){\n"
     "  vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;\n"
     "  ndc.y = -ndc.y;\n"
     "  gl_Position = vec4(ndc, 0.0, 1.0);\n"
@@ -333,7 +333,7 @@ static const char *FS_SRC =
     "  vec2 q = abs(p) - b + r;\n"
     "  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;\n"
     "}\n"
-    "void main(){\n"
+    "vec4 shade(){\n"
     /*
      * 四角半径：按象限从 v_radii 里挑（局部坐标 x 右为正、y 下为正）。
      * 四个值相同时退化成单半径 —— 与 CPU 侧 round_row_span4 同一套语义。
@@ -2094,7 +2094,8 @@ static const char *LAYER_FS =
     "  if (src.a <= 0.0) { frag = vec4(0.0); return; }\n"
 
     "  if (u_mode == 0 || u_pass == 0) {\n"
-    "    return src;\n"
+    "    frag = src;\n"
+    "    return;\n"
     "  }\n"
     /* 非普通混合：从背景纹理取色，按 CSS 公式算，再与 src 的 alpha 合成 */
     "  vec4 bd = texture(u_backdrop, uv);\n"

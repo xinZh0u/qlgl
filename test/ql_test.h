@@ -6,6 +6,7 @@
 #define QL_TEST_H
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <qlgl/qlgl.h>
@@ -65,6 +66,28 @@ static int ql_test_failures;
             ql_test_failures++;                                              \
             printf("  [FAIL] %s:%d  \"%s\" != \"%s\"\n", __FILE__,           \
                    __LINE__, _lhs ? _lhs : "(null)", _rhs ? _rhs : "(null)");\
+        }                                                                    \
+    } while (0)
+
+/**
+ * GL 上下文在本机本应可用；创建失败通常意味着着色器编译不过，而"静默 SKIP"会让
+ * 这类回归一路绿灯通过全部测试。默认把 SKIP 记成失败，只有显式
+ * `QLGL_SKIP_GL=1`（例如无 EGL/X11 的机器）才真的放行。
+ */
+static inline int ql_test_gl_required(void)
+{
+    const char *v = getenv("QLGL_SKIP_GL");
+    return !(v != NULL && v[0] != '\0' && v[0] != '0');
+}
+
+#define QL_TEST_GL_SKIP(what)                                                \
+    do {                                                                     \
+        printf("  [SKIP] %s\n", (what));                                     \
+        if (ql_test_gl_required()) {                                         \
+            ql_test_checks++;                                                \
+            ql_test_failures++;                                              \
+            printf("  [FAIL] %s:%d  GL 不可用（确实没有 EGL/GL 请设 "        \
+                   "QLGL_SKIP_GL=1）\n", __FILE__, __LINE__);                \
         }                                                                    \
     } while (0)
 

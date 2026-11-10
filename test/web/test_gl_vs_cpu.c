@@ -53,11 +53,11 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
     /* ---- GPU 图 ---- */
     QLGfxGL *gfx = ql_gfx_gl_create("gl-vs-cpu", W, H, QL_GFX_GL_OFFSCREEN);
     if (gfx == NULL) {
-        printf("  [SKIP] 无法创建 GL 上下文（无 EGL/X11？）\n");
+        QL_TEST_GL_SKIP("无法创建 GL 上下文（无 EGL/X11？）");
         ql_ui_free(ui);
         ql_disp_mem_destroy(disp);
         qlgl_shutdown();
-        return 0;
+        return ql_test_gl_required() ? 1 : 0;
     }
 
     ql_gfx_gl_begin(gfx, QL_COLOR_RGB(0x10, 0x14, 0x1C));
@@ -645,7 +645,7 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
                 ql_ui_free(uc);
                 ql_disp_mem_destroy(dc);
                 ql_ui_doc_free(doc);
-                printf("  [SKIP] 无法创建 GL 上下文\n");
+                QL_TEST_GL_SKIP("无法创建 GL 上下文");
                 break;
             }
             ql_gfx_gl_begin(gr, QL_COLOR_RGB(0, 0, 0));

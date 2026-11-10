@@ -68,9 +68,9 @@ QL_TEST_BEGIN("test_gl_dirty")
 
     QLGfxGL *g = ql_gfx_gl_create("gl-dirty", W, H, QL_GFX_GL_OFFSCREEN);
     if (g == NULL) {
-        printf("  [SKIP] 无法创建 GL 上下文（无 EGL/X11？）\n");
+        QL_TEST_GL_SKIP("无法创建 GL 上下文（无 EGL/X11？）");
         qlgl_shutdown();
-        return 0;
+        return ql_test_gl_required() ? 1 : 0;
     }
 
     QL_CHECK_EQ(ql_gfx_gl_set_retained(g, 1), QL_OK);

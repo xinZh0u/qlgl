@@ -195,7 +195,7 @@ QL_TEST_BEGIN("test_dpr")
 
         QLGfxGL *gfx = ql_gfx_gl_create("dpr-gl", 2 * W, 2 * H, QL_GFX_GL_OFFSCREEN);
         if (gfx == NULL) {
-            printf("  [SKIP] DPR GPU 对比：无法创建 GL 上下文\n");
+            QL_TEST_GL_SKIP("DPR GPU 对比：无法创建 GL 上下文");
         } else {
             ql_gfx_gl_set_scale(gfx, 2 * QL_SCALE_ONE);
             ql_ui_layout(ui, W, H);            /* 布局仍是 CSS px */
