@@ -1,8 +1,8 @@
-# CSS 效果检阅：十五个例程
+# CSS 效果检阅：十六个例程
 
 <img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480">
 
-完整程序：`example/16_css_units/` … `example/30_border_image/`（每个例程一个文件夹）
+完整程序：`example/16_css_units/` … `example/31_filter/`（每个例程一个文件夹）
 
 前几章是按"补了什么"讲的（[CSS3 补全](14_css3.md)、[毛玻璃](15_backdrop.md)）。
 这一章反过来：**按"能看出效果的最小样本"讲** —— 每一个已支持的 CSS 效果都摆成
@@ -399,7 +399,25 @@ pre { tab-size: 4; }
 
 四角不变形、四边沿一个方向铺开 —— 这是"像素风 / 描边卡片"最常见的做法。
 
-## 16. 这几个例程查出了什么
+## 16. `31_filter`：离屏图层
+
+<img src="../img/31-filter.png" alt="模糊、投影、颜色矩阵、组透明度、混合模式、遮罩" width="620">
+
+| 格 | 验证什么 | 该看到什么 |
+|---|---|---|
+| 左卡片 / 右卡片 | `filter: blur(3px)` 作用在**合成后的子树**上 | 右卡片的两块色块连重叠处一起糊，边缘没有接缝 |
+| `box-shadow` / `drop-shadow` | 前者认边框盒，后者认 alpha 形状 | 圆角胶囊的影子跟着圆角走 |
+| 月牙 ×2 | `drop-shadow` 跟着透明洞走 | 影子是月牙，不是圆饼 |
+| `原色 / gray / sepia / invert / 亮度 / 饱和 / 色相` | 颜色矩阵族 | `gray` 三项相等、`invert` 是反相色 |
+| 两个重叠方块 ×2 | 组 `opacity` | 右边重叠处**不比别处深** |
+| 六个 `mix-blend-mode` | 混合读的是背景 | `multiply` 变暗、`screen` 变亮、`difference` 出反色 |
+| `mask: url()` | 图片 alpha 当遮罩 | 左边渐隐、右边实心 |
+
+细节见 [离屏图层](20_filter.md)。
+
+---
+
+## 17. 这几个例程查出了什么
 
 写完这三个例程当场暴露了一个真 bug：
 

@@ -179,10 +179,11 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1538,14 +1539,20 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <tr>
 <td><code>opacity</code></td>
 <td>✅</td>
-<td>R</td>
-<td>0~1，默认 1；<strong>逐图元降透明并顺着子树往下乘</strong>（背景/边框/阴影/文字/图片一起淡）。与真 group opacity 的差别见 §20.1</td>
+<td>O</td>
+<td>0~1，默认 1；<strong>有子节点时走离屏图层 = 真 group opacity</strong>（重叠处不会更深），单节点时逐图元乘 alpha（与合成等价，省一层缓冲）。见 §18.10</td>
 </tr>
 <tr>
-<td><code>mix-blend-mode</code> / <code>background-blend-mode</code></td>
+<td><code>mix-blend-mode</code></td>
+<td>✅</td>
+<td>O</td>
+<td><code>normal</code>/<code>multiply</code>/<code>screen</code>/<code>overlay</code>/<code>darken</code>/<code>lighten</code>/<code>difference</code>；其余<strong>构建期报错</strong>。见 §18.10</td>
+</tr>
+<tr>
+<td><code>background-blend-mode</code></td>
 <td>❌</td>
 <td>O</td>
-<td>要离屏图层 + 混合方程</td>
+<td>要"多层背景图之间的混合"，与元素混合不是一回事</td>
 </tr>
 <tr>
 <td><code>isolation</code></td>
@@ -2197,16 +2204,28 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 <code>border-radius</code>；自己带 <code>transform: translate</code> 时采样区跟着走；下层动画实时跟随</td>
 </tr>
 <tr>
-<td><code>filter: blur()</code></td>
-<td>⏳</td>
+<td><code>filter: blur(&lt;N&gt;px)</code></td>
+<td>✅</td>
 <td>O</td>
-<td><strong>单独立项"离屏图层"，PC/Mobile 必做</strong>（§22）：要"元素自己离屏后再模糊"，与 <code>backdrop-filter</code> 不是一回事。MCU 档恒关</td>
+<td><strong>离屏图层</strong>（§18.10）：元素先合成到临时图再整体糊。9 抽头可分离高斯，抽头间距 = N/2，两条后端同一公式。MCU 档恒关</td>
 </tr>
 <tr>
-<td><code>filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/drop-shadow</code></td>
-<td>⏳</td>
+<td><code>filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity</code></td>
+<td>✅</td>
 <td>O</td>
-<td>同样进"离屏图层"立项；颜色矩阵那几族也可以先做"单色乘法融进绘制入口"的便宜版</td>
+<td>颜色矩阵族，同一图层里可链式（最多 6 个）；<code>1.2</code> 与 <code>120%</code> 等价</td>
+</tr>
+<tr>
+<td><code>filter: drop-shadow(&lt;dx&gt; &lt;dy&gt; [blur] [color])</code></td>
+<td>✅</td>
+<td>O</td>
+<td>影子取 <strong>alpha 形状</strong>（跟着圆角/透明洞走）；颜色默认 <code>currentColor</code>；<code>spread</code> 报错</td>
+</tr>
+<tr>
+<td><code>filter: url(#svg)</code> / <code>backdrop-filter</code> 的颜色函数</td>
+<td>❌</td>
+<td>X</td>
+<td>前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur）</td>
 </tr>
 <tr>
 <td><code>clip-path: circle()</code></td>
@@ -2221,16 +2240,22 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td>PC/Mobile 排期：<code>inset()</code>/<code>ellipse()</code> 便宜（SDF 扩展），<code>polygon()</code>/<code>path()</code> 要扫线</td>
 </tr>
 <tr>
-<td><code>mask</code> / <code>mask-image</code> / <code>-webkit-mask</code></td>
-<td>⏳</td>
+<td><code>mask</code> / <code>mask-image</code></td>
+<td>✅</td>
 <td>O</td>
-<td>进"离屏图层"立项（A8 通道 + 逐像素乘）</td>
+<td><code>url(&lt;name&gt;)</code> / <code>none</code>；只用图片 alpha，拉伸到边框盒（= <code>mask-size: 100% 100%</code> + <code>mask-mode: alpha</code>）。见 §18.10</td>
+</tr>
+<tr>
+<td><code>mask-position</code> / <code>-repeat</code> / <code>-composite</code> / <code>mask-border</code></td>
+<td>❌</td>
+<td>O</td>
+<td>语义分支多，收益低</td>
 </tr>
 <tr>
 <td><code>mix-blend-mode</code></td>
-<td>⏳</td>
+<td>✅</td>
 <td>O</td>
-<td>进"离屏图层"立项：混合模式要求"读到下层已画好的像素"，与 <code>backdrop-filter</code> 同一条件</td>
+<td>与 <code>filter</code> 共用同一套离屏图层；GPU 侧要把目标表面抓成纹理再算</td>
 </tr>
 </tbody>
 </table>
@@ -2915,6 +2940,202 @@ libfribidi.so      106 KB   = 0.8 倍（fribidi 本身还勉强，但单独它�
 写了 <code>border-image</code> 就不再画 <code>border-style</code>（CSS 语义）。</p>
 <p>资源走的是 <code>&lt;img src&gt;</code> / <code>background-image</code> 的<strong>同一张表</strong>：
 <code>ql_ui_register_image(ui, "frame", ...)</code> 填一次像素，三种用法共享。</p>
+<h3 id="1810-m93-filter-mix-blend-mode-mask-group-opacity">18.10 M9.3 落地：离屏图层（<code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> / 真 group opacity）</h3>
+<p>四样特性共用一句前提：<strong>先把子树合成到一张临时图上，再整体处理</strong>。</p>
+<h4 id="style_needs_layer">触发条件（<code>style_needs_layer()</code>）</h4>
+<table>
+<thead>
+<tr>
+<th>样式</th>
+<th>开图层？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filter_n &gt; 0</code></td>
+<td>是</td>
+</tr>
+<tr>
+<td><code>mix_blend != normal</code></td>
+<td>是</td>
+</tr>
+<tr>
+<td><code>mask_image != none</code></td>
+<td>是</td>
+</tr>
+<tr>
+<td><code>opacity &lt; 1</code> <strong>且</strong>有子节点</td>
+<td>是</td>
+</tr>
+<tr>
+<td>其余</td>
+<td>否 —— 走原来的单批次路径</td>
+</tr>
+</tbody>
+</table>
+<h4 id="_1">绘制范围</h4>
+<div class="highlight"><pre><span></span><code>bounds = 边框盒 ∪ paint_box（子树可能画到的范围）
+       ∪ blur·3 的外扩
+       ∪ drop-shadow 的偏移与 blur·3
+       ∩ 当前裁剪（不裁剪就会为屏幕外的东西分配缓冲）
+</code></pre></div>
+
+<p><strong>裁剪仍然按元素的边框盒 + 圆角</strong>：所以"圆角卡片 + 模糊光晕"的四个角是干净的，
+光晕不会漏到圆角外面（<code>QLDraw2DLayerFx.box</code> + <code>.corner</code> 就是为这一条存在的）。</p>
+<h4 id="qldraw2dh">后端协议（<code>qldraw2d.h</code>）</h4>
+<div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">layer_begin</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">bounds</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLDraw2DLayerFx</span><span class="w"> </span><span class="o">*</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">layer_end</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 返回 1 = 请把同一棵子树再画一遍 */</span>
+</code></pre></div>
+
+<p><code>layer_end</code> 返回 1 是 CPU 侧的协议：它要两遍。</p>
+<h4 id="cpu">CPU：两遍哑光反解</h4>
+<p>CPU 光栅有二十多条混合路径（整行快路径、SSE2 块、字形位图、图片搬运…），
+它们全都写成"只在 RGB 上混、alpha 恒 0xFF"。要让它们各自累积 alpha，
+改动面大且极易漏。于是换个方向：<strong>同一棵子树画两次</strong>，一次在黑底、一次在白底。</p>
+<div class="highlight"><pre><span></span><code>黑底：B = C·a          白底：W = C·a + 255·(1-a)
+⇒  a = 255-(W-B)，而**预乘色就是 B**
+</code></pre></div>
+
+<p>既不用除 alpha（除法的量化误差很大），也不用知道 C。代价是子树画两遍
+（实测：一块 200×120 的卡片多花 ~0.2 ms），换来的是<strong>零风险</strong>——
+所有既有图元的混合语义一个字都没改。</p>
+<blockquote>
+<p>三个通道各自给出的 alpha 会差 1~2（8 位量化），实现里取平均把误差摊掉。</p>
+</blockquote>
+<h4 id="gpu-rgba-fbo">GPU：真 RGBA FBO + 一个合成着色器</h4>
+<p>GL 有 RGBA 帧缓冲，只画一遍。合成走 <code>LAYER_FS</code>：</p>
+<ul>
+<li>颜色矩阵族（6 个 uniform 对，按顺序作用在<strong>直通色</strong>上，再乘回 alpha）；</li>
+<li><code>opacity</code> / 圆角裁剪（SDF + smoothstep，与 CPU 同一公式）/ <code>mask</code>（第二张纹理）；</li>
+<li>混合模式：把目标表面那一块先 <code>glBlitFramebuffer</code> 成一张纹理当背景，
+  片元里按 CSS 公式算（和毛玻璃同一个套路）；</li>
+<li><code>drop-shadow</code>：额外的两趟模糊 + 一次"只画影子"的合成（先画影子，再画本体）。</li>
+</ul>
+<p><strong>踩过的坑</strong>（都在代码注释里留了记号）：</p>
+<ol>
+<li><code>layer_ensure()</code> 建纹理时临时切了 FBO，结尾一句 <code>glBindFramebuffer(0)</code>
+   把<strong>外层图层</strong>的输出丢到了默认帧缓冲 —— 嵌套时外层整个不见。必须存/还原绑定。</li>
+<li>模糊那几趟把 viewport 改成了模糊纹理的尺寸，不切回来合成四边形就会按错误投影
+   画出去。抽了 <code>gl_bind_target()</code> 统一负责"绑定 + viewport + scissor"。</li>
+<li>毛玻璃那套 <code>BLUR_FS</code> 的片元固定输出 <code>alpha = 1</code>（它背后永远是不透明的页面）。
+   拿它糊图层会把透明区域糊成<strong>不透明黑</strong>，图层边缘立刻出现黑边。
+   所以另开了一个 4 通道版本 <code>BLUR_RGBA_FS</code>。</li>
+<li>GLSL 的 <code>mat3(a,b,c, …)</code> 是<strong>按列</strong>填的，照抄 CPU 的行主序色相矩阵会得到转置
+   （色相旋转不对称 → 颜色明显跑偏）。改成逐行写死 <code>dot()</code>。</li>
+<li>CPU 侧 <code>ql_layer_drop_shadow()</code> 里写反了合成顺序
+   （<code>shadow + layer*(1-shadow_a)</code> 是"影子盖住元素"），现在固定为
+   <code>layer + shadow*(1-layer_a)</code>。</li>
+</ol>
+<h4 id="_2">一致性</h4>
+<p><code>test_gl_vs_cpu</code> 里新增六个图层用例（blur / drop-shadow / 颜色矩阵链 /
+multiply / 组 opacity 重叠 / 嵌套两层），两条后端的差异：</p>
+<table>
+<thead>
+<tr>
+<th>用例</th>
+<th>差异</th>
+<th>最大单通道差</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filter: blur</code></td>
+<td>0.00%</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>filter: drop-shadow</code></td>
+<td>0.00%</td>
+<td>1</td>
+</tr>
+<tr>
+<td>颜色矩阵链</td>
+<td>0.00%</td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>mix-blend-mode: multiply</code></td>
+<td>0.00%</td>
+<td>1</td>
+</tr>
+<tr>
+<td>真 group opacity（重叠）</td>
+<td>0.00%</td>
+<td>0</td>
+</tr>
+<tr>
+<td>嵌套两层</td>
+<td>0.95%</td>
+<td>152（全在抗锯齿边上）</td>
+</tr>
+</tbody>
+</table>
+<p>模糊为了两端一致，统一改成"9 抽头、抽头间距 = 半径/2、边缘钳位"——
+CPU 原来那套"两趟盒式 ≈ 钟形"与 GL 的高斯形状不同，同一份 CSS 会糊出不同宽度。</p>
+<h4 id="_3">容量与裁剪</h4>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>上限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每层缓冲</td>
+<td>宽 × 高 × 4 字节（预乘 RGBA）</td>
+</tr>
+<tr>
+<td>嵌套深度</td>
+<td><code>QL_CFG_UI_LAYER_MAX_DEPTH</code>（默认 4）</td>
+</tr>
+<tr>
+<td>单层尺寸兜底</td>
+<td>4096×1024（防误用）</td>
+</tr>
+<tr>
+<td><code>filter</code> 链长</td>
+<td><code>QL_CFG_UI_FILTER_MAX_OPS</code>（默认 6）</td>
+</tr>
+<tr>
+<td>编译开关</td>
+<td><code>QL_FEAT_CSS_FILTER_LAYER</code>（MCU 默认关，整个 <code>qllayer.c</code> 编译成空）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MCU 实测</strong>（<code>test/mcu/build.sh</code>，Cortex-M4 / mps2-an386，只算静态量）：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code>.text</code></th>
+<th><code>.bss</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_FEAT_CSS_FILTER_LAYER=0</code>（MCU 默认）</td>
+<td>139,740 B</td>
+<td>140,264 B</td>
+</tr>
+<tr>
+<td><code>QL_FEAT_CSS_FILTER_LAYER=1</code></td>
+<td>155,084 B</td>
+<td>140,940 B</td>
+</tr>
+<tr>
+<td><strong>差额</strong></td>
+<td><strong>+15,344 B（+11.0%）</strong></td>
+<td><strong>+676 B</strong>（图层栈本身）</td>
+</tr>
+</tbody>
+</table>
+<p>那 676 B 是 <code>QLDraw2DCanvas</code> 里的图层栈（4 层 × 约 170 B），编译成空之后 RAM
+和 Flash 一起还回去。<strong>运行期</strong>的 RAM 峰值另算：一层 = 元素尺寸 × 4 字节，
+所以 MCU 上这个包是"默认关 + 真要玻璃面板时按页面调"。</p>
+<p>对比一下：<code>CSS_GRID</code> 是 <strong>4,528 B</strong>、<code>CSS_BORDER_IMAGE</code> 是 <strong>2,176 B</strong> ——
+离屏图层是这两者之和的<strong>两倍多</strong>，也解释了为什么它必须是一个独立的能力包
+（而不是塞进 BASE）。</p>
 <hr />
 <h2 id="19">19. 覆盖率：两份实测 + 一份规范口径</h2>
 <p>三个数回答三个不同的问题，别混着用。</p>
@@ -3488,11 +3709,10 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 <h2 id="20">20. 三处"看起来简单、其实不简单"</h2>
 <p>写在这里，免得后面有人当"漏了"顺手补成半成品：</p>
 <ol>
-<li><strong><code>opacity</code> 是"逐图元降透明"，不是严格的组不透明度</strong>。真 CSS 把整棵子树先合成到一张
-   离屏图层再整体混合；本库的做法是把整体 alpha 乘到<strong>每一个绘制入口</strong>上，并顺着子树
-   往下乘（<code>QLDraw2D.alpha</code> / <code>ql_draw2d_set_alpha()</code>）。对"子树内部不重叠"的界面两者
-   逐像素一致；只有<strong>子树内部互相覆盖</strong>处会略透（每个图元各自降透明，重叠区乘了两次）。
-   严格版本要在 CPU 与 GL 两端各加一层离屏合成 —— 和 <code>transform: rotate()</code> 同级成本。</li>
+<li><strong><code>opacity</code> 在"有子节点"时走离屏图层，单节点时不走</strong>。真 CSS 永远先合成整棵子树；
+   本库对<strong>单节点</strong>保留"把 alpha 乘进每个绘制入口"的老做法 —— 因为一个节点内部没有
+   "图元互相覆盖"这回事，两者逐像素等价，而省掉一层缓冲。一旦有子节点就必然走图层
+   （否则重叠区会乘两次 alpha、比别处更深）。判据见 <code>style_needs_layer()</code>，实现见 §18.10。</li>
 <li><strong><code>margin: auto</code> 是布局概念，不是值解析</strong>。块级盒要在<strong>有确定可用宽度</strong>时分掉剩余空间；
    flex 里的 <code>auto</code> margin 又是另一套（吸收剩余空间）。改动落在 <code>layout_node()</code> 与
    flex 求解器两处。</li>
@@ -3715,6 +3935,15 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 <td><strong>默认开</strong>（可裁）</td>
 <td>BASE + <code>QL_FEAT_UI_IMAGE</code></td>
 <td><strong>实测 2,176 B</strong>（−1.6%）</td>
+</tr>
+<tr>
+<td><code>CSS_FILTER_LAYER</code></td>
+<td><code>QL_FEAT_CSS_FILTER_LAYER</code></td>
+<td><strong>M9.3 ✅</strong>：离屏图层 = <code>filter</code> 全家 + <code>mix-blend-mode</code> + <code>mask</code> + 真 group opacity</td>
+<td>✅</td>
+<td><strong>默认关</strong></td>
+<td>BASE（+ <code>QL_FEAT_UI_IMAGE</code> 才有 <code>mask</code>）</td>
+<td><strong>实测 Flash 15,344 B / RAM 676 B</strong>（见 §18.10 末）</td>
 </tr>
 <tr>
 <td><code>CSS_FONT_STACK</code></td>

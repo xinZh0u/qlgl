@@ -653,7 +653,30 @@ typedef struct {
     uint8_t     bi_reserved;
     int16_t     bi_slice[4];    /* 上 右 下 左 */
     int16_t     bi_width[4];    /* 边框宽度（0 = 用 slice） */
+
+    /* ----- 离屏图层：filter / mix-blend-mode / mask（M9.3，blob v29） ----- */
+    /*
+     * `filter: <fn>+`。**有这几样就必须走离屏图层**：先把子树合成到一张临时图，
+     * 再整体处理。逐图元施加"滤镜"和"先合成再滤镜"是两回事（重叠处、模糊半径
+     * 吃到的邻居像素都不一样）。
+     */
+    uint8_t     filter_n;                              /* 0..QL_CFG_UI_FILTER_MAX_OPS */
+    uint16_t    filter_op[QL_CFG_UI_FILTER_MAX_OPS];   /* QL_UI_FILTER_PACK 打包 */
+    int8_t      ds_dx;          /* `drop-shadow()` 的水平偏移 px */
+    int8_t      ds_dy;          /* 垂直偏移 px */
+    uint8_t     ds_blur;        /* 模糊半径 px（0 = 硬边） */
+    uint8_t     ds_a;           /* 0 = 用 ds_color 自己的 alpha */
+    uint32_t    ds_color;       /* 0 = currentColor */
+    uint8_t     mix_blend;      /* QLUIBlendMode */
+    uint16_t    mask_image;     /* 资源名在文本池里的下标；QL_UI_NO_MASK = 无 */
+    /*
+     * `mask: url()` 目前只支持"按边框盒拉伸 + 用图片 alpha"这一种，
+     * 覆盖 `mask-image` / `-size: 100% 100%` / `-mode: alpha` 三个默认值。
+     */
 } QLUIStyle;
+
+/* ============================== 离屏图层（M9.3） ============================== */
+
 
 /* ============================== Grid（B6） ============================== */
 
@@ -1708,7 +1731,7 @@ QLUINodeRT *ql_ui_focus_node(const QLUIRoot *ui);
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    28u
+#define QL_UI_BLOB_VERSION    29u
 
 typedef struct {
     uint32_t magic;

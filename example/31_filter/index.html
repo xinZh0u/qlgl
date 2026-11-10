@@ -1,0 +1,105 @@
+<div id="root">
+  <div class="top">
+    <div class="h1">离屏图层：filter / mix-blend-mode / mask / 组透明度</div>
+    <div class="badge">先合成再处理</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">1. <code>filter: blur()</code> —— 模糊的是"合成后的子树"，不是每个图元各糊一次</div>
+    <div class="row">
+      <div class="card">
+        <div class="blob b1"></div>
+        <div class="blob b2"></div>
+      </div>
+      <div class="card blurred">
+        <div class="blob b1"></div>
+        <div class="blob b2"></div>
+      </div>
+    </div>
+    <div class="hint">左：原样　右：整张卡片 <code>blur(3px)</code>（两块的重叠处也一起糊）</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">2. <code>filter: drop-shadow()</code> —— 影子取的是"alpha 形状"，不是外框</div>
+    <div class="row">
+      <div class="pill shadow-plain">box-shadow</div>
+      <div class="pill shadow-drop">drop-shadow</div>
+      <div class="crescent"></div>
+      <div class="crescent drop"></div>
+    </div>
+    <div class="hint">前两个都是圆的：box-shadow 只认矩形框，drop-shadow 跟着圆角走</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">3. 颜色矩阵族：brightness / contrast / saturate / grayscale / sepia / invert / hue-rotate</div>
+    <div class="row">
+      <div class="chip c0">原色</div>
+      <div class="chip c1">gray</div>
+      <div class="chip c2">sepia</div>
+      <div class="chip c3">invert</div>
+      <div class="chip c4">亮度 0.6</div>
+      <div class="chip c5">饱和 2</div>
+      <div class="chip c6">色相 120°</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">4. 真 <code>opacity</code>（组）：两个半透明块重叠处不会更深</div>
+    <div class="row">
+      <div class="overlap">
+        <div class="sq s1"></div>
+        <div class="sq s2"></div>
+      </div>
+      <div class="overlap faded">
+        <div class="sq s1"></div>
+        <div class="sq s2"></div>
+      </div>
+    </div>
+    <div class="hint">左：不透明　右：<code>opacity: 0.5</code>（整组先合成再降透明）</div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">5. <code>mix-blend-mode</code></div>
+    <div class="row mixes">
+      <div class="mix">
+        <div class="mixbg"><div class="bl m-normal"></div></div>
+        <div class="mlab">normal</div>
+      </div>
+      <div class="mix">
+        <div class="mixbg"><div class="bl m-multiply"></div></div>
+        <div class="mlab">multiply</div>
+      </div>
+      <div class="mix">
+        <div class="mixbg"><div class="bl m-screen"></div></div>
+        <div class="mlab">screen</div>
+      </div>
+      <div class="mix">
+        <div class="mixbg"><div class="bl m-overlay"></div></div>
+        <div class="mlab">overlay</div>
+      </div>
+      <div class="mix">
+        <div class="mixbg"><div class="bl m-darken"></div></div>
+        <div class="mlab">darken</div>
+      </div>
+      <div class="mix">
+        <div class="mixbg"><div class="bl m-difference"></div></div>
+        <div class="mlab">difference</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="cap">6. <code>mask: url()</code> —— 用图片的 alpha 当遮罩（这里的图是程序里现算的）</div>
+    <div class="row">
+      <div class="mcard"><div class="mtxt">masked</div></div>
+    </div>
+    <div class="hint">遮罩图是一张 8×8 的 A8：左半 0、右半 255，中间斜着过渡</div>
+  </div>
+
+  <div class="note">
+    为什么要"先合成再处理"：<code>blur</code> 吃的是邻居像素、<code>opacity</code> 是整组
+    一起降透明、<code>mix-blend-mode</code> 要读背景 —— 三者都要求先把子树画到一张
+    临时图上。代价是一块元素大小的 RGBA 缓冲，所以 MCU 档用
+    <code>QL_FEAT_CSS_FILTER_LAYER=0</code> 整套裁掉。
+  </div>
+</div>

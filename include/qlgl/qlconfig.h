@@ -88,6 +88,29 @@
 #define QL_FEAT_CSS_BORDER_IMAGE    1
 #endif
 
+/* ----- 离屏图层（M9.3 能力包）：filter / mix-blend-mode / mask / 真 group opacity ----- */
+/*
+ * PC / Mobile 默认开；MCU 默认关（`-DQL_FEAT_CSS_FILTER_LAYER=0`）。
+ *
+ * 关掉之后：`filter` / `mix-blend-mode` / `mask` 在**构建期报错**（红线：不静默降级），
+ * `opacity` 退回"逐元素乘 alpha"的旧语义（重叠处会略微透出来）。
+ *
+ * 为什么单独一个包：它要一块"元素盒子大小的 RGBA 临时缓冲"，
+ * 这是全库唯一会**按元素尺寸**吃 RAM 的特性（其余都是固定上限）。
+ */
+#ifndef QL_FEAT_CSS_FILTER_LAYER
+#define QL_FEAT_CSS_FILTER_LAYER    1
+#endif
+/* 图层最多嵌套几层（外层有 filter 的元素里再放一个带 filter 的元素）。
+ * 每层一块临时缓冲，所以这个值直接乘 RAM 峰值。 */
+#ifndef QL_CFG_UI_LAYER_MAX_DEPTH
+#define QL_CFG_UI_LAYER_MAX_DEPTH   4
+#endif
+/* `filter:` 一条声明里最多几个函数（`blur() brightness() drop-shadow()` 这类） */
+#ifndef QL_CFG_UI_FILTER_MAX_OPS
+#define QL_CFG_UI_FILTER_MAX_OPS    6
+#endif
+
 /* ----- Grid 的容量上限 ----- */
 /* 单个容器最多几条显式轨道（列和行各自）。12 列栅格 + 12 行已远超常见页面 */
 #ifndef QL_CFG_UI_GRID_MAX_TRACKS

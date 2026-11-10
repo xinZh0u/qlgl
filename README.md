@@ -87,6 +87,7 @@ cmake --build build -j
 | `28_bg_image` | B4：`background-image: url()` + `background-size/-position/-repeat`（与 `<img>` 共用资源表） |
 | `29_grid` | B6：CSS Grid —— 具名区域 / 12 列栅格 / `span` 跨格 / 自动放置 / `justify-self` |
 | `30_border_image` | B6：`border-image` 九宫格（`stretch` / `repeat` / `round`），一张图当边框 |
+| `31_filter` | M9.3：离屏图层 —— `filter` / 真 group `opacity` / `mix-blend-mode` / `mask` |
 
 ## 构建与测试
 

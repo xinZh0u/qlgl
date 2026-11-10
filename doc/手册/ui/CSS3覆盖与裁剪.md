@@ -361,8 +361,9 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `color` | ✅ | R | |
-| `opacity` | ✅ | R | 0~1，默认 1；**逐图元降透明并顺着子树往下乘**（背景/边框/阴影/文字/图片一起淡）。与真 group opacity 的差别见 §20.1 |
-| `mix-blend-mode` / `background-blend-mode` | ❌ | O | 要离屏图层 + 混合方程 |
+| `opacity` | ✅ | O | 0~1，默认 1；**有子节点时走离屏图层 = 真 group opacity**（重叠处不会更深），单节点时逐图元乘 alpha（与合成等价，省一层缓冲）。见 §18.10 |
+| `mix-blend-mode` | ✅ | O | `normal`/`multiply`/`screen`/`overlay`/`darken`/`lighten`/`difference`；其余**构建期报错**。见 §18.10 |
+| `background-blend-mode` | ❌ | O | 要"多层背景图之间的混合"，与元素混合不是一回事 |
 | `isolation` | ❌ | O | 同上（为混合服务的） |
 | `color-scheme` / `accent-color` / `caret-color` | ❌ | N | 与"主题由 CSS 自己写"重复 |
 
@@ -519,12 +520,15 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `backdrop-filter: blur()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
-| `filter: blur()` | ⏳ | O | **单独立项"离屏图层"，PC/Mobile 必做**（§22）：要"元素自己离屏后再模糊"，与 `backdrop-filter` 不是一回事。MCU 档恒关 |
-| `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/drop-shadow` | ⏳ | O | 同样进"离屏图层"立项；颜色矩阵那几族也可以先做"单色乘法融进绘制入口"的便宜版 |
+| `filter: blur(<N>px)` | ✅ | O | **离屏图层**（§18.10）：元素先合成到临时图再整体糊。9 抽头可分离高斯，抽头间距 = N/2，两条后端同一公式。MCU 档恒关 |
+| `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | ✅ | O | 颜色矩阵族，同一图层里可链式（最多 6 个）；`1.2` 与 `120%` 等价 |
+| `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`spread` 报错 |
+| `filter: url(#svg)` / `backdrop-filter` 的颜色函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur） |
 | `clip-path: circle()` | ✅ | R | 子树级圆形遮罩；CPU 与 GPU 各一份 |
 | `clip-path: inset()` / `ellipse()` / `polygon()` / `path()` | ⏳ | F | PC/Mobile 排期：`inset()`/`ellipse()` 便宜（SDF 扩展），`polygon()`/`path()` 要扫线 |
-| `mask` / `mask-image` / `-webkit-mask` | ⏳ | O | 进"离屏图层"立项（A8 通道 + 逐像素乘） |
-| `mix-blend-mode` | ⏳ | O | 进"离屏图层"立项：混合模式要求"读到下层已画好的像素"，与 `backdrop-filter` 同一条件 |
+| `mask` / `mask-image` | ✅ | O | `url(<name>)` / `none`；只用图片 alpha，拉伸到边框盒（= `mask-size: 100% 100%` + `mask-mode: alpha`）。见 §18.10 |
+| `mask-position` / `-repeat` / `-composite` / `mask-border` | ❌ | O | 语义分支多，收益低 |
+| `mix-blend-mode` | ✅ | O | 与 `filter` 共用同一套离屏图层；GPU 侧要把目标表面抓成纹理再算 |
 
 ---
 
@@ -1006,6 +1010,126 @@ ui->grid_size_used  = saved_coord;
 资源走的是 `<img src>` / `background-image` 的**同一张表**：
 `ql_ui_register_image(ui, "frame", ...)` 填一次像素，三种用法共享。
 
+### 18.10 M9.3 落地：离屏图层（`filter` / `mix-blend-mode` / `mask` / 真 group opacity）
+
+四样特性共用一句前提：**先把子树合成到一张临时图上，再整体处理**。
+
+#### 触发条件（`style_needs_layer()`）
+
+| 样式 | 开图层？ |
+|---|---|
+| `filter_n > 0` | 是 |
+| `mix_blend != normal` | 是 |
+| `mask_image != none` | 是 |
+| `opacity < 1` **且**有子节点 | 是 |
+| 其余 | 否 —— 走原来的单批次路径 |
+
+#### 绘制范围
+
+```
+bounds = 边框盒 ∪ paint_box（子树可能画到的范围）
+       ∪ blur·3 的外扩
+       ∪ drop-shadow 的偏移与 blur·3
+       ∩ 当前裁剪（不裁剪就会为屏幕外的东西分配缓冲）
+```
+
+**裁剪仍然按元素的边框盒 + 圆角**：所以"圆角卡片 + 模糊光晕"的四个角是干净的，
+光晕不会漏到圆角外面（`QLDraw2DLayerFx.box` + `.corner` 就是为这一条存在的）。
+
+#### 后端协议（`qldraw2d.h`）
+
+```c
+int  (*layer_begin)(QLDraw2D *, QLRect bounds, const QLDraw2DLayerFx *);
+int  (*layer_end)(QLDraw2D *);      /* 返回 1 = 请把同一棵子树再画一遍 */
+```
+
+`layer_end` 返回 1 是 CPU 侧的协议：它要两遍。
+
+#### CPU：两遍哑光反解
+
+CPU 光栅有二十多条混合路径（整行快路径、SSE2 块、字形位图、图片搬运…），
+它们全都写成"只在 RGB 上混、alpha 恒 0xFF"。要让它们各自累积 alpha，
+改动面大且极易漏。于是换个方向：**同一棵子树画两次**，一次在黑底、一次在白底。
+
+```
+黑底：B = C·a          白底：W = C·a + 255·(1-a)
+⇒  a = 255-(W-B)，而**预乘色就是 B**
+```
+
+既不用除 alpha（除法的量化误差很大），也不用知道 C。代价是子树画两遍
+（实测：一块 200×120 的卡片多花 ~0.2 ms），换来的是**零风险**——
+所有既有图元的混合语义一个字都没改。
+
+> 三个通道各自给出的 alpha 会差 1~2（8 位量化），实现里取平均把误差摊掉。
+
+#### GPU：真 RGBA FBO + 一个合成着色器
+
+GL 有 RGBA 帧缓冲，只画一遍。合成走 `LAYER_FS`：
+
+- 颜色矩阵族（6 个 uniform 对，按顺序作用在**直通色**上，再乘回 alpha）；
+- `opacity` / 圆角裁剪（SDF + smoothstep，与 CPU 同一公式）/ `mask`（第二张纹理）；
+- 混合模式：把目标表面那一块先 `glBlitFramebuffer` 成一张纹理当背景，
+  片元里按 CSS 公式算（和毛玻璃同一个套路）；
+- `drop-shadow`：额外的两趟模糊 + 一次"只画影子"的合成（先画影子，再画本体）。
+
+**踩过的坑**（都在代码注释里留了记号）：
+
+1. `layer_ensure()` 建纹理时临时切了 FBO，结尾一句 `glBindFramebuffer(0)`
+   把**外层图层**的输出丢到了默认帧缓冲 —— 嵌套时外层整个不见。必须存/还原绑定。
+2. 模糊那几趟把 viewport 改成了模糊纹理的尺寸，不切回来合成四边形就会按错误投影
+   画出去。抽了 `gl_bind_target()` 统一负责"绑定 + viewport + scissor"。
+3. 毛玻璃那套 `BLUR_FS` 的片元固定输出 `alpha = 1`（它背后永远是不透明的页面）。
+   拿它糊图层会把透明区域糊成**不透明黑**，图层边缘立刻出现黑边。
+   所以另开了一个 4 通道版本 `BLUR_RGBA_FS`。
+4. GLSL 的 `mat3(a,b,c, …)` 是**按列**填的，照抄 CPU 的行主序色相矩阵会得到转置
+   （色相旋转不对称 → 颜色明显跑偏）。改成逐行写死 `dot()`。
+5. CPU 侧 `ql_layer_drop_shadow()` 里写反了合成顺序
+   （`shadow + layer*(1-shadow_a)` 是"影子盖住元素"），现在固定为
+   `layer + shadow*(1-layer_a)`。
+
+#### 一致性
+
+`test_gl_vs_cpu` 里新增六个图层用例（blur / drop-shadow / 颜色矩阵链 /
+multiply / 组 opacity 重叠 / 嵌套两层），两条后端的差异：
+
+| 用例 | 差异 | 最大单通道差 |
+|---|---|---|
+| `filter: blur` | 0.00% | 1 |
+| `filter: drop-shadow` | 0.00% | 1 |
+| 颜色矩阵链 | 0.00% | 3 |
+| `mix-blend-mode: multiply` | 0.00% | 1 |
+| 真 group opacity（重叠） | 0.00% | 0 |
+| 嵌套两层 | 0.95% | 152（全在抗锯齿边上） |
+
+模糊为了两端一致，统一改成"9 抽头、抽头间距 = 半径/2、边缘钳位"——
+CPU 原来那套"两趟盒式 ≈ 钟形"与 GL 的高斯形状不同，同一份 CSS 会糊出不同宽度。
+
+#### 容量与裁剪
+
+| 项 | 上限 |
+|---|---|
+| 每层缓冲 | 宽 × 高 × 4 字节（预乘 RGBA） |
+| 嵌套深度 | `QL_CFG_UI_LAYER_MAX_DEPTH`（默认 4） |
+| 单层尺寸兜底 | 4096×1024（防误用） |
+| `filter` 链长 | `QL_CFG_UI_FILTER_MAX_OPS`（默认 6） |
+| 编译开关 | `QL_FEAT_CSS_FILTER_LAYER`（MCU 默认关，整个 `qllayer.c` 编译成空） |
+
+**MCU 实测**（`test/mcu/build.sh`，Cortex-M4 / mps2-an386，只算静态量）：
+
+| 配置 | `.text` | `.bss` |
+|---|---|---|
+| `QL_FEAT_CSS_FILTER_LAYER=0`（MCU 默认） | 139,740 B | 140,264 B |
+| `QL_FEAT_CSS_FILTER_LAYER=1` | 155,084 B | 140,940 B |
+| **差额** | **+15,344 B（+11.0%）** | **+676 B**（图层栈本身） |
+
+那 676 B 是 `QLDraw2DCanvas` 里的图层栈（4 层 × 约 170 B），编译成空之后 RAM
+和 Flash 一起还回去。**运行期**的 RAM 峰值另算：一层 = 元素尺寸 × 4 字节，
+所以 MCU 上这个包是"默认关 + 真要玻璃面板时按页面调"。
+
+对比一下：`CSS_GRID` 是 **4,528 B**、`CSS_BORDER_IMAGE` 是 **2,176 B** ——
+离屏图层是这两者之和的**两倍多**，也解释了为什么它必须是一个独立的能力包
+（而不是塞进 BASE）。
+
 ---
 
 ## 19. 覆盖率：两份实测 + 一份规范口径
@@ -1176,11 +1300,10 @@ matplotlib web_backend、Font Awesome、VLC 的 jQuery UI 皮肤）当语料，
 
 写在这里，免得后面有人当"漏了"顺手补成半成品：
 
-1. **`opacity` 是"逐图元降透明"，不是严格的组不透明度**。真 CSS 把整棵子树先合成到一张
-   离屏图层再整体混合；本库的做法是把整体 alpha 乘到**每一个绘制入口**上，并顺着子树
-   往下乘（`QLDraw2D.alpha` / `ql_draw2d_set_alpha()`）。对"子树内部不重叠"的界面两者
-   逐像素一致；只有**子树内部互相覆盖**处会略透（每个图元各自降透明，重叠区乘了两次）。
-   严格版本要在 CPU 与 GL 两端各加一层离屏合成 —— 和 `transform: rotate()` 同级成本。
+1. **`opacity` 在"有子节点"时走离屏图层，单节点时不走**。真 CSS 永远先合成整棵子树；
+   本库对**单节点**保留"把 alpha 乘进每个绘制入口"的老做法 —— 因为一个节点内部没有
+   "图元互相覆盖"这回事，两者逐像素等价，而省掉一层缓冲。一旦有子节点就必然走图层
+   （否则重叠区会乘两次 alpha、比别处更深）。判据见 `style_needs_layer()`，实现见 §18.10。
 2. **`margin: auto` 是布局概念，不是值解析**。块级盒要在**有确定可用宽度**时分掉剩余空间；
    flex 里的 `auto` margin 又是另一套（吸收剩余空间）。改动落在 `layout_node()` 与
    flex 求解器两处。
@@ -1235,6 +1358,7 @@ CSS 这边一个"包"= 一组属性（含值级别的子特性）+ 支撑它们�
 | `CSS_TABLE` | `QL_FEAT_CSS_TABLE` | **B7**：`display: table` 全家 + `<table>` 标签 + 列宽分配 + `border-collapse` | ✅ | **默认关** | BASE | 估 6–10 KB（`table-layout: auto` 要两遍测量） |
 | `CSS_COLUMNS` | `QL_FEAT_CSS_COLUMNS` | **B7**：`columns` / `column-rule`（列高平衡 = 排两遍） | ✅ | **默认关** | BASE | 估 8–15 KB（最贵的一项：要"盒内分裂"） |
 | `CSS_BORDER_IMAGE` | `QL_FEAT_CSS_BORDER_IMAGE` | **B6 ✅**：`border-image` 九宫格 | ✅ | **默认开**（可裁） | BASE + `QL_FEAT_UI_IMAGE` | **实测 2,176 B**（−1.6%） |
+| `CSS_FILTER_LAYER` | `QL_FEAT_CSS_FILTER_LAYER` | **M9.3 ✅**：离屏图层 = `filter` 全家 + `mix-blend-mode` + `mask` + 真 group opacity | ✅ | **默认关** | BASE（+ `QL_FEAT_UI_IMAGE` 才有 `mask`） | **实测 Flash 15,344 B / RAM 676 B**（见 §18.10 末） |
 | `CSS_FONT_STACK` | `QL_FEAT_CSS_FONT_STACK` | **B8**：`@font-face` + 自由 `font-family` + 真字重/斜体 —— 依赖 FreeType | ✅ | **恒关** | BASE + `QL_FEAT_FONT_FREETYPE` | 依赖库体积见 §2.1（FreeType 813 KB） |
 | `CSS_TEXT_SHAPE` | `QL_FEAT_CSS_TEXT_SHAPE` | **B8**：连字 / 字距 / `font-feature-settings` —— 依赖 HarfBuzz | ✅ | **恒关** | `CSS_FONT_STACK` | 依赖库体积见 §2.1（HarfBuzz 1,178 KB） |
 | `CSS_BIDI` | `QL_FEAT_CSS_BIDI` | **B8**：`direction` / `unicode-bidi` —— 依赖 SheenBidi（或 fribidi，106 KB） | ✅ | **恒关** | BASE | 依赖库体积见 §2.1 |

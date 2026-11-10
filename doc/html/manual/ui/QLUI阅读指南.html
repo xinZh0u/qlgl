@@ -179,10 +179,11 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1482,6 +1483,16 @@ index.html + index.css ──qltext cc──┤
   这样绘制与命中测试<strong>都自动遵循 z 序</strong>，不必各自排序：
   <code>render_node</code> 正向遍历（先画的在下），<code>hit_walk_ui</code> 正向遍历并覆盖（最后的在上）。</li>
 </ul>
+<h3 id="6x-render_node">6.x 离屏图层：<code>render_node</code> 里的那道分支</h3>
+<p><code>render_node</code> 有三条路：<code>display:none</code> 直接返回、<strong>需要图层</strong>就
+<code>render_node_layered()</code>、其余走原来的"单批次"路径。判据只有四条
+（<code>style_needs_layer()</code>）：有 <code>filter</code>、<code>mix-blend-mode</code> 不是 <code>normal</code>、
+有 <code>mask</code>、<code>opacity &lt; 1</code> <strong>且有子节点</strong>。</p>
+<p>图层里的两遍协议要留意：<code>layer_end()</code> 返回 1 表示"请把同一棵子树再画一遍"
+（CPU 侧靠黑底/白底两遍反解 alpha），所以 <code>render_node_layered()</code> 会再调一次
+<code>layer_begin</code> + <code>render_node_inner</code> + <code>layer_end</code>。<strong>画子树必须走
+<code>render_node_inner</code> 而不是 <code>render_node</code></strong>，否则第二次进去又会开一层新图层，
+无限递归。</p>
 <h4 id="overflow">overflow</h4>
 <p><code>render_node</code> 进入 overflow 容器时 <code>set_clip(intersect(saved, box))</code>，退出恢复；
 <code>hit_walk_ui</code> 传一个 <code>clip</code> 参数做同样的事。两处必须同步，否则会出现
@@ -1564,7 +1575,12 @@ index.html + index.css ──qltext cc──┤
 <tr>
 <td><code>backdrop-filter</code></td>
 <td>✅ <code>blur(1~64px)</code></td>
-<td>其它 filter 函数报错</td>
+<td>其它 filter 函数报错（它是"糊背后"，与 <code>filter</code> 不是一回事）</td>
+</tr>
+<tr>
+<td><code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> / 组 <code>opacity</code></td>
+<td>✅ 离屏图层（M9.3）</td>
+<td><code>filter: url()</code>、<code>mask-position/repeat/composite</code>、<code>background-blend-mode</code> 报错；<code>filter</code> 链最长 6 个函数</td>
 </tr>
 <tr>
 <td><code>@keyframes</code> / <code>animation</code></td>

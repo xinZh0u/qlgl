@@ -179,10 +179,11 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
+<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
 <a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1672,16 +1673,79 @@ z-index 相同则保持文档顺序（稳定）。</p>
 </tbody>
 </table>
 <p><code>opacity: 0</code> 时整棵子树直接跳过（连遍历都不做）。</p>
-<p><strong>与 CSS 的差别</strong>：真 CSS 是<strong>组不透明度</strong> —— 子树先合成一张离屏图层再整体降透明。
-这里是逐图元降透明，所以只有"子树内部互相覆盖"的地方会略透（重叠区被乘了两次）。
-不重叠的界面两者逐像素一致。严格版本需要离屏图层（见《CSS3 覆盖与裁剪》§20.1）。</p>
+<p><strong>有子节点时是真正的组不透明度</strong>（M9.3 起）：整棵子树先合成到一张离屏图层，
+再整体降透明，所以"子树内部互相覆盖"的地方<strong>不会</strong>更深。
+<strong>单节点</strong>（没有子节点）仍走"逐个绘制入口乘 alpha"的老路径 —— 一个节点内部
+没有互相覆盖这回事，两者逐像素等价，而省掉一层缓冲。</p>
+<table>
+<thead>
+<tr>
+<th>情形</th>
+<th>走哪条</th>
+<th>内存</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无子节点</td>
+<td>逐图元乘 alpha（<code>QLDraw2D.alpha</code>）</td>
+<td>0</td>
+</tr>
+<tr>
+<td>有子节点</td>
+<td>离屏图层（CPU 两遍哑光 / GPU FBO）</td>
+<td>元素尺寸 × 4 字节</td>
+</tr>
+<tr>
+<td><code>QL_FEAT_CSS_FILTER_LAYER=0</code></td>
+<td>恒走逐图元（旧语义）</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<h3 id="3113-filter-mix-blend-mode-mask">3.11.3 <code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code>（离屏图层）</h3>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">a</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">4</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">brightness</span><span class="p">(</span><span class="mi">120</span><span class="kt">%</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">drop-shadow</span><span class="p">(</span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="mi">3</span><span class="kt">px</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mf">.4</span><span class="p">));</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">c</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">mix-blend-mode</span><span class="p">:</span><span class="w"> </span><span class="kc">multiply</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">d</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">mask</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">alpha8</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>这三条和"组 <code>opacity</code>"共用同一块基建：<strong>先把子树合成到一张临时图，再整体处理</strong>。
+支持范围与公式见《CSS3 覆盖与裁剪》§18.10，教程见 <a href="../tutorial/20_filter.md">离屏图层</a>。</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filter</code></td>
+<td><code>blur(&lt;0~64&gt;px)</code>、<code>brightness/contrast/saturate(&lt;倍数&gt;\|&lt;百分比&gt;)</code>、<code>grayscale/sepia/invert(&lt;百分比&gt;)</code>、<code>hue-rotate(&lt;deg&gt;)</code>、<code>opacity(&lt;0~1&gt;)</code>、<code>drop-shadow(&lt;dx&gt; &lt;dy&gt; [&lt;blur&gt;] [&lt;color&gt;])</code>；链长 ≤ 6，按书写顺序应用</td>
+</tr>
+<tr>
+<td><code>mix-blend-mode</code></td>
+<td><code>normal</code> / <code>multiply</code> / <code>screen</code> / <code>overlay</code> / <code>darken</code> / <code>lighten</code> / <code>difference</code></td>
+</tr>
+<tr>
+<td><code>mask</code> / <code>mask-image</code></td>
+<td><code>url(&lt;资源名&gt;)</code> / <code>none</code>；只用图片 alpha，拉伸到边框盒</td>
+</tr>
+</tbody>
+</table>
+<p><strong>离屏图层是一块"按元素尺寸"的 RAM</strong>，所以它单独一个编译开关：
+<code>QL_FEAT_CSS_FILTER_LAYER</code>（MCU 默认关）。关掉时上面三个属性在<strong>构建期报错</strong>，
+<code>opacity</code> 退回逐图元语义。</p>
 <p><strong>构建期报错</strong>：不是 0~1 的数字（<code>opacity: abc</code>）、越界（<code>opacity: 1.5</code>）。</p>
 <hr />
 <h3 id="312">3.12 不支持的写法一律报错</h3>
 <div class="highlight"><pre><span></span><code>float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
-filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
+filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
+mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
+background-blend-mode
 list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
 text-align: justify                     transition-delay
 backface-visibility（假翻转没有背面）

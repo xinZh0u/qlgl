@@ -499,7 +499,29 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->justify_items, (unsigned)s->justify_self,
             (int)s->grid_auto_row, (int)s->grid_auto_col);
 
-    fputs("      .inset = { ", f);
+    /*
+     * 离屏图层的一组字段（M9.3）。`mask_image` 必须显式写 QL_UI_NO_MASK：
+     * 不写的话静态初始化是 0，而 0 是"文本池第 0 条"这个合法下标 ——
+     * 每个样式都会变成"带遮罩"，整棵树都去走离屏图层。
+     */
+    fputs("      .filter_n = ", f);
+    fprintf(f, "%u", (unsigned)s->filter_n);
+    fputs(", .filter_op = { ", f);
+    for (int i = 0; i < QL_CFG_UI_FILTER_MAX_OPS; i++)
+        fprintf(f, "%s0x%04X", (i == 0) ? "" : ", ", (unsigned)s->filter_op[i]);
+    fprintf(f,
+            " },\n"
+            "      .ds_dx = %d, .ds_dy = %d, .ds_blur = %u, .ds_a = %u,"
+            " .ds_color = 0x%06Xu,\n"
+            "      .mix_blend = %u, .mask_image = ",
+            (int)s->ds_dx, (int)s->ds_dy, (unsigned)s->ds_blur, (unsigned)s->ds_a,
+            (unsigned)(s->ds_color & 0xFFFFFFu), (unsigned)s->mix_blend);
+    if (s->mask_image == QL_UI_NO_MASK)
+        fputs("QL_UI_NO_MASK", f);
+    else
+        fprintf(f, "%u", (unsigned)s->mask_image);
+
+    fputs(",\n      .inset = { ", f);
     fput_length(f, s->inset[0]);
     fputs(", ", f);
     fput_length(f, s->inset[1]);

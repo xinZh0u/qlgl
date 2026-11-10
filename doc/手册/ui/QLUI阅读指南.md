@@ -944,6 +944,19 @@ layout_flex_children(容器):
   这样绘制与命中测试**都自动遵循 z 序**，不必各自排序：
   `render_node` 正向遍历（先画的在下），`hit_walk_ui` 正向遍历并覆盖（最后的在上）。
 
+### 6.x 离屏图层：`render_node` 里的那道分支
+
+`render_node` 有三条路：`display:none` 直接返回、**需要图层**就
+`render_node_layered()`、其余走原来的"单批次"路径。判据只有四条
+（`style_needs_layer()`）：有 `filter`、`mix-blend-mode` 不是 `normal`、
+有 `mask`、`opacity < 1` **且有子节点**。
+
+图层里的两遍协议要留意：`layer_end()` 返回 1 表示"请把同一棵子树再画一遍"
+（CPU 侧靠黑底/白底两遍反解 alpha），所以 `render_node_layered()` 会再调一次
+`layer_begin` + `render_node_inner` + `layer_end`。**画子树必须走
+`render_node_inner` 而不是 `render_node`**，否则第二次进去又会开一层新图层，
+无限递归。
+
 #### overflow
 
 `render_node` 进入 overflow 容器时 `set_clip(intersect(saved, box))`，退出恢复；
@@ -979,7 +992,8 @@ layout_flex_children(容器):
 | 文本折行 | ✅ `white-space: normal` 自动折行 + `word-break` / `text-overflow: ellipsis` | `text-align: justify` 不支持 |
 | `position` / `z-index` | ✅ `static`/`relative`/`absolute`/`fixed`/`sticky` + `z-index` | 弹窗靠 `absolute` + `z-index` 自己搭 |
 | `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path` | `box-shadow` 不参与过渡；`delay` 报错 |
-| `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错 |
+| `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
+| `filter` / `mix-blend-mode` / `mask` / 组 `opacity` | ✅ 离屏图层（M9.3） | `filter: url()`、`mask-position/repeat/composite`、`background-blend-mode` 报错；`filter` 链最长 6 个函数 |
 | `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
 | `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` | `rotate`/`skew`/`matrix`/3d 报错 |
 | `radial-gradient` | ✅ 圆心固定在元素中心 | `at 偏移` / 自定义半径 / stop 位置报错 |

@@ -524,5 +524,122 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
         ql_disp_mem_destroy(d2);
     }
 
+    /*
+     * ---- 离屏图层：CPU 与 GPU 必须逐像素一致 ----
+     *
+     * 两边是两套完全不同的实现：CPU 用"黑底/白底两遍哑光反解"，GPU 有真的
+     * RGBA 帧缓冲 + 合成着色器。它们对同一份 CSS 必须给出同一张图，
+     * 否则"同一份界面在 PC 上和在 MCU 上长得不一样"。
+     */
+    {
+        struct { const char *html; const char *css; const char *what; } cases[] = {
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:40px;top:30px;width:60px;height:40px;"
+              "background-color:#E04020;filter:blur(4px)}",
+              "filter: blur" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:40px;top:30px;width:60px;height:40px;"
+              "background-color:#E04020;filter:drop-shadow(10px 10px 4px #204080)}",
+              "filter: drop-shadow" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#b{position:absolute;left:40px;top:30px;width:60px;height:40px;"
+              "background-color:#E04020;"
+              "filter:grayscale(60%) brightness(120%) hue-rotate(30deg)}",
+              "filter: 颜色矩阵链" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFCC00}"
+              "#b{position:absolute;left:40px;top:30px;width:60px;height:40px;"
+              "background-color:#3366FF;mix-blend-mode:multiply}",
+              "mix-blend-mode: multiply" },
+            { "<div id=r><div id=o>"
+              "<div class=c></div><div class=\"c c2\"></div></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#o{position:absolute;left:20px;top:20px;width:80px;height:50px;"
+              "opacity:0.5}"
+              ".c{position:absolute;left:0;top:0;width:44px;height:50px;"
+              "background-color:#2040C0}"
+              ".c2{left:20px}",
+              "真 group opacity（重叠）" },
+            { "<div id=r><div id=o><div id=b></div></div></div>",
+              "#r{width:160px;height:120px;background-color:#FFFFFF}"
+              "#o{position:absolute;left:16px;top:16px;width:100px;height:60px;"
+              "filter:blur(3px)}"
+              "#b{position:absolute;left:0;top:0;width:44px;height:34px;"
+              "background-color:#E04020;border-radius:10px;filter:saturate(0.4)}",
+              "嵌套两层图层" },
+        };
+
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            QLUIDoc *doc = ql_ui_load_text(cases[i].html, cases[i].css);
+            QL_CHECK(doc != NULL);
+            if (doc == NULL)
+                continue;
+
+            QLDispDriver *dc = ql_disp_mem_create(W, H, QL_COLOR_RGB888);
+            QLCanvas cc;
+            ql_canvas_from_disp(&cc, dc);
+            ql_canvas_clear(&cc, cases[i].css[0] == '#' ? QL_COLOR_RGB(0, 0, 0)
+                                                        : QL_COLOR_RGB(0, 0, 0));
+            QLUIRoot *uc = ql_ui_build(doc);
+            QL_CHECK(uc != NULL);
+            if (uc == NULL) {
+                ql_disp_mem_destroy(dc);
+                ql_ui_doc_free(doc);
+                continue;
+            }
+            ql_ui_layout(uc, W, H);
+            /* 背景由 CSS 画满，这里的清除色无所谓 */
+            ql_ui_render_canvas(uc, &cc);
+
+            QLGfxGL *gr = ql_gfx_gl_create("gl-layer", W, H, QL_GFX_GL_OFFSCREEN);
+            if (gr == NULL) {
+                ql_ui_free(uc);
+                ql_disp_mem_destroy(dc);
+                ql_ui_doc_free(doc);
+                printf("  [SKIP] 无法创建 GL 上下文\n");
+                break;
+            }
+            ql_gfx_gl_begin(gr, QL_COLOR_RGB(0, 0, 0));
+            ql_ui_render(uc, ql_gfx_gl_draw(gr));
+            ql_gfx_gl_end(gr);
+
+            uint8_t *rg = (uint8_t *)ql_mem_calloc(1, (size_t)W * H * 4u);
+            QL_CHECK(rg != NULL);
+            if (rg != NULL) {
+                QL_CHECK_EQ(ql_gfx_gl_read_pixels(gr, rg, W * 4), QL_OK);
+                long badp = 0, maxd = 0;
+                for (int y = 0; y < H; y++) {
+                    for (int x = 0; x < W; x++) {
+                        const ql_color_t c = ql_disp_mem_pixel(dc, x, y);
+                        const uint8_t *g = rg + ((size_t)y * (size_t)W + (size_t)x) * 4u;
+                        const int dr = abs((int)QL_COLOR_GET_R(c) - (int)g[0]);
+                        const int dg2 = abs((int)QL_COLOR_GET_G(c) - (int)g[1]);
+                        const int db = abs((int)QL_COLOR_GET_B(c) - (int)g[2]);
+                        int d = dr > dg2 ? dr : dg2;
+                        if (db > d)
+                            d = db;
+                        if ((long)d > maxd)
+                            maxd = d;
+                        if (d > TOLERANCE)
+                            badp++;
+                    }
+                }
+                const double r2 = (double)badp / ((double)W * (double)H);
+                printf("  %-24s 差异 %.2f%%（最大单通道差 %ld）\n", cases[i].what,
+                       r2 * 100, maxd);
+                /* 图层两侧数学一致，只有抗锯齿/浮点取整的小差。阈值 1% */
+                QL_CHECK(r2 <= 0.01);
+                ql_mem_free(rg);
+            }
+            ql_gfx_gl_destroy(gr);
+            ql_ui_free(uc);
+            ql_disp_mem_destroy(dc);
+            ql_ui_doc_free(doc);
+        }
+    }
+
 QL_TEST_END()
 #endif

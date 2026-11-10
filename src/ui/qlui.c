@@ -104,7 +104,8 @@ static int has_shown_text(const QLUINodeRT *n)
 }
 
 /* 共享的隐藏样式：只用来关掉"只含空白的 flex 项" */
-static const QLUIStyle s_style_hidden = { .display = QL_UI_DISPLAY_NONE };
+static const QLUIStyle s_style_hidden = { .display = QL_UI_DISPLAY_NONE,
+                                          .mask_image = QL_UI_NO_MASK };
 
 struct QLUISelectState {
     QLUINodeRT *node;
@@ -179,6 +180,23 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d);
 /* 子节点分两趟画（普通流 → sticky），见 render_children 的说明 */
 static void render_children(QLUINodeRT *node, QLDraw2D *d2d);
 static const QLImage *image_by_name(const QLUIRoot *ui, const char *name);
+
+/*
+ * 一个样式可能引用的资源（文本池下标）：
+ *   which 0 = background-image、1 = border-image、2 = mask
+ * 返回 QL_UI_NO_IMAGE（= 0xFFFF）表示这一种没有。
+ */
+static inline uint16_t style_res_idx(const QLUIStyle *st, int which)
+{
+    switch (which) {
+    case 1:
+        return st->border_image;
+    case 2:
+        return st->mask_image;
+    default:
+        return st->bg_image;
+    }
+}
 static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 static void draw_border_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d);
 
@@ -419,16 +437,14 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
      */
     uint16_t bg_slots = 0;
     for (uint16_t i = 0; i < doc->style_count; i++) {
-        for (int which = 0; which < 2; which++) {
-            const uint16_t idx = (which == 0) ? doc->styles[i].bg_image
-                                              : doc->styles[i].border_image;
+        for (int which = 0; which < 3; which++) {
+            const uint16_t idx = style_res_idx(&doc->styles[i], which);
             if (idx == QL_UI_NO_IMAGE)
                 continue;
             const char *nm = doc->text_pool + doc->text_offsets[idx];
             int dup = 0;
             for (uint16_t j = 0; j < i && !dup; j++) {
-                const uint16_t oi = (which == 0) ? doc->styles[j].bg_image
-                                                 : doc->styles[j].border_image;
+                const uint16_t oi = style_res_idx(&doc->styles[j], which);
                 if (oi == QL_UI_NO_IMAGE)
                     continue;
                 const char *o = doc->text_pool + doc->text_offsets[oi];
@@ -479,9 +495,8 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
 
         /* 背景图 / 边框图资源（node == NULL，只按名字索引） */
         for (uint16_t i = 0; i < doc->style_count && k < ui->image_count; i++) {
-          for (int which = 0; which < 2; which++) {
-            const uint16_t sidx = (which == 0) ? doc->styles[i].bg_image
-                                               : doc->styles[i].border_image;
+          for (int which = 0; which < 3; which++) {
+            const uint16_t sidx = style_res_idx(&doc->styles[i], which);
             if (sidx == QL_UI_NO_IMAGE)
                 continue;
             const char *nm = doc->text_pool + doc->text_offsets[sidx];
@@ -6764,6 +6779,138 @@ void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
  * CSS 是先合成一张图再降透明，这里逐图元降透明，重叠处会略微透出来。
  * 严格一致要离屏图层（见《CSS3 覆盖与裁剪》§20.1），这里选择"便宜且可预期"。
  */
+/* ------------------------------ 离屏图层（M9.3） ------------------------------ */
+
+/* 这一层必须走离屏合成吗？（filter / 混合模式 / 遮罩 / 真 group opacity） */
+static int style_needs_layer(const QLUIStyle *s, const QLUINodeRT *node)
+{
+#if !QL_FEAT_CSS_FILTER_LAYER
+    (void)s;
+    (void)node;
+    return 0;
+#else
+    if (s->filter_n > 0)
+        return 1;
+    if (s->mix_blend != QL_UI_BLEND_NORMAL)
+        return 1;
+    if (s->mask_image != QL_UI_NO_MASK)
+        return 1;
+    /*
+     * 真 group opacity：**有子节点**才需要图层。
+     * 单节点时"逐图元乘 alpha"和"合成后再降透明"是同一个结果（图元之间不重叠），
+     * 走老路径更快；有子节点时重叠处会透出来，必须合成。
+     */
+    if (s->opacity < 255 && node->first_child != NULL)
+        return 1;
+    return 0;
+#endif
+}
+
+/* 把样式翻译成后端要的图层参数；`inherited` 是祖先留下的 alpha（0..255） */
+static void layer_fx_of(const QLUIStyle *s, QLUINodeRT *node, uint8_t inherited,
+                        QLDraw2DLayerFx *fx)
+{
+    memset(fx, 0, sizeof(*fx));
+    fx->nops = (uint8_t)((s->filter_n > 6u) ? 6u : s->filter_n);
+    for (uint8_t i = 0; i < fx->nops; i++)
+        fx->op[i] = s->filter_op[i];
+    for (uint8_t i = 0; i < fx->nops; i++) {
+        const uint8_t kind = QL_UI_FILTER_KIND(fx->op[i]);
+        const int32_t arg = QL_UI_FILTER_ARG(fx->op[i]);
+        if (kind == QL_UI_FILTER_BLUR && arg > (int32_t)fx->blur)
+            fx->blur = (uint8_t)(arg > 64 ? 64 : arg);
+        if (kind == QL_UI_FILTER_DROP_SHADOW) {
+            fx->has_drop = 1;
+            fx->ds_dx = s->ds_dx;
+            fx->ds_dy = s->ds_dy;
+            fx->ds_blur = s->ds_blur;
+            fx->ds_a = s->ds_a;
+            /* currentColor：没写颜色就用元素的文字色（CSS 语义） */
+            fx->ds_color = (s->ds_color != 0) ? s->ds_color : s->text_color;
+        }
+    }
+    uint32_t op = (uint32_t)s->opacity * (uint32_t)inherited;
+    fx->opacity = (uint8_t)((op + 127u) / 255u);
+    fx->blend = s->mix_blend;
+    fx->box = node->border_box;
+    {
+        ql_coord_t r = s->radius[0];
+        const ql_coord_t mx = (node->border_box.w < node->border_box.h)
+                                  ? node->border_box.w / 2
+                                  : node->border_box.h / 2;
+        if (r > mx)
+            r = mx;
+        fx->corner = (r > 0) ? r : 0;
+    }
+    if (s->mask_image != QL_UI_NO_MASK) {
+        const QLUIRoot *ui = node->owner;
+        if (ui != NULL && ui->doc != NULL && ui->doc->text_pool != NULL &&
+            ui->doc->text_offsets != NULL)
+            fx->mask = image_by_name(ui, ui->doc->text_pool +
+                                             ui->doc->text_offsets[s->mask_image]);
+    }
+}
+
+/* 图层的绘制范围（CSS px）：自身盒子 ∪ 子树可能画到的范围，再按滤镜半径外扩 */
+static QLRect layer_bounds_of(QLUIRoot *ui, QLUINodeRT *node, const QLUIStyle *s)
+{
+    QLRect b = ql_rect_union(node->border_box, node->paint_box);
+    ql_coord_t pad = 0;
+    for (uint8_t i = 0; i < s->filter_n && i < 6u; i++) {
+        const uint8_t kind = QL_UI_FILTER_KIND(s->filter_op[i]);
+        const int32_t arg = QL_UI_FILTER_ARG(s->filter_op[i]);
+        if (kind == QL_UI_FILTER_BLUR && arg * 3 > pad)
+            pad = arg * 3;
+    }
+    if (s->ds_color != 0 || (s->filter_n > 0 && s->ds_blur > 0) ||
+        (s->filter_n > 0 && (s->ds_dx != 0 || s->ds_dy != 0))) {
+        ql_coord_t e = (ql_coord_t)((s->ds_dx < 0 ? -s->ds_dx : s->ds_dx) +
+                                    (s->ds_dy < 0 ? -s->ds_dy : s->ds_dy));
+        if ((ql_coord_t)s->ds_blur * 3 > e)
+            e = (ql_coord_t)s->ds_blur * 3;
+        if (e > pad)
+            pad = e;
+    }
+    if (pad > 0)
+        b = ql_rect_make(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    /* 别为屏幕外的东西分配缓冲 */
+    if (ui != NULL && ui->clip.w > 0 && ui->clip.h > 0)
+        b = ql_rect_intersect(b, ui->clip);
+    return b;
+}
+
+/* 带图层的节点：两遍哑光（CPU）/ 一遍 RGBA（GPU）——协议见 qldraw2d.h */
+static void render_node_layered(QLUINodeRT *node, QLDraw2D *d2d, const QLUIStyle *s)
+{
+    const uint8_t inherited = d2d->alpha;
+    QLDraw2DLayerFx fx;
+    layer_fx_of(s, node, inherited, &fx);
+
+    const QLRect bounds = layer_bounds_of(node->owner, node, s);
+    if (ql_rect_is_empty(bounds) || d2d->layer_begin == NULL) {
+        render_node_inner(node, d2d);
+        return;
+    }
+
+    /* 层内按"完全不透明"画，透明度统一在合成阶段乘（否则会左右各乘一次） */
+    if (!ql_draw2d_layer_begin(d2d, bounds, &fx)) {
+        render_node_inner(node, d2d);    /* 后端做不了：照常画，不留白 */
+        return;
+    }
+    d2d->alpha = 255;
+    render_node_inner(node, d2d);
+    d2d->alpha = inherited;
+    if (ql_draw2d_layer_end(d2d)) {
+        /* CPU 后端要第二遍（白底），这样才反解得出 alpha */
+        if (ql_draw2d_layer_begin(d2d, bounds, &fx)) {
+            d2d->alpha = 255;
+            render_node_inner(node, d2d);
+            d2d->alpha = inherited;
+            (void)ql_draw2d_layer_end(d2d);
+        }
+    }
+}
+
 static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 {
     const QLUIStyle *s = ql_ui_node_style(node);
@@ -6772,6 +6919,11 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
 
     if (s->opacity == 0)
         return;                      /* 完全透明：整棵子树不用画 */
+
+    if (style_needs_layer(s, node)) {
+        render_node_layered(node, d2d, s);
+        return;
+    }
 
     const uint8_t saved = d2d->alpha;
     if (s->opacity < 255 && saved > 0) {
@@ -7479,7 +7631,8 @@ static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
 {
     int any_blur = 0;
     for (uint16_t i = 0; i < ui->node_count; i++) {
-        if (ql_ui_node_style(&ui->nodes[i])->backdrop_blur > 0) {
+        const QLUIStyle *st = ql_ui_node_style(&ui->nodes[i]);
+        if (st->backdrop_blur > 0 || st->filter_n > 0) {
             any_blur = 1;
             break;
         }
@@ -7496,9 +7649,33 @@ static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
         for (int k = 0; k < n; k++) {
             for (uint16_t i = 0; i < ui->node_count; i++) {
                 const QLUINodeRT *node = &ui->nodes[i];
-                if (ql_ui_node_style(node)->backdrop_blur <= 0)
+                const QLUIStyle *st = ql_ui_node_style(node);
+                if (st->backdrop_blur <= 0 && st->filter_n <= 0)
                     continue;
-                const QLRect g = node->paint_box;
+                /*
+                 * 带 `filter` 的元素要按**滤镜外扩**算脏区：模糊/投影会读到
+                 * 自己盒子外面一圈，只重绘盒子内部的话边缘会缺一条。
+                 * 这里多扩一圈 `blur·3 + |drop-shadow|`，和绘制时的 bounds 同口径。
+                 */
+                QLRect g = node->paint_box;
+                if (st->filter_n > 0) {
+                    ql_coord_t pad = 0;
+                    for (uint8_t oi = 0; oi < st->filter_n && oi < 6u; oi++) {
+                        const uint8_t kind = QL_UI_FILTER_KIND(st->filter_op[oi]);
+                        const int32_t arg = QL_UI_FILTER_ARG(st->filter_op[oi]);
+                        if (kind == QL_UI_FILTER_BLUR && arg * 3 > pad)
+                            pad = arg * 3;
+                    }
+                    const ql_coord_t e =
+                        (ql_coord_t)((st->ds_dx < 0 ? -st->ds_dx : st->ds_dx) +
+                                     (st->ds_dy < 0 ? -st->ds_dy : st->ds_dy) +
+                                     (ql_coord_t)st->ds_blur * 3);
+                    if (e > pad)
+                        pad = e;
+                    if (pad > 0)
+                        g = ql_rect_make(g.x - pad, g.y - pad, g.w + pad * 2,
+                                         g.h + pad * 2);
+                }
                 if (ql_rect_is_empty(g) || !ql_rect_overlaps(out[k], g))
                     continue;
                 const QLRect u = ql_rect_union(out[k], g);

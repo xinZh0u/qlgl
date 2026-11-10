@@ -3294,6 +3294,8 @@ static const char *const k_supported_props[] = {
     "border-image-width", "border-image-repeat", "border-image-outset",
     "position", "top", "right", "bottom", "left", "z-index", "overflow",
     "transform", "clip-path", "backdrop-filter",
+    /* 离屏图层（M9.3） */
+    "filter", "mix-blend-mode", "mask", "mask-image",
     "transition", "transition-duration", "transition-timing-function",
     "transition-property",
     "animation", "animation-name", "animation-duration",
@@ -8066,7 +8068,369 @@ typedef struct {
     char *bi_slice;       /* border-image-slice */
     char *bi_width;       /* border-image-width */
     char *bi_repeat;      /* border-image-repeat */
+    char *mask_url;       /* `mask` / `mask-image` 的 url() */
 } CompileSide;
+
+#if QL_FEAT_CSS_FILTER_LAYER
+/* 取一段 `name(args)` 的实参（已 trim）；返回 0 表示括号不配对 */
+static int filter_args(const char *text, const char *where, const char *fname,
+                       char *out, size_t out_sz, const char **rest)
+{
+    const size_t n = strlen(fname);
+    if (strncmp(text, fname, n) != 0) {
+        set_error("%s: 这里要的是 %s()（收到 '%s'）", where, fname, text);
+        return 0;
+    }
+    const char *p = skip_space(text + n);
+    if (*p != '(') {
+        set_error("%s: %s 后面要有左括号（收到 '%s'）", where, fname, text);
+        return 0;
+    }
+    /*
+     * 找**配对**的右括号：实参里可能有嵌套括号（`rgba(31,35,40,.45)`、
+     * `minmax(10px,1fr)`）。用 strchr 找第一个 ')' 会把它截断。
+     */
+    const char *close = NULL;
+    {
+        int depth = 0;
+        for (const char *q = p; *q != '\0'; q++) {
+            if (*q == '(')
+                depth++;
+            else if (*q == ')') {
+                if (--depth == 0) {
+                    close = q;
+                    break;
+                }
+            }
+        }
+    }
+    if (close == NULL) {
+        set_error("%s: %s 的括号没闭合（收到 '%s'）", where, fname, text);
+        return 0;
+    }
+    size_t len = (size_t)(close - (p + 1));
+    if (len == 0 || len >= out_sz) {
+        set_error("%s: %s 的参数长度不合法（收到 '%s'）", where, fname, text);
+        return 0;
+    }
+    memcpy(out, p + 1, len);
+    out[len] = '\0';
+    /* 去掉尾部空白（实参内部允许空格，例如 drop-shadow 的四个分量） */
+    while (len > 0 && is_space(out[len - 1u]))
+        out[--len] = '\0';
+    if (rest != NULL)
+        *rest = skip_space(close + 1);
+    return 1;
+}
+
+/* `<num>` / `<pct>%` → 千分比（1.0 = 1000，2.0 = 2000） */
+static int filter_ratio(const char *arg, const char *where, const char *fname,
+                        int32_t *out)
+{
+    const char *end = NULL;
+    double d = 0;
+    if (!match_number(skip_space(arg), &end, &d)) {
+        set_error("%s: %s 的参数不是数字（收到 '%s'）", where, fname, arg);
+        return 0;
+    }
+    end = skip_space(end);
+    /*
+     * 两种写法都要支持：`1.5`（倍数，1.0 = 不变）与 `150%`（百分比，100% = 不变）。
+     * CSS 允许 brightness/saturate/contrast 超过 100%，所以上限放到 100 倍。
+     */
+    int pct = 0;
+    if (*end == '%') {
+        pct = 1;
+        end = skip_space(end + 1);
+    } else if (*end != '\0') {
+        set_error("%s: %s 的参数只能是数字或百分比（收到 '%s'）", where, fname, arg);
+        return 0;
+    }
+    if (d < 0.0 || d > (pct ? 10000.0 : 100.0)) {
+        set_error("%s: %s 的取值超出范围（最多 100 倍 / 10000%%）（收到 '%s'）", where,
+                  fname, arg);
+        return 0;
+    }
+    *out = (int32_t)py_round(pct ? d * 10.0 : d * 1000.0);
+    return 1;
+}
+
+/* `<num>px` → 整数 px（允许 0） */
+static int filter_px(const char *arg, const char *where, const char *fname,
+                     int32_t *out, int maxpx)
+{
+    const char *end = NULL;
+    double d = 0;
+    if (!match_number(skip_space(arg), &end, &d)) {
+        set_error("%s: %s 的参数不是数字（收到 '%s'）", where, fname, arg);
+        return 0;
+    }
+    end = skip_space(end);
+    /*
+     * CSS 里唯一允许不带单位的长度是 0（`blur(0)` / `drop-shadow(0 2px …)`）。
+     * 其余必须写 px —— 写成 em/rem 会静默算错，所以明确报错。
+     */
+    if (*end == '\0' && d == 0.0) {
+        *out = 0;
+        return 1;
+    }
+    if (end[0] != 'p' || end[1] != 'x' || *skip_space(end + 2) != '\0') {
+        set_error("%s: %s 的参数要写成 <N>px（收到 '%s'）", where, fname, arg);
+        return 0;
+    }
+    if (d < 0.0 || d > (double)maxpx) {
+        set_error("%s: %s 的半径必须在 0~%dpx（收到 '%s'）", where, fname, maxpx, arg);
+        return 0;
+    }
+    *out = (int32_t)py_round(d);
+    return 1;
+}
+
+/* `<num>px` → 有符号整数 px（drop-shadow 的偏移可以为负） */
+static int filter_px_signed(const char *arg, const char *where, const char *fname,
+                            int32_t *out, int maxpx)
+{
+    const char *end = NULL;
+    double d = 0;
+    if (!match_number(skip_space(arg), &end, &d)) {
+        set_error("%s: %s 的参数不是数字（收到 '%s'）", where, fname, arg);
+        return 0;
+    }
+    end = skip_space(end);
+    if (*end == '\0' && d == 0.0) {      /* 无单位 0 是合法的 */
+        *out = 0;
+        return 1;
+    }
+    if (end[0] != 'p' || end[1] != 'x' || *skip_space(end + 2) != '\0') {
+        set_error("%s: %s 的参数要写成 <N>px（收到 '%s'）", where, fname, arg);
+        return 0;
+    }
+    if (d < -(double)maxpx || d > (double)maxpx) {
+        set_error("%s: %s 的偏移必须在 -%d~%dpx（收到 '%s'）", where, fname, maxpx,
+                  maxpx, arg);
+        return 0;
+    }
+    *out = (int32_t)py_round(d);
+    return 1;
+}
+
+/*
+ * `filter: none | <fn>+`
+ *
+ * 每个函数变成 filter_op[] 里的一条（打包 kind + 有符号参数）。
+ * `drop-shadow()` 的偏移/模糊/颜色进 ds_*（一次 filter 里只允许一个）。
+ */
+static int parse_filter(const char *text, const char *where, QLUIStyle *out)
+{
+    out->filter_n = 0;
+    out->ds_dx = 0;
+    out->ds_dy = 0;
+    out->ds_blur = 0;
+    out->ds_a = 0;
+    out->ds_color = 0;
+
+    const char *p = skip_space(text);
+    if (*p == '\0') {
+        set_error("%s: filter 是空的", where);
+        return 0;
+    }
+    if (strcmp(p, "none") == 0)
+        return 1;
+
+    int seen_drop = 0;
+    while (*p != '\0') {
+        if (out->filter_n >= QL_CFG_UI_FILTER_MAX_OPS) {
+            set_error("%s: filter 最多 %d 个函数", where, (int)QL_CFG_UI_FILTER_MAX_OPS);
+            return 0;
+        }
+        char arg[128];
+        const char *rest = NULL;
+        uint8_t kind = 0;
+        int32_t pv = 0;
+
+        if (strncmp(p, "blur(", 5) == 0) {
+            if (!filter_args(p, where, "blur", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_px(arg, where, "blur", &pv, 64))
+                return 0;
+            kind = QL_UI_FILTER_BLUR;
+        } else if (strncmp(p, "brightness(", 11) == 0) {
+            if (!filter_args(p, where, "brightness", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "brightness", &pv))
+                return 0;
+            kind = QL_UI_FILTER_BRIGHTNESS;
+        } else if (strncmp(p, "contrast(", 9) == 0) {
+            if (!filter_args(p, where, "contrast", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "contrast", &pv))
+                return 0;
+            kind = QL_UI_FILTER_CONTRAST;
+        } else if (strncmp(p, "saturate(", 9) == 0) {
+            if (!filter_args(p, where, "saturate", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "saturate", &pv))
+                return 0;
+            kind = QL_UI_FILTER_SATURATE;
+        } else if (strncmp(p, "grayscale(", 10) == 0) {
+            if (!filter_args(p, where, "grayscale", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "grayscale", &pv))
+                return 0;
+            if (pv > 1000)
+                pv = 1000;
+            kind = QL_UI_FILTER_GRAYSCALE;
+        } else if (strncmp(p, "sepia(", 6) == 0) {
+            if (!filter_args(p, where, "sepia", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "sepia", &pv))
+                return 0;
+            if (pv > 1000)
+                pv = 1000;
+            kind = QL_UI_FILTER_SEPIA;
+        } else if (strncmp(p, "invert(", 7) == 0) {
+            if (!filter_args(p, where, "invert", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "invert", &pv))
+                return 0;
+            if (pv > 1000)
+                pv = 1000;
+            kind = QL_UI_FILTER_INVERT;
+        } else if (strncmp(p, "opacity(", 8) == 0) {
+            if (!filter_args(p, where, "opacity", arg, sizeof(arg), &rest))
+                return 0;
+            if (!filter_ratio(arg, where, "opacity", &pv))
+                return 0;
+            if (pv > 1000)
+                pv = 1000;
+            kind = QL_UI_FILTER_OPACITY;
+        } else if (strncmp(p, "hue-rotate(", 11) == 0) {
+            if (!filter_args(p, where, "hue-rotate", arg, sizeof(arg), &rest))
+                return 0;
+            const char *end = NULL;
+            double d = 0;
+            if (!match_number(skip_space(arg), &end, &d)) {
+                set_error("%s: hue-rotate 的参数不是数字（收到 '%s'）", where, arg);
+                return 0;
+            }
+            end = skip_space(end);
+            if (strncmp(end, "deg", 3) != 0 || *skip_space(end + 3) != '\0') {
+                set_error("%s: hue-rotate 的参数要写成 <N>deg（收到 '%s'）", where, arg);
+                return 0;
+            }
+            while (d < 0.0)
+                d += 360.0;
+            while (d >= 360.0)
+                d -= 360.0;
+            pv = (int32_t)py_round(d);
+            kind = QL_UI_FILTER_HUE_ROTATE;
+        } else if (strncmp(p, "drop-shadow(", 12) == 0) {
+            if (seen_drop) {
+                set_error("%s: 一条 filter 里只支持一个 drop-shadow()", where);
+                return 0;
+            }
+            if (!filter_args(p, where, "drop-shadow", arg, sizeof(arg), &rest))
+                return 0;
+            /* <dx> <dy> [<blur>] [<color>] */
+            char tok[6][32];
+            int ntok = 0;
+            const char *q = skip_space(arg);
+            while (*q != '\0' && ntok < 6) {
+                const char *st2 = q;
+                /* 颜色可能是 `rgba(31, 35, 40, 0.45)`：括号里的空格不算分隔 */
+                int depth = 0;
+                while (*q != '\0') {
+                    if (*q == '(')
+                        depth++;
+                    else if (*q == ')')
+                        depth--;
+                    else if (depth == 0 && is_space(*q))
+                        break;
+                    q++;
+                }
+                size_t len = (size_t)(q - st2);
+                if (len >= sizeof(tok[0])) {
+                    set_error("%s: drop-shadow 的分量太长（收到 '%s'）", where, arg);
+                    return 0;
+                }
+                memcpy(tok[ntok], st2, len);
+                tok[ntok][len] = '\0';
+                ntok++;
+                q = skip_space(q);
+            }
+            if (*q != '\0' || ntok < 2) {
+                set_error("%s: drop-shadow 至少要 <dx> <dy>（收到 '%s'）", where, arg);
+                return 0;
+            }
+            int32_t dx = 0, dy = 0, bl = 0;
+            if (!filter_px_signed(tok[0], where, "drop-shadow", &dx, 128) ||
+                !filter_px_signed(tok[1], where, "drop-shadow", &dy, 128))
+                return 0;
+            uint32_t ds_c = 0;
+            uint8_t ds_a = 0;
+            int have_color = 0;
+            int nlen = 0;
+            for (int i = 2; i < ntok; i++) {
+                const size_t tl = strlen(tok[i]);
+                if (tl > 2u && tok[i][tl - 2u] == 'p' && tok[i][tl - 1u] == 'x') {
+                    nlen++;
+                    if (nlen > 1) {
+                        set_error("%s: drop-shadow 不支持 spread（第 4 个长度值），"
+                                  "只支持 <dx> <dy> [<blur>] [<color>]", where);
+                        return 0;
+                    }
+                    if (!filter_px(tok[i], where, "drop-shadow", &bl, 64))
+                        return 0;
+                } else if (!have_color && parse_color(tok[i], where, &ds_c, &ds_a)) {
+                    have_color = 1;
+                } else {
+                    set_error("%s: drop-shadow 里认不出 '%s'（只支持 <dx> <dy> "
+                              "[<blur>] [<color>]，不支持 spread）", where, tok[i]);
+                    return 0;
+                }
+            }
+            out->ds_dx = (int8_t)dx;
+            out->ds_dy = (int8_t)dy;
+            out->ds_blur = (uint8_t)bl;
+            out->ds_color = have_color ? ds_c : 0;
+            out->ds_a = have_color ? ds_a : 0;
+            seen_drop = 1;
+            kind = QL_UI_FILTER_DROP_SHADOW;
+            pv = 0;
+        } else {
+            set_error("%s: 暂不支持的 filter 函数（支持 blur / brightness / contrast / "
+                      "saturate / grayscale / sepia / invert / hue-rotate / opacity / "
+                      "drop-shadow）", where);
+            return 0;
+        }
+
+        out->filter_op[out->filter_n] = QL_UI_FILTER_PACK(kind, pv);
+        out->filter_n++;
+        p = (rest != NULL) ? rest : (p + strlen(p));
+        if (*p == ',')
+            p = skip_space(p + 1);
+    }
+    return 1;
+}
+
+#endif /* QL_FEAT_CSS_FILTER_LAYER */
+
+/* `mix-blend-mode`：只认七个，其余明确报错 */
+static int parse_mix_blend(const char *text, const char *where, int *out)
+{
+    char t[32];
+    trim_lower(text, t, sizeof(t));
+    if (strcmp(t, "normal") == 0) { *out = QL_UI_BLEND_NORMAL; return 1; }
+    if (strcmp(t, "multiply") == 0) { *out = QL_UI_BLEND_MULTIPLY; return 1; }
+    if (strcmp(t, "screen") == 0) { *out = QL_UI_BLEND_SCREEN; return 1; }
+    if (strcmp(t, "overlay") == 0) { *out = QL_UI_BLEND_OVERLAY; return 1; }
+    if (strcmp(t, "darken") == 0) { *out = QL_UI_BLEND_DARKEN; return 1; }
+    if (strcmp(t, "lighten") == 0) { *out = QL_UI_BLEND_LIGHTEN; return 1; }
+    if (strcmp(t, "difference") == 0) { *out = QL_UI_BLEND_DIFFERENCE; return 1; }
+    set_error("%s: 暂不支持的 mix-blend-mode '%s'（支持 normal / multiply / screen / "
+              "overlay / darken / lighten / difference）", where, t);
+    return 0;
+}
 
 static void compile_side_free(CompileSide *sd)
 {
@@ -8083,6 +8447,7 @@ static void compile_side_free(CompileSide *sd)
     ql_mem_free(sd->bi_slice);
     ql_mem_free(sd->bi_width);
     ql_mem_free(sd->bi_repeat);
+    ql_mem_free(sd->mask_url);
     memset(sd, 0, sizeof(*sd));
 }
 
@@ -9685,6 +10050,61 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         }
     }
 
+    /* ----- 离屏图层：filter / mix-blend-mode / mask（M9.3） ----- */
+    {
+        int blend = QL_UI_BLEND_NORMAL;
+        if ((v = decls_get(st, "mix-blend-mode")) != NULL) {
+            if (!parse_mix_blend(v, where, &blend))
+                return 0;
+#if !QL_FEAT_CSS_FILTER_LAYER
+            if (blend != QL_UI_BLEND_NORMAL) {
+                set_error("%s: 这个构建关掉了离屏图层（QL_FEAT_CSS_FILTER_LAYER=0），"
+                          "不支持 mix-blend-mode", where);
+                return 0;
+            }
+#endif
+        }
+        out->mix_blend = (uint8_t)blend;
+
+        if ((v = decls_get(st, "filter")) != NULL) {
+#if QL_FEAT_CSS_FILTER_LAYER
+            if (!parse_filter(v, where, out))
+                return 0;
+#else
+            char flow[32];
+            trim_lower(v, flow, sizeof(flow));
+            if (strcmp(flow, "none") != 0) {
+                set_error("%s: 这个构建关掉了离屏图层（QL_FEAT_CSS_FILTER_LAYER=0），"
+                          "不支持 filter", where);
+                return 0;
+            }
+#endif
+        }
+        out->mask_image = QL_UI_NO_MASK;
+        if (side != NULL) {
+            const char *mi = decls_get(st, "mask-image");
+            const char *mk = decls_get(st, "mask");
+            const char *use = (mi != NULL) ? mi : mk;
+            if (use != NULL) {
+                char mlow[128];
+                trim_lower(use, mlow, sizeof(mlow));
+                if (strcmp(mlow, "none") == 0) {
+                    ql_mem_free(side->mask_url);
+                    side->mask_url = NULL;
+                } else {
+#if !QL_FEAT_CSS_FILTER_LAYER
+                    set_error("%s: 这个构建关掉了离屏图层（QL_FEAT_CSS_FILTER_LAYER=0），"
+                              "不支持 mask", where);
+                    return 0;
+#else
+                    ql_mem_free(side->mask_url);
+                    side->mask_url = dup_or_null(use);
+#endif
+                }
+            }
+        }
+    }
+
     int clip_kind = 0, clip_r = 0;
     if (!parse_clip_path((v = decls_get(st, "clip-path")) != NULL ? v : "none", where,
                          &clip_kind, &clip_r))
@@ -10189,6 +10609,7 @@ static GridRaw *s_grid_raw;
 static int      s_grid_raw_cap;
 
 static int text_pool_intern(TextPool *tp, const char *text, uint16_t *out);
+static char *grid_parse_url(const char *v, const char *where, int *is_none);
 
 static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
                          const KfRanges *ranges, const KfTable *kftab,
@@ -10231,6 +10652,30 @@ static int style_tab_add(StyleTab *tab, const Decls *decls, const char *where,
         compile_side_free(&side);
         ql_mem_free(sig);
         return 0;
+    }
+    if (side.mask_url != NULL) {
+        int is_none = 0;
+        char *nm = grid_parse_url(side.mask_url, where, &is_none);
+        if (nm == NULL && !is_none) {
+            compile_side_free(&side);
+            ql_mem_free(sig);
+            return 0;
+        }
+        if (nm != NULL) {
+            uint16_t midx = 0xFFFF;
+            const int okm = (s_styles_pool != NULL)
+                                ? text_pool_intern(s_styles_pool, nm, &midx)
+                                : ((midx = 0xFFFF), 1);
+            ql_mem_free(nm);
+            if (!okm) {
+                compile_side_free(&side);
+                ql_mem_free(sig);
+                return 0;
+            }
+            e->st.mask_image = midx;
+        }
+        ql_mem_free(side.mask_url);
+        side.mask_url = NULL;
     }
     if (side.bg_url != NULL) {
         uint16_t uidx = 0xFFFF;

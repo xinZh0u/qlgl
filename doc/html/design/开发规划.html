@@ -179,10 +179,11 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十五个例程</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -3221,33 +3222,56 @@ blob v10 → <strong>v11</strong>。</p>
 </tr>
 </tbody>
 </table>
-<h4 id="m93">M9.3 · 离屏图层（一次解锁四样）</h4>
+<h4 id="m93-2026-11-11">M9.3 · 离屏图层（一次解锁四样）—— <strong>已完成（2026-11-11）</strong></h4>
 <table>
 <thead>
 <tr>
 <th>任务</th>
+<th>状态</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>离屏图层基建（CPU 临时缓冲 / GL FBO 复用）</td>
-<td>"子树先合成到一张图，再整体处理"</td>
+<td>✅</td>
+<td><code>QLDraw2D.layer_begin/layer_end</code>；CPU 走"两遍哑光反解"，GL 走真 RGBA FBO + 合成着色器</td>
 </tr>
 <tr>
 <td><code>filter: blur()</code> / <code>drop-shadow()</code></td>
-<td>在合成结果上做方框模糊</td>
+<td>✅</td>
+<td>9 抽头可分离高斯（两端口径统一，抽头间距 = 半径/2）；<code>drop-shadow</code> 取 alpha 形状</td>
 </tr>
 <tr>
-<td><code>filter</code> 颜色矩阵族（brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate）</td>
-<td>可先做"融进绘制入口"的便宜版，再统一到图层</td>
+<td><code>filter</code> 颜色矩阵族</td>
+<td>✅</td>
+<td>brightness / contrast / saturate / grayscale / sepia / invert / hue-rotate / opacity，可链式（≤6）</td>
 </tr>
 <tr>
-<td>真 group <code>opacity</code> / <code>mix-blend-mode</code> / <code>mask</code></td>
-<td>三样都要求"读到已合成的子树"</td>
+<td>真 group <code>opacity</code></td>
+<td>✅</td>
+<td>有子节点时走图层；单节点保留逐图元乘 alpha（等价且省一层缓冲）</td>
+</tr>
+<tr>
+<td><code>mix-blend-mode</code></td>
+<td>✅</td>
+<td>normal / multiply / screen / overlay / darken / lighten / difference</td>
+</tr>
+<tr>
+<td><code>mask</code></td>
+<td>✅</td>
+<td><code>url()</code> 的 alpha，拉伸到边框盒</td>
 </tr>
 </tbody>
 </table>
+<p><strong>落地数据</strong>：<code>QLUIStyle</code> 312 → <strong>336</strong>、blob <strong>v29</strong>；新增 <code>src/draw/qllayer.c</code>
+（纯缓冲运算，关掉能力包时编译成空）；<code>test_layer</code> 121 项断言；
+<code>test_gl_vs_cpu</code> 新增 6 个图层用例（CPU/GPU 差异 ≤ 0.01%，嵌套 0.95%）；
+例程 <code>31_filter</code>；教程 <code>20_filter.md</code>。</p>
+<p><strong>MCU 实测</strong>（Cortex-M4 / mps2-an386）：<code>QL_FEAT_CSS_FILTER_LAYER=0</code> 时
+<code>.text</code> 139,740 B / <code>.bss</code> 140,264 B；开时 155,084 / 140,940 ——
+<strong>+15,344 B Flash、+676 B RAM</strong>，比 Grid（4,528 B）与 border-image（2,176 B）
+加起来还多一倍多，所以它必须是一个独立能力包。</p>
 <p><strong>为什么一次做四样</strong>：它们的共同前提是同一块能力；分四次做等于把图层基建写四遍。
 RAM 成本 = 一个元素盒子的 RGBA 缓冲（PC/Mobile 档可接受，MCU 档恒关）。</p>
 <h4 id="m94">M9.4 · 旋转光栅</h4>

@@ -1,0 +1,255 @@
+/*
+ * M9.3：离屏图层。白底浅色主题（见 ../README.md 的"约定"）。
+ *
+ * 这一页里凡是带 filter / mix-blend-mode / mask / 组 opacity 的元素，
+ * 渲染时都会先合成到一块临时图上再处理 —— CSS 也是这个语义。
+ */
+#root {
+  width: 704px;
+  padding: 20px 28px 24px 28px;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.h1 {
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.badge {
+  font-size: 10px;
+  color: #57606A;
+  background-color: #F6F8FA;
+  border-radius: 9px;
+  padding: 3px 8px;
+}
+
+.sec {
+  margin-bottom: 16px;
+}
+
+.cap {
+  font-size: 11px;
+  color: #57606A;
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 10px;
+  color: #6E7781;
+  margin-top: 6px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+code {
+  color: #9A6700;
+}
+
+/* ---------- 1. blur ---------- */
+
+.card {
+  width: 120px;
+  height: 66px;
+  background-color: #F6F8FA;
+  border: 1px solid #D0D7DE;
+  border-radius: 8px;
+  position: relative;
+}
+
+.card.blurred {
+  filter: blur(3px);
+}
+
+.blob {
+  position: absolute;
+  border-radius: 20px;
+}
+
+.b1 {
+  left: 14px;
+  top: 16px;
+  width: 56px;
+  height: 34px;
+  background-color: #0969DA;
+}
+
+.b2 {
+  left: 46px;
+  top: 22px;
+  width: 56px;
+  height: 34px;
+  background-color: #1A7F37;
+}
+
+/* ---------- 2. drop-shadow ---------- */
+
+.pill {
+  width: 92px;
+  height: 34px;
+  line-height: 34px;
+  text-align: center;
+  border-radius: 17px;
+  background-color: #0969DA;
+  color: #FFFFFF;
+  font-size: 10px;
+}
+
+.shadow-plain {
+  box-shadow: 0 4px 8px rgba(31, 35, 40, 0.35);
+}
+
+.shadow-drop {
+  filter: drop-shadow(0 4px 4px rgba(31, 35, 40, 0.45));
+}
+
+/* 月牙形（画一个圆 + 一个背景色圆盖住一角） */
+.crescent {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background-color: #8250DF;
+  position: relative;
+}
+
+.crescent::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 0;
+  width: 36px;
+  height: 44px;
+  border-radius: 22px;
+  background-color: #FFFFFF;
+}
+
+.crescent.drop {
+  filter: drop-shadow(3px 3px 2px rgba(31, 35, 40, 0.4));
+}
+
+/* ---------- 3. 颜色矩阵族 ---------- */
+
+.chip {
+  width: 62px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-radius: 6px;
+  background-color: #D9480F;
+  color: #FFFFFF;
+  font-size: 10px;
+}
+
+.c1 { filter: grayscale(100%); }
+.c2 { filter: sepia(100%); }
+.c3 { filter: invert(100%); }
+.c4 { filter: brightness(0.6); }
+.c5 { filter: saturate(2); }
+.c6 { filter: hue-rotate(120deg); }
+
+/* ---------- 4. 组透明度 ---------- */
+
+.overlap {
+  width: 96px;
+  height: 44px;
+  position: relative;
+}
+
+.overlap.faded {
+  opacity: 0.5;
+}
+
+.sq {
+  position: absolute;
+  top: 0;
+  width: 56px;
+  height: 44px;
+  border-radius: 6px;
+}
+
+.s1 {
+  left: 0;
+  background-color: #0969DA;
+}
+
+.s2 {
+  left: 40px;
+  background-color: #1A7F37;
+}
+
+/* ---------- 5. mix-blend-mode ---------- */
+
+.mixbg {
+  width: 88px;
+  height: 34px;
+  position: relative;
+  background-color: #FFCC00;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mix {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mlab {
+  font-size: 9px;
+  color: #57606A;
+  margin-top: 3px;
+}
+
+.bl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 34px;
+  background-color: #3366FF;
+}
+
+.m-normal { mix-blend-mode: normal; }
+.m-multiply { mix-blend-mode: multiply; }
+.m-screen { mix-blend-mode: screen; }
+.m-overlay { mix-blend-mode: overlay; }
+.m-darken { mix-blend-mode: darken; }
+.m-difference { mix-blend-mode: difference; }
+
+/* ---------- 6. mask ---------- */
+
+.mcard {
+  width: 220px;
+  height: 44px;
+  border-radius: 8px;
+  background-color: #0969DA;
+  mask: url(diag);
+}
+
+.mtxt {
+  height: 44px;
+  line-height: 44px;
+  text-align: center;
+  color: #FFFFFF;
+  font-size: 11px;
+}
+
+.note {
+  white-space: normal;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #6E7781;
+  line-height: 17px;
+}

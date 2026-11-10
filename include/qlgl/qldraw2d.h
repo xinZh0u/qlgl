@@ -19,6 +19,72 @@
 
 typedef struct QLDraw2D QLDraw2D;
 
+/*
+ * `filter` 里的一个函数。**顺序即应用顺序**（CSS 语义）：
+ * `filter: blur(2px) brightness(1.2)` 是先模糊再提亮。
+ */
+typedef enum {
+    QL_UI_FILTER_BLUR = 0,      /* 参数 = 半径 px */
+    QL_UI_FILTER_BRIGHTNESS,    /* 参数 = 千分比（1000 = 不变） */
+    QL_UI_FILTER_CONTRAST,      /* 同上 */
+    QL_UI_FILTER_SATURATE,      /* 同上 */
+    QL_UI_FILTER_GRAYSCALE,     /* 参数 = 千分比（1000 = 全灰） */
+    QL_UI_FILTER_SEPIA,         /* 参数 = 千分比（1000 = 全棕） */
+    QL_UI_FILTER_INVERT,        /* 参数 = 千分比（1000 = 全反相） */
+    QL_UI_FILTER_HUE_ROTATE,    /* 参数 = 角度（度） */
+    QL_UI_FILTER_OPACITY,       /* 参数 = 千分比（1000 = 不变） */
+    QL_UI_FILTER_DROP_SHADOW,   /* 参数不用；偏移/模糊/颜色在 ds_* 字段 */
+} QLUIFilterOp;
+
+/*
+ * `mix-blend-mode`：只做浏览器里最常用的七个（其余**构建期报错**）。
+ * 这些公式对"未预乘的 sRGB 分量"定义，实现里两边都按预乘存，
+ * 混合时再还原成直通色算，见《CSS3 覆盖与裁剪》§18.10。
+ */
+typedef enum {
+    QL_UI_BLEND_NORMAL = 0,
+    QL_UI_BLEND_MULTIPLY,
+    QL_UI_BLEND_SCREEN,
+    QL_UI_BLEND_OVERLAY,
+    QL_UI_BLEND_DARKEN,
+    QL_UI_BLEND_LIGHTEN,
+    QL_UI_BLEND_DIFFERENCE,
+} QLUIBlendMode;
+
+/* `filter_op[]` 的打包：高 4 位 kind，低 12 位**有符号**参数（-2048..2047） */
+#define QL_UI_FILTER_PACK(kind, arg) \
+    ((uint16_t)((((uint16_t)(kind) & 0x0Fu) << 12) | ((uint16_t)(arg) & 0x0FFFu)))
+#define QL_UI_FILTER_KIND(packed)    ((uint8_t)(((packed) >> 12) & 0x0Fu))
+#define QL_UI_FILTER_ARG(packed)                                             \
+    ((int32_t)(((packed) & 0x0800u)                                          \
+                   ? ((int32_t)((packed) & 0x0FFFu) - 0x1000)                \
+                   : (int32_t)((packed) & 0x0FFFu)))
+
+#define QL_UI_NO_MASK       0xFFFFu   /* `mask_image`：没有遮罩图 */
+
+/*
+ * 一次离屏图层合成要的全部参数（M9.3）。
+ *
+ * 为什么在这里而不是 qlui.h：**两个后端都要读它**，而 qlui 是"使用方"。
+ * 字段与 `QLUIStyle` 里那几个同名成员一一对应，qlui 只做搬运。
+ */
+typedef struct {
+    uint8_t      nops;        /* `filter_op[]` 里有效的条数 */
+    uint16_t     op[6];       /* QL_UI_FILTER_PACK 打包（与 QLUIStyle 同格式） */
+    uint8_t      blur;        /* 不用 op[] 单独给一份：合成阶段先看它，省一次遍历 */
+    uint8_t      opacity;     /* 0..255，组透明度（255 = 不透明） */
+    uint8_t      blend;       /* QLUIBlendMode */
+    uint8_t      has_drop;    /* 1 = 有 drop-shadow */
+    int8_t       ds_dx;
+    int8_t       ds_dy;
+    uint8_t      ds_blur;
+    uint8_t      ds_a;        /* 0 = 用 ds_color 自己的 alpha */
+    uint32_t     ds_color;    /* 0 = currentColor（用 text_color） */
+    QLRect       box;         /* 元素的边框盒（CSS px）：圆角裁剪与遮罩拉伸都以它为准 */
+    ql_coord_t   corner;      /* 图层的圆角半径（CSS px，0 = 直角） */
+    const QLImage *mask;      /* `mask: url()` 解出来的图（NULL = 无） */
+} QLDraw2DLayerFx;
+
 /* 装饰线（`text-decoration`）：两条都是 1px，画在基线附近 */
 #define QL_TEXT_DECO_UNDERLINE    0x01u
 #define QL_TEXT_DECO_LINE_THROUGH 0x02u
@@ -171,6 +237,26 @@ struct QLDraw2D {
     void (*blit_image)(QLDraw2D *self, const QLImage *img, QLRect dst,
                        const QLRect *src, ql_coord_t radius, uint8_t alpha);
 
+    /*
+     * 离屏图层（M9.3）：把接下来画的东西先落到一块临时图上，`layer_end` 时
+     * 应用滤镜（blur / 颜色矩阵 / drop-shadow）、组透明度和混合模式，
+     * 再整体合成回目标表面。`bounds` 是图层在屏幕上的**设备像素**范围
+     * （调用方已按滤镜半径外扩）。
+     *
+     * 返回 0 = 这层没法做（内存不足等），调用方应当**照常画**（降级不留白）。
+     *
+     * 后端为 NULL 时上层直接按"没有图层"处理：filter 之类会在构建期被拒绝，
+     * 所以运行期不会出现"答应了却没画"。
+     */
+    int  (*layer_begin)(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx *fx);
+    /*
+     * 结束一层，返回 1 表示**请把同一棵子树再画一遍**（再调一次 layer_begin
+     * + 同样内容，然后 layer_end）。CPU 后端要两遍：一遍画在黑底上、一遍画在
+     * 白底上，反解出每个像素的颜色与 alpha（见 CSS3 覆盖与裁剪 §18.10）；
+     * GPU 后端一张 RGBA 帧缓冲就够，恒返回 0。
+     */
+    int  (*layer_end)(QLDraw2D *self);
+
     void (*flush)(QLDraw2D *self);
 
     /*
@@ -232,6 +318,18 @@ struct QLDraw2D {
 
     void *user;   /* 后端私有数据 */
 };
+
+/* 离屏图层的便捷包装：后端没实现时返回 0 / 直接返回 0（= 不用再画一遍） */
+static inline int ql_draw2d_layer_begin(QLDraw2D *d, QLRect bounds,
+                                        const QLDraw2DLayerFx *fx)
+{
+    return (d != NULL && d->layer_begin != NULL) ? d->layer_begin(d, bounds, fx) : 0;
+}
+
+static inline int ql_draw2d_layer_end(QLDraw2D *d)
+{
+    return (d != NULL && d->layer_end != NULL) ? d->layer_end(d) : 0;
+}
 
 /* 折行后的一行：指向原文里的一段（不拷贝） */
 typedef struct {

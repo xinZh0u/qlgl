@@ -6,6 +6,8 @@
 
 #include <qlgl/qlgl.h>
 
+#include "qllayer.h"
+
 void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_t x2,
                          ql_coord_t y2, ql_coord_t thickness, ql_color_t color)
 {
@@ -438,6 +440,25 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 typedef struct {
     QLCanvas *canvas;
     QLRect    saved_clip;
+
+#if QL_FEAT_CSS_FILTER_LAYER
+    /* ----- 离屏图层（M9.3）：一块小栈，深度上限 QL_CFG_UI_LAYER_MAX_DEPTH ----- */
+    struct {
+        int             stage;      /* 0 空闲、1 黑底那一遍、2 白底那一遍 */
+        QLRect          dev;        /* 图层在设备像素里的范围 */
+        QLDraw2DLayerFx fx;
+        QLCanvas        saved;      /* 进入图层前的画布状态（缓冲 / 裁剪 / 遮罩） */
+        uint8_t        *matte[2];   /* [0] 黑底、[1] 白底，都是紧凑 RGB888 */
+        uint8_t        *rgba;       /* 第二遍末尾反解出来的预乘 RGBA */
+        size_t          matte_bytes;
+        ql_coord_t      saved_off_x;
+        ql_coord_t      saved_off_y;
+        ql_coord_t      saved_mask_cx, saved_mask_cy, saved_mask_r;
+        ql_coord_t      saved_scale;
+        uint8_t         saved_alpha;
+    } layer[QL_CFG_UI_LAYER_MAX_DEPTH];
+    int layer_depth;
+#endif
 } QLDraw2DCanvas;
 
 static QLDraw2DCanvas s_cpu;
@@ -879,6 +900,183 @@ static void cpu_draw_text(QLDraw2D *self, const QLFont *font, const char *text, 
     ql_draw2d_text_layout(self, dev, text, len, tb, &local, cpu_emit_glyph);
 }
 
+#if QL_FEAT_CSS_FILTER_LAYER
+/* ------------------------------ 离屏图层（CPU） ------------------------------ */
+
+/*
+ * CPU 侧的离屏图层 = **两遍哑光反解**。
+ *
+ * 为什么不像 GPU 那样直接渲染到一张 RGBA 缓冲？因为 CPU 光栅的二十多条混合路径
+ * （整行快路径、SSE2 块、字形位图、图片搬运……）全都写成"只在 RGB 上混、alpha
+ * 恒置 0xFF"，要各自改成累积 alpha，改动面大且极易漏。反过来"同一棵子树画两次
+ * （黑底一遍、白底一遍）再解方程"只用一条公式：
+ *
+ *   黑底：B = C*a          白底：W = C*a + 255*(1-a)
+ *   ⇒  a = 255-(W-B)，而预乘色就是 B。
+ *
+ * 代价是这棵子树画两遍（滤镜本来就只用在局部），换来的是**零风险**：
+ * 所有既有图元的混合语义一个字都不用改。GPU 那侧有真的 RGBA 帧缓冲，只画一遍。
+ */
+static QLRect cpu_layer_dev_rect(QLDraw2D *self, QLRect bounds)
+{
+    const QLRectFx f = sxf(self, elem_rect(self, bounds));
+    const ql_coord_t x0 = (ql_coord_t)(f.x >> QL_FX_SHIFT);
+    const ql_coord_t y0 = (ql_coord_t)(f.y >> QL_FX_SHIFT);
+    const ql_coord_t x1 = (ql_coord_t)((f.x + f.w + QL_FX_ONE - 1) >> QL_FX_SHIFT);
+    const ql_coord_t y1 = (ql_coord_t)((f.y + f.h + QL_FX_ONE - 1) >> QL_FX_SHIFT);
+    if (x1 <= x0 || y1 <= y0)
+        return ql_rect_make(0, 0, 0, 0);
+    ql_coord_t w = x1 - x0;
+    ql_coord_t h = y1 - y0;
+    /* 上限：一块哑光缓冲 3 B/px。设错了也不该把内存吃光（约 12 MB 封顶） */
+    if ((int64_t)w * (int64_t)h > 4096 * 1024) {
+        w = 4096;
+        h = 1024;
+    }
+    return ql_rect_make(x0, y0, w, h);
+}
+
+/* 把画布切到某块哑光缓冲，并把 `dev` 的左上角挪到 (0,0) */
+static void cpu_layer_attach(QLDraw2D *self, uint8_t *buf, QLRect dev)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    QLCanvas *c = ctx->canvas;
+    c->buffer = buf;
+    c->stride = (uint32_t)dev.w * 3u;
+    c->width = dev.w;
+    c->height = dev.h;
+    c->format = QL_COLOR_RGB888;
+    c->clip = ql_rect_make(0, 0, dev.w, dev.h);
+    c->mask_r = -1;      /* 图层的裁剪留到合成阶段（圆角与 mask 一起做） */
+
+    /*
+     * 平移：让 dev 的左上角落在 (0,0)。
+     * 设备位置 = (px + off/F) * scale ⇒ 减掉 dev.x 个设备像素就是
+     * `off -= dev.x * F * F / scale`（偏移是 CSS 26.6）。
+     */
+    const ql_coord_t scale = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
+    self->offset_x_fx -= (ql_coord_t)(((int64_t)dev.x * QL_FX_ONE * QL_FX_ONE) / scale);
+    self->offset_y_fx -= (ql_coord_t)(((int64_t)dev.y * QL_FX_ONE * QL_FX_ONE) / scale);
+}
+
+/* 在栈的第 i 层开一个新图层（黑底第一遍） */
+static int cpu_layer_open(QLDraw2D *self, int i, QLRect bounds,
+                          const QLDraw2DLayerFx *fx)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (fx == NULL)
+        return 0;
+    const QLRect dev = cpu_layer_dev_rect(self, bounds);
+    if (ql_rect_is_empty(dev))
+        return 0;
+    const size_t bytes = (size_t)dev.w * (size_t)dev.h * 3u;
+    uint8_t *m0 = (uint8_t *)ql_mem_alloc(bytes);
+    if (m0 == NULL)
+        return 0;
+
+    ctx->layer[i].stage = 0;
+    ctx->layer[i].matte[0] = m0;
+    ctx->layer[i].matte[1] = NULL;
+    ctx->layer[i].rgba = NULL;
+    ctx->layer[i].matte_bytes = bytes;
+    ctx->layer[i].dev = dev;
+    ctx->layer[i].fx = *fx;
+    ctx->layer[i].saved = *ctx->canvas;
+    ctx->layer[i].saved_off_x = self->offset_x_fx;
+    ctx->layer[i].saved_off_y = self->offset_y_fx;
+
+    cpu_layer_attach(self, m0, dev);
+    ql_canvas_clear(ctx->canvas, 0x000000);
+    ctx->layer[i].stage = 1;
+    return 1;
+}
+
+/* 恢复进入图层前的画布与平移 */
+static void cpu_layer_restore(QLDraw2D *self, int i)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    *ctx->canvas = ctx->layer[i].saved;
+    self->offset_x_fx = ctx->layer[i].saved_off_x;
+    self->offset_y_fx = ctx->layer[i].saved_off_y;
+}
+
+static int cpu_layer_begin(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx *fx)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (ctx == NULL || ctx->canvas == NULL)
+        return 0;
+    /* 栈顶正处于"两遍之间"→ 这是第二遍（白底） */
+    if (ctx->layer_depth > 0 && ctx->layer[ctx->layer_depth - 1].stage == 2) {
+        const int i = ctx->layer_depth - 1;
+        if (ctx->layer[i].matte[1] == NULL) {
+            uint8_t *m1 = (uint8_t *)ql_mem_alloc(ctx->layer[i].matte_bytes);
+            if (m1 == NULL)
+                return 0;
+            ctx->layer[i].matte[1] = m1;
+        }
+        cpu_layer_attach(self, ctx->layer[i].matte[1], ctx->layer[i].dev);
+        ql_canvas_clear(ctx->canvas, 0xFFFFFF);
+        ctx->layer[i].stage = 3;
+        return 1;
+    }
+    if (ctx->layer_depth >= QL_CFG_UI_LAYER_MAX_DEPTH)
+        return 0;
+    if (!cpu_layer_open(self, ctx->layer_depth, bounds, fx))
+        return 0;
+    ctx->layer_depth++;
+    return 1;
+}
+
+static int cpu_layer_end(QLDraw2D *self)
+{
+    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
+    if (ctx == NULL || ctx->canvas == NULL || ctx->layer_depth <= 0)
+        return 0;
+    const int i = ctx->layer_depth - 1;
+    if (ctx->layer[i].stage == 1) {
+        /* 黑底那一遍画完了：请调用方把同一棵子树再画一遍 */
+        cpu_layer_restore(self, i);
+        ctx->layer[i].stage = 2;
+        return 1;
+    }
+    if (ctx->layer[i].stage != 3)
+        return 0;
+
+    QLRect dev = ctx->layer[i].dev;
+    const QLDraw2DLayerFx fx = ctx->layer[i].fx;
+    cpu_layer_restore(self, i);
+
+    QLCanvas *dst = ctx->canvas;
+    const size_t npx = (size_t)dev.w * (size_t)dev.h;
+    uint8_t *rgba = (uint8_t *)ql_mem_alloc(npx * 4u);
+    if (rgba != NULL) {
+        ql_layer_reconstruct(ctx->layer[i].matte[0], ctx->layer[i].matte[1], dev.w,
+                             dev.h, rgba);
+        if (fx.blur > 0) {
+            ql_coord_t scale = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
+            int r = (int)(((int64_t)fx.blur * scale) / QL_SCALE_ONE);
+            if (r < 1)
+                r = 1;
+            ql_layer_blur(rgba, dev.w, dev.h, r);
+        }
+        ql_layer_apply_color_ops(rgba, dev.w, dev.h, &fx);
+        if (fx.has_drop)
+            ql_layer_drop_shadow(rgba, dev.w, dev.h, &fx);
+        ql_layer_composite(dst, rgba, dev.w, dev.h, ql_rect_make(dev.x, dev.y, dev.w, dev.h),
+                           &fx);
+        ql_mem_free(rgba);
+    }
+
+    ql_mem_free(ctx->layer[i].matte[0]);
+    ql_mem_free(ctx->layer[i].matte[1]);
+    ctx->layer[i].matte[0] = NULL;
+    ctx->layer[i].matte[1] = NULL;
+    ctx->layer[i].stage = 0;
+    ctx->layer_depth = i;
+    return 0;
+}
+#endif /* QL_FEAT_CSS_FILTER_LAYER */
+
 static void cpu_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
                            const QLRect *src, ql_coord_t radius, uint8_t alpha)
 {
@@ -904,6 +1102,10 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->set_mask = cpu_set_mask;
     out->backdrop_blur = cpu_backdrop_blur;
     out->backdrop_blur_round = cpu_backdrop_blur_round;
+#if QL_FEAT_CSS_FILTER_LAYER
+    out->layer_begin = cpu_layer_begin;
+    out->layer_end = cpu_layer_end;
+#endif
     out->fill_rect = cpu_fill_rect;
     out->fill_round_rect = cpu_fill_round_rect;
     out->fill_round_rect_gradient = cpu_fill_round_rect_gradient;

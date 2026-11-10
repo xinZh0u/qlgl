@@ -6,6 +6,8 @@
 #
 # 参数通过环境变量覆盖：
 #   CPU=cortex-m4  BOARD=mps2-an386  FREQ_MHZ=200
+#   QL_FEAT_CSS_FILTER_LAYER=0|1   离屏图层（MCU 默认关：它要按元素尺寸吃 RAM）
+#   EXTRA_CFLAGS="..."             额外的 -D / 编译选项（量体积用）
 set -e
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -29,7 +31,8 @@ SRCS="$ROOT/test/mcu/bench.c $ROOT/test/mcu/startup.c $ROOT/test/mcu/syscalls.c 
       $ROOT/src/core/qlclass.c $ROOT/src/core/qlobject.c $ROOT/src/core/qlevent.c \
       $ROOT/src/core/qlprop.c \
       $ROOT/src/ui/qlui_blob.c $ROOT/src/generated/qlclass_gen.c \
-      $ROOT/src/draw/qlcanvas.c $ROOT/src/draw/qldraw2d.c $ROOT/src/draw/qlgeom.c \
+      $ROOT/src/draw/qlcanvas.c $ROOT/src/draw/qldraw2d.c $ROOT/src/draw/qllayer.c \
+      $ROOT/src/draw/qlgeom.c \
       $ROOT/src/draw/qldisp.c $ROOT/src/draw/qlimage.c $ROOT/src/draw/qlinflate.c \
       $ROOT/src/text/qlfont.c $ROOT/src/text/qlfont_ascii.c \
       $ROOT/src/ui/qlui.c"
@@ -37,7 +40,9 @@ SRCS="$ROOT/test/mcu/bench.c $ROOT/test/mcu/startup.c $ROOT/test/mcu/syscalls.c 
 CFLAGS="-mcpu=$CPU -mthumb -O2 -g -std=c11 -ffreestanding -fno-common
         -I$ROOT/include -I$OUT
         -DQL_CFG_UI_MAX_NODES=256 -DQL_CFG_UI_MAX_STYLES=256
-        -DQL_CFG_UI_FLEX_MAX_ITEMS=64"
+        -DQL_CFG_UI_FLEX_MAX_ITEMS=64
+        -DQL_FEAT_CSS_FILTER_LAYER=${QL_FEAT_CSS_FILTER_LAYER:-0}
+        ${EXTRA_CFLAGS:-}"
 
 # shellcheck disable=SC2086
 "${CROSS}gcc" $CFLAGS -T "$ROOT/test/mcu/link.ld" \

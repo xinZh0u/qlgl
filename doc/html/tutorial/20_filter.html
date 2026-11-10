@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html' class='active'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="filter-mix-blend-mode-mask">离屏图层：<code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> / 组透明度</h1>
+<p><img src="../img/31-filter.png" alt="模糊、投影、颜色矩阵、组透明度、混合模式、遮罩" width="620"></p>
+<p>完整程序：<code>example/31_filter/</code></p>
+<p>前面所有绘制都是"<strong>一个图元画一次</strong>"：背景一块、边框一圈、文字一遍。这条规矩
+简单、快，而且 MCU 上不需要任何额外内存。但它表达不了四类效果：</p>
+<table>
+<thead>
+<tr>
+<th>想要</th>
+<th>为什么一图元一次做不到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filter: blur(4px)</code></td>
+<td>模糊要读<strong>邻居像素</strong> —— 一个元素内部的图元得先落在一起，否则每块各糊一次，接缝处会亮一条线</td>
+</tr>
+<tr>
+<td><code>opacity: 0.5</code> 的<strong>组</strong></td>
+<td>逐图元乘 alpha 时，子元素<strong>重叠的地方会叠两次</strong>，比别处更暗</td>
+</tr>
+<tr>
+<td><code>mix-blend-mode</code></td>
+<td>混合要读<strong>背景像素</strong>（它自己画之前那块地方）</td>
+</tr>
+<tr>
+<td><code>mask: url()</code></td>
+<td>遮罩要乘在"整个元素合成后的 alpha"上</td>
+</tr>
+</tbody>
+</table>
+<p>四样东西的共同前提是一句话：<strong>先把这棵子树合成到一张临时图上，再整体处理。</strong>
+这就是"离屏图层"。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">card</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">3</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">drop-shadow</span><span class="p">(</span><span class="mi">0</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mf">.45</span><span class="p">));</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">group</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">blend</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">mix-blend-mode</span><span class="p">:</span><span class="w"> </span><span class="kc">multiply</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">masked</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">mask</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">alpha8</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="1">1. 什么时候会自动开图层</h2>
+<p>不是所有元素都要图层。判据写在 <code>src/ui/qlui.c</code> 的 <code>style_needs_layer()</code>：</p>
+<table>
+<thead>
+<tr>
+<th>条件</th>
+<th>是否开图层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写了 <code>filter</code>（任何函数）</td>
+<td>开</td>
+</tr>
+<tr>
+<td><code>mix-blend-mode</code> 不是 <code>normal</code></td>
+<td>开</td>
+</tr>
+<tr>
+<td><code>mask</code> 不是 <code>none</code></td>
+<td>开</td>
+</tr>
+<tr>
+<td><code>opacity &lt; 1</code> <strong>且有子节点</strong></td>
+<td>开（单节点的逐图元乘 alpha 与合成等价）</td>
+</tr>
+<tr>
+<td>其余（99% 的元素）</td>
+<td>不开，走原来的单批次路径</td>
+</tr>
+</tbody>
+</table>
+<p>最后一行很重要：<strong>图层是要花内存和带宽的</strong>，所以它必须"按需、稀有"。</p>
+<hr />
+<h2 id="2-filter">2. <code>filter</code></h2>
+<h3 id="21">2.1 支持哪些函数</h3>
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blur(&lt;N&gt;px)</code></td>
+<td>0~64</td>
+<td>9 抽头可分离高斯，抽头间距 = N/2</td>
+</tr>
+<tr>
+<td><code>brightness(&lt;倍数&gt;\|&lt;百分比&gt;)</code></td>
+<td>0~100 倍</td>
+<td><code>1.2</code> 与 <code>120%</code> 等价</td>
+</tr>
+<tr>
+<td><code>contrast(...)</code></td>
+<td>同上</td>
+<td><code>c' = (c-0.5)*k+0.5</code></td>
+</tr>
+<tr>
+<td><code>saturate(...)</code></td>
+<td>同上</td>
+<td>标准饱和度矩阵</td>
+</tr>
+<tr>
+<td><code>grayscale(...)</code> / <code>sepia(...)</code> / <code>invert(...)</code></td>
+<td>0~100%</td>
+<td>按比例在"原色"与"效果色"之间插值</td>
+</tr>
+<tr>
+<td><code>hue-rotate(&lt;N&gt;deg)</code></td>
+<td>0~360</td>
+<td>CSS 的固定旋转矩阵（不是 HSL 往返）</td>
+</tr>
+<tr>
+<td><code>opacity(&lt;0~1&gt;)</code></td>
+<td>—</td>
+<td>乘在图层 alpha 上</td>
+</tr>
+<tr>
+<td><code>drop-shadow(&lt;dx&gt; &lt;dy&gt; [&lt;blur&gt;] [&lt;color&gt;])</code></td>
+<td>—</td>
+<td>影子取 <strong>alpha 形状</strong>，跟着圆角走</td>
+</tr>
+</tbody>
+</table>
+<p>不支持 <code>url(#svg)</code>、<code>spread</code>（第 4 个长度值）—— 都会<strong>构建期报错</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">a</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">4</span><span class="kt">px</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">.</span><span class="nc">b</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">brightness</span><span class="p">(</span><span class="mi">120</span><span class="kt">%</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mf">1.5</span><span class="p">);</span><span class="w"> </span><span class="p">}</span><span class="w">    </span><span class="c">/* 链式，顺序即应用顺序 */</span>
+<span class="p">.</span><span class="nc">c</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">drop-shadow</span><span class="p">(</span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="mi">3</span><span class="kt">px</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="mh">#123456</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<h3 id="22-drop-shadow-box-shadow">2.2 <code>drop-shadow</code> 与 <code>box-shadow</code> 的区别</h3>
+<p>这是最容易搞混的一点：</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;moon&quot;</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>   <span class="cm">&lt;!-- 圆角做出来的月牙 --&gt;</span>
+</code></pre></div>
+
+<ul>
+<li><code>box-shadow</code> 认的是<strong>边框盒</strong>：月牙的影子是一个矩形框的影子；</li>
+<li><code>drop-shadow</code> 认的是<strong>合成后的 alpha</strong>：影子是月牙形状。</li>
+</ul>
+<p>前者的代价是一次边缘扫描，后者要先把元素画出来再抽 alpha，所以后者一定带图层。</p>
+<hr />
+<h2 id="3-opacity">3. 组 <code>opacity</code></h2>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">group</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>老语义（现在是"单节点"的情形）：把 <code>opacity</code> 乘进每个图元的 alpha。
+新语义（有子节点时）：整组先合成，再乘。</p>
+<p>差别只在<strong>重叠处</strong>：</p>
+<div class="highlight"><pre><span></span><code>两个半透明块重叠             逐图元乘 alpha        组 opacity
+  ██▒▒██                   重叠处 = 0.5+0.5*0.5    重叠处 = 0.5
+</code></pre></div>
+
+<p><code>example/31_filter</code> 的第 4 节就是这个对照 —— 右边两块重叠的地方<strong>不比别处深</strong>。</p>
+<hr />
+<h2 id="4-mix-blend-mode">4. <code>mix-blend-mode</code></h2>
+<p>做了浏览器里最常用的七个：<code>normal</code> / <code>multiply</code> / <code>screen</code> / <code>overlay</code> /
+<code>darken</code> / <code>lighten</code> / <code>difference</code>。其余（<code>hue</code> / <code>color</code> / <code>exclusion</code> …）
+<strong>构建期报错</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">bl</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#3366FF</span><span class="p">;</span><span class="w"> </span><span class="k">mix-blend-mode</span><span class="p">:</span><span class="w"> </span><span class="kc">multiply</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>公式（<code>cb</code> = 背景、<code>cs</code> = 源，都是 0..1）：</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>multiply</code></td>
+<td><code>cb * cs</code></td>
+</tr>
+<tr>
+<td><code>screen</code></td>
+<td><code>cb + cs - cb*cs</code></td>
+</tr>
+<tr>
+<td><code>overlay</code></td>
+<td><code>cb &lt; 0.5 ? 2*cb*cs : 1-2*(1-cb)*(1-cs)</code></td>
+</tr>
+<tr>
+<td><code>darken</code> / <code>lighten</code></td>
+<td><code>min</code> / <code>max</code></td>
+</tr>
+<tr>
+<td><code>difference</code></td>
+<td><code>abs(cb - cs)</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>混合模式读的是<strong>背景</strong>，所以 GPU 侧要把目标表面那一块先抓成一张纹理再算
+（和毛玻璃同一个套路）。</p>
+</blockquote>
+<hr />
+<h2 id="5-mask">5. <code>mask</code></h2>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">masked</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">mask</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">alpha8</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<ul>
+<li>只用图片的 <strong>alpha</strong>（<code>A8</code> 直接取灰度，<code>RGBA8888</code> 取 alpha 通道）；</li>
+<li>遮罩被<strong>拉伸到边框盒</strong>（相当于 <code>mask-size: 100% 100%</code> + <code>mask-mode: alpha</code>）；</li>
+<li><code>mask: none</code> 表示取消。</li>
+</ul>
+<p><code>mask-image</code> / <code>mask</code> 两个写法都行。<code>mask-position</code> / <code>mask-repeat</code> /
+<code>mask-composite</code> 还没做，写了会报错。</p>
+<hr />
+<h2 id="6">6. 代价：一块元素大小的缓冲</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>数字</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每层缓冲</td>
+<td><code>宽 × 高 × 4</code> 字节（预乘 RGBA）</td>
+</tr>
+<tr>
+<td>最多嵌套</td>
+<td><code>QL_CFG_UI_LAYER_MAX_DEPTH</code>（默认 4）</td>
+</tr>
+<tr>
+<td>单个图层上限</td>
+<td>4096×1024（防误用，超了按上限截）</td>
+</tr>
+<tr>
+<td>编译期开关</td>
+<td><code>QL_FEAT_CSS_FILTER_LAYER</code>（MCU 默认关）</td>
+</tr>
+</tbody>
+</table>
+<p>关掉之后 <code>filter</code> / <code>mix-blend-mode</code> / <code>mask</code> 在<strong>构建期报错</strong>（红线：不静默降级），
+<code>opacity</code> 退回逐图元乘 alpha 的老语义。</p>
+<p>CPU 侧的图层用"<strong>两遍哑光反解</strong>"：同一棵子树画两遍（黑底、白底），再解方程</p>
+<div class="highlight"><pre><span></span><code>黑底：B = C·a          白底：W = C·a + 255·(1-a)
+⇒  a = 255-(W-B)，预乘色就是 B
+</code></pre></div>
+
+<p>GPU 侧有真的 RGBA 帧缓冲，只画一遍。两条后端的结果用
+<code>test_gl_vs_cpu</code> 的图层用例逐像素对拍（差异 &lt; 0.01%）。</p>
+<hr />
+<h2 id="7">7. 常见坑</h2>
+<ol>
+<li><strong><code>text-align</code> / <code>border-radius</code> 与滤镜的关系</strong>：图层外扩了模糊半径那一圈，
+   但<strong>裁剪仍然按边框盒</strong>（含圆角）。所以"圆角卡片 + 模糊光晕"的四个角是干净的 ——
+   这也是 <code>layer_fx_of()</code> 里把 <code>box</code> 和 <code>corner</code> 一起传给后端的原因。</li>
+<li><strong><code>drop-shadow</code> 的颜色默认取 <code>currentColor</code></strong>（也就是元素的 <code>color</code>），
+   不写颜色时影子是文字色，不是黑色。</li>
+<li><strong><code>filter</code> 里的 <code>blur</code> 与 <code>backdrop-filter</code> 不是一回事</strong>：前者糊自己，
+   后者糊"自己背后已经画好的东西"。后者不需要图层（就地模糊即可）。</li>
+<li><strong>图层会打断 GPU 的"单批次"</strong>：一个带滤镜的元素至少多一次 flush + 一次合成。
+   所以别给滚动列表的每一行都加 filter。</li>
+</ol>
+<div class='pager'>
+<a href='../tutorial/19_grid.html'><span class='dir'>上一页</span>Grid：二维布局，以及 `border-image`</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

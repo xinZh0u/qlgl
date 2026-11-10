@@ -200,6 +200,40 @@ struct QLGfxGL {
     GLuint           bg_dummy_tex;    /* u_bg 的占位：没有毛玻璃时也必须绑着 */
 
     /*
+     * 离屏图层（M9.3：filter / mix-blend-mode / mask）。
+     * 每层一张 RGBA 纹理 + FBO（预乘），合成走一个专用程序：
+     *   颜色矩阵族 + opacity + 圆角裁剪 + 遮罩 + 混合模式 + drop-shadow。
+     * 复用模糊那套 ping-pong 纹理做 blur / drop-shadow 的模糊。
+     */
+    GLuint           layer_prog;
+    GLuint           layer_vbo;
+    GLint            lu_tex, lu_blur, lu_backdrop, lu_mask;
+    GLint            lu_viewport, lu_texel, lu_opacity, lu_mode, lu_box, lu_radius;
+    GLint            lu_uv_tex, lu_uv_blur;
+    /* 图层用的 4 通道模糊（预乘保 alpha）。不能复用毛玻璃那套：
+     * 它的片元固定输出 alpha=1（背后是不透明的页面），拿来糊图层会把
+     * "透明区域"糊成不透明黑 —— 图层边缘立刻出现黑边。 */
+    GLuint           blur_rgba_prog;
+    GLint            bu_tex, bu_texel, bu_step, bu_uvmax;
+    GLint            lu_flags, lu_nops, lu_op, lu_ds, lu_ds_color, lu_pass, lu_flipy;
+    GLuint           layer_bd_tex, layer_bd_fbo;   /* 混合模式要读的背景 */
+    int              layer_bd_w, layer_bd_h;
+    struct QLGLLayer {
+        GLuint          tex, fbo;
+        int             w, h;              /* 分配尺寸（只增不减） */
+        QLRect          dev;               /* 这次用到的设备矩形 */
+        QLDraw2DLayerFx fx;
+        ql_coord_t      saved_w, saved_h;
+        QLRect          saved_clip;
+        int             saved_clip_active;
+        GLint           saved_fbo;         /* 进入前的渲染目标（嵌套图层要还给它） */
+        GLuint          mask_tex;
+        const uint8_t  *mask_key;
+    } layer[QL_CFG_UI_LAYER_MAX_DEPTH];
+    int              layer_depth;
+    GLint            cur_target;       /* 当前渲染目标 FBO（0 = 默认帧缓冲） */
+
+    /*
      * 位图（`<img>`）。纹理按 (px,w,h,stride,format) 缓存：同一张图每帧重复
      * blit 时不再上传。数量很小（一屏几张），线性查找足够。
      */
@@ -1828,6 +1862,768 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
     ql_draw2d_text_layout(self, dev, text, len, tb, &local, gl_emit_glyph);
 }
 
+#if QL_FEAT_CSS_FILTER_LAYER
+/* ------------------------------ 离屏图层（M9.3） ------------------------------ */
+
+/*
+ * 合成程序：把一个图层的纹理按 CSS 的语义画回目标表面。
+ *
+ * 与 CPU 侧（qllayer.c）是同一套数学，两边靠 test_gl_vs_cpu 的像素差分守住：
+ *   · 颜色矩阵族在**直通色**上做（先除 alpha，再乘回去）；
+ *   · 预乘 RGBA 存储，普通混合就是 src + dst*(1-a)；
+ *   · 混合模式（multiply/screen/...）需要背景，所以多绑一张背景纹理。
+ *
+ * `u_pass`：0 = drop-shadow（只画阴影），1 = 图层本体。
+ */
+static const char *LAYER_FS =
+    "#version 300 es\n"
+    "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+    "precision highp float;\n"
+    "#else\n"
+    "precision mediump float;\n"
+    "#endif\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform sampler2D u_blur;\n"
+    "uniform sampler2D u_backdrop;\n"
+    "uniform sampler2D u_mask;\n"
+    "uniform vec2  u_viewport;\n"
+    "uniform vec2  u_texel;\n"      /* 1/图层尺寸 */
+    "uniform vec2  u_uv_tex;\n"     /* 图层纹理里"有效区域"的占比（纹理可能更大） */
+    "uniform vec2  u_uv_blur;\n"
+    "uniform float u_opacity;\n"
+    "uniform int   u_mode;\n"
+    "uniform int   u_flags;\n"      /* bit0 有 blur、bit1 有 backdrop、bit2 有 mask */
+    "uniform int   u_nops;\n"
+    "uniform vec2  u_op[6];\n"      /* (kind, arg) */
+    "uniform vec4  u_box;\n"        /* 圆角裁剪盒（目标设备像素 x,y,w,h） */
+    "uniform float u_radius;\n"
+    "uniform vec4  u_ds;\n"         /* (dx, dy, blur, color_alpha) */
+    "uniform vec3  u_ds_color;\n"
+    "uniform int   u_pass;\n"
+    "uniform int   u_flipy;\n"
+    "in vec2 v_uv;\n"
+    "out vec4 frag;\n"
+
+    "float sdRoundBox(vec2 p, vec2 b, float r){\n"
+    "  vec2 q = abs(p) - b + r;\n"
+    "  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;\n"
+    "}\n"
+
+    "vec3 apply_ops(vec3 c){\n"
+    "  for (int i = 0; i < 6; i++) {\n"
+    "    if (i >= u_nops) break;\n"
+    "    int k = int(u_op[i].x);\n"
+    "    float a = u_op[i].y;\n"
+    "    if (k == 1) { c = c * a; }\n"
+    "    else if (k == 2) { c = (c - 0.5) * a + 0.5; }\n"
+    "    else if (k == 3) {\n"
+    "      float lum = dot(c, vec3(0.213, 0.715, 0.072));\n"
+    "      c = mix(vec3(lum), c, a);\n"
+    "    }\n"
+    "    else if (k == 4) {\n"
+    "      float lum = dot(c, vec3(0.213, 0.715, 0.072));\n"
+    "      c = mix(c, vec3(lum), a);\n"
+    "    }\n"
+    "    else if (k == 5) {\n"
+    "      vec3 s = vec3(dot(c, vec3(0.393, 0.769, 0.189)),\n"
+    "                    dot(c, vec3(0.349, 0.686, 0.168)),\n"
+    "                    dot(c, vec3(0.272, 0.534, 0.131)));\n"
+    "      c = mix(c, s, a);\n"
+    "    }\n"
+    "    else if (k == 6) { c = mix(c, 1.0 - c, a); }\n"
+    "    else if (k == 7) {\n"
+    "      float ang = radians(a);\n"
+    "      float cs = cos(ang), sn = sin(ang);\n"
+    /*
+     * 逐行写死点积，不用 mat3：GLSL 的 mat3(a,b,c,...) 是**按列**填的，
+     * 照抄 CPU 的行主序矩阵会得到转置（色相旋转不对称 → 颜色明显不对）。
+     */
+    "      vec3 o = c;\n"
+    "      c.r = dot(vec3(0.213 + cs * 0.787 - sn * 0.213,\n"
+    "                    0.715 - cs * 0.715 - sn * 0.715,\n"
+    "                    0.072 - cs * 0.072 + sn * 0.928), o);\n"
+    "      c.g = dot(vec3(0.213 - cs * 0.213 + sn * 0.143,\n"
+    "                    0.715 + cs * 0.285 + sn * 0.140,\n"
+    "                    0.072 - cs * 0.072 - sn * 0.283), o);\n"
+    "      c.b = dot(vec3(0.213 - cs * 0.213 - sn * 0.787,\n"
+    "                    0.715 - cs * 0.715 + sn * 0.715,\n"
+    "                    0.072 + cs * 0.928 + sn * 0.072), o);\n"
+    "    }\n"
+    "  }\n"
+    "  return clamp(c, 0.0, 1.0);\n"
+    "}\n"
+
+    "float blend_ch(float cb, float cs, int mode){\n"
+    "  if (mode == 1) return cb * cs;\n"
+    "  if (mode == 2) return cb + cs - cb * cs;\n"
+    "  if (mode == 3) return (cb < 0.5) ? (2.0 * cb * cs) : (1.0 - 2.0 * (1.0 - cb) * (1.0 - cs));\n"
+    "  if (mode == 4) return min(cb, cs);\n"
+    "  if (mode == 5) return max(cb, cs);\n"
+    "  if (mode == 6) return abs(cb - cs);\n"
+    "  return cs;\n"
+    "}\n"
+
+    "void main(){\n"
+    /* 目标表面的设备像素坐标（y 向下） */
+    /*
+     * 目标表面的设备坐标（y 向下）。画到最终目标时要翻（内容是按翻转的投影
+     * 画的），画到外层图层的 FBO 时不翻 —— 与顶点那边同一个开关。
+     */
+    "  float fyd = (u_flipy != 0) ? (u_viewport.y - gl_FragCoord.y) : gl_FragCoord.y;\n"
+    "  vec2 dp = vec2(gl_FragCoord.x, fyd);\n"
+    "  vec2 uv = v_uv;\n"
+    "  float cov = 1.0;\n"
+    "  if (u_radius > 0.0) {\n"
+    "    vec2 c = u_box.xy + u_box.zw * 0.5;\n"
+    "    float d = sdRoundBox(dp - c, u_box.zw * 0.5, u_radius);\n"
+    "    cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
+    "    if (cov <= 0.0) { frag = vec4(0.0); return; }\n"
+    "  }\n"
+
+    "  vec4 src;\n"
+    "  if (u_pass == 0) {\n"
+    /* 阴影：取（已模糊的）图层 alpha，按偏移采样，染色 */
+    "    vec2 suv = (uv - u_ds.xy * u_texel) * u_uv_blur;\n"
+    "    float a = texture(u_blur, suv).a * u_ds.w * u_opacity;\n"
+    "    src = vec4(u_ds_color * a, a);\n"
+    "  } else {\n"
+    "    src = ((u_flags & 1) != 0) ? texture(u_blur, uv * u_uv_blur)\n"
+    "                                : texture(u_tex, uv * u_uv_tex);\n"
+    "    float a = src.a;\n"
+    "    if (a > 0.0) {\n"
+    "      vec3 c = src.rgb / a;\n"
+    "      c = apply_ops(c);\n"
+    "      src = vec4(c * a, a);\n"
+    "    }\n"
+    "    src *= u_opacity;\n"
+    "  }\n"
+
+    "  if ((u_flags & 4) != 0) {\n"
+    "    float ma = texture(u_mask, uv).a;\n"
+    "    src *= ma;\n"
+    "  }\n"
+    "  src *= cov;\n"
+    "  if (src.a <= 0.0) { frag = vec4(0.0); return; }\n"
+
+    "  if (u_mode == 0 || u_pass == 0) {\n"
+    "    frag = src;\n"
+    "    return;\n"
+    "  }\n"
+    /* 非普通混合：从背景纹理取色，按 CSS 公式算，再与 src 的 alpha 合成 */
+    "  vec4 bd = texture(u_backdrop, vec2(v_uv.x, 1.0 - v_uv.y));\n"
+    "  vec3 cb = bd.rgb;\n"
+    "  vec3 cs = src.rgb / max(src.a, 1e-5);\n"
+    "  vec3 bb = vec3(blend_ch(cb.r, cs.r, u_mode), blend_ch(cb.g, cs.g, u_mode),\n"
+    "                 blend_ch(cb.b, cs.b, u_mode));\n"
+    "  vec3 outv = cb * (1.0 - src.a) + bb * src.a;\n"
+    "  frag = vec4(outv, 1.0);\n"
+    "}\n";
+
+/* 4 通道（预乘）版本的 9 抽头高斯：alpha 一起糊，输出不强制 1 */
+static const char *BLUR_RGBA_FS =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform vec2 u_texel;\n"
+    "uniform vec2 u_step;\n"
+    "uniform vec2 u_uvmax;\n"
+    "in vec2 v_uv;\n"
+    "out vec4 frag;\n"
+    "void main(){\n"
+    "  const float w[5] = float[5](0.227027, 0.194594, 0.121621, 0.054054, 0.016216);\n"
+    "  vec2 c = clamp(v_uv, vec2(0.0), u_uvmax);\n"
+    "  vec4 acc = texture(u_tex, c) * w[0];\n"
+    "  for (int i = 1; i < 5; i++) {\n"
+    "    vec2 o = u_step * float(i);\n"
+    "    acc += texture(u_tex, clamp(c + o, vec2(0.0), u_uvmax)) * w[i];\n"
+    "    acc += texture(u_tex, clamp(c - o, vec2(0.0), u_uvmax)) * w[i];\n"
+    "  }\n"
+    "  frag = acc;\n"
+    "}\n";
+
+static GLuint build_blur_rgba_program(void)
+{
+    GLuint vs = compile(GL_VERTEX_SHADER, BLUR_VS);
+    GLuint fs = compile(GL_FRAGMENT_SHADER, BLUR_RGBA_FS);
+    if (!vs || !fs) {
+        if (vs) glDeleteShader(vs);
+        if (fs) glDeleteShader(fs);
+        return 0;
+    }
+    GLuint p = glCreateProgram();
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glLinkProgram(p);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    GLint ok = 0;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(p, (GLsizei)sizeof(log), NULL, log);
+        QL_LOGE("gl: layer blur program link failed: %s", log);
+        glDeleteProgram(p);
+        return 0;
+    }
+    return p;
+}
+
+static GLuint build_layer_program(void)
+{
+    GLuint vs = compile(GL_VERTEX_SHADER, BLUR_VS);   /* 顶点与模糊那套一样 */
+    GLuint fs = compile(GL_FRAGMENT_SHADER, LAYER_FS);
+    if (!vs || !fs) {
+        if (vs) glDeleteShader(vs);
+        if (fs) glDeleteShader(fs);
+        return 0;
+    }
+    GLuint p = glCreateProgram();
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glLinkProgram(p);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    GLint ok = 0;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(p, (GLsizei)sizeof(log), NULL, log);
+        QL_LOGE("gl: layer program link failed: %s", log);
+        glDeleteProgram(p);
+        return 0;
+    }
+    return p;
+}
+
+/* 让第 i 层有一张 >= w x h 的 RGBA 纹理 + FBO（只增不减） */
+static int layer_ensure(QLGfxGL *g, int i, int w, int h)
+{
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    struct QLGLLayer *L = &g->layer[i];
+    if (L->tex != 0 && L->w >= w && L->h >= h)
+        return 1;
+
+    /*
+     * 建纹理/FBO 会临时切目标。**必须存/还原当前绑定**：嵌套图层时外层正
+     * 画在自己的 FBO 上，这里一句 `glBindFramebuffer(0)` 就把外层的输出
+     * 全丢到默认帧缓冲去了（表现：外层图层整个不见）。
+     */
+    GLint prev_fbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+    if (L->tex != 0) {
+        glDeleteTextures(1, &L->tex);
+        glDeleteFramebuffers(1, &L->fbo);
+        L->tex = 0;
+        L->fbo = 0;
+    }
+    glGenTextures(1, &L->tex);
+    glBindTexture(GL_TEXTURE_2D, L->tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenFramebuffers(1, &L->fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, L->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, L->tex, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        QL_LOGE("gl: layer FBO incomplete");
+        glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev_fbo);
+        return 0;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev_fbo);
+    L->w = w;
+    L->h = h;
+    return 1;
+}
+
+/* 背景（混合模式用）：一张按需增长的纹理 + FBO */
+static int layer_bd_ensure(QLGfxGL *g, int w, int h)
+{
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (g->layer_bd_tex != 0 && g->layer_bd_w >= w && g->layer_bd_h >= h)
+        return 1;
+    GLint prev_fbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+    if (g->layer_bd_tex != 0) {
+        glDeleteTextures(1, &g->layer_bd_tex);
+        glDeleteFramebuffers(1, &g->layer_bd_fbo);
+        g->layer_bd_tex = 0;
+        g->layer_bd_fbo = 0;
+    }
+    glGenTextures(1, &g->layer_bd_tex);
+    glBindTexture(GL_TEXTURE_2D, g->layer_bd_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenFramebuffers(1, &g->layer_bd_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, g->layer_bd_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           g->layer_bd_tex, 0);
+    const int ok = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev_fbo);
+    if (!ok) {
+        QL_LOGE("gl: layer backdrop FBO incomplete");
+        return 0;
+    }
+    g->layer_bd_w = w;
+    g->layer_bd_h = h;
+    return 1;
+}
+
+/* 画一个覆盖 0..1 的全屏四边形（与模糊那套共用 vbo） */
+static void layer_draw_quad(QLGfxGL *g)
+{
+    static const float quad[16] = {
+        0.0f, 0.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 1.0f,
+        1.0f, 1.0f, 1.0f, 1.0f,
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, g->layer_vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_STREAM_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                          (void *)(2 * sizeof(float)));
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+}
+
+/* 把一张纹理拷进模糊 ping-pong 的 tex[0]（step 0 = 只做一次 9 抽头归一化拷贝） */
+static void layer_copy_into_blur(QLGfxGL *g, GLuint src_tex, int w, int h)
+{
+    if (!blur_ensure(g, w, h))
+        return;
+    glBindFramebuffer(GL_FRAMEBUFFER, g->blur_fbo[1]);
+    glViewport(0, 0, g->blur_w, g->blur_h);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, w, h);
+    glDisable(GL_BLEND);
+    glUseProgram(g->blur_rgba_prog);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, src_tex);
+    glUniform1i(g->bu_tex, 0);
+    glUniform2f(g->bu_texel, 1.0f / (GLfloat)g->blur_w, 1.0f / (GLfloat)g->blur_h);
+    glUniform2f(g->bu_step, 0.0f, 0.0f);
+    glUniform2f(g->bu_uvmax, (GLfloat)w / (GLfloat)g->blur_w,
+                (GLfloat)h / (GLfloat)g->blur_h);
+    layer_draw_quad(g);
+    /* blur_fbo[1] 的结果再搬到 tex[0]（用同一趟拷贝） */
+    glBindFramebuffer(GL_FRAMEBUFFER, g->blur_fbo[0]);
+    glScissor(0, 0, w, h);
+    glBindTexture(GL_TEXTURE_2D, g->blur_tex[1]);
+    layer_draw_quad(g);
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g->cur_target);
+}
+
+/* 对 tex[0] 里的内容做两趟可分离模糊（结果仍在 tex[0]） */
+/* 一趟 4 通道模糊：tex[src] → fbo[dst] */
+static void layer_blur_pass(QLGfxGL *g, int src, int dst, float step_px, int horizontal,
+                            float uw, float uh)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, g->blur_fbo[dst]);
+    glViewport(0, 0, g->blur_w, g->blur_h);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, (GLsizei)(uw * (float)g->blur_w), (GLsizei)(uh * (float)g->blur_h));
+    glDisable(GL_BLEND);
+    glUseProgram(g->blur_rgba_prog);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g->blur_tex[src]);
+    glUniform1i(g->bu_tex, 0);
+    glUniform2f(g->bu_texel, 1.0f / (GLfloat)g->blur_w, 1.0f / (GLfloat)g->blur_h);
+    glUniform2f(g->bu_step, horizontal ? step_px / (GLfloat)g->blur_w : 0.0f,
+                horizontal ? 0.0f : step_px / (GLfloat)g->blur_h);
+    glUniform2f(g->bu_uvmax, uw, uh);
+    layer_draw_quad(g);
+}
+
+static void layer_blur_tex(QLGfxGL *g, int w, int h, int radius)
+{
+    if (radius <= 0 || !blur_ensure(g, w, h))
+        return;
+    const float uw = (GLfloat)w / (GLfloat)g->blur_w;
+    const float uh = (GLfloat)h / (GLfloat)g->blur_h;
+    const float step_px = (float)((radius + 1) / 2);   /* 与 CPU 侧同一步长 */
+    layer_blur_pass(g, 0, 1, step_px, 1, uw, uh);
+    layer_blur_pass(g, 1, 0, step_px, 0, uw, uh);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+/*
+ * 把渲染目标、viewport、scissor 切回主表面。
+ *
+ * 模糊那几趟会绑定 blur FBO 并把 viewport 改成模糊纹理的尺寸 —— 不切回来的话，
+ * 后面合成的四边形会按错误的投影画出去（表现：图层完全不见）。
+ */
+static void gl_bind_target(QLGfxGL *g)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g->cur_target);
+    glViewport(0, 0, (GLsizei)g->width, (GLsizei)g->height);
+    glEnable(GL_SCISSOR_TEST);
+    if (g->clip_active)
+        glScissor((int)g->clip.x, (int)(g->height - ql_rect_bottom(g->clip)),
+                  (GLsizei)g->clip.w, (GLsizei)g->clip.h);
+    else
+        glScissor(0, 0, (GLsizei)g->width, (GLsizei)g->height);
+}
+
+/* 上传一张 mask 图到第 i 层的纹理（按像素指针做缓存键） */
+static GLuint layer_mask_tex(QLGfxGL *g, int i, const QLImage *m)
+{
+    struct QLGLLayer *L = &g->layer[i];
+    if (m == NULL || m->px == NULL)
+        return g->bg_dummy_tex;
+    if (L->mask_tex != 0 && L->mask_key == m->px)
+        return L->mask_tex;
+
+    /* 统一展开成 RGBA8888（只用到 alpha，但复用一条上传路径最省事） */
+    const int w = (int)m->w, h = (int)m->h;
+    GLuint tex = 0;
+    for (int fmt_try = 0; fmt_try < 2; fmt_try++) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        if (m->format == QL_IMAGE_RGBA8888) {
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                         m->px);
+            break;
+        }
+        if (m->format == QL_IMAGE_A8) {
+            /* A8 → 单通道纹理，采样 .a 恒为 1，所以片元里读 .r 更保险；
+             * 这里统一升成 RGBA，alpha 与亮度都填 A8 的值。 */
+            uint8_t *buf = (uint8_t *)ql_mem_alloc((size_t)w * (size_t)h * 4u);
+            if (buf == NULL) {
+                glDeleteTextures(1, &tex);
+                return g->bg_dummy_tex;
+            }
+            for (int y = 0; y < h; y++) {
+                const uint8_t *row = m->px + (size_t)y * m->stride;
+                for (int x = 0; x < w; x++) {
+                    const uint8_t a = row[x];
+                    uint8_t *o = buf + ((size_t)y * (size_t)w + (size_t)x) * 4u;
+                    o[0] = o[1] = o[2] = a;
+                    o[3] = a;
+                }
+            }
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                         buf);
+            ql_mem_free(buf);
+            break;
+        }
+        /* 其他格式（RGB565/RGB888）：当成"全不遮"，不建纹理 */
+        glDeleteTextures(1, &tex);
+        tex = 0;
+        break;
+    }
+    if (L->mask_tex != 0)
+        glDeleteTextures(1, &L->mask_tex);
+    L->mask_tex = tex;
+    L->mask_key = m->px;
+    return (tex != 0) ? tex : g->bg_dummy_tex;
+}
+
+/*
+ * CSS px 矩形 → 设备像素整数矩形（与 CPU 侧 cpu_layer_dev_rect 同一口径）。
+ *
+ * **必须把绘制期平移算进去**：`gsx()` 只做了 elem scale 与 dpr，平移是顶点
+ * 发射时才加的。图层的 FBO 尺寸 / 位置如果按 `gsx` 算，嵌套图层就会错位
+ * （外层图层已经在自己的坐标系里了，内层还按"整屏"算），表现为内容被压缩。
+ */
+static QLRect gl_layer_dev_rect(QLGfxGL *g, QLRect bounds)
+{
+    const QLRect e = elem_rect_gl(g, bounds);
+    const ql_coord_t scale = (g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE;
+    const int64_t ax = (int64_t)e.x * QL_FX_ONE + g->draw.offset_x_fx;
+    const int64_t ay = (int64_t)e.y * QL_FX_ONE + g->draw.offset_y_fx;
+    const int64_t bx = (int64_t)(e.x + e.w) * QL_FX_ONE + g->draw.offset_x_fx;
+    const int64_t by = (int64_t)(e.y + e.h) * QL_FX_ONE + g->draw.offset_y_fx;
+    /* 设备 26.6 → 整数像素，向外取整（宁大勿小） */
+    const ql_coord_t x0 = (ql_coord_t)(((ax * scale) >> QL_FX_SHIFT) >> QL_FX_SHIFT);
+    const ql_coord_t y0 = (ql_coord_t)(((ay * scale) >> QL_FX_SHIFT) >> QL_FX_SHIFT);
+    const ql_coord_t x1 =
+        (ql_coord_t)(((((bx * scale) >> QL_FX_SHIFT) + QL_FX_ONE - 1) >> QL_FX_SHIFT));
+    const ql_coord_t y1 =
+        (ql_coord_t)(((((by * scale) >> QL_FX_SHIFT) + QL_FX_ONE - 1) >> QL_FX_SHIFT));
+    if (x1 <= x0 || y1 <= y0)
+        return ql_rect_make(0, 0, 0, 0);
+    return ql_rect_make(x0, y0, x1 - x0, y1 - y0);
+}
+
+static int gl_layer_begin(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx *fx)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    if (g == NULL || fx == NULL || g->layer_prog == 0)
+        return 0;
+    if (g->layer_depth >= QL_CFG_UI_LAYER_MAX_DEPTH)
+        return 0;
+
+    const QLRect dev = gl_layer_dev_rect(g, bounds);
+    if (ql_rect_is_empty(dev))
+        return 0;
+    const int i = g->layer_depth;
+    if (!layer_ensure(g, i, (int)dev.w, (int)dev.h))
+        return 0;
+
+    struct QLGLLayer *L = &g->layer[i];
+    flush_batch(g);           /* 之前攒的几何先落到原目标上 */
+
+    {
+        GLint cur = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &cur);
+        L->saved_fbo = cur;
+        g->cur_target = (GLint)L->fbo;
+    }
+    L->dev = dev;
+    L->fx = *fx;
+    L->saved_w = g->width;
+    L->saved_h = g->height;
+    L->saved_clip = g->clip;
+    L->saved_clip_active = g->clip_active;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, L->fbo);
+    glViewport(0, 0, (GLsizei)dev.w, (GLsizei)dev.h);
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, (GLsizei)dev.w, (GLsizei)dev.h);
+
+    /* 之后的顶点按"图层左上角为原点"生成 */
+    g->width = dev.w;
+    g->height = dev.h;
+    g->clip = ql_rect_make(0, 0, dev.w, dev.h);
+    g->clip_active = 0;
+    self->offset_x_fx -= (ql_coord_t)(((int64_t)dev.x * QL_FX_ONE * QL_FX_ONE) /
+                                     ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
+    self->offset_y_fx -= (ql_coord_t)(((int64_t)dev.y * QL_FX_ONE * QL_FX_ONE) /
+                                     ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
+    g->layer_depth++;
+    return 1;
+}
+
+/* 把第 i 层合成回原目标。`pass` 见 LAYER_FS */
+static void gl_layer_draw(QLGfxGL *g, int i, int pass, GLuint tex, GLuint blur_tex,
+                          GLuint backdrop_tex, GLuint mask_tex, int blend_on,
+                          GLuint blur_tex_w, GLuint blur_tex_h)
+{
+    struct QLGLLayer *L = &g->layer[i];
+    const QLDraw2DLayerFx *fx = &L->fx;
+    const int to_layer = (i > 0);   /* 目标是不是外层图层的 FBO */
+
+    glUseProgram(g->layer_prog);
+    glUniform1i(g->lu_flipy, to_layer ? 0 : 1);
+    glUniform2f(g->lu_viewport, (GLfloat)g->width, (GLfloat)g->height);
+    glUniform2f(g->lu_texel,
+                1.0f / (GLfloat)((L->dev.w > 0) ? L->dev.w : 1),
+                1.0f / (GLfloat)((L->dev.h > 0) ? L->dev.h : 1));
+    glUniform1f(g->lu_opacity, (GLfloat)fx->opacity / 255.0f);
+    glUniform1i(g->lu_mode, blend_on ? (int)fx->blend : 0);
+    glUniform1i(g->lu_pass, pass);
+    {
+        /*
+         * 圆角裁剪与遮罩拉伸都以**元素的边框盒**为准，不是外扩后的图层矩形：
+         * 图层矩形含滤镜外扩（blur 半径那么一圈），拿它做圆角的话
+         * 模糊光晕会跑到圆角外头去（CPU 侧用的是 fx->box，这里是同一口径）。
+         */
+        QLRect b = gl_layer_dev_rect(g, fx->box);
+        glUniform4f(g->lu_box, (GLfloat)b.x, (GLfloat)b.y, (GLfloat)b.w, (GLfloat)b.h);
+    }
+    glUniform1f(g->lu_radius, (GLfloat)fx->corner);
+    glUniform1i(g->lu_nops, (int)fx->nops);
+    for (int k = 0; k < 6; k++) {
+        GLfloat kind = 0.0f, arg = 0.0f;
+        if (k < (int)fx->nops) {
+            kind = (GLfloat)QL_UI_FILTER_KIND(fx->op[k]);
+            arg = (GLfloat)QL_UI_FILTER_ARG(fx->op[k]) / 1000.0f;
+            if (QL_UI_FILTER_KIND(fx->op[k]) == QL_UI_FILTER_HUE_ROTATE)
+                arg = (GLfloat)QL_UI_FILTER_ARG(fx->op[k]);   /* 角度 */
+        }
+        glUniform2f(g->lu_op + k, kind, arg);
+    }
+    glUniform4f(g->lu_ds, (GLfloat)fx->ds_dx, (GLfloat)fx->ds_dy, (GLfloat)fx->ds_blur,
+                (GLfloat)((fx->ds_a != 0) ? fx->ds_a : 255) / 255.0f);
+    glUniform3f(g->lu_ds_color, (GLfloat)QL_COLOR_GET_R(fx->ds_color) / 255.0f,
+                (GLfloat)QL_COLOR_GET_G(fx->ds_color) / 255.0f,
+                (GLfloat)QL_COLOR_GET_B(fx->ds_color) / 255.0f);
+
+    glUniform2f(g->lu_uv_tex, (GLfloat)L->dev.w / (GLfloat)((L->w > 0) ? L->w : 1),
+                (GLfloat)L->dev.h / (GLfloat)((L->h > 0) ? L->h : 1));
+    if (blur_tex != 0 && blur_tex_w > 0 && blur_tex_h > 0)
+        glUniform2f(g->lu_uv_blur, (GLfloat)L->dev.w / (GLfloat)blur_tex_w,
+                    (GLfloat)L->dev.h / (GLfloat)blur_tex_h);
+    else
+        glUniform2f(g->lu_uv_blur, (GLfloat)L->dev.w / (GLfloat)((L->w > 0) ? L->w : 1),
+                    (GLfloat)L->dev.h / (GLfloat)((L->h > 0) ? L->h : 1));
+
+    int flags = 0;
+    if (blur_tex != 0) flags |= 1;
+    if (backdrop_tex != 0) flags |= 2;
+    if (mask_tex != 0) flags |= 4;
+    glUniform1i(g->lu_flags, flags);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glUniform1i(g->lu_tex, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, (blur_tex != 0) ? blur_tex : g->bg_dummy_tex);
+    glUniform1i(g->lu_blur, 1);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, (backdrop_tex != 0) ? backdrop_tex : g->bg_dummy_tex);
+    glUniform1i(g->lu_backdrop, 2);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, (mask_tex != 0) ? mask_tex : g->bg_dummy_tex);
+    glUniform1i(g->lu_mask, 3);
+
+    if (blend_on) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    }
+
+    /* 四边形覆盖图层矩形：用 uv 0..1 与目标设备坐标都算得出来 */
+    {
+        /*
+         * 顶点是**归一化表面坐标**（BLUR_VS 里再 *2-1 转成 NDC），不是设备像素。
+         * y 要翻转：CSS 的 y 向下，GL 的 NDC y 向上；而图层纹理的第 0 行
+         * 正是 CSS 的顶边（渲染进 FBO 时 y=0 落在纹理底部），所以 uv.y=0
+         * 对应 CSS 顶边 —— 两边一致，不需要额外的 uv 翻转。
+         */
+        const float vw = (float)((g->width > 0) ? g->width : 1);
+        const float vh = (float)((g->height > 0) ? g->height : 1);
+        const float u0 = (float)L->dev.x / vw;
+        const float u1 = (float)(L->dev.x + L->dev.w) / vw;
+        /*
+         * 主顶点着色器（FS 那套）在 VS 里做了 `ndc.y = -ndc.y`，而 BLUR_VS 没有；
+         * 所以"画到最终目标"和"画到图层 FBO"两种情形 y 方向的处理不一样：
+         * 图层 FBO 里的内容行号 = 设备 y，直接按设备 y 归一化即可；
+         * 画到最终目标时要显式翻一下。
+         */
+        const float ty0 = to_layer ? (float)L->dev.y / vh
+                                   : 1.0f - (float)L->dev.y / vh;
+        const float ty1 = to_layer ? (float)(L->dev.y + L->dev.h) / vh
+                                   : 1.0f - (float)(L->dev.y + L->dev.h) / vh;
+        const float t0 = ty0;
+        const float t1 = ty1;
+        const float quad[16] = {
+            u0, t0, 0.0f, 0.0f,
+            u1, t0, 1.0f, 0.0f,
+            u0, t1, 0.0f, 1.0f,
+            u1, t1, 1.0f, 1.0f,
+        };
+        (void)0;
+        glBindBuffer(GL_ARRAY_BUFFER, g->layer_vbo);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_STREAM_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                              (void *)(2 * sizeof(float)));
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
+        (void)vw;
+        (void)vh;
+    }
+    glActiveTexture(GL_TEXTURE0);
+}
+
+static int gl_layer_end(QLDraw2D *self)
+{
+    QLGfxGL *g = (QLGfxGL *)self->user;
+    if (g == NULL || g->layer_depth <= 0)
+        return 0;
+    const int i = g->layer_depth - 1;
+    struct QLGLLayer *L = &g->layer[i];
+    const QLDraw2DLayerFx fx = L->fx;
+
+    flush_batch(g);           /* 图层内容全部写进 FBO */
+
+    /* 恢复目标表面与坐标（嵌套时这里要回到外层图层的 FBO，不是主表面） */
+    g->cur_target = L->saved_fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)L->saved_fbo);
+    g->width = L->saved_w;
+    g->height = L->saved_h;
+    g->clip = L->saved_clip;
+    g->clip_active = L->saved_clip_active;
+    glViewport(0, 0, (GLsizei)g->width, (GLsizei)g->height);
+    self->offset_x_fx += (ql_coord_t)(((int64_t)L->dev.x * QL_FX_ONE * QL_FX_ONE) /
+                                      ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
+    self->offset_y_fx += (ql_coord_t)(((int64_t)L->dev.y * QL_FX_ONE * QL_FX_ONE) /
+                                      ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
+    glEnable(GL_SCISSOR_TEST);
+    if (g->clip_active)
+        glScissor((int)g->clip.x, (int)(g->height - ql_rect_bottom(g->clip)),
+                  (GLsizei)g->clip.w, (GLsizei)g->clip.h);
+    else
+        glScissor(0, 0, (GLsizei)g->width, (GLsizei)g->height);
+
+    /* 背景（混合模式要读它）：把目标表面当前内容抓一份 */
+    GLuint backdrop = 0;
+    if (fx.blend != QL_UI_BLEND_NORMAL && layer_bd_ensure(g, (int)L->dev.w, (int)L->dev.h)) {
+        const QLRect d = L->dev;
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)g->cur_target);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g->layer_bd_fbo);
+        /* GL 的 y 轴朝上：把目标表面的 y 翻过来 */
+        glBlitFramebuffer((int)d.x, (int)(g->height - (d.y + d.h)),
+                          (int)(d.x + d.w), (int)(g->height - d.y), 0, 0, (int)d.w,
+                          (int)d.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g->cur_target);
+        backdrop = g->layer_bd_tex;
+    }
+
+    GLuint mask_tex = 0;
+    if (fx.mask != NULL)
+        mask_tex = layer_mask_tex(g, i, fx.mask);
+
+    /* drop-shadow 先画（在图层下面）：它自己要用一趟模糊 */
+    if (fx.has_drop) {
+        if (fx.ds_blur > 0) {
+            layer_copy_into_blur(g, L->tex, (int)L->dev.w, (int)L->dev.h);
+            layer_blur_tex(g, (int)L->dev.w, (int)L->dev.h, (int)fx.ds_blur);
+            gl_bind_target(g);
+            gl_layer_draw(g, i, 0, L->tex, g->blur_tex[0], 0, mask_tex, 0,
+                          (GLuint)g->blur_w, (GLuint)g->blur_h);
+        } else {
+            gl_bind_target(g);
+            gl_layer_draw(g, i, 0, L->tex, L->tex, 0, mask_tex, 0, 0, 0);
+        }
+    }
+    /* 图层本体：有 blur 就把模糊结果当源 */
+    GLuint src_blur = 0;
+    if (fx.blur > 0) {
+        layer_copy_into_blur(g, L->tex, (int)L->dev.w, (int)L->dev.h);
+        layer_blur_tex(g, (int)L->dev.w, (int)L->dev.h, (int)fx.blur);
+        src_blur = g->blur_tex[0];
+    }
+    gl_bind_target(g);
+    gl_layer_draw(g, i, 1, L->tex, src_blur, backdrop, mask_tex,
+                  fx.blend != QL_UI_BLEND_NORMAL,
+                  (src_blur != 0) ? (GLuint)g->blur_w : 0,
+                  (src_blur != 0) ? (GLuint)g->blur_h : 0);
+    glDisable(GL_BLEND);
+
+    L->fx.has_drop = 0;
+    g->layer_depth = i;
+    return 0;
+}
+#endif /* QL_FEAT_CSS_FILTER_LAYER */
+
 /* ------------------------------ 生命周期 ------------------------------ */
 
 static void now_us(struct timespec *t)
@@ -2076,6 +2872,41 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         g->blur_u_uvmax = glGetUniformLocation(g->blur_prog, "u_uvmax");
     }
 
+#if QL_FEAT_CSS_FILTER_LAYER
+    /* 离屏图层（M9.3）：一个合成程序 + 一条四边形 VBO */
+    g->layer_prog = build_layer_program();
+    g->blur_rgba_prog = build_blur_rgba_program();
+    if (g->blur_rgba_prog != 0) {
+        g->bu_tex = glGetUniformLocation(g->blur_rgba_prog, "u_tex");
+        g->bu_texel = glGetUniformLocation(g->blur_rgba_prog, "u_texel");
+        g->bu_step = glGetUniformLocation(g->blur_rgba_prog, "u_step");
+        g->bu_uvmax = glGetUniformLocation(g->blur_rgba_prog, "u_uvmax");
+    }
+    glGenBuffers(1, &g->layer_vbo);
+    if (g->layer_prog != 0) {
+        g->lu_tex = glGetUniformLocation(g->layer_prog, "u_tex");
+        g->lu_blur = glGetUniformLocation(g->layer_prog, "u_blur");
+        g->lu_backdrop = glGetUniformLocation(g->layer_prog, "u_backdrop");
+        g->lu_mask = glGetUniformLocation(g->layer_prog, "u_mask");
+        g->lu_viewport = glGetUniformLocation(g->layer_prog, "u_viewport");
+        g->lu_texel = glGetUniformLocation(g->layer_prog, "u_texel");
+        g->lu_uv_tex = glGetUniformLocation(g->layer_prog, "u_uv_tex");
+        g->lu_uv_blur = glGetUniformLocation(g->layer_prog, "u_uv_blur");
+        g->lu_opacity = glGetUniformLocation(g->layer_prog, "u_opacity");
+        g->lu_mode = glGetUniformLocation(g->layer_prog, "u_mode");
+        g->lu_flags = glGetUniformLocation(g->layer_prog, "u_flags");
+        g->lu_nops = glGetUniformLocation(g->layer_prog, "u_nops");
+        g->lu_op = glGetUniformLocation(g->layer_prog, "u_op[0]");
+        g->lu_ds = glGetUniformLocation(g->layer_prog, "u_ds");
+        g->lu_ds_color = glGetUniformLocation(g->layer_prog, "u_ds_color");
+        g->lu_pass = glGetUniformLocation(g->layer_prog, "u_pass");
+        g->lu_flipy = glGetUniformLocation(g->layer_prog, "u_flipy");
+        g->lu_box = glGetUniformLocation(g->layer_prog, "u_box");
+        g->lu_radius = glGetUniformLocation(g->layer_prog, "u_radius");
+    }
+#endif
+
+    g->cur_target = 0;
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -2087,6 +2918,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.set_mask = gl_set_mask;
     g->draw.backdrop_blur = gl_backdrop_blur;
     g->draw.backdrop_blur_round = gl_backdrop_blur_round;
+#if QL_FEAT_CSS_FILTER_LAYER
+    g->draw.layer_begin = gl_layer_begin;
+    g->draw.layer_end = gl_layer_end;
+#endif
     g->draw.fill_rect = gl_fill_rect;
     g->draw.fill_round_rect = gl_fill_round_rect;
     g->draw.fill_round_rect_gradient = gl_fill_round_rect_gradient;
@@ -2751,6 +3586,26 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
             glDeleteTextures(1, &g->bg_dummy_tex);
         if (g->blur_prog)
             glDeleteProgram(g->blur_prog);
+#if QL_FEAT_CSS_FILTER_LAYER
+        if (g->layer_vbo)
+            glDeleteBuffers(1, &g->layer_vbo);
+        for (int i = 0; i < QL_CFG_UI_LAYER_MAX_DEPTH; i++) {
+            if (g->layer[i].fbo)
+                glDeleteFramebuffers(1, &g->layer[i].fbo);
+            if (g->layer[i].tex)
+                glDeleteTextures(1, &g->layer[i].tex);
+            if (g->layer[i].mask_tex)
+                glDeleteTextures(1, &g->layer[i].mask_tex);
+        }
+        if (g->layer_bd_fbo)
+            glDeleteFramebuffers(1, &g->layer_bd_fbo);
+        if (g->layer_bd_tex)
+            glDeleteTextures(1, &g->layer_bd_tex);
+        if (g->layer_prog)
+            glDeleteProgram(g->layer_prog);
+        if (g->blur_rgba_prog)
+            glDeleteProgram(g->blur_rgba_prog);
+#endif
         if (g->program)
             glDeleteProgram(g->program);
         if (g->ctx != EGL_NO_CONTEXT)

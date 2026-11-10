@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>CSS 效果检阅：十五个例程 · QLGL</title>
+<title>CSS 效果检阅：十六个例程 · QLGL</title>
 <style>
 :root {
   --bg: #ffffff;
@@ -179,10 +179,11 @@ main img.shot { max-width: 100%; }
 <a href='../tutorial/13_form.html'>多行输入与表单</a>
 <a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
 <a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：十五个例程</a>
+<a href='../tutorial/16_css_gallery.html' class='active'>CSS 效果检阅：十六个例程</a>
 <a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
 <a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
 <a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -217,9 +218,9 @@ main img.shot { max-width: 100%; }
 <a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
 </aside>
 <main>
-<h1 id="css">CSS 效果检阅：十五个例程</h1>
+<h1 id="css">CSS 效果检阅：十六个例程</h1>
 <p><img src="../img/16-css-units.png" alt="单位与尺寸：em / rem / vw / vh / vmin / vmax / aspect-ratio / margin:auto" width="480"></p>
-<p>完整程序：<code>example/16_css_units/</code> … <code>example/30_border_image/</code>（每个例程一个文件夹）</p>
+<p>完整程序：<code>example/16_css_units/</code> … <code>example/31_filter/</code>（每个例程一个文件夹）</p>
 <p>前几章是按"补了什么"讲的（<a href="14_css3.html">CSS3 补全</a>、<a href="15_backdrop.html">毛玻璃</a>）。
 这一章反过来：<strong>按"能看出效果的最小样本"讲</strong> —— 每一个已支持的 CSS 效果都摆成
 一格，旁边写着它该是什么值。跑起来一眼就能看出哪一格不对。</p>
@@ -724,7 +725,57 @@ main img.shot { max-width: 100%; }
 </code></pre></div>
 
 <p>四角不变形、四边沿一个方向铺开 —— 这是"像素风 / 描边卡片"最常见的做法。</p>
-<h2 id="16">16. 这几个例程查出了什么</h2>
+<h2 id="16-31_filter">16. <code>31_filter</code>：离屏图层</h2>
+<p><img src="../img/31-filter.png" alt="模糊、投影、颜色矩阵、组透明度、混合模式、遮罩" width="620"></p>
+<table>
+<thead>
+<tr>
+<th>格</th>
+<th>验证什么</th>
+<th>该看到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>左卡片 / 右卡片</td>
+<td><code>filter: blur(3px)</code> 作用在<strong>合成后的子树</strong>上</td>
+<td>右卡片的两块色块连重叠处一起糊，边缘没有接缝</td>
+</tr>
+<tr>
+<td><code>box-shadow</code> / <code>drop-shadow</code></td>
+<td>前者认边框盒，后者认 alpha 形状</td>
+<td>圆角胶囊的影子跟着圆角走</td>
+</tr>
+<tr>
+<td>月牙 ×2</td>
+<td><code>drop-shadow</code> 跟着透明洞走</td>
+<td>影子是月牙，不是圆饼</td>
+</tr>
+<tr>
+<td><code>原色 / gray / sepia / invert / 亮度 / 饱和 / 色相</code></td>
+<td>颜色矩阵族</td>
+<td><code>gray</code> 三项相等、<code>invert</code> 是反相色</td>
+</tr>
+<tr>
+<td>两个重叠方块 ×2</td>
+<td>组 <code>opacity</code></td>
+<td>右边重叠处<strong>不比别处深</strong></td>
+</tr>
+<tr>
+<td>六个 <code>mix-blend-mode</code></td>
+<td>混合读的是背景</td>
+<td><code>multiply</code> 变暗、<code>screen</code> 变亮、<code>difference</code> 出反色</td>
+</tr>
+<tr>
+<td><code>mask: url()</code></td>
+<td>图片 alpha 当遮罩</td>
+<td>左边渐隐、右边实心</td>
+</tr>
+</tbody>
+</table>
+<p>细节见 <a href="20_filter.html">离屏图层</a>。</p>
+<hr />
+<h2 id="17">17. 这几个例程查出了什么</h2>
 <p>写完这三个例程当场暴露了一个真 bug：</p>
 <ul>
 <li><code>::before</code> 配宿主文本时，两边都从内容盒原点开始排 —— 圆点被正文盖掉，

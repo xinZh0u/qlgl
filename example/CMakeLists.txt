@@ -54,6 +54,7 @@ set(QL_EXAMPLES
     28_bg_image
     29_grid
     30_border_image
+    31_filter
 )
 
 foreach(e ${QL_EXAMPLES})

@@ -870,9 +870,38 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 
 `opacity: 0` 时整棵子树直接跳过（连遍历都不做）。
 
-**与 CSS 的差别**：真 CSS 是**组不透明度** —— 子树先合成一张离屏图层再整体降透明。
-这里是逐图元降透明，所以只有"子树内部互相覆盖"的地方会略透（重叠区被乘了两次）。
-不重叠的界面两者逐像素一致。严格版本需要离屏图层（见《CSS3 覆盖与裁剪》§20.1）。
+**有子节点时是真正的组不透明度**（M9.3 起）：整棵子树先合成到一张离屏图层，
+再整体降透明，所以"子树内部互相覆盖"的地方**不会**更深。
+**单节点**（没有子节点）仍走"逐个绘制入口乘 alpha"的老路径 —— 一个节点内部
+没有互相覆盖这回事，两者逐像素等价，而省掉一层缓冲。
+
+| 情形 | 走哪条 | 内存 |
+|---|---|---|
+| 无子节点 | 逐图元乘 alpha（`QLDraw2D.alpha`） | 0 |
+| 有子节点 | 离屏图层（CPU 两遍哑光 / GPU FBO） | 元素尺寸 × 4 字节 |
+| `QL_FEAT_CSS_FILTER_LAYER=0` | 恒走逐图元（旧语义） | 0 |
+
+### 3.11.3 `filter` / `mix-blend-mode` / `mask`（离屏图层）
+
+```css
+.a { filter: blur(4px) brightness(120%); }
+.b { filter: drop-shadow(2px 3px 4px rgba(0,0,0,.4)); }
+.c { mix-blend-mode: multiply; }
+.d { mask: url(alpha8); }
+```
+
+这三条和"组 `opacity`"共用同一块基建：**先把子树合成到一张临时图，再整体处理**。
+支持范围与公式见《CSS3 覆盖与裁剪》§18.10，教程见 [离屏图层](../tutorial/20_filter.md)。
+
+| 属性 | 取值 |
+|---|---|
+| `filter` | `blur(<0~64>px)`、`brightness/contrast/saturate(<倍数>\|<百分比>)`、`grayscale/sepia/invert(<百分比>)`、`hue-rotate(<deg>)`、`opacity(<0~1>)`、`drop-shadow(<dx> <dy> [<blur>] [<color>])`；链长 ≤ 6，按书写顺序应用 |
+| `mix-blend-mode` | `normal` / `multiply` / `screen` / `overlay` / `darken` / `lighten` / `difference` |
+| `mask` / `mask-image` | `url(<资源名>)` / `none`；只用图片 alpha，拉伸到边框盒 |
+
+**离屏图层是一块"按元素尺寸"的 RAM**，所以它单独一个编译开关：
+`QL_FEAT_CSS_FILTER_LAYER`（MCU 默认关）。关掉时上面三个属性在**构建期报错**，
+`opacity` 退回逐图元语义。
 
 **构建期报错**：不是 0~1 的数字（`opacity: abc`）、越界（`opacity: 1.5`）。
 
@@ -884,7 +913,9 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 float / align-content: baseline
 椭圆 border-radius（`10px / 20px`）
 rotate() / skew() / matrix() / 3D transform（只支持 translate 与轴对齐 scale）
-filter（blur 等）                       backdrop-filter 的 blur() 以外的函数
+filter: url(#svg) / spread              backdrop-filter 的 blur() 以外的函数
+mask-position / -repeat / -composite    mix-blend-mode: hue / color / exclusion
+background-blend-mode
 list-style / @supports / @font-face      overscroll-behavior / scroll-snap-*
 text-align: justify                     transition-delay
 backface-visibility（假翻转没有背面）
