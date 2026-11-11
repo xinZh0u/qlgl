@@ -2920,7 +2920,9 @@ static int gl_layer_end(QLDraw2D *self)
      * 离屏对拍的用例里没有文字，一直是绿的。
      */
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    /* 与 begin 同一套（目标 alpha 锁 1，见那边的说明） */
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE,
+                        GL_ONE_MINUS_SRC_ALPHA);
 
     L->fx.has_drop = 0;
     g->layer_depth = i;
@@ -3433,7 +3435,25 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->cur_target = 0;
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    /*
+     * **必须用 `glBlendFuncSeparate` 把目标 alpha 锁在 1。**
+     *
+     * 普通 `glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)` 对 alpha 通道也是同一套
+     * 公式：`a_out = a_src² + a_dst(1-a_src)`。清屏 alpha 是 1，画一条 75% 覆盖率的
+     * 字形之后目标 alpha 变成 `0.5625 + 0.25 = 0.8125` —— **不是 1**。
+     *
+     * 窗口缓冲是交给合成器的：Wayland 的 `wl_buffer` 按**预乘 alpha** 解释，
+     * mutter 会拿这个 0.8125 去和桌面背景混合。结果就是文字边缘发白发灰、
+     * 笔画看着"糊"（实测 form 例程 520 个字形边缘像素 alpha 在 192~207）。
+     * X11 那条路看不见这个 bug，因为 X11 窗口是 24 位无 alpha 的，
+     * 合成器直接忽略那一位 —— 所以"同一份代码，Wayland 看着更糊"。
+     *
+     * alpha 用 `ONE, ONE_MINUS_SRC_ALPHA`：`a_out = a_src + a_dst(1-a_src)`，
+     * 只要底色 alpha 是 1（`glClearColor(..., 1.0f)` 保证）就恒为 1。
+     * RGB 的结果与原来**逐位相同**，所以画面颜色一个像素都不会变。
+     */
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE,
+                        GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_SCISSOR_TEST);
 
     g->clip = ql_rect_make(0, 0, width, height);

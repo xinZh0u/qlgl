@@ -427,7 +427,37 @@ QLGL_GL_BACKEND=wayland ./build/example/example_02_text --frames 30 --stats
 并置 `ql_gfx_gl_resize_pending()`，调用方据此重建画布 + 重排。
 `ql_gfx_gl_wait()` 直接 `poll()` 协议 fd，不用 `usleep` 空转。
 
-### 10.7.2.1 窗口变糊 = 缓冲区尺寸和窗口尺寸不一致
+### 10.7.2.0 窗口变糊之二：目标 alpha 不是 255（预乘 alpha 混合）
+
+Wayland 的 `wl_buffer` 按**预乘 alpha** 解释，合成器会拿 alpha 去和桌面背景混合。
+而普通 `glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` 对 **alpha 通道也走同一套
+公式**：
+
+```
+a_out = a_src² + a_dst(1 - a_src)
+```
+
+清屏 alpha = 1，画一条 75% 覆盖率的字形之后目标 alpha 变成 `0.5625 + 0.25 = 0.8125`
+—— 不是 1。于是文字边缘发白发灰、笔画看着糊（实测 form 例程有 520 个字形边缘
+像素 alpha 落在 192~207）。**X11 窗口是 24 位无 alpha，合成器直接忽略那一位，
+所以这个 bug 只在 Wayland 上看得见** —— 这就是"同一份代码，Wayland 比 X11 糊"。
+
+```c
+glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                    GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);   /* alpha: 锁 1 */
+```
+
+alpha 用 `ONE, ONE_MINUS_SRC_ALPHA`：`a_out = a_src + a_dst(1-a_src)`，只要清屏 alpha
+是 1（`glClearColor(..., 1.0f)` 保证）就恒为 1。**RGB 结果逐位不变**，画面颜色不受影响。
+
+守住它的是 `test_gl_vs_cpu`：离屏对拍时顺带断言"每个像素 alpha 都是 255"
+（不需要合成器，CI 也能跑）。把 blend 改回去会立刻报
+"非不透明像素 20074 个（最小 alpha 121）"。
+
+验证方法（真窗口）：`QL_EX_WINDOW_DUMP` 抓自己的帧缓冲，与 portal 截屏里同一块区域
+逐像素比 —— 修好之后是 **mean|diff| = 0.000、max 0**（bit-exact）。修之前字形边缘对不上。
+
+### 10.7.2.1 窗口变糊之一：缓冲区尺寸和窗口尺寸不一致
 
 Wayland 上"窗口多大"是合成器说的（`xdg_toplevel.configure` 里的 w/h），
 客户端**必须**按它重建缓冲区。只改窗口大小、不换缓冲区的话，合成器会把旧尺寸的

@@ -812,7 +812,29 @@ QLGfxGL.scale_fx     ───────────────────�
 自己只处理 <code>wl.resize_pending</code> —— 缩放变了就重算设备像素尺寸、<code>wl_egl_window_resize()</code>
 并置 <code>ql_gfx_gl_resize_pending()</code>，调用方据此重建画布 + 重排。
 <code>ql_gfx_gl_wait()</code> 直接 <code>poll()</code> 协议 fd，不用 <code>usleep</code> 空转。</p>
-<h3 id="10721">10.7.2.1 窗口变糊 = 缓冲区尺寸和窗口尺寸不一致</h3>
+<h3 id="10720-alpha-255-alpha">10.7.2.0 窗口变糊之二：目标 alpha 不是 255（预乘 alpha 混合）</h3>
+<p>Wayland 的 <code>wl_buffer</code> 按<strong>预乘 alpha</strong> 解释，合成器会拿 alpha 去和桌面背景混合。
+而普通 <code>glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)</code> 对 <strong>alpha 通道也走同一套
+公式</strong>：</p>
+<div class="highlight"><pre><span></span><code>a_out = a_src² + a_dst(1 - a_src)
+</code></pre></div>
+
+<p>清屏 alpha = 1，画一条 75% 覆盖率的字形之后目标 alpha 变成 <code>0.5625 + 0.25 = 0.8125</code>
+—— 不是 1。于是文字边缘发白发灰、笔画看着糊（实测 form 例程有 520 个字形边缘
+像素 alpha 落在 192~207）。<strong>X11 窗口是 24 位无 alpha，合成器直接忽略那一位，
+所以这个 bug 只在 Wayland 上看得见</strong> —— 这就是"同一份代码，Wayland 比 X11 糊"。</p>
+<div class="highlight"><pre><span></span><code><span class="n">glBlendFuncSeparate</span><span class="p">(</span><span class="n">GL_SRC_ALPHA</span><span class="p">,</span><span class="w"> </span><span class="n">GL_ONE_MINUS_SRC_ALPHA</span><span class="p">,</span>
+<span class="w">                    </span><span class="n">GL_ONE</span><span class="p">,</span><span class="w">       </span><span class="n">GL_ONE_MINUS_SRC_ALPHA</span><span class="p">);</span><span class="w">   </span><span class="cm">/* alpha: 锁 1 */</span>
+</code></pre></div>
+
+<p>alpha 用 <code>ONE, ONE_MINUS_SRC_ALPHA</code>：<code>a_out = a_src + a_dst(1-a_src)</code>，只要清屏 alpha
+是 1（<code>glClearColor(..., 1.0f)</code> 保证）就恒为 1。<strong>RGB 结果逐位不变</strong>，画面颜色不受影响。</p>
+<p>守住它的是 <code>test_gl_vs_cpu</code>：离屏对拍时顺带断言"每个像素 alpha 都是 255"
+（不需要合成器，CI 也能跑）。把 blend 改回去会立刻报
+"非不透明像素 20074 个（最小 alpha 121）"。</p>
+<p>验证方法（真窗口）：<code>QL_EX_WINDOW_DUMP</code> 抓自己的帧缓冲，与 portal 截屏里同一块区域
+逐像素比 —— 修好之后是 <strong>mean|diff| = 0.000、max 0</strong>（bit-exact）。修之前字形边缘对不上。</p>
+<h3 id="10721">10.7.2.1 窗口变糊之一：缓冲区尺寸和窗口尺寸不一致</h3>
 <p>Wayland 上"窗口多大"是合成器说的（<code>xdg_toplevel.configure</code> 里的 w/h），
 客户端<strong>必须</strong>按它重建缓冲区。只改窗口大小、不换缓冲区的话，合成器会把旧尺寸的
 那张图<strong>拉伸</strong>到新窗口上：字变糊、布局也不重排 —— 这正是"Wayland 窗口清晰度比

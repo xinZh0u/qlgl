@@ -72,6 +72,31 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
     QL_CHECK(rgba != NULL);
     QL_CHECK_EQ(ql_gfx_gl_read_pixels(gfx, rgba, W * 4), QL_OK);
 
+    /*
+     * 目标 alpha 必须恒为 255（不透明）。
+     *
+     * 窗口缓冲最终是交给合成器的，而 Wayland 的 `wl_buffer` 按**预乘 alpha**
+     * 解释：只要字形抗锯齿把 alpha 打成 0.8 之类，mutter 就会拿它去和桌面背景
+     * 混合 —— 文字边缘发白发灰、笔画看着糊（"同一份代码 Wayland 比 X11 糊"）。
+     * X11 窗口是 24 位无 alpha，看不出这个 bug，所以**必须在离屏对拍里守住**，
+     * 否则回归了也没人发现。成因是 `glBlendFunc` 对 alpha 通道也走了同一套公式，
+     * 修法是 `glBlendFuncSeparate(..., GL_ONE, GL_ONE_MINUS_SRC_ALPHA)`。
+     */
+    {
+        long not_opaque = 0;
+        int worst = 255;
+        for (int i = 0; i < W * H; i++) {
+            const int a = rgba[(size_t)i * 4u + 3u];
+            if (a != 255) {
+                not_opaque++;
+                if (a < worst) worst = a;
+            }
+        }
+        if (not_opaque != 0)
+            printf("  非不透明像素 %ld 个（最小 alpha %d）\n", not_opaque, worst);
+        QL_CHECK_EQ(not_opaque, 0);
+    }
+
     /* ---- 逐像素比较 ---- */
     long total = 0, bad = 0;
     long max_diff = 0;
