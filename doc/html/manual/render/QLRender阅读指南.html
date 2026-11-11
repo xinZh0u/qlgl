@@ -742,10 +742,19 @@ QLGfxGL.scale_fx     ───────────────────�
 <li>粘贴：<code>wl_data_offer_receive()</code> + 匿名管道<strong>非阻塞</strong>读，读不到 EOF 就下一帧再问
   （与 X11 那套"异步等 SelectionNotify"同一个接口形状）。</li>
 </ul>
-<p>两个踩过的坑：<code>wl_data_offer_add_listener</code> 只能加一次（<code>data_offer</code> 与
-<code>selection</code> 两条事件都会带同一个 offer，重复加会报 <code>proxy already has listener</code>）；
-<code>xdg-shell</code> 第一帧必须先 <code>wl_display_roundtrip()</code> 拿到 <code>configure</code>，
-否则前几帧 <code>flush</code> 会因为 <code>!configured</code> 被静默丢掉。</p>
+<p>三个踩过的坑：</p>
+<ol>
+<li><strong>监听器槽位一个都不能漏</strong>。libwayland 收到事件而对应槽位是 <code>NULL</code> 时
+   <strong>直接 <code>abort()</code></strong>（打印 <code>listener function for opcode N of wl_pointer is NULL</code>）。
+   我们绑 <code>wl_seat</code> v5，指针就会多出 <code>frame</code> / <code>axis_source</code> / <code>axis_stop</code> /
+   <code>axis_discrete</code> 四个事件 —— 少一个，<strong>鼠标一进窗口进程就崩</strong>（现象是
+   "窗口一闪就没了 / 根本没显示"）。规则：<strong>升级 <code>bind</code> 的版本时，同步补槽位</strong>；
+   <code>test_wayland</code> 第 0 节把每个槽位都断言了一遍（不需要合成器就能跑）。</li>
+<li><code>wl_data_offer_add_listener</code> 只能加一次（<code>data_offer</code> 与
+   <code>selection</code> 两条事件都会带同一个 offer，重复加会报 <code>proxy already has listener</code>）；</li>
+<li><code>xdg-shell</code> 第一帧必须先 <code>wl_display_roundtrip()</code> 拿到 <code>configure</code>，
+   否则前几帧 <code>flush</code> 会因为 <code>!configured</code> 被静默丢掉。</li>
+</ol>
 <h3 id="1072-wayland-gpu-wl_egl_window">10.7.2 Wayland GPU 后端（<code>wl_egl_window</code>）</h3>
 <p><code>qlgfx_gl.c</code> 支持把 GL 画到原生 Wayland 表面（<code>wl_egl_window</code>），与 CPU 后端
 共用同一套窗口外壳 <code>src/port/qlwindow_wayland.h</code>（xdg-shell / 输入 / 高 DPI /

@@ -383,10 +383,18 @@ quad = intersect(形状外扩 1px 的范围, g->clip);
 * 粘贴：`wl_data_offer_receive()` + 匿名管道**非阻塞**读，读不到 EOF 就下一帧再问
   （与 X11 那套"异步等 SelectionNotify"同一个接口形状）。
 
-两个踩过的坑：`wl_data_offer_add_listener` 只能加一次（`data_offer` 与
-`selection` 两条事件都会带同一个 offer，重复加会报 `proxy already has listener`）；
-`xdg-shell` 第一帧必须先 `wl_display_roundtrip()` 拿到 `configure`，
-否则前几帧 `flush` 会因为 `!configured` 被静默丢掉。
+三个踩过的坑：
+
+1. **监听器槽位一个都不能漏**。libwayland 收到事件而对应槽位是 `NULL` 时
+   **直接 `abort()`**（打印 `listener function for opcode N of wl_pointer is NULL`）。
+   我们绑 `wl_seat` v5，指针就会多出 `frame` / `axis_source` / `axis_stop` /
+   `axis_discrete` 四个事件 —— 少一个，**鼠标一进窗口进程就崩**（现象是
+   "窗口一闪就没了 / 根本没显示"）。规则：**升级 `bind` 的版本时，同步补槽位**；
+   `test_wayland` 第 0 节把每个槽位都断言了一遍（不需要合成器就能跑）。
+2. `wl_data_offer_add_listener` 只能加一次（`data_offer` 与
+   `selection` 两条事件都会带同一个 offer，重复加会报 `proxy already has listener`）；
+3. `xdg-shell` 第一帧必须先 `wl_display_roundtrip()` 拿到 `configure`，
+   否则前几帧 `flush` 会因为 `!configured` 被静默丢掉。
 
 ### 10.7.2 Wayland GPU 后端（`wl_egl_window`）
 

@@ -27,6 +27,12 @@
 
 #if defined(QLGL_ENABLE_WAYLAND)
 #include <qlgl/qldisp_wayland.h>
+/*
+ * 窗口外壳本身也拉进来：要检查**监听器槽位一个不漏**。
+ * libwayland 收到事件而槽位为 NULL 时会直接 `abort()`（程序"一闪就没了"），
+ * 而合成器按我们 `bind` 的版本发事件 —— 版本和槽位必须对得上。
+ */
+#include "../../src/port/qlwindow_wayland.h"
 #endif
 #if defined(QLGL_ENABLE_GL)
 #include <qlgl/qlgfx_gl.h>
@@ -37,6 +43,45 @@ QL_TEST_BEGIN("test_wayland")
 #if !defined(QLGL_ENABLE_WAYLAND)
     printf("  这个构建没有 Wayland 后端，跳过\n");
 #else
+    /*
+     * ---------- 0. 监听器完整性（不需要合成器，离线也能查） ----------
+     *
+     * `qlwl_registry_global()` 把 `wl_seat` 绑到 v5：指针就会有 frame /
+     * axis_source / axis_stop / axis_discrete 四个事件。少任何一个槽位，
+     * **鼠标进窗口那一刻进程就 abort**（现象：窗口一闪就没了 / 根本没显示）。
+     */
+    QL_CHECK(qlwl_ptr_listener.enter != NULL);
+    QL_CHECK(qlwl_ptr_listener.leave != NULL);
+    QL_CHECK(qlwl_ptr_listener.motion != NULL);
+    QL_CHECK(qlwl_ptr_listener.button != NULL);
+    QL_CHECK(qlwl_ptr_listener.axis != NULL);
+    QL_CHECK(qlwl_ptr_listener.frame != NULL);              /* v5 */
+    QL_CHECK(qlwl_ptr_listener.axis_source != NULL);        /* v5 */
+    QL_CHECK(qlwl_ptr_listener.axis_stop != NULL);          /* v5 */
+    QL_CHECK(qlwl_ptr_listener.axis_discrete != NULL);      /* v5 */
+    QL_CHECK(qlwl_kb_listener.keymap != NULL);
+    QL_CHECK(qlwl_kb_listener.enter != NULL);
+    QL_CHECK(qlwl_kb_listener.leave != NULL);
+    QL_CHECK(qlwl_kb_listener.key != NULL);
+    QL_CHECK(qlwl_kb_listener.modifiers != NULL);
+    QL_CHECK(qlwl_kb_listener.repeat_info != NULL);         /* v4 */
+    QL_CHECK(qlwl_touch_listener.down != NULL);
+    QL_CHECK(qlwl_touch_listener.up != NULL);
+    QL_CHECK(qlwl_touch_listener.motion != NULL);
+    QL_CHECK(qlwl_touch_listener.frame != NULL);
+    QL_CHECK(qlwl_touch_listener.cancel != NULL);
+    QL_CHECK(qlwl_seat_listener.capabilities != NULL);
+    QL_CHECK(qlwl_seat_listener.name != NULL);              /* v2 */
+    QL_CHECK(qlwl_wm_listener.ping != NULL);
+    QL_CHECK(qlwl_xdg_listener.configure != NULL);
+    QL_CHECK(qlwl_toplevel_listener.configure != NULL);
+    QL_CHECK(qlwl_toplevel_listener.close != NULL);
+    /* 绑定 xdg_wm_base v1 / wl_output v2 / wl_shm v1：别多实现也别少实现 */
+    QL_CHECK(qlwl_out_listener.geometry != NULL);
+    QL_CHECK(qlwl_out_listener.mode != NULL);
+    QL_CHECK(qlwl_out_listener.done != NULL);
+    QL_CHECK(qlwl_out_listener.scale != NULL);
+
     const char *opt = getenv("QLGL_TEST_WAYLAND");
     if (opt == NULL || opt[0] == '\0') {
         printf("  需要合成器：设置 QLGL_TEST_WAYLAND=1 才跑（当前跳过）\n");

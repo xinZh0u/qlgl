@@ -311,12 +311,48 @@ static void qlwl_ptr_axis(void *data, struct wl_pointer *p, uint32_t time,
                         dx, dy);
 }
 
+/*
+ * 指针 v5 新增了 4 个事件（frame / axis_source / axis_stop / axis_discrete）。
+ *
+ * **一个都不能省**：libwayland 遇到"收到了事件但监听器槽位是 NULL"会直接
+ * `abort()`（打印 "listener function for opcode N of wl_pointer is NULL"）。
+ * 我们绑定 `wl_seat` v5，合成器就会发 `frame`（它把同一帧的 motion/button/axis
+ * 打包）—— 少了这个槽位，**鼠标一进窗口进程就崩**，"窗口一闪就没了"。
+ *
+ * 这几个事件这里都不需要：滚动量在 `axis` 里已经拿到，`frame` 只是分组。
+ */
+static void qlwl_ptr_frame(void *data, struct wl_pointer *p)
+{
+    (void)data; (void)p;
+}
+
+static void qlwl_ptr_axis_source(void *data, struct wl_pointer *p, uint32_t source)
+{
+    (void)data; (void)p; (void)source;
+}
+
+static void qlwl_ptr_axis_stop(void *data, struct wl_pointer *p, uint32_t time,
+                               uint32_t axis)
+{
+    (void)data; (void)p; (void)time; (void)axis;
+}
+
+static void qlwl_ptr_axis_discrete(void *data, struct wl_pointer *p, uint32_t axis,
+                                   int32_t discrete)
+{
+    (void)data; (void)p; (void)axis; (void)discrete;
+}
+
 static const struct wl_pointer_listener qlwl_ptr_listener = {
     .enter = qlwl_ptr_enter,
     .leave = qlwl_ptr_leave,
     .motion = qlwl_ptr_motion,
     .button = qlwl_ptr_button,
     .axis = qlwl_ptr_axis,
+    .frame = qlwl_ptr_frame,
+    .axis_source = qlwl_ptr_axis_source,
+    .axis_stop = qlwl_ptr_axis_stop,
+    .axis_discrete = qlwl_ptr_axis_discrete,
 };
 
 /* ------------------------------ 触摸 ------------------------------ */
