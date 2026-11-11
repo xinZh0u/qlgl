@@ -29,7 +29,9 @@
 #ifndef QLGL_ANIM_H
 #define QLGL_ANIM_H
 
-#include "qlgl.h"
+#include <stdint.h>
+
+#include "qlconfig.h"
 
 /* 同时活跃的动画上限；满了以后新动画直接落到终值（不排队，避免延迟累积） */
 #ifndef QL_CFG_ANIM_MAX
@@ -66,6 +68,14 @@ typedef struct {
     uint8_t     steps;   /* QL_EASE_STEPS 用：台阶数 */
     uint16_t    reserved;
 } QLAnimKey;
+
+/*
+ * 依赖 `ql_err_t`，所以要 include `qlgl.h` —— 但**必须放在本文件类型定义之后**：
+ * `qlgl.h` 是伞头文件，末尾会 include `qlui.h`，而 `qlui.h` 用到了 `QLAnimKey`。
+ * 放在最上面就会形成"qlui.h 里 QLAnimKey 还没定义"的循环（只影响**外部**工程：
+ * 内部例程都是从 `qlgl.h` 进，顺序刚好躲过去了）。
+ */
+#include "qlgl.h"
 
 /* 单调时钟（毫秒）。默认用 CLOCK_MONOTONIC；MCU 上可用 set_time_source 换掉 */
 uint32_t ql_anim_now_ms(void);

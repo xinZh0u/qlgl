@@ -558,6 +558,12 @@ if(WAYLAND_CLIENT_FOUND)
     string(APPEND QLGL_CONFIG_DEPS
         "pkg_check_modules(WAYLAND_CLIENT IMPORTED_TARGET wayland-client)\n")
 endif()
+# Wayland 的 GPU 路径链的是 wl_egl_window：导出文件里有 PkgConfig::WAYLAND_EGL，
+# 消费方不把它找出来就会在 include(qlglTargets.cmake) 处报 "target was not found"
+if(WAYLAND_EGL_FOUND)
+    string(APPEND QLGL_CONFIG_DEPS
+        "pkg_check_modules(WAYLAND_EGL IMPORTED_TARGET wayland-egl)\n")
+endif()
 if(QLGL_FREETYPE_ENABLED)
     string(APPEND QLGL_CONFIG_DEPS "find_dependency(Freetype)\n")
 endif()
@@ -595,6 +601,10 @@ if(QLGL_BUILD_X11 AND X11_FOUND)
 endif()
 if(WAYLAND_CLIENT_FOUND)
     set(QL_PC_LIBS "${QL_PC_LIBS} -lwayland-client")
+    # GPU 路径要用 wl_egl_window：静态库的链接方必须一起给
+    if(WAYLAND_EGL_FOUND)
+        set(QL_PC_LIBS "${QL_PC_LIBS} -lwayland-egl")
+    endif()
 endif()
 if(QL_CFG_HAVE_DLOPEN_PC)
     set(QL_PC_LIBS "${QL_PC_LIBS}")

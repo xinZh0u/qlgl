@@ -26,6 +26,7 @@
 #include "qlgl.h"
 #include "qlcanvas.h"
 #include "qldraw2d.h"
+#include "qlanim.h"   /* QLAnimKey：布局/绘制都直接用 */
 
 /* ----- 生成数据的格式（构建期产出，运行期只读） ----- */
 
