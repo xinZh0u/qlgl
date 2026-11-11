@@ -28,6 +28,9 @@
 #if defined(QLGL_ENABLE_WAYLAND)
 #include <qlgl/qldisp_wayland.h>
 #endif
+#if defined(QLGL_ENABLE_GL)
+#include <qlgl/qlgfx_gl.h>
+#endif
 
 QL_TEST_BEGIN("test_wayland")
 
@@ -104,6 +107,88 @@ QL_TEST_BEGIN("test_wayland")
             unsetenv("QLGL_WAYLAND_SCALE");
         }
     }
+
+#if defined(QLGL_ENABLE_GL) && defined(QLGL_HAVE_WAYLAND_EGL)
+    /*
+     * GPU 后端（`wl_egl_window`）：同样验"设备像素 = CSS × scale"这条不变量，
+     * 另外验**真的画对了**——读回帧缓冲，红方块必须正好覆盖 10×scale 个设备像素。
+     *
+     * 第二个断言是关键：`g->width` 曾经只被赋成 CSS 尺寸（缩放只乘了局部变量），
+     * 于是 viewport 只有四分之一大，2x 下画面挤在左上角。只查尺寸不查像素
+     * 是发现不了的。
+     */
+    if (getenv("QLGL_TEST_WAYLAND") != NULL && getenv("WAYLAND_DISPLAY") != NULL) {
+        setenv("QLGL_GL_BACKEND", "wayland", 1);
+        const char *be_opt = getenv("QLGL_TEST_WAYLAND");
+        if (be_opt != NULL && be_opt[0] != '\0') {
+            for (int pass = 0; pass < 2; pass++) {
+                const int want_scale = (pass == 0) ? 1 : 2;
+                setenv("QLGL_WAYLAND_SCALE", (pass == 0) ? "1" : "2", 1);
+
+                const ql_coord_t css_w = 100, css_h = 60;
+                QLGfxGL *g = ql_gfx_gl_create("QLGL gl wayland test", css_w, css_h, 0);
+                QL_CHECK(g != NULL);
+                if (g == NULL)
+                    continue;
+
+                ql_coord_t sw = 0, sh = 0;
+                ql_gfx_gl_size(g, &sw, &sh);
+                QL_CHECK_EQ((int)sw, (int)css_w);        /* CSS 尺寸不随缩放变 */
+                QL_CHECK_EQ((int)sh, (int)css_h);
+                ql_gfx_gl_device_size(g, &sw, &sh);
+                QL_CHECK_EQ((int)sw, (int)(css_w * want_scale));
+                QL_CHECK_EQ((int)sh, (int)(css_h * want_scale));
+
+                QL_CHECK_EQ(ql_gfx_gl_poll(g), 1);       /* 泵一轮事件不崩 */
+
+                /* body 默认有 8px 外边距，去掉它方块才正好贴在 (0,0) */
+                QLUIDoc *doc = ql_ui_load_text("<div id=a></div>",
+                                               "body { margin: 0 } "
+                                               "#a { width: 10px; height: 10px; "
+                                               "background: #ff0000 }");
+                QL_CHECK(doc != NULL);
+                if (doc != NULL) {
+                    QLUIRoot *ui = ql_ui_build(doc);
+                    QL_CHECK(ui != NULL);
+                    if (ui != NULL) {
+                        ql_ui_layout(ui, css_w, css_h);
+                        QL_CHECK_EQ(ql_gfx_gl_begin_rects(g, 0xFFFFFF, NULL, 0), 1);
+                        ql_ui_render(ui, ql_gfx_gl_draw(g));
+                        /* 先落盘（顶点批次在这里才上传）、不交换，然后读回 */
+                        ql_gfx_gl_flush_frame(g);
+
+                        /* swap 之前读：交换之后后缓冲内容未定义（Wayland 上是黑的） */
+                        ql_gfx_gl_finish(g);
+                        uint8_t *px = (uint8_t *)calloc(1, (size_t)sw * (size_t)sh * 4u);
+                        QL_CHECK(px != NULL);
+                        if (px != NULL) {
+                            QL_CHECK_EQ(ql_gfx_gl_read_pixels(g, px, (uint32_t)sw * 4u),
+                                        QL_OK);
+                            const int edge = 10 * want_scale;
+                            const uint8_t *p00 = px;     /* (0,0) 在方块里 */
+                            const uint8_t *pin = px + (size_t)(edge - 1) * 4u;
+                            const uint8_t *pout = px + (size_t)edge * 4u;
+
+                            QL_CHECK(p00[0] > 240 && p00[1] < 16 && p00[2] < 16);
+                            QL_CHECK(pin[0] > 240 && pin[1] < 16 && pin[2] < 16);
+                            QL_CHECK(pout[0] > 240 && pout[1] > 240 && pout[2] > 240);
+                            free(px);
+                        }
+                        ql_gfx_gl_end(g);
+                        ql_ui_free(ui);
+                    }
+                    ql_ui_doc_free(doc);
+                }
+
+                QL_CHECK_EQ(ql_gfx_gl_poll(g), 1);       /* 交换之后再泵一轮 */
+                QL_CHECK(ql_gfx_gl_frame_count(g) >= 1);
+                ql_gfx_gl_destroy(g);
+                unsetenv("QLGL_WAYLAND_SCALE");
+            }
+        }
+        unsetenv("QLGL_GL_BACKEND");
+    }
+#endif
 #endif
 
 QL_TEST_END()

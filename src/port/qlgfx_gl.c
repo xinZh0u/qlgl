@@ -25,6 +25,14 @@
 
 #include "qlinput_x11.h"
 #include "qlclipboard_x11.h"
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+#include <wayland-egl.h>
+/*
+ * 窗口外壳与 CPU 后端**共用同一份**（输入 / 高 DPI / 帧回调 / 剪贴板语义
+ * 只有一处），这里只把 `wl_surface` 交给 `wl_egl_window` 做 GPU 呈现。
+ */
+#include "qlwindow_wayland.h"
+#endif
 
 #include <poll.h>
 #include <stdio.h>
@@ -87,6 +95,19 @@ typedef struct {
 struct QLGfxGL {
     Display         *dpy;
     Window           win;
+    /*
+     * Wayland 原生窗口（GPU）。`use_wayland` 为真时上面那两个 X11 句柄为 NULL，
+     * 所有 X11 专用代码都会因为 `dpy == NULL` 自动跳过。
+     *
+     * 默认仍走 X11：原生 Wayland 还没有 `zwp_text_input_v3`（中文输入法），
+     * 默认切过去会让现在的输入法功能失效。想用原生 Wayland 就设
+     * `QLGL_GL_BACKEND=wayland`；没有 DISPLAY 时也会自动回落到 Wayland。
+     */
+    int              use_wayland;
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    QLWlWindow       wl;
+    struct wl_egl_window *wl_egl;
+#endif
     Atom             wm_delete;
     Atom             wm_protocols;      /* WM_PROTOCOLS 的原子（判断 ClientMessage 用） */
 #ifdef QLGL_HAVE_XSYNC
@@ -153,6 +174,7 @@ struct QLGfxGL {
 
     ql_coord_t       width, height;   /* 设备像素（framebuffer 尺寸） */
     ql_coord_t       scale_fx;        /* CSS px → 设备像素，26.6 定点 */
+    ql_coord_t       css_w, css_h;    /* 逻辑尺寸（Wayland 缩放变化时据此重算设备像素） */
 
 
     GLuint           program;
@@ -2916,6 +2938,8 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
 
     g->width = width;
     g->height = height;
+    g->css_w = width;
+    g->css_h = height;
     g->scale_fx = QL_SCALE_ONE;
     g->offscreen = (flags & QL_GFX_GL_OFFSCREEN) ? 1 : 0;
     g->mask_rx = -1.0f;
@@ -2934,15 +2958,80 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         return NULL;
     }
 
-    /* --- X11 窗口（离屏模式不建窗口） --- */
-    g->dpy = XOpenDisplay(NULL);
-    if (g->dpy == NULL) {
-        QL_LOGE("gl: cannot open X display (DISPLAY=%s)",
-                getenv("DISPLAY") ? getenv("DISPLAY") : "(unset)");
-        goto fail;
+    /*
+     * --- 选后端 ---
+     *
+     * `QLGL_GL_BACKEND=x11|wayland` 显式指定；没指定时**优先 X11**：
+     * 原生 Wayland 还没有 `zwp_text_input_v3`，默认切过去会让中文输入法失效。
+     * X11 连不上（纯 Wayland 会话）才自动回落到 Wayland。
+     */
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    {
+        const char *be = getenv("QLGL_GL_BACKEND");
+        if (be != NULL && strcmp(be, "wayland") == 0) {
+            g->use_wayland = 1;
+        } else if (be == NULL || be[0] == '\0') {
+            const char *disp = getenv("DISPLAY");
+            if ((disp == NULL || disp[0] == '\0') && getenv("WAYLAND_DISPLAY") != NULL)
+                g->use_wayland = 1;
+        }
+        if (g->offscreen) {
+            /* 离屏没有 wl_surface：仍是 X11 的 pbuffer 路径（不需要 DISPLAY 事件） */
+            g->use_wayland = 0;
+        } else if (getenv("WAYLAND_DISPLAY") == NULL) {
+            QL_LOGE("gl: 要 Wayland 后端但没有 WAYLAND_DISPLAY");
+            goto fail;
+        }
     }
+#endif
 
-    int screen = DefaultScreen(g->dpy);
+    /* --- 窗口（离屏模式不建窗口） --- */
+    int screen = 0;
+    if (!g->offscreen && g->use_wayland) {
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+        /* 调试用：1x 屏上强制按 N 倍分配（与 CPU 后端同一环境变量） */
+        int32_t scale_override = 0;
+        {
+            const char *env = getenv("QLGL_WAYLAND_SCALE");
+            if (env != NULL && env[0] != '\0') {
+                const long v = strtol(env, NULL, 10);
+                if (v >= 1 && v <= 8)
+                    scale_override = (int32_t)v;
+            }
+        }
+        if (!qlwl_open(&g->wl, title, scale_override)) {
+            QL_LOGE("gl: cannot open wayland window");
+            goto fail;
+        }
+        /*
+         * `wl_egl_window` 的尺寸必须是**物理像素**（= CSS × scale）：
+         * EGL 在这块缓冲上画，合成器再按 set_buffer_scale 缩回去。
+         */
+        g->scale_fx = (ql_coord_t)g->wl.scale * QL_SCALE_ONE;
+        g->wl_egl = wl_egl_window_create(g->wl.surface,
+                                         width * g->wl.scale,
+                                         height * g->wl.scale);
+        if (g->wl_egl == NULL) {
+            QL_LOGE("gl: wl_egl_window_create failed");
+            goto fail;
+        }
+        /*
+         * 窗口尺寸按设备像素记（与 X11 路径一致）。注意必须写回 `g`：
+         * `g->width` 在上面已经按 CSS 赋过值了，只改局部变量等于没改 ——
+         * 那样 viewport / 抓图 / damage 全是 CSS 尺寸，2x 下只画到左上四分之一。
+         */
+        g->width = width * g->wl.scale;
+        g->height = height * g->wl.scale;
+#endif
+    } else {
+        g->dpy = XOpenDisplay(NULL);
+        if (g->dpy == NULL) {
+            QL_LOGE("gl: cannot open X display (DISPLAY=%s)",
+                    getenv("DISPLAY") ? getenv("DISPLAY") : "(unset)");
+            goto fail;
+        }
+        screen = DefaultScreen(g->dpy);
+    }
 
     /* --- EGL --- */
     static const EGLint cfg_attrs[] = {
@@ -2955,22 +3044,46 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     EGLint num_cfg = 0;
 
     /*
-     * 必须显式指定 X11 平台：在 Wayland 会话里 eglGetDisplay() 会自动选
-     * Wayland 平台，然后把 X11 的 Display* 当 wl_display* 用 → 直接段错误。
+     * 必须显式指定平台：在 Wayland 会话里 `eglGetDisplay()` 会自动选 Wayland
+     * 平台，然后把 X11 的 `Display*` 当 `wl_display*` 用 → 直接段错误。
+     * 反过来（Wayland 后端）也必须显式要 Wayland 平台。
      */
     g->egdpy = EGL_NO_DISPLAY;
-#if defined(EGL_PLATFORM_X11_KHR)
     {
         PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display =
             (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
         if (get_platform_display != NULL) {
-            g->egdpy = get_platform_display(EGL_PLATFORM_X11_KHR,
-                                            (void *)g->dpy, NULL);
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+            if (g->use_wayland) {
+#if defined(EGL_PLATFORM_WAYLAND_KHR)
+                g->egdpy = get_platform_display(EGL_PLATFORM_WAYLAND_KHR,
+                                                (void *)g->wl.dpy, NULL);
+#elif defined(EGL_PLATFORM_WAYLAND_EXT)
+                g->egdpy = get_platform_display(EGL_PLATFORM_WAYLAND_EXT,
+                                                (void *)g->wl.dpy, NULL);
+#endif
+            } else
+#endif
+#if defined(EGL_PLATFORM_X11_KHR)
+            {
+                g->egdpy = get_platform_display(EGL_PLATFORM_X11_KHR,
+                                                (void *)g->dpy, NULL);
+            }
+#else
+            {
+                (void)get_platform_display;
+            }
+#endif
         }
     }
+    if (g->egdpy == EGL_NO_DISPLAY) {
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+        if (g->use_wayland)
+            g->egdpy = eglGetDisplay((EGLNativeDisplayType)g->wl.dpy);
+        else
 #endif
-    if (g->egdpy == EGL_NO_DISPLAY)
-        g->egdpy = eglGetDisplay((EGLNativeDisplayType)g->dpy);
+            g->egdpy = eglGetDisplay((EGLNativeDisplayType)g->dpy);
+    }
     if (g->egdpy == EGL_NO_DISPLAY || !eglInitialize(g->egdpy, NULL, NULL)) {
         QL_LOGE("gl: eglInitialize failed");
         goto fail;
@@ -2994,6 +3107,19 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         pb_real[4] = EGL_NONE;
         QL_UNUSED(pb_attrs);
         g->surface = eglCreatePbufferSurface(g->egdpy, cfg, pb_real);
+    } else if (g->use_wayland) {
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+        /*
+         * Wayland 的原生窗口类型就是 `wl_egl_window`；尺寸是**设备像素**。
+         * 输入法走不了 XIM（那是 X11 专用），原生 Wayland 的中文输入要等
+         * `zwp_text_input_v3` —— 所以默认后端仍是 X11。
+         */
+        g->surface = eglCreateWindowSurface(g->egdpy, cfg,
+                                            (EGLNativeWindowType)g->wl_egl, NULL);
+        /* 表面尺寸按设备像素记：`surface_sync()` 靠它判断要不要 resize */
+        g->surface_w = g->width;
+        g->surface_h = g->height;
+#endif
     } else {
         XVisualInfo vinfo;
         if (!XMatchVisualInfo(g->dpy, screen, 24, TrueColor, &vinfo) &&
@@ -3500,6 +3626,23 @@ static void sync_window_background(QLGfxGL *g, ql_color_t clear_color)
  */
 static int surface_sync(QLGfxGL *g)
 {
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    /*
+     * Wayland：表面是 `wl_egl_window`，尺寸用 `wl_egl_window_resize()` 改，
+     * **不用**销毁重建（EGL 会自己重新协商缓冲）。缩放变化时缓冲区尺寸也跟着
+     * 变，所以这里同时更新 `wl.scale`。
+     */
+    if (g->use_wayland) {
+        if (g->width <= 0 || g->height <= 0)
+            return 1;
+        if (g->surface_w == g->width && g->surface_h == g->height)
+            return 1;
+        wl_egl_window_resize(g->wl_egl, g->width, g->height, 0, 0);
+        g->surface_w = g->width;
+        g->surface_h = g->height;
+        return 1;
+    }
+#endif
     if (g->offscreen || g->egdpy == EGL_NO_DISPLAY || g->win == 0)
         return 1;
     if (g->width <= 0 || g->height <= 0)
@@ -3739,14 +3882,21 @@ static void flush_batch(QLGfxGL *g)
     }
 }
 
-void ql_gfx_gl_end(QLGfxGL *g)
+/*
+ * 把这一帧的绘制**全部落到目标缓冲**，但**不交换**。
+ *
+ * 交换之后后缓冲的内容没有任何保证（Wayland/EGL 上直接是黑的），所以"抓图"
+ * 只能抓交换之前的那一帧；而顶点批次是在 end() 里才上传的，抓早了又什么都
+ * 还没画。要抓正确的一帧，就得能"先落盘、不交换" —— 就是这个函数。
+ */
+void ql_gfx_gl_flush_frame(QLGfxGL *g)
 {
     if (g == NULL)
         return;
 
     flush_batch(g);
 
-    /* 保留模式：FBO 是真正的画布，整块 blit 到窗口再交换 */
+    /* 保留模式：FBO 是真正的画布，整块 blit 到窗口（交换由 end 负责） */
     if (g->fbo_valid) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -3756,6 +3906,14 @@ void ql_gfx_gl_end(QLGfxGL *g)
                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
+}
+
+void ql_gfx_gl_end(QLGfxGL *g)
+{
+    if (g == NULL)
+        return;
+
+    ql_gfx_gl_flush_frame(g);
 
     /*
      * 拖动边框时**不跟 vblank**。
@@ -3837,6 +3995,19 @@ int ql_gfx_gl_wait(QLGfxGL *g, int timeout_ms)
 {
     if (g == NULL || g->closed)
         return 0;
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    /* Wayland：等协议 fd 可读（有新事件才醒），超时也返回，让调用方去画 */
+    if (g->use_wayland) {
+        if (g->wl.dpy == NULL)
+            return 0;
+        struct pollfd pfd;
+        pfd.fd = wl_display_get_fd(g->wl.dpy);
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        (void)poll(&pfd, 1, timeout_ms);
+        return qlwl_pump(&g->wl) ? 1 : 0;
+    }
+#endif
     if (g->offscreen || g->dpy == NULL) {
         /* 离屏模式没有事件源：睡一会儿就当"等到了" */
         if (timeout_ms > 0)
@@ -3872,7 +4043,42 @@ int ql_gfx_gl_wait(QLGfxGL *g, int timeout_ms)
 
 int ql_gfx_gl_poll(QLGfxGL *g)
 {
-    if (g == NULL || g->closed || g->offscreen || g->dpy == NULL)
+    if (g == NULL || g->closed)
+        return 0;
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    /*
+     * Wayland：事件（键盘/鼠标/触摸/DPI）全由共用外壳推给 `ql_input`，
+     * 这里只需要泵事件 + 处理缩放变化。
+     */
+    if (g->use_wayland) {
+        if (!qlwl_pump(&g->wl) || g->wl.closed) {
+            g->closed = 1;
+            return 0;
+        }
+        /*
+         * 缩放变了（换显示器 / 改缩放）：CSS 尺寸不变，设备像素尺寸 = CSS × scale
+         * 要重算，`wl_egl_window` 也要 resize。调用方按 `resize_pending` 重排。
+         */
+        if (g->wl.resize_pending) {
+            g->wl.resize_pending = 0;
+            const ql_coord_t new_scale = (ql_coord_t)g->wl.scale * QL_SCALE_ONE;
+            if (new_scale != g->scale_fx) {
+                g->scale_fx = new_scale;
+                g->draw.scale_fx = new_scale;
+                g->width = g->css_w * g->wl.scale;
+                g->height = g->css_h * g->wl.scale;
+                if (g->wl_egl != NULL)
+                    wl_egl_window_resize(g->wl_egl, g->width, g->height, 0, 0);
+                g->surface_w = g->width;
+                g->surface_h = g->height;
+                g->fbo_fresh = 1;
+                g->resize_pending = 1;
+            }
+        }
+        return g->closed ? 0 : 1;
+    }
+#endif
+    if (g->offscreen || g->dpy == NULL)
         return (g != NULL && !g->closed) ? 1 : 0;
 
     while (XPending(g->dpy) > 0) {
@@ -3969,7 +4175,15 @@ static const QLUIClipboard s_gl_clip = { gl_clip_set, gl_clip_get };
 
 void ql_gfx_gl_attach_clipboard(QLGfxGL *g, QLUIRoot *ui)
 {
-    if (g == NULL || g->dpy == NULL || g->win == 0 || ui == NULL)
+    if (g == NULL || ui == NULL)
+        return;
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    if (g->use_wayland) {
+        qlwl_attach_clipboard(&g->wl, ui);
+        return;
+    }
+#endif
+    if (g->dpy == NULL || g->win == 0)
         return;
     ql_x11_clip_attach(g->dpy, g->win);
     ql_ui_set_clipboard(ui, &s_gl_clip, NULL);
@@ -4154,7 +4368,14 @@ void ql_gfx_gl_attach_ime(QLGfxGL *gfx, QLUIRoot *ui)
 
 void ql_gfx_gl_set_ime_spot(QLGfxGL *g, ql_coord_t x, ql_coord_t y, ql_coord_t h)
 {
-    if (g == NULL || g->xic == NULL || g->dpy == NULL)
+    /*
+     * Wayland：原生 Wayland 的输入法走 `zwp_text_input_v3`，我们还没接
+     * （XIM 是 X11 专有协议），所以这里没有光标位置可报 —— 候选窗位置由
+     * 合成器自己决定。等接了 text-input-v3 再补。
+     */
+    if (g == NULL || g->use_wayland)
+        return;
+    if (g->xic == NULL || g->dpy == NULL)
         return;
     if (x == g->ime_x && y == g->ime_y && h == g->ime_h)
         return;                     /* 没动就不发 X 请求 */
@@ -4218,6 +4439,14 @@ void ql_gfx_gl_size(const QLGfxGL *g, ql_coord_t *out_w, ql_coord_t *out_h)
         *out_w = w;
     if (out_h != NULL)
         *out_h = h;
+}
+
+void ql_gfx_gl_device_size(const QLGfxGL *g, ql_coord_t *out_w, ql_coord_t *out_h)
+{
+    if (out_w != NULL)
+        *out_w = (g != NULL) ? g->width : 0;
+    if (out_h != NULL)
+        *out_h = (g != NULL) ? g->height : 0;
 }
 
 void ql_gfx_gl_close(QLGfxGL *g)
@@ -4294,6 +4523,14 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
             eglDestroySurface(g->egdpy, g->surface);
         eglTerminate(g->egdpy);
     }
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    if (g->wl_egl != NULL) {
+        wl_egl_window_destroy(g->wl_egl);   /* EGL 表面已销毁，再还窗口 */
+        g->wl_egl = NULL;
+    }
+    if (g->wl.dpy != NULL)
+        qlwl_close(&g->wl);
+#endif
     if (g->dpy != NULL) {
 #ifdef QLGL_HAVE_XSYNC
         if (g->sync_counter != None)

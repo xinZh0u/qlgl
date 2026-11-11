@@ -39,6 +39,11 @@ void     ql_gfx_gl_destroy(QLGfxGL *gfx);
  */
 int  ql_gfx_gl_resize_pending(QLGfxGL *gfx);
 void ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
+/*
+ * 帧缓冲的**设备像素**尺寸（= CSS × scale）。抓图 / `ql_gfx_gl_read_pixels()`
+ * 要用它算 stride；`ql_gfx_gl_size()` 给的是 CSS px，高 DPI 下两者不等。
+ */
+void ql_gfx_gl_device_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
 
 /* 把 X11 剪贴板接到这个界面（Ctrl+C/X/V 生效）。可在窗口建好之后调一次。 */
 void ql_gfx_gl_attach_clipboard(QLGfxGL *gfx, QLUIRoot *ui);
@@ -90,6 +95,15 @@ void     ql_gfx_gl_begin(QLGfxGL *gfx, ql_color_t clear_color);
 void     ql_gfx_gl_end(QLGfxGL *gfx);
 
 /*
+ * 把本帧的绘制全部落进目标缓冲，但**不交换**（交换由 `ql_gfx_gl_end` 做）。
+ *
+ * 抓图 / `ql_gfx_gl_read_pixels()` 必须在这一步之后、`ql_gfx_gl_end()` 之前：
+ * `eglSwapBuffers` 之后后缓冲内容未定义（Wayland 上读出来是全黑），而在
+ * `ql_gfx_gl_end` 之前顶点批次还没上传（读出来只有清除色）。
+ */
+void     ql_gfx_gl_flush_frame(QLGfxGL *gfx);
+
+/*
  * 保留式脏区（窗口模式，M5.5"动画必须走脏区"红线的实现）。
  *
  * 问题：窗口是双缓冲，`eglSwapBuffers` 之后后缓冲的内容**没有任何保证**——
@@ -104,7 +118,6 @@ void     ql_gfx_gl_end(QLGfxGL *gfx);
  *   -- 每一帧 --
  *   ql_gfx_gl_begin_rects(gfx, bg, areas, n);   // n == 0 → 整屏清 + 整屏重画
  *   ql_ui_render_rect(d2d, areas[i]) × n
- *   ql_gfx_gl_end(gfx);
  *   ql_gfx_gl_end(gfx);
  *
  * 关掉（或创建 FBO 失败）时退回"每帧整屏清"，行为与不用它时完全一致。

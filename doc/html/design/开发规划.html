@@ -2845,8 +2845,8 @@ blob v10 → <strong>v11</strong>。</p>
 （title / app_id / configure / close）+ <code>wl_seat</code> 的 keyboard / pointer、
 <strong><code>wl_touch</code>（触摸，2026-11-11）</strong>、<strong><code>wl_output.scale</code>（高 DPI）</strong>、
 <strong><code>wl_callback</code> 帧回调（提交节流 / 省电）</strong>、<strong><code>wl_data_device</code>（剪贴板）</strong>。
-<strong>没有</strong>：fractional-scale、<code>wl_egl_window</code>（GPU）、<code>zwp_text_input_v3</code> /
-<code>zwp_input_method_v2</code>（软键盘 / 中文输入）。</p>
+<strong>没有</strong>：fractional-scale、<code>zwp_text_input_v3</code> / <code>zwp_input_method_v2</code>（软键盘 / 中文输入）。
+GPU 那条（<code>wl_egl_window</code>）在 2026-11-11 补上了，见下面第 5 步。</p>
 <h4 id="_5">步骤与验收</h4>
 <table>
 <thead>
@@ -2884,9 +2884,9 @@ blob v10 → <strong>v11</strong>。</p>
 </tr>
 <tr>
 <td>5</td>
-<td>GPU：<code>wl_egl_window</code> + EGL + <code>wl_callback</code> 帧回调</td>
-<td>手机分辨率下 CPU 全屏重绘撑不住动画；帧回调同时是省电关键</td>
-<td><code>test_gl_vs_cpu</code> 等价断言；静止时不 commit</td>
+<td>~~GPU：<code>wl_egl_window</code> + EGL~~ ✅ <strong>已完成（2026-11-11）</strong>：<code>QLGL_GL_BACKEND=wayland</code> 走 <code>EGL_PLATFORM_WAYLAND_KHR</code> + <code>wl_egl_window</code>（尺寸 = CSS × scale），改尺寸用 <code>wl_egl_window_resize()</code>；<strong>默认仍是 X11</strong>（原生 Wayland 缺 <code>zwp_text_input_v3</code>，切过去中文输入法会失效），<code>DISPLAY</code> 为空时自动回落</td>
+<td>手机分辨率下 CPU 全屏重绘撑不住动画</td>
+<td><code>test_wayland</code> 1x/2x 断言"红方块 = 10×scale 设备像素"；同界面 X11/Wayland 抓帧<strong>逐字节相同</strong></td>
 </tr>
 <tr>
 <td>6</td>

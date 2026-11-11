@@ -388,6 +388,49 @@ quad = intersect(形状外扩 1px 的范围, g->clip);
 `xdg-shell` 第一帧必须先 `wl_display_roundtrip()` 拿到 `configure`，
 否则前几帧 `flush` 会因为 `!configured` 被静默丢掉。
 
+### 10.7.2 Wayland GPU 后端（`wl_egl_window`）
+
+`qlgfx_gl.c` 支持把 GL 画到原生 Wayland 表面（`wl_egl_window`），与 CPU 后端
+共用同一套窗口外壳 `src/port/qlwindow_wayland.h`（xdg-shell / 输入 / 高 DPI /
+帧回调 / 剪贴板都在里面，两个后端只各自管"像素怎么变成 wl_buffer"）。
+
+```
+QLGL_GL_BACKEND=wayland ./build/example/example_02_text --frames 30 --stats
+```
+
+**默认仍然是 X11**。原因不是技术问题而是功能问题：原生 Wayland 的中文输入法走
+`zwp_text_input_v3`，我们还没接；切过去会让组字、候选窗全失效。所以只有
+`QLGL_GL_BACKEND=wayland` 显式指定时才走 Wayland；`DISPLAY` 为空（纯 Wayland
+会话）时自动回落。
+
+几个和 X11 路径**不一样**的地方：
+
+| 项目 | X11（GLX/EGL-X11） | Wayland（EGL-Wayland） |
+|---|---|---|
+| 原生窗口句柄 | `Window`（XID） | `wl_egl_window`（由 `wl_surface` 包出来的） |
+| EGL 平台 | `EGL_PLATFORM_X11_KHR` | `EGL_PLATFORM_WAYLAND_KHR` |
+| 改尺寸 | 销毁 `EGLSurface` 重建（X11 表面尺寸是创建时定死的） | `wl_egl_window_resize()`，表面不重建 |
+| 尺寸单位 | 设备像素 | 设备像素（= CSS × scale，缓冲缩放交给 `set_buffer_scale`） |
+| 输入 / 输入法 | Xlib 事件 + XIM | 共用外壳（键盘/指针/触摸）；**输入法暂缺** |
+| 帧节奏 | `eglSwapInterval` + 自算 pace | 合成器在缓冲排队满时阻塞 `eglSwapBuffers`（天然 vsync） |
+
+`ql_gfx_gl_poll()` 在 Wayland 下泵 `qlwl_pump()`：事件全由外壳推给 `ql_input`，
+自己只处理 `wl.resize_pending` —— 缩放变了就重算设备像素尺寸、`wl_egl_window_resize()`
+并置 `ql_gfx_gl_resize_pending()`，调用方据此重建画布 + 重排。
+`ql_gfx_gl_wait()` 直接 `poll()` 协议 fd，不用 `usleep` 空转。
+
+> **抓图的两个坑**（`QL_EX_WINDOW_DUMP` 就是这么实现的）：`eglSwapBuffers`
+> 之后后缓冲内容**未定义**（Wayland 上读出来全黑），而 `ql_gfx_gl_end()` 之前
+> 顶点批次还没上传（只读到清除色）。正确的时机是新增的
+> `ql_gfx_gl_flush_frame()`：落盘但**不交换**，这时 `ql_gfx_gl_read_pixels()`
+> 拿到的才是真的这一帧。设备像素尺寸用 `ql_gfx_gl_device_size()`
+> （`ql_gfx_gl_size()` 给的是 CSS px，高 DPI 下两者不等）。
+
+验证：`test_wayland`（`QLGL_TEST_WAYLAND=1`）在 1x/2x 两种缩放下断言
+"设备像素 = CSS × scale"以及"10 CSS px 的红方块正好覆盖 10×scale 个设备像素"；
+同一界面在 X11 与 Wayland 两个 GPU 后端抓窗口帧**逐字节相同**，
+2x 帧按 2×2 平均降到 1x 后与 1x 帧一致（差异只剩字形微调）。
+
 ## 10.8 绘制期亚像素与边缘覆盖率（M5.3）
 
 整像素矩形只能对齐到整格：`translate(0.5px)` 会变成 1px 一跳，60fps×300ms 的动画
