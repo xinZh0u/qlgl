@@ -264,6 +264,38 @@ QL_TEST_BEGIN("b9")
         release(ui);
     }
 
+    /*
+     * 回归：polygon 遮罩画完之后必须被关掉。
+     *
+     * 曾经 `ql_canvas_set_mask(-1,-1)` 只清椭圆、不清 `mask_pn`，于是
+     * `mask_on()` 仍然成立 —— polygon 之后的所有兄弟节点都被裁进那个
+     * 三角形里（例程 36 的第 5、6 区整片空白，只有重绘时才"露"出来）。
+     * 这里放一个 polygon 节点 + 它**右边**的实色兄弟：
+     * 若遮罩没关，实色块的位置落在三角形之外，会被整块裁掉。
+     */
+    {
+        QLUIRoot *ui = render(
+            "<div id=w><div id=a></div><div id=b></div></div>",
+            "#w { position: absolute; left: 0; top: 0; width: 120px; height: 100px }\n"
+            "#a { position: absolute; left: 0; top: 0; width: 56px; height: 70px;"
+            "     background: #0000FF;"
+            "     clip-path: polygon(0 0, 100% 0, 50% 100%) }\n"
+            "#b { position: absolute; left: 76px; top: 0; width: 40px; height: 70px;"
+            "     background: #00A000 }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            /* 三角形内部照旧 */
+            QL_CHECK_EQ(px(28, 20) & 0xFFFFFFu, 0x0000FFu);
+            /* 三角形左下外侧：仍应是背景 */
+            QL_CHECK_EQ(px(4, 62) & 0xFFFFFFu, BG);
+            /* 后面的兄弟必须完整可见（这条就是本次回归的判据） */
+            QL_CHECK_EQ(px(80, 6) & 0xFFFFFFu, 0x00A000u);
+            QL_CHECK_EQ(px(110, 64) & 0xFFFFFFu, 0x00A000u);
+            QL_CHECK_EQ(px(96, 35) & 0xFFFFFFu, 0x00A000u);
+        }
+        release(ui);
+    }
+
     /* ============ 3. 字体变体 ============ */
     {
         QLUIDoc *doc = ql_ui_load_text(

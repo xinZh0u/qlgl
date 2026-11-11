@@ -1,0 +1,148 @@
+/*
+ * `border-radius` 的百分比 —— 人工可视化测试。
+ *
+ * 浏览器里 `border-radius: 50%` 的横向半径相对**盒子宽**、纵向相对**盒子高**，
+ * 所以要等布局结束才有具体 px。早先版本直接把 `50%` 判成"不支持百分比"，
+ * 于是最常用的头像圆、胶囊按钮都写不出来。
+ *
+ * 六个格子依次验证：
+ *   ① 正方形 + 50%      → 正圆（半径 = 32px）
+ *   ② 长方形 + 50%      → 胶囊（半径被短边夹住 = 22px）
+ *   ③ 正方形 + 24px     → 圆角方块（对照组，行为不变）
+ *   ④ 50% / 25%         → 横向 60px、纵向 20px 的椭圆角
+ *   ⑤ 12%               → 180 宽 → 21.6 → 21px
+ *   ⑥ 50% 50% 0 0       → 只有上面两角圆
+ */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.h1 {
+  position: absolute;
+  left: 20px;
+  top: 14px;
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.sub {
+  position: absolute;
+  left: 20px;
+  top: 38px;
+  width: 680px;
+  font-size: 11px;
+  color: #57606A;
+  white-space: normal;
+  line-height: 16px;
+}
+
+.grid {
+  position: absolute;
+  left: 16px;
+  top: 84px;
+  width: 688px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.cell {
+  width: 210px;
+}
+
+.txt {
+  position: absolute;
+  left: 0px;
+  right: 0px;
+  top: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: #FFFFFF;
+}
+
+.cap {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #57606A;
+  text-align: center;
+}
+
+/* ---- ① 正方形 + 50% = 正圆 ---- */
+.avatar {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin-left: 73px;
+  border-radius: 50%;
+  background-color: #2563EB;
+}
+
+/* ---- ② 长方形 + 50% = 胶囊 ---- */
+.pill {
+  position: relative;
+  width: 140px;
+  height: 44px;
+  margin-left: 35px;
+  border-radius: 50%;
+  background-color: #16A34A;
+}
+
+.pill .txt {
+  top: 13px;
+}
+
+/* ---- ③ 对照：固定 px 圆角 ---- */
+.well {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin-left: 73px;
+  border-radius: 24px;
+  background-color: #8250DF;
+}
+
+/* ---- ④ 斜杠写法：横向 50%、纵向 25% ---- */
+.oval {
+  position: relative;
+  width: 120px;
+  height: 80px;
+  margin-left: 45px;
+  border-radius: 50% / 25%;
+  background-color: #E5484D;
+}
+
+/* ---- ⑤ 小百分比：跟着宽度走 ---- */
+.card {
+  position: relative;
+  width: 180px;
+  height: 60px;
+  margin-left: 15px;
+  border-radius: 12%;
+  background-color: #0EA5A4;
+}
+
+.card .txt {
+  top: 21px;
+}
+
+/* ---- ⑥ 逐角写法 ---- */
+.half {
+  position: relative;
+  width: 180px;
+  height: 60px;
+  margin-left: 15px;
+  border-radius: 50% 50% 0px 0px;
+  background-color: #F59E0B;
+}
+
+.half .txt {
+  top: 21px;
+}

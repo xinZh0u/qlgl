@@ -6,228 +6,333 @@
 <title>QLGL 开发规划 · QLGL</title>
 <style>
 :root {
-  --bg: #ffffff;
-  --bg-alt: #f6f8fa;
-  --fg: #1f2328;
-  --fg-dim: #59636e;
-  --line: #d1d9e0;
-  --accent: #0969da;
-  --code-bg: #f6f8fa;
-  --side-w: 260px;
+  --text: #333;
+  --text-muted: rgba(51, 51, 51, .65);
+  --primary: #1c76e4;
+  --bg: #fff;
+  --side-bg: #151515;
+  --side-fg: #fafafa;
+  --side-primary: rgb(144, 194, 255);
+  --side-hover: rgba(127, 127, 127, .2);
+  --side-sel: #1c76e4;
+  --side-search: rgba(127, 127, 127, .25);
+  --side-search-focus: rgba(127, 127, 127, .38);
+  --box-bg: rgba(135, 135, 135, .085);
+  --box-radius: .35rem;
+  --line: rgba(51, 51, 51, .12);
+  --side-w: 17.5rem;
+  --toc-w: 15.5rem;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC",
+          "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Source Code Pro", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
-        "Microsoft YaHei", sans-serif;
-  color: var(--fg);
+  font: 15px/1.6 var(--font);
+  color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* 顶栏 */
-header.top {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 18px;
-  height: 52px; padding: 0 20px;
-  background: #24292f; color: #fff;
-  border-bottom: 1px solid #1b1f23;
-}
-header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
-header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
-header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
-header.top nav a { color: #d0d7de; }
-header.top nav a:hover { color: #fff; }
+.shell { display: flex; align-items: flex-start; }
 
-/* 两栏 */
-.layout { display: flex; align-items: flex-start; }
-aside.side {
-  position: sticky; top: 52px;
+/* ---------------- 左侧深色导航（GTK 风格） ---------------- */
+.sidebar {
+  position: sticky; top: 0;
   flex: 0 0 var(--side-w); width: var(--side-w);
-  max-height: calc(100vh - 52px); overflow-y: auto;
-  padding: 18px 12px 40px;
-  background: var(--bg-alt);
-  border-right: 1px solid var(--line);
+  height: 100vh; overflow-y: auto;
+  padding: 1.2rem 1rem 3rem;
+  background: var(--side-bg);
+  color: var(--side-fg);
+  color-scheme: dark;
   font-size: 13.5px;
+  scrollbar-width: thin;
 }
-aside.side h4 {
-  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--fg-dim);
+.sidebar::-webkit-scrollbar { width: 9px; }
+.sidebar::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 9px; }
+.sidebar .brand { display: block; padding: .2rem .5rem 1rem; }
+.sidebar .brand b {
+  display: block; font-size: 1.45rem; letter-spacing: .02em; color: #fff;
+  font-weight: 900;
 }
-aside.side h4:first-child { margin-top: 0; }
-aside.side a {
-  display: block; padding: 4px 8px; border-radius: 5px;
-  color: var(--fg); line-height: 1.4;
-}
-aside.side a:hover { background: #eaeef2; text-decoration: none; }
-aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
-aside.side a.sub-item {
-  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
-}
-aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+.sidebar .brand span { font-size: .8rem; opacity: .7; }
+.sidebar a { text-decoration: none; }
 
+.search { position: relative; margin: 0 0 1rem; }
+.search input {
+  width: 100%; border: 0; border-radius: 50px;
+  padding: 8px 14px; font-size: 13.5px; outline: 0;
+  background: var(--side-search); color: var(--side-fg);
+  transition: background-color .15s ease;
+}
+.search input::placeholder { color: rgba(250, 250, 250, .55); }
+.search input:hover, .search input:focus { background: var(--side-search-focus); }
+.results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  max-height: 60vh; overflow-y: auto; z-index: 50;
+  background: #232323; border: 1px solid #3a3a3a; border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .5); padding: 6px;
+}
+.results .hit {
+  display: block; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  color: var(--side-fg);
+}
+.results .hit:hover, .results .hit.sel { background: var(--side-sel); }
+.results .hit .t { display: block; font-size: 13.5px; }
+.results .hit .c { display: block; font-size: 11.5px; opacity: .62; }
+.results .hit.sel .c { opacity: .85; }
+.results .empty { padding: 10px; font-size: 12.5px; opacity: .6; }
+
+.sec { border-top: 1px solid rgba(255, 255, 255, .07); padding: .5rem 0 .2rem; }
+.sec > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; font-weight: 700; font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .55);
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before {
+  content: "▸"; font-size: 10px; transition: transform .15s ease; opacity: .8;
+}
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > summary:hover { color: rgba(250, 250, 250, .85); }
+.sec a {
+  display: block; padding: .25rem .55rem; margin-bottom: .1rem;
+  border-radius: var(--box-radius); color: var(--side-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sec a:hover { background: var(--side-hover); color: var(--side-fg); }
+.sec a.current { background: var(--side-sel); color: #fff; font-weight: 600; }
+.sec .mod {
+  display: block; padding: .55rem .55rem .15rem;
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .4);
+}
+.sec .mod:first-child { padding-top: .2rem; }
+.sidebar .gen {
+  margin: 1.4rem .5rem 0; font-size: 11px; opacity: .45; line-height: 1.5;
+}
+
+/* ---------------- 正文 ---------------- */
 main {
   flex: 1 1 auto; min-width: 0;
-  padding: 28px 40px 80px;
-  max-width: 900px;
+  padding: 3rem 3rem 6rem;
+  box-shadow: 0 0 134px rgba(0, 0, 0, .07);
 }
-
-/* 正文 */
-main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
-main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main .inner { max-width: 54rem; margin: 0 auto; }
+main h1, main h2, main h3, main h4, main h5 {
+  font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
+}
+main h1 { font-size: 2.05rem; margin: 0 0 .3rem; }
+main .eyebrow {
+  font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 0 .15rem;
+}
+main .lead { color: var(--text-muted); font-size: 1rem; margin: .6rem 0 2rem; }
 main h2 {
-  font-size: 21px; margin: 38px 0 10px;
-  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  font-size: 1.45rem; margin: 2.4rem 0 .7rem;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--line);
 }
-main h3 { font-size: 16.5px; margin: 26px 0 8px; }
-main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
-main p { margin: 10px 0; }
-main ul, main ol { margin: 10px 0; padding-left: 26px; }
-main li { margin: 4px 0; }
-main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main h3 { font-size: 1.18rem; margin: 1.8rem 0 .5rem; }
+main h4 { font-size: 1.02rem; margin: 1.4rem 0 .4rem; color: var(--text-muted); }
+main p { margin: .7rem 0; }
+main ul, main ol { margin: .7rem 0; padding-left: 1.5rem; }
+main li { margin: .25rem 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 2.2rem 0; }
 main blockquote {
-  margin: 14px 0; padding: 8px 14px;
-  border-left: 3px solid var(--accent);
-  background: #f6f8fa; color: var(--fg-dim);
+  margin: 1rem 0; padding: .5rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: var(--box-bg); border-radius: 0 var(--box-radius) var(--box-radius) 0;
+  color: var(--text-muted);
 }
-main blockquote p { margin: 4px 0; }
+main blockquote p { margin: .3rem 0; }
 
-/* 行内代码与代码块 */
 code {
-  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
-  border: 1px solid var(--line);
+  font: .86em/1.5 var(--mono);
+  background: var(--box-bg); padding: .12em .35em;
+  border-radius: 4px;
 }
 pre {
-  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
-  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+  margin: 1rem 0; padding: .8rem 1rem; overflow-x: auto;
+  background: var(--box-bg); border-radius: var(--box-radius);
 }
-pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+pre code { background: none; padding: 0; font-size: .86rem; }
 
-/* 表格 */
-table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
-th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
-th { background: var(--bg-alt); font-weight: 600; }
-tbody tr:nth-child(even) { background: #fafbfc; }
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid var(--line); padding: .4rem .65rem; text-align: left; }
+th { background: var(--box-bg); font-weight: 650; }
+tbody tr:nth-child(even) { background: rgba(135, 135, 135, .04); }
 
 /* 代码高亮（pygments） */
-.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
-.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
-.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
-.highlight .mi, .highlight .mf { color: #0550ae; }
-.highlight .nf, .highlight .n { color: #8250df; }
-.highlight .cp, .highlight .cpf { color: #6e7781; }
+.highlight .k, .highlight .kd, .highlight .kn { color: #a626a4; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #4078f2; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #a0a1a7; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #986801; }
+.highlight .nf, .highlight .n { color: #383a42; }
+.highlight .cp, .highlight .cpf { color: #a0a1a7; }
 
 main img {
-  max-width: 100%; height: auto; display: block; margin: 16px 0;
-  border: 1px solid var(--line); border-radius: 8px;
+  max-width: 100%; height: auto; display: block; margin: 1.2rem 0;
+  border: 1px solid var(--line); border-radius: var(--box-radius);
 }
-main img.shot { max-width: 100%; }
 
-/* 页面底部翻页 */
+/* ---------------- 右侧页内目录 ---------------- */
+.toc {
+  position: sticky; top: 0;
+  flex: 0 0 var(--toc-w); width: var(--toc-w);
+  max-height: 100vh; overflow-y: auto;
+  padding: 3rem .8rem 3rem .4rem;
+  font-size: 12.5px;
+}
+.toc h5 {
+  margin: 0 0 .5rem; font-size: 10.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: .15rem 0; }
+.toc a {
+  display: block; padding: .16rem .4rem; border-radius: 5px;
+  color: var(--text-muted); line-height: 1.4;
+}
+.toc a:hover { background: var(--box-bg); color: var(--primary); text-decoration: none; }
+.toc .lv3 { padding-left: 1rem; font-size: 12px; }
+
+/* 翻页 */
 .pager {
-  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  display: flex; gap: .8rem; margin-top: 3rem; padding-top: 1.2rem;
   border-top: 1px solid var(--line);
 }
 .pager a {
-  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
-  border-radius: 7px; color: var(--fg);
+  flex: 1 1 0; padding: .6rem .9rem; border: 1px solid var(--line);
+  border-radius: var(--box-radius); color: var(--text);
 }
-.pager a:hover { background: var(--bg-alt); text-decoration: none; }
-.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager a:hover { background: var(--box-bg); text-decoration: none; }
+.pager .dir { display: block; font-size: 11px; color: var(--text-muted); }
 .pager .next { text-align: right; }
 
 /* 首页卡片 */
-.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+         gap: .7rem; margin: 1rem 0 2rem; }
 .cards a {
-  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
-  border-radius: 9px; color: var(--fg);
+  display: block; padding: .8rem 1rem; color: var(--text);
+  background: var(--box-bg); border-radius: var(--box-radius);
+  border: 1px solid transparent;
 }
-.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
-.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
-.cards span { font-size: 12.8px; color: var(--fg-dim); }
+.cards a:hover { border-color: var(--primary); text-decoration: none; }
+.cards b { display: block; font-size: .95rem; margin-bottom: .15rem; }
+.cards span { font-size: .82rem; color: var(--text-muted); }
+.sec-title { font-size: 1.2rem; font-weight: 800; margin: 2rem 0 .1rem; }
+.sec-desc { color: var(--text-muted); font-size: .88rem; margin: 0 0 .6rem; }
 
-@media (max-width: 860px) {
-  aside.side { display: none; }
-  main { padding: 20px 18px 60px; }
+@media (max-width: 1180px) {
+  .toc { display: none; }
+}
+@media (max-width: 820px) {
+  .shell { display: block; }
+  .sidebar { position: static; height: auto; width: auto; flex: none; }
+  main { padding: 1.6rem 1.1rem 4rem; box-shadow: none; }
 }
 </style>
 </head>
 <body>
-<header class='top'>
-  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
-  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
-</header>
-<div class='layout'>
-<aside class='side'>
-<h4>导航</h4>
-<a href='../index.html'>首页</a>
-<h4>入门教程</h4>
-<a href='../tutorial/01_basics.html'>基础知识</a>
-<a href='../tutorial/02_text.html'>文本</a>
-<a href='../tutorial/03_layout.html'>布局</a>
-<a href='../tutorial/04_interaction.html'>交互</a>
-<a href='../tutorial/05_animation.html'>动画</a>
-<a href='../tutorial/06_theme.html'>换皮肤</a>
-<a href='../tutorial/07_advanced.html'>进阶</a>
-<a href='../tutorial/08_tags.html'>标签与语义</a>
-<a href='../tutorial/09_scroll.html'>滚动</a>
-<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
-<a href='../tutorial/11_input.html'>输入控件</a>
-<a href='../tutorial/12_text.html'>空白与上下标</a>
-<a href='../tutorial/13_form.html'>多行输入与表单</a>
-<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
-<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
-<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
-<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
-<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
-<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
-<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
-<a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
-<a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
-<a href='../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
-<a href='../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
-<a href='../tutorial/27_liquid_glass.html'>液态玻璃：`backdrop-filter` 的玻璃按钮 + 背后会动的东西</a>
-<h4>设计文档</h4>
-<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
-<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
-<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../design/第三方依赖.html'>第三方依赖与许可</a>
-<a class='sub-item' href='../design/迁移指南.html'>从 Web 迁到 QLGL：写法对照与坑</a>
-<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
-<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
-<a class='sub-item active' href='../design/开发规划.html'>QLGL 开发规划</a>
-<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
-<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
-<h4>QLObject</h4>
-<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLText</h4>
-<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
-<h4>QLUI</h4>
-<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
-<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
-<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
-<h4>QLUIText</h4>
-<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
-<h4>QLRender</h4>
-<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
-<h4>QLAnim</h4>
-<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
-<h4>QLInput</h4>
-<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+<div class='shell'>
+<aside class='sidebar'>
+<div class='brand'><a href='index.html' style='color:inherit'><b>QLGL</b><span>C11 界面库 · 文档</span></a></div>
+<div class='search'><input id='q' type='text' placeholder='搜索页面与章节…' autocomplete='off' spellcheck='false'><div id='qres' class='results' hidden></div></div>
+<details class='sec'><summary>入门</summary>
+<a href='tutorial/01_basics.html' title='基础知识'>基础知识</a>
+<a href='tutorial/02_text.html' title='文本'>文本</a>
+<a href='tutorial/03_layout.html' title='布局'>布局</a>
+<a href='tutorial/04_interaction.html' title='交互'>交互</a>
+<a href='tutorial/05_animation.html' title='动画'>动画</a>
+<a href='tutorial/06_theme.html' title='换皮肤'>换皮肤</a>
+<a href='tutorial/07_advanced.html' title='进阶'>进阶</a>
+</details>
+<details class='sec'><summary>界面与控件</summary>
+<a href='tutorial/08_tags.html' title='标签与语义'>标签与语义</a>
+<a href='tutorial/09_scroll.html' title='滚动'>滚动</a>
+<a href='tutorial/11_input.html' title='输入控件'>输入控件</a>
+<a href='tutorial/13_form.html' title='多行输入与表单'>多行输入与表单</a>
+<a href='tutorial/26_touch.html' title='触摸：单指点按 · 拖动滚动 · 双指缩放'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+</details>
+<details class='sec'><summary>布局与文本</summary>
+<a href='tutorial/12_text.html' title='空白与上下标'>空白与上下标</a>
+<a href='tutorial/19_grid.html' title='Grid：二维布局，以及 border-image'>Grid：二维布局，以及 border-image</a>
+<a href='tutorial/22_table.html' title='表格：display: table 全家 + colspan / rowspan'>表格：display: table 全家 + colspan / rowspan</a>
+<a href='tutorial/23_columns.html' title='多栏：column-count / column-width / column-rule'>多栏：column-count / column-width / column-rule</a>
+<a href='tutorial/24_text_stack.html' title='文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向'>文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向</a>
+</details>
+<details class='sec'><summary>视觉与动效</summary>
+<a href='tutorial/15_backdrop.html' title='毛玻璃叠在动的背景上'>毛玻璃叠在动的背景上</a>
+<a href='tutorial/20_filter.html' title='离屏图层：filter / mix-blend-mode / mask / 组透明度'>离屏图层：filter / mix-blend-mode / mask / 组透明度</a>
+<a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
+<a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西'>液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西</a>
+</details>
+<details class='sec'><summary>语法与兼容</summary>
+<a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
+<a href='tutorial/14_css3.html' title='CSS3 补全：真实页面天天用的那几件'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='tutorial/18_css3_more.html' title='CSS3 补全收官：状态选择器、文本细节、背景图'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+</details>
+<details class='sec'><summary>性能</summary>
+<a href='tutorial/17_perf.html' title='性能诊断与 MCU 基准'>性能诊断与 MCU 基准</a>
+</details>
+<details class='sec'><summary>API 手册</summary>
+<span class='mod'>QLObject —— 对象系统：类、属性、信号</span>
+<a href='manual/object/QLObject阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/object/QLObject API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLText —— 文本：字体、字形、UTF-8</span>
+<a href='manual/text/QLText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/text/QLText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
+<a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
+<a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLRender —— 渲染：画布、GPU 后端、脏区</span>
+<a href='manual/render/QLRender阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/render/QLRender API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLAnim —— 动效：帧时钟、缓动、补间</span>
+<a href='manual/anim/QLAnim阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/anim/QLAnim API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
+<a href='manual/input/QLInput阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+</details>
+<details class='sec'><summary>规范与清单</summary>
+<a href='manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
+<a href='manual/ui/CSS3进度规划.html' title='CSS 进度规划'>CSS 进度规划</a>
+<a href='manual/ui/CSS3开发日志.html' title='CSS 开发日志'>CSS 开发日志</a>
+<a href='manual/ui/HTML5标签覆盖与裁剪.html' title='HTML5 标签覆盖与 MCU 裁剪'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a href='manual/ui/HTML5标签进度规划.html' title='HTML5 标签进度规划'>HTML5 标签进度规划</a>
+<a href='manual/ui/HTML5标签开发日志.html' title='HTML5 标签开发日志'>HTML5 标签开发日志</a>
+</details>
+<details class='sec' open><summary>设计文档</summary>
+<a href='图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a href='底层实现设计.html' title='QLGL 底层实现设计（v0.1 草案）'>QLGL 底层实现设计（v0.1 草案）</a>
+<a href='第三方依赖.html' title='第三方依赖与许可'>第三方依赖与许可</a>
+<a href='迁移指南.html' title='从 Web 迁到 QLGL：写法对照与坑'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a href='Web兼容设计.html' title='Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）'>Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）</a>
+<a href='对比与取舍.html' title='与主流框架对比：qlgl 站在哪一格'>与主流框架对比：qlgl 站在哪一格</a>
+<a href='开发规划.html' class='current' title='QLGL 开发规划'>QLGL 开发规划</a>
+<a href='bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
+<a href='性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+</details>
+<p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
-<main>
-<h1 id="qlgl">QLGL 开发规划</h1>
+<main><div class='inner'>
+<p class='eyebrow'>设计文档</p>
+<h1>QLGL 开发规划</h1>
+<p class='lead'>规模：头文件 + 实现 12,600+ 行，测试/示例 21 个文件，20 个 ctest 全绿， ASan/UBSan 与 -Werror -Wpedantic -Wconversion 通过。</p>
 <blockquote>
 <p>定位：<strong>CSS+HTML 的"GTK"</strong> —— 界面用 HTML/CSS 写，构建期编译成 C；绘制层 CPU/GPU 双后端；
 PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏 CPU 光栅场景结构性轻于 GTK。</p>
@@ -311,8 +416,6 @@ PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏
 </tr>
 </tbody>
 </table>
-<p><strong>规模</strong>：头文件 + 实现 <strong>12,600+ 行</strong>，测试/示例 21 个文件，20 个 ctest 全绿，
-ASan/UBSan 与 <code>-Werror -Wpedantic -Wconversion</code> 通过。</p>
 <h3 id="mesa-780-release">实测性能（本机，Mesa，单帧 780 顶点，Release）</h3>
 <table>
 <thead>
@@ -1455,7 +1558,7 @@ GL 侧是 <code>QLGfxGL.scale_fx</code>。上层代码<strong>一行都不用改
 <strong>状态标志只能通过 <code>set_state_chain</code> 改，禁止直接写 <code>flags</code>。</strong></p>
 <p><strong>验收</strong>：<code>test_anim</code>（64 项）+ <code>test_transition</code>（41 项）全绿；<code>test_web_ui</code> 63 项在
 demo CSS 带 <code>transition: 180ms ease-out</code> 的前提下仍全部通过（断言前用 <code>settle()</code> 推进到静止）。
-文档：<a href="../manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a> · <a href="../manual/anim/QLAnim API手册.html">QLAnim API手册</a>，
+文档：<a href="manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a> · <a href="manual/anim/QLAnim API手册.html">QLAnim API手册</a>，
 <code>QLUI</code> 两本手册补 transition 小节。</p>
 <h5 id="3-keyframes">③ <code>@keyframes</code> —— <strong>已完成</strong></h5>
 <p>关键帧在<strong>构建期编译成静态表</strong>，运行期零解析、零分配：</p>
@@ -1505,7 +1608,7 @@ demo CSS 带 <code>transition: 180ms ease-out</code> 的前提下仍全部通过
 <p><strong>验收</strong>：<code>test_keyframes</code>（86 项）覆盖构建期落 0% 帧、线性/alternate/reverse、
 隐式关键帧、<code>fill: forwards</code> 停留与 <code>fill: none</code> 回落、无限循环、重播、
 脏区覆盖、blob 往返逐字节一致、无 <code>@keyframes</code> 时零成本。
-文档：<a href="../manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a> §9 · <a href="../manual/ui/QLUI API手册.html">QLUI API手册</a> §3.10。</p>
+文档：<a href="manual/anim/QLAnim阅读指南.html">QLAnim 阅读指南</a> §9 · <a href="manual/ui/QLUI API手册.html">QLUI API手册</a> §3.10。</p>
 <h5 id="4-transform-translate-scalerotate">④ transform —— <strong><code>translate</code> 已完成；<code>scale</code>/<code>rotate</code> 待做</strong></h5>
 <p><code>transform</code> 是<strong>绘制期属性</strong>（与 CSS 一致），所以移动元素<strong>零重排</strong>：</p>
 <table>
@@ -1985,7 +2088,7 @@ blob 升到 <strong>v14</strong>（<code>areas</code> / <code>area_coords</code>
 <h5 id="17-html5-2026-11-08">⑰ HTML5 全覆盖 + 能力包裁剪 —— <strong>计划（2026-11-08 定案）</strong></h5>
 <p>目标改口径：不再按"缺哪个补哪个"推进，而是<strong>先把 114 个标签全部认下来</strong>，
 再按"能力包"把渲染补齐；MCU 侧编译期裁包。详见
-<a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>（全量清单 + 行为矩阵）。</p>
+<a href="manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>（全量清单 + 行为矩阵）。</p>
 <p><strong>P0（已完成）</strong>：31 个纯语义标签（<code>a</code> <code>code</code> <code>kbd</code> <code>samp</code> <code>var</code> <code>q</code> <code>dfn</code> <code>cite</code>
 <code>data</code> <code>time</code> <code>small</code> <code>bdi</code> <code>bdo</code> <code>wbr</code> <code>del</code> <code>ins</code> <code>dl</code> <code>dt</code> <code>dd</code> <code>menu</code> <code>address</code>
 <code>hgroup</code> <code>search</code> <code>html</code> <code>body</code> <code>form</code> <code>label</code> <code>fieldset</code> <code>legend</code> <code>optgroup</code>）。
@@ -2958,13 +3061,13 @@ GPU 那条（<code>wl_egl_window</code>）在 2026-11-11 补上了，见下面�
 <h3 id="m8-css3-2026-11-10">M8 · CSS3 补全（五批）—— <strong>已完成（2026-11-10）</strong></h3>
 <blockquote>
 <p>结果：B1–B5 全部落地（B1/B3/B4/B5 见各节，B2 与 B3/B4 的最后几项见
-<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §18.7</a>）。
+<a href="manual/ui/CSS3开发日志.html">CSS3 开发日志 §18.7</a>）。
 例程 <code>26_css_states</code> / <code>27_css_text2</code> / <code>28_bg_image</code>，教程 <code>18_css3_more.md</code>，
 测试 <code>test_m8</code>（61 项）。<strong>唯一没做的是 <code>filter</code></strong>（<code>blur()</code> 要离屏图层，
 与 <code>transform: rotate()</code> 同级，留作单独立项）。</p>
 </blockquote>
 <p>HTML5 标签覆盖已到 114/114（含占位），接下来补 CSS。逐条覆盖与批次见
-<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>。</p>
+<a href="manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>。</p>
 <p><strong>现状实测</strong>（23 份真实 CSS、5391 条声明，去掉 CSS 变量与厂商前缀）：
 属性名级 38%、<strong>声明级 73.6%</strong>、能直接照搬 61.3%。
 分模块：flexbox 99.8% / 定位 100% / 文本 98.6% / 盒模型 95.2% / 背景边框 82.7%。</p>
@@ -3012,8 +3115,8 @@ GPU 那条（<code>wl_egl_window</code>）在 2026-11-11 补上了，见下面�
 </table>
 <p><strong>单独立项</strong>（成本与一批相当，但属"新子系统"）：
 <code>transform: rotate()</code>（要旋转光栅路径）、真 group <code>opacity</code>（要离屏图层）。</p>
-<p><strong>已经推翻了"不做"的结论</strong>（原因都是"构建期能算清"）：CSS 变量 <code>var()</code>（§18.1）、
-<code>@media</code> 宽度断点（§18.2）、<code>calc()</code>/<code>min()</code>/<code>max()</code>/<code>clamp()</code>（§18.3）——
+<p><strong>已经推翻了"不做"的结论</strong>（原因都是"构建期能算清"）：CSS 变量 <code>var()</code>（开发日志 §18.1）、
+<code>@media</code> 宽度断点（§18.2）、<code>calc()</code>/<code>min()</code>/<code>max()</code>/<code>clamp()</code>（§18.3，均见 <a href="manual/ui/CSS3开发日志.html">CSS 开发日志</a>）——
 三者都不进运行期样式表，只在编译产物里多几段静态数据。</p>
 <p><strong>原"仍明确不做"清单已被推翻</strong>（2026-11-10 重新定档，见覆盖表 §0）：</p>
 <table>
@@ -3064,7 +3167,7 @@ GPU 那条（<code>wl_egl_window</code>）在 2026-11-11 补上了，见下面�
 </table>
 <p>判据见覆盖表 §2.2：<strong>"MCU 装不下"不再是"不做"的理由</strong>，只是能力包的口径。</p>
 <h4 id="css">CSS 能力包（与标签同构）—— <strong>计划</strong></h4>
-<p>CSS 侧同样按"包"裁剪，原则与 <a href="../manual/ui/HTML5标签覆盖与裁剪.html">HTML5 §3</a> 一致：
+<p>CSS 侧同样按"包"裁剪，原则与 <a href="manual/ui/HTML5标签覆盖与裁剪.html">HTML5 §3</a> 一致：
 <strong>字段与枚举永远全量，裁的是绘制/布局代码路径</strong>；关掉之后写该属性必须
 <strong>明确报错并点名缺哪个包</strong>（<code>strict</code>）或计入 <code>degraded_props</code>（<code>lenient</code>）。</p>
 <table>
@@ -3131,13 +3234,13 @@ GPU 那条（<code>wl_egl_window</code>）在 2026-11-11 补上了，见下面�
 </table>
 <p>预设三档：<code>full</code>（全开）/ <code>ui-lite</code>（BASE+FLEX+RADIUS+SELECTOR_ADV）/ <code>micro</code>（BASE 而已）。</p>
 <p><strong>每个包的验收四条</strong>：关掉能编译、关掉会报错、体积真的降、两端逐像素一致。
-细节见 <a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §21</a>。</p>
+细节见 <a href="manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §21</a>。</p>
 <hr />
 <h3 id="m9-pcmobile-2026-11-10">M9 · 兼容广度（PC/Mobile 主线）—— <strong>规划（2026-11-10 定档）</strong></h3>
 <blockquote>
 <p>定档依据：<strong>两个档位的取舍不能互相强加</strong>。MCU 的体积问题由能力包（<code>QL_FEAT_CSS_*</code>）解决，
 不该变成 PC/Mobile 档"不做"的理由。判据与实测数据见
-<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §0 / §2.1 / §2.2</a>。</p>
+<a href="manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪 §0 / §2.1 / §2.2</a>。</p>
 </blockquote>
 <h4 id="m91-b6grid-border-image-2026-11-10">M9.1 · B6：Grid 与 <code>border-image</code> —— <strong>已完成（2026-11-10）</strong></h4>
 <table>
@@ -3246,7 +3349,7 @@ GPU 那条（<code>wl_egl_window</code>）在 2026-11-11 补上了，见下面�
 </table>
 <p><strong>落地数据</strong>：<code>QLUINode</code> 28 → <strong>30</strong>、<code>QLUIStyle</code> 344 → <strong>364</strong>、blob <strong>v31 / v32</strong>；
 <code>test_table</code> 78 项 + <code>test_columns</code> 34 项；例程 <code>33_table</code> / <code>34_columns</code>；
-教程 <code>22_table.md</code> / <code>23_columns.md</code>；实现要点见《CSS3 覆盖与裁剪》§18.12 / §18.13。</p>
+教程 <code>22_table.md</code> / <code>23_columns.md</code>；实现要点见《CSS3 开发日志》§18.12 / §18.13。</p>
 <p><strong>坑</strong>：① 跨行之后的行要按"跳过被占用的列"重新分配起始列（否则第二行的第一个格子会
 压住上一行跨行的格子）；② 表格角色不能用文字撑宽；③ <code>vertical-align</code> 的余量要用
 "自然内容高"，不能拿撑开后的 <code>border_box.h</code>；④ 单元格宽度必须由<strong>列宽</strong>决定
@@ -3388,7 +3491,7 @@ RAM 成本 = 一个元素盒子的 RGBA 缓冲（PC/Mobile 档可接受，MCU �
 </table>
 <p><strong>落地数据</strong>：<code>QLUIStyle</code> 364 → <strong>368</strong>、blob <strong>v33</strong>（头 152 → 172）；
 新增 <code>test_font_stack</code>（38 项）+ <code>test_text_shape</code>（27 项，两条后端各跑一遍）；
-例程 <code>35_text_stack</code>；教程 <code>24_text_stack.md</code>；实现要点见《CSS3 覆盖与裁剪》§18.14。</p>
+例程 <code>35_text_stack</code>；教程 <code>24_text_stack.md</code>；实现要点见《CSS3 开发日志》§18.14。</p>
 <p><strong>MCU</strong>：三个开关默认全关，且<strong>关/开对体积没有影响</strong>（实现要 FreeType / dlopen，
 MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整形循环 + 内建 UAX#9 + 样式 +4 B）。
 <code>QL_FEAT_CSS_FONT_STACK=1</code> 且没有 FreeType 时<strong>编译期报错</strong>（不给"链接期找不到符号"）。</p>
@@ -3436,7 +3539,7 @@ MCU 上没有）；但共享成本涨了 <strong>+3,184 B</strong>（内建整�
 </table>
 <p><strong>落地数据</strong>：<code>QLUIStyle</code> 368 → <strong>400</strong>（<code>clip_box</code> / <code>clip_pts</code> / <code>variant_flags</code> / <code>radius_v</code>）、
 blob <strong>v34</strong>（头 172 → 180、新增 <code>clip_pts</code> 段）；<code>test_b9</code> <strong>88 项</strong>；例程 <code>36_clip_filter</code>；
-教程 <code>25_clip_filter.md</code>；实现要点见《CSS3 覆盖与裁剪》§18.15。</p>
+教程 <code>25_clip_filter.md</code>；实现要点见《CSS3 开发日志》§18.15。</p>
 <p><strong>顺手抓到的三个老 bug</strong>（都已修）：① GL 片元的零半径椭圆遮罩把整块变成半透明
 （golden 的 <code>clip</code> 用例 CPU/GPU 差 47%）；② column flex 里折行文本用了<strong>容器</strong>宽度
 而不是子项自己的 <code>width</code> 当折行基准；③ column 布局把 <code>inline</code> 子节点高度<strong>逐个相加</strong>。</p>
@@ -3734,9 +3837,19 @@ M6 平台扩展 ◀ 依赖 M4~M5.5（否则每个平台都要返工）
 <p>刻意<strong>不依赖 <code>test/</code>、也不需要先跑代码生成</strong>：界面用 <code>ql_ui_load_text()</code> 内联在
 源文件里，一个 <code>.c</code> 编译完就能跑，没有窗口时自动退回离屏 + PPM。</p>
 <p><strong>文档站：<code>doc/html/</code>（布局参照 GTK 文档）</strong></p>
-<p><code>tools/doc/gen_html.py</code> 把 <code>doc/tutorial/*.md</code> 与 <code>doc/手册/**/*.md</code> 生成静态站点：
-顶栏 + 左侧导航（指南/API 分区）+ 正文 + 上一页/下一页，无 JS、无外部资源，
-<code>cmake --build build --target doc_html</code> 重新生成。</p>
+<p><code>tools/doc/gen_html.py</code> 把 <code>doc/tutorial/*.md</code> 与 <code>doc/手册/**/*.md</code> 生成静态站点，
+视觉效果对齐 <a href="https://docs.gtk.org/gtk4/">docs.gtk.org/gtk4</a>：</p>
+<ul>
+<li><strong>左侧深色导航</strong>（<code>#151515</code>）：按用途分组（入门 / 界面与控件 / 布局与文本 /
+  视觉与动效 / 语法与兼容 / 性能 / API 手册 / 规范与清单 / 设计文档），
+  组用原生 <code>&lt;details&gt;</code> 折叠，只展开当前页所在那组；</li>
+<li><strong>侧栏顶部胶囊搜索框</strong>：额外的 <code>search-index.js</code> 收录 58 个页面 + 947 个
+  h2/h3 锚点，纯前端模糊匹配（前缀 &gt; 包含 &gt; 所属页面），<code>/</code> 聚焦、
+  ↑↓ 选择、回车跳转；双击 <code>file://</code> 也能用；</li>
+<li><strong>白底正文</strong>（带投影，<code>max-width: 54rem</code>）+ <strong>右侧页内目录</strong>（h2/h3，窄屏自动隐藏）</li>
+<li>上一页/下一页；</li>
+<li>无外部资源（字体走系统栈），<code>cmake --build build --target doc_html</code> 重新生成。</li>
+</ul>
 <p><strong>教程（7 章，GTK <code>getting_started</code> 那种递进写法）</strong>：
 基础知识 → 文本 → 布局 → 交互 → 动画 → 换皮肤 → 进阶。
 每章先给<strong>可编译运行的完整程序</strong>，再逐段解释新增的部分，配真实截图
@@ -3764,7 +3877,7 @@ oklch()/color()</code>、阴影命名色、<code>linear-gradient</code> 省略�
 <code>gap: 1rem</code>、<code>line-height: 1.5em/150%</code>、<code>border-width: 1em</code>、<code>transition-delay</code>、
 <code>steps()</code>/<code>cubic-bezier()</code>（过渡 + 动画）、逻辑属性（<code>padding-inline</code> 等）。
 blob <strong>v36</strong>；回归测试 <code>test_css_syntax</code>（100 项）。详见
-<a href="../manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a> §18.16。
+<a href="manual/ui/CSS3开发日志.html">CSS3 开发日志</a> §18.16。
 追加：<code>margin</code>/<code>padding</code> 的 <code>%</code> / <code>vw</code> / <code>vh</code> / <code>vmin</code> / <code>vmax</code> 也落地了
 （单位位扩到 4 位、布局期按包含块宽度解析）。<strong>仍然缺的</strong>只有：继承来的
 <code>direction: rtl</code> 下逻辑属性的左右互换。</p>
@@ -3805,32 +3918,32 @@ blob <strong>v36</strong>；回归测试 <code>test_css_syntax</code>（100 项�
 <tr>
 <td>对象/属性/事件</td>
 <td><code>src/core/</code></td>
-<td><a href="../manual/object/QLObject阅读指南.html">QLObject 手册</a></td>
+<td><a href="manual/object/QLObject阅读指南.html">QLObject 手册</a></td>
 </tr>
 <tr>
 <td>画布/绘制原语</td>
 <td><code>src/draw/qlcanvas.c</code></td>
-<td><a href="../manual/render/QLRender阅读指南.html">QLRender 手册</a></td>
+<td><a href="manual/render/QLRender阅读指南.html">QLRender 手册</a></td>
 </tr>
 <tr>
 <td>界面（HTML/CSS）</td>
 <td><code>src/ui/</code></td>
-<td><a href="../manual/ui/QLUI阅读指南.html">QLUI 手册</a></td>
+<td><a href="manual/ui/QLUI阅读指南.html">QLUI 手册</a></td>
 </tr>
 <tr>
 <td>字体/文本</td>
 <td><code>src/text/</code></td>
-<td><a href="../manual/text/QLText阅读指南.html">QLText 手册</a></td>
+<td><a href="manual/text/QLText阅读指南.html">QLText 手册</a></td>
 </tr>
 <tr>
 <td>HTML/CSS 编译</td>
 <td><code>tools/qlui</code></td>
-<td><a href="../manual/ui/QLUI阅读指南.html">QLUI 手册</a></td>
+<td><a href="manual/ui/QLUI阅读指南.html">QLUI 手册</a></td>
 </tr>
 <tr>
 <td>绘制接口/GPU</td>
 <td><code>src/draw/qldraw2d.c</code>、<code>src/port/qlgfx_gl.c</code></td>
-<td><a href="../manual/render/QLRender阅读指南.html">QLRender 手册</a></td>
+<td><a href="manual/render/QLRender阅读指南.html">QLRender 手册</a></td>
 </tr>
 <tr>
 <td>显示后端</td>
@@ -3843,12 +3956,121 @@ blob <strong>v36</strong>；回归测试 <code>test_css_syntax</code>（100 项�
 <td><a href="Web兼容设计.html">Web 兼容设计</a></td>
 </tr>
 </tbody>
-</table>
-<div class='pager'>
-<a href='../design/对比与取舍.html'><span class='dir'>上一页</span>与主流框架对比：qlgl 站在哪一格</a>
-<a class='next' href='../design/bench.html'><span class='dir'>下一页</span>性能基线（bench.md）</a>
+</table><div class='pager'>
+<a href='对比与取舍.html'><span class='dir'>上一页</span>与主流框架对比：qlgl 站在哪一格</a>
+<a class='next' href='bench.html'><span class='dir'>下一页</span>性能基线（bench.md）</a>
 </div>
-</main>
+</div></main>
+<aside class='toc'><h5>本页内容</h5><ul>
+<li><a href='#1'>1. 现状快照（已完成并可验证）</a></li>
+<li class='lv3'><a href='#mesa-780-release'>实测性能（本机，Mesa，单帧 780 顶点，Release）</a></li>
+<li><a href='#2'>2. 已知缺口（按影响排序）</a></li>
+<li><a href='#3'>3. 目标与验收标准</a></li>
+<li class='lv3'><a href='#31-ci'>3.1 性能（可量化，进 CI）</a></li>
+<li class='lv3'><a href='#32'>3.2 能力（功能验收）</a></li>
+<li><a href='#4'>4. 里程碑</a></li>
+<li class='lv3'><a href='#m1-2-2026-11-08'>M1 · 交互闭环（约 2 周）—— 已完成（2026-11-08）</a></li>
+<li class='lv3'><a href='#m2-3-2026-11-08'>M2 · 文本质量（约 3 周）—— 已完成（2026-11-08）</a></li>
+<li class='lv3'><a href='#m3-4-2026-11-08'>M3 · 布局表达力（约 4 周）—— 已完成（2026-11-08）</a></li>
+<li class='lv3'><a href='#m35-ui-115-01234-2026-11-08'>M3.5 · UI 前端统一（约 1~1.5 周）—— 第 0/1/2/3/4 步已完成（2026-11-08）</a></li>
+<li class='lv3'><a href='#m4-3'>M4 · 性能补齐（约 3 周）—— 进行中（第一批已完成）</a></li>
+<li class='lv3'><a href='#m5-dpi-2026-11-08'>M5 · 逻辑坐标 / 高 DPI / 亚像素 —— 已完成（2026-11-08）</a></li>
+<li class='lv3'><a href='#m55-ui-45-pcmcu'>M5.5 · 动效与现代 UI（约 4~5 周）—— PC/移动优先；MCU 暂缓</a></li>
+<li class='lv3'><a href='#m6-68'>M6 · 平台扩展（约 6~8 周，可并行）</a></li>
+<li class='lv3'><a href='#m65-linux-wayland-2026-11-09'>M6.5 · Linux 手机（Wayland 移动端）—— 规划（2026-11-09 评估）</a></li>
+<li class='lv3'><a href='#m80-2026-11-09'>M8.0 · 三个&quot;小尾巴&quot; —— 已完成（2026-11-09）</a></li>
+<li class='lv3'><a href='#m8-css3-2026-11-10'>M8 · CSS3 补全（五批）—— 已完成（2026-11-10）</a></li>
+<li class='lv3'><a href='#m9-pcmobile-2026-11-10'>M9 · 兼容广度（PC/Mobile 主线）—— 规划（2026-11-10 定档）</a></li>
+<li class='lv3'><a href='#m10-b8-2026-11-11'>M10 · B8 文本栈 —— 已完成（2026-11-11）</a></li>
+<li class='lv3'><a href='#m7-golden-ci-2026-11-08'>M7 · 工程化与生态（持续）—— golden 套件 + CI 已完成（2026-11-08）</a></li>
+<li><a href='#5'>5. 关键路径与依赖</a></li>
+<li><a href='#6'>6. 架构红线（写进规范，防止走偏）</a></li>
+<li><a href='#7'>7. 风险登记</a></li>
+<li class='lv3'><a href='#golden-m7-2026-11-08'>golden 护栏（M7 前置）—— 已完成（2026-11-08）</a></li>
+<li class='lv3'><a href='#2026-11-08'>例程与文档站 —— 已完成（2026-11-08）</a></li>
+<li><a href='#8'>8. 立即可开工（按性价比）</a></li>
+<li><a href='#9'>9. 附录：术语与对应模块</a></li>
+</ul></aside>
 </div>
+<script src='search-index.js'></script>
+<script>var PREFIX='';
+(function () {
+  var IDX = window.QLGL_SEARCH || [];
+  var box = document.getElementById('q');
+  var panel = document.getElementById('qres');
+  if (!box || !panel) return;
+  var sel = -1, hits = [];
+
+  function esc(s) { return s; }
+
+  function render() {
+    panel.textContent = '';
+    if (!hits.length) {
+      var d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '没有匹配的页面';
+      panel.appendChild(d);
+      panel.hidden = false;
+      return;
+    }
+    hits.forEach(function (h, i) {
+      var a = document.createElement('a');
+      a.className = 'hit' + (i === sel ? ' sel' : '');
+      a.href = PREFIX + h.u;
+      var t = document.createElement('span');
+      t.className = 't';
+      t.textContent = h.t;
+      var c = document.createElement('span');
+      c.className = 'c';
+      c.textContent = h.b;
+      a.appendChild(t); a.appendChild(c);
+      panel.appendChild(a);
+    });
+    panel.hidden = false;
+  }
+
+  function search(q) {
+    q = q.trim().toLowerCase();
+    if (!q) { panel.hidden = true; hits = []; return; }
+    var out = [];
+    for (var i = 0; i < IDX.length; i++) {
+      var e = IDX[i], t = e.t.toLowerCase(), s = 0;
+      if (t === q) s = 100;
+      else if (t.indexOf(q) === 0) s = 90;
+      else if (t.indexOf(q) >= 0) s = 70;
+      else if (e.k && e.b && e.b.toLowerCase().indexOf(q) >= 0) s = 30;
+      if (s > 0) out.push({ s: s + (e.k ? 0 : 8), e: e });
+    }
+    out.sort(function (x, y) { return y.s - x.s || x.e.t.length - y.e.t.length; });
+    hits = out.slice(0, 18).map(function (o) { return o.e; });
+    sel = hits.length ? 0 : -1;
+    render();
+  }
+
+  box.addEventListener('input', function () { search(box.value); });
+  box.addEventListener('focus', function () { if (box.value.trim()) search(box.value); });
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!hits.length) return;
+      sel = (sel + (ev.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length;
+      render();
+    } else if (ev.key === 'Enter') {
+      if (sel >= 0 && hits[sel]) window.location.href = PREFIX + hits[sel].u;
+    } else if (ev.key === 'Escape') {
+      panel.hidden = true; box.blur();
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (!panel.contains(ev.target) && ev.target !== box) panel.hidden = true;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === '/' && document.activeElement !== box &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      ev.preventDefault(); box.focus(); box.select();
+    }
+  });
+})();
+</script>
 </body>
 </html>

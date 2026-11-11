@@ -6,228 +6,333 @@
 <title>QLInput / 交互系统 阅读指南 · QLGL</title>
 <style>
 :root {
-  --bg: #ffffff;
-  --bg-alt: #f6f8fa;
-  --fg: #1f2328;
-  --fg-dim: #59636e;
-  --line: #d1d9e0;
-  --accent: #0969da;
-  --code-bg: #f6f8fa;
-  --side-w: 260px;
+  --text: #333;
+  --text-muted: rgba(51, 51, 51, .65);
+  --primary: #1c76e4;
+  --bg: #fff;
+  --side-bg: #151515;
+  --side-fg: #fafafa;
+  --side-primary: rgb(144, 194, 255);
+  --side-hover: rgba(127, 127, 127, .2);
+  --side-sel: #1c76e4;
+  --side-search: rgba(127, 127, 127, .25);
+  --side-search-focus: rgba(127, 127, 127, .38);
+  --box-bg: rgba(135, 135, 135, .085);
+  --box-radius: .35rem;
+  --line: rgba(51, 51, 51, .12);
+  --side-w: 17.5rem;
+  --toc-w: 15.5rem;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC",
+          "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Source Code Pro", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
-        "Microsoft YaHei", sans-serif;
-  color: var(--fg);
+  font: 15px/1.6 var(--font);
+  color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* 顶栏 */
-header.top {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 18px;
-  height: 52px; padding: 0 20px;
-  background: #24292f; color: #fff;
-  border-bottom: 1px solid #1b1f23;
-}
-header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
-header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
-header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
-header.top nav a { color: #d0d7de; }
-header.top nav a:hover { color: #fff; }
+.shell { display: flex; align-items: flex-start; }
 
-/* 两栏 */
-.layout { display: flex; align-items: flex-start; }
-aside.side {
-  position: sticky; top: 52px;
+/* ---------------- 左侧深色导航（GTK 风格） ---------------- */
+.sidebar {
+  position: sticky; top: 0;
   flex: 0 0 var(--side-w); width: var(--side-w);
-  max-height: calc(100vh - 52px); overflow-y: auto;
-  padding: 18px 12px 40px;
-  background: var(--bg-alt);
-  border-right: 1px solid var(--line);
+  height: 100vh; overflow-y: auto;
+  padding: 1.2rem 1rem 3rem;
+  background: var(--side-bg);
+  color: var(--side-fg);
+  color-scheme: dark;
   font-size: 13.5px;
+  scrollbar-width: thin;
 }
-aside.side h4 {
-  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--fg-dim);
+.sidebar::-webkit-scrollbar { width: 9px; }
+.sidebar::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 9px; }
+.sidebar .brand { display: block; padding: .2rem .5rem 1rem; }
+.sidebar .brand b {
+  display: block; font-size: 1.45rem; letter-spacing: .02em; color: #fff;
+  font-weight: 900;
 }
-aside.side h4:first-child { margin-top: 0; }
-aside.side a {
-  display: block; padding: 4px 8px; border-radius: 5px;
-  color: var(--fg); line-height: 1.4;
-}
-aside.side a:hover { background: #eaeef2; text-decoration: none; }
-aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
-aside.side a.sub-item {
-  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
-}
-aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+.sidebar .brand span { font-size: .8rem; opacity: .7; }
+.sidebar a { text-decoration: none; }
 
+.search { position: relative; margin: 0 0 1rem; }
+.search input {
+  width: 100%; border: 0; border-radius: 50px;
+  padding: 8px 14px; font-size: 13.5px; outline: 0;
+  background: var(--side-search); color: var(--side-fg);
+  transition: background-color .15s ease;
+}
+.search input::placeholder { color: rgba(250, 250, 250, .55); }
+.search input:hover, .search input:focus { background: var(--side-search-focus); }
+.results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  max-height: 60vh; overflow-y: auto; z-index: 50;
+  background: #232323; border: 1px solid #3a3a3a; border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .5); padding: 6px;
+}
+.results .hit {
+  display: block; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  color: var(--side-fg);
+}
+.results .hit:hover, .results .hit.sel { background: var(--side-sel); }
+.results .hit .t { display: block; font-size: 13.5px; }
+.results .hit .c { display: block; font-size: 11.5px; opacity: .62; }
+.results .hit.sel .c { opacity: .85; }
+.results .empty { padding: 10px; font-size: 12.5px; opacity: .6; }
+
+.sec { border-top: 1px solid rgba(255, 255, 255, .07); padding: .5rem 0 .2rem; }
+.sec > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; font-weight: 700; font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .55);
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before {
+  content: "▸"; font-size: 10px; transition: transform .15s ease; opacity: .8;
+}
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > summary:hover { color: rgba(250, 250, 250, .85); }
+.sec a {
+  display: block; padding: .25rem .55rem; margin-bottom: .1rem;
+  border-radius: var(--box-radius); color: var(--side-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sec a:hover { background: var(--side-hover); color: var(--side-fg); }
+.sec a.current { background: var(--side-sel); color: #fff; font-weight: 600; }
+.sec .mod {
+  display: block; padding: .55rem .55rem .15rem;
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .4);
+}
+.sec .mod:first-child { padding-top: .2rem; }
+.sidebar .gen {
+  margin: 1.4rem .5rem 0; font-size: 11px; opacity: .45; line-height: 1.5;
+}
+
+/* ---------------- 正文 ---------------- */
 main {
   flex: 1 1 auto; min-width: 0;
-  padding: 28px 40px 80px;
-  max-width: 900px;
+  padding: 3rem 3rem 6rem;
+  box-shadow: 0 0 134px rgba(0, 0, 0, .07);
 }
-
-/* 正文 */
-main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
-main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main .inner { max-width: 54rem; margin: 0 auto; }
+main h1, main h2, main h3, main h4, main h5 {
+  font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
+}
+main h1 { font-size: 2.05rem; margin: 0 0 .3rem; }
+main .eyebrow {
+  font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 0 .15rem;
+}
+main .lead { color: var(--text-muted); font-size: 1rem; margin: .6rem 0 2rem; }
 main h2 {
-  font-size: 21px; margin: 38px 0 10px;
-  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  font-size: 1.45rem; margin: 2.4rem 0 .7rem;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--line);
 }
-main h3 { font-size: 16.5px; margin: 26px 0 8px; }
-main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
-main p { margin: 10px 0; }
-main ul, main ol { margin: 10px 0; padding-left: 26px; }
-main li { margin: 4px 0; }
-main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main h3 { font-size: 1.18rem; margin: 1.8rem 0 .5rem; }
+main h4 { font-size: 1.02rem; margin: 1.4rem 0 .4rem; color: var(--text-muted); }
+main p { margin: .7rem 0; }
+main ul, main ol { margin: .7rem 0; padding-left: 1.5rem; }
+main li { margin: .25rem 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 2.2rem 0; }
 main blockquote {
-  margin: 14px 0; padding: 8px 14px;
-  border-left: 3px solid var(--accent);
-  background: #f6f8fa; color: var(--fg-dim);
+  margin: 1rem 0; padding: .5rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: var(--box-bg); border-radius: 0 var(--box-radius) var(--box-radius) 0;
+  color: var(--text-muted);
 }
-main blockquote p { margin: 4px 0; }
+main blockquote p { margin: .3rem 0; }
 
-/* 行内代码与代码块 */
 code {
-  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
-  border: 1px solid var(--line);
+  font: .86em/1.5 var(--mono);
+  background: var(--box-bg); padding: .12em .35em;
+  border-radius: 4px;
 }
 pre {
-  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
-  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+  margin: 1rem 0; padding: .8rem 1rem; overflow-x: auto;
+  background: var(--box-bg); border-radius: var(--box-radius);
 }
-pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+pre code { background: none; padding: 0; font-size: .86rem; }
 
-/* 表格 */
-table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
-th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
-th { background: var(--bg-alt); font-weight: 600; }
-tbody tr:nth-child(even) { background: #fafbfc; }
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid var(--line); padding: .4rem .65rem; text-align: left; }
+th { background: var(--box-bg); font-weight: 650; }
+tbody tr:nth-child(even) { background: rgba(135, 135, 135, .04); }
 
 /* 代码高亮（pygments） */
-.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
-.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
-.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
-.highlight .mi, .highlight .mf { color: #0550ae; }
-.highlight .nf, .highlight .n { color: #8250df; }
-.highlight .cp, .highlight .cpf { color: #6e7781; }
+.highlight .k, .highlight .kd, .highlight .kn { color: #a626a4; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #4078f2; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #a0a1a7; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #986801; }
+.highlight .nf, .highlight .n { color: #383a42; }
+.highlight .cp, .highlight .cpf { color: #a0a1a7; }
 
 main img {
-  max-width: 100%; height: auto; display: block; margin: 16px 0;
-  border: 1px solid var(--line); border-radius: 8px;
+  max-width: 100%; height: auto; display: block; margin: 1.2rem 0;
+  border: 1px solid var(--line); border-radius: var(--box-radius);
 }
-main img.shot { max-width: 100%; }
 
-/* 页面底部翻页 */
+/* ---------------- 右侧页内目录 ---------------- */
+.toc {
+  position: sticky; top: 0;
+  flex: 0 0 var(--toc-w); width: var(--toc-w);
+  max-height: 100vh; overflow-y: auto;
+  padding: 3rem .8rem 3rem .4rem;
+  font-size: 12.5px;
+}
+.toc h5 {
+  margin: 0 0 .5rem; font-size: 10.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: .15rem 0; }
+.toc a {
+  display: block; padding: .16rem .4rem; border-radius: 5px;
+  color: var(--text-muted); line-height: 1.4;
+}
+.toc a:hover { background: var(--box-bg); color: var(--primary); text-decoration: none; }
+.toc .lv3 { padding-left: 1rem; font-size: 12px; }
+
+/* 翻页 */
 .pager {
-  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  display: flex; gap: .8rem; margin-top: 3rem; padding-top: 1.2rem;
   border-top: 1px solid var(--line);
 }
 .pager a {
-  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
-  border-radius: 7px; color: var(--fg);
+  flex: 1 1 0; padding: .6rem .9rem; border: 1px solid var(--line);
+  border-radius: var(--box-radius); color: var(--text);
 }
-.pager a:hover { background: var(--bg-alt); text-decoration: none; }
-.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager a:hover { background: var(--box-bg); text-decoration: none; }
+.pager .dir { display: block; font-size: 11px; color: var(--text-muted); }
 .pager .next { text-align: right; }
 
 /* 首页卡片 */
-.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+         gap: .7rem; margin: 1rem 0 2rem; }
 .cards a {
-  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
-  border-radius: 9px; color: var(--fg);
+  display: block; padding: .8rem 1rem; color: var(--text);
+  background: var(--box-bg); border-radius: var(--box-radius);
+  border: 1px solid transparent;
 }
-.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
-.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
-.cards span { font-size: 12.8px; color: var(--fg-dim); }
+.cards a:hover { border-color: var(--primary); text-decoration: none; }
+.cards b { display: block; font-size: .95rem; margin-bottom: .15rem; }
+.cards span { font-size: .82rem; color: var(--text-muted); }
+.sec-title { font-size: 1.2rem; font-weight: 800; margin: 2rem 0 .1rem; }
+.sec-desc { color: var(--text-muted); font-size: .88rem; margin: 0 0 .6rem; }
 
-@media (max-width: 860px) {
-  aside.side { display: none; }
-  main { padding: 20px 18px 60px; }
+@media (max-width: 1180px) {
+  .toc { display: none; }
+}
+@media (max-width: 820px) {
+  .shell { display: block; }
+  .sidebar { position: static; height: auto; width: auto; flex: none; }
+  main { padding: 1.6rem 1.1rem 4rem; box-shadow: none; }
 }
 </style>
 </head>
 <body>
-<header class='top'>
-  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
-  <nav><a href='../../index.html'>首页</a><a href='../../tutorial/01_basics.html'>教程</a><a href='../../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
-</header>
-<div class='layout'>
-<aside class='side'>
-<h4>导航</h4>
-<a href='../../index.html'>首页</a>
-<h4>入门教程</h4>
-<a href='../../tutorial/01_basics.html'>基础知识</a>
-<a href='../../tutorial/02_text.html'>文本</a>
-<a href='../../tutorial/03_layout.html'>布局</a>
-<a href='../../tutorial/04_interaction.html'>交互</a>
-<a href='../../tutorial/05_animation.html'>动画</a>
-<a href='../../tutorial/06_theme.html'>换皮肤</a>
-<a href='../../tutorial/07_advanced.html'>进阶</a>
-<a href='../../tutorial/08_tags.html'>标签与语义</a>
-<a href='../../tutorial/09_scroll.html'>滚动</a>
-<a href='../../tutorial/10_vs_web.html'>与 Web 的差别</a>
-<a href='../../tutorial/11_input.html'>输入控件</a>
-<a href='../../tutorial/12_text.html'>空白与上下标</a>
-<a href='../../tutorial/13_form.html'>多行输入与表单</a>
-<a href='../../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
-<a href='../../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
-<a href='../../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
-<a href='../../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
-<a href='../../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
-<a href='../../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
-<a href='../../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
-<a href='../../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
-<a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
-<a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
-<a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
-<a href='../../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
-<a href='../../tutorial/27_liquid_glass.html'>液态玻璃：`backdrop-filter` 的玻璃按钮 + 背后会动的东西</a>
-<h4>设计文档</h4>
-<a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
-<a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
-<a class='sub-item' href='../../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
-<a class='sub-item' href='../../design/第三方依赖.html'>第三方依赖与许可</a>
-<a class='sub-item' href='../../design/迁移指南.html'>从 Web 迁到 QLGL：写法对照与坑</a>
-<a class='sub-item' href='../../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
-<a class='sub-item' href='../../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
-<a class='sub-item' href='../../design/开发规划.html'>QLGL 开发规划</a>
-<a class='sub-item' href='../../design/bench.html'>性能基线（bench.md）</a>
-<a class='sub-item' href='../../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
-<h4>QLObject</h4>
-<a class='sub-item' href='../../manual/object/QLObject阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/object/QLObject API手册.html'>API 手册</a>
-<h4>QLText</h4>
-<a class='sub-item' href='../../manual/text/QLText阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/text/QLText API手册.html'>API 手册</a>
-<h4>QLUI</h4>
-<a class='sub-item' href='../../manual/ui/QLUI阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
-<a class='sub-item' href='../../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
-<a class='sub-item' href='../../manual/ui/QLUI API手册.html'>API 手册</a>
-<h4>QLUIText</h4>
-<a class='sub-item' href='../../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/uitext/QLUIText API手册.html'>API 手册</a>
-<h4>QLRender</h4>
-<a class='sub-item' href='../../manual/render/QLRender阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/render/QLRender API手册.html'>API 手册</a>
-<h4>QLAnim</h4>
-<a class='sub-item' href='../../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/anim/QLAnim API手册.html'>API 手册</a>
-<h4>QLInput</h4>
-<a class='sub-item active' href='../../manual/input/QLInput阅读指南.html'>阅读指南</a>
-<a class='sub-item' href='../../manual/input/QLInput API手册.html'>API 手册</a>
+<div class='shell'>
+<aside class='sidebar'>
+<div class='brand'><a href='../../index.html' style='color:inherit'><b>QLGL</b><span>C11 界面库 · 文档</span></a></div>
+<div class='search'><input id='q' type='text' placeholder='搜索页面与章节…' autocomplete='off' spellcheck='false'><div id='qres' class='results' hidden></div></div>
+<details class='sec'><summary>入门</summary>
+<a href='../../tutorial/01_basics.html' title='基础知识'>基础知识</a>
+<a href='../../tutorial/02_text.html' title='文本'>文本</a>
+<a href='../../tutorial/03_layout.html' title='布局'>布局</a>
+<a href='../../tutorial/04_interaction.html' title='交互'>交互</a>
+<a href='../../tutorial/05_animation.html' title='动画'>动画</a>
+<a href='../../tutorial/06_theme.html' title='换皮肤'>换皮肤</a>
+<a href='../../tutorial/07_advanced.html' title='进阶'>进阶</a>
+</details>
+<details class='sec'><summary>界面与控件</summary>
+<a href='../../tutorial/08_tags.html' title='标签与语义'>标签与语义</a>
+<a href='../../tutorial/09_scroll.html' title='滚动'>滚动</a>
+<a href='../../tutorial/11_input.html' title='输入控件'>输入控件</a>
+<a href='../../tutorial/13_form.html' title='多行输入与表单'>多行输入与表单</a>
+<a href='../../tutorial/26_touch.html' title='触摸：单指点按 · 拖动滚动 · 双指缩放'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+</details>
+<details class='sec'><summary>布局与文本</summary>
+<a href='../../tutorial/12_text.html' title='空白与上下标'>空白与上下标</a>
+<a href='../../tutorial/19_grid.html' title='Grid：二维布局，以及 border-image'>Grid：二维布局，以及 border-image</a>
+<a href='../../tutorial/22_table.html' title='表格：display: table 全家 + colspan / rowspan'>表格：display: table 全家 + colspan / rowspan</a>
+<a href='../../tutorial/23_columns.html' title='多栏：column-count / column-width / column-rule'>多栏：column-count / column-width / column-rule</a>
+<a href='../../tutorial/24_text_stack.html' title='文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向'>文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向</a>
+</details>
+<details class='sec'><summary>视觉与动效</summary>
+<a href='../../tutorial/15_backdrop.html' title='毛玻璃叠在动的背景上'>毛玻璃叠在动的背景上</a>
+<a href='../../tutorial/20_filter.html' title='离屏图层：filter / mix-blend-mode / mask / 组透明度'>离屏图层：filter / mix-blend-mode / mask / 组透明度</a>
+<a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
+<a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西'>液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西</a>
+</details>
+<details class='sec'><summary>语法与兼容</summary>
+<a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
+<a href='../../tutorial/14_css3.html' title='CSS3 补全：真实页面天天用的那几件'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../../tutorial/18_css3_more.html' title='CSS3 补全收官：状态选择器、文本细节、背景图'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+</details>
+<details class='sec'><summary>性能</summary>
+<a href='../../tutorial/17_perf.html' title='性能诊断与 MCU 基准'>性能诊断与 MCU 基准</a>
+</details>
+<details class='sec' open><summary>API 手册</summary>
+<span class='mod'>QLObject —— 对象系统：类、属性、信号</span>
+<a href='../../manual/object/QLObject阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='../../manual/object/QLObject API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLText —— 文本：字体、字形、UTF-8</span>
+<a href='../../manual/text/QLText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='../../manual/text/QLText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
+<a href='../../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='../../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
+<a href='../../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='../../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLRender —— 渲染：画布、GPU 后端、脏区</span>
+<a href='../../manual/render/QLRender阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='../../manual/render/QLRender API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLAnim —— 动效：帧时钟、缓动、补间</span>
+<a href='../../manual/anim/QLAnim阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='../../manual/anim/QLAnim API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
+<a href='../../manual/input/QLInput阅读指南.html' class='current' title='阅读指南'>阅读指南</a>
+<a href='../../manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+</details>
+<details class='sec'><summary>规范与清单</summary>
+<a href='../../manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
+<a href='../../manual/ui/CSS3进度规划.html' title='CSS 进度规划'>CSS 进度规划</a>
+<a href='../../manual/ui/CSS3开发日志.html' title='CSS 开发日志'>CSS 开发日志</a>
+<a href='../../manual/ui/HTML5标签覆盖与裁剪.html' title='HTML5 标签覆盖与 MCU 裁剪'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a href='../../manual/ui/HTML5标签进度规划.html' title='HTML5 标签进度规划'>HTML5 标签进度规划</a>
+<a href='../../manual/ui/HTML5标签开发日志.html' title='HTML5 标签开发日志'>HTML5 标签开发日志</a>
+</details>
+<details class='sec'><summary>设计文档</summary>
+<a href='../../图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='../../EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a href='../../底层实现设计.html' title='QLGL 底层实现设计（v0.1 草案）'>QLGL 底层实现设计（v0.1 草案）</a>
+<a href='../../第三方依赖.html' title='第三方依赖与许可'>第三方依赖与许可</a>
+<a href='../../迁移指南.html' title='从 Web 迁到 QLGL：写法对照与坑'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a href='../../Web兼容设计.html' title='Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）'>Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）</a>
+<a href='../../对比与取舍.html' title='与主流框架对比：qlgl 站在哪一格'>与主流框架对比：qlgl 站在哪一格</a>
+<a href='../../开发规划.html' title='QLGL 开发规划'>QLGL 开发规划</a>
+<a href='../../bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
+<a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+</details>
+<p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
-<main>
-<h1 id="qlinput">QLInput / 交互系统 阅读指南</h1>
+<main><div class='inner'>
+<p class='eyebrow'>QLInput</p>
+<h1>QLInput / 交互系统 阅读指南</h1>
+<p class='lead'>后端只认识&quot;坐标 + 按钮 + 键码&quot;，界面层只认识节点树。中间隔一个定长队列， 换来三件事：</p>
 <blockquote>
 <p>目标读者：要读懂或修改 <code>src/core/qlinput.c</code>、给新后端接输入、或调试"点了没反应"的人。
 只想用 API，请看 <a href="QLInput API手册.html">QLInput API手册</a>。</p>
@@ -296,8 +401,6 @@ HTML/CSS 编译出来的节点树（<code>display:none</code>、<code>overflow</
 </blockquote>
 <hr />
 <h2 id="2">2. 为什么队列要独立一层</h2>
-<p>后端只认识"坐标 + 按钮 + 键码"，界面层只认识节点树。中间隔一个<strong>定长队列</strong>，
-换来三件事：</p>
 <div class="highlight"><pre><span></span><code>X11/Wayland 事件 ──┐
 测试注入的事件   ──┼─→ QLInputEvent 队列 ─→ ql_input_dispatch() ─→ 事件汇 ─→ ql_ui_input_event()
 自动化脚本       ──┘
@@ -512,11 +615,105 @@ X11 显示后端和 GL 后端共用，键码表只有一份。</p>
 <li><code>src/port/qlinput_x11.h</code>（一个后端怎么翻译事件）</li>
 <li><code>test/input/test_input_queue.c</code>（所有队列语义的可执行说明）</li>
 <li>想看"命中之后发生什么"：<code>src/ui/qlui.c</code> 的 <code>ql_ui_pointer_down/up/move</code></li>
-</ol>
-<div class='pager'>
+</ol><div class='pager'>
 <a href='../../manual/input/QLInput API手册.html'><span class='dir'>上一页</span>QLInput / 交互 API 手册（v0.1）</a>
+<a class='next' href='../../manual/ui/CSS3覆盖与裁剪.html'><span class='dir'>下一页</span>CSS 覆盖与裁剪（全量清单）</a>
 </div>
-</main>
+</div></main>
+<aside class='toc'><h5>本页内容</h5><ul>
+<li><a href='#1'>1. 文件地图</a></li>
+<li><a href='#2'>2. 为什么队列要独立一层</a></li>
+<li><a href='#3'>3. 事件队列</a></li>
+<li><a href='#4'>4. 界面层接手之后的四件事</a></li>
+<li><a href='#5'>5. 事件参数约定</a></li>
+<li><a href='#6'>6. 后端怎么接</a></li>
+<li class='lv3'><a href='#x11qselectinput'>X11（QSelectInput 必须包含）</a></li>
+<li class='lv3'><a href='#wayland'>Wayland</a></li>
+<li class='lv3'><a href='#_1'>关闭窗口</a></li>
+<li><a href='#7-bug'>7. 顺带修掉的一个真 bug：子链表顺序</a></li>
+<li><a href='#8'>8. 已知边界</a></li>
+<li><a href='#9'>9. 建议阅读顺序</a></li>
+</ul></aside>
 </div>
+<script src='../../search-index.js'></script>
+<script>var PREFIX='../../';
+(function () {
+  var IDX = window.QLGL_SEARCH || [];
+  var box = document.getElementById('q');
+  var panel = document.getElementById('qres');
+  if (!box || !panel) return;
+  var sel = -1, hits = [];
+
+  function esc(s) { return s; }
+
+  function render() {
+    panel.textContent = '';
+    if (!hits.length) {
+      var d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '没有匹配的页面';
+      panel.appendChild(d);
+      panel.hidden = false;
+      return;
+    }
+    hits.forEach(function (h, i) {
+      var a = document.createElement('a');
+      a.className = 'hit' + (i === sel ? ' sel' : '');
+      a.href = PREFIX + h.u;
+      var t = document.createElement('span');
+      t.className = 't';
+      t.textContent = h.t;
+      var c = document.createElement('span');
+      c.className = 'c';
+      c.textContent = h.b;
+      a.appendChild(t); a.appendChild(c);
+      panel.appendChild(a);
+    });
+    panel.hidden = false;
+  }
+
+  function search(q) {
+    q = q.trim().toLowerCase();
+    if (!q) { panel.hidden = true; hits = []; return; }
+    var out = [];
+    for (var i = 0; i < IDX.length; i++) {
+      var e = IDX[i], t = e.t.toLowerCase(), s = 0;
+      if (t === q) s = 100;
+      else if (t.indexOf(q) === 0) s = 90;
+      else if (t.indexOf(q) >= 0) s = 70;
+      else if (e.k && e.b && e.b.toLowerCase().indexOf(q) >= 0) s = 30;
+      if (s > 0) out.push({ s: s + (e.k ? 0 : 8), e: e });
+    }
+    out.sort(function (x, y) { return y.s - x.s || x.e.t.length - y.e.t.length; });
+    hits = out.slice(0, 18).map(function (o) { return o.e; });
+    sel = hits.length ? 0 : -1;
+    render();
+  }
+
+  box.addEventListener('input', function () { search(box.value); });
+  box.addEventListener('focus', function () { if (box.value.trim()) search(box.value); });
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!hits.length) return;
+      sel = (sel + (ev.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length;
+      render();
+    } else if (ev.key === 'Enter') {
+      if (sel >= 0 && hits[sel]) window.location.href = PREFIX + hits[sel].u;
+    } else if (ev.key === 'Escape') {
+      panel.hidden = true; box.blur();
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (!panel.contains(ev.target) && ev.target !== box) panel.hidden = true;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === '/' && document.activeElement !== box &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      ev.preventDefault(); box.focus(); box.select();
+    }
+  });
+})();
+</script>
 </body>
 </html>

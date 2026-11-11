@@ -1,0 +1,162 @@
+/*
+ * `::before` / `::after` 的多条规则 —— 人工可视化测试。
+ *
+ * 判据只有一条：**一个伪元素只该出现一次**，哪怕它的样式被拆成两条规则写。
+ * 早先版本每条规则各建一个伪节点：既不认识"第二条规则只补一点样式"，
+ * 也不允许第二条规则不写 content。
+ *
+ * 四个格子从左到右、从上到下依次验证：
+ *   ① 基线（单规则）
+ *   ② 拆两条：徽标只有一个，且第二条规则的颜色生效
+ *   ③ 两条规则抢同一个属性：后写的赢（左移/右移、灰/绿）
+ *   ④ ::before 与 ::after 各自拆两条：左右各一个装饰，互不影响
+ */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.h1 {
+  position: absolute;
+  left: 20px;
+  top: 14px;
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.sub {
+  position: absolute;
+  left: 20px;
+  top: 38px;
+  width: 680px;
+  font-size: 11px;
+  color: #57606A;
+  white-space: normal;
+  line-height: 16px;
+}
+
+.grid {
+  position: absolute;
+  left: 16px;
+  top: 84px;
+  width: 688px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.cell {
+  width: 330px;
+}
+
+/*
+ * 卡片里刻意**不用** flex：绝对定位子节点放在 flex 容器里会走一条有已知缺陷的
+ * 尺寸路径（`width: 24px` 被算成 20px），那是与伪元素无关的旧问题，
+ * 混进来会让本测试的判据看不清。正文改为绝对定位居中。
+ */
+.card {
+  position: relative;
+  height: 84px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #D0D7DE;
+  border-radius: 10px;
+  background-color: #F6F8FA;
+}
+
+.txt {
+  position: absolute;
+  left: 46px;
+  right: 14px;
+  top: 33px;
+  text-align: center;
+  font-size: 12px;
+  color: #1F2328;
+}
+
+.cap {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #57606A;
+  text-align: center;
+}
+
+/* ①②③ 的徽标：先给形状与位置，颜色/位置由后面那条规则覆盖 */
+.a::before,
+.b::before,
+.c::before {
+  position: absolute;
+  top: 30px;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background-color: #E5E7EB;
+  color: #1F2328;
+  font-size: 12px;
+  text-align: center;
+  line-height: 24px;
+}
+
+/* ---- ① 基线：一条规则写完 ---- */
+.a::before {
+  content: "1";
+  left: 14px;
+}
+
+/* ---- ② 拆成两条：第二条只补颜色，content 不重复写 ---- */
+.b::before {
+  content: "2";
+  left: 14px;
+}
+.b::before {
+  background-color: #2563EB;
+  color: #FFFFFF;
+}
+
+/* ---- ③ 两条规则抢同一个属性：后写的那条生效 ---- */
+.c::before {
+  content: "3";
+  left: 14px;
+}
+.c::before {
+  left: 22px;
+  background-color: #10B981;
+  color: #FFFFFF;
+}
+
+/* ---- ④ ::before 与 ::after 各拆两条 ---- */
+.d::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 38px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background-color: #2563EB;
+}
+.d::before {
+  left: 18px;
+}
+
+.d::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 36px;
+  width: 20px;
+  height: 14px;
+  border-radius: 7px;
+  background-color: #0EA5A4;
+}
+.d::after {
+  width: 26px;
+}
+

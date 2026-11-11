@@ -1,0 +1,38 @@
+<div id="root">
+  <div class="h1">::before / ::after 的多条规则</div>
+  <div class="sub">同一个伪元素被拆成多条规则写时，应当只有一个标记：声明按级联合并，而不是各生成一个伪元素。</div>
+
+  <div class="grid">
+    <!-- ① 基线：一条规则写完 -->
+    <div class="cell">
+      <div class="card a">
+        <div class="txt">一条规则写完</div>
+      </div>
+      <div class="cap">① 基线：一个「1」徽标</div>
+    </div>
+
+    <!-- ② 本次修复：拆成两条规则，content 只在第一条 -->
+    <div class="cell">
+      <div class="card b">
+        <div class="txt">拆成两条规则写</div>
+      </div>
+      <div class="cap">② 应为：一个蓝色「2」徽标（不是两个）</div>
+    </div>
+
+    <!-- ③ 两条规则改同一个属性：后写的赢 -->
+    <div class="cell">
+      <div class="card c">
+        <div class="txt">两条规则抢同一个属性</div>
+      </div>
+      <div class="cap">③ 应为：徽标右移、变绿（后一条生效）</div>
+    </div>
+
+    <!-- ④ before 与 after 各拆两条 -->
+    <div class="cell">
+      <div class="card d">
+        <div class="txt">before / after 各两条</div>
+      </div>
+      <div class="cap">④ 应为：左边蓝点 + 右边青色条，各只一个</div>
+    </div>
+  </div>
+</div>

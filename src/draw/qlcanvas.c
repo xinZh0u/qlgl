@@ -190,6 +190,13 @@ void ql_canvas_set_mask(QLCanvas *canvas, ql_coord_t cx, ql_coord_t cy, ql_coord
     if (rx < 0 || ry < 0) {
         canvas->mask_r = -1;
         canvas->mask_ry = -1;
+        /*
+         * 关遮罩时必须把多边形也关掉：`mask_on()` 是"椭圆或多项式任一成立"，
+         * 只清椭圆会把 `mask_pn` 留在 3 —— 于是 polygon 之后的所有内容都被
+         * 裁进那个三角形（绘制侧恢复遮罩统一走 set_mask(-1) 这一条路，
+         * 它并不区分当前生效的是椭圆还是多边形）。
+         */
+        canvas->mask_pn = 0;
         return;
     }
     canvas->mask_pn = 0;      /* 互斥：两种遮罩只有一层 */

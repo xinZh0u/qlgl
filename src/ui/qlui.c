@@ -1630,6 +1630,45 @@ static QLUIStyle *ensure_style_copy(QLUINodeRT *node)
     return cp;
 }
 
+
+/*
+ * `border-radius: 50%` 之类：构建期把百分比存成负数（-50 = 50%），
+ * 这里在**拿到边框盒尺寸之后**折成 px 写回样式副本 —— 于是绘制、命中、
+ * 圆角裁剪读到的都是 px，9 个调用点一个都不用改。
+ *
+ * 横向半径按盒子**宽**算、纵向按**高**算（与 CSS 一致）；`50%` 在正方形上
+ * 就是内切圆，在长方形上与 `a / b` 一样按单半径近似（见文档中的已知近似）。
+ */
+static void resolve_radius_pct(QLUINodeRT *node)
+{
+    const QLUIStyle *s = node->style;
+    if (s == NULL)
+        return;
+    int neg = 0;
+    for (int i = 0; i < 4; i++)
+        if (s->radius[i] < 0 || s->radius_v[i] < 0) {
+            neg = 1;
+            break;
+        }
+    if (!neg)
+        return;
+    QLUIStyle *c = ensure_style_copy(node);
+    if (c == NULL)
+        return;
+    const ql_coord_t w = node->border_box.w;
+    const ql_coord_t h = node->border_box.h;
+    for (int i = 0; i < 4; i++) {
+        if (c->radius[i] < 0) {
+            int32_t px = (int32_t)w * (-c->radius[i]) / 100;
+            c->radius[i] = (int16_t)((px > 32767) ? 32767 : px);
+        }
+        if (c->radius_v[i] < 0) {
+            int32_t px = (int32_t)h * (-c->radius_v[i]) / 100;
+            c->radius_v[i] = (int16_t)((px > 32767) ? 32767 : px);
+        }
+    }
+}
+
 /* 给节点写一个"强制主/交叉尺寸"，走 style_copy（border-box 语义） */
 static void force_size(QLUINodeRT *node, ql_coord_t main_sz, int row, int apply_main,
                        ql_coord_t cross_sz, int apply_cross)
@@ -3182,6 +3221,9 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
 
     node->border_box = ql_rect_make(box_x, box_y, border_w, border_h);
     node->content_box = ql_rect_make(content_x, content_y, content_w, content_h);
+
+    /* 百分比圆角要等盒子尺寸确定（`border-radius: 50%` → -50） */
+    resolve_radius_pct(node);
 
     /* ---- 定位收尾 ---- */
     if (s->position == QL_UI_POSITION_STATIC) {

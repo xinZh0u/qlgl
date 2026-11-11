@@ -1,0 +1,115 @@
+/*
+ * `outline` 的宽度关键字 —— 人工可视化测试。
+ *
+ * 浏览器里 `outline: thin|medium|thick` 是合法宽度（实测 1 / 3 / 5 px），
+ * `outline: 0` 是最常见的"去掉 focus 环"写法。早先版本这两种都把 token
+ * 当成了颜色，直接报 "不支持的属性" / "不支持的颜色"。
+ *
+ * 六个格子从左到右、从上到下依次验证：
+ *   ① outline: 0           → 完全不画
+ *   ② outline: thin        → 1px
+ *   ③ outline: medium      → 3px
+ *   ④ outline: thick       → 5px
+ *   ⑤ outline: 3px + offset: -6px → 环在盒子内侧
+ *   ⑥ outline-width: thick（长写）→ 与简写同值
+ */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.h1 {
+  position: absolute;
+  left: 20px;
+  top: 14px;
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.sub {
+  position: absolute;
+  left: 20px;
+  top: 38px;
+  width: 680px;
+  font-size: 11px;
+  color: #57606A;
+  white-space: normal;
+  line-height: 16px;
+}
+
+.grid {
+  position: absolute;
+  left: 16px;
+  top: 84px;
+  width: 688px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.cell {
+  width: 214px;
+}
+
+.card {
+  position: relative;
+  height: 62px;
+  border-radius: 8px;
+  background-color: #F6F8FA;
+}
+
+.txt {
+  position: absolute;
+  left: 0px;
+  right: 0px;
+  top: 21px;
+  text-align: center;
+  font-size: 12px;
+  color: #1F2328;
+}
+
+.cap {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #57606A;
+  text-align: center;
+}
+
+/* ---- ① 最常见写法：去掉 focus 环 ---- */
+.o0 {
+  outline: 0;
+}
+
+/* ---- ②③④ 宽度关键字 ---- */
+.o1 {
+  outline: thin solid #2563EB;
+}
+
+.o2 {
+  outline: medium solid #E5484D;
+}
+
+.o3 {
+  outline: thick solid #16A34A;
+}
+
+/* ---- ⑤ 负 offset：环画在盒子里面 ---- */
+.o4 {
+  outline: 3px solid #8250DF;
+  outline-offset: -6px;
+}
+
+/* ---- ⑥ 长写的宽度关键字也要认 ---- */
+.o5 {
+  outline-width: thick;
+  outline-style: solid;
+  outline-color: #F59E0B;
+  outline-offset: 4px;
+}

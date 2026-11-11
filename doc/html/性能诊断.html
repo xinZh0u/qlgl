@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>性能诊断：怎么量、怎么判、往哪儿改 · QLGL</title>
+<style>
+:root {
+  --text: #333;
+  --text-muted: rgba(51, 51, 51, .65);
+  --primary: #1c76e4;
+  --bg: #fff;
+  --side-bg: #151515;
+  --side-fg: #fafafa;
+  --side-primary: rgb(144, 194, 255);
+  --side-hover: rgba(127, 127, 127, .2);
+  --side-sel: #1c76e4;
+  --side-search: rgba(127, 127, 127, .25);
+  --side-search-focus: rgba(127, 127, 127, .38);
+  --box-bg: rgba(135, 135, 135, .085);
+  --box-radius: .35rem;
+  --line: rgba(51, 51, 51, .12);
+  --side-w: 17.5rem;
+  --toc-w: 15.5rem;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC",
+          "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Source Code Pro", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font: 15px/1.6 var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.shell { display: flex; align-items: flex-start; }
+
+/* ---------------- 左侧深色导航（GTK 风格） ---------------- */
+.sidebar {
+  position: sticky; top: 0;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  height: 100vh; overflow-y: auto;
+  padding: 1.2rem 1rem 3rem;
+  background: var(--side-bg);
+  color: var(--side-fg);
+  color-scheme: dark;
+  font-size: 13.5px;
+  scrollbar-width: thin;
+}
+.sidebar::-webkit-scrollbar { width: 9px; }
+.sidebar::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 9px; }
+.sidebar .brand { display: block; padding: .2rem .5rem 1rem; }
+.sidebar .brand b {
+  display: block; font-size: 1.45rem; letter-spacing: .02em; color: #fff;
+  font-weight: 900;
+}
+.sidebar .brand span { font-size: .8rem; opacity: .7; }
+.sidebar a { text-decoration: none; }
+
+.search { position: relative; margin: 0 0 1rem; }
+.search input {
+  width: 100%; border: 0; border-radius: 50px;
+  padding: 8px 14px; font-size: 13.5px; outline: 0;
+  background: var(--side-search); color: var(--side-fg);
+  transition: background-color .15s ease;
+}
+.search input::placeholder { color: rgba(250, 250, 250, .55); }
+.search input:hover, .search input:focus { background: var(--side-search-focus); }
+.results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  max-height: 60vh; overflow-y: auto; z-index: 50;
+  background: #232323; border: 1px solid #3a3a3a; border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .5); padding: 6px;
+}
+.results .hit {
+  display: block; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  color: var(--side-fg);
+}
+.results .hit:hover, .results .hit.sel { background: var(--side-sel); }
+.results .hit .t { display: block; font-size: 13.5px; }
+.results .hit .c { display: block; font-size: 11.5px; opacity: .62; }
+.results .hit.sel .c { opacity: .85; }
+.results .empty { padding: 10px; font-size: 12.5px; opacity: .6; }
+
+.sec { border-top: 1px solid rgba(255, 255, 255, .07); padding: .5rem 0 .2rem; }
+.sec > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; font-weight: 700; font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .55);
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before {
+  content: "▸"; font-size: 10px; transition: transform .15s ease; opacity: .8;
+}
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > summary:hover { color: rgba(250, 250, 250, .85); }
+.sec a {
+  display: block; padding: .25rem .55rem; margin-bottom: .1rem;
+  border-radius: var(--box-radius); color: var(--side-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sec a:hover { background: var(--side-hover); color: var(--side-fg); }
+.sec a.current { background: var(--side-sel); color: #fff; font-weight: 600; }
+.sec .mod {
+  display: block; padding: .55rem .55rem .15rem;
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .4);
+}
+.sec .mod:first-child { padding-top: .2rem; }
+.sidebar .gen {
+  margin: 1.4rem .5rem 0; font-size: 11px; opacity: .45; line-height: 1.5;
+}
+
+/* ---------------- 正文 ---------------- */
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 3rem 3rem 6rem;
+  box-shadow: 0 0 134px rgba(0, 0, 0, .07);
+}
+main .inner { max-width: 54rem; margin: 0 auto; }
+main h1, main h2, main h3, main h4, main h5 {
+  font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
+}
+main h1 { font-size: 2.05rem; margin: 0 0 .3rem; }
+main .eyebrow {
+  font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 0 .15rem;
+}
+main .lead { color: var(--text-muted); font-size: 1rem; margin: .6rem 0 2rem; }
+main h2 {
+  font-size: 1.45rem; margin: 2.4rem 0 .7rem;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 1.18rem; margin: 1.8rem 0 .5rem; }
+main h4 { font-size: 1.02rem; margin: 1.4rem 0 .4rem; color: var(--text-muted); }
+main p { margin: .7rem 0; }
+main ul, main ol { margin: .7rem 0; padding-left: 1.5rem; }
+main li { margin: .25rem 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 2.2rem 0; }
+main blockquote {
+  margin: 1rem 0; padding: .5rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: var(--box-bg); border-radius: 0 var(--box-radius) var(--box-radius) 0;
+  color: var(--text-muted);
+}
+main blockquote p { margin: .3rem 0; }
+
+code {
+  font: .86em/1.5 var(--mono);
+  background: var(--box-bg); padding: .12em .35em;
+  border-radius: 4px;
+}
+pre {
+  margin: 1rem 0; padding: .8rem 1rem; overflow-x: auto;
+  background: var(--box-bg); border-radius: var(--box-radius);
+}
+pre code { background: none; padding: 0; font-size: .86rem; }
+
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid var(--line); padding: .4rem .65rem; text-align: left; }
+th { background: var(--box-bg); font-weight: 650; }
+tbody tr:nth-child(even) { background: rgba(135, 135, 135, .04); }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #a626a4; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #4078f2; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #a0a1a7; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #986801; }
+.highlight .nf, .highlight .n { color: #383a42; }
+.highlight .cp, .highlight .cpf { color: #a0a1a7; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 1.2rem 0;
+  border: 1px solid var(--line); border-radius: var(--box-radius);
+}
+
+/* ---------------- 右侧页内目录 ---------------- */
+.toc {
+  position: sticky; top: 0;
+  flex: 0 0 var(--toc-w); width: var(--toc-w);
+  max-height: 100vh; overflow-y: auto;
+  padding: 3rem .8rem 3rem .4rem;
+  font-size: 12.5px;
+}
+.toc h5 {
+  margin: 0 0 .5rem; font-size: 10.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: .15rem 0; }
+.toc a {
+  display: block; padding: .16rem .4rem; border-radius: 5px;
+  color: var(--text-muted); line-height: 1.4;
+}
+.toc a:hover { background: var(--box-bg); color: var(--primary); text-decoration: none; }
+.toc .lv3 { padding-left: 1rem; font-size: 12px; }
+
+/* 翻页 */
+.pager {
+  display: flex; gap: .8rem; margin-top: 3rem; padding-top: 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: .6rem .9rem; border: 1px solid var(--line);
+  border-radius: var(--box-radius); color: var(--text);
+}
+.pager a:hover { background: var(--box-bg); text-decoration: none; }
+.pager .dir { display: block; font-size: 11px; color: var(--text-muted); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+         gap: .7rem; margin: 1rem 0 2rem; }
+.cards a {
+  display: block; padding: .8rem 1rem; color: var(--text);
+  background: var(--box-bg); border-radius: var(--box-radius);
+  border: 1px solid transparent;
+}
+.cards a:hover { border-color: var(--primary); text-decoration: none; }
+.cards b { display: block; font-size: .95rem; margin-bottom: .15rem; }
+.cards span { font-size: .82rem; color: var(--text-muted); }
+.sec-title { font-size: 1.2rem; font-weight: 800; margin: 2rem 0 .1rem; }
+.sec-desc { color: var(--text-muted); font-size: .88rem; margin: 0 0 .6rem; }
+
+@media (max-width: 1180px) {
+  .toc { display: none; }
+}
+@media (max-width: 820px) {
+  .shell { display: block; }
+  .sidebar { position: static; height: auto; width: auto; flex: none; }
+  main { padding: 1.6rem 1.1rem 4rem; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class='shell'>
+<aside class='sidebar'>
+<div class='brand'><a href='index.html' style='color:inherit'><b>QLGL</b><span>C11 界面库 · 文档</span></a></div>
+<div class='search'><input id='q' type='text' placeholder='搜索页面与章节…' autocomplete='off' spellcheck='false'><div id='qres' class='results' hidden></div></div>
+<details class='sec'><summary>入门</summary>
+<a href='tutorial/01_basics.html' title='基础知识'>基础知识</a>
+<a href='tutorial/02_text.html' title='文本'>文本</a>
+<a href='tutorial/03_layout.html' title='布局'>布局</a>
+<a href='tutorial/04_interaction.html' title='交互'>交互</a>
+<a href='tutorial/05_animation.html' title='动画'>动画</a>
+<a href='tutorial/06_theme.html' title='换皮肤'>换皮肤</a>
+<a href='tutorial/07_advanced.html' title='进阶'>进阶</a>
+</details>
+<details class='sec'><summary>界面与控件</summary>
+<a href='tutorial/08_tags.html' title='标签与语义'>标签与语义</a>
+<a href='tutorial/09_scroll.html' title='滚动'>滚动</a>
+<a href='tutorial/11_input.html' title='输入控件'>输入控件</a>
+<a href='tutorial/13_form.html' title='多行输入与表单'>多行输入与表单</a>
+<a href='tutorial/26_touch.html' title='触摸：单指点按 · 拖动滚动 · 双指缩放'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+</details>
+<details class='sec'><summary>布局与文本</summary>
+<a href='tutorial/12_text.html' title='空白与上下标'>空白与上下标</a>
+<a href='tutorial/19_grid.html' title='Grid：二维布局，以及 border-image'>Grid：二维布局，以及 border-image</a>
+<a href='tutorial/22_table.html' title='表格：display: table 全家 + colspan / rowspan'>表格：display: table 全家 + colspan / rowspan</a>
+<a href='tutorial/23_columns.html' title='多栏：column-count / column-width / column-rule'>多栏：column-count / column-width / column-rule</a>
+<a href='tutorial/24_text_stack.html' title='文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向'>文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向</a>
+</details>
+<details class='sec'><summary>视觉与动效</summary>
+<a href='tutorial/15_backdrop.html' title='毛玻璃叠在动的背景上'>毛玻璃叠在动的背景上</a>
+<a href='tutorial/20_filter.html' title='离屏图层：filter / mix-blend-mode / mask / 组透明度'>离屏图层：filter / mix-blend-mode / mask / 组透明度</a>
+<a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
+<a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西'>液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西</a>
+</details>
+<details class='sec'><summary>语法与兼容</summary>
+<a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
+<a href='tutorial/14_css3.html' title='CSS3 补全：真实页面天天用的那几件'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='tutorial/18_css3_more.html' title='CSS3 补全收官：状态选择器、文本细节、背景图'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+</details>
+<details class='sec'><summary>性能</summary>
+<a href='tutorial/17_perf.html' title='性能诊断与 MCU 基准'>性能诊断与 MCU 基准</a>
+</details>
+<details class='sec'><summary>API 手册</summary>
+<span class='mod'>QLObject —— 对象系统：类、属性、信号</span>
+<a href='manual/object/QLObject阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/object/QLObject API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLText —— 文本：字体、字形、UTF-8</span>
+<a href='manual/text/QLText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/text/QLText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
+<a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
+<a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLRender —— 渲染：画布、GPU 后端、脏区</span>
+<a href='manual/render/QLRender阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/render/QLRender API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLAnim —— 动效：帧时钟、缓动、补间</span>
+<a href='manual/anim/QLAnim阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/anim/QLAnim API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
+<a href='manual/input/QLInput阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+</details>
+<details class='sec'><summary>规范与清单</summary>
+<a href='manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
+<a href='manual/ui/CSS3进度规划.html' title='CSS 进度规划'>CSS 进度规划</a>
+<a href='manual/ui/CSS3开发日志.html' title='CSS 开发日志'>CSS 开发日志</a>
+<a href='manual/ui/HTML5标签覆盖与裁剪.html' title='HTML5 标签覆盖与 MCU 裁剪'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a href='manual/ui/HTML5标签进度规划.html' title='HTML5 标签进度规划'>HTML5 标签进度规划</a>
+<a href='manual/ui/HTML5标签开发日志.html' title='HTML5 标签开发日志'>HTML5 标签开发日志</a>
+</details>
+<details class='sec' open><summary>设计文档</summary>
+<a href='图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a href='底层实现设计.html' title='QLGL 底层实现设计（v0.1 草案）'>QLGL 底层实现设计（v0.1 草案）</a>
+<a href='第三方依赖.html' title='第三方依赖与许可'>第三方依赖与许可</a>
+<a href='迁移指南.html' title='从 Web 迁到 QLGL：写法对照与坑'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a href='Web兼容设计.html' title='Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）'>Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）</a>
+<a href='对比与取舍.html' title='与主流框架对比：qlgl 站在哪一格'>与主流框架对比：qlgl 站在哪一格</a>
+<a href='开发规划.html' title='QLGL 开发规划'>QLGL 开发规划</a>
+<a href='bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
+<a href='性能诊断.html' class='current' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+</details>
+<p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
+</aside>
+<main><div class='inner'>
+<p class='eyebrow'>设计文档</p>
+<h1>性能诊断：怎么量、怎么判、往哪儿改</h1>
+<p class='lead'>调&quot;卡&quot;的时候，肉眼是最差的工具：CPU 打满、GPU 打满、在等 vsync、被合成器拖住， 四种表现都是&quot;顿一下&quot;，但改法完全不同。这份文档记录 qlgl 自带的测量手段， 以及用它们抓到的一个真实问题（拖动窗口掉帧）。</p>
+<blockquote>
+<p><strong>想跟着做一遍</strong>：看 <a href="tutorial/17_perf.html">教程 17 · 性能诊断与 MCU 基准</a>。
+这份文档是<strong>参考手册</strong>（参数、口径、判读清单），教程是<strong>动手流程</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 速查</h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># 帧时间（含&quot;其中等 swap 多少&quot;）</span>
+./build/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">5</span><span class="w"> </span>--stats
+
+<span class="c1"># 进程 CPU / GPU / RSS，并主动缩放窗口复现掉帧</span>
+./build/qlperf<span class="w"> </span>run<span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span>--<span class="w"> </span>./build/example/example_22_media
+./build/qlperf<span class="w"> </span>watch<span class="w"> </span>--csv<span class="w"> </span>/tmp/s.csv<span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>&lt;pid&gt;
+
+<span class="c1"># MCU（Cortex-M4 @ QEMU）：布局 / 整屏光栅 / 脏区重绘</span>
+./test/mcu/build.sh
+</code></pre></div>
+
+<h2 id="1">1. 三件工具</h2>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>量什么</th>
+<th>怎么跑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qlperf</code>（<code>tools/qlperf</code>）</td>
+<td>进程的 CPU / GPU / RSS / 线程数，并可驱动窗口缩放</td>
+<td><code>./build/qlperf run -- ./build/example/example_22_media</code></td>
+</tr>
+<tr>
+<td><code>example_* --stats</code></td>
+<td>每帧耗时，<strong>其中等 swap 占多少</strong></td>
+<td><code>./build/example/example_22_media --seconds 5 --stats</code></td>
+</tr>
+<tr>
+<td><code>example_* --dump</code> + <code>doc/html</code></td>
+<td>画面是否正确（性能问题的副产品）</td>
+<td>见各例程</td>
+</tr>
+</tbody>
+</table>
+<h3 id="11-qlperf">1.1 <code>qlperf</code>：进程级探针</h3>
+<div class="highlight"><pre><span></span><code>./build/qlperf<span class="w"> </span>run<span class="w"> </span>--interval<span class="w"> </span><span class="m">200</span><span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>--<span class="w"> </span>./build/example/example_22_media
+./build/qlperf<span class="w"> </span>run<span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span>--<span class="w"> </span>./build/example/example_22_media
+./build/qlperf<span class="w"> </span>watch<span class="w"> </span><span class="m">12345</span><span class="w">            </span><span class="c1"># 监控已有进程</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>  t(s)   CPU%  GPU进程%  GPU整机%  RSS(MB)  线程
+  0.25    5.0      3.2      18.0    151.0    11
+</code></pre></div>
+
+<p>数据全部来自内核/驱动，<strong>不猜</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>来源</th>
+<th>口径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU%</td>
+<td><code>/proc/&lt;pid&gt;/stat</code> 的 <code>utime+stime</code> 差分</td>
+<td>单核 100%（多线程可能 &gt; 100）</td>
+</tr>
+<tr>
+<td>GPU 进程%</td>
+<td><code>/proc/&lt;pid&gt;/fdinfo/*</code> 里 <code>drm-engine-*</code> 的纳秒计数器差分</td>
+<td>引擎时间 / 墙钟；&gt; 100 表示多引擎并行</td>
+</tr>
+<tr>
+<td>GPU 整机%</td>
+<td><code>/sys/class/drm/cardN/device/gpu_busy_percent</code></td>
+<td>驱动报告，amdgpu/部分 i915 有</td>
+</tr>
+<tr>
+<td>RSS</td>
+<td><code>/proc/&lt;pid&gt;/status</code> 的 <code>VmRSS</code></td>
+<td>常驻内存</td>
+</tr>
+<tr>
+<td>缩放驱动</td>
+<td>X11 <code>XResizeWindow</code>，每 ~8ms 一步</td>
+<td>模拟拖边框的密度</td>
+</tr>
+</tbody>
+</table>
+<p>汇总会直接给一句结论（CPU 打满 / GPU 打满 / 在等 vsync），因为这一步最容易看反。</p>
+<h3 id="12-stats-swap">1.2 <code>--stats</code>：帧时间与"等 swap"的拆分</h3>
+<div class="highlight"><pre><span></span><code>./build/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">5</span><span class="w"> </span>--stats<span class="w"> </span>--spin
+帧时间：p50<span class="w"> </span><span class="m">6</span>.93ms<span class="w">  </span>p95<span class="w"> </span><span class="m">7</span>.37ms<span class="w">  </span>max<span class="w"> </span><span class="m">15</span>.12ms<span class="w">  </span>（300<span class="w"> </span>帧）
+帧间隔：p50<span class="w"> </span><span class="m">6</span>.94ms（≈<span class="w"> </span><span class="m">144</span><span class="w"> </span>fps）<span class="w">  </span>max<span class="w"> </span><span class="m">7</span>.52ms
+其中等<span class="w"> </span>swap：p50<span class="w"> </span><span class="m">6</span>.84ms<span class="w">  </span>max<span class="w"> </span><span class="m">15</span>.04ms
+</code></pre></div>
+
+<ul>
+<li><code>帧时间</code> = 画一帧花多久；<code>帧间隔</code> = 相邻两帧的实际时间差（<strong>看帧率认这个</strong>）。
+  不加 <code>--spin</code> 的例程是事件驱动的，"帧时间"小到上千 fps 很正常，别当帧率读；</li>
+<li><code>frame_us - swap_us</code> = <strong>我们自己花的</strong>（布局 + 提交 + 光栅）；</li>
+<li><code>swap_us</code> = <code>eglSwapBuffers</code> 里等垂直同步 / 合成器取帧。</li>
+</ul>
+<p><strong>p50 6.93ms 而其中 6.84ms 在等 swap</strong> → 我们一帧只花了 0.1ms，
+144fps 是刷新率上限，不是我们的上限。这种"跑不满 300fps"不是性能问题。</p>
+<h3 id="13">1.3 例程的循环参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>（默认）</td>
+<td><strong>事件驱动</strong>：没有脏区就阻塞等事件，界面静止时 0 帧、0% CPU</td>
+</tr>
+<tr>
+<td><code>--spin</code></td>
+<td>每帧都渲染（基准测试用）</td>
+</tr>
+<tr>
+<td><code>--frames N</code></td>
+<td>渲染 N 帧后退出（隐含 <code>--spin</code>）</td>
+</tr>
+<tr>
+<td><code>--seconds S</code></td>
+<td>跑 S 秒后退出并打统计</td>
+</tr>
+<tr>
+<td><code>--stats</code></td>
+<td>退出时打帧时间百分位 + 等 swap 时间</td>
+</tr>
+<tr>
+<td><code>--vsync 0/1</code></td>
+<td>强制开关垂直同步（默认开，拖动缩放期间自动临时关闭）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 一个真实案例：拖动窗口掉帧</h2>
+<h3 id="21">2.1 现象</h3>
+<p><code>example_22_media</code>（820×420，几十个节点）静止时 p50 ≈ 7ms（144Hz），
+但拖动窗口边缘时肉眼可见地"卡一下"。</p>
+<h3 id="22">2.2 测量</h3>
+<div class="highlight"><pre><span></span><code>./build/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>--stats<span class="w">      </span><span class="c1"># 终端 A</span>
+./build/qlperf<span class="w"> </span>watch<span class="w"> </span>--seconds<span class="w"> </span><span class="m">6</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span>&lt;pid&gt;<span class="w">  </span><span class="c1"># 终端 B</span>
+</code></pre></div>
+
+<p>修复前：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>p95 4%</td>
+</tr>
+<tr>
+<td>GPU（进程）</td>
+<td>0.1%</td>
+</tr>
+<tr>
+<td>帧时间</td>
+<td>p50 6.93ms，<strong>max 58.50ms</strong></td>
+</tr>
+<tr>
+<td>其中等 swap</td>
+<td>p50 6.82ms，<strong>max 58.40ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>结论一目了然：<strong>卡的那一帧 58.4ms 全在 <code>eglSwapBuffers</code> 里</strong>，我们自己的活是 0.1ms。
+再开 <code>--vsync 0</code> 复测，卡顿完全消失（max 4.4ms）——说明是"等 vblank"被合成器拖住，
+不是我们画得慢。</p>
+<p>Mesa 的 Present/XCB 路径在合成器忙于重配窗口时不会及时收到 frame callback，
+最坏会一直等到它的 1 秒超时（实测复现过 <code>swap max 1000.8ms</code>）。</p>
+<h3 id="23">2.3 两个修复</h3>
+<p><strong>① 事件驱动循环（例程 + <code>common.h</code>）</strong></p>
+<p>以前每帧都 <code>begin → render → swap</code>，静止的界面也每秒交换 144 次。
+现在默认"有脏区才画"：<code>ql_ui_consume_dirty()</code> 拿到脏矩形，没有脏区就
+<code>ql_gfx_gl_wait()</code>（<code>poll(2)</code>）阻塞等事件。拖动时"一个 ConfigureNotify 画一帧"，
+其余时间不占 CPU，也不和合成器抢帧。</p>
+<p><strong>② 拖动期间不跟 vblank（<code>qlgfx_gl.c</code>）</strong></p>
+<p>收到 <code>ConfigureNotify</code> 后 200ms 内把 <code>eglSwapInterval</code> 设为 0（<code>ql_gfx_gl_end</code> 里
+按 <code>resize_until_ms</code> 判断），拖动结束自动恢复。这是 GTK/Qt 在互动缩放期间的常规做法：
+拖动时优先"跟手"，静止时再回到垂直同步（避免撕裂）。</p>
+<p><strong>③ 不跟 vblank 时按显示节奏节流（同一个函数）</strong></p>
+<p>关掉 vsync 就等于"谁快谁赢"：<code>--spin</code>（或基准测试）的循环每帧只花 0.6ms，
+fps 会直接飙到 1700+，看起来像坏了，也白烧 CPU 和电。</p>
+<p>所以后端记了两个量：
+- <code>pace_us</code>：跟 vsync 时的帧间隔滑动平均（EMA，7:1，限幅 1~100ms），默认 16666；
+- <code>last_end_us</code>：上一帧 swap 结束的时刻。</p>
+<p><strong>只在 <code>vsync_eff == 1</code> 的帧更新 <code>pace_us</code></strong>（否则被测到的"无 vsync 快帧"会把
+pace 拉到 0.6ms，节流等于没做）；拖动期间在<strong>下一帧开头</strong>（<code>begin_common</code>，
+且在抓 <code>t0</code> 之前）补睡到 <code>last_end_us + pace_us</code>。</p>
+<p>放在帧开头而不是帧末，是为了让 <code>frame_us</code>（begin→end）把等待算进去 —— 这样
+<code>--stats</code> 的帧时间/fps 与跟 vsync 时的口径一致，不会出现"帧时间 0.6ms 却报 1700fps"
+这种吓人的数字。</p>
+<p><strong>④ 例外：刚改变尺寸的那一帧不等</strong></p>
+<p>节流不能无脑套在"每一帧"上。窗口被拉大时，新露出来的那块区域正等着我们填；
+如果这一帧还先睡 7ms，看到的就是"缩放时闪一下空白"，而且画面永远比鼠标慢半拍。</p>
+<p>所以 <code>ConfigureNotify</code> 会置 <code>present_now</code>，紧接着的那一帧<strong>跳过等待</strong>，
+立刻画、立刻 swap；之后的帧照旧按 <code>pace_us</code> 补。实测这一改把
+"配置事件 → 新画面推上屏"的中位延迟从 7ms 级压到 <strong>1.2ms</strong>（p95 1.9ms），
+帧率仍然稳在 144。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 量这个延迟（每个 ConfigureNotify 打一行）</span>
+<span class="nv">QLGL_LAG_DEBUG</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>./build/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="p">&amp;</span>
+./build/qlperf<span class="w"> </span>watch<span class="w"> </span>--seconds<span class="w"> </span><span class="m">4</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span><span class="nv">$!</span>
+</code></pre></div>
+
+<p><strong>⑤ 接上 <code>_NET_WM_SYNC_REQUEST</code>（让窗口管理器跟我们的帧对齐）</strong></p>
+<p>上面的节流只解决"我们自己什么时候画"。还有一半在窗口管理器那边：
+X11 的交互式缩放里，WM 不知道客户端什么时候把新尺寸画完。它可能连着发好几次
+<code>ConfigureNotify</code>，也可能等一阵再把尺寸<strong>一次跳到位</strong> —— 肉眼就是
+"拖动时窗口大小停住一会儿，然后突然变大"。</p>
+<p>标准解法是 EWMH 的 <code>_NET_WM_SYNC_REQUEST</code>（GTK / Qt 都实现了）：</p>
+<ol>
+<li>建一个 XSync 计数器，把它的 XID 写进窗口属性 <code>_NET_WM_SYNC_REQUEST_COUNTER</code>；</li>
+<li>把 <code>_NET_WM_SYNC_REQUEST</code> 加进 <code>WM_PROTOCOLS</code>；</li>
+<li>WM 每次要缩放，会先发一条带<strong>新计数值</strong>的 <code>ClientMessage</code>；</li>
+<li>客户端画完这一帧（<code>eglSwapBuffers</code> 之后）<code>XSync</code> 一下，再把计数器设成那个值。</li>
+</ol>
+<p>我们在 <code>qlgfx_gl.c</code> 里按上面四步接好了（<code>XSyncCreateCounter</code> 需要 libXext，
+CMake 会自己判断，没有就退回旧的"不接协议"路径）。另外有个细节：如果 WM 发来
+请求、而我们这一轮<strong>没有</strong>东西要画（比如只是移动窗口，尺寸没变），
+<code>ql_gfx_gl_wait()</code> 会立刻回执，否则 WM 会一直等我们。</p>
+<h3 id="24">2.4 修复后</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>修复前</th>
+<th>修复后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>拖动时 max 帧时间</td>
+<td>58.5ms（偶发 1000ms）</td>
+<td><strong>≤ 7.3ms</strong>（3 次复测）</td>
+</tr>
+<tr>
+<td>拖动时 p50 帧时间</td>
+<td>6.9ms（被 vsync 限住）</td>
+<td><strong>7.3ms</strong>（按 144Hz 节流，我们只花 0.6ms）</td>
+</tr>
+<tr>
+<td>静止时 CPU</td>
+<td>3~8%（持续 swap）</td>
+<td><strong>0%</strong>（0 帧）</td>
+</tr>
+<tr>
+<td>静止时帧数</td>
+<td>144 fps</td>
+<td>0 fps</td>
+</tr>
+<tr>
+<td>拖动时帧率</td>
+<td>144 fps</td>
+<td><strong>144 fps</strong>（p50 6.97ms / p95 8.30ms / max 15ms）</td>
+</tr>
+<tr>
+<td>配置事件 → 上屏延迟</td>
+<td>7ms 级（先睡再画）</td>
+<td><strong>p50 1.2ms / p95 1.9ms</strong></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1"># 复现修复后的数字</span>
+./build/example/example_22_media<span class="w"> </span>--seconds<span class="w"> </span><span class="m">4</span><span class="w"> </span>--stats<span class="w"> </span><span class="p">&amp;</span>
+./build/qlperf<span class="w"> </span>watch<span class="w"> </span>--seconds<span class="w"> </span><span class="m">3</span><span class="w"> </span>--resize<span class="w"> </span><span class="s2">&quot;22 media&quot;</span><span class="w"> </span><span class="nv">$!</span>
+</code></pre></div>
+
+<hr />
+<h2 id="3">3. 判读清单</h2>
+<p>看到"卡"时按顺序问：</p>
+<ol>
+<li><strong>CPU 满了吗？</strong> <code>qlperf</code> 的 p95 &gt; 85% → 找热点（布局？光栅？事件循环空转？）。</li>
+<li><strong>GPU 满了吗？</strong> 进程 GPU% &gt; 85% 或整机 &gt; 85% → 填充率 / 批次问题。</li>
+<li><strong>两个都没满，帧时间却大？</strong> 看 <code>--stats</code> 的"等 swap"占比：
+   - 等 swap 占大头 → 在等 vblank / 合成器，<strong>不是我们的问题</strong>；
+     若拖动时爆到几十上百 ms，就是本轮的案例（已在库里规避）。
+   - 我们自己占大头 → 用 <code>qlperf --csv</code> 存曲线，配合 <code>--frames</code> 二分定位。</li>
+<li><strong>"跑不满 xxx fps"</strong>：先确认 p50 是不是正好等于 1/刷新率（如 6.94ms ≈ 144Hz）。
+   是的话就是 vsync 上限，别改代码。</li>
+</ol>
+<hr />
+<h2 id="35-qlperf">3.5 <code>qlperf</code> 的其它选项</h2>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--interval MS</code></td>
+<td>采样间隔（默认 250ms）；要看瞬时突发就调小</td>
+</tr>
+<tr>
+<td><code>--csv FILE</code></td>
+<td>每次采样写 CSV（<code>t,cpu_pct,gpu_proc_pct,gpu_busy_pct,rss_mb,threads</code>），接画图/看板</td>
+</tr>
+<tr>
+<td><code>--resize TITLE</code></td>
+<td>期间不停缩放标题含 TITLE 的窗口（X11）</td>
+</tr>
+<tr>
+<td><code>--resize-range A-B</code></td>
+<td>缩放宽度范围（默认 700-900）</td>
+</tr>
+<tr>
+<td><code>--quiet</code></td>
+<td>只打汇总</td>
+</tr>
+<tr>
+<td><code>watch &lt;pid&gt;</code></td>
+<td>监控已经在跑的进程（不需要由它启动）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-mcu-qemu-cortex-m4">4. MCU 侧：QEMU 上的 Cortex-M4 基准</h2>
+<p>PC 上的数字不能外推到 MCU，所以有一套裸机基准：<code>test/mcu/</code>。</p>
+<div class="highlight"><pre><span></span><code>./test/mcu/build.sh<span class="w">             </span><span class="c1"># 交叉编译 + 在 QEMU 的 Cortex-M4 上跑</span>
+./test/mcu/build.sh<span class="w"> </span>--no-run<span class="w">    </span><span class="c1"># 只看 ROM/RAM 占用</span>
+</code></pre></div>
+
+<p>跑的是<strong>和 PC 完全同一份</strong> <code>src/</code> 源码，只换三样：文档是构建期静态数据、
+画布是一块静态 RGB565 数组、时钟走 ARM 半主机。</p>
+<p><strong>口径</strong>：QEMU 用 <code>-icount shift=0,align=off,sleep=off</code>（每条指令推进 1ns 虚拟时间），
+<code>SYS_ELAPSED</code> 的虚拟纳秒 ≈ 指令数。实测把宿主机打满后数值不变（±1%），
+所以它是与主机无关的确定性指标。换算到 M4@200MHz 就乘 5（每条指令 5ns），
+即 <code>ns / 200 = µs</code>。<strong>这是乐观下界</strong>：M4 无 cache、flash 取指有等待周期，
+真实板子按 ×1.5~2 估计。</p>
+<p>当前数字（240×160 RGB565，21 节点 / 11 样式：flex 三列卡 + 圆角 + 边框 +
+渐变 + 折行文本 + 裁剪）：</p>
+<table>
+<thead>
+<tr>
+<th>动作</th>
+<th>虚拟 ns</th>
+<th>M4@200MHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_ui_layout()</code> 全树重排</td>
+<td>≈ 63 500</td>
+<td><strong>0.32 ms</strong></td>
+</tr>
+<tr>
+<td>一帧整屏光栅（含清屏）</td>
+<td>≈ 1 200 000</td>
+<td><strong>6.0 ms</strong></td>
+</tr>
+<tr>
+<td>1×1 脏区重绘</td>
+<td>≈ 4 700</td>
+<td><strong>0.024 ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>结论：60fps 的 16.7ms 预算里，"光栅 6.0 + 布局 0.3" 只占 <strong>36%</strong>；
+而且<strong>局部更新只要 0.02ms</strong> —— MCU 上真正该做的是脏区重绘，不是每帧全画。
+详见 <code>test/mcu/README.md</code>。</p><div class='pager'>
+<a href='bench.html'><span class='dir'>上一页</span>性能基线（bench.md）</a>
+</div>
+</div></main>
+<aside class='toc'><h5>本页内容</h5><ul>
+<li><a href='#0'>0. 速查</a></li>
+<li><a href='#1'>1. 三件工具</a></li>
+<li class='lv3'><a href='#11-qlperf'>1.1 qlperf：进程级探针</a></li>
+<li class='lv3'><a href='#12-stats-swap'>1.2 --stats：帧时间与&quot;等 swap&quot;的拆分</a></li>
+<li class='lv3'><a href='#13'>1.3 例程的循环参数</a></li>
+<li><a href='#2'>2. 一个真实案例：拖动窗口掉帧</a></li>
+<li class='lv3'><a href='#21'>2.1 现象</a></li>
+<li class='lv3'><a href='#22'>2.2 测量</a></li>
+<li class='lv3'><a href='#23'>2.3 两个修复</a></li>
+<li class='lv3'><a href='#24'>2.4 修复后</a></li>
+<li><a href='#3'>3. 判读清单</a></li>
+<li><a href='#35-qlperf'>3.5 qlperf 的其它选项</a></li>
+<li><a href='#4-mcu-qemu-cortex-m4'>4. MCU 侧：QEMU 上的 Cortex-M4 基准</a></li>
+</ul></aside>
+</div>
+<script src='search-index.js'></script>
+<script>var PREFIX='';
+(function () {
+  var IDX = window.QLGL_SEARCH || [];
+  var box = document.getElementById('q');
+  var panel = document.getElementById('qres');
+  if (!box || !panel) return;
+  var sel = -1, hits = [];
+
+  function esc(s) { return s; }
+
+  function render() {
+    panel.textContent = '';
+    if (!hits.length) {
+      var d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '没有匹配的页面';
+      panel.appendChild(d);
+      panel.hidden = false;
+      return;
+    }
+    hits.forEach(function (h, i) {
+      var a = document.createElement('a');
+      a.className = 'hit' + (i === sel ? ' sel' : '');
+      a.href = PREFIX + h.u;
+      var t = document.createElement('span');
+      t.className = 't';
+      t.textContent = h.t;
+      var c = document.createElement('span');
+      c.className = 'c';
+      c.textContent = h.b;
+      a.appendChild(t); a.appendChild(c);
+      panel.appendChild(a);
+    });
+    panel.hidden = false;
+  }
+
+  function search(q) {
+    q = q.trim().toLowerCase();
+    if (!q) { panel.hidden = true; hits = []; return; }
+    var out = [];
+    for (var i = 0; i < IDX.length; i++) {
+      var e = IDX[i], t = e.t.toLowerCase(), s = 0;
+      if (t === q) s = 100;
+      else if (t.indexOf(q) === 0) s = 90;
+      else if (t.indexOf(q) >= 0) s = 70;
+      else if (e.k && e.b && e.b.toLowerCase().indexOf(q) >= 0) s = 30;
+      if (s > 0) out.push({ s: s + (e.k ? 0 : 8), e: e });
+    }
+    out.sort(function (x, y) { return y.s - x.s || x.e.t.length - y.e.t.length; });
+    hits = out.slice(0, 18).map(function (o) { return o.e; });
+    sel = hits.length ? 0 : -1;
+    render();
+  }
+
+  box.addEventListener('input', function () { search(box.value); });
+  box.addEventListener('focus', function () { if (box.value.trim()) search(box.value); });
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!hits.length) return;
+      sel = (sel + (ev.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length;
+      render();
+    } else if (ev.key === 'Enter') {
+      if (sel >= 0 && hits[sel]) window.location.href = PREFIX + hits[sel].u;
+    } else if (ev.key === 'Escape') {
+      panel.hidden = true; box.blur();
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (!panel.contains(ev.target) && ev.target !== box) panel.hidden = true;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === '/' && document.activeElement !== box &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      ev.preventDefault(); box.focus(); box.select();
+    }
+  });
+})();
+</script>
+</body>
+</html>

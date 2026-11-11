@@ -62,6 +62,9 @@ set(QL_EXAMPLES
     36_clip_filter
     37_touch
     38_liquid_glass
+    39_pseudo_multi
+    40_outline
+    41_radius_pct
 )
 
 foreach(e ${QL_EXAMPLES})

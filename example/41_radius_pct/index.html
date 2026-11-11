@@ -1,0 +1,31 @@
+<div id="root">
+  <div class="h1">border-radius：百分比</div>
+  <div class="sub">百分比按盒子自身尺寸算（横向 → 宽、纵向 → 高），所以要等布局结束才知道是多少 px。</div>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="avatar"><div class="txt">50%</div></div>
+      <div class="cap">① 64×64 + 50%：正圆</div>
+    </div>
+    <div class="cell">
+      <div class="pill"><div class="txt">50%</div></div>
+      <div class="cap">② 140×44 + 50%：胶囊（被短边夹住）</div>
+    </div>
+    <div class="cell">
+      <div class="well"><div class="txt">24px</div></div>
+      <div class="cap">③ 64×64 + 24px：圆角方块</div>
+    </div>
+    <div class="cell">
+      <div class="oval"><div class="txt">50% / 25%</div></div>
+      <div class="cap">④ 120×80 + 50%/25%：椭圆角</div>
+    </div>
+    <div class="cell">
+      <div class="card"><div class="txt">12%</div></div>
+      <div class="cap">⑤ 180×60 + 12%：随宽度变</div>
+    </div>
+    <div class="cell">
+      <div class="half"><div class="txt">50% 50% 0 0</div></div>
+      <div class="cap">⑥ 只圆上面两角</div>
+    </div>
+  </div>
+</div>

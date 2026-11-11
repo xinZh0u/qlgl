@@ -991,11 +991,17 @@ static inline int ql_ui_radius_uniform(const QLUIStyle *s)
     return s->radius[0] == s->radius[1] && s->radius[0] == s->radius[2] &&
            s->radius[0] == s->radius[3];
 }
-/* 四个圆角里的最大值（给"只支持单半径"的接口/兜底路径用） */
+/*
+ * 四个圆角里的最大值（给"只支持单半径"的接口/兜底路径用）。
+ *
+ * 负值是"百分比还没折成 px"的标记（`50%` → -50，见 `resolve_radius_pct()`）；
+ * 没布局过的节点（`display: none`）可能还留着负数，这里一律按 0 处理，
+ * 免得把负数当半径传进绘制。
+ */
 static inline ql_coord_t ql_ui_radius_max4(const ql_coord_t r4[4])
 {
-    ql_coord_t m = r4[0];
-    for (int i = 1; i < 4; i++)
+    ql_coord_t m = 0;
+    for (int i = 0; i < 4; i++)
         if (r4[i] > m)
             m = r4[i];
     return m;
@@ -1004,15 +1010,15 @@ static inline ql_coord_t ql_ui_radius_max4(const ql_coord_t r4[4])
 /* 最大的那个圆角（给"只支持单半径"的旧接口/兜底路径用） */
 static inline ql_coord_t ql_ui_radius_max(const QLUIStyle *s)
 {
-    ql_coord_t m = s->radius[0];
-    for (int i = 1; i < 4; i++)
+    ql_coord_t m = 0;                       /* 负值 = 未折成 px 的百分比，按 0 */
+    for (int i = 0; i < 4; i++)
         if (s->radius[i] > m)
             m = s->radius[i];
     /* 椭圆圆角（`a / b`）取两分量的平均作为等价单半径，见 style_radii4 */
     if (s->radius_v[0] > 0 || s->radius_v[1] > 0 || s->radius_v[2] > 0 ||
         s->radius_v[3] > 0) {
-        ql_coord_t mv = s->radius_v[0];
-        for (int i = 1; i < 4; i++)
+        ql_coord_t mv = 0;
+        for (int i = 0; i < 4; i++)
             if (s->radius_v[i] > mv)
                 mv = s->radius_v[i];
         m = (m + mv) / 2;

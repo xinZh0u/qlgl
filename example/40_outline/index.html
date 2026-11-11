@@ -1,0 +1,31 @@
+<div id="root">
+  <div class="h1">outline：0 / thin / medium / thick</div>
+  <div class="sub">描边不占布局。判据：① 完全没有环；② 1px；③ 3px；④ 5px；⑤ offset 为负 → 环缩进盒子内；⑥ 长写关键字生效。</div>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="card o0"><div class="txt">outline: 0</div></div>
+      <div class="cap">① 应为：没有描边</div>
+    </div>
+    <div class="cell">
+      <div class="card o1"><div class="txt">thin</div></div>
+      <div class="cap">② 应为：1px 蓝环</div>
+    </div>
+    <div class="cell">
+      <div class="card o2"><div class="txt">medium</div></div>
+      <div class="cap">③ 应为：3px 红环</div>
+    </div>
+    <div class="cell">
+      <div class="card o3"><div class="txt">thick</div></div>
+      <div class="cap">④ 应为：5px 绿环</div>
+    </div>
+    <div class="cell">
+      <div class="card o4"><div class="txt">offset -6px</div></div>
+      <div class="cap">⑤ 应为：紫环缩进盒子内</div>
+    </div>
+    <div class="cell">
+      <div class="card o5"><div class="txt">长写 thick</div></div>
+      <div class="cap">⑥ 应为：5px 橙环，外扩 4px</div>
+    </div>
+  </div>
+</div>

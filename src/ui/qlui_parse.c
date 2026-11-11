@@ -3805,6 +3805,68 @@ static void fmt_g(char *out, size_t cap, double v)
     snprintf(out, cap, "%g", v);
 }
 
+/*
+ * `outline-width` 的三个关键字（浏览器实测值：thin=1 / medium=3 / thick=5）。
+ * `outline` 简写与 `outline-width` 长写共用，保证两条路径一致。
+ */
+static int outline_width_kw(const char *text, int *px)
+{
+    char t[32];
+    trim_lower(text, t, sizeof(t));
+    if (strcmp(t, "thin") == 0)
+        *px = 1;
+    else if (strcmp(t, "medium") == 0)
+        *px = 3;
+    else if (strcmp(t, "thick") == 0)
+        *px = 5;
+    else
+        return 0;
+    return 1;
+}
+
+/*
+ * `border-radius` 的单个分量。px / em / rem / calc() 照旧折成 px；
+ * **百分比存成负数**（`50%` → -50）—— 它相对的是盒子自身的宽/高，
+ * 构建期拿不到尺寸，只能等布局期由 `resolve_radius_pct()` 折成 px。
+ * 用负数当标记是为了不加结构体字段（blob 布局不变，不用升版本）。
+ */
+static int parse_radius_token(const char *text, const char *where, CalcPool *calc,
+                              int *out)
+{
+    char t[128];
+    trim_lower(text, t, sizeof(t));
+    const size_t n = strlen(t);
+    if (n > 1 && t[n - 1u] == '%') {
+        char num[128];
+        memcpy(num, t, n - 1u);
+        num[n - 1u] = '\0';
+        const char *end = NULL;
+        double pct = 0;
+        if (match_number(num, &end, &pct) && *end == '\0') {
+            if (!(pct > 0.0) || pct > 1000.0) {
+                set_error("%s: border-radius 的百分比必须在 0~1000%%（收到 '%s'）",
+                          where, text);
+                return 0;
+            }
+            int ip = (int)py_round(pct);
+            *out = (ip < 1) ? -1 : -ip;
+            return 1;
+        }
+    }
+    uint8_t unit;
+    int num = 0;
+    if (!parse_length(text, where, 0, calc, &unit, &num))
+        return 0;
+    if (!length_wants_const(unit, where, "border-radius"))
+        return 0;
+    if (num < 0 || num > 32767) {
+        set_error("%s: border-radius 超出 0~32767px（收到 '%s'）", where, text);
+        return 0;
+    }
+    *out = num;
+    return 1;
+}
+
 /* ======================= 简写展开（**必须在单条规则内**做） ======================= */
 /*
  * 级联合并之后再展开会覆盖后出现的长写：
@@ -4597,7 +4659,18 @@ static int expand_shorthands(Decls *ds)
             trim_lower(tok, low, sizeof(low));
 
             size_t ln = strlen(low);
+            int kw_px = 0;
             if (ln > 2 && strcmp(low + ln - 2u, "px") == 0) {
+                if (!decls_set(ds, "outline-width", low))
+                    return 0;
+            } else if (outline_width_kw(low, &kw_px)) {
+                /* `thin` / `medium` / `thick` 折成 px 存，长写那条路只认数字 */
+                char wbuf[8];
+                snprintf(wbuf, sizeof(wbuf), "%dpx", kw_px);
+                if (!decls_set(ds, "outline-width", wbuf))
+                    return 0;
+            } else if (strcmp(low, "0") == 0) {
+                /* `outline: 0` 是"去掉 focus 环"的常见写法；无单位 0 按 0px */
                 if (!decls_set(ds, "outline-width", low))
                     return 0;
             } else if (strcmp(low, "solid") == 0 || strcmp(low, "none") == 0 ||
@@ -8677,10 +8750,124 @@ static char *pseudo_content_text(const Rule *r)
     return xstrndup(start, (size_t)(p - start));
 }
 
-static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
+/* ---- 伪元素分组（v39）：同一宿主的同一伪元素 = 一个节点、多条规则 ---- */
+
+/* 两段选择器是否**完全等价**（含伪类状态；状态不同的伪元素仍算两组） */
+static int selpart_same(const SelPart *a, const SelPart *b)
+{
+    if (a->comb != b->comb || a->states != b->states ||
+        a->universal != b->universal || a->pseudo != b->pseudo ||
+        a->nth_a != b->nth_a || a->nth_b != b->nth_b ||
+        a->pseudo_elem != b->pseudo_elem)
+        return 0;
+    if ((a->tag == NULL) != (b->tag == NULL))
+        return 0;
+    if (a->tag != NULL && strcmp(a->tag, b->tag) != 0)
+        return 0;
+    if ((a->id == NULL) != (b->id == NULL))
+        return 0;
+    if (a->id != NULL && strcmp(a->id, b->id) != 0)
+        return 0;
+    if (a->nclasses != b->nclasses || a->nattrs != b->nattrs)
+        return 0;
+    for (int i = 0; i < a->nclasses; i++)
+        if (strcmp(a->classes[i], b->classes[i]) != 0)
+            return 0;
+    for (int i = 0; i < a->nattrs; i++) {
+        if (strcmp(a->attrs[i].name, b->attrs[i].name) != 0 ||
+            a->attrs[i].op != b->attrs[i].op)
+            return 0;
+        if ((a->attrs[i].value == NULL) != (b->attrs[i].value == NULL))
+            return 0;
+        if (a->attrs[i].value != NULL &&
+            strcmp(a->attrs[i].value, b->attrs[i].value) != 0)
+            return 0;
+    }
+    if ((a->not_p == NULL) != (b->not_p == NULL))
+        return 0;
+    if (a->not_p != NULL && !selpart_same(a->not_p, b->not_p))
+        return 0;
+    return 1;
+}
+
+static int selector_same(const Rule *a, const Rule *b)
+{
+    if (a->nparts != b->nparts)
+        return 0;
+    for (int i = 0; i < a->nparts; i++)
+        if (!selpart_same(&a->parts[i], &b->parts[i]))
+            return 0;
+    return 1;
+}
+
+/*
+ * 给合成节点追加一条内部规则（`.__pe_N { ... }`）。
+ *
+ * `src` 是**下标**而不是指针：`rs->r` 在这里会 realloc，传进来的指针会悬空。
+ * 声明里的 `content` 不复制 —— 它已经变成节点的文本了。
+ */
+static int pe_add_rule(Rules *rs, const char *cls, int src)
+{
+    int spec_cls = rs->r[src].spec_cls;
+    int spec_tags = rs->r[src].spec_tags;
+    int spec_ids = rs->r[src].spec_ids;
+    const int order = rs->r[src].order;
+    const int media = rs->r[src].media;
+    Decl *const src_decls = rs->r[src].decls.d;   /* 声明数组不随规则表搬家 */
+    const int src_n = rs->r[src].decls.n;
+
+    if (rs->n >= rs->cap) {
+        int ncap = (rs->cap == 0) ? 8 : rs->cap * 2;
+        Rule *nr = (Rule *)ql_mem_realloc(rs->r, (size_t)ncap * sizeof(Rule));
+        if (nr == NULL)
+            return 0;
+        rs->r = nr;
+        rs->cap = ncap;
+    }
+    Rule *nr = &rs->r[rs->n];
+    memset(nr, 0, sizeof(*nr));
+    nr->parts = (SelPart *)ql_mem_calloc(1, sizeof(SelPart));
+    if (nr->parts == NULL)
+        return 0;
+    nr->nparts = 1;
+    nr->parts[0].allow_pseudo = 1;
+    nr->parts[0].classes = (char **)ql_mem_calloc(1, sizeof(char *));
+    if (nr->parts[0].classes == NULL)
+        return 0;
+    nr->parts[0].classes[0] = xstrdup(cls);
+    if (nr->parts[0].classes[0] == NULL)
+        return 0;
+    nr->parts[0].nclasses = 1;
+    nr->spec_cls = spec_cls + 1;      /* 伪元素在规范里"比元素更强" */
+    nr->spec_tags = spec_tags;
+    nr->spec_ids = spec_ids;
+    nr->order = order;
+    nr->media = media;
+    for (int i = 0; i < src_n; i++) {
+        if (strcmp(src_decls[i].key, "content") == 0)
+            continue;
+        if (!decls_set(&nr->decls, src_decls[i].key, src_decls[i].val))
+            return 0;
+    }
+    rs->n++;
+    return 1;
+}
+
+/* 一组伪元素规则：同一宿主选择器 + 同一伪元素 */
+typedef struct {
+    int   rep;      /* 代表规则（做 rule_matches 用） */
+    int   content;  /* 提供 content 的规则下标（后写的赢）；-1 = 整组都没有 */
+    char *text;     /* content 的字符串；NULL = 不生成节点（`content: none`） */
+    int   first;    /* 组员在 members[] 里的起点 */
+    int   nmem;
+    int   cur;      /* 填充 members[] 时的游标 */
+} PseudoGroup;
+
+static int expand_pseudo_group(PNode *n, Rules *rs, const PseudoGroup *g,
+                               const int *members)
 {
     for (PNode *c = n->first_child; c != NULL; c = c->next_sibling)
-        if (!expand_pseudo_rec(c, r, rs))
+        if (!expand_pseudo_group(c, rs, g, members))
             return 0;
 
     /* 输入框/下拉框是叶子：往里塞节点没有意义（也会破坏值池） */
@@ -8688,24 +8875,27 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
         strcmp(n->tag, "textarea") == 0 || strcmp(n->tag, "#pe") == 0)
         return 1;
 
-    if (!rule_matches(n, r))
+    if (!rule_matches(n, &rs->r[g->rep]))
         return 1;
 
-    char *text = pseudo_content_text(r);
-    if (text == NULL)
-        return 1;                      /* 没有 content：不生成（与浏览器一致） */
+    /* `content: none` / 非字符串：这一组不生成（与浏览器一致） */
+    if (g->text == NULL)
+        return 1;
+
+    const int is_before = (rs->r[g->rep].parts[rs->r[g->rep].nparts - 1].pseudo_elem == 1);
 
     char cls[32];
     snprintf(cls, sizeof(cls), "__pe_%d", pseudo_counter++);
 
     PNode *pe = pnode_new("#pe", NULL);
-    if (pe == NULL) {
-        ql_mem_free(text);
+    if (pe == NULL)
+        return 0;
+    pe->is_pseudo = 1;
+    pe->text = xstrdup(g->text);
+    if (pe->text == NULL) {
+        pnode_free(pe);
         return 0;
     }
-    pe->is_pseudo = 1;
-    pe->text = text;
-    /* 给合成节点挂 class（直接建，不用 selpart 那套） */
     pe->classes = (char **)ql_mem_calloc(1, sizeof(char *));
     if (pe->classes == NULL) {
         pnode_free(pe);
@@ -8718,65 +8908,12 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
     }
     pe->nclasses = 1;
 
-    /*
-     * 下面会给规则表追加一条内部规则 —— `realloc` 可能把 `rs->r` 整体搬走，
-     * 传进来的 `r` 就成了野指针。所以先把这一趟要用到的字段抄下来。
-     */
-    const int is_before = (r->parts[r->nparts - 1].pseudo_elem == 1);
-    const int spec_cls = r->spec_cls;
-    const int spec_tags = r->spec_tags;
-    const int spec_ids = r->spec_ids;
-    const int order = r->order;
-    const int rule_media = r->media;      /* 伪元素规则跟着源规则一起受断点约束 */
-    Decl *const src_decls = r->decls.d;   /* 声明数组本身不随规则表搬家 */
-    const int src_n = r->decls.n;
-
-    /* 内部规则：`.__pe_N` + 原规则的全部声明（去掉 content） */
-    if (rs->n >= rs->cap) {
-        int ncap = (rs->cap == 0) ? 8 : rs->cap * 2;
-        Rule *nr = (Rule *)ql_mem_realloc(rs->r, (size_t)ncap * sizeof(Rule));
-        if (nr == NULL) {
+    /* 组里**每一条**规则都变成一条内部规则：级联（后者/高优先级覆盖）照旧生效 */
+    for (int i = 0; i < g->nmem; i++)
+        if (!pe_add_rule(rs, cls, members[i])) {
             pnode_free(pe);
             return 0;
         }
-        rs->r = nr;
-        rs->cap = ncap;
-    }
-    Rule *nr = &rs->r[rs->n];
-    memset(nr, 0, sizeof(*nr));
-    nr->parts = (SelPart *)ql_mem_calloc(1, sizeof(SelPart));
-    if (nr->parts == NULL) {
-        pnode_free(pe);
-        return 0;
-    }
-    nr->nparts = 1;
-    nr->parts[0].allow_pseudo = 1;
-    nr->parts[0].classes = (char **)ql_mem_calloc(1, sizeof(char *));
-    if (nr->parts[0].classes == NULL) {
-        ql_mem_free(nr->parts);
-        pnode_free(pe);
-        return 0;
-    }
-    nr->parts[0].classes[0] = xstrdup(cls);
-    if (nr->parts[0].classes[0] == NULL) {
-        pnode_free(pe);
-        return 0;
-    }
-    nr->parts[0].nclasses = 1;
-    nr->spec_cls = spec_cls + 1;      /* 伪元素在规范里"比元素更强" */
-    nr->spec_tags = spec_tags;
-    nr->spec_ids = spec_ids;
-    nr->order = order;
-    nr->media = rule_media;
-    for (int i = 0; i < src_n; i++) {
-        if (strcmp(src_decls[i].key, "content") == 0)
-            continue;
-        if (!decls_set(&nr->decls, src_decls[i].key, src_decls[i].val)) {
-            pnode_free(pe);
-            return 0;
-        }
-    }
-    rs->n++;
 
     /*
      * 宿主自己还有文本（`<div>正文</div>` 上加 `::before`）：把文本挪进匿名 span。
@@ -8789,10 +8926,8 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
     PNode *text_span = NULL;
     if (n->text != NULL) {
         text_span = pnode_new("span", n);
-        if (text_span == NULL) {
-            pnode_free(pe);
+        if (text_span == NULL)
             return 0;
-        }
         text_span->is_anon_text = 1;
         text_span->text = n->text;      /* 接管所有权 */
         n->text = NULL;
@@ -8821,10 +8956,32 @@ static int expand_pseudo_rec(PNode *n, const Rule *r, Rules *rs)
     return 1;
 }
 
-/* 对每条带伪元素的规则展开一次（规则条数很少，不优化） */
+/*
+ * 展开 `::before` / `::after`。
+ *
+ * **同一宿主的同一伪元素只有一个节点**：一条伪元素常常被拆成多条规则写
+ * （基样式一条、状态/微调一条），浏览器里那是同一个伪元素、声明按级联合并；
+ * 早先版本每条规则各建一个节点，于是 `.a::before{content:""}` +
+ * `.a::after{transform:...}` 直接报"缺少 content"，两条都写 content 时又会
+ * 长出两个伪元素。
+ *
+ * 现在先按"选择器完全相同"分组：组内任一条写了 `content` 就生成一个节点，
+ * 其余规则只贡献声明（仍是**一条规则一条内部规则**，级联语义不变）。
+ */
 static int expand_pseudo(PNode *root, Rules *rs)
 {
     const int base = rs->n;      /* 只遍历用户规则；新加的内部规则不再展开 */
+    if (base <= 0)
+        return 1;
+
+    PseudoGroup *grp = (PseudoGroup *)xalloc((size_t)base * sizeof(PseudoGroup));
+    int *members = (int *)xalloc((size_t)base * sizeof(int));
+    int ngrp = 0;
+    int rc = 0;
+
+    if (grp == NULL || members == NULL)
+        goto done;
+
     for (int i = 0; i < base; i++) {
         Rule *r = &rs->r[i];
         if (r->nparts <= 0)
@@ -8833,31 +8990,93 @@ static int expand_pseudo(PNode *root, Rules *rs)
          * `::placeholder` 不生成节点，也不是宿主自己的样式：
          * 它在建表期被单独收集成"占位文字用的样式"，只挂在输入框上（B2）。
          */
-        if (r->parts[r->nparts - 1].pseudo_elem == 3)
+        const int pe = r->parts[r->nparts - 1].pseudo_elem;
+        if (pe == 3)
             continue;
-        if (r->parts[r->nparts - 1].pseudo_elem == 0) {
+        if (pe == 0) {
             /* `content` 只在伪元素上合法 —— 元素上用它是常见的误写，必须报错 */
             if (decls_get(&r->decls, "content") != NULL) {
                 set_error("'content' 只能用在 ::before / ::after 上");
-                return 0;
+                goto done;
             }
             continue;
         }
-        const char *cval = decls_get(&r->decls, "content");
-        if (cval == NULL) {
-            set_error("%s 规则缺少 'content'：::before / ::after 只有写了 content 才生成内容",
-                      r->parts[r->nparts - 1].pseudo_elem == 1 ? "::before" : "::after");
-            return 0;
+
+        int g = -1;
+        for (int k = 0; k < ngrp; k++)
+            if (selector_same(&rs->r[grp[k].rep], r)) {
+                g = k;
+                break;
+            }
+        if (g < 0) {
+            g = ngrp++;
+            grp[g].rep = i;
+            grp[g].content = -1;
+            grp[g].text = NULL;
+            grp[g].first = 0;
+            grp[g].nmem = 0;
+            grp[g].cur = 0;
         }
-        /* 伪元素在级联**之前**展开，那时还没有自定义属性 —— 明确报错，别留成字面量 */
-        if (strstr(cval, "var(") != NULL) {
-            set_error("content 不支持 var()（伪元素在级联之前展开，那时还没有自定义属性）");
-            return 0;
-        }
-        if (!expand_pseudo_rec(root, r, rs))
-            return 0;
+        grp[g].nmem++;
+        /* 同一选择器 → 同优先级；后写的赢（与级联一致） */
+        if (decls_get(&r->decls, "content") != NULL)
+            grp[g].content = i;
     }
-    return 1;
+
+    /*
+     * 组员必须**连续**存放（`expand_pseudo_group` 只拿到 `members + first`），
+     * 而规则表里的顺序是按书写顺序交叉的（合并选择器先来、单条后补），
+     * 所以再扫一趟、按组紧凑填充。
+     */
+    {
+        int off = 0;
+        for (int g = 0; g < ngrp; g++) {
+            grp[g].first = off;
+            off += grp[g].nmem;
+        }
+        for (int i = 0; i < base; i++) {
+            Rule *r = &rs->r[i];
+            if (r->nparts <= 0)
+                continue;
+            if (r->parts[r->nparts - 1].pseudo_elem == 0 ||
+                r->parts[r->nparts - 1].pseudo_elem == 3)
+                continue;
+            for (int k = 0; k < ngrp; k++)
+                if (selector_same(&rs->r[grp[k].rep], r)) {
+                    members[grp[k].first + grp[k].cur++] = i;
+                    break;
+                }
+        }
+    }
+
+    for (int g = 0; g < ngrp; g++) {
+        if (grp[g].content < 0) {
+            const Rule *r0 = &rs->r[grp[g].rep];
+            set_error("%s 规则缺少 'content'：::before / ::after 只有写了 content 才生成内容",
+                      r0->parts[r0->nparts - 1].pseudo_elem == 1 ? "::before" : "::after");
+            goto done;
+        }
+        const char *cval = decls_get(&rs->r[grp[g].content].decls, "content");
+        /* 伪元素在级联**之前**展开，那时还没有自定义属性 —— 明确报错，别留成字面量 */
+        if (cval != NULL && strstr(cval, "var(") != NULL) {
+            set_error("content 不支持 var()（伪元素在级联之前展开，那时还没有自定义属性）");
+            goto done;
+        }
+        grp[g].text = pseudo_content_text(&rs->r[grp[g].content]);
+    }
+
+    for (int g = 0; g < ngrp; g++) {
+        if (!expand_pseudo_group(root, rs, &grp[g], members + grp[g].first))
+            goto done;
+    }
+
+    rc = 1;
+done:
+    for (int g = 0; g < ngrp && grp != NULL; g++)
+        ql_mem_free(grp[g].text);
+    ql_mem_free(grp);
+    ql_mem_free(members);
+    return rc;
 }
 
 /*
@@ -11531,19 +11750,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 return 0;
             }
             int r4[4] = { 0, 0, 0, 0 };
-            for (int i = 0; i < n; i++) {
-                uint8_t unit;
-                int num;
-                if (!parse_length(seg[i], where, 0, calc, &unit, &num))
+            for (int i = 0; i < n; i++)
+                if (!parse_radius_token(seg[i], where, calc, &r4[i]))
                     return 0;
-                if (!length_wants_const(unit, where, "border-radius"))
-                    return 0;
-                if (num < 0 || num > 32767) {
-                    set_error("%s: border-radius 超出 0~32767px", where);
-                    return 0;
-                }
-                r4[i] = num;
-            }
             quad_fill(n, r4);
             for (int i = 0; i < 4; i++)
                 rad4[i] = (int16_t)r4[i];
@@ -11558,19 +11767,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                     return 0;
                 }
                 int rv[4] = { 0, 0, 0, 0 };
-                for (int i = 0; i < m; i++) {
-                    uint8_t unit;
-                    int num;
-                    if (!parse_length(segv[i], where, 0, calc, &unit, &num))
+                for (int i = 0; i < m; i++)
+                    if (!parse_radius_token(segv[i], where, calc, &rv[i]))
                         return 0;
-                    if (!length_wants_const(unit, where, "border-radius"))
-                        return 0;
-                    if (num < 0 || num > 32767) {
-                        set_error("%s: border-radius 超出 0~32767px", where);
-                        return 0;
-                    }
-                    rv[i] = num;
-                }
                 quad_fill(m, rv);
                 for (int i = 0; i < 4; i++)
                     radv4[i] = (int16_t)rv[i];
@@ -11586,17 +11785,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                               where, k_corner_names[i]);
                     return 0;
                 }
-                uint8_t unit;
-                int num;
-                if (!parse_length(v, where, 0, calc, &unit, &num))
+                int num = 0;
+                if (!parse_radius_token(v, where, calc, &num))
                     return 0;
-                if (!length_wants_const(unit, where, "border-radius"))
-                    return 0;
-                if (num < 0 || num > 32767) {
-                    set_error("%s: border-%s-radius 超出 0~32767px", where,
-                              k_corner_names[i]);
-                    return 0;
-                }
                 rad4[i] = (int16_t)num;
             }
         }
@@ -11618,19 +11809,24 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             outline_style_set = 1;
         }
         if ((v = decls_get(st, "outline-width")) != NULL) {
-            uint8_t unit;
-            int num;
-            if (!parse_length(v, where, 0, calc, &unit, &num))
-                return 0;
-            if (!length_wants_const(unit, where, "outline-width"))
-                return 0;
-            if (!len_to_px(&num, unit, font_px, where, "outline-width"))
-                return 0;
-            if (num < 0 || num > 64) {
-                set_error("%s: outline-width 必须在 0~64px（收到 '%s'）", where, v);
-                return 0;
+            int kw_px = 0;
+            if (outline_width_kw(v, &kw_px)) {
+                outline_w = kw_px;
+            } else {
+                uint8_t unit;
+                int num;
+                if (!parse_length(v, where, 0, calc, &unit, &num))
+                    return 0;
+                if (!length_wants_const(unit, where, "outline-width"))
+                    return 0;
+                if (!len_to_px(&num, unit, font_px, where, "outline-width"))
+                    return 0;
+                if (num < 0 || num > 64) {
+                    set_error("%s: outline-width 必须在 0~64px（收到 '%s'）", where, v);
+                    return 0;
+                }
+                outline_w = num;
             }
-            outline_w = num;
             /*
              * 只写宽度**不画** —— 这是 CSS 的语义（`outline-style` 初值是 none，
              * 省略样式就等于没有线）。要画就写 `outline: 2px solid red`。

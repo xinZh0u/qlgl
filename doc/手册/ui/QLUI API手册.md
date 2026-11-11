@@ -958,9 +958,9 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 ```
 
 这三条和"组 `opacity`"共用同一块基建：**先把子树合成到一张临时图，再整体处理**。
-支持范围与公式见《CSS3 覆盖与裁剪》§18.10，教程见 [离屏图层](../tutorial/20_filter.md)。
-`transform: rotate()/skew()/matrix()` 也长在这块基建上（§3.10 / §18.11），
-教程见 [旋转光栅](../tutorial/21_transform.md)。
+支持范围与公式见《CSS3 开发日志》§18.10，教程见 [离屏图层](../../tutorial/20_filter.md)。
+`transform: rotate()/skew()/matrix()` 也长在这块基建上（§3.10 / [开发日志 §18.11](CSS3开发日志.html)），
+教程见 [旋转光栅](../../tutorial/21_transform.md)。
 
 | 属性 | 取值 |
 |---|---|
@@ -995,8 +995,8 @@ th, td { border: 1px solid #D0D7DE; padding: 5px 8px }
 | `vertical-align` | 单元格里支持 `top` / `middle` / `bottom`；其它元素仍只认 `baseline` / `sub` / `super` |
 
 **样式写在 `td` / `th` 上** —— `tr` / `thead` 不是盒子（与浏览器一致），
-写在上面的边框、背景、内边距不会生效。实现细节与代价见《CSS3 覆盖与裁剪》§18.12，
-教程见 [表格](../tutorial/22_table.md)。
+写在上面的边框、背景、内边距不会生效。实现细节与代价见《CSS3 开发日志》§18.12，
+教程见 [表格](../../tutorial/22_table.md)。
 
 **构建期报错**：`table-layout: <auto/fixed 之外>`、`border-collapse: <collapse/separate 之外>`、
 `border-spacing` 带 `%`、`caption-side: bottom`、
@@ -1020,8 +1020,8 @@ th, td { border: 1px solid #D0D7DE; padding: 5px 8px }
 
 **语义收窄成"贪心分栏"**：按文档顺序把子节点塞进当前栏，塞不下就换下一栏，
 **不把一个子节点劈成两栏**（容器高度 auto 时会先二分出一个"等高栏高"）。
-不支持 `column-span: all`。实现细节与代价见《CSS3 覆盖与裁剪》§18.13，
-教程见 [多栏](../tutorial/23_columns.md)。
+不支持 `column-span: all`。实现细节与代价见《CSS3 开发日志》§18.13，
+教程见 [多栏](../../tutorial/23_columns.md)。
 
 **构建期报错**：`column-count: <非整数>`、负的 `column-width`、`columns: auto`、
 `column-rule: <wavy 等非 solid/dashed/dotted/none>`、`column-span` 整个属性、
@@ -1077,7 +1077,7 @@ printf("%s %s\n", ql_text_shape_backend(), ql_text_bidi_backend());
 `QL_FEAT_CSS_BIDI=0` 时的 `direction: rtl`、
 `QL_FEAT_CSS_TEXT_SHAPE=0` 时关连字/字距。
 
-实现细节与体积见《CSS3 覆盖与裁剪》§18.14，教程见 [文本栈](../tutorial/24_text_stack.md)。
+实现细节与体积见《CSS3 开发日志》§18.14，教程见 [文本栈](../../tutorial/24_text_stack.md)。
 
 **环境变量（排查用）**：`QL_TEXT_SHAPE=builtin` 强制用内建整形；
 `QL_TEXT_BIDI=builtin` 强制用内建 UAX#9 子集。

@@ -1907,6 +1907,16 @@ static void gl_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (rx < 0 || ry < 0) {
+        /*
+         * **椭圆和多边形共用同一个"关闭"入口**（绘制侧统一走 set_mask(-1) 恢复），
+         * 所以这里必须把多边形也关掉：只清 mask_on 的话，`poly_n` 会一直挂着，
+         * polygon 之后整页都还被裁进那个三角形（CPU 路径同一个坑，见 qlcanvas.c）。
+         * 先 flush 再清，攒着的那些顶点才用得上旧遮罩。
+         */
+        if (g->poly_n != 0) {
+            flush_batch(g);
+            g->poly_n = 0;
+        }
         g->mask_on = 0;
         g->mask_rx = -1.0f;
         g->mask_ry = -1.0f;

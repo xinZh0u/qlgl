@@ -2,7 +2,7 @@
 
 > 状态：**设计；当前实现全部是占位（P7，2026-11-09）**。目标读者：要接
 > ffmpeg / miniaudio / plutosvg / libcurl，或要决定某个平台该开哪些开关的人。
-> 文档站上的覆盖度清单见 [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html)；
+> 文档站上的覆盖度清单见 [HTML5 标签覆盖与裁剪](manual/ui/HTML5标签覆盖与裁剪.html)；
 > 图像部分的做法直接参照 [图像管线设计](图像管线设计.html)，本文所有结构都与它同构。
 
 这份文档定一件事：**`EMBED` 包这 13 个标签，哪些值得接外部库，哪些接了就是另一个产品。**
@@ -495,8 +495,8 @@ MathML 需要：分数线的垂直对齐、根号的可伸缩符号（stretchy�
 
 | 文档 | 关系 |
 |---|---|
-| [HTML5 标签覆盖与裁剪](../manual/ui/HTML5标签覆盖与裁剪.html) | 权威标签表；`EMBED` 那 13 行现在全是 ✅（占位），接上后端后才升级实现档次 |
+| [HTML5 标签覆盖与裁剪](manual/ui/HTML5标签覆盖与裁剪.html) | 权威标签表；`EMBED` 那 13 行现在全是 ✅（占位），接上后端后才升级实现档次 |
 | [图像管线设计](图像管线设计.html) | **同构蓝本**：能力开关、平台后端、构建期转码三件事本文全部照抄，只是换了标签 |
-| [QLUI API 手册](<../manual/ui/QLUI API手册.html>) | 占位标签的 API 面（`ql_ui_invalidate` / `ql_ui_canvas_bind` / `ql_ui_media_*` 落地后补进去） |
-| [QLUI 阅读指南](../manual/ui/QLUI阅读指南.html) | §5.4.7 的 UA 默认表；接后端后占位盒仅在 `UNSUPPORTED` 时出现 |
+| [QLUI API 手册](<manual/ui/QLUI API手册.html>) | 占位标签的 API 面（`ql_ui_invalidate` / `ql_ui_canvas_bind` / `ql_ui_media_*` 落地后补进去） |
+| [QLUI 阅读指南](manual/ui/QLUI阅读指南.html) | §5.4.7 的 UA 默认表；接后端后占位盒仅在 `UNSUPPORTED` 时出现 |
 | [开发规划](开发规划.html) | 分期表 P7a–P7l |
