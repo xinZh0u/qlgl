@@ -1702,15 +1702,23 @@ opacity(k)    : 不动颜色，乘进 d2d->alpha
 | `steps(n)` / `cubic-bezier(a,b,c,d)`（过渡与动画） | 报"暂不支持" | 都支持：过渡在客户端套缓动，动画在 `anim_apply` 里按"帧 > 动画"优先级选 |
 | `padding-inline` / `margin-block` / `inset-inline-start` … | 报"不支持的属性" | 解析期改写成物理四边（`direction: rtl` 时 inline 左右互换） |
 
-**两个结构性限制（诚实记录）**：
+**`margin` / `padding` 的相对单位（同一批收尾）**
 
-1. `margin` / `padding` 的 **百分比**与 `vw/vh` 仍不支持 —— 它们要在**布局期**相对包含块
-   求值，而 `QLUIEdges` 只存 int16 px。要做需要把四边换成 `QLUILength` 并在布局里
-   统一解析（`resolve_inset()` 已有现成算法），是一次独立的布局重构。
-2. 逻辑属性只在**元素自己写了** `direction: rtl` 时交换左右；从祖先继承来的 RTL
-   看不到（解析期拿不到继承值），这类界面请直接写物理属性。
+`%` / `vw` / `vh` / `vmin` / `vmax` 现在都支持：
 
-**结构体与 blob**：`QLUIStyle` 400 → **416**（`gap_units` + `trans_delay_ms` +
+* 每边的单位从 2 位扩到 **4 位**（`margin_unit` / `padding_unit`），编码
+  `0=px 1=em 2=rem 3=auto 4=% 5=vw 6=vh 7=vmin 8=vmax`；
+* `QLUIStyle` 里存的是**原始数值**（`padding: 5%` → 5），布局期由
+  `margin_of()` / `padding_of()` 按**包含块宽度**（`%`）或视口（`vw` 族）折成 px；
+* 布局代码一律通过 `margin_h/margin_v/padding_h/padding_v/margin_of/padding_of`
+  读，**不再直接读 `style->margin.left`** —— 直接读会拿到原始数值（5 当成 5px）；
+* 固有尺寸（`max-content` / `min-content` / 表格定宽）里百分比按 **0** 算，
+  与 CSS "auto 宽度下百分比基准不确定" 的处理一致。
+
+**还剩一个限制（诚实记录）**：逻辑属性只在**元素自己写了** `direction: rtl` 时交换
+左右；从祖先继承来的 RTL 看不到（解析期拿不到继承值），这类界面请直接写物理属性。
+
+**结构体与 blob**：`QLUIStyle` 400 → **416**（`margin_unit`/`padding_unit` 各 8→16 位）（`gap_units` + `trans_delay_ms` +
 `trans_steps` + `trans_bez_on` + `trans_bez[4]`），`QLUIKeyframe` 36 → **44**（帧级
 `bez[4]`/`bez_on`），`QLUIAnimation` 12 → **22**（`steps`/`bez[4]`/`bez_on`），
 blob **v36**；`qltext cc` 的 C 生成器与全部 golden 基准同步重建。

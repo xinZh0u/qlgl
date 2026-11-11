@@ -1402,16 +1402,94 @@ static void fonts_register_from_doc(QLUIRoot *ui)
 #endif
 
 
-static ql_coord_t inner_width_of(const QLUIStyle *style, ql_coord_t content_w)
+/* ------------------------------ 边距解析 ------------------------------ */
+
+/*
+ * `margin` / `padding` 的四个边在样式里可能带**相对单位**（`%` / `vw` / `vh` /
+ * `vmin` / `vmax`），基准是"包含块宽度"或视口 —— 只有布局期才知道。
+ *
+ * 所以布局代码**不直接读** `style->margin.*`：都是通过下面这几个函数拿到 px。
+ * `%` 按 CSS 语义相对**包含块宽度**（竖排也是宽度，不是高度）。
+ */
+static ql_coord_t edge_unit_px(int16_t v, uint8_t unit, ql_coord_t basis_w)
 {
-    return content_w - style->padding.left - style->padding.right -
-           ql_ui_border_h(style);
+    switch (unit) {
+    case 4:     /* % */
+        return (ql_coord_t)(((int32_t)basis_w * (int32_t)v) / 100);
+    case 5:     /* vw */
+        return (ql_coord_t)(((int32_t)s_viewport_w * (int32_t)v) / 100);
+    case 6:     /* vh */
+        return (ql_coord_t)(((int32_t)s_viewport_h * (int32_t)v) / 100);
+    case 7: {   /* vmin */
+        const ql_coord_t m = (s_viewport_w < s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)v) / 100);
+    }
+    case 8: {   /* vmax */
+        const ql_coord_t m = (s_viewport_w > s_viewport_h) ? s_viewport_w : s_viewport_h;
+        return (ql_coord_t)(((int32_t)m * (int32_t)v) / 100);
+    }
+    default:
+        return (ql_coord_t)v;     /* px（em/rem 构建期已折成 px）、auto 记 0 */
+    }
 }
 
-static ql_coord_t outer_width_of(const QLUINodeRT *node)
+/* 四边一起解析。`auto`（unit 3）保留 0 值，由调用方按 `*_unit` 判断 */
+static QLUIEdges edges_resolve(const QLUIEdges *raw, uint16_t units, ql_coord_t basis_w)
 {
-    const QLUIStyle *s = node->style;
-    return node->border_box.w + s->margin.left + s->margin.right;
+    QLUIEdges out;
+    const int16_t *v = &raw->top;
+    int16_t *o = &out.top;
+    for (int i = 0; i < 4; i++) {
+        const uint8_t u = (uint8_t)((units >> (4 * i)) & 0xFu);
+        o[i] = (u == 3) ? 0 : (int16_t)edge_unit_px(v[i], u, basis_w);
+    }
+    return out;
+}
+
+static QLUIEdges margin_of(const QLUINodeRT *n, ql_coord_t basis_w)
+{
+    return edges_resolve(&n->style->margin, n->style->margin_unit, basis_w);
+}
+
+static QLUIEdges padding_of(const QLUINodeRT *n, ql_coord_t basis_w)
+{
+    return edges_resolve(&n->style->padding, n->style->padding_unit, basis_w);
+}
+
+/* 常用组合：横向 / 纵向的和 */
+static ql_coord_t margin_h(const QLUINodeRT *n, ql_coord_t basis_w)
+{
+    const QLUIEdges m = margin_of(n, basis_w);
+    return m.left + m.right;
+}
+
+static ql_coord_t margin_v(const QLUINodeRT *n, ql_coord_t basis_w)
+{
+    const QLUIEdges m = margin_of(n, basis_w);
+    return m.top + m.bottom;
+}
+
+static ql_coord_t padding_h(const QLUINodeRT *n, ql_coord_t basis_w)
+{
+    const QLUIEdges p = padding_of(n, basis_w);
+    return p.left + p.right;
+}
+
+static ql_coord_t padding_v(const QLUINodeRT *n, ql_coord_t basis_w)
+{
+    const QLUIEdges p = padding_of(n, basis_w);
+    return p.top + p.bottom;
+}
+
+static ql_coord_t inner_width_of(const QLUINodeRT *node, ql_coord_t border_box_w,
+                                 ql_coord_t basis_w)
+{
+    return border_box_w - padding_h(node, basis_w) - ql_ui_border_h(node->style);
+}
+
+static ql_coord_t outer_width_of(const QLUINodeRT *node, ql_coord_t basis_w)
+{
+    return node->border_box.w + margin_h(node, basis_w);
 }
 
 static ql_coord_t line_height_of(const QLFont *font)
@@ -1474,7 +1552,7 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
         s->width.unit == QL_UI_UNIT_AUTO) {
         ql_coord_t iw = 0, ih = 0;
         image_node_size(node->owner, node, &iw, &ih);
-        return iw + s->padding.left + s->padding.right + ql_ui_border_h(s);
+        return iw + padding_h(node, avail_w) + ql_ui_border_h(s);
     }
 
     const QLFont *font = font_of_style(node, s);
@@ -1491,10 +1569,11 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
         return ql_font_line_width_ls2(font, node->text, -1,
                                       (ql_coord_t)s->letter_spacing,
                                       (ql_coord_t)s->word_spacing, s->tab_size) +
-               s->padding.left + s->padding.right + ql_ui_border_h(s);
+               padding_h(node, avail_w) + ql_ui_border_h(s);
 
     if (s->width.unit == QL_UI_UNIT_AUTO) {
-        ql_coord_t w = avail_w - s->margin.left - s->margin.right;
+        /* 宽度 auto：撑满包含块（`padding: 5%` 的基准就是 avail_w） */
+        ql_coord_t w = avail_w - margin_h(node, avail_w);
         return (w > 0) ? w : 0;
     }
 
@@ -1507,7 +1586,7 @@ static ql_coord_t border_width_of(const QLUINodeRT *node, ql_coord_t avail_w)
      * （border-box 时它们指边框盒，直接夹总量 —— 上面那条 return。）
      */
     v = clamp_len(s->min_width, s->max_width, v, avail_w);
-    return v + s->padding.left + s->padding.right + ql_ui_border_h(s);
+    return v + padding_h(node, avail_w) + ql_ui_border_h(s);
 }
 
 
@@ -1588,16 +1667,18 @@ static void force_size(QLUINodeRT *node, ql_coord_t main_sz, int row, int apply_
 static ql_coord_t natural_main(const QLUINodeRT *node, int row)
 {
     const QLUIStyle *s = node->style;
-    return row ? (node->border_box.w + s->margin.left + s->margin.right)
-               : (node->border_box.h + s->margin.top + s->margin.bottom);
+    QL_UNUSED(s);
+    return row ? (node->border_box.w + margin_h(node, node->edges_basis))
+               : (node->border_box.h + margin_v(node, node->edges_basis));
 }
 
 /* 交叉方向的外尺寸（含 margin） */
 static ql_coord_t natural_cross(const QLUINodeRT *node, int row)
 {
     const QLUIStyle *s = node->style;
-    return row ? (node->border_box.h + s->margin.top + s->margin.bottom)
-               : (node->border_box.w + s->margin.left + s->margin.right);
+    QL_UNUSED(s);
+    return row ? (node->border_box.h + margin_v(node, node->edges_basis))
+               : (node->border_box.w + margin_h(node, node->edges_basis));
 }
 
 /*
@@ -1723,7 +1804,7 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
                                                    (ql_coord_t)s->letter_spacing,
                                                    (ql_coord_t)s->word_spacing,
                                                    s->tab_size) +
-                            ql_ui_border_h(s) + s->padding.left + s->padding.right;
+                            ql_ui_border_h(s) + padding_h(child, cb.w);
             ql_coord_t cap = cb.w - l - r;
             if (cap > 0 && tw > cap)
                 tw = cap;
@@ -1743,7 +1824,7 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
         avail_w = own_w;
     }
     if (has_r && !has_l)
-        x = cb.x + cb.w - r - own_w - (s->margin.left + s->margin.right);
+        x = cb.x + cb.w - r - own_w - margin_h(child, cb.w);
 
     /* 高度同理：显式 height 优先，否则 top+bottom 拉伸 */
     int definite_h = (s->height.unit != QL_UI_UNIT_AUTO) || (has_t && has_b);
@@ -1763,7 +1844,7 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
         y = cb.y + t;
     } else if (has_b) {
         (void)layout_node(child, x, 0, avail_w, cb.h);
-        y = cb.y + cb.h - b - child->border_box.h - (s->margin.top + s->margin.bottom);
+        y = cb.y + cb.h - b - child->border_box.h - margin_v(child, cb.w);
     } else {
         y = cb.y;        /* 都没给：贴在包含块左上（CSS 的 static position 未实现） */
     }
@@ -2719,9 +2800,10 @@ static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
         if (c->style->display == QL_UI_DISPLAY_NONE)
             continue;
         const QLRect b = c->border_box;
-        const ql_coord_t r = ql_rect_right(b) + s->margin.right + c->style->margin.right;
-        const ql_coord_t bo =
-            ql_rect_bottom(b) + s->margin.bottom + c->style->margin.bottom;
+        /* 内容外沿要算上**子节点自己的**外边距（`%` 按本节点内容宽解析） */
+        const QLUIEdges cm = margin_of(c, cw);
+        const ql_coord_t r = ql_rect_right(b) + cm.right;
+        const ql_coord_t bo = ql_rect_bottom(b) + cm.bottom;
         const ql_coord_t w = r - cx;
         const ql_coord_t h = bo - cy;
         if (w > ext_w)
@@ -2791,6 +2873,17 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         return 0;
     }
 
+    /*
+     * `%` / `vw` / `vh` 的边距基准是**包含块宽度**（= 传进来的 avail_w），
+     * 所以进函数第一件事就是把四边折成 px，后面所有算术都用这两个局部量。
+     */
+    const QLUIEdges mg = margin_of(node, avail_w);
+    const QLUIEdges pd = padding_of(node, avail_w);
+    node->margin_px = mg;
+    node->padding_px = pd;
+    node->edges_basis = avail_w;
+    node->edges_valid = 1;
+
     const QLFont *font = font_of_style(node, s);
     ql_coord_t border_w = border_width_of(node, avail_w);
 
@@ -2800,11 +2893,11 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      * 纵向 auto 按 0 处理 —— 那是"块级外边距合并"的领域，本库还不做外边距合并，
      * 单独实现一套纵向居中容易与它打架，宁可明确不做。
      */
-    ql_coord_t m_left = s->margin.left;
-    ql_coord_t m_right = s->margin.right;
+    ql_coord_t m_left = mg.left;
+    ql_coord_t m_right = mg.right;
     {
-        const uint8_t lu = (uint8_t)((s->margin_unit >> 6) & 0x3u);   /* left */
-        const uint8_t ru = (uint8_t)((s->margin_unit >> 2) & 0x3u);   /* right */
+        const uint8_t lu = (uint8_t)((s->margin_unit >> 12) & 0xFu);  /* left */
+        const uint8_t ru = (uint8_t)((s->margin_unit >> 4) & 0xFu);   /* right */
         const int auto_l = (lu == 3);
         const int auto_r = (ru == 3);
         if ((auto_l || auto_r) && s->display == QL_UI_DISPLAY_BLOCK) {
@@ -2825,11 +2918,11 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     }
 
     ql_coord_t box_x = x + m_left;
-    ql_coord_t box_y = y + s->margin.top;
+    ql_coord_t box_y = y + mg.top;
 
-    ql_coord_t content_x = box_x + s->border_w[3] + s->padding.left;
-    ql_coord_t content_y = box_y + s->border_w[0] + s->padding.top;
-    ql_coord_t content_w = inner_width_of(s, border_w);
+    ql_coord_t content_x = box_x + s->border_w[3] + pd.left;
+    ql_coord_t content_y = box_y + s->border_w[0] + pd.top;
+    ql_coord_t content_w = inner_width_of(node, border_w, avail_w);
     if (content_w < 0)
         content_w = 0;
 
@@ -2846,7 +2939,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
     if (height_is_definite(s, basis_h)) {
         decl_h = height_of_style(s, basis_h, 0);
         if (s->box_sizing == 1) {
-            decl_h -= ql_ui_border_v(s) + s->padding.top + s->padding.bottom;
+            decl_h -= ql_ui_border_v(s) + pd.top + pd.bottom;
             if (decl_h < 0)
                 decl_h = 0;
         }
@@ -2863,7 +2956,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         if (definite_h) {
             ql_coord_t hv = height_of_style(s, basis_h, 0);
             if (s->box_sizing == 1)
-                avail_h = hv - ql_ui_border_v(s) - s->padding.top - s->padding.bottom;
+                avail_h = hv - ql_ui_border_v(s) - pd.top - pd.bottom;
             else
                 avail_h = hv;
             if (avail_h < 0)
@@ -2885,7 +2978,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         if (definite_h) {
             ql_coord_t hv = height_of_style(s, basis_h, 0);
             if (s->box_sizing == 1) {
-                avail_h = hv - ql_ui_border_v(s) - s->padding.top - s->padding.bottom;
+                avail_h = hv - ql_ui_border_v(s) - pd.top - pd.bottom;
             } else {
                 avail_h = hv;
             }
@@ -2924,8 +3017,8 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                                         decl_h);
             } else {
                 ql_coord_t child_avail = content_w;
-                ql_coord_t child_w = border_width_of(child, content_w) +
-                                     child->style->margin.left + child->style->margin.right;
+                ql_coord_t child_w =
+                    border_width_of(child, content_w) + margin_h(child, content_w);
                 if (in_row && cursor_x + child_w > content_x + content_w) {
                     align_inline_row(row_first, child, content_w,
                                      cursor_x - content_x, s->text_align);
@@ -2939,7 +3032,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                     row_first = child;
                 ql_coord_t h = layout_node(child, cursor_x, cursor_y, child_avail,
                                            decl_h);
-                cursor_x += outer_width_of(child);
+                cursor_x += outer_width_of(child, content_w);
                 if (h > row_h)
                     row_h = h;
                 in_row = 1;
@@ -3008,7 +3101,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
           (is_flex_container(s) || is_grid_container(s) || is_table_container(s)))) {
         ql_coord_t hv = height_of_style(s, basis_h, content_h);
         if (s->box_sizing == 1) {
-            hv -= ql_ui_border_v(s) + s->padding.top + s->padding.bottom;
+            hv -= ql_ui_border_v(s) + pd.top + pd.bottom;
             if (hv < 0)
                 hv = 0;
         }
@@ -3028,7 +3121,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                 (ql_coord_t)(((int32_t)content_h * (int32_t)s->aspect_w) /
                              (int32_t)s->aspect_h);
             content_w = (cw > 0) ? cw : 0;
-            border_w = content_w + s->padding.left + s->padding.right +
+            border_w = content_w + pd.left + pd.right +
                        ql_ui_border_h(s);
         } else if (!h_def) {
             const ql_coord_t ch =
@@ -3043,12 +3136,12 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
      * border-box 时夹边框盒，content-box 时夹内容高。
      */
     if (s->box_sizing == 1) {
-        ql_coord_t bh = content_h + s->padding.top + s->padding.bottom +
+        ql_coord_t bh = content_h + pd.top + pd.bottom +
                         ql_ui_border_v(s);
         const ql_coord_t clamped =
             clamp_len(s->min_height, s->max_height, bh, 0);
         if (clamped != bh) {
-            content_h = clamped - s->padding.top - s->padding.bottom -
+            content_h = clamped - pd.top - pd.bottom -
                         ql_ui_border_v(s);
             if (content_h < 0)
                 content_h = 0;
@@ -3057,7 +3150,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         content_h = clamp_len(s->min_height, s->max_height, content_h, 0);
     }
 
-    ql_coord_t border_h = content_h + s->padding.top + s->padding.bottom +
+    ql_coord_t border_h = content_h + pd.top + pd.bottom +
                           ql_ui_border_v(s);
 
     node->border_box = ql_rect_make(box_x, box_y, border_w, border_h);
@@ -3102,7 +3195,7 @@ static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
         translate_subtree(node, dx, dy);
     }
 
-    return border_h + s->margin.top + s->margin.bottom;
+    return border_h + mg.top + mg.bottom;
 }
 
 
@@ -3453,7 +3546,7 @@ static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
             const QLUIGridTrack t = grid_col_track(doc, g, p.col, cs);
             if (t.max_kind != QL_UI_GT_AUTO)
                 continue;
-            const ql_coord_t mh = (ql_coord_t)(is->margin.left + is->margin.right);
+            const ql_coord_t mh = margin_h(c, content_w);
             const ql_coord_t need = max_content_main(c, 1, content_w, 0) - mh;
             if (p.cspan == 1) {
                 if (need > cw[p.col])
@@ -3536,8 +3629,7 @@ static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
             for (int i = p.row; i < p.row + p.rspan; i++)
                 have += rh[i];
             const ql_coord_t need =
-                max_content_main(c, 0, content_w, 0) - c->style->margin.top -
-                c->style->margin.bottom;
+                max_content_main(c, 0, content_w, 0) - margin_v(c, content_w);
             if (need > have) {
                 const ql_coord_t add = (need - have) / (ql_coord_t)p.rspan;
                 for (int i = p.row; i < p.row + p.rspan; i++)
@@ -3594,8 +3686,11 @@ static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
                 ah += rh[i];
             ah += gap_r * (p.rspan - 1);
 
-            const ql_coord_t mh = (ql_coord_t)(is->margin.left + is->margin.right);
-            const ql_coord_t mv = (ql_coord_t)(is->margin.top + is->margin.bottom);
+            const QLUIEdges cm = margin_of(c, content_w);
+            const ql_coord_t mh = cm.left + cm.right;
+            const ql_coord_t mv = cm.top + cm.bottom;
+            const ql_coord_t mh_left = cm.left;
+            const ql_coord_t mv_top = cm.top;
             const ql_coord_t cell_w = (aw - mh > 0) ? (aw - mh) : 0;
             const ql_coord_t cell_h = (ah - mv > 0) ? (ah - mv) : 0;
 
@@ -3637,8 +3732,8 @@ static ql_coord_t layout_grid_children(QLUIRoot *ui, QLUINodeRT *node,
                 off_y = 0;
 
             force_size(c, fw, 1, 1, fh, 1);
-            (void)layout_node(c, cx[p.col] + is->margin.left + off_x,
-                              ry[p.row] + is->margin.top + off_y, fw, -1);
+            (void)layout_node(c, cx[p.col] + mh_left + off_x,
+                              ry[p.row] + mv_top + off_y, fw, -1);
         }
     }
 
@@ -3795,7 +3890,7 @@ static ql_coord_t table_cell_fixed_w(const QLUINodeRT *cell)
         return 0;
     ql_coord_t w = (ql_coord_t)cs->width.value;
     if (cs->box_sizing == 0)
-        w += (ql_coord_t)(cs->padding.left + cs->padding.right) + ql_ui_border_h(cs);
+        w += padding_h(cell, 0) + ql_ui_border_h(cs);   /* 固有尺寸：% 视为 0 */
     return w;
 }
 
@@ -3846,9 +3941,9 @@ static ql_coord_t min_content_main(const QLUINodeRT *node, int depth)
     const QLUIStyle *s = node->style;
     if (s->display == QL_UI_DISPLAY_NONE)
         return 0;
-    const ql_coord_t pad_border =
-        (ql_coord_t)(s->padding.left + s->padding.right + ql_ui_border_h(s));
-    const ql_coord_t margin = (ql_coord_t)(s->margin.left + s->margin.right);
+    /* 固有尺寸（min/max-content）：百分比边距的基准不确定 → 按 0 算，与 CSS 一致 */
+    const ql_coord_t pad_border = padding_h(node, 0) + ql_ui_border_h(s);
+    const ql_coord_t margin = margin_h(node, 0);
 
     if (s->width.unit == QL_UI_UNIT_PX) {
         ql_coord_t w = (ql_coord_t)s->width.value;
@@ -3936,8 +4031,8 @@ static ql_coord_t table_cell_content_h(const QLUINodeRT *cell, ql_coord_t avail_
         for (QLUINodeRT *c = cell->first_child; c != NULL; c = c->next_sibling) {
             if (c->style->display == QL_UI_DISPLAY_NONE)
                 continue;
-            const ql_coord_t b = c->border_box.y + c->border_box.h +
-                                 (ql_coord_t)(c->style->margin.top + c->style->margin.bottom);
+            const ql_coord_t b =
+                c->border_box.y + c->border_box.h + margin_v(c, cell->content_box.w);
             if (b > bottom)
                 bottom = b;
         }
@@ -3960,8 +4055,7 @@ static ql_coord_t table_cell_content_h(const QLUINodeRT *cell, ql_coord_t avail_
 static void table_fit_cell(QLUINodeRT *cell, ql_coord_t h)
 {
     const QLUIStyle *cs = cell->style;
-    const ql_coord_t inner =
-        (ql_coord_t)(cs->padding.top + cs->padding.bottom) + ql_ui_border_v(cs);
+    const ql_coord_t inner = padding_v(cell, cell->content_box.w) + ql_ui_border_v(cs);
     const ql_coord_t used_border_h = cell->border_box.h;
     if (h < used_border_h)
         return;                       /* 内容比这一行还高：让它溢出去（不压扁） */
@@ -4567,20 +4661,20 @@ static int is_multicol(const QLUIStyle *s)
 
 #if QL_FEAT_CSS_COLUMNS
 /* 一个参与多栏的子节点的"推进高度"（第一次量过之后就能直接算，不重排） */
-static ql_coord_t column_item_adv(const QLUINodeRT *c)
+static ql_coord_t column_item_adv(const QLUINodeRT *c, ql_coord_t basis_w)
 {
-    return c->border_box.h + c->style->margin.top + c->style->margin.bottom;
+    return c->border_box.h + margin_v(c, basis_w);
 }
 
 /* 用栏高 `target` 贪心分栏，需要几栏（空格子也算一栏；栏高变大会单调变少） */
-static int columns_needed(QLUINodeRT *node, ql_coord_t target)
+static int columns_needed(QLUINodeRT *node, ql_coord_t target, ql_coord_t basis_w)
 {
     int cols = 1;
     ql_coord_t used = 0;
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
         if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
             continue;
-        const ql_coord_t adv = column_item_adv(c);
+        const ql_coord_t adv = column_item_adv(c, basis_w);
         if (used > 0 && used + adv > target) {
             cols++;
             used = 0;
@@ -4651,8 +4745,7 @@ static ql_coord_t layout_columns_children(QLUINodeRT *node, ql_coord_t content_x
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
         if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
             continue;
-        const ql_coord_t adv = layout_node(c, 0, 0, col_w, -1) +
-                               c->style->margin.top + c->style->margin.bottom;
+        const ql_coord_t adv = layout_node(c, 0, 0, col_w, -1) + margin_v(c, col_w);
         total += adv;
         if (adv > tallest)
             tallest = adv;
@@ -4674,7 +4767,7 @@ static ql_coord_t layout_columns_children(QLUINodeRT *node, ql_coord_t content_x
         ql_coord_t hi = (total > lo) ? total : lo;
         for (int it = 0; it < 12 && lo < hi; it++) {
             const ql_coord_t mid = lo + (hi - lo) / 2;
-            if (columns_needed(node, mid) <= n)
+            if (columns_needed(node, mid, col_w) <= n)
                 hi = mid;
             else
                 lo = mid + 1;
@@ -4698,8 +4791,8 @@ static ql_coord_t layout_columns_children(QLUINodeRT *node, ql_coord_t content_x
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
         if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
             continue;
-        const ql_coord_t mt = c->style->margin.top;
-        const ql_coord_t adv = column_item_adv(c);
+        const ql_coord_t mt = margin_of(c, col_w).top;
+        const ql_coord_t adv = column_item_adv(c, col_w);
 
         /* 这一栏放不下了 → 换栏（空栏无论如何都放，免得死循环） */
         if (cursor > col_top && (cursor - col_top) + adv > target && col + 1 < n) {
@@ -4776,12 +4869,12 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
     if (s->display == QL_UI_DISPLAY_NONE)
         return 0;
 
-    const ql_coord_t pad_border =
-        row ? (ql_coord_t)(s->padding.left + s->padding.right + ql_ui_border_h(s))
-            : (ql_coord_t)(s->padding.top + s->padding.bottom + ql_ui_border_v(s));
-    const ql_coord_t margin =
-        row ? (ql_coord_t)(s->margin.left + s->margin.right)
-            : (ql_coord_t)(s->margin.top + s->margin.bottom);
+    /* 固有尺寸：% 边距的基准不确定 → 按 0 算（与 CSS 的 auto 宽度一致） */
+    const ql_coord_t pad_border = row ? padding_h(node, 0) + ql_ui_border_h(s)
+                                      : padding_v(node, 0) + ql_ui_border_v(s);
+    const ql_coord_t margin = row ? margin_h(node, 0) : margin_v(node, 0);
+    /* 子节点的可用宽要扣掉本节点的左右外边距（基准 = 传进来的 avail_w） */
+    const ql_coord_t mar_h = margin_h(node, avail_w);
 
     const QLUILength *len = row ? &s->width : &s->height;
     ql_coord_t own = 0;
@@ -4829,18 +4922,16 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
                          * 而绘制时按 440 折成 2 行 → 第二行压到下一个元素上
                          * （例程 36 的 justify 段落就是这么暴露出来的）。
                          */
-                        const ql_coord_t pad_h =
-                            (ql_coord_t)(s->padding.left + s->padding.right +
-                                         ql_ui_border_h(s));
-                        const ql_coord_t mar_h =
-                            (ql_coord_t)(s->margin.left + s->margin.right);
+                        const ql_coord_t pad_h = padding_h(node, avail_w) +
+                                                 ql_ui_border_h(s);
+                        const ql_coord_t wrap_mar_h = margin_h(node, avail_w);
                         ql_coord_t basis = avail_w;
                         if (s->width.unit == QL_UI_UNIT_PX)
                             basis = (ql_coord_t)s->width.value +
                                     ((s->box_sizing == 0) ? pad_h : 0);
                         else if (s->width.unit == QL_UI_UNIT_PERCENT && avail_w > 0)
                             basis = (ql_coord_t)(((int32_t)avail_w * s->width.value) / 100);
-                        ql_coord_t inner = basis - pad_h - mar_h;
+                        ql_coord_t inner = basis - pad_h - wrap_mar_h;
                         maxw = (inner > 0) ? inner : 0;
                     }
                     const QLTextWrapOpt wopt = wrap_opt_of(s);
@@ -4898,10 +4989,7 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
             for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
                 if (c->style->display == QL_UI_DISPLAY_NONE)
                     continue;
-                sum += max_content_main(c, row,
-                                        avail_w - pad_border - s->margin.left -
-                                            s->margin.right,
-                                        depth + 1);
+                sum += max_content_main(c, row, avail_w - pad_border - mar_h, depth + 1);
                 n++;
             }
             if (n > 1)
@@ -4913,10 +5001,8 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
             for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
                 if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
                     continue;
-                ql_coord_t v = max_content_main(c, row,
-                                                avail_w - pad_border - s->margin.left -
-                                                    s->margin.right,
-                                                depth + 1);
+                ql_coord_t v =
+                    max_content_main(c, row, avail_w - pad_border - mar_h, depth + 1);
                 if (v > mx)
                     mx = v;
             }
@@ -4944,10 +5030,7 @@ static ql_coord_t max_content_main(const QLUINodeRT *node, int row, ql_coord_t a
                 if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
                     continue;
                 const ql_coord_t v =
-                    max_content_main(c, row,
-                                     avail_w - pad_border - s->margin.left -
-                                         s->margin.right,
-                                     depth + 1);
+                    max_content_main(c, row, avail_w - pad_border - mar_h, depth + 1);
                 if (c->style->display == QL_UI_DISPLAY_BLOCK) {
                     if (in_row) {
                         sum += row_max;
@@ -4995,11 +5078,8 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
         if (len->unit == QL_UI_UNIT_AUTO) {
             const ql_coord_t mc =
                 max_content_main(c, flex_is_row(node->style), content_w, 0);
-            const ql_coord_t mb = flex_is_row(node->style)
-                                      ? (ql_coord_t)(c->style->margin.left +
-                                                     c->style->margin.right)
-                                      : (ql_coord_t)(c->style->margin.top +
-                                                     c->style->margin.bottom);
+            const ql_coord_t mb = flex_is_row(node->style) ? margin_h(c, content_w)
+                                                           : margin_v(c, content_w);
             ql_coord_t box = mc - mb;          /* 去掉 margin 后的 border-box 尺寸 */
             if (box < 0)
                 box = 0;
@@ -5015,10 +5095,8 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
              */
             const int row_axis = flex_is_row(node->style);
             const ql_coord_t pad_border =
-                row_axis ? (ql_coord_t)(c->style->padding.left + c->style->padding.right +
-                                        ql_ui_border_h(c->style))
-                         : (ql_coord_t)(c->style->padding.top + c->style->padding.bottom +
-                                        ql_ui_border_v(c->style));
+                row_axis ? padding_h(c, content_w) + ql_ui_border_h(c->style)
+                         : padding_v(c, content_w) + ql_ui_border_v(c->style);
             const ql_coord_t len_value =
                 (c->style->box_sizing == 1) ? box : (box - pad_border);
 
@@ -5046,8 +5124,7 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             const int row_axis = flex_is_row(node->style);
             if (row_axis) {
                 const ql_coord_t pad_border =
-                    (ql_coord_t)(c->style->padding.left + c->style->padding.right +
-                                 ql_ui_border_h(c->style));
+                    padding_h(c, content_w) + ql_ui_border_h(c->style);
                 ql_coord_t v = resolve_length(*len, content_w, content_w);
                 if (c->style->box_sizing == 0)
                     v -= pad_border;
@@ -5115,8 +5192,8 @@ static void sort_children_by_order(QLUINodeRT *parent)
 static ql_coord_t flex_base_of(const QLUINodeRT *node, int row, ql_coord_t main_size)
 {
     const QLUIStyle *s = node->style;
-    ql_coord_t margin = row ? (ql_coord_t)(s->margin.left + s->margin.right)
-                            : (ql_coord_t)(s->margin.top + s->margin.bottom);
+    const ql_coord_t margin =
+        row ? margin_h(node, main_size) : margin_v(node, main_size);
 
     if (s->flex_basis_pct > 0) {
         ql_coord_t b = (main_size > 0)
@@ -5437,12 +5514,10 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
                     final_main = 0;
             }
 
-            const ql_coord_t margin_main =
-                row ? (ql_coord_t)(is->margin.left + is->margin.right)
-                    : (ql_coord_t)(is->margin.top + is->margin.bottom);
-            const ql_coord_t margin_cross =
-                row ? (ql_coord_t)(is->margin.top + is->margin.bottom)
-                    : (ql_coord_t)(is->margin.left + is->margin.right);
+            const ql_coord_t margin_main = row ? margin_h(c, content_w)
+                                               : margin_v(c, content_w);
+            const ql_coord_t margin_cross = row ? margin_v(c, content_w)
+                                                : margin_h(c, content_w);
 
             ql_coord_t inner_sz = final_main - margin_main;
             if (inner_sz < 0)
@@ -5533,7 +5608,7 @@ static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
         if (c->style->display == QL_UI_DISPLAY_NONE)
             continue;
-        used_main += c->border_box.h + c->style->margin.top + c->style->margin.bottom;
+        used_main += c->border_box.h + margin_v(c, content_w);
         total++;
     }
     if (total > 1)

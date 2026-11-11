@@ -353,15 +353,17 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .bg_grad_dir = %u,\n"
             "      .flex_direction = %s, .justify_content = %s,\n"
             "      .align_items = %s, .flex_wrap = %u, .gap_row = %d,"
-            " .gap_col = %d,\n"
+            " .gap_col = %d, .gap_units = 0x%02X,\n"
             "      .flex_grow = %u, .flex_shrink = %u, .flex_basis = %d,"
             " .flex_basis_pct = %u,\n"
             "      .position = %s, .overflow = %s, .z_index = %d,\n"
             "      .trans_ms = %u, .trans_ease = %s, .trans_props = 0x%02X,\n"
+            "      .trans_delay_ms = %u, .trans_steps = %u, .trans_bez_on = %u,\n"
+            "      .trans_bez = { %d, %d, %d, %d },\n"
             "      .backdrop_blur = %u, .line_h = %d, .white_space = %u,"
             " .font_flags = 0x%02X,\n"
             "      .clip_kind = %u, .clip_r = %u, .opacity = %u,\n"
-            "      .margin_unit = 0x%02X, .padding_unit = 0x%02X,\n"
+            "      .margin_unit = 0x%04X, .padding_unit = 0x%04X,\n"
             "      .aspect_w = %u, .aspect_h = %u,\n"
             "      .letter_spacing = %d, .word_spacing = %d, .tab_size = %u,"
             " .text_indent = %d, .text_transform = %u,"
@@ -401,6 +403,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             enum_name(ALIGN_NAMES, COUNT_OF(ALIGN_NAMES), s->align_items,
                       "QLUIAlign"),
             (unsigned)s->flex_wrap, (int)s->gap_row, (int)s->gap_col,
+            (unsigned)s->gap_units,
             (unsigned)s->flex_grow, (unsigned)s->flex_shrink, (int)s->flex_basis,
             (unsigned)s->flex_basis_pct,
             enum_name(POSITION_NAMES, COUNT_OF(POSITION_NAMES), s->position,
@@ -410,6 +413,10 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (int)s->z_index,
             (unsigned)s->trans_ms, ease_name(s->trans_ease),
             (unsigned)s->trans_props,
+            (unsigned)s->trans_delay_ms, (unsigned)s->trans_steps,
+            (unsigned)s->trans_bez_on,
+            (int)s->trans_bez[0], (int)s->trans_bez[1], (int)s->trans_bez[2],
+            (int)s->trans_bez[3],
             (unsigned)s->backdrop_blur, (int)s->line_h,
             (unsigned)s->white_space, (unsigned)s->font_flags,
             (unsigned)s->clip_kind, (unsigned)s->clip_r, (unsigned)s->opacity,

@@ -577,16 +577,18 @@ typedef struct {
     uint8_t     opacity;
 
     /*
-     * `margin` / `padding` 每一边的"单位"（每边 2 位，顺序 上右下左）：
-     *   0 = px、1 = em、2 = rem、3 = auto（只对 margin 有效）。
+     * `margin` / `padding` 每一边的"单位"（每边 4 位，顺序 上右下左）：
+     *   0 = px、1 = em、2 = rem、3 = auto（只对 margin 有效）、
+     *   4 = %（相对**包含块宽度**）、5 = vw、6 = vh、7 = vmin、8 = vmax。
      *
-     * 为什么单独放字节而不是让 QLUIEdges 带单位：Edges 有 60 处直接读
-     * `.left` / `.top`，改成带单位的结构会逼着所有布局代码跟着改；而 em/rem 在
-     * **构建期**就折成 px 了（`resolve_length_units()`），运行期只剩 px 与 auto，
-     * 所以值仍然是一个 int16。auto 用这两位标出来，值为 0。
+     * em/rem 在**构建期**就折成 px 了（`resolve_length_units()`），所以这里只剩
+     * px / auto / 相对单位。相对单位（% / vw / vh / vmin / vmax）必须在**布局期**
+     * 求值：`QLUIEdges` 里存的是**原始数值**（`5%` → 5），
+     * 由 `ql_ui_layout()` 把结果写进 `QLUINodeRT.margin_px` / `padding_px`，
+     * 布局代码只读那两个（见 `resolve_node_edges()`）。
      */
-    uint8_t     margin_unit;
-    uint8_t     padding_unit;
+    uint16_t    margin_unit;
+    uint16_t    padding_unit;
 
     /*
      * `aspect-ratio: 宽 / 高`（存成两个 uint16；任一为 0 = 没设）。
@@ -1429,6 +1431,16 @@ typedef struct QLUINodeRT {
     QLUIStyle       *style_copy;
 
     const char      *text;
+
+    /*
+     * 布局期解析好的四边（px）。`QLUIStyle` 里的 `margin`/`padding` 在含相对单位
+     * 时是**原始数值**，这里才是能直接参与算术的 px —— 布局代码一律读这里，
+     * 解析在 `resolve_node_edges()` 里做（按包含块宽度，只在换基准时重算）。
+     */
+    QLUIEdges        margin_px;
+    QLUIEdges        padding_px;
+    ql_coord_t       edges_basis;   /* 上面那份是按哪个包含块宽度算的 */
+    uint8_t          edges_valid;
 
     QLRect           border_box; /* 边框盒的绝对矩形（布局结果） */
     QLRect           content_box;/* 内容盒的绝对矩形 */

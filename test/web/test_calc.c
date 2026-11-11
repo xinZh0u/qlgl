@@ -317,7 +317,9 @@ QL_TEST_BEGIN("test_calc")
     QL_CHECK(rejects(H, "#a { width: calc(10px / 0); }", "除以 0"));
     QL_CHECK(rejects(H, "#a { width: calc(100% - 2px; }", ")"));
     QL_CHECK(rejects(H, "#a { width: clamp(1px, 2px); }", "3 个参数"));
-    QL_CHECK(rejects(H, "#a { margin: calc(100% - 2px); }", "百分比"));
+    /* 边距只接受构建期就能折成 px 的 calc()（% 的基准要到布局期才有） */
+    QL_CHECK(rejects(H, "#a { margin: calc(100% - 2px); }", "构建期"));
+    QL_CHECK(rejects(H, "#a { margin: calc(1em - 2px); }", "构建期"));
     QL_CHECK(rejects(H, "#a { font-size: calc(1em + 2px); }", "px"));
     QL_CHECK(rejects(H, "#a { width: calc(50% - 2px) extra; }", "多余内容"));
 

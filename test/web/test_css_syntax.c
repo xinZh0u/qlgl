@@ -249,6 +249,62 @@ QL_TEST_BEGIN("test_css_syntax")
         QL_CHECK(rejects("#a { gap: 5% }", "不支持百分比"));
     }
 
+    /* ---------- 5b. margin / padding 的 % / vw / vh / vmin / vmax ---------- */
+    {
+        /*
+         * 基准是**包含块宽度**（竖排也一样，这是 CSS 的规定）：
+         * 父容器内容宽 200 → `padding: 10%` 四边各 20px。
+         */
+        QLUIRoot *ui = build("<div id=r><div id=a>x</div></div>",
+                             "#r { width: 200px; height: 100px } #a { padding: 10% }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUINodeRT *a = &ui->nodes[1];
+            QL_CHECK_EQ((int)a->padding_px.left, 20);
+            QL_CHECK_EQ((int)a->padding_px.top, 20);
+            /* 内容宽 = 200 - 2×20（border/padding 之外还有文本自身高度） */
+            QL_CHECK_EQ((int)a->content_box.w, 160);
+            drop(ui);
+        }
+        ui = build("<div id=r><div id=a>x</div></div>",
+                   "#r { width: 200px; height: 100px } #a { margin: 10% }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUINodeRT *a = &ui->nodes[1];
+            QL_CHECK_EQ((int)a->border_box.x, 20);
+            QL_CHECK_EQ((int)a->border_box.y, 20);
+            QL_CHECK_EQ((int)a->border_box.w, 160);
+            drop(ui);
+        }
+        /* 视口单位按**视口**算：测试视口宽 200 → 5vw = 10px */
+        ui = build("<div id=r><div id=a>x</div></div>",
+                   "#r { width: 200px; height: 100px } #a { padding: 5vw }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)ui->nodes[1].padding_px.left, 10);
+            drop(ui);
+        }
+        /* 两个值：上下 / 左右 */
+        ui = build("<div id=r><div id=a>x</div></div>",
+                   "#r { width: 200px; height: 100px } #a { padding: 10% 5% }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)ui->nodes[1].padding_px.top, 20);
+            QL_CHECK_EQ((int)ui->nodes[1].padding_px.left, 10);
+            drop(ui);
+        }
+        /* auto 仍然按剩余空间分配（不能被当 0） */
+        ui = build("<div id=r><div id=a>x</div></div>",
+                   "#r { width: 200px; height: 100px } #a { width: 100px; margin: 0 auto }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)ui->nodes[1].border_box.x, 50);
+            drop(ui);
+        }
+        /* calc 里带 % 仍明确报错（边距不接受运行期表达式） */
+        QL_CHECK(rejects("#a { margin: calc(10% - 2px) }", "构建期"));
+    }
+
     /* ---------- 6. line-height 的 em / % ---------- */
     {
         int ref = -1;

@@ -1542,35 +1542,30 @@ static int parse_number(const char *text, const char *where, int allow_percent,
 /*
  * margin/padding 的 1/2/4 值语法。输出顺序写 (上,右,下,左)。
  *
- * 接受 px / em / rem；`auto` 只对 margin 有效（CSS 里 padding 不能 auto）。
- * `%` 与 `vw/vh` 在这里被拒绝：边距的百分比相对的是**包含块宽度**，而本库的
- * 布局在算边距时还没有那个基准 —— 与其算个大概，不如明确报错。
+ * 接受 px / em / rem / % / vw / vh / vmin / vmax；`auto` 只对 margin 有效
+ * （CSS 里 padding 不能 auto）。em/rem 构建期折成 px；相对单位留到布局期
+ * （基准是包含块宽度 / 视口，见 `ql_ui_layout()` 的 `resolve_node_edges()`）。
  */
+static int split_top_spaces(const char *text, const char *where, char (*out)[64],
+                            int max);
+
 static int parse_edges(const char *text, const char *where, int allow_auto,
                        CalcPool *calc, QLUILength out[4])
 {
     QLUILength vals[4];
-    int n = 0;
-    const char *p = text;
-    while (*p != '\0' && n < 4) {
-        while (is_space(*p))
-            p++;
-        if (*p == '\0')
-            break;
-        const char *start = p;
-        while (*p != '\0' && !is_space(*p))
-            p++;
-        char tok[64];
-        size_t len = (size_t)(p - start);
-        if (len >= sizeof(tok)) {
-            set_error("%s: margin/padding 的值太长", where);
-            return 0;
-        }
-        memcpy(tok, start, len);
-        tok[len] = '\0';
+    /*
+     * 按**顶层**空白切：`calc(100% - 2px)` 里的空格不是分隔符
+     * （切错了会得到 `calc(100%` 这种碎片，报"缺少 ')'"）。
+     */
+    char seg[5][64];
+    const int n = split_top_spaces(text, where, seg, 5);
+    if (n < 0)
+        return 0;
+    for (int i = 0; i < n; i++) {
         uint8_t unit = QL_UI_UNIT_PX;
         int v = 0;
-        if (!parse_length(tok, where, 0, calc, &unit, &v))
+        /* allow_percent=1：`%` / `vw` 等相对单位要收（见上面的说明） */
+        if (!parse_length(seg[i], where, 1, calc, &unit, &v))
             return 0;
         if (!length_wants_const(unit, where, "margin/padding"))
             return 0;
@@ -1578,18 +1573,9 @@ static int parse_edges(const char *text, const char *where, int allow_auto,
             set_error("%s: padding 不支持 auto", where);
             return 0;
         }
-        if (unit == QL_UI_UNIT_PERCENT || unit == QL_UI_UNIT_VW ||
-            unit == QL_UI_UNIT_VH || unit == QL_UI_UNIT_VMIN ||
-            unit == QL_UI_UNIT_VMAX) {
-            set_error("%s: margin/padding 暂不支持 %% / vw / vh / vmin / vmax"
-                      "（用 px / em / rem）",
-                      where);
-            return 0;
-        }
-        vals[n].value = (int16_t)v;
-        vals[n].unit = unit;
-        vals[n].reserved = 0;
-        n++;
+        vals[i].value = (int16_t)v;
+        vals[i].unit = unit;
+        vals[i].reserved = 0;
     }
     if (n == 1) {
         for (int i = 0; i < 4; i++)
@@ -1609,19 +1595,27 @@ static int parse_edges(const char *text, const char *where, int allow_auto,
     return 1;
 }
 
-/* 2 位/边：0=px 1=em 2=rem 3=auto */
-static uint8_t edges_unit_bits(const QLUILength e[4])
+/*
+ * 4 位/边：0=px 1=em 2=rem 3=auto 4=% 5=vw 6=vh 7=vmin 8=vmax。
+ * 与 `QLUIStyle.margin_unit` 的约定一致（见 qlui.h）。
+ */
+static uint16_t edges_unit_bits(const QLUILength e[4])
 {
-    uint8_t bits = 0;
+    uint16_t bits = 0;
     for (int i = 0; i < 4; i++) {
-        uint8_t u = 0;
-        if (e[i].unit == QL_UI_UNIT_EM)
-            u = 1;
-        else if (e[i].unit == QL_UI_UNIT_REM)
-            u = 2;
-        else if (e[i].unit == QL_UI_UNIT_AUTO)
-            u = 3;
-        bits = (uint8_t)(bits | (uint8_t)(u << (2 * i)));
+        uint16_t u = 0;
+        switch (e[i].unit) {
+        case QL_UI_UNIT_EM:      u = 1; break;
+        case QL_UI_UNIT_REM:     u = 2; break;
+        case QL_UI_UNIT_AUTO:    u = 3; break;
+        case QL_UI_UNIT_PERCENT: u = 4; break;
+        case QL_UI_UNIT_VW:      u = 5; break;
+        case QL_UI_UNIT_VH:      u = 6; break;
+        case QL_UI_UNIT_VMIN:    u = 7; break;
+        case QL_UI_UNIT_VMAX:    u = 8; break;
+        default:                 u = 0; break;
+        }
+        bits = (uint16_t)(bits | (uint16_t)(u << (4 * i)));
     }
     return bits;
 }
@@ -1630,17 +1624,18 @@ static uint8_t edges_unit_bits(const QLUILength e[4])
  * 边距里的 em / rem 折成 px（值存的是百分之一 em）。`auto` 原样留着，
  * 由布局按"剩余空间"分配。
  */
-static void resolve_edge_units(QLUIEdges *e, uint8_t *bits, int font_px, int root_px)
+static void resolve_edge_units(QLUIEdges *e, uint16_t *bits, int font_px, int root_px)
 {
     int16_t *v[4] = { &e->top, &e->right, &e->bottom, &e->left };
     for (int i = 0; i < 4; i++) {
-        const uint8_t u = (uint8_t)((*bits >> (2 * i)) & 0x3u);
+        const uint8_t shift = (uint8_t)(4 * i);
+        const uint8_t u = (uint8_t)((*bits >> shift) & 0xFu);
         if (u == 1 && font_px > 0) {
             *v[i] = (int16_t)(((int32_t)*v[i] * font_px) / 100);
-            *bits = (uint8_t)(*bits & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
+            *bits = (uint16_t)(*bits & (uint16_t)~(uint16_t)(0xFu << shift));
         } else if (u == 2 && root_px > 0) {
             *v[i] = (int16_t)(((int32_t)*v[i] * root_px) / 100);
-            *bits = (uint8_t)(*bits & (uint8_t)~(uint8_t)(0x3u << (2 * i)));
+            *bits = (uint16_t)(*bits & (uint16_t)~(uint16_t)(0xFu << shift));
         }
     }
 }
