@@ -18,9 +18,10 @@ typedef struct QLDraw2D {
     void (*stroke_round_rect)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                               ql_coord_t thickness, ql_color_t color);
 
+    /* from/to 各带自己的 alpha：a1/a2 沿渐变插值（CSS 的 rgba 色标） */
     void (*fill_round_rect_gradient)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                      ql_color_t from, ql_color_t to, uint8_t dir,
-                                     uint8_t alpha);
+                                     uint8_t a1, uint8_t a2);
     void (*fill_shadow)(QLDraw2D *self, QLRect inner, ql_coord_t radius, ql_coord_t blur,
                         ql_coord_t dx, ql_coord_t dy, ql_color_t color, uint8_t alpha);
 
@@ -37,7 +38,7 @@ typedef struct QLDraw2D {
 | `set_clip` | 绝对坐标；与表面边界求交；后续绘制都被裁到它里面 |
 | `fill_rect` / `fill_round_rect` | `alpha` 0=跳过，255=不透明；圆角半径自动裁到短边一半 |
 | `stroke_round_rect` | **向内描边**；`thickness` ≤ 0 时无操作 |
-| `fill_round_rect_gradient` | `dir` 取 `QLGradientDir`；只有 2 个停靠点 |
+| `fill_round_rect_gradient` | `dir` 取 `QLGradientDir`；只有 2 个停靠点；`a1`/`a2` 是两端色标各自的 alpha（都传 255 = 与旧版等价） |
 | `fill_shadow` | 以 `inner` 为轮廓向外扩散 `blur` 并偏移 `(dx,dy)`；**必须先画阴影再画本体** |
 
 ### 5.x 高 DPI（DPR）

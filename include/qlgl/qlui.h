@@ -383,7 +383,16 @@ typedef struct {
     QLUIEdges   padding;
 
     uint8_t     display;       /* QLUIDisplay */
-    uint8_t     bg_alpha;      /* 0..255 */
+    uint8_t     bg_alpha;      /* 0..255：背景（或渐变起始色）的 alpha */
+    /*
+     * 渐变**终止色**的 alpha（v37）。
+     *
+     * 以前一个背景只有一个 alpha，`linear-gradient(#FFF, rgba(255,255,255,0))` 的
+     * 透明端会被静默丢掉 —— 玻璃/柔光这类效果全靠"一端不透明另一端透明"，
+     * 所以单独存一个。没有渐变（或渐变色标都没写 alpha）时它等于 bg_alpha，
+     * 与旧行为完全一致。
+     */
+    uint8_t     bg_alpha2;
     /*
      * 四边独立的边框宽度，顺序 上 右 下 左（blob v26）。
      * `border-width: 2px` 写满四个；`border-width: 1px 2px` 是"上下 左右"。
@@ -518,6 +527,13 @@ typedef struct {
      * PC/GL 走半分辨率两趟可分离模糊；CPU 后端就地模糊画布（同一条像素路径）。
      */
     uint8_t     backdrop_blur;
+    /*
+     * `backdrop-filter: saturate(<N>%)`（v37），0 = 没写（按 100% 处理）。
+     *
+     * Apple 的"液态玻璃"关键一步：模糊之后把颜色推艳。只有模糊的话，
+     * 玻璃后面是一片灰蒙蒙的均值色，看不出"玻璃"。
+     */
+    uint8_t     backdrop_sat;
 
     /*
      * line-height（px）。0 = `normal`，用字体自己的 line_height（= ascent + descent）。
@@ -2143,7 +2159,7 @@ int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *ou
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    36u
+#define QL_UI_BLOB_VERSION    37u
 
 typedef struct {
     uint32_t magic;

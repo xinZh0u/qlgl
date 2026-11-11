@@ -259,6 +259,14 @@ struct QLGfxGL {
      */
     GLuint           blur_prog;
     GLuint           blur_vbo;
+    /*
+     * 收尾的抖动 pass：把保留模式画布拷到窗口时顺手 dither。
+     * 8 位缓冲里一段很缓的渐变（大面积的模糊背景就是）必然出现 1px 一档、
+     * 十几像素才跳一格的"色带"，抖动把台阶打散成噪点，肉眼就是平滑的。
+     */
+    GLuint           dither_prog;
+    GLint            dither_u_tex;
+    GLint            dither_u_uvmax;
     GLint            blur_u_tex, blur_u_texel, blur_u_step, blur_u_uvmax;
     GLuint           blur_tex[2];
     GLuint           blur_fbo[2];
@@ -541,7 +549,17 @@ static const char *FS_SRC =
     "    }\n"
     "  }\n"
     "  if (mode > 3.5) {\n"
-    "    return vec4(texture(u_bg, v_uv).rgb, v_color.a * cov * m);\n"
+    /*
+     * `a_params.w`（pad）带的是 `saturate()` 的百分比，0 / 100 = 不处理。
+     * 系数与 CPU 侧（`filter: saturate()` 与 `ql_canvas` 的 saturate_rect）
+     * 完全同一组：0.213 / 0.715 / 0.072 —— 两条后端才对得上。
+     */
+    "    vec3 bg = texture(u_bg, v_uv).rgb;\n"
+    "    if (v_params.w > 0.5 && abs(v_params.w - 100.0) > 0.5) {\n"
+    "      float gy = dot(bg, vec3(0.213, 0.715, 0.072));\n"
+    "      bg = clamp(mix(vec3(gy), bg, v_params.w / 100.0), 0.0, 1.0);\n"
+    "    }\n"
+    "    return vec4(bg, v_color.a * cov * m);\n"
     "  }\n"
     "  if (mode > 2.5 && mode < 3.5) {\n"
     /*
@@ -555,10 +573,17 @@ static const char *FS_SRC =
     "    float cr = floor(pk / 65536.0);\n"
     "    float t = clamp(length(v_local) / max(length(v_half), 0.5), 0.0, 1.0);\n"
     "    vec3 c2 = vec3(cr, cg, cb) / 255.0;\n"
-    "    return vec4(mix(v_color.rgb, c2, t), v_color.a * cov * m);\n"
+    /* 终止 alpha 打包在 v_uv.y（径向不采样 uv），按同一个 t 插值 */
+    "    float a2 = v_uv.y;\n"
+    "    return vec4(mix(v_color.rgb, c2, t), mix(v_color.a, a2, t) * cov * m);\n"
     "  }\n"
     "  return vec4(v_color.rgb, v_color.a * cov * m);\n"
-    "}\n"
+    "}\n";
+
+static const char *FS_TAIL =
+    /* 4×4 有序抖动（Bayer），只在低于 1 个色阶的量级上做手脚 */
+    "float bayer2(vec2 a){ a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }\n"
+    "float bayer4(vec2 a){ return bayer2(0.5 * a) * 0.25 + bayer2(a); }\n"
     /*
      * 所有分支算完再统一施加颜色矩阵 —— 这是唯一一个"出口"，
      * 不会像当年的圆遮罩那样漏掉某个 return。
@@ -572,13 +597,27 @@ static const char *FS_SRC =
     "      + vec3(u_cm[0].w, u_cm[1].w, u_cm[2].w);\n"
     "    c.rgb = clamp(o, 0.0, 1.0);\n"
     "  }\n"
+    /*
+     * 抖动必须在**这里**：颜色此刻还是 float，写进 8 位画布才做量化。
+     * 一段很缓的渐变（大面积模糊背景就是这样）压进 256 档会出现十几像素
+     * 才跳一格的色带；加 ±半个色阶的有序噪声，台阶被打散成肉眼看不见的噪点，
+     * 平均色不变。放到后处理里做没有意义 —— 那时台阶已经量化进画布了。
+     *
+     * 只看 `gl_FragCoord`，所以脏区重绘每次算出来的噪声完全一样，
+     * 不会出现"局部重绘那一块在抖"。
+     */
+    "  c.rgb += (bayer4(gl_FragCoord.xy) - 0.5) * (1.0 / 255.0);\n"
     "  frag = c;\n"
     "}\n";
 
-static GLuint compile(GLenum type, const char *src)
+/*
+ * 分段编译：主片元着色器已经超过 ISO C 保证的 4095 字符单个字符串上限
+ * （`-Woverlength-strings`），拆成几个字面量交给 `glShaderSource` 的多段接口。
+ */
+static GLuint compile_parts(GLenum type, const char *const *parts, int n)
 {
     GLuint sh = glCreateShader(type);
-    glShaderSource(sh, 1, &src, NULL);
+    glShaderSource(sh, n, parts, NULL);
     glCompileShader(sh);
     GLint ok = 0;
     glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
@@ -590,6 +629,11 @@ static GLuint compile(GLenum type, const char *src)
         return 0;
     }
     return sh;
+}
+
+static GLuint compile(GLenum type, const char *src)
+{
+    return compile_parts(type, &src, 1);
 }
 
 /*
@@ -608,7 +652,8 @@ static void ime_preedit_caret(XIC ic, XPointer client, XPointer call);
 static int build_program(QLGfxGL *g)
 {
     GLuint vs = compile(GL_VERTEX_SHADER, VS_SRC);
-    GLuint fs = compile(GL_FRAGMENT_SHADER, FS_SRC);
+    const char *const fs_parts[] = { FS_SRC, FS_TAIL };
+    GLuint fs = compile_parts(GL_FRAGMENT_SHADER, fs_parts, 2);
     if (!vs || !fs) {
         if (vs) glDeleteShader(vs);
         if (fs) glDeleteShader(fs);
@@ -1170,9 +1215,9 @@ static float pack_color(ql_color_t c)
 
 static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
                                ql_color_t from, ql_color_t to, uint8_t dir,
-                               uint8_t alpha)
+                               uint8_t a1, uint8_t a2)
 {
-    if (ql_rect_is_empty(r) || alpha == 0)
+    if (ql_rect_is_empty(r) || (a1 == 0 && a2 == 0))
         return;
     /* 注意别把 RADIAL 一起归一成 VERTICAL —— 那样径向会静默变成竖直渐变 */
     if (dir != QL_GRADIENT_HORIZONTAL && dir != QL_GRADIENT_RADIAL)
@@ -1194,7 +1239,6 @@ static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
     if (rad > half_min) rad = half_min;
     if (rad < 0.0f) rad = 0.0f;
 
-    float ca = (float)alpha / 255.0f;
     const int radial = (dir == QL_GRADIENT_RADIAL);
     ql_coord_t span = (dir == QL_GRADIENT_HORIZONTAL) ? r.w : r.h;
     if (span < 1) span = 1;
@@ -1214,12 +1258,16 @@ static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
     v.r_tl = v.r_tr = v.r_br = v.r_bl = rad;
     v.border = -1.0f;
     v.use_tex = 0.0f;
-    v.a = ca;
+    v.a = (float)a1 / 255.0f;
 
     if (radial) {
-        /* 起始色走 v_color，终止色打包进 uv.x，形状仍是同一个 SDF */
+        /*
+         * 起始色走 v_color，终止色打包进 uv.x，形状仍是同一个 SDF。
+         * 终止 alpha 打包进 uv.y（径向的 uv 不用来采样，空着也是空着）。
+         */
         v.use_tex = 3.0f;
         v.u = pack_color(to);
+        v.v = (float)a2 / 255.0f;
         v.radius = rad;
         const float r3[3] = { (float)QL_COLOR_GET_R(from) / 255.0f,
                               (float)QL_COLOR_GET_G(from) / 255.0f,
@@ -1241,6 +1289,9 @@ static void emit_quad_gradient(QLGfxGL *g, QLRect r, ql_coord_t radius,
             float rgb[3];
             color_at(from, to, t, rgb);
             v.r = rgb[0]; v.g = rgb[1]; v.b = rgb[2];
+            /* 线性渐变的 alpha 也按顶点插值（GPU 免费） */
+            v.a = (float)a1 / 255.0f +
+                  ((float)a2 - (float)a1) / 255.0f * ((float)t / 255.0f);
         }
 
         v.x = xs[k];
@@ -1315,9 +1366,9 @@ static void emit_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius, ql_coord_t 
 
 static void gl_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                         ql_color_t from, ql_color_t to, uint8_t dir,
-                                        uint8_t alpha)
+                                        uint8_t a1, uint8_t a2)
 {
-    emit_quad_gradient((QLGfxGL *)self->user, rect, radius, from, to, dir, alpha);
+    emit_quad_gradient((QLGfxGL *)self->user, rect, radius, from, to, dir, a1, a2);
 }
 
 static void emit_inset_shadow(QLGfxGL *g, QLRect inner, ql_coord_t radius,
@@ -1357,13 +1408,14 @@ static void gl_stroke_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t 
 
 static void gl_fill_round_rect_gradient4(QLDraw2D *self, QLRect rect,
                                          const ql_coord_t r4[4], ql_color_t from,
-                                         ql_color_t to, uint8_t dir, uint8_t alpha)
+                                         ql_color_t to, uint8_t dir, uint8_t a1,
+                                         uint8_t a2)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     for (int i = 0; i < 4; i++)
         g->cur_r4[i] = r4[i];
     g->use_r4 = 1;
-    emit_quad_gradient(g, rect, ql_ui_radius_max4(r4), from, to, dir, alpha);
+    emit_quad_gradient(g, rect, ql_ui_radius_max4(r4), from, to, dir, a1, a2);
     g->use_r4 = 0;
 }
 
@@ -1575,6 +1627,70 @@ static GLuint build_blur_program(void)
     return p;
 }
 
+/*
+ * 收尾抖动（dither）。
+ *
+ * 为什么必须有：缓冲是 8 位/通道，一段**很缓**的渐压缩进 256 档就会出现
+ * 十几像素才跳一格的"色带"。大面积模糊背景最容易露馅 —— 模糊把高频抹平了，
+ * 剩下的就是台阶。有序抖动（4×4 Bayer，±0.5 个色阶）把这些台阶打散，
+ * 肉眼看到的是平滑过渡。
+ *
+ * 抖动放在**最后一步**（保留模式画布 → 窗口）而不是每个图元里：
+ * 一处收口，渐变、模糊、图层合成全都覆盖到，也不会在字形边缘撒噪点。
+ */
+static const char *DITHER_VS =
+    "#version 300 es\n"
+    "out vec2 v_uv;\n"
+    "void main(){\n"
+    "  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);\n"
+    "  v_uv = p;\n"
+    "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+static const char *DITHER_FS =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "in vec2 v_uv;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform vec2 u_uvmax;\n"
+    "out vec4 frag;\n"
+    "float bayer2(vec2 a){ a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }\n"
+    "float bayer4(vec2 a){ return bayer2(0.5 * a) * 0.25 + bayer2(a); }\n"
+    "void main(){\n"
+    "  vec3 c = texture(u_tex, v_uv * u_uvmax).rgb;\n"
+    "  c += (bayer4(gl_FragCoord.xy) - 0.5) * (1.0 / 255.0);\n"
+    "  frag = vec4(c, 1.0);\n"
+    "}\n";
+
+static GLuint build_dither_program(void)
+{
+    GLuint vs = compile(GL_VERTEX_SHADER, DITHER_VS);
+    GLuint fs = compile(GL_FRAGMENT_SHADER, DITHER_FS);
+    if (vs == 0 || fs == 0) {
+        if (vs)
+            glDeleteShader(vs);
+        if (fs)
+            glDeleteShader(fs);
+        return 0;
+    }
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    GLint ok = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(prog, (GLsizei)sizeof(log), NULL, log);
+        QL_LOGE("gl: dither link failed: %s", log);
+        glDeleteProgram(prog);
+        return 0;
+    }
+    return prog;
+}
+
 /* 半分辨率 ping-pong 缓冲：只在需要的尺寸变大时重建 */
 static int blur_ensure(QLGfxGL *g, int w, int h)
 {
@@ -1670,16 +1786,16 @@ static void blur_pass(QLGfxGL *g, int src, int dst, float dx, float dy, float uw
  *   4. 恢复帧缓冲/视口，发一个 mode 4 的四边形（片元里采样 u_bg）。
  */
 static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
-                                   ql_coord_t corner);
+                                   ql_coord_t corner, uint8_t sat);
 
 /* 直角版本 = 圆角半径为 0，保留旧入口（外部可能只认识 backdrop_blur） */
-static void gl_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma)
+static void gl_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma, uint8_t sat)
 {
-    gl_backdrop_blur_round(self, rect, sigma, 0);
+    gl_backdrop_blur_round(self, rect, sigma, 0, sat);
 }
 
 static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
-                                   ql_coord_t corner)
+                                   ql_coord_t corner, uint8_t sat)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (g == NULL || g->blur_prog == 0)
@@ -1751,6 +1867,11 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
      */
     v.radius = (corner > 0) ? (float)gsl(g, corner) : 0.0f;
     v.r_tl = v.r_tr = v.r_br = v.r_bl = v.radius;
+    /*
+     * 饱和度（`backdrop-filter: saturate(N%)`）借 `pad` 传真元：0 或 100 = 不变。
+     * 只有 backdrop 这一档用得上它，别的图元 pad 恒为 0。
+     */
+    v.pad = (float)sat;
     v.a = 1.0f;
     v.r = 1.0f;
     v.g = 1.0f;
@@ -3400,6 +3521,12 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glBindTexture(GL_TEXTURE_2D, g->atlas_tex);
     }
+    /* QLGL_GL_NDITHER=1 关掉收尾抖动（A/B 对比色带时用） */
+    g->dither_prog = getenv("QLGL_GL_NDITHER") != NULL ? 0 : build_dither_program();
+    if (g->dither_prog != 0) {
+        g->dither_u_tex = glGetUniformLocation(g->dither_prog, "u_tex");
+        g->dither_u_uvmax = glGetUniformLocation(g->dither_prog, "u_uvmax");
+    }
     if (g->blur_prog != 0) {
         g->blur_u_tex = glGetUniformLocation(g->blur_prog, "u_tex");
         g->blur_u_texel = glGetUniformLocation(g->blur_prog, "u_texel");
@@ -3972,15 +4099,47 @@ void ql_gfx_gl_flush_frame(QLGfxGL *g)
 
     flush_batch(g);
 
-    /* 保留模式：FBO 是真正的画布，整块 blit 到窗口（交换由 end 负责） */
+    /*
+     * 保留模式：FBO 是真正的画布，整块拷到窗口（交换由 end 负责）。
+     *
+     * 这一步顺手做**抖动**：8 位缓冲里的大面积渐变必然有台阶（色带），
+     * 抖动把它们打散成噪点。用 quad + 着色器而不是 glBlitFramebuffer，
+     * 就是因为固定管线的 blit 没地方插这个操作。
+     */
     if (g->fbo_valid) {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glDisable(GL_SCISSOR_TEST);
-        glBlitFramebuffer(0, 0, (GLint)g->width, (GLint)g->height,
-                          0, 0, (GLint)g->width, (GLint)g->height,
-                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND);
+        glViewport(0, 0, (GLsizei)g->width, (GLsizei)g->height);
+        if (g->dither_prog != 0) {
+            glUseProgram(g->dither_prog);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, g->fbo_tex);
+            glUniform1i(g->dither_u_tex, 0);
+            /* 纹理比窗口大（按 256 对齐分配），uv 只取左上角窗口那一块 */
+            glUniform2f(g->dither_u_uvmax,
+                        g->fbo_cap_w > 0 ? (GLfloat)g->width / (GLfloat)g->fbo_cap_w : 1.0f,
+                        g->fbo_cap_h > 0 ? (GLfloat)g->height / (GLfloat)g->fbo_cap_h : 1.0f);
+            /*
+             * 顶点位置由 `gl_VertexID` 现算（不传缓冲），所以只要一个空 VAO。
+             * ES 3.0 不允许"没有 VAO 就画"，这里现建一个一次性的。
+             */
+            GLuint vao = 0;
+            glGenVertexArrays(1, &vao);
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBindVertexArray(0);
+            glDeleteVertexArrays(1, &vao);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glUseProgram(g->program);
+            glEnable(GL_BLEND);
+        } else {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glBlitFramebuffer(0, 0, (GLint)g->width, (GLint)g->height,
+                              0, 0, (GLint)g->width, (GLint)g->height,
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
     }
 }
 

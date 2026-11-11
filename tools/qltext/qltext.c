@@ -344,7 +344,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
     fput_edges(f, s->padding);
     fprintf(f,
             ",\n"
-            "      .display = %s, .bg_alpha = %u,\n"
+            "      .display = %s, .bg_alpha = %u, .bg_alpha2 = %u,\n"
             "      .border_w = { %u, %u, %u, %u },\n"
             "      .border_style4 = { %s, %s, %s, %s },\n"
             "      .radius = { %d, %d, %d, %d },\n"
@@ -360,7 +360,8 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .trans_ms = %u, .trans_ease = %s, .trans_props = 0x%02X,\n"
             "      .trans_delay_ms = %u, .trans_steps = %u, .trans_bez_on = %u,\n"
             "      .trans_bez = { %d, %d, %d, %d },\n"
-            "      .backdrop_blur = %u, .line_h = %d, .white_space = %u,"
+            "      .backdrop_blur = %u, .backdrop_sat = %u, .line_h = %d,"
+            " .white_space = %u,"
             " .font_flags = 0x%02X,\n"
             "      .clip_kind = %u, .clip_r = %u, .opacity = %u,\n"
             "      .margin_unit = 0x%04X, .padding_unit = 0x%04X,\n"
@@ -387,7 +388,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             "      .anim = ",
             enum_name(DISPLAY_NAMES, COUNT_OF(DISPLAY_NAMES), s->display,
                       "QLUIDisplay"),
-            (unsigned)s->bg_alpha,
+            (unsigned)s->bg_alpha, (unsigned)s->bg_alpha2,
             (unsigned)s->border_w[0], (unsigned)s->border_w[1],
             (unsigned)s->border_w[2], (unsigned)s->border_w[3],
             bs_name[0], bs_name[1], bs_name[2], bs_name[3],
@@ -417,7 +418,7 @@ static void fput_style(FILE *f, const QLUIStyle *s)
             (unsigned)s->trans_bez_on,
             (int)s->trans_bez[0], (int)s->trans_bez[1], (int)s->trans_bez[2],
             (int)s->trans_bez[3],
-            (unsigned)s->backdrop_blur, (int)s->line_h,
+            (unsigned)s->backdrop_blur, (unsigned)s->backdrop_sat, (int)s->line_h,
             (unsigned)s->white_space, (unsigned)s->font_flags,
             (unsigned)s->clip_kind, (unsigned)s->clip_r, (unsigned)s->opacity,
             (unsigned)s->margin_unit, (unsigned)s->padding_unit,

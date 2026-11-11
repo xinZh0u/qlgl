@@ -122,7 +122,7 @@ QL_TEST_BEGIN("test_effects")
     /* ---------- 1. 垂直渐变：上蓝下红，中间是过渡 ---------- */
     fresh(bg);
     ql_canvas_fill_round_rect_gradient(&s_canvas, ql_rect_make(10, 10, 100, 100), 0,
-                                       c0, c1, QL_GRADIENT_VERTICAL, 255);
+                                       c0, c1, QL_GRADIENT_VERTICAL, 255, 255);
     QL_CHECK(near(px(60, 10), c0, 8));
     QL_CHECK(near(px(60, 109), c1, 8));
     ql_color_t mid = px(60, 60);
@@ -134,7 +134,7 @@ QL_TEST_BEGIN("test_effects")
     /* ---------- 2. 水平渐变：左蓝右红，同列颜色相同 ---------- */
     fresh(bg);
     ql_canvas_fill_round_rect_gradient(&s_canvas, ql_rect_make(10, 10, 100, 100), 0,
-                                       c0, c1, QL_GRADIENT_HORIZONTAL, 255);
+                                       c0, c1, QL_GRADIENT_HORIZONTAL, 255, 255);
     QL_CHECK(near(px(10, 60), c0, 8));
     QL_CHECK(near(px(109, 60), c1, 8));
     QL_CHECK_EQ(px(60, 11), px(60, 108));      /* 同一列相同 */
@@ -142,7 +142,7 @@ QL_TEST_BEGIN("test_effects")
     /* ---------- 3. 渐变 + 圆角：角上不填 ---------- */
     fresh(bg);
     ql_canvas_fill_round_rect_gradient(&s_canvas, ql_rect_make(10, 10, 100, 100), 20,
-                                       c0, c1, QL_GRADIENT_VERTICAL, 255);
+                                       c0, c1, QL_GRADIENT_VERTICAL, 255, 255);
     QL_CHECK_EQ(px(10, 10), bg);               /* 左上角外 */
     QL_CHECK_EQ(px(109, 10), bg);              /* 右上角外 */
     QL_CHECK(near(px(60, 11), c0, 10));        /* 顶边中点仍然填 */
@@ -151,7 +151,7 @@ QL_TEST_BEGIN("test_effects")
     /* ---------- 4. 渐变 alpha=0 是空操作 ---------- */
     fresh(bg);
     ql_canvas_fill_round_rect_gradient(&s_canvas, ql_rect_make(0, 0, W, H), 0,
-                                       c0, c1, QL_GRADIENT_VERTICAL, 0);
+                                       c0, c1, QL_GRADIENT_VERTICAL, 0, 0);
     QL_CHECK_EQ(px(60, 60), bg);
 
     /* ---------- 5. 软阴影：紧贴边缘有暗晕，远处没有，内部不受影响 ---------- */
@@ -292,7 +292,7 @@ QL_TEST_BEGIN("test_effects")
 
         fresh(white);
         ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
-        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, rad);
+        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, rad, 0);
 
         int leaked = 0;
         for (ql_coord_t y = 0; y < H; y++)
@@ -308,21 +308,21 @@ QL_TEST_BEGIN("test_effects")
         /* 灵敏度：同样的场景走直角版本，圆角缺口里一定会渗色 */
         fresh(white);
         ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
-        ql_canvas_backdrop_blur(&s_canvas, bg_box, 4);
+        ql_canvas_backdrop_blur(&s_canvas, bg_box, 4, 0);
         QL_CHECK(px(12, 12) != ql_disp_mem_pixel(ref, 12, 12));
 
         /* corner == 0 必须与直角版本逐像素一致（不给上层留两条语义） */
         static ql_color_t plain[W * H];
         fresh(white);
         ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
-        ql_canvas_backdrop_blur(&s_canvas, bg_box, 4);
+        ql_canvas_backdrop_blur(&s_canvas, bg_box, 4, 0);
         for (ql_coord_t y = 0; y < H; y++)
             for (ql_coord_t x = 0; x < W; x++)
                 plain[y * W + x] = px(x, y);
 
         fresh(white);
         ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
-        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, 0);
+        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, 0, 0);
         int rect_diff = 0;
         for (ql_coord_t y = 0; y < H; y++)
             for (ql_coord_t x = 0; x < W; x++)
@@ -330,6 +330,71 @@ QL_TEST_BEGIN("test_effects")
                     rect_diff++;
         QL_CHECK_EQ(rect_diff, 0);
         ql_disp_mem_destroy(ref);
+    }
+
+    /* ---------- O. 渐变色标各自带 alpha ---------- */
+    /*
+     * CSS 允许 `linear-gradient(rgba(255,0,0,1), rgba(255,0,0,0))` ——
+     * 从一个不透明红渐变到"全透明红"。两端 alpha 必须沿着渐变插值，
+     * 而不是两端都用同一个 alpha（以前就是这样，写透明的收尾色等于没写）。
+     */
+    {
+        const QLRect box = ql_rect_make(10, 10, 100, 60);
+        const ql_color_t red = QL_COLOR_RGB(0xFF, 0x00, 0x00);
+
+        fresh(white);
+        ql_canvas_fill_round_rect_gradient(&s_canvas, box, 0, red, red,
+                                           QL_GRADIENT_HORIZONTAL, 255, 0);
+
+        /* 左端 = 纯红（alpha 255），右端 = 完全没画（白底） */
+        QL_CHECK_EQ(px(10, 40), red);
+        QL_CHECK_EQ(px(109, 40), white);
+        /* 中段必须落在两者之间：既不是纯红也不是纯白 */
+        QL_CHECK(px(60, 40) != red);
+        QL_CHECK(px(60, 40) != white);
+        /* 单调：越往右越接近白 */
+        QL_CHECK(abs((int)QL_COLOR_GET_R(px(30, 40)) - 255) <=
+                 abs((int)QL_COLOR_GET_R(px(90, 40)) - 255));
+
+        /* 两端 alpha 一样时，结果必须与"整块实心"一致（旧行为不许变） */
+        fresh(white);
+        ql_canvas_fill_round_rect_gradient(&s_canvas, box, 0, red, red,
+                                           QL_GRADIENT_HORIZONTAL, 255, 255);
+        QL_CHECK_EQ(px(10, 40), red);
+        QL_CHECK_EQ(px(109, 40), red);
+    }
+
+    /* ---------- P. backdrop-filter: saturate() ---------- */
+    /*
+     * 玻璃后面糊完是一片"均值色"，常常发灰。`saturate(N%)` 把饱和度往上推。
+     * 测法：同一块灰蓝背景，sat=100（不变）与 sat=220 之后比较
+     * "通道极差"（max-min）——推艳必须让它变大，而亮度（三通道均值）基本不动。
+     */
+    {
+        const QLRect area = ql_rect_make(20, 20, 60, 60);
+        /* 灰蓝：三通道差异小，饱和度的变化看得清 */
+        const ql_color_t dull = QL_COLOR_RGB(0x60, 0x70, 0x88);
+
+        fresh(dull);
+        ql_canvas_backdrop_blur(&s_canvas, area, 1, 100);   /* 100 = 不变 */
+        ql_color_t base = px(50, 50);
+        int span0 = (int)QL_COLOR_GET_R(base) - (int)QL_COLOR_GET_B(base);
+        int luma0 = (21 * (int)QL_COLOR_GET_R(base) + 72 * (int)QL_COLOR_GET_G(base) +
+                     7 * (int)QL_COLOR_GET_B(base)) / 100;
+
+        fresh(dull);
+        ql_canvas_backdrop_blur(&s_canvas, area, 1, 220);
+        ql_color_t hot = px(50, 50);
+        int span1 = (int)QL_COLOR_GET_R(hot) - (int)QL_COLOR_GET_B(hot);
+        int luma1 = (21 * (int)QL_COLOR_GET_R(hot) + 72 * (int)QL_COLOR_GET_G(hot) +
+                     7 * (int)QL_COLOR_GET_B(hot)) / 100;
+
+        QL_CHECK(abs(span1) > abs(span0));       /* 更艳 */
+        QL_CHECK(abs(luma1 - luma0) <= 2);       /* 亮度不许明显漂 */
+        /* sat=0 与 sat=100 都是"不变"，落回原色 */
+        fresh(dull);
+        ql_canvas_backdrop_blur(&s_canvas, area, 1, 0);
+        QL_CHECK_EQ(px(50, 50), dull);
     }
 
     ql_disp_mem_destroy(s_disp);

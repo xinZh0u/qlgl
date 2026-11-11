@@ -222,6 +222,64 @@ QL_TEST_BEGIN("test_css_syntax")
                          "两个色标"));
         QL_CHECK(rejects("#a { background: linear-gradient(45deg, red, blue) }",
                          "不支持的渐变方向"));
+        /* 色标可以各带 alpha：`linear-gradient(#fff, rgba(255,255,255,0))` 是"上实下透" */
+        ui = build("<div id=a>x</div>",
+                   "#a { background: linear-gradient(#FF0000, rgba(0,0,255,0)) }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *s = ql_ui_node_style(&ui->nodes[0]);
+            QL_CHECK_EQ(s->bg_alpha, 255);       /* 起色不透明 */
+            QL_CHECK_EQ(s->bg_alpha2, 0);        /* 收色全透 */
+            QL_CHECK_EQ(s->bg_color2 & 0xFFFFFFu, 0x0000FFu);
+            drop(ui);
+        }
+        /* 两端都不带 alpha 时两栏都是 255（旧行为） */
+        ui = build("<div id=a>x</div>", "#a { background: linear-gradient(red, blue) }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *s = ql_ui_node_style(&ui->nodes[0]);
+            QL_CHECK_EQ(s->bg_alpha, 255);
+            QL_CHECK_EQ(s->bg_alpha2, 255);
+            drop(ui);
+        }
+    }
+
+    /* ---------- 4b. backdrop-filter：blur + saturate，顺序随意 ---------- */
+    {
+        QLUIRoot *ui = build("<div id=a>x</div>",
+                             "#a { backdrop-filter: blur(8px) saturate(150%) }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *s = ql_ui_node_style(&ui->nodes[0]);
+            QL_CHECK_EQ((int)s->backdrop_blur, 8);
+            QL_CHECK_EQ((int)s->backdrop_sat, 150);
+            drop(ui);
+        }
+        /* 换个顺序结果一样 */
+        ui = build("<div id=a>x</div>",
+                   "#a { backdrop-filter: saturate(150%) blur(8px) }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *s = ql_ui_node_style(&ui->nodes[0]);
+            QL_CHECK_EQ((int)s->backdrop_blur, 8);
+            QL_CHECK_EQ((int)s->backdrop_sat, 150);
+            drop(ui);
+        }
+        /* 不写 saturate 就是"不变"，与 100% 同义 */
+        ui = build("<div id=a>x</div>", "#a { backdrop-filter: blur(6px) }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            const QLUIStyle *s = ql_ui_node_style(&ui->nodes[0]);
+            QL_CHECK_EQ((int)s->backdrop_sat, 0);
+            drop(ui);
+        }
+        /* 100% 归一化成 0（"不变"只有一种表示，绘制侧不用分情况） */
+        ui = build("<div id=a>x</div>", "#a { backdrop-filter: saturate(100%) blur(6px) }");
+        QL_CHECK(ui != NULL);
+        if (ui != NULL) {
+            QL_CHECK_EQ((int)ql_ui_node_style(&ui->nodes[0])->backdrop_sat, 0);
+            drop(ui);
+        }
     }
 
     /* ---------- 5. gap 的 em / rem ---------- */

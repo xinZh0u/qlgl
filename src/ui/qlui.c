@@ -8105,7 +8105,7 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
      */
     if (!inv && s->backdrop_blur > 0 && !ql_rect_is_empty(box))
         (void)ql_draw2d_backdrop_blur_round(d2d, box, (int)s->backdrop_blur,
-                                            ql_ui_radius_max(s));
+                                            ql_ui_radius_max(s), s->backdrop_sat);
 
     ql_coord_t r4[4];
     style_radii4(s, r4);
@@ -8152,10 +8152,12 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
             if (uniform || d2d->fill_round_rect_gradient4 == NULL)
                 d2d->fill_round_rect_gradient(
                     d2d, box, uniform ? r4[0] : ql_ui_radius_max(s), s->bg_color,
-                    s->bg_color2, (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha);
+                    s->bg_color2, (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha,
+                    s->bg_alpha2);
             else
                 d2d->fill_round_rect_gradient4(d2d, box, r4, s->bg_color, s->bg_color2,
-                                               (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha);
+                                               (uint8_t)(s->bg_grad_dir - 1), s->bg_alpha,
+                                               s->bg_alpha2);
         } else {
             fill_rect_r4(d2d, box, r4, s->bg_color, s->bg_alpha);
         }

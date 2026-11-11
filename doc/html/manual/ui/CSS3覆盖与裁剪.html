@@ -1409,13 +1409,13 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td><code>background-image: linear-gradient()</code></td>
 <td>⚠️</td>
 <td>R</td>
-<td><strong>必须写方向</strong>（<code>to right</code> / <code>to bottom</code> / <code>90deg</code> / <code>180deg</code>）；<code>to bottom right</code> 报错</td>
+<td><strong>必须写方向</strong>（<code>to right</code> / <code>to bottom</code> / <code>90deg</code> / <code>180deg</code>）；<code>to bottom right</code> 报错；两个色标<strong>可以各带 alpha</strong>（<code>rgba(...,0)</code> → 柔边/淡出）</td>
 </tr>
 <tr>
 <td><code>background-image: radial-gradient()</code></td>
 <td>✅</td>
 <td>R</td>
-<td>需要 3 个参数（位置, 起色, 止色）</td>
+<td>需要 3 个参数（位置, 起色, 止色）；止色带 alpha 就是"中心实、边缘淡出"的软光斑（圆心恒居中）</td>
 </tr>
 <tr>
 <td><code>background-image: url(...)</code></td>
@@ -2243,10 +2243,10 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 </thead>
 <tbody>
 <tr>
-<td><code>backdrop-filter: blur()</code></td>
+<td><code>backdrop-filter: blur() saturate()</code></td>
 <td>✅</td>
 <td>R</td>
-<td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 <code>border-radius</code>；自己带 <code>transform: translate</code> 时采样区跟着走；下层动画实时跟随</td>
+<td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；<code>saturate(&lt;N&gt;%)</code> 把糊完的均值色推艳（<code>0</code>/<code>100%</code> = 不变），两个函数任意顺序、可只写一个；结果裁进 <code>border-radius</code>；自己带 <code>transform: translate</code> 时采样区跟着走；下层动画实时跟随</td>
 </tr>
 <tr>
 <td><code>filter: blur(&lt;N&gt;px)</code></td>
@@ -2267,10 +2267,10 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td>影子取 <strong>alpha 形状</strong>（跟着圆角/透明洞走）；颜色默认 <code>currentColor</code>；<code>drop-shadow</code> <strong>不接受</strong> <code>spread</code>（CSS 也没有）</td>
 </tr>
 <tr>
-<td><code>filter: url(#svg)</code> / <code>backdrop-filter</code> 的颜色函数</td>
+<td><code>filter: url(#svg)</code> / <code>backdrop-filter</code> 的其它函数</td>
 <td>❌</td>
 <td>X</td>
-<td>前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur）</td>
+<td>前者要内联 SVG 滤镜图；后者只有 <code>blur()</code> + <code>saturate()</code> 两个（<code>brightness</code>/<code>contrast</code>/<code>hue-rotate</code> 等明确报错，不静默忽略）</td>
 </tr>
 <tr>
 <td><code>clip-path: circle()</code> / <code>ellipse()</code></td>

@@ -479,8 +479,56 @@ static void apply_round_clip(QLCanvas *canvas, QLRect r, ql_coord_t corner,
 }
 
 /* 通用入口：先算好裁剪后的区域，再决定要不要做圆角收尾 */
+/*
+ * 饱和度：与 `filter: saturate()` 同一套 CSS 系数（0.213/0.715/0.072），
+ * GPU 侧的 backdrop 分支用的是同一组数，两条后端才对得上。
+ * `sat` 是百分比（100 = 不变）。
+ */
+static void saturate_rect(QLCanvas *canvas, QLRect r, uint8_t sat)
+{
+    if (sat == 0 || sat == 100)
+        return;
+    /*
+     * CSS 饱和度矩阵（权重和 = 1，所以亮度不漂）：
+     *   out = luma + (in - luma) * s，luma = 0.213R + 0.715G + 0.072B
+     * 下面的系数都是"×100"的定点，末尾统一 /100；`s = 100` 时恰好是单位阵。
+     */
+    const int32_t s = sat;
+    const int32_t ir = 21, ig = 72, ib = 7;
+    const int32_t rr = (ir + (100 - ir) * s / 100);
+    const int32_t rg = (ig - ig * s / 100);
+    const int32_t rb = (ib - ib * s / 100);
+    const int32_t gr = (ir - ir * s / 100);
+    const int32_t gg = (ig + (100 - ig) * s / 100);
+    const int32_t gb = (ib - ib * s / 100);
+    const int32_t br = (ir - ir * s / 100);
+    const int32_t bg = (ig - ig * s / 100);
+    const int32_t bb = (ib + (100 - ib) * s / 100);
+    /*
+     * `raw_px_get/set` 给的是**内存顺序**，32 位格式是小端 0xAARRGGBB，字节序是
+     * B,G,R,A —— 颜色矩阵必须先按通道语义取出来，否则红蓝权重会互换。
+     * 模糊本身与通道无关，所以别处不用关心这件事。
+     */
+    const int ri = (canvas->format == QL_COLOR_ARGB8888) ? 2 : 0;
+    const int bi = (canvas->format == QL_COLOR_ARGB8888) ? 0 : 2;
+    uint8_t px[3];
+    for (ql_coord_t y = r.y; y < ql_rect_bottom(r); y++) {
+        for (ql_coord_t x = r.x; x < ql_rect_right(r); x++) {
+            raw_px_get(canvas, x, y, px);
+            const int32_t orr = px[ri], og = px[1], ob = px[bi];
+            int32_t nr = (rr * orr + rg * og + rb * ob) / 100;
+            int32_t ng = (gr * orr + gg * og + gb * ob) / 100;
+            int32_t nb = (br * orr + bg * og + bb * ob) / 100;
+            px[ri] = (uint8_t)(nr < 0 ? 0 : (nr > 255 ? 255 : nr));
+            px[1] = (uint8_t)(ng < 0 ? 0 : (ng > 255 ? 255 : ng));
+            px[bi] = (uint8_t)(nb < 0 ? 0 : (nb > 255 ? 255 : nb));
+            raw_px_set(canvas, x, y, px);
+        }
+    }
+}
+
 static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
-                                   ql_coord_t corner)
+                                   ql_coord_t corner, uint8_t sat)
 {
     if (canvas == NULL || canvas->buffer == NULL)
         return QL_ERR_INVAL;
@@ -534,6 +582,7 @@ static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
     }
 
     blur_rect_in_place(canvas, r, radius);
+    saturate_rect(canvas, r, sat);
 
     if (corner > 0)
         apply_round_clip(canvas, r, corner, saved, saved_r);
@@ -542,15 +591,15 @@ static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
     return QL_OK;
 }
 
-ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius)
+ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat)
 {
-    return backdrop_blur_impl(canvas, rect, radius, 0);
+    return backdrop_blur_impl(canvas, rect, radius, 0, sat);
 }
 
 ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
-                                       ql_coord_t corner)
+                                       ql_coord_t corner, uint8_t sat)
 {
-    return backdrop_blur_impl(canvas, rect, radius, corner);
+    return backdrop_blur_impl(canvas, rect, radius, corner, sat);
 }
 
 /* smoothstep，与 GPU 片元着色器同一公式，保证两条后端视觉一致 */
@@ -1282,11 +1331,18 @@ static ql_color_t lerp_color(ql_color_t a, ql_color_t b, uint32_t t)
     return QL_COLOR_RGB(r, g, bl);
 }
 
+/* 两端 alpha 线性插值（t 是 0..255 的比例，与颜色同一套步进） */
+static inline uint8_t lerp_u8(uint8_t a, uint8_t b, uint32_t t)
+{
+    const int32_t d = ((int32_t)b - (int32_t)a) * (int32_t)t / 255;
+    return (uint8_t)((int32_t)a + d);
+}
+
 void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                         ql_color_t from, ql_color_t to,
-                                        QLGradientDir dir, uint8_t alpha)
+                                        QLGradientDir dir, uint8_t a1, uint8_t a2)
 {
-    if (canvas == NULL || alpha == 0)
+    if (canvas == NULL || (a1 == 0 && a2 == 0))
         return;
 
     QLRect area = ql_rect_intersect(rect, canvas->clip);
@@ -1296,7 +1352,7 @@ void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_
     ql_coord_t span = (dir == QL_GRADIENT_HORIZONTAL) ? rect.w : rect.h;
     if (dir != QL_GRADIENT_RADIAL && span <= 1) {
         /* 退化成一格：直接用起始色 */
-        ql_canvas_fill_round_rect_alpha(canvas, rect, radius, from, alpha);
+        ql_canvas_fill_round_rect_alpha(canvas, rect, radius, from, a1);
         return;
     }
 
@@ -1315,13 +1371,13 @@ void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_
             continue;
 
         if (dir == QL_GRADIENT_VERTICAL) {
-            /* 快路径：整行同一个颜色 */
+            /* 快路径：整行同一个颜色（alpha 也整行同一个值） */
             uint32_t t = (uint32_t)((y - rect.y) * 255) / (uint32_t)(span - 1);
-            fill_row(canvas, sx0, sx1, y, lerp_color(from, to, t), alpha);
+            fill_row(canvas, sx0, sx1, y, lerp_color(from, to, t), lerp_u8(a1, a2, t));
         } else if (dir == QL_GRADIENT_HORIZONTAL) {
             for (ql_coord_t x = sx0; x <= sx1; x++) {
                 uint32_t t = (uint32_t)((x - rect.x) * 255) / (uint32_t)(span - 1);
-                put_px(canvas, x, y, lerp_color(from, to, t), alpha);
+                put_px(canvas, x, y, lerp_color(from, to, t), lerp_u8(a1, a2, t));
             }
         } else {
             /*
@@ -1342,8 +1398,8 @@ void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_
                 float t = sqrtf(dx2 + dy2) / d_max;
                 if (t > 1.0f)
                     t = 1.0f;
-                put_px(canvas, x, y, lerp_color(from, to, (uint32_t)(t * 255.0f)),
-                       alpha);
+                const uint32_t tt = (uint32_t)(t * 255.0f);
+                put_px(canvas, x, y, lerp_color(from, to, tt), lerp_u8(a1, a2, tt));
                 dx2 += 2.0f * dx + 1.0f;
                 dx += 1.0f;
             }

@@ -335,8 +335,8 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 |---|---|---|---|
 | `background-color` | ✅ | R | |
 | `background`（简写） | ⚠️ | R | 只认**纯色或单个渐变**；写成 `background: #fff url(a.png)` 会报错 |
-| `background-image: linear-gradient()` | ⚠️ | R | **必须写方向**（`to right` / `to bottom` / `90deg` / `180deg`）；`to bottom right` 报错 |
-| `background-image: radial-gradient()` | ✅ | R | 需要 3 个参数（位置, 起色, 止色） |
+| `background-image: linear-gradient()` | ⚠️ | R | **必须写方向**（`to right` / `to bottom` / `90deg` / `180deg`）；`to bottom right` 报错；两个色标**可以各带 alpha**（`rgba(...,0)` → 柔边/淡出） |
+| `background-image: radial-gradient()` | ✅ | R | 需要 3 个参数（位置, 起色, 止色）；止色带 alpha 就是"中心实、边缘淡出"的软光斑（圆心恒居中） |
 | `background-image: url(...)` | ✅ | R | 与 `<img src>` 共用资源表，按名字注册（§18.7） |
 | `background-size` | ✅ | R | `cover` / `contain` / `<w> <h>`；渐变不受影响（渐变的尺寸就是元素尺寸） |
 | `background-position` | ✅ | R | `left/center/right + top/center/bottom` 与 px 混写 |
@@ -527,11 +527,11 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `backdrop-filter: blur()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
+| `backdrop-filter: blur() saturate()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；`saturate(<N>%)` 把糊完的均值色推艳（`0`/`100%` = 不变），两个函数任意顺序、可只写一个；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
 | `filter: blur(<N>px)` | ✅ | O | **离屏图层**（§18.10）：元素先合成到临时图再整体糊。9 抽头可分离高斯，抽头间距 = N/2，两条后端同一公式。MCU 档恒关 |
 | `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | ✅ | O | 颜色矩阵族，同一图层里可链式（最多 6 个）；`1.2` 与 `120%` 等价 |
 | `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`drop-shadow` **不接受** `spread`（CSS 也没有） |
-| `filter: url(#svg)` / `backdrop-filter` 的颜色函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者是"模糊背景"的独立通道（现在只有 blur） |
+| `filter: url(#svg)` / `backdrop-filter` 的其它函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者只有 `blur()` + `saturate()` 两个（`brightness`/`contrast`/`hue-rotate` 等明确报错，不静默忽略） |
 | `clip-path: circle()` / `ellipse()` | ✅ | R | 子树级**椭圆**遮罩（圆心恒在元素中心）；GPU 顶点属性带 `(cx,cy,rx,ry)`，CPU 同一公式 |
 | `clip-path: inset()` | ✅ | R | **与裁剪矩形求交**，两后端精确、零额外成本（B9） |
 | `clip-path: polygon()` | ✅ | F | B9：顶点进 doc 池（同形状去重）→ 绘制期解析覆盖率（奇偶内点 + 到最近边距离），CPU/GPU 同公式、零图层 |

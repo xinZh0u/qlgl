@@ -303,7 +303,8 @@ background: linear-gradient(to bottom, #4ad08a, #2a9a5c);
 |---|---|
 | 方向 | `to bottom` / `to top` / `180deg`、`to right` / `to left` / `90deg` |
 | 颜色停靠点 | 只支持 **2 个**（起始 + 终止） |
-| 多停靠点 / 角度其他值 / `radial-gradient` | ❌ 构建期报错 |
+| 色标 alpha | ✅ 两个色标可**各带自己的 alpha**（见下） |
+| 多停靠点 / 角度其他值 | ❌ 构建期报错 |
 
 实现：垂直渐变走**行填充快路径**（整行同色，成本≈纯色填充）；水平渐变逐像素插值，慢一个量级。
 GPU 侧用**顶点颜色插值**实现，不增加顶点、不增加 draw call。
@@ -315,6 +316,23 @@ GPU 侧用**顶点颜色插值**实现，不增加顶点、不增加 draw call�
 > ```css
 > .btn:hover { background: linear-gradient(to bottom, #58e09a, #35a869); }
 > ```
+
+> **色标带 alpha = 柔边 / 淡出**：两个色标各写自己的 `rgba()`，
+> 插值的是"颜色 + alpha"两组分量。最常见的用法是"中心实、边缘透明"的软光斑：
+>
+> ```css
+> .glow {
+>   width: 480px; height: 480px;
+>   background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0));
+> }
+> ```
+>
+> 这条以前做不到：渐变只有一个 alpha，写透明的止色等于没写。现在
+> `#a { background: linear-gradient(#FFF, rgba(255,255,255,0)) }` 就是"上实下透"。
+>
+> ⚠️ **两个色标都不写 alpha 时**，渐变的 alpha 沿用 `background-color` 的 ——
+> 这条保持了旧行为，也是 `transition: background-color` 能改变玻璃"透光度"的原因。
+> 一旦色标自己带了 alpha，`background-color` 的 alpha 就不再参与（以渐变里的为准）。
 
 > **径向渐变**：`background: radial-gradient(circle, <起色>, <止色>)`。
 > 圆心固定为元素中心，按到**最远角**的距离归一化（等价 CSS `farthest-corner`）。
@@ -844,20 +862,30 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 
 ---
 
-### 3.11.1 毛玻璃（`backdrop-filter: blur()`）
+### 3.11.1 毛玻璃（`backdrop-filter: blur()` / `saturate()`）
 
 ```css
 .glass {
   background-color: rgba(255, 255, 255, 0.10);   /* 想看见效果就得带 alpha */
   border-radius: 14px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(160%);
 }
 ```
 
 | 允许值 | 说明 |
 |---|---|
 | `blur(Npx)`，N = 1~64 | 高斯标准差（CSS 语义）；N 越大越糊 |
+| `saturate(<N>%)` | 模糊之后把颜色推艳；`0%`/`100%` 都归一化成"不变" |
+| 两个一起写 | 顺序随意：`blur() saturate()` 与 `saturate() blur()` 等价 |
 | `none` | 关闭 |
+
+**为什么几乎总要配 `saturate()`**：模糊是加权平均，把一块区域糊成"均值色"之后
+饱和度必然下降，玻璃看上去就像蒙了层灰塑料。真实玻璃/Apple 的 Liquid Glass 都是
+"糊完再把颜色推回来"。经验值 140%~180%。
+
+实现上两条后端都把百分比当系数（`s > 1` 推艳、`< 1` 变灰），用 CSS 标准亮度权重
+`0.213/0.715/0.072`（权重和 = 1，所以亮度不漂）。GPU 侧塞进毛玻璃着色器的
+`v_params.w`（原来那个 pad 字段）一并插值。
 
 它模糊的是**这层元素背后已经画好的内容**，所以：
 
@@ -886,7 +914,7 @@ static void on_anim_end(QLUIRoot *ui, QLUINodeRT *node, QLUIAnimEndKind kind, vo
 的变化只覆盖玻璃的一小块，就只有那一小块被重新模糊，模糊核够不到矩形外的邻居，
 边缘可能出现细接缝 —— 需要绝对干净时，把带 `backdrop-filter` 的元素整体当脏区。
 
-**构建期报错**：`blur()` 以外的函数（`blur` 以外的 `backdrop-filter` 值）、半径 0 或 > 64。
+**构建期报错**：`blur()` / `saturate()` 以外的函数、半径 0 或 > 64。
 
 ---
 

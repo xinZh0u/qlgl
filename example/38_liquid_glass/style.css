@@ -7,8 +7,9 @@
  *   2. 边缘高光          → 1px 亮边 + `inset` 白色上高光 / 深色下内阴影
  *   3. 镜面反射条        → `.sheen` 那层斜向渐变（顶端更亮、底下透明）
  *
- * 本库只支持 `backdrop-filter: blur(<N>px)`（不支持 saturate/brightness），
- * 所以"玻璃底下颜色更鲜"这件事是用**背景本身就很饱和** + 半透明暖色叠加来凑的。
+ * `backdrop-filter` 支持 `blur(<N>px)` 与 `saturate(<N>%)`（可任意顺序叠加）。
+ * 模糊把背后的东西抹成一片"均值色"，必然会发灰，所以玻璃一定要配 saturate() 把
+ * 颜色推回来 —— 这也是真实玻璃看起来通透的原因。
  */
 #root {
   position: relative;
@@ -25,6 +26,9 @@
  * 整层一起模糊：`filter: blur()` 走**离屏图层**，一层就够（比给每个色块
  * 各加一次 filter 便宜得多）。色块于是从"硬边圆盘"变成一团团流动的颜色。
  * 顺手 `saturate()` 把颜色推艳一点 —— Apple 的玻璃后面也是提高饱和度的。
+ *
+ * 色块自己已经用"到透明"的径向渐变做了柔边（渐变色标可以各带 alpha），
+ * 所以下面 blur 只要 14px 收一下毛边就够，不必靠大半径糊。
  */
 .scene {
   position: absolute;
@@ -33,7 +37,7 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  filter: blur(20px) saturate(150%);
+  filter: blur(14px) saturate(150%);
 }
 
 /*
@@ -50,7 +54,7 @@
   top: -120px;
   width: 480px;
   height: 480px;
-  background-image: radial-gradient(circle, #FF2D6F, #9B0F45);
+  background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0));
   animation: drift1 7000ms ease-in-out infinite alternate;
 }
 
@@ -60,7 +64,7 @@
   top: -140px;
   width: 520px;
   height: 520px;
-  background-image: radial-gradient(circle, #00D8FF, #005A78);
+  background-image: radial-gradient(circle, #00D8FF, rgba(0, 216, 255, 0));
   animation: drift2 8600ms ease-in-out infinite alternate;
 }
 
@@ -70,7 +74,7 @@
   top: 220px;
   width: 460px;
   height: 460px;
-  background-image: radial-gradient(circle, #8B5CF6, #3A1E7A);
+  background-image: radial-gradient(circle, #8B5CF6, rgba(139, 92, 246, 0));
   animation: drift3 6100ms ease-in-out infinite alternate;
 }
 
@@ -80,7 +84,7 @@
   top: 240px;
   width: 480px;
   height: 480px;
-  background-image: radial-gradient(circle, #FFC24B, #8A5A0C);
+  background-image: radial-gradient(circle, #FFC24B, rgba(255, 194, 75, 0));
   animation: drift4 9400ms ease-in-out infinite alternate;
 }
 
@@ -90,7 +94,7 @@
   top: 60px;
   width: 420px;
   height: 420px;
-  background-image: radial-gradient(circle, #23E5A0, #0A6146);
+  background-image: radial-gradient(circle, #23E5A0, rgba(35, 229, 160, 0));
   animation: drift5 5200ms ease-in-out infinite alternate;
 }
 
@@ -158,7 +162,7 @@
 .head,
 .status,
 .btn {
-  backdrop-filter: blur(40px);
+  backdrop-filter: blur(40px) saturate(150%);
   border-width: 1px;
   border-style: solid;
   border-color: #E9EFF9;
@@ -219,7 +223,7 @@
 .dock {
   background-color: rgba(226, 236, 255, 0.07);
   background-image: linear-gradient(180deg, #FFFFFF, #CBDCF0);
-  backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px) saturate(160%);
   border-radius: 30px;
   border-width: 1px;
   border-style: solid;
@@ -295,7 +299,7 @@
   border-radius: 38px;
   background-color: rgba(240, 248, 255, 0.20);
   background-image: linear-gradient(180deg, #FFFFFF, #D7E4F6);
-  backdrop-filter: blur(40px);
+  backdrop-filter: blur(40px) saturate(150%);
   border-width: 1px;
   border-style: solid;
   border-color: #FFFFFF;

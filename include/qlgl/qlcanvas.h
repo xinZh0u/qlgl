@@ -131,7 +131,13 @@ int  ql_canvas_mask_active(const QLCanvas *canvas);
  * 代价：一次调用要 4 趟（H/V × 2）扫描 + 两块临时缓冲，**只在真有 blur 的元素上发生**。
  * 只支持 8/16/24/32 位的 RGB 系格式；Alpha 通道不参与模糊（合成时才用得到）。
  */
-ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius);
+/*
+ * 毛玻璃：把 rect 区域里**已经画好的内容**就地模糊。
+ *
+ * `sat` = `backdrop-filter: saturate(<N>%)` 的百分比（0 或 100 = 不变）。
+ * 模糊之后把颜色推艳 —— 玻璃后面那片"均值色"才不会灰扑扑的。
+ */
+ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat);
 
 /*
  * 同上，但把结果裁进**圆角矩形**（`corner` = 圆角半径，设备像素，0 等价于上一个）。
@@ -143,7 +149,7 @@ ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius);
  * 原像素，模糊后按圆角覆盖率混回去。开销与 corner² 成正比，通常几百个像素。
  */
 ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
-                                       ql_coord_t corner);
+                                       ql_coord_t corner, uint8_t sat);
 
 /* ----- 原语 ----- */
 void ql_canvas_clear(QLCanvas *canvas, ql_color_t color);
@@ -196,9 +202,13 @@ typedef enum {
  * 水平 / 径向每像素颜色不同，逐像素混合，比垂直慢一个量级
  * （径向用增量法算 x 方向距离平方，没有逐像素乘法）。
  */
+/*
+ * 渐变：`a1`/`a2` 是两个端色各自的 alpha（CSS 的渐变色标可以带 alpha，
+ * `linear-gradient(#FFF, rgba(255,255,255,0))` 就是"上实下透"）。
+ */
 void ql_canvas_fill_round_rect_gradient(QLCanvas *canvas, QLRect rect, ql_coord_t radius,
                                         ql_color_t from, ql_color_t to,
-                                        QLGradientDir dir, uint8_t alpha);
+                                        QLGradientDir dir, uint8_t a1, uint8_t a2);
 
 /*
  * 软阴影：以 inner 矩形（圆角 radius）为轮廓，向外扩散 blur 像素，

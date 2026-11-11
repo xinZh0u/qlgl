@@ -14,16 +14,21 @@
 
 | 层 | 实现 | 作用 |
 |---|---|---|
-| ① 背后模糊 + 染色 | `backdrop-filter: blur(40px)` + `background-color: rgba(...,0.1~0.2)` | 玻璃"透过去"的那部分 |
+| ① 背后模糊 + 染色 | `backdrop-filter: blur(40px) saturate(150%)` + `background-color: rgba(...,0.1~0.2)` | 玻璃"透过去"的那部分 |
 | ② 亮边 + 内高光 | `border: 1px solid #FFFFFF` + `box-shadow: inset 0 1px 0 rgba(255,255,255,.55)` | 玻璃的**厚度**感 |
 | ③ 投影 | `box-shadow: 0 10px 30px rgba(0,0,0,.38)` | 玻璃**浮在**背景上 |
 
 只做 ① 会得到一块"灰蒙蒙的毛玻璃"；②③ 才是让人认出"这是玻璃"的东西。
 这三样都是纯绘制，不增加模糊次数。
 
+**`saturate()` 不是装饰**：模糊是加权平均，糊完的"均值色"饱和度必然下降，
+玻璃看上去就像蒙了层灰塑料。真实玻璃、Apple 的 Liquid Glass 都是"糊完再把颜色
+推回来"，经验值 140%~180%。这个例程里外层 `.scene` 推 150%、玻璃自己再推 150%
+（两层叠加，玻璃底下那片颜色才够亮）。
+
 ```css
 .head, .dock, .btn, .puck {
-  backdrop-filter: blur(40px);
+  backdrop-filter: blur(40px) saturate(150%);
   background-color: rgba(226, 236, 255, 0.12);
   background-image: linear-gradient(180deg, #FFFFFF, #DCE8F8);
   border-width: 1px;
@@ -41,9 +46,19 @@
 
 ```css
 .scene {
-  filter: blur(20px) saturate(150%);   /* 一个离屏图层，**不是**五个 */
+  filter: blur(14px) saturate(150%);   /* 一个离屏图层，**不是**五个 */
 }
 ```
+
+色块自己先用"到透明"的径向渐变做了柔边，所以外面这层 `blur()` 只要收一下毛边：
+
+```css
+.b1 { background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0)); }
+```
+
+> 渐变的两个色标可以**各带自己的 alpha**（这条是本例程逼出来的库能力，见 §3.1）。
+> 写成不透明的止色（`#9B0F45`）得到的是硬边圆盘，必须靠大半径 `blur()` 去糊；
+> 止色写 `rgba(...,0)` 就得到一团柔光斑，`blur()` 只负责最后那点毛边。
 
 > 给每个色块各加一次 `filter` 会让图层数乘 5。容器上一次就够，
 > 因为 `filter` 是对"合成后的结果"生效 —— 这也是 CSS 的语义。
@@ -55,18 +70,27 @@
 
 写的时候一路"看着不对就查"，查到三件事，两件已经修进库里：
 
-### 3.1 渐变的两个色标共用一个 alpha（限制，未改）
+### 3.1 渐变的两个色标共用一个 alpha（**已修**）
 
 ```css
 background-color: rgba(226, 236, 255, 0.12);        /* ← 透不透由它决定 */
 background-image: linear-gradient(180deg, #FFFFFF, #DCE8F8);  /* ← 只做明暗 */
 ```
 
-本库一个背景只有**一个** alpha：`rgba()` 写在渐变色标里会被忽略。所以"上亮下透"
-的渐变（玻璃最常用的那种）做不出来，只能"整体 alpha + 明暗层次"。
-要真做得更细，需要给渐变的每个色标单独存 alpha。
+一开始本库一个背景只有**一个** alpha：`rgba()` 写在渐变色标里会被忽略。
+于是"上亮下透"的渐变（玻璃最常用的那种）做不出来，只能"整体 alpha + 明暗层次"，
+色块也只能是硬边圆盘、靠大半径模糊去糊。
 
-另外渐变目前只支持**两个**色标、只支持水平/垂直方向、`radial-gradient` 只支持圆心在中心。
+后来补上了：两个色标各带自己的 alpha，插值时"颜色 + alpha"两组分量一起插。
+
+```css
+background-image: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,255,255,0));
+background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0));   /* 柔边光斑 */
+```
+
+**兼容规则**：两个色标都不写 alpha 时，渐变的 alpha 沿用 `background-color` 的
+（旧行为不变，也正是 `transition: background-color` 能改玻璃"透光度"的原因）；
+一旦色标自己带了 alpha，就以渐变里的为准。
 
 ### 3.2 `box-shadow: inset` + 圆角=半边长 → 四角被涂满（**已修**）
 
@@ -111,7 +135,7 @@ transition: background-color 180ms ease-out, border-color 180ms ease-out;
 
 | 项 | 数值（本机 1920×1080、GPU 后端） |
 |---|---|
-| 帧时间 p50 | **6.93 ms**（≈144 fps，跟 vsync） |
+| 帧时间 p50 | **6.92 ms**（≈144 fps，跟 vsync） |
 | 其中等 swap | 6.64 ms（几乎全是等垂直同步） |
 | 实际渲染 | 约 0.3 ms |
 
@@ -120,3 +144,12 @@ transition: background-color 180ms ease-out, border-color 180ms ease-out;
 （半径直接决定降采样的盒半径）。
 
 CPU 后端（`--dump`）也能跑，画面基本一致，只是模糊是逐像素盒式近似、边缘略硬。
+
+## 6. 背景为什么不会出现"色带"
+
+大面积模糊背景最容易露馅的不是模糊本身，而是 **8 位量化**：一段"100px 才变一个
+色阶"的缓渐变压进 256 档就是一条条竖直色带（这个例程最初就是这样，肉眼很明显）。
+
+修法是在"float → 8 位"的那一下加有序抖动（4×4 Bayer，±0.5 色阶），
+平均色不变、台阶被打散成看不见的噪点。技术细节见
+`doc/手册/render/QLRender阅读指南.md` §16；`QLGL_GL_NDITHER=1` 可以关掉它做 A/B 对比。

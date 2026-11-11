@@ -1097,14 +1097,14 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 | 文本折行 | ✅ `white-space: normal` 自动折行 + `word-break` / `text-overflow: ellipsis` | `text-align: justify` 不支持 |
 | `position` / `z-index` | ✅ `static`/`relative`/`absolute`/`fixed`/`sticky` + `z-index` | 弹窗靠 `absolute` + `z-index` 自己搭 |
 | `transition` | ✅ 背景色/alpha/文本色/边框色/圆角/`transform`/`clip-path` | `box-shadow` 不参与过渡；`delay` 报错 |
-| `backdrop-filter` | ✅ `blur(1~64px)` | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
+| `backdrop-filter` | ✅ `blur(1~64px)` + `saturate(<N>%)`（可只写一个、顺序随意） | 其它 filter 函数报错（它是"糊背后"，与 `filter` 不是一回事） |
 | 表格 | ✅ `display: table` 全家 + `<table>` 系列标签 + `table-layout: auto/fixed` + `colspan/rowspan` + `border-collapse` + `<colgroup>/<col>`（B7） | `caption-side: bottom`、`empty-cells` 没有 |
 | 多栏 | ✅ `column-count` / `column-width` / `columns` / `column-gap` / `column-rule*`（B7 后半，贪心分栏） | `column-span: all`、真·跨栏分裂没有 |
 | 文本栈 | ✅ `@font-face` + 家族列表 + 逐字回退 + 真字重/斜体 + HarfBuzz 整形 + `direction`/RTL（B8） | `unicode-range`、`local()`、小体大写、嵌套 bidi 隔离没有 |
 | `filter` / `mix-blend-mode` / `mask` / 组 `opacity` | ✅ 离屏图层（M9.3） | `filter: url()`、`mask-position/repeat/composite`、`background-blend-mode` 报错；`filter` 链最长 6 个函数 |
 | `@keyframes` / `animation` | ✅ 构建期编译成静态帧表 | 关键帧里只能改背景色/渐变/alpha/文本色/边框色/圆角/平移；无 `steps()`/`cubic-bezier()` |
 | `transform` | ✅ `translate()` + `scale()`/`scaleX()`/`scaleY()` + `rotate()`/`skew()`/`matrix()` + `transform-origin` | 3D（`perspective()`/`rotate3d()`/`matrix3d()`）报错；`rotate` 等依赖离屏图层包 |
-| `radial-gradient` | ✅ 圆心固定在元素中心 | `at 偏移` / 自定义半径 / stop 位置报错 |
+| `radial-gradient` | ✅ 圆心固定在元素中心；两色标可各带 alpha（止色透明 = 柔边光斑） | `at 偏移` / 自定义半径 / stop 位置报错 |
 | `clip-path` | ✅ 只有 `circle(<pct>%)` | 圆心固定元素中心；只支持一层；其它形状报错 |
 | CSS 变量 / media query | ✅ `var()` 构建期替换；`@media` 只有宽度断点 | 其它断点特性（`prefers-*`/`orientation`）报错 |
 | `filter` | ❌ 报错 | 只有 `backdrop-filter: blur()` |

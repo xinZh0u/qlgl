@@ -208,9 +208,14 @@ struct QLDraw2D {
      * 线性渐变圆角矩形：from → to，dir 见 QLGradientDir。
      * GPU 侧用"顶点颜色插值"实现，所以不增加顶点、不增加 draw call。
      */
+    /*
+     * 渐变的两端**各有自己的 alpha**（CSS 的渐变色标可以带 alpha）。
+     * 以前只有一个 alpha，`linear-gradient(#FFF, transparent)` 的透明端会被
+     * 静默丢掉 —— 玻璃/柔光全靠"一端实一端透"。
+     */
     void (*fill_round_rect_gradient)(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                      ql_color_t from, ql_color_t to, uint8_t dir,
-                                     uint8_t alpha);
+                                     uint8_t a1, uint8_t a2);
     /*
      * 软阴影：以 inner（圆角 radius）为轮廓，向外扩散 blur，整体偏移 (dx,dy)。
      * 调用方必须**先画阴影再画本体**。
@@ -235,7 +240,7 @@ struct QLDraw2D {
                              ql_color_t color, uint8_t alpha);
     void (*fill_round_rect_gradient4)(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
                                       ql_color_t from, ql_color_t to, uint8_t dir,
-                                      uint8_t alpha);
+                                      uint8_t a1, uint8_t a2);
     void (*stroke_round_rect4)(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
                                ql_coord_t thickness, ql_color_t color);
 
@@ -258,16 +263,17 @@ struct QLDraw2D {
      * 毛玻璃（CSS px）：把 `rect` 区域里**已经画好的内容**就地模糊。
      * NULL = 该后端不支持（上层跳过该效果并告警一次）。
      * `sigma` 是高斯标准差（CSS `blur()` 的语义），后端自行换算成盒式半径。
+     * `sat` = `backdrop-filter: saturate(<N>%)` 的百分比（0 或 100 = 不变）。
      * 必须在"画元素自己的背景之前"调用，否则会连元素自己一起模糊。
      */
-    void (*backdrop_blur)(QLDraw2D *self, QLRect rect, int sigma);
+    void (*backdrop_blur)(QLDraw2D *self, QLRect rect, int sigma, uint8_t sat);
 
     /*
      * 同上，但把模糊结果裁进圆角矩形（`corner` = 圆角半径，CSS px，0 = 直角）。
      * 可选：为 NULL 时上层退回 `backdrop_blur`，表现为圆角缺口里渗出方形模糊。
      */
     void (*backdrop_blur_round)(QLDraw2D *self, QLRect rect, int sigma,
-                               ql_coord_t corner);
+                               ql_coord_t corner, uint8_t sat);
 
     /* 后端可选的批次提交（GPU 用；CPU 为 NULL） */
     /*
@@ -481,13 +487,18 @@ static inline uint8_t ql_draw2d_eff_alpha(const QLDraw2D *d2d, uint8_t alpha)
     return (uint8_t)(((uint32_t)alpha * (uint32_t)d2d->alpha + 127u) / 255u);
 }
 
-static inline int ql_draw2d_backdrop_blur(QLDraw2D *d2d, QLRect rect, int sigma)
+/*
+ * `sat` = `backdrop-filter: saturate(<N>%)` 的百分比，0 或 100 表示不变。
+ * 模糊之后把背景颜色推艳 —— 只有模糊的话玻璃后面是一片灰蒙蒙的均值色。
+ */
+static inline int ql_draw2d_backdrop_blur(QLDraw2D *d2d, QLRect rect, int sigma,
+                                          uint8_t sat)
 {
     if (d2d == NULL || d2d->backdrop_blur == NULL || sigma <= 0)
         return 0;
     if (ql_rect_is_empty(rect))
         return 0;
-    d2d->backdrop_blur(d2d, rect, sigma);
+    d2d->backdrop_blur(d2d, rect, sigma, sat);
     return 1;
 }
 
@@ -496,14 +507,15 @@ static inline int ql_draw2d_backdrop_blur(QLDraw2D *d2d, QLRect rect, int sigma)
  * 返回 1 表示做了模糊（调用方据此调整自身背景）。
  */
 static inline int ql_draw2d_backdrop_blur_round(QLDraw2D *d2d, QLRect rect,
-                                                int sigma, ql_coord_t corner)
+                                                int sigma, ql_coord_t corner,
+                                                uint8_t sat)
 {
     if (corner > 0 && d2d != NULL && d2d->backdrop_blur_round != NULL &&
         sigma > 0 && !ql_rect_is_empty(rect)) {
-        d2d->backdrop_blur_round(d2d, rect, sigma, corner);
+        d2d->backdrop_blur_round(d2d, rect, sigma, corner, sat);
         return 1;
     }
-    return ql_draw2d_backdrop_blur(d2d, rect, sigma);
+    return ql_draw2d_backdrop_blur(d2d, rect, sigma, sat);
 }
 
 static inline void ql_draw2d_set_mask_ellipse(QLDraw2D *d2d, ql_coord_t cx,

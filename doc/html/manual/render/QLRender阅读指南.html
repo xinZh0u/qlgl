@@ -1420,6 +1420,65 @@ GPU 侧走的是"blit 一小块 → 半分辨率两趟模糊 → 画回"，中�
 <li>半透明的玻璃自己叠在模糊结果之上。</li>
 </ul>
 <p>实测（120×80 的用例页）：CPU 有 13 个中间色像素，GPU 7 个（半分辨率 → 斜坡更窄）。</p>
+<hr />
+<h2 id="16-dither8">16. 抖动（dither）：8 位画布上的大面积渐变为什么会有色带</h2>
+<h3 id="161">16.1 现象</h3>
+<p>"液态玻璃"例程里，玻璃后面那片模糊背景上出现了<strong>一片片竖直色带</strong>：
+同一行里相邻 12~46 个像素完全同值，然后跳一格。</p>
+<p>这不是模糊算错了，而是<strong>量化</strong>：缓冲只有 8 位/通道（256 档），
+一段"每 100px 才变 1 个色阶"的缓渐变进 256 档之后，台阶就变成肉眼可见的色带。
+模糊把高频细节全抹平了，只剩台阶，所以大面积毛玻璃最容易露馅。</p>
+<p>量化前那段渐变在 float 里是连续的——<strong>一旦写进 8 位纹理，信息就没了</strong>。
+所以修法只有一条：在"float → 8 位"的那一下加噪声，把台阶打散。</p>
+<h3 id="162">16.2 加在哪：两处，各管一段</h3>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>代码</th>
+<th>管什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主片元着色器出口</td>
+<td><code>main()</code> 里 <code>c.rgb += (bayer4(gl_FragCoord.xy) - 0.5) / 255.0</code></td>
+<td>图元<strong>第一次</strong>落到 8 位画布（渐变、软阴影、毛玻璃结果、字形边缘）</td>
+</tr>
+<tr>
+<td>收尾拷屏</td>
+<td><code>ql_gfx_gl_flush_frame()</code> 的 dither pass</td>
+<td>保留式画布 → 窗口的最后一次量化（<code>layer_prog</code> 合成出来的东西也在这一步被抹平）</td>
+</tr>
+</tbody>
+</table>
+<p>第一处是主力：不在这里加，画布里已经是台阶了，后面再怎么做都补不回来。
+第二处补的是"图层合成"这条路——<code>filter: blur()</code> 会把第一处的噪声平均掉一部分，
+合成时再量化一次又可能出现浅台阶。</p>
+<p>有序抖动（4×4 Bayer）而不是随机噪声：只看 <code>gl_FragCoord</code>，所以</p>
+<ul>
+<li><strong>脏区重绘</strong>每次算出来的噪声完全一样，不会出现"只重画的那一块在抖"；</li>
+<li>静止画面不闪（随机噪声会闪）。</li>
+</ul>
+<p>幅度取 ±0.5 个色阶：平均色不变（肉眼看不出来），台阶被拆成相邻两档的棋盘。</p>
+<h3 id="163-glblitframebuffer">16.3 为什么不直接用 <code>glBlitFramebuffer</code> 拷屏</h3>
+<p>固定管线的 blit 没有地方插片元着色器。所以保留模式收尾改成"绑 <code>g-&gt;fbo_tex</code>
+→ 画一个全屏 quad → 着色器里采样 + 抖动"。两个必须注意的点：</p>
+<ol>
+<li><strong><code>uv</code> 要按有效区域缩放</strong>：FBO 纹理按 256 对齐分配（<code>fbo_cap_w/h</code> 常大于窗口），
+   <code>uv = v_uv * (width / fbo_cap_w, height / fbo_cap_h)</code>。写成 <code>v_uv</code> 直接采样，
+   整个画面会被压进左上角一小块（踩过）。</li>
+<li>顶点位置用 <code>gl_VertexID</code> 现算，但 <strong>ES 3.0 不允许没有 VAO 就画</strong>，得现建一个空的。</li>
+</ol>
+<h3 id="164">16.4 什么时候看不出效果</h3>
+<ul>
+<li><code>QLGL_GL_NDITHER=1</code> 关掉收尾那一路（A/B 对比色带时用）；</li>
+<li>画布是纯色/纯色块的时候，本来就没有台阶，抖动只是加了一层看不见的噪点；</li>
+<li>非保留模式（直接画到窗口）<strong>没有</strong>收尾那一路，但主着色器那一处仍然生效。</li>
+</ul>
+<p>效果实测（<code>example/38_liquid_glass</code> 同一帧）：
+"同一行连续 ≥12 像素同值"的 run 从 <strong>1845</strong> 个降到 <strong>191</strong> 个，
+平均 run 长度 2.09 → 1.21，帧时间 p50 不变（6.92ms，抖动是几个 ALU 指令）。</p>
 <div class='pager'>
 <a href='../../manual/render/QLRender API手册.html'><span class='dir'>上一页</span>QLRender / GPU 后端 API 手册（v0.1）</a>
 <a class='next' href='../../manual/anim/QLAnim API手册.html'><span class='dir'>下一页</span>QLAnim / 帧时钟与补间动画 API手册（v0.1）</a>

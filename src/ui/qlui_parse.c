@@ -1751,7 +1751,13 @@ static int gradient_dir_of(const char *token)
  * **两端**（`0`/`0%`/`100%`）时与真实渲染等价，接受；中间位置会改变画面，
  * 明确报错而不是悄悄忽略（静默降级是本库的红线）。
  */
-static int parse_gradient_stop(const char *txt, const char *where, uint32_t *rgb)
+/*
+ * 渐变色标：`<color>` 或 `<color> <pos>`。
+ * `alpha` 带出颜色自带的 alpha（`rgba()` / 8 位 hex），`*has_alpha` 记录
+ * "有没有显式写过 alpha" —— 写了才让渐变的 alpha 覆盖 `background-color` 的。
+ */
+static int parse_gradient_stop(const char *txt, const char *where, uint32_t *rgb,
+                               uint8_t *alpha, int *has_alpha)
 {
     char buf[192];
     size_t n = strlen(txt);
@@ -1767,8 +1773,12 @@ static int parse_gradient_stop(const char *txt, const char *where, uint32_t *rgb
     buf[n] = '\0';
 
     uint8_t a = 0;
-    if (parse_color(buf, where, rgb, &a))
+    if (parse_color(buf, where, rgb, &a)) {
+        *alpha = a;
+        if (a != 255)
+            *has_alpha = 1;
         return 1;                       /* 没有位置 */
+    }
 
     /* 剥掉末尾的位置 token 再试 */
     char *sp = strrchr(buf, ' ');
@@ -1789,12 +1799,16 @@ static int parse_gradient_stop(const char *txt, const char *where, uint32_t *rgb
         set_error("%s: 渐变色标看不懂 '%s'", where, txt);
         return 0;
     }
+    *alpha = a;
+    if (a != 255)
+        *has_alpha = 1;
     return 1;
 }
 
 /* linear-gradient(...) / radial-gradient(...) → 起色、止色、方向 */
 static int parse_gradient(const char *text, const char *where, uint32_t *from,
-                          uint32_t *to, int *dir)
+                          uint8_t *a1, uint32_t *to, uint8_t *a2, int *dir,
+                          int *has_alpha)
 {
     const char *p = skip_space(text);
     int radial = 0;
@@ -1928,8 +1942,11 @@ static int parse_gradient(const char *text, const char *where, uint32_t *from,
         return 0;
     }
     const int b = have_head ? 1 : 0;
-    if (!parse_gradient_stop(seg[b], where, from) ||
-        !parse_gradient_stop(seg[b + 1], where, to))
+    *a1 = 255;
+    *a2 = 255;
+    *has_alpha = 0;
+    if (!parse_gradient_stop(seg[b], where, from, a1, has_alpha) ||
+        !parse_gradient_stop(seg[b + 1], where, to, a2, has_alpha))
         return 0;
     return 1;
 }
@@ -9508,10 +9525,16 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
                 const char *gi = decls_get(d, "background-image");
                 if (gi != NULL) {
                     int dir = 0;
-                    if (!parse_gradient(gi, where, &bg, &bg2, &dir)) {
+                    uint8_t ka1 = 255, ka2 = 255;
+                    int k_has_a = 0;
+                    if (!parse_gradient(gi, where, &bg, &ka1, &bg2, &ka2, &dir,
+                                        &k_has_a)) {
                         ql_mem_free(idx);
                         return 0;
                     }
+                    /* 关键帧里渐变的两端 alpha 取起始色那个（关键帧只有一份 alpha） */
+                    if (k_has_a != 0)
+                        alpha = ka1;
                 } else {
                     const char *txt = decls_get(d, "background-color");
                     if (txt == NULL)
@@ -10318,6 +10341,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
         return 0;
 
     uint32_t bg2 = bg;
+    /* 渐变色标自带的 alpha（写了才用，见 parse_gradient_stop 的说明） */
+    uint8_t grad_a1 = 255, grad_a2 = 255;
+    int grad_has_alpha = 0;
     int grad_dir = 0;
     /*
      * `background-image`：渐变**或** `url(...)`。
@@ -10345,12 +10371,17 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 return 0;
         } else {
             uint32_t g0 = 0, g1 = 0;
-            if (!parse_gradient(v, where, &g0, &g1, &grad_dir)) {
+            uint8_t ga1 = 255, ga2 = 255;
+            int g_has_a = 0;
+            if (!parse_gradient(v, where, &g0, &ga1, &g1, &ga2, &grad_dir, &g_has_a)) {
                 ql_mem_free(bg_url);
                 return 0;
             }
             bg = g0;
             bg2 = g1;
+            grad_a1 = ga1;
+            grad_a2 = ga2;
+            grad_has_alpha = g_has_a;
             if (bg_a == 0)
                 bg_a = 255;
         }
@@ -11951,10 +11982,17 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             return 0;
     }
 
-    /* 毛玻璃 */
+    /*
+     * 毛玻璃：`backdrop-filter: blur(<N>px) [saturate(<M>%)]`（两种函数任意顺序，
+     * 也可以只写其中一个）。
+     *
+     * `saturate()` 是 v37 加的：模糊之后把背景颜色推艳。只有模糊的话玻璃后面
+     * 是一片灰蒙蒙的均值色 —— Apple 的"液态玻璃"看起来通透正是靠这一步。
+     */
     int backdrop = 0;
+    int backdrop_sat = 0;
     if ((v = decls_get(st, "backdrop-filter")) != NULL) {
-        char low[64];
+        char low[96];
         size_t k = 0;
         int prev = 0;
         const char *s = skip_space(v);
@@ -11974,34 +12012,101 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
             k--;
         low[k] = '\0';
         if (strcmp(low, "none") != 0) {
-            /* blur(<num>px) */
-            if (strncmp(low, "blur(", 5) != 0 || low[k - 1] != ')') {
-                set_error("%s: backdrop-filter 只支持 blur(<N>px)（收到 '%s'）", where,
-                          v);
-                return 0;
+            /* 按顶层空白切函数（括号内不切：`blur(8px)` 里没有空白，但保险） */
+            char fn[4][48];
+            int nfn = 0;
+            {
+                int depth = 0;
+                size_t st_i = 0;
+                for (size_t i = 0; i <= k; i++) {
+                    const char c = (i < k) ? low[i] : ' ';
+                    if (c == '(')
+                        depth++;
+                    else if (c == ')')
+                        depth--;
+                    if (depth == 0 && (c == ' ' || i == k)) {
+                        if (i > st_i && nfn < 4) {
+                            size_t n = i - st_i;
+                            if (n >= sizeof(fn[0]))
+                                n = sizeof(fn[0]) - 1u;
+                            memcpy(fn[nfn], low + st_i, n);
+                            fn[nfn][n] = '\0';
+                            nfn++;
+                        }
+                        while (i + 1u < k && low[i + 1u] == ' ')
+                            i++;
+                        st_i = i + 1u;
+                    }
+                }
             }
-            char num[64];
-            size_t n = k - 6u;      /* 去掉 "blur(" 与 ")" */
-            memcpy(num, low + 5, n);
-            num[n] = '\0';
-            size_t nn = strlen(num);
-            if (nn <= 2 || strcmp(num + nn - 2u, "px") != 0) {
-                set_error("%s: backdrop-filter 只支持 blur(<N>px)（收到 '%s'）", where,
-                          v);
-                return 0;
-            }
-            num[nn - 2u] = '\0';
-            double d = 0;
-            const char *end = NULL;
-            if (!match_number(num, &end, &d) || *end != '\0') {
-                set_error("%s: backdrop-filter 只支持 blur(<N>px)（收到 '%s'）", where,
-                          v);
-                return 0;
-            }
-            backdrop = (int)py_round(d);
-            if (backdrop < 1 || backdrop > 64) {
-                set_error("%s: backdrop-filter: blur 半径必须在 1~64px", where);
-                return 0;
+            for (int i = 0; i < nfn; i++) {
+                const char *f = fn[i];
+                const size_t fl = strlen(f);
+                if (fl < 4u || f[fl - 1u] != ')') {
+                    set_error("%s: backdrop-filter 只认识 blur(<N>px) 与 "
+                              "saturate(<N>%%)（收到 '%s'）", where, v);
+                    return 0;
+                }
+                if (strncmp(f, "blur(", 5) == 0) {
+                    const char *arg = f + 5;
+                    const size_t al = fl - 6u;      /* 去掉 "blur(" 与 ")" */
+                    if (al <= 2u || strncmp(arg + al - 2u, "px", 2) != 0) {
+                        set_error("%s: backdrop-filter: blur 需要 px 单位"
+                                  "（收到 '%s'）", where, v);
+                        return 0;
+                    }
+                    char nb[32];
+                    size_t m = (al - 2u < sizeof(nb) - 1u) ? al - 2u : sizeof(nb) - 1u;
+                    memcpy(nb, arg, m);
+                    nb[m] = '\0';
+                    double d = 0;
+                    const char *e2 = NULL;
+                    if (!match_number(nb, &e2, &d) || *e2 != '\0') {
+                        set_error("%s: backdrop-filter: blur 参数看不懂（收到 '%s'）",
+                                  where, v);
+                        return 0;
+                    }
+                    backdrop = (int)py_round(d);
+                    if (backdrop < 1 || backdrop > 64) {
+                        set_error("%s: backdrop-filter: blur 半径必须在 1~64px", where);
+                        return 0;
+                    }
+                } else if (strncmp(f, "saturate(", 9) == 0) {
+                    const char *arg = f + 9;
+                    const size_t al = fl - 10u;     /* 去掉 "saturate(" 与 ")" */
+                    if (al < 1u) {
+                        set_error("%s: backdrop-filter: saturate 参数为空", where);
+                        return 0;
+                    }
+                    if (strncmp(arg + al - 1u, "%", 1) != 0) {
+                        set_error("%s: backdrop-filter: saturate 需要百分比"
+                                  "（收到 '%s'）", where, v);
+                        return 0;
+                    }
+                    char nb[32];
+                    size_t m = (al - 1u < sizeof(nb) - 1u) ? al - 1u : sizeof(nb) - 1u;
+                    memcpy(nb, arg, m);
+                    nb[m] = '\0';
+                    double d = 0;
+                    const char *e2 = NULL;
+                    if (!match_number(nb, &e2, &d) || *e2 != '\0') {
+                        set_error("%s: backdrop-filter: saturate 参数看不懂（收到 '%s'）",
+                                  where, v);
+                        return 0;
+                    }
+                    if (d < 0)
+                        d = 0;
+                    if (d > 255)
+                        d = 255;
+                    backdrop_sat = (int)py_round(d);
+                    /* 100% = 不变；存 0 表示"没写"，好让下游少一次判断 */
+                    if (backdrop_sat == 100)
+                        backdrop_sat = 0;
+                } else {
+                    set_error("%s: backdrop-filter 只认识 blur(<N>px) 与 "
+                              "saturate(<N>%%)（收到 '%s'）", where, v);
+                    return 0;
+                }
             }
         }
     }
@@ -12582,7 +12687,12 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->padding.left = padding_e[3].value;
     out->padding_unit = edges_unit_bits(padding_e);
     out->display = (uint8_t)disp;
-    out->bg_alpha = bg_a;
+    /*
+     * 渐变写了 rgba() 色标就按色标走（两端各自的 alpha），否则沿用
+     * `background-color` 的 alpha —— 后者是 v36 及以前的行为，不能变。
+     */
+    out->bg_alpha = (grad_has_alpha != 0) ? grad_a1 : bg_a;
+    out->bg_alpha2 = (grad_has_alpha != 0) ? grad_a2 : bg_a;
     for (int i = 0; i < 4; i++) {
         out->border_w[i] = bw4[i];
         out->border_style4[i] = bstyle4[i];
@@ -12744,6 +12854,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->align_self = align_self;
     out->order = (int16_t)order;
     out->backdrop_blur = (uint8_t)backdrop;
+    out->backdrop_sat = (uint8_t)backdrop_sat;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
     out->baseline_dy = (int8_t)baseline_dy;

@@ -241,9 +241,10 @@ main img.shot { max-width: 100%; }
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">stroke_round_rect</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">rect</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
 <span class="w">                              </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">thickness</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
 
+<span class="w">    </span><span class="cm">/* from/to 各带自己的 alpha：a1/a2 沿渐变插值（CSS 的 rgba 色标） */</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fill_round_rect_gradient</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">rect</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span>
 <span class="w">                                     </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">from</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">dir</span><span class="p">,</span>
-<span class="w">                                     </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
+<span class="w">                                     </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">a1</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">a2</span><span class="p">);</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fill_shadow</span><span class="p">)(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">inner</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">radius</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">blur</span><span class="p">,</span>
 <span class="w">                        </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dy</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">alpha</span><span class="p">);</span>
 
@@ -277,7 +278,7 @@ main img.shot { max-width: 100%; }
 </tr>
 <tr>
 <td><code>fill_round_rect_gradient</code></td>
-<td><code>dir</code> 取 <code>QLGradientDir</code>；只有 2 个停靠点</td>
+<td><code>dir</code> 取 <code>QLGradientDir</code>；只有 2 个停靠点；<code>a1</code>/<code>a2</code> 是两端色标各自的 alpha（都传 255 = 与旧版等价）</td>
 </tr>
 <tr>
 <td><code>fill_shadow</code></td>

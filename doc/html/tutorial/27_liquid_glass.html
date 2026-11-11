@@ -248,7 +248,7 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td>① 背后模糊 + 染色</td>
-<td><code>backdrop-filter: blur(40px)</code> + <code>background-color: rgba(...,0.1~0.2)</code></td>
+<td><code>backdrop-filter: blur(40px) saturate(150%)</code> + <code>background-color: rgba(...,0.1~0.2)</code></td>
 <td>玻璃"透过去"的那部分</td>
 </tr>
 <tr>
@@ -265,8 +265,12 @@ main img.shot { max-width: 100%; }
 </table>
 <p>只做 ① 会得到一块"灰蒙蒙的毛玻璃"；②③ 才是让人认出"这是玻璃"的东西。
 这三样都是纯绘制，不增加模糊次数。</p>
+<p><strong><code>saturate()</code> 不是装饰</strong>：模糊是加权平均，糊完的"均值色"饱和度必然下降，
+玻璃看上去就像蒙了层灰塑料。真实玻璃、Apple 的 Liquid Glass 都是"糊完再把颜色
+推回来"，经验值 140%~180%。这个例程里外层 <code>.scene</code> 推 150%、玻璃自己再推 150%
+（两层叠加，玻璃底下那片颜色才够亮）。</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">head</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">dock</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">btn</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">puck</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">40</span><span class="kt">px</span><span class="p">);</span>
+<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">40</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mi">150</span><span class="kt">%</span><span class="p">);</span>
 <span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">226</span><span class="p">,</span><span class="w"> </span><span class="mi">236</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.12</span><span class="p">);</span>
 <span class="w">  </span><span class="k">background-image</span><span class="p">:</span><span class="w"> </span><span class="nb">linear-gradient</span><span class="p">(</span><span class="mi">180</span><span class="kt">deg</span><span class="p">,</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">,</span><span class="w"> </span><span class="mh">#DCE8F8</span><span class="p">);</span>
 <span class="w">  </span><span class="k">border-width</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">;</span>
@@ -281,11 +285,18 @@ main img.shot { max-width: 100%; }
 <p>五个 400~520px 的色块互相重叠、各自 <code>transform: translate()</code> 动画（零重排），
 外面套一层 <code>filter: blur() saturate()</code>：</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">scene</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">20</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mi">150</span><span class="kt">%</span><span class="p">);</span><span class="w">   </span><span class="c">/* 一个离屏图层，**不是**五个 */</span>
+<span class="w">  </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">14</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mi">150</span><span class="kt">%</span><span class="p">);</span><span class="w">   </span><span class="c">/* 一个离屏图层，**不是**五个 */</span>
 <span class="p">}</span>
 </code></pre></div>
 
+<p>色块自己先用"到透明"的径向渐变做了柔边，所以外面这层 <code>blur()</code> 只要收一下毛边：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">b1</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-image</span><span class="p">:</span><span class="w"> </span><span class="nb">radial-gradient</span><span class="p">(</span><span class="kc">circle</span><span class="p">,</span><span class="w"> </span><span class="mh">#FF2D6F</span><span class="p">,</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w"> </span><span class="mi">111</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">));</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
 <blockquote>
+<p>渐变的两个色标可以<strong>各带自己的 alpha</strong>（这条是本例程逼出来的库能力，见 §3.1）。
+写成不透明的止色（<code>#9B0F45</code>）得到的是硬边圆盘，必须靠大半径 <code>blur()</code> 去糊；
+止色写 <code>rgba(...,0)</code> 就得到一团柔光斑，<code>blur()</code> 只负责最后那点毛边。</p>
 <p>给每个色块各加一次 <code>filter</code> 会让图层数乘 5。容器上一次就够，
 因为 <code>filter</code> 是对"合成后的结果"生效 —— 这也是 CSS 的语义。</p>
 </blockquote>
@@ -293,15 +304,22 @@ main img.shot { max-width: 100%; }
 "底下是深色空白"——那看起来就是一块灰塑料。</p>
 <h2 id="3-bug">3. 这个例程逼出来的三个真 bug / 限制</h2>
 <p>写的时候一路"看着不对就查"，查到三件事，两件已经修进库里：</p>
-<h3 id="31-alpha">3.1 渐变的两个色标共用一个 alpha（限制，未改）</h3>
+<h3 id="31-alpha">3.1 渐变的两个色标共用一个 alpha（<strong>已修</strong>）</h3>
 <div class="highlight"><pre><span></span><code><span class="nt">background-color</span><span class="o">:</span><span class="w"> </span><span class="nt">rgba</span><span class="o">(</span><span class="nt">226</span><span class="o">,</span><span class="w"> </span><span class="nt">236</span><span class="o">,</span><span class="w"> </span><span class="nt">255</span><span class="o">,</span><span class="w"> </span><span class="nt">0</span><span class="p">.</span><span class="nc">12</span><span class="o">);</span><span class="w">        </span><span class="c">/* ← 透不透由它决定 */</span>
 <span class="nt">background-image</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">180deg</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">FFFFFF</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">DCE8F8</span><span class="o">);</span><span class="w">  </span><span class="c">/* ← 只做明暗 */</span>
 </code></pre></div>
 
-<p>本库一个背景只有<strong>一个</strong> alpha：<code>rgba()</code> 写在渐变色标里会被忽略。所以"上亮下透"
-的渐变（玻璃最常用的那种）做不出来，只能"整体 alpha + 明暗层次"。
-要真做得更细，需要给渐变的每个色标单独存 alpha。</p>
-<p>另外渐变目前只支持<strong>两个</strong>色标、只支持水平/垂直方向、<code>radial-gradient</code> 只支持圆心在中心。</p>
+<p>一开始本库一个背景只有<strong>一个</strong> alpha：<code>rgba()</code> 写在渐变色标里会被忽略。
+于是"上亮下透"的渐变（玻璃最常用的那种）做不出来，只能"整体 alpha + 明暗层次"，
+色块也只能是硬边圆盘、靠大半径模糊去糊。</p>
+<p>后来补上了：两个色标各带自己的 alpha，插值时"颜色 + alpha"两组分量一起插。</p>
+<div class="highlight"><pre><span></span><code><span class="nt">background-image</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">180deg</span><span class="o">,</span><span class="w"> </span><span class="nt">rgba</span><span class="o">(</span><span class="nt">255</span><span class="o">,</span><span class="nt">255</span><span class="o">,</span><span class="nt">255</span><span class="o">,</span><span class="nt">1</span><span class="o">),</span><span class="w"> </span><span class="nt">rgba</span><span class="o">(</span><span class="nt">255</span><span class="o">,</span><span class="nt">255</span><span class="o">,</span><span class="nt">255</span><span class="o">,</span><span class="nt">0</span><span class="o">));</span>
+<span class="nt">background-image</span><span class="o">:</span><span class="w"> </span><span class="nt">radial-gradient</span><span class="o">(</span><span class="nt">circle</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">FF2D6F</span><span class="o">,</span><span class="w"> </span><span class="nt">rgba</span><span class="o">(</span><span class="nt">255</span><span class="o">,</span><span class="w"> </span><span class="nt">45</span><span class="o">,</span><span class="w"> </span><span class="nt">111</span><span class="o">,</span><span class="w"> </span><span class="nt">0</span><span class="o">));</span><span class="w">   </span><span class="c">/* 柔边光斑 */</span>
+</code></pre></div>
+
+<p><strong>兼容规则</strong>：两个色标都不写 alpha 时，渐变的 alpha 沿用 <code>background-color</code> 的
+（旧行为不变，也正是 <code>transition: background-color</code> 能改玻璃"透光度"的原因）；
+一旦色标自己带了 alpha，就以渐变里的为准。</p>
 <h3 id="32-box-shadow-inset">3.2 <code>box-shadow: inset</code> + 圆角=半边长 → 四角被涂满（<strong>已修</strong>）</h3>
 <p>玻璃按钮/气球都是"药丸"或正圆，也就是 <code>border-radius</code> 正好等于半边长。
 这种形状下 SDF 是圆角轮廓的，矩形四角落在轮廓<strong>外面</strong>，而内阴影的覆盖率公式
@@ -339,7 +357,7 @@ main img.shot { max-width: 100%; }
 <tbody>
 <tr>
 <td>帧时间 p50</td>
-<td><strong>6.93 ms</strong>（≈144 fps，跟 vsync）</td>
+<td><strong>6.92 ms</strong>（≈144 fps，跟 vsync）</td>
 </tr>
 <tr>
 <td>其中等 swap</td>
@@ -355,6 +373,12 @@ main img.shot { max-width: 100%; }
 <code>filter</code> 模糊。想更快就减少玻璃元素数量或降低 <code>blur()</code> 半径
 （半径直接决定降采样的盒半径）。</p>
 <p>CPU 后端（<code>--dump</code>）也能跑，画面基本一致，只是模糊是逐像素盒式近似、边缘略硬。</p>
+<h2 id="6">6. 背景为什么不会出现"色带"</h2>
+<p>大面积模糊背景最容易露馅的不是模糊本身，而是 <strong>8 位量化</strong>：一段"100px 才变一个
+色阶"的缓渐变压进 256 档就是一条条竖直色带（这个例程最初就是这样，肉眼很明显）。</p>
+<p>修法是在"float → 8 位"的那一下加有序抖动（4×4 Bayer，±0.5 色阶），
+平均色不变、台阶被打散成看不见的噪点。技术细节见
+<code>doc/手册/render/QLRender阅读指南.md</code> §16；<code>QLGL_GL_NDITHER=1</code> 可以关掉它做 A/B 对比。</p>
 <div class='pager'>
 <a href='../tutorial/26_touch.html'><span class='dir'>上一页</span>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
 <a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>

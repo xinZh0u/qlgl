@@ -1701,7 +1701,7 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 </tr>
 <tr>
 <td><code>backdrop-filter</code></td>
-<td>✅ <code>blur(1~64px)</code></td>
+<td>✅ <code>blur(1~64px)</code> + <code>saturate(&lt;N&gt;%)</code>（可只写一个、顺序随意）</td>
 <td>其它 filter 函数报错（它是"糊背后"，与 <code>filter</code> 不是一回事）</td>
 </tr>
 <tr>
@@ -1736,7 +1736,7 @@ scissor 在"屏幕上那一小块"——两块不重叠，整次拷贝被静默�
 </tr>
 <tr>
 <td><code>radial-gradient</code></td>
-<td>✅ 圆心固定在元素中心</td>
+<td>✅ 圆心固定在元素中心；两色标可各带 alpha（止色透明 = 柔边光斑）</td>
 <td><code>at 偏移</code> / 自定义半径 / stop 位置报错</td>
 </tr>
 <tr>

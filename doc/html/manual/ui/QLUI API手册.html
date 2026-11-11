@@ -793,7 +793,11 @@ out 里先解析 `--x` 自己的值     →  再把所有 var() 换成字面量
 <td>只支持 <strong>2 个</strong>（起始 + 终止）</td>
 </tr>
 <tr>
-<td>多停靠点 / 角度其他值 / <code>radial-gradient</code></td>
+<td>色标 alpha</td>
+<td>✅ 两个色标可<strong>各带自己的 alpha</strong>（见下）</td>
+</tr>
+<tr>
+<td>多停靠点 / 角度其他值</td>
 <td>❌ 构建期报错</td>
 </tr>
 </tbody>
@@ -806,6 +810,18 @@ GPU 侧用<strong>顶点颜色插值</strong>实现，不增加顶点、不增�
 想让渐变按钮在 hover/active 下保持渐变，要显式写：</p>
 <p><code>css
 .btn:hover { background: linear-gradient(to bottom, #58e09a, #35a869); }</code></p>
+<p><strong>色标带 alpha = 柔边 / 淡出</strong>：两个色标各写自己的 <code>rgba()</code>，
+插值的是"颜色 + alpha"两组分量。最常见的用法是"中心实、边缘透明"的软光斑：</p>
+<p><code>css
+.glow {
+  width: 480px; height: 480px;
+  background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0));
+}</code></p>
+<p>这条以前做不到：渐变只有一个 alpha，写透明的止色等于没写。现在
+<code>#a { background: linear-gradient(#FFF, rgba(255,255,255,0)) }</code> 就是"上实下透"。</p>
+<p>⚠️ <strong>两个色标都不写 alpha 时</strong>，渐变的 alpha 沿用 <code>background-color</code> 的 ——
+这条保持了旧行为，也是 <code>transition: background-color</code> 能改变玻璃"透光度"的原因。
+一旦色标自己带了 alpha，<code>background-color</code> 的 alpha 就不再参与（以渐变里的为准）。</p>
 <p><strong>径向渐变</strong>：<code>background: radial-gradient(circle, &lt;起色&gt;, &lt;止色&gt;)</code>。
 圆心固定为元素中心，按到<strong>最远角</strong>的距离归一化（等价 CSS <code>farthest-corner</code>）。
 只支持 <code>circle</code> / <code>circle at center</code> / <code>ellipse</code>；写 <code>at 偏移</code>、自定义半径、
@@ -1648,11 +1664,11 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <code>animation-iteration-count: infinite</code> 的动画永远让 <code>ql_ui_anim_tick</code> 返回非 0，
 所以<strong>别用"tick 返回 0"来判断能不能退出</strong>，那不是它的语义。</p>
 <hr />
-<h3 id="3111-backdrop-filter-blur">3.11.1 毛玻璃（<code>backdrop-filter: blur()</code>）</h3>
+<h3 id="3111-backdrop-filter-blur-saturate">3.11.1 毛玻璃（<code>backdrop-filter: blur()</code> / <code>saturate()</code>）</h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">glass</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.10</span><span class="p">);</span><span class="w">   </span><span class="c">/* 想看见效果就得带 alpha */</span>
 <span class="w">  </span><span class="k">border-radius</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="kt">px</span><span class="p">;</span>
-<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">12</span><span class="kt">px</span><span class="p">);</span>
+<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">12</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mi">160</span><span class="kt">%</span><span class="p">);</span>
 <span class="p">}</span>
 </code></pre></div>
 
@@ -1669,11 +1685,25 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <td>高斯标准差（CSS 语义）；N 越大越糊</td>
 </tr>
 <tr>
+<td><code>saturate(&lt;N&gt;%)</code></td>
+<td>模糊之后把颜色推艳；<code>0%</code>/<code>100%</code> 都归一化成"不变"</td>
+</tr>
+<tr>
+<td>两个一起写</td>
+<td>顺序随意：<code>blur() saturate()</code> 与 <code>saturate() blur()</code> 等价</td>
+</tr>
+<tr>
 <td><code>none</code></td>
 <td>关闭</td>
 </tr>
 </tbody>
 </table>
+<p><strong>为什么几乎总要配 <code>saturate()</code></strong>：模糊是加权平均，把一块区域糊成"均值色"之后
+饱和度必然下降，玻璃看上去就像蒙了层灰塑料。真实玻璃/Apple 的 Liquid Glass 都是
+"糊完再把颜色推回来"。经验值 140%~180%。</p>
+<p>实现上两条后端都把百分比当系数（<code>s &gt; 1</code> 推艳、<code>&lt; 1</code> 变灰），用 CSS 标准亮度权重
+<code>0.213/0.715/0.072</code>（权重和 = 1，所以亮度不漂）。GPU 侧塞进毛玻璃着色器的
+<code>v_params.w</code>（原来那个 pad 字段）一并插值。</p>
 <p>它模糊的是<strong>这层元素背后已经画好的内容</strong>，所以：</p>
 <ol>
 <li><strong>必须写在"上面那一层"</strong>：靠 z 序/文档顺序决定谁是"背后"；</li>
@@ -1698,7 +1728,7 @@ z-index 相同则保持文档顺序（稳定）。</p>
 <p><strong>脏区的边界</strong>：脏区里只要有一块与玻璃元素相交，玻璃就会重新糊一次。但如果下层
 的变化只覆盖玻璃的一小块，就只有那一小块被重新模糊，模糊核够不到矩形外的邻居，
 边缘可能出现细接缝 —— 需要绝对干净时，把带 <code>backdrop-filter</code> 的元素整体当脏区。</p>
-<p><strong>构建期报错</strong>：<code>blur()</code> 以外的函数（<code>blur</code> 以外的 <code>backdrop-filter</code> 值）、半径 0 或 &gt; 64。</p>
+<p><strong>构建期报错</strong>：<code>blur()</code> / <code>saturate()</code> 以外的函数、半径 0 或 &gt; 64。</p>
 <hr />
 <h3 id="3112-opacity">3.11.2 整体不透明度（<code>opacity</code>）</h3>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">dim</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">opacity</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w">          </span><span class="c">/* 0~1，默认 1 */</span>
