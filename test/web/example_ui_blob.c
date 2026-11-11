@@ -97,8 +97,18 @@ int main(int argc, char **argv)
         return 1;
     }
     printf("已加载 %s（%u 节点）\n", blob_path, (unsigned)ui->node_count);
-    ql_ui_layout(ui, WIN_W, WIN_H);
+    ql_coord_t css_w = ql_win_css_width(&win);
+    ql_coord_t css_h = ql_win_css_height(&win);
+    if (css_w <= 0)
+        css_w = WIN_W;
+    if (css_h <= 0)
+        css_h = WIN_H;
+    ql_ui_layout(ui, css_w, css_h);
     ql_ui_attach_input(ui);
+#if defined(QLGL_ENABLE_WAYLAND)
+    if (win.kind == QL_WIN_KIND_WAYLAND)
+        ql_disp_wayland_attach_clipboard(win.disp, ui);
+#endif
 
     QLCanvas canvas;
     long last_sig = watch ? file_mtime(blob_path) : -1;
@@ -117,7 +127,7 @@ int main(int argc, char **argv)
                 if (fresh != NULL) {
                     ql_ui_free(ui);
                     ui = fresh;
-                    ql_ui_layout(ui, WIN_W, WIN_H);
+                    ql_ui_layout(ui, css_w, css_h);
                     ql_ui_attach_input(ui);
                     reloads++;
                     printf("热重载 #%d：%s（%u 节点）\n", reloads, blob_path,
@@ -129,6 +139,20 @@ int main(int argc, char **argv)
             }
         }
 
+        /*
+         * 缩放/窗口尺寸变了：帧缓冲整套换新，画布必须重建（否则画到旧内存上），
+         * 界面按新的逻辑尺寸重排。
+         */
+        if (ql_win_resize_pending(&win)) {
+            css_w = ql_win_css_width(&win);
+            css_h = ql_win_css_height(&win);
+            if (css_w <= 0)
+                css_w = WIN_W;
+            if (css_h <= 0)
+                css_h = WIN_H;
+            ql_ui_layout(ui, css_w, css_h);
+        }
+
         if (ql_canvas_from_disp(&canvas, ql_disp_get()) != QL_OK) {
             /* 内存显示路径下走 ql_render 不适用，这里直接画 */
             break;
@@ -136,7 +160,8 @@ int main(int argc, char **argv)
         ql_canvas_clear(&canvas, QL_COLOR_RGB(0x08, 0x0A, 0x10));
         ql_ui_render_canvas(ui, &canvas);
         if (win.disp != NULL && win.disp->flush != NULL)
-            win.disp->flush(win.disp, ql_rect_make(0, 0, WIN_W, WIN_H));
+            win.disp->flush(win.disp, ql_rect_make(0, 0, win.disp->width,
+                                                    win.disp->height));
         if (win.disp != NULL && win.disp->flush_done != NULL)
             win.disp->flush_done(win.disp);
 

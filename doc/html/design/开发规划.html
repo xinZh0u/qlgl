@@ -1316,7 +1316,7 @@ GL 侧是 <code>QLGfxGL.scale_fx</code>。上层代码<strong>一行都不用改
 </tr>
 <tr>
 <td>Wayland</td>
-<td>⏳ <strong>待办</strong>，写法已定：绑定 <code>wl_output</code> 听 <code>scale</code> 事件 → 分配<strong>物理尺寸</strong>的 shm 缓冲 → <code>wl_surface.set_buffer_scale(scale)</code>；本机无合成器无法验证，不写未测过的协议代码</td>
+<td>✅ 绑定 <code>wl_output</code> 听 <code>scale</code> → 按 <code>css × scale</code> 分配 shm 缓冲 → <code>wl_surface.set_buffer_scale()</code>；缩放变化通过 <code>ql_disp_wayland_resize_pending()</code> 通知调用方重建画布（<code>test_wayland</code>）</td>
 </tr>
 <tr>
 <td>输入</td>
@@ -2842,9 +2842,11 @@ blob v10 → <strong>v11</strong>。</p>
 <strong>不涉及 Android/iOS</strong>（那两个是另一条线，见 M6 第 3/4 项）。</p>
 <h4 id="2026-11-09">现状盘点（2026-11-09）</h4>
 <p>已有：<code>wl_shm</code> 双缓冲 + <code>wl_surface_damage_buffer</code> 脏区提交 + xdg-shell
-（title / app_id / configure / close）+ <code>wl_seat</code> 的 keyboard / pointer。
-<strong>没有</strong>：<code>wl_touch</code>、<code>wl_output.scale</code> / fractional-scale、<code>wl_egl_window</code>、
-<code>zwp_text_input_v3</code> / <code>zwp_input_method_v2</code>、<code>wl_data_device</code>、<code>wl_callback</code> 帧回调。</p>
+（title / app_id / configure / close）+ <code>wl_seat</code> 的 keyboard / pointer、
+<strong><code>wl_touch</code>（触摸，2026-11-11）</strong>、<strong><code>wl_output.scale</code>（高 DPI）</strong>、
+<strong><code>wl_callback</code> 帧回调（提交节流 / 省电）</strong>、<strong><code>wl_data_device</code>（剪贴板）</strong>。
+<strong>没有</strong>：fractional-scale、<code>wl_egl_window</code>（GPU）、<code>zwp_text_input_v3</code> /
+<code>zwp_input_method_v2</code>（软键盘 / 中文输入）。</p>
 <h4 id="_5">步骤与验收</h4>
 <table>
 <thead>
@@ -2864,15 +2866,15 @@ blob v10 → <strong>v11</strong>。</p>
 </tr>
 <tr>
 <td>2</td>
-<td>HiDPI：<code>wl_output.scale</code> + <code>ql_gfx_gl_set_scale()</code>（<strong>新 API</strong>，现在 <code>scale_fx</code> 恒为 1）</td>
+<td>~~HiDPI：<code>wl_output.scale</code>~~ ✅ <strong>已完成（2026-11-11）</strong>：按 <code>css × scale</code> 分配缓冲 + <code>set_buffer_scale()</code>，<code>resize_pending</code> 通知重建画布；<code>QLGL_WAYLAND_SCALE</code> 可在 1x 屏上验证 2x 路径</td>
 <td>移动端基本都是 2x-3x；桌面 2x 屏也受益</td>
-<td><code>example_02_text</code> 在 1x/2x 下字号视觉一致，<code>test_scale</code> 覆盖事件坐标反算</td>
+<td><code>test_wayland</code>（1x / 2x 各一遍，验设备像素与 CSS 映射）</td>
 </tr>
 <tr>
 <td>3</td>
-<td><strong>触摸</strong>：<code>wl_touch</code> → 复用点事件；点击 slop；滚动改"拖动 + 惯性"</td>
+<td>~~<strong>触摸</strong>：<code>wl_touch</code>~~ ✅ <strong>已完成（2026-11-11）</strong>：映射成主键按下/移动/抬起，界面层零改动；多指手势未做</td>
 <td>没有触摸就不是手机 UI</td>
-<td><code>example_09_scroll</code> 手指拖动能滚，松手有惯性</td>
+<td>见 <code>qldisp_wayland.c</code> 的 touch 监听器</td>
 </tr>
 <tr>
 <td>4</td>
@@ -2888,9 +2890,9 @@ blob v10 → <strong>v11</strong>。</p>
 </tr>
 <tr>
 <td>6</td>
-<td>剪贴板：<code>wl_data_device</code></td>
+<td>~~剪贴板：<code>wl_data_device</code>~~ ✅ <strong>已完成（2026-11-11）</strong>：<code>ql_disp_wayland_attach_clipboard()</code>；<code>set_selection</code> 用最近一次输入事件的 serial，粘贴走非阻塞管道 + 下一帧重试</td>
 <td>复制粘贴</td>
-<td>复用 <code>QLUIClipboard</code> 的异步语义（已是异步接口）</td>
+<td>复用 <code>QLUIClipboard</code> 的异步语义</td>
 </tr>
 <tr>
 <td>7</td>

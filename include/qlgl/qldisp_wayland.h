@@ -45,6 +45,28 @@ void ql_disp_wayland_close(QLDispDriver *driver);
 
 const char *ql_disp_wayland_title(QLDispDriver *driver);
 
+/*
+ * 尺寸/缩放变过：调用方需要**重建画布**（`ql_canvas_from_disp`）并重排。
+ * 读一次即清（与 `ql_disp_x11_resize_pending()` 同语义）。
+ *
+ * 高 DPI：`wl_output.scale` 一变，帧缓冲按 `css × scale` 重新分配，
+ * `ql_disp_css_width()` 不变（逻辑尺寸不变），但画布/缓冲区是全套换新的，
+ * 所以**必须**重建画布，否则会画到已释放的内存上。
+ */
+int ql_disp_wayland_resize_pending(QLDispDriver *driver);
+
+/*
+ * 把 Wayland 的剪贴板接到界面上（`QLUIClipboard` 后端）。
+ *
+ * 没有 `wl_data_device_manager` 时只打一条警告、不装后端 —— 界面层在没装后端时
+ * Ctrl+C/V 什么也不做，不会报错。合成器要求 `set_selection` 带**最近一次输入
+ * 事件的 serial**，所以这个后端得等用户先点一下窗口（键盘/鼠标事件产生 serial）。
+ */
+void ql_disp_wayland_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui);
+
+/* 当前缩放倍数（1 = 不缩放）。调试/测试用 */
+int ql_disp_wayland_scale(QLDispDriver *driver);
+
 /* 成功提交（commit）的帧数，调试用 */
 uint32_t ql_disp_wayland_commit_count(QLDispDriver *driver);
 

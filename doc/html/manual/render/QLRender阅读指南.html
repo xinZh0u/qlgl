@@ -706,6 +706,45 @@ QLGfxGL.scale_fx     ───────────────────�
 线性插值重算 UV——图集 UV 是轴对齐的，插值精确。</p>
 </blockquote>
 <hr />
+<h2 id="1071-wayland-scale">10.7.1 Wayland 后端：scale / 触摸 / 帧回调 / 剪贴板</h2>
+<p>纯 CPU 的 Wayland 后端（<code>src/port/qldisp_wayland.c</code>）在这一轮补齐了四件事。
+都是<strong>协议层</strong>的事，不影响上面那套单位换算。</p>
+<h3 id="dpiwl_outputscale">高 DPI（<code>wl_output.scale</code>）</h3>
+<p>合成器的 <code>wl_surface.set_buffer_scale(N)</code> 只负责"把逻辑尺寸缩回去"，
+<strong>缓冲区本身必须是 N 倍物理像素</strong>。所以缩放一变：</p>
+<ol>
+<li>帧缓冲按 <code>css × scale</code> 重新分配（<code>buffers_rebuild()</code>）；</li>
+<li><code>base.width/height/stride</code> 换成物理值，<code>scale_fx</code> 同步（画布/<code>QLDraw2D</code> 自动跟上）；</li>
+<li><strong>画布必须重建</strong> —— <code>ql_disp_wayland_resize_pending()</code> 读一次即清，
+   调用方看到就 <code>ql_canvas_from_disp()</code> + <code>ql_ui_layout(css_w, css_h)</code>。</li>
+</ol>
+<p><code>ql_disp_css_width()</code> 始终是创建时给的逻辑尺寸，所以<strong>布局代码一行都不用改</strong>。
+输入坐标（pointer / touch）本来就是 surface 的逻辑坐标，也不需要换算。</p>
+<blockquote>
+<p>调试：<code>QLGL_WAYLAND_SCALE=2</code> 可以在 1x 屏上强制按 2x 分配缓冲区 ——
+这是本机（<code>output scale=1</code>）唯一能自动验证 2x 路径的办法，见 <code>test_wayland</code>。</p>
+</blockquote>
+<h3 id="wl_surfaceframe">帧回调（<code>wl_surface.frame</code>）</h3>
+<p>同一时刻只挂一个回调。上一帧还没被呈现（<code>frame_pending</code>）时<strong>不提交</strong>，
+脏区继续攒在同一个缓冲区里，等回调到了在 <code>poll()</code> 里补提交 ——
+这就是"提交节奏压在刷新率上"，也是 roadmap 里说的省电关键。</p>
+<p>兜底：连续被节流 3 次（<code>QL_WL_MAX_STALL</code>）就强提交一次，
+免得某个合成器不回帧回调时界面僵住。</p>
+<h3 id="wl_touch">触摸（<code>wl_touch</code>）</h3>
+<p>映射成"主键按下 / 移动 / 抬起"，界面层只认指针事件，所以点按、拖动滚动、
+输入框聚焦全都自动可用。多指手势没做（本机没法验证，写了也是猜）。</p>
+<h3 id="wl_data_device">剪贴板（<code>wl_data_device</code>）</h3>
+<p><code>ql_disp_wayland_attach_clipboard(driver, ui)</code> 装上 <code>QLUIClipboard</code> 后端：</p>
+<ul>
+<li>复制：建 <code>wl_data_source</code>，offer <code>text/plain;charset=utf-8</code> 等四种 MIME；
+  <code>set_selection</code> 必须带<strong>最近一次输入事件的 serial</strong>，所以得等用户先点一下窗口；</li>
+<li>粘贴：<code>wl_data_offer_receive()</code> + 匿名管道<strong>非阻塞</strong>读，读不到 EOF 就下一帧再问
+  （与 X11 那套"异步等 SelectionNotify"同一个接口形状）。</li>
+</ul>
+<p>两个踩过的坑：<code>wl_data_offer_add_listener</code> 只能加一次（<code>data_offer</code> 与
+<code>selection</code> 两条事件都会带同一个 offer，重复加会报 <code>proxy already has listener</code>）；
+<code>xdg-shell</code> 第一帧必须先 <code>wl_display_roundtrip()</code> 拿到 <code>configure</code>，
+否则前几帧 <code>flush</code> 会因为 <code>!configured</code> 被静默丢掉。</p>
 <h2 id="108-m53">10.8 绘制期亚像素与边缘覆盖率（M5.3）</h2>
 <p>整像素矩形只能对齐到整格：<code>translate(0.5px)</code> 会变成 1px 一跳，60fps×300ms 的动画
 只有 18 个台阶，肉眼可辨。这一步给光栅化加了"边落在小数上也能画"的能力。</p>

@@ -338,6 +338,56 @@ quad = intersect(形状外扩 1px 的范围, g->clip);
 
 ---
 
+
+## 10.7.1 Wayland 后端：scale / 触摸 / 帧回调 / 剪贴板
+
+纯 CPU 的 Wayland 后端（`src/port/qldisp_wayland.c`）在这一轮补齐了四件事。
+都是**协议层**的事，不影响上面那套单位换算。
+
+### 高 DPI（`wl_output.scale`）
+
+合成器的 `wl_surface.set_buffer_scale(N)` 只负责"把逻辑尺寸缩回去"，
+**缓冲区本身必须是 N 倍物理像素**。所以缩放一变：
+
+1. 帧缓冲按 `css × scale` 重新分配（`buffers_rebuild()`）；
+2. `base.width/height/stride` 换成物理值，`scale_fx` 同步（画布/`QLDraw2D` 自动跟上）；
+3. **画布必须重建** —— `ql_disp_wayland_resize_pending()` 读一次即清，
+   调用方看到就 `ql_canvas_from_disp()` + `ql_ui_layout(css_w, css_h)`。
+
+`ql_disp_css_width()` 始终是创建时给的逻辑尺寸，所以**布局代码一行都不用改**。
+输入坐标（pointer / touch）本来就是 surface 的逻辑坐标，也不需要换算。
+
+> 调试：`QLGL_WAYLAND_SCALE=2` 可以在 1x 屏上强制按 2x 分配缓冲区 ——
+> 这是本机（`output scale=1`）唯一能自动验证 2x 路径的办法，见 `test_wayland`。
+
+### 帧回调（`wl_surface.frame`）
+
+同一时刻只挂一个回调。上一帧还没被呈现（`frame_pending`）时**不提交**，
+脏区继续攒在同一个缓冲区里，等回调到了在 `poll()` 里补提交 ——
+这就是"提交节奏压在刷新率上"，也是 roadmap 里说的省电关键。
+
+兜底：连续被节流 3 次（`QL_WL_MAX_STALL`）就强提交一次，
+免得某个合成器不回帧回调时界面僵住。
+
+### 触摸（`wl_touch`）
+
+映射成"主键按下 / 移动 / 抬起"，界面层只认指针事件，所以点按、拖动滚动、
+输入框聚焦全都自动可用。多指手势没做（本机没法验证，写了也是猜）。
+
+### 剪贴板（`wl_data_device`）
+
+`ql_disp_wayland_attach_clipboard(driver, ui)` 装上 `QLUIClipboard` 后端：
+
+* 复制：建 `wl_data_source`，offer `text/plain;charset=utf-8` 等四种 MIME；
+  `set_selection` 必须带**最近一次输入事件的 serial**，所以得等用户先点一下窗口；
+* 粘贴：`wl_data_offer_receive()` + 匿名管道**非阻塞**读，读不到 EOF 就下一帧再问
+  （与 X11 那套"异步等 SelectionNotify"同一个接口形状）。
+
+两个踩过的坑：`wl_data_offer_add_listener` 只能加一次（`data_offer` 与
+`selection` 两条事件都会带同一个 offer，重复加会报 `proxy already has listener`）；
+`xdg-shell` 第一帧必须先 `wl_display_roundtrip()` 拿到 `configure`，
+否则前几帧 `flush` 会因为 `!configured` 被静默丢掉。
+
 ## 10.8 绘制期亚像素与边缘覆盖率（M5.3）
 
 整像素矩形只能对齐到整格：`translate(0.5px)` 会变成 1px 一跳，60fps×300ms 的动画
