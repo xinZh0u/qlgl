@@ -789,7 +789,7 @@ QLGfxGL.scale_fx     ───────────────────�
 <tr>
 <td>改尺寸</td>
 <td>销毁 <code>EGLSurface</code> 重建（X11 表面尺寸是创建时定死的）</td>
-<td><code>wl_egl_window_resize()</code>，表面不重建</td>
+<td><code>wl_egl_window_resize()</code>，表面不重建；<strong>并且必须采纳 <code>xdg_toplevel.configure</code> 给的尺寸</strong>（见下）</td>
 </tr>
 <tr>
 <td>尺寸单位</td>
@@ -812,7 +812,25 @@ QLGfxGL.scale_fx     ───────────────────�
 自己只处理 <code>wl.resize_pending</code> —— 缩放变了就重算设备像素尺寸、<code>wl_egl_window_resize()</code>
 并置 <code>ql_gfx_gl_resize_pending()</code>，调用方据此重建画布 + 重排。
 <code>ql_gfx_gl_wait()</code> 直接 <code>poll()</code> 协议 fd，不用 <code>usleep</code> 空转。</p>
+<h3 id="10721">10.7.2.1 窗口变糊 = 缓冲区尺寸和窗口尺寸不一致</h3>
+<p>Wayland 上"窗口多大"是合成器说的（<code>xdg_toplevel.configure</code> 里的 w/h），
+客户端<strong>必须</strong>按它重建缓冲区。只改窗口大小、不换缓冲区的话，合成器会把旧尺寸的
+那张图<strong>拉伸</strong>到新窗口上：字变糊、布局也不重排 —— 这正是"Wayland 窗口清晰度比
+X11 低"的典型成因（用户拖一下窗口边缘 / 窗口被平铺或最大化就出现）。</p>
+<p>所以 <code>qlwl_toplevel_configure()</code> 会把 w/h 记下来（0/0 表示"你自己定"，首帧就是这样），
+后端在 <code>poll()</code> 里用 <code>qlwl_take_resize()</code> 取走，然后：</p>
+<div class="highlight"><pre><span></span><code><span class="n">g</span><span class="o">-&gt;</span><span class="n">width</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">css_w</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">wl</span><span class="p">.</span><span class="n">scale</span><span class="p">;</span><span class="w">  </span><span class="n">g</span><span class="o">-&gt;</span><span class="n">height</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">css_h</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">wl</span><span class="p">.</span><span class="n">scale</span><span class="p">;</span>
+<span class="n">wl_egl_window_resize</span><span class="p">(</span><span class="n">wl_egl</span><span class="p">,</span><span class="w"> </span><span class="n">g</span><span class="o">-&gt;</span><span class="n">width</span><span class="p">,</span><span class="w"> </span><span class="n">g</span><span class="o">-&gt;</span><span class="n">height</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w">   </span><span class="cm">/* GPU */</span>
+<span class="n">buffers_rebuild</span><span class="p">(</span><span class="n">w</span><span class="p">);</span><span class="w">                                        </span><span class="cm">/* CPU：shm 重建 */</span>
+<span class="n">g</span><span class="o">-&gt;</span><span class="n">resize_pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">                                     </span><span class="cm">/* 让界面层重排 */</span>
+</code></pre></div>
+
+<p><code>resize_pending</code> 一路传到主循环，主循环 <code>ql_ui_layout()</code> 之后画面就是 1:1 像素对点。</p>
 <blockquote>
+<p>自测：<code>QLGL_WAYLAND_MAXIMIZE=1</code> 让客户端请求最大化，合成器随后会给一个新尺寸 ——
+采纳对了的表现是"缓冲区和布局都变成屏幕大小"（<code>--frames 5</code> 配
+<code>QL_EX_WINDOW_DUMP</code> 看输出里的尺寸），错了就是窗口变大但内容被拉伸。
+<code>test_wayland</code> 第 0b 节是这条逻辑的单元测试（0/0 不算尺寸、只取一次、同尺寸不重排）。</p>
 <p><strong>抓图的两个坑</strong>（<code>QL_EX_WINDOW_DUMP</code> 就是这么实现的）：<code>eglSwapBuffers</code>
 之后后缓冲内容<strong>未定义</strong>（Wayland 上读出来全黑），而 <code>ql_gfx_gl_end()</code> 之前
 顶点批次还没上传（只读到清除色）。正确的时机是新增的

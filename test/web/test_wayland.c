@@ -77,6 +77,41 @@ QL_TEST_BEGIN("test_wayland")
     QL_CHECK(qlwl_toplevel_listener.configure != NULL);
     QL_CHECK(qlwl_toplevel_listener.close != NULL);
     /* 绑定 xdg_wm_base v1 / wl_output v2 / wl_shm v1：别多实现也别少实现 */
+    /*
+     * ---------- 0b. `xdg_toplevel.configure` 的尺寸必须被采纳 ----------
+     *
+     * 不采纳的表现：用户拖动窗口边缘时合成器把**旧尺寸的缓冲区拉伸**到新窗口，
+     * 内容不重排、字变糊（点对点变成了插值放大）。这里用纯逻辑验一遍：
+     *   - 0/0 表示"你自己定"（首帧就是这样）→ 不能当成 0 尺寸；
+     *   - 给了尺寸 → 记下来，且**只取一次**；
+     *   - 和当前尺寸相同 → 不算变化（免得每帧重排）。
+     */
+    {
+        QLWlWindow w;
+        memset(&w, 0, sizeof(w));
+        w.css_w = 340;
+        w.css_h = 400;
+
+        struct wl_array empty;
+        wl_array_init(&empty);
+        qlwl_toplevel_configure(&w, NULL, 0, 0, &empty);      /* 你自己定 */
+        int32_t cw = 0, ch = 0;
+        QL_CHECK_EQ(qlwl_take_resize(&w, &cw, &ch), 0);
+        QL_CHECK_EQ((int)w.css_w, 340);
+
+        qlwl_toplevel_configure(&w, NULL, 500, 300, &empty);  /* 用户拖大了 */
+        QL_CHECK_EQ((int)w.resize_pending, 1);
+        QL_CHECK_EQ(qlwl_take_resize(&w, &cw, &ch), 1);
+        QL_CHECK_EQ((int)cw, 500);
+        QL_CHECK_EQ((int)ch, 300);
+        QL_CHECK_EQ((int)w.css_w, 500);
+        QL_CHECK_EQ(qlwl_take_resize(&w, &cw, &ch), 0);       /* 取过一次就没了 */
+
+        qlwl_toplevel_configure(&w, NULL, 500, 300, &empty);  /* 同尺寸：不算变化 */
+        QL_CHECK_EQ(qlwl_take_resize(&w, &cw, &ch), 0);
+        wl_array_release(&empty);
+    }
+
     QL_CHECK(qlwl_out_listener.geometry != NULL);
     QL_CHECK(qlwl_out_listener.mode != NULL);
     QL_CHECK(qlwl_out_listener.done != NULL);

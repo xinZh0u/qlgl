@@ -294,6 +294,10 @@ QLDispDriver *ql_disp_wayland_create(const char *title, ql_coord_t width, ql_coo
         return NULL;
     }
 
+    /* 布局基准登记到共享外壳：合成器改尺寸时会更新它 */
+    w->wl.css_w = (int32_t)width;
+    w->wl.css_h = (int32_t)height;
+
     if (ql_disp_init_fb(&w->base, (void *)(uintptr_t)1, (uint32_t)width * 4u, width,
                         height, QL_COLOR_ARGB8888, wayland_flush) != QL_OK) {
         qlwl_close(&w->wl);
@@ -332,6 +336,20 @@ int ql_disp_wayland_poll(QLDispDriver *driver)
 
     if (!qlwl_pump(&w->wl))
         return 0;
+
+    /*
+     * 合成器要改窗口尺寸：采纳它并整套重建缓冲区（不重建的话合成器拉伸旧图，
+     * 字会糊、布局也不重排）。
+     */
+    {
+        int32_t nw = 0, nh = 0;
+        if (qlwl_take_resize(&w->wl, &nw, &nh)) {
+            w->css_w = nw;
+            w->css_h = nh;
+            (void)buffers_rebuild(w);
+            w->wl.resize_pending = 1;
+        }
+    }
 
     /* 缩放变了：缓冲区整套换新，通知调用方重建画布 */
     if (w->wl.resize_pending) {

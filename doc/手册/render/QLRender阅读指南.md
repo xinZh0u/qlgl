@@ -417,7 +417,7 @@ QLGL_GL_BACKEND=wayland ./build/example/example_02_text --frames 30 --stats
 |---|---|---|
 | 原生窗口句柄 | `Window`（XID） | `wl_egl_window`（由 `wl_surface` 包出来的） |
 | EGL 平台 | `EGL_PLATFORM_X11_KHR` | `EGL_PLATFORM_WAYLAND_KHR` |
-| 改尺寸 | 销毁 `EGLSurface` 重建（X11 表面尺寸是创建时定死的） | `wl_egl_window_resize()`，表面不重建 |
+| 改尺寸 | 销毁 `EGLSurface` 重建（X11 表面尺寸是创建时定死的） | `wl_egl_window_resize()`，表面不重建；**并且必须采纳 `xdg_toplevel.configure` 给的尺寸**（见下） |
 | 尺寸单位 | 设备像素 | 设备像素（= CSS × scale，缓冲缩放交给 `set_buffer_scale`） |
 | 输入 / 输入法 | Xlib 事件 + XIM | 共用外壳（键盘/指针/触摸）；**输入法暂缺** |
 | 帧节奏 | `eglSwapInterval` + 自算 pace | 合成器在缓冲排队满时阻塞 `eglSwapBuffers`（天然 vsync） |
@@ -426,6 +426,30 @@ QLGL_GL_BACKEND=wayland ./build/example/example_02_text --frames 30 --stats
 自己只处理 `wl.resize_pending` —— 缩放变了就重算设备像素尺寸、`wl_egl_window_resize()`
 并置 `ql_gfx_gl_resize_pending()`，调用方据此重建画布 + 重排。
 `ql_gfx_gl_wait()` 直接 `poll()` 协议 fd，不用 `usleep` 空转。
+
+### 10.7.2.1 窗口变糊 = 缓冲区尺寸和窗口尺寸不一致
+
+Wayland 上"窗口多大"是合成器说的（`xdg_toplevel.configure` 里的 w/h），
+客户端**必须**按它重建缓冲区。只改窗口大小、不换缓冲区的话，合成器会把旧尺寸的
+那张图**拉伸**到新窗口上：字变糊、布局也不重排 —— 这正是"Wayland 窗口清晰度比
+X11 低"的典型成因（用户拖一下窗口边缘 / 窗口被平铺或最大化就出现）。
+
+所以 `qlwl_toplevel_configure()` 会把 w/h 记下来（0/0 表示"你自己定"，首帧就是这样），
+后端在 `poll()` 里用 `qlwl_take_resize()` 取走，然后：
+
+```c
+g->width = css_w * wl.scale;  g->height = css_h * wl.scale;
+wl_egl_window_resize(wl_egl, g->width, g->height, 0, 0);   /* GPU */
+buffers_rebuild(w);                                        /* CPU：shm 重建 */
+g->resize_pending = 1;                                     /* 让界面层重排 */
+```
+
+`resize_pending` 一路传到主循环，主循环 `ql_ui_layout()` 之后画面就是 1:1 像素对点。
+
+> 自测：`QLGL_WAYLAND_MAXIMIZE=1` 让客户端请求最大化，合成器随后会给一个新尺寸 ——
+> 采纳对了的表现是"缓冲区和布局都变成屏幕大小"（`--frames 5` 配
+> `QL_EX_WINDOW_DUMP` 看输出里的尺寸），错了就是窗口变大但内容被拉伸。
+> `test_wayland` 第 0b 节是这条逻辑的单元测试（0/0 不算尺寸、只取一次、同尺寸不重排）。
 
 > **抓图的两个坑**（`QL_EX_WINDOW_DUMP` 就是这么实现的）：`eglSwapBuffers`
 > 之后后缓冲内容**未定义**（Wayland 上读出来全黑），而 `ql_gfx_gl_end()` 之前

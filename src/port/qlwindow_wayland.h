@@ -135,6 +135,17 @@ typedef struct {
     int  configured;
     int  closed;
     int  resize_pending;          /* 尺寸/缩放变了，调用方要重建画布并重排 */
+
+    /*
+     * 布局基准（CSS px）与"合成器要求的新尺寸"。
+     *
+     * 关键：`xdg_toplevel.configure` 里的 w/h **必须采纳**。不采纳的话，用户拖动
+     * 窗口边缘时合成器会把我们那张旧尺寸的缓冲区**拉伸**到新窗口上 —— 内容不会
+     * 重排，字还是按旧尺寸排的，看起来就是"糊了"。缓冲区尺寸必须跟着 configure
+     * 走，画面才是 1:1 的点对点。
+     */
+    int32_t css_w, css_h;
+    int32_t next_w, next_h;       /* >0 = 合成器刚给的尺寸，等后端取走 */
     char title[64];
 } QLWlWindow;
 
@@ -173,11 +184,23 @@ static void qlwl_xdg_configure(void *data, struct xdg_surface *s, uint32_t seria
 
 static const struct xdg_surface_listener qlwl_xdg_listener = { .configure = qlwl_xdg_configure };
 
+/*
+ * `width/height` 为 0 表示"你自己定"（首帧就是这种）；>0 是合成器给的窗口尺寸
+ * （用户拖边缘、平铺、最大化都走这里）。
+ *
+ * 必须记下来让后端按它重建缓冲区：只改窗口大小、不换缓冲区 = 合成器拉伸旧图，
+ * 字会糊、布局也不重排。后端取走之后会置 `resize_pending`，调用方据此重排。
+ */
 static void qlwl_toplevel_configure(void *data, struct xdg_toplevel *t, int32_t width,
                                     int32_t height, struct wl_array *states)
 {
-    (void)data; (void)t; (void)width; (void)height; (void)states;
-    /* 尺寸由应用决定（CSS 尺寸固定）；缩放走 wl_output.scale */
+    (void)t; (void)states;
+    QLWlWindow *w = (QLWlWindow *)data;
+    if (width > 0 && height > 0) {
+        w->next_w = width;
+        w->next_h = height;
+        w->resize_pending = 1;
+    }
 }
 
 static void qlwl_toplevel_close(void *data, struct xdg_toplevel *t)
@@ -597,6 +620,31 @@ static QLWL_MAYBE_UNUSED void qlwl_request_frame(QLWlWindow *w)
  * 上一帧还没被合成器呈现时返回 0，调用方**先别提交**、脏区继续攒着；
  * 连续被挡 `QLWL_MAX_STALL` 次就放行一次，免得某个合成器不回帧回调时僵住。
  */
+/*
+ * 取走"合成器要求的新尺寸"。返回 1 表示变了，`cw`/`ch` 是新的 CSS 尺寸。
+ *
+ * 后端拿到之后要：按 `css × scale` 重建缓冲区/EGL 窗口，并置自己的
+ * `resize_pending` 让界面层重排（否则画面还是按旧尺寸排的）。
+ */
+static QLWL_MAYBE_UNUSED int qlwl_take_resize(QLWlWindow *w, int32_t *cw, int32_t *ch)
+{
+    if (w == NULL || w->next_w <= 0 || w->next_h <= 0)
+        return 0;
+    const int32_t nw = w->next_w;
+    const int32_t nh = w->next_h;
+    w->next_w = 0;
+    w->next_h = 0;
+    if (nw == w->css_w && nh == w->css_h)
+        return 0;
+    w->css_w = nw;
+    w->css_h = nh;
+    if (cw != NULL)
+        *cw = nw;
+    if (ch != NULL)
+        *ch = nh;
+    return 1;
+}
+
 static QLWL_MAYBE_UNUSED int qlwl_should_commit(QLWlWindow *w)
 {
     if (w == NULL)
@@ -953,6 +1001,8 @@ static QLWL_MAYBE_UNUSED int qlwl_open(QLWlWindow *w, const char *title, int32_t
     memset(w, 0, sizeof(*w));
     w->clip_pipe = -1;
     w->coord_div_fx = QL_SCALE_ONE;
+    w->css_w = 0;
+    w->css_h = 0;
     w->scale_lock = (scale_override > 0) ? scale_override : 0;
     w->scale = (scale_override > 0) ? scale_override : 1;
     snprintf(w->title, sizeof(w->title), "%s", (title != NULL) ? title : "QLGL");
@@ -1003,6 +1053,16 @@ static QLWL_MAYBE_UNUSED int qlwl_open(QLWlWindow *w, const char *title, int32_t
     }
 
     wl_surface_set_buffer_scale(w->surface, w->scale);
+
+    /*
+     * 调试用：`QLGL_WAYLAND_MAXIMIZE=1` 让合成器把窗口最大化。
+     *
+     * 这是验证"采纳 `xdg_toplevel.configure` 尺寸"那条路最方便的办法 ——
+     * 客户端自己没法改窗口大小，只能请求最大化，让合成器给一个新尺寸过来。
+     * 不采纳的表现是：窗口变大了，但内容还是旧尺寸被拉伸（字糊、不重排）。
+     */
+    if (getenv("QLGL_WAYLAND_MAXIMIZE") != NULL)
+        xdg_toplevel_set_maximized(w->toplevel);
     return 1;
 }
 

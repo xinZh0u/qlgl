@@ -3026,6 +3026,8 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
          * `wl_egl_window` 的尺寸必须是**物理像素**（= CSS × scale）：
          * EGL 在这块缓冲上画，合成器再按 set_buffer_scale 缩回去。
          */
+        g->wl.css_w = (int32_t)width;      /* 布局基准：合成器改尺寸时它会变 */
+        g->wl.css_h = (int32_t)height;
         g->scale_fx = (ql_coord_t)g->wl.scale * QL_SCALE_ONE;
         g->wl_egl = wl_egl_window_create(g->wl.surface,
                                          width * g->wl.scale,
@@ -4097,6 +4099,27 @@ int ql_gfx_gl_poll(QLGfxGL *g)
         if (!qlwl_pump(&g->wl) || g->wl.closed) {
             g->closed = 1;
             return 0;
+        }
+        /*
+         * 合成器要改窗口尺寸（用户拖边缘 / 平铺 / 最大化）：**必须采纳**。
+         *
+         * 只换窗口大小不换缓冲区的话，合成器会把旧尺寸的缓冲拉伸上去 ——
+         * 字变糊、布局也不重排。所以这里按新的 CSS 尺寸重建 `wl_egl_window`
+         * 并让调用方重排一次。
+         */
+        int32_t nw = 0, nh = 0;
+        if (qlwl_take_resize(&g->wl, &nw, &nh)) {
+            g->css_w = (ql_coord_t)nw;
+            g->css_h = (ql_coord_t)nh;
+            g->width = g->css_w * g->wl.scale;
+            g->height = g->css_h * g->wl.scale;
+            if (g->wl_egl != NULL)
+                wl_egl_window_resize(g->wl_egl, g->width, g->height, 0, 0);
+            g->surface_w = g->width;
+            g->surface_h = g->height;
+            g->fbo_fresh = 1;
+            g->ime_x = -1;             /* 尺寸变了，光标位置要重算 */
+            g->resize_pending = 1;
         }
         /*
          * 缩放变了（换显示器 / 改缩放）：CSS 尺寸不变，设备像素尺寸 = CSS × scale
