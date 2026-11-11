@@ -44,6 +44,8 @@
 #define QLWL_MAX_OUTPUTS 4
 /* 连续被节流几次就强提交一次（防某些合成器不回帧回调时界面僵住） */
 #define QLWL_MAX_STALL  3
+/* 最多同时跟踪几根手指（五指的"顺手一按"够用；再多的手势本库不做） */
+#define QLWL_MAX_TOUCH  5
 
 /*
  * 这个头里的函数都是 `static`（两个后端各编译一份），但**不是每个 TU 都用得上**
@@ -77,6 +79,27 @@ typedef struct {
     struct wl_surface    *surface;
     struct xdg_surface   *xdg_surface;
     struct xdg_toplevel  *toplevel;
+
+    /*
+     * 触摸点表：合成器给的是"每根手指一串 down/move/up"，界面层要认双指手势，
+     * 就得知道"现在还有几根手指按着"。没 finger 的相位信息时 `touch_count`
+     * 只能靠这里数。
+     */
+    struct {
+        int32_t id;
+        wl_fixed_t x, y;
+        int     active;
+    } touches[QLWL_MAX_TOUCH];
+    int touch_active_count;
+
+    /*
+     * 逻辑坐标 → 应用坐标的**除数**（26.6 定点，默认 1.0）。
+     *
+     * 合成器给的是 surface 逻辑坐标；应用若做了"页面缩放"（应用层 zoom，
+     * 见 `ql_gfx_gl_set_zoom`），布局基准是 `逻辑尺寸 / zoom`，所以进来就要
+     * 除掉 zoom，界面层才拿得到它自己那套 CSS 坐标。
+     */
+    ql_coord_t coord_div_fx;
 
     /* 输入状态：后端自己维护，控件层不关心 */
     uint8_t    buttons;
@@ -116,6 +139,22 @@ typedef struct {
 } QLWlWindow;
 
 /* ------------------------------ 监听器 ------------------------------ */
+
+/*
+ * surface 逻辑坐标 → 应用坐标（CSS px）。
+ *
+ * 平时两者相同；应用做了**页面缩放**（`ql_gfx_gl_set_zoom`）时，布局基准是
+ * `逻辑尺寸 / zoom`，所以坐标要除掉 zoom 才落在同一套坐标系里。
+ */
+static ql_coord_t qlwl_css_x(const QLWlWindow *w, wl_fixed_t x)
+{
+    const ql_coord_t v = wl_fixed_to_int(x);
+    if (w->coord_div_fx <= 0 || w->coord_div_fx == QL_SCALE_ONE)
+        return v;
+    return (ql_coord_t)(((int64_t)v * QL_SCALE_ONE) / w->coord_div_fx);
+}
+
+
 
 static void qlwl_wm_ping(void *data, struct xdg_wm_base *wm, uint32_t serial)
 {
@@ -220,7 +259,7 @@ static void qlwl_ptr_enter(void *data, struct wl_pointer *p, uint32_t serial,
     QLWlWindow *w = (QLWlWindow *)data;
     w->pointer_x = x;
     w->pointer_y = y;
-    ql_input_push_move(wl_fixed_to_int(x), wl_fixed_to_int(y), w->buttons);
+    ql_input_push_move(qlwl_css_x(w, x), qlwl_css_x(w, y), w->buttons);
 }
 
 static void qlwl_ptr_leave(void *data, struct wl_pointer *p, uint32_t serial,
@@ -237,7 +276,7 @@ static void qlwl_ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
     QLWlWindow *w = (QLWlWindow *)data;
     w->pointer_x = x;
     w->pointer_y = y;
-    ql_input_push_move(wl_fixed_to_int(x), wl_fixed_to_int(y), w->buttons);
+    ql_input_push_move(qlwl_css_x(w, x), qlwl_css_x(w, y), w->buttons);
 }
 
 static void qlwl_ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
@@ -255,7 +294,7 @@ static void qlwl_ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
         w->buttons |= (uint8_t)(1u << btn);
     else
         w->buttons &= (uint8_t)~(1u << btn);
-    ql_input_push_button(wl_fixed_to_int(w->pointer_x), wl_fixed_to_int(w->pointer_y),
+    ql_input_push_button(qlwl_css_x(w, w->pointer_x), qlwl_css_x(w, w->pointer_y),
                          btn, down);
 }
 
@@ -268,7 +307,7 @@ static void qlwl_ptr_axis(void *data, struct wl_pointer *p, uint32_t time,
     const int32_t delta = (int32_t)(wl_fixed_to_double(value) * 20.0);
     const int32_t dx = (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) ? delta : 0;
     const int32_t dy = (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) ? delta : 0;
-    ql_input_push_wheel(wl_fixed_to_int(w->pointer_x), wl_fixed_to_int(w->pointer_y),
+    ql_input_push_wheel(qlwl_css_x(w, w->pointer_x), qlwl_css_x(w, w->pointer_y),
                         dx, dy);
 }
 
@@ -283,40 +322,90 @@ static const struct wl_pointer_listener qlwl_ptr_listener = {
 /* ------------------------------ 触摸 ------------------------------ */
 
 /*
- * 触摸映射成"主键按下 / 移动 / 抬起"：界面层只认指针事件，触摸与鼠标
- * 走同一条路。坐标是 surface 的逻辑坐标（= CSS px），不用换算。
+ * 触摸**原样上报**，不在这里合成指针事件。
+ *
+ * 单指当鼠标、双指捏合，这些是"手势"，要结合界面层才知道按在谁身上、
+ * 该不该认成点击 —— 所以合成放到界面层（`ql_ui_input_event()` 的
+ * `QL_INPUT_TOUCH` 分支）。这一层只负责把每根手指的状态和"手上还按着几根"
+ * 报上去。
  */
+static void qlwl_touch_sync(QLWlWindow *w)
+{
+    int n = 0;
+    for (int i = 0; i < QLWL_MAX_TOUCH; i++)
+        if (w->touches[i].active)
+            n++;
+    w->touch_active_count = n;
+}
+
+static int qlwl_touch_slot(QLWlWindow *w, int32_t id)
+{
+    for (int i = 0; i < QLWL_MAX_TOUCH; i++)
+        if (w->touches[i].active && w->touches[i].id == id)
+            return i;
+    for (int i = 0; i < QLWL_MAX_TOUCH; i++)
+        if (!w->touches[i].active)
+            return i;
+    return -1;
+}
+
+static void qlwl_touch_push(QLWlWindow *w, wl_fixed_t x, wl_fixed_t y, uint8_t phase,
+                            int32_t id)
+{
+    qlwl_touch_sync(w);
+    (void)ql_input_push_touch(qlwl_css_x(w, x), qlwl_css_x(w, y), phase,
+                              (uint8_t)((id < 0) ? 0 : id),
+                              (uint8_t)((w->touch_active_count > 255)
+                                            ? 255 : w->touch_active_count));
+}
+
 static void qlwl_touch_down(void *data, struct wl_touch *t, uint32_t serial,
                             uint32_t time, struct wl_surface *s, int32_t id,
                             wl_fixed_t x, wl_fixed_t y)
 {
-    (void)t; (void)serial; (void)time; (void)s; (void)id;
+    (void)t; (void)time; (void)s;
     QLWlWindow *w = (QLWlWindow *)data;
+    w->last_serial = serial;
+    const int slot = qlwl_touch_slot(w, id);
+    if (slot < 0)
+        return;                    /* 手指数超了：忽略后来的手指 */
+    w->touches[slot].id = id;
+    w->touches[slot].x = x;
+    w->touches[slot].y = y;
+    w->touches[slot].active = 1;
     w->pointer_x = x;
     w->pointer_y = y;
-    w->buttons |= 1u;
-    ql_input_push_move(wl_fixed_to_int(x), wl_fixed_to_int(y), w->buttons);
-    ql_input_push_button(wl_fixed_to_int(x), wl_fixed_to_int(y), 0, 1);
+    qlwl_touch_push(w, x, y, QL_TOUCH_DOWN, id);
 }
 
 static void qlwl_touch_up(void *data, struct wl_touch *t, uint32_t serial,
                           uint32_t time, int32_t id)
 {
-    (void)t; (void)serial; (void)time; (void)id;
+    (void)t; (void)time;
     QLWlWindow *w = (QLWlWindow *)data;
-    ql_input_push_button(wl_fixed_to_int(w->pointer_x), wl_fixed_to_int(w->pointer_y),
-                         0, 0);
-    w->buttons &= (uint8_t)~1u;
+    w->last_serial = serial;
+    const int slot = qlwl_touch_slot(w, id);
+    if (slot < 0)
+        return;
+    const wl_fixed_t x = w->touches[slot].x;
+    const wl_fixed_t y = w->touches[slot].y;
+    w->touches[slot].active = 0;
+    qlwl_touch_push(w, x, y, QL_TOUCH_UP, id);
 }
 
 static void qlwl_touch_motion(void *data, struct wl_touch *t, uint32_t time,
                               int32_t id, wl_fixed_t x, wl_fixed_t y)
 {
-    (void)t; (void)time; (void)id;
+    (void)t; (void)time;
     QLWlWindow *w = (QLWlWindow *)data;
+    const int slot = qlwl_touch_slot(w, id);
+    if (slot < 0)
+        return;
+    w->touches[slot].x = x;
+    w->touches[slot].y = y;
     w->pointer_x = x;
     w->pointer_y = y;
-    ql_input_push_move(wl_fixed_to_int(x), wl_fixed_to_int(y), w->buttons);
+    qlwl_touch_push(w, x, y, QL_TOUCH_MOVE, id);
 }
 
 static void qlwl_touch_frame(void *data, struct wl_touch *t)
@@ -328,10 +417,14 @@ static void qlwl_touch_cancel(void *data, struct wl_touch *t)
 {
     (void)t;
     QLWlWindow *w = (QLWlWindow *)data;
-    if ((w->buttons & 1u) != 0) {
-        ql_input_push_button(wl_fixed_to_int(w->pointer_x),
-                             wl_fixed_to_int(w->pointer_y), 0, 0);
-        w->buttons &= (uint8_t)~1u;
+    for (int i = 0; i < QLWL_MAX_TOUCH; i++) {
+        if (!w->touches[i].active)
+            continue;
+        const wl_fixed_t x = w->touches[i].x;
+        const wl_fixed_t y = w->touches[i].y;
+        const int32_t id = w->touches[i].id;
+        w->touches[i].active = 0;
+        qlwl_touch_push(w, x, y, QL_TOUCH_CANCEL, id);
     }
 }
 
@@ -823,6 +916,7 @@ static QLWL_MAYBE_UNUSED int qlwl_open(QLWlWindow *w, const char *title, int32_t
         return 0;
     memset(w, 0, sizeof(*w));
     w->clip_pipe = -1;
+    w->coord_div_fx = QL_SCALE_ONE;
     w->scale_lock = (scale_override > 0) ? scale_override : 0;
     w->scale = (scale_override > 0) ? scale_override : 1;
     snprintf(w->title, sizeof(w->title), "%s", (title != NULL) ? title : "QLGL");

@@ -245,6 +245,27 @@ static void ex_print_stats(void)
     s_frame_n = 0;
 }
 
+/*
+ * 每帧钩子（窗口模式才调）：给"需要拿到后端句柄"的例程用，比如触摸例程要
+ * 在双指捏合时调 `ql_gfx_gl_set_zoom()` 并重排。
+ *
+ * 返回 1 表示"这一帧要整屏重绘"（缩放变了就必须整屏）。重排由钩子自己做
+ * （它知道布局基准该是多少），这个循环不猜。
+ */
+typedef int (*ex_frame_cb)(QLUIRoot *ui, QLGfxGL *gfx, void *user);
+static ex_frame_cb s_frame_cb;
+static void         *s_frame_user;
+
+/* 大多数例程用不到钩子；挂着 unused 免得严格构建报 unused-function */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
+static void ex_set_frame_cb(ex_frame_cb cb, void *user)
+{
+    s_frame_cb = cb;
+    s_frame_user = user;
+}
+
 static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                   char **argv)
 {
@@ -347,6 +368,8 @@ static int ex_run(QLUIRoot *ui, int w, int h, const char *title, int argc,
                     ql_gfx_gl_set_ime_spot(gfx, sx, sy, sh);
             }
             const uint32_t moving = ql_ui_anim_tick(ui, ql_anim_now_ms());
+            if (s_frame_cb != NULL && s_frame_cb(ui, gfx, s_frame_user))
+                need_full = 1;
 
             QLRect areas[16];
             int n = ql_ui_consume_dirty(ui, areas, 16);

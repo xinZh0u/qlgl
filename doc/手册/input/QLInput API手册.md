@@ -95,6 +95,7 @@ typedef struct {
 | `QL_INPUT_POINTER_UP` | 按钮抬起 |
 | `QL_INPUT_POINTER_LEAVE` | 指针离开窗口表面 |
 | `QL_INPUT_WHEEL` | 滚轮 / 触控板滚动 |
+| `QL_INPUT_TOUCH` | 触摸点（`button` 里放相位 `QL_TOUCH_DOWN/MOVE/UP/CANCEL`，另带 `touch_id` / `touch_count`） |
 | `QL_INPUT_KEY_DOWN` / `QL_INPUT_KEY_UP` | 键盘 |
 | `QL_INPUT_TEXT` | 已翻译好的 UTF-8 字符 |
 
@@ -146,7 +147,13 @@ ql_err_t ql_input_push_leave(void);
 ql_err_t ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy);
 ql_err_t ql_input_push_key(uint32_t key, int down, uint8_t mods);
 ql_err_t ql_input_push_text(const char *utf8);
+ql_err_t ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+                            uint8_t touch_id, uint8_t touch_count);
 ```
+
+> **触摸不走指针事件**：后端只报"哪根手指、在哪儿、手上还有几根"，
+> 单指当鼠标 / 单指拖滚动 / 双指捏合这些手势在界面层认
+> （见《QLUI API 手册》"触摸手势"与教程 `26_touch.md`）。
 
 > 这些函数**只入队不派发**。要在测试里立刻看到效果，记得跟一句 `ql_input_dispatch()`。
 

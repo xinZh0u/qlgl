@@ -1,0 +1,32 @@
+<div id="root">
+  <div class="bar">
+    <div class="title">触摸例程</div>
+    <div class="zoom" id="zoom">100%</div>
+  </div>
+
+  <div class="body">
+    <div class="pad" id="pad">
+      <div class="pad-main">点我</div>
+      <div class="pad-sub" id="cnt">点按 0 次</div>
+    </div>
+
+    <div class="hint">单指拖列表 → 滚动<br>双指捏合 → 缩放整页<br>（桌面用滚轮 / 拖滚动条）</div>
+
+    <div class="list" id="list">
+      <div class="row"><span class="n">01</span>手指按住列表往上推</div>
+      <div class="row"><span class="n">02</span>松手不算点击</div>
+      <div class="row"><span class="n">03</span>两指间距变大 = 放大</div>
+      <div class="row"><span class="n">04</span>两指间距变小 = 缩小</div>
+      <div class="row"><span class="n">05</span>缩放范围 50% ~ 300%</div>
+      <div class="row"><span class="n">06</span>捏合会作废单指那次按下</div>
+      <div class="row"><span class="n">07</span>所以不会误触发点击</div>
+      <div class="row"><span class="n">08</span>缩放时布局按 窗口 / zoom</div>
+      <div class="row"><span class="n">09</span>输入坐标后端已除掉 zoom</div>
+      <div class="row"><span class="n">10</span>行高 44px，够手指点</div>
+      <div class="row"><span class="n">11</span>拖动用的是"按下点+总位移"</div>
+      <div class="row"><span class="n">12</span>滑到这里说明真滚动了</div>
+    </div>
+  </div>
+
+  <div class="status" id="status">等待触摸或鼠标…</div>
+</div>

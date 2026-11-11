@@ -315,6 +315,20 @@
 #define QL_CFG_UI_WHEEL_STEP_PX      50
 #endif
 
+/*
+ * 触摸手势。
+ *
+ * `QL_CFG_UI_TOUCH_MAX`：同时跟踪几根手指（界面层在 `<input>` 上算捏合时用）。
+ * `QL_CFG_UI_TOUCH_SLOP`：手指移动多少像素才算"拖动"而不是"点按" ——
+ * 手指没有鼠标那么准，浏览器用 8~10px，这里取 8。
+ */
+#ifndef QL_CFG_UI_TOUCH_MAX
+#define QL_CFG_UI_TOUCH_MAX          5
+#endif
+#ifndef QL_CFG_UI_TOUCH_SLOP
+#define QL_CFG_UI_TOUCH_SLOP         8
+#endif
+
 #ifndef QL_CFG_UI_TEXTAREA_LEN
 #define QL_CFG_UI_TEXTAREA_LEN      512
 #endif

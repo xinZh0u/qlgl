@@ -189,6 +189,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='../../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2214,6 +2215,9 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 
 <p>只允许改"没有子节点的元素"的文本。改完需要重新 <code>ql_ui_layout</code> + <code>ql_ui_render</code>。</p>
 <blockquote>
+<p><strong>字符串不复制</strong>：<code>text</code> 的指针直接存进节点，必须<strong>一直有效</strong>（字面量 / 静态缓冲 /
+自己管理生命周期）。传栈上局部数组会画出乱码 —— 指针悬空之后读到的就是别人的栈。
+本库零分配是刻意的。</p>
 <p><strong>不支持</strong>运行期改样式类、增删节点。页面结构在构建期固定。</p>
 </blockquote>
 <h3 id="_3">交互</h3>
@@ -2256,7 +2260,81 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <p>注意：状态位<strong>会影响绘制</strong>（<code>:hover</code>/<code>:active</code>/<code>:focus</code> 有独立样式），但<strong>不影响布局</strong>（M1 限制），
 需要高亮请在 <code>click</code> 回调或渲染后自行处理。</p>
 </blockquote>
-<h3 id="_4">输入框</h3>
+<h3 id="_4">触摸手势</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 前端（平台后端）只管上报；手势在界面层认 */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_touch</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">phase</span><span class="p">,</span>
+<span class="w">                             </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">touch_id</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">touch_count</span><span class="p">);</span>
+
+<span class="cm">/* 相位（放在 QLInputEvent.button 里） */</span>
+<span class="n">QL_TOUCH_DOWN</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_TOUCH_MOVE</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_TOUCH_UP</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">QL_TOUCH_CANCEL</span>
+
+<span class="cm">/* 双指捏合 */</span>
+<span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">QL_UI_PINCH_BEGIN</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_PINCH_UPDATE</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_PINCH_END</span><span class="w"> </span><span class="p">};</span>
+<span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_ui_pinch_cb</span><span class="p">)(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">cx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">cy</span><span class="p">,</span>
+<span class="w">                               </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">scale_fx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">phase</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_set_pinch_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_pinch_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>默认</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_UI_TOUCH_MAX</code></td>
+<td>5</td>
+<td>同时跟踪几根手指</td>
+</tr>
+<tr>
+<td><code>QL_CFG_UI_TOUCH_SLOP</code></td>
+<td>8</td>
+<td>移动多少像素才算"拖动"而不是"点按"</td>
+</tr>
+</tbody>
+</table>
+<p>界面层认的手势（<strong>后端什么都不用管</strong>）：</p>
+<table>
+<thead>
+<tr>
+<th>手势</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单指按下 → 抬起（位移 &lt; slop）</td>
+<td>等同鼠标点按，合成一次 <code>click</code></td>
+</tr>
+<tr>
+<td>单指在可滚动容器里移动 ≥ slop</td>
+<td>拖内容滚动，<strong>不</strong>合成 <code>click</code>（手机没有滚轮）</td>
+</tr>
+<tr>
+<td>第二根手指落下</td>
+<td>作废那次按下（清 <code>:active</code>、无 <code>click</code>），转入捏合</td>
+</tr>
+<tr>
+<td>两指移动</td>
+<td><code>QL_UI_PINCH_UPDATE</code>，<code>scale_fx</code> = 当前间距 / 手势开始时的间距（26.6 定点）</td>
+</tr>
+<tr>
+<td>抬起一根手指</td>
+<td><code>QL_UI_PINCH_END</code>；<strong>剩下的手指不再当鼠标</strong>，直到全部抬起</td>
+</tr>
+<tr>
+<td>合成器 <code>cancel</code></td>
+<td>当抬起处理（不合成点击）</td>
+</tr>
+</tbody>
+</table>
+<p>库只给"倍数"，<strong>缩放什么由应用决定</strong>：要缩放整页就用
+<code>ql_gfx_gl_set_zoom()</code>（见《QLRender 阅读指南》§10.7.3），要缩放某个元素就自己换算。
+完整例子见 <code>example/37_touch</code> 与教程 <code>26_touch.md</code>。</p>
+<h3 id="_5">输入框</h3>
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_ui_input_cb</span><span class="p">)(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span>
 <span class="w">                               </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">value</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
 
@@ -2290,7 +2368,7 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <p>编辑能力：点击定位、拖动选字、<code>Backspace</code>/<code>Delete</code>、<code>←</code>/<code>→</code>/<code>Home</code>/<code>End</code>、
 <code>Shift+方向</code> 扩展选区、<code>QL_INPUT_TEXT</code> 插入、<code>Esc</code> 收焦点。
 <strong>没有剪贴板、没有 IME、光标不闪。</strong></p>
-<h3 id="_5">进度条 / 度量条</h3>
+<h3 id="_6">进度条 / 度量条</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_progress_permille</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_progress_set</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">value</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">max</span><span class="p">);</span>
 </code></pre></div>
@@ -2591,14 +2669,14 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 
 <p>打开时：居中、视口压暗、点遮罩或 <code>Esc</code> 关闭。同一时刻只认<strong>最后打开</strong>的那个。
 <code>ql_ui_paint_bounds</code> 在浮层打开时返回整个视口（遮罩要盖满，脏区重绘才不会漏）。</p>
-<h3 id="_6">折叠面板</h3>
+<h3 id="_7">折叠面板</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_details_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_details_set_open</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">open</span><span class="p">);</span>
 </code></pre></div>
 
 <p><code>&lt;details&gt;</code> 收起时把非 <code>&lt;summary&gt;</code> 的子节点指向共享隐藏样式（<code>display:none</code>）。
 <code>set_open</code> 会重排（高度变了）；状态没变时是空操作。点 <code>&lt;summary&gt;</code> 也会切换。</p>
-<h3 id="_7">下拉框</h3>
+<h3 id="_8">下拉框</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">     </span><span class="nf">ql_ui_set_select_cb</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_input_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_select_index</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_select_set_index</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
@@ -2628,7 +2706,7 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 </table>
 <p>面板是<strong>覆盖层</strong>：不占布局、不受父级 <code>overflow</code> 裁剪、同一时刻只开一个。
 键盘：<code>↑</code>/<code>↓</code> 改选中，<code>空格</code>/<code>回车</code> 展开收起。</p>
-<h3 id="_8">滚动</h3>
+<h3 id="_9">滚动</h3>
 <div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_scroll_to</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_scroll_by</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">dy</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">      </span><span class="nf">ql_ui_scrollable</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
@@ -2648,7 +2726,7 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 与 Firefox 同量级；Chrome 是 100px）。想更快/更慢改这一个宏。</p>
 <p>滚到头之后<strong>继续往上滚父级容器</strong>（最多 8 层），与浏览器一致：
 内层列表到底了，整页接着滚。</p>
-<h3 id="_9">焦点</h3>
+<h3 id="_10">焦点</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w">        </span><span class="nf">ql_ui_set_focus_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 <span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_focus_node</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
 
@@ -2660,7 +2738,7 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 
 <p><code>Tab</code> / <code>Shift+Tab</code> 在 <code>input</code> / <code>textarea</code> / <code>select</code> / <code>button</code> 之间按树序循环。
 焦点只点亮 <code>QL_UI_RT_FOCUS</code>（<code>:focus</code> 样式靠它），<strong>不影响布局</strong>。</p>
-<h3 id="_10">剪贴板</h3>
+<h3 id="_11">剪贴板</h3>
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_text</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">utf8</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
 <span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">get_text</span><span class="p">)(</span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">cap</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 0 = 还没到 */</span>
@@ -2678,7 +2756,7 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 所以第一次可能返回 0 —— 界面层会记住这次粘贴，在下一帧的 <code>ql_ui_anim_tick()</code> 里重试。
 主循环只要照常每帧调 <code>ql_ui_anim_tick()</code> 就行。</p>
 <p>X11 的后端已经接好：<code>ql_gfx_gl_attach_clipboard(gfx, ui)</code>（拿到 GL 窗口之后调一次）。</p>
-<h3 id="_11">接上输入系统</h3>
+<h3 id="_12">接上输入系统</h3>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_attach_input</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 主循环里只调 ql_input_dispatch() 即可 */</span>
 <span class="kt">void</span><span class="w"> </span><span class="nf">ql_ui_detach_input</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
 </code></pre></div>

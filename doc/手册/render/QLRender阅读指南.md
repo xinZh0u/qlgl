@@ -426,6 +426,36 @@ QLGL_GL_BACKEND=wayland ./build/example/example_02_text --frames 30 --stats
 > 拿到的才是真的这一帧。设备像素尺寸用 `ql_gfx_gl_device_size()`
 > （`ql_gfx_gl_size()` 给的是 CSS px，高 DPI 下两者不等）。
 
+### 10.7.3 应用级缩放（`ql_gfx_gl_set_zoom`）：双指捏合的落点
+
+DPR（`scale_fx`）管的是"帧缓冲多大"；**应用缩放**（`zoom_fx`）管的是"同样的缓冲里
+内容画多大"。两者相乘才是 CSS px → 设备像素的系数（内部叫 `dscale()`）。
+
+```c
+ql_gfx_gl_set_zoom(gfx, QL_SCALE_ONE * 3 / 2);   /* 150% */
+ql_ui_layout(ui, win_w * QL_SCALE_ONE / z, win_h * QL_SCALE_ONE / z);
+```
+
+约定三条：
+
+1. **布局基准 = 窗口 / zoom**（`ql_gfx_gl_window_size()` 拿窗口逻辑尺寸，
+   `ql_gfx_gl_size()` 给的已经是除过 zoom 的值）；
+2. **输入坐标后端负责换算**：X11 按 `设备像素 / (DPR×zoom)`，Wayland 外壳按
+   `逻辑坐标 / zoom` —— 界面层只会看到自己那套 CSS 坐标；
+3. 改完 zoom 内部会把保留模式画布作废（`fbo_fresh`），调用方整屏重绘一帧即可。
+
+为什么这么做而不是"改字号/改宽度"：那要重解析 CSS、重算 em/rem，而且文字会重排；
+按缩放系数画是纯几何的，只重排一次布局基准，字形还按新尺寸重新取字体（放大后是清晰的）。
+
+| 抓图相关 | 用途 |
+|---|---|
+| `ql_gfx_gl_device_size()` | 帧缓冲**设备像素**尺寸（抓图/stride 用它） |
+| `ql_gfx_gl_window_size()` | 窗口**逻辑**尺寸（不含 zoom，算布局基准用它） |
+| `ql_gfx_gl_size()` | 当前布局基准（已经是 `窗口 / zoom`） |
+| `ql_gfx_gl_flush_frame()` | 落盘但**不交换**：抓图必须在这一步之后、`end()` 之前 |
+
+验证：`example/37_touch --zoom 150` 抓窗口帧，X11 与 Wayland 两个 GPU 后端逐字节相同。
+
 验证：`test_wayland`（`QLGL_TEST_WAYLAND=1`）在 1x/2x 两种缩放下断言
 "设备像素 = CSS × scale"以及"10 CSS px 的红方块正好覆盖 10×scale 个设备像素"；
 同一界面在 X11 与 Wayland 两个 GPU 后端抓窗口帧**逐字节相同**，

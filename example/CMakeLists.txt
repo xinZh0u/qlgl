@@ -60,6 +60,7 @@ set(QL_EXAMPLES
     34_columns
     35_text_stack
     36_clip_filter
+    37_touch
 )
 
 foreach(e ${QL_EXAMPLES})

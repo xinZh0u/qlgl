@@ -23,7 +23,8 @@ static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
     if (node->src == NULL || node->src->tag != QL_UI_TAG_DIV)
         return;                             /* 只关心按钮那一层 */
     s_clicks++;
-    char buf[64];
+    /* `ql_ui_set_text()` **不复制**字符串：缓冲必须一直有效（栈上局部会变乱码） */
+    static char buf[64];
     snprintf(buf, sizeof(buf), "点击次数：%d", s_clicks);
     ql_ui_set_text(s_ui, s_log, buf);       /* 改文本会顺带标脏 */
     printf("%s\n", buf);

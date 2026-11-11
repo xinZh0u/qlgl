@@ -276,4 +276,42 @@ QL_TEST_BEGIN("test_scroll")
         }
     }
 
+    /* ---------- 11. flex 里的滚动容器：滚动位置不能被测量过程清掉 ---------- */
+    {
+        /*
+         * 手机布局几乎都是"flex 列 + 中间列表 flex:1 + overflow:auto"。
+         * flex 会**先测量**每一项的主轴尺寸（临时高度），测量那几轮的可滚范围
+         * 还是 0 或很小 —— 如果那时按临时值夹一次滚动偏移，用户的滚动位置就
+         * 变回 0 了。现象：列表滚不动（拖/滚轮都白费）。
+         */
+        const char *html =
+            "<div id=r><div class=sc><div class=i>1</div><div class=i>2</div>"
+            "<div class=i>3</div><div class=i>4</div><div class=i>5</div>"
+            "<div class=i>6</div></div></div>";
+        const char *css = "#r { width: 120px; height: 100px; display: flex;"
+                          "     flex-direction: column; }"
+                          ".sc { width: 120px; flex: 1 1 0; overflow-y: auto; }"
+                          ".i { width: 120px; height: 40px; background-color: #334455; }";
+        QLUIDoc *doc = ql_ui_load_text(html, css);
+        QL_CHECK(doc != NULL);
+        if (doc != NULL) {
+            QLUIRoot *ui = ql_ui_build(doc);
+            ql_ui_layout(ui, W, H);
+            QLUINodeRT *sc = &ui->nodes[1];
+            QL_CHECK(ql_ui_scrollable(sc));
+            QL_CHECK(sc->scroll_max_y > 0);
+
+            QL_CHECK_EQ(ql_ui_scroll_by(ui, sc, 0, 60), QL_OK);
+            const ql_coord_t y1 = sc->scroll_y;
+            QL_CHECK_EQ((int)y1, 60);
+
+            /* 再排一次（= 每帧/每次脏区重排都会做的事）：位置必须还在 */
+            ql_ui_layout(ui, W, H);
+            QL_CHECK_EQ((int)sc->scroll_y, (int)y1);
+
+            ql_ui_free(ui);
+            ql_ui_doc_free(doc);
+        }
+    }
+
 QL_TEST_END()

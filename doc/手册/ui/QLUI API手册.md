@@ -1258,6 +1258,10 @@ ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 
 只允许改"没有子节点的元素"的文本。改完需要重新 `ql_ui_layout` + `ql_ui_render`。
 
+> **字符串不复制**：`text` 的指针直接存进节点，必须**一直有效**（字面量 / 静态缓冲 /
+> 自己管理生命周期）。传栈上局部数组会画出乱码 —— 指针悬空之后读到的就是别人的栈。
+> 本库零分配是刻意的。
+
 > **不支持**运行期改样式类、增删节点。页面结构在构建期固定。
 
 ### 交互
@@ -1281,6 +1285,43 @@ int  ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 
 > 注意：状态位**会影响绘制**（`:hover`/`:active`/`:focus` 有独立样式），但**不影响布局**（M1 限制），
 > 需要高亮请在 `click` 回调或渲染后自行处理。
+
+### 触摸手势
+
+```c
+/* 前端（平台后端）只管上报；手势在界面层认 */
+ql_err_t ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+                             uint8_t touch_id, uint8_t touch_count);
+
+/* 相位（放在 QLInputEvent.button 里） */
+QL_TOUCH_DOWN / QL_TOUCH_MOVE / QL_TOUCH_UP / QL_TOUCH_CANCEL
+
+/* 双指捏合 */
+enum { QL_UI_PINCH_BEGIN, QL_UI_PINCH_UPDATE, QL_UI_PINCH_END };
+typedef void (*ql_ui_pinch_cb)(QLUIRoot *ui, ql_coord_t cx, ql_coord_t cy,
+                               ql_coord_t scale_fx, int phase, void *user);
+void ql_ui_set_pinch_cb(QLUIRoot *ui, ql_ui_pinch_cb cb, void *user);
+```
+
+| 配置 | 默认 | 含义 |
+|---|---|---|
+| `QL_CFG_UI_TOUCH_MAX` | 5 | 同时跟踪几根手指 |
+| `QL_CFG_UI_TOUCH_SLOP` | 8 | 移动多少像素才算"拖动"而不是"点按" |
+
+界面层认的手势（**后端什么都不用管**）：
+
+| 手势 | 行为 |
+|---|---|
+| 单指按下 → 抬起（位移 < slop） | 等同鼠标点按，合成一次 `click` |
+| 单指在可滚动容器里移动 ≥ slop | 拖内容滚动，**不**合成 `click`（手机没有滚轮） |
+| 第二根手指落下 | 作废那次按下（清 `:active`、无 `click`），转入捏合 |
+| 两指移动 | `QL_UI_PINCH_UPDATE`，`scale_fx` = 当前间距 / 手势开始时的间距（26.6 定点） |
+| 抬起一根手指 | `QL_UI_PINCH_END`；**剩下的手指不再当鼠标**，直到全部抬起 |
+| 合成器 `cancel` | 当抬起处理（不合成点击） |
+
+库只给"倍数"，**缩放什么由应用决定**：要缩放整页就用
+`ql_gfx_gl_set_zoom()`（见《QLRender 阅读指南》§10.7.3），要缩放某个元素就自己换算。
+完整例子见 `example/37_touch` 与教程 `26_touch.md`。
 
 ### 输入框
 

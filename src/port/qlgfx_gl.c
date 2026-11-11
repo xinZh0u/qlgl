@@ -175,6 +175,12 @@ struct QLGfxGL {
     ql_coord_t       width, height;   /* 设备像素（framebuffer 尺寸） */
     ql_coord_t       scale_fx;        /* CSS px → 设备像素，26.6 定点 */
     ql_coord_t       css_w, css_h;    /* 逻辑尺寸（Wayland 缩放变化时据此重算设备像素） */
+    /*
+     * 应用级缩放（"页面缩放"，双指捏合那种）。与 `scale_fx` 分开：
+     * 那个是 DPR（决定**缓冲区多大**），这个是"内容画多大"（缓冲区不变）。
+     * 布局基准要自己按 `CSS 尺寸 = 窗口 / zoom` 算，见 `ql_gfx_gl_set_zoom()`。
+     */
+    ql_coord_t       zoom_fx;
 
 
     GLuint           program;
@@ -311,6 +317,21 @@ struct QLGfxGL {
     GLint            u_pn;      /* int：多边形遮罩顶点数（< 3 = 关闭） */
     GLint            u_p;       /* vec2[N]：多边形顶点（设备像素） */
 };
+/*
+ * 绘制用的缩放 = DPR × 页面 zoom。
+ *
+ * 缓冲区尺寸只看 `scale_fx`（DPR）；内容画多大还要乘 zoom。所有"CSS px → 设备
+ * 像素"的换算都走这个，别直接用 `g->scale_fx`（除非在算缓冲区大小）。
+ */
+static inline ql_coord_t dscale(const QLGfxGL *g)
+{
+    const ql_coord_t dpr = (g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE;
+    const ql_coord_t z = (g->zoom_fx > 0) ? g->zoom_fx : QL_SCALE_ONE;
+    return (z == QL_SCALE_ONE) ? dpr
+                               : (ql_coord_t)(((int64_t)dpr * z) / QL_SCALE_ONE);
+}
+
+
 
 
 /* EWMH 的 UTF-8 标题（WM_NAME 是 latin-1 语义，中文会变乱码），与 qldisp_x11.c 同一做法 */
@@ -921,13 +942,13 @@ static int clip_quad(QLGfxGL *g, float bx0, float by0, float bx1, float by1,
  */
 static inline float off_x_of(QLGfxGL *g)
 {
-    return (float)((int64_t)g->draw.offset_x_fx * (int64_t)g->scale_fx) /
+    return (float)((int64_t)g->draw.offset_x_fx * (int64_t)dscale(g)) /
            (float)(QL_FX_ONE * QL_SCALE_ONE);
 }
 
 static inline float off_y_of(QLGfxGL *g)
 {
-    return (float)((int64_t)g->draw.offset_y_fx * (int64_t)g->scale_fx) /
+    return (float)((int64_t)g->draw.offset_y_fx * (int64_t)dscale(g)) /
            (float)(QL_FX_ONE * QL_SCALE_ONE);
 }
 
@@ -1446,14 +1467,16 @@ static inline QLRect elem_rect_gl(QLGfxGL *g, QLRect r)
 static inline QLRect gsx(QLGfxGL *g, QLRect r)
 {
     r = elem_rect_gl(g, r);
-    return (g->scale_fx == QL_SCALE_ONE) ? r : ql_scale_rect(r, g->scale_fx);
+    const ql_coord_t sc = dscale(g);
+    return (sc == QL_SCALE_ONE) ? r : ql_scale_rect(r, sc);
 }
 
 static inline ql_coord_t gsl(QLGfxGL *g, ql_coord_t v)
 {
     if (!elem_identity_gl(g))
         v = (ql_coord_t)((int64_t)v * elem_len_fx_gl(g) / QL_SCALE_ONE);
-    return (g->scale_fx == QL_SCALE_ONE) ? v : ql_scale_len(v, g->scale_fx);
+    const ql_coord_t sc = dscale(g);
+    return (sc == QL_SCALE_ONE) ? v : ql_scale_len(v, sc);
 }
 
 static void gl_set_clip(QLDraw2D *self, QLRect clip)
@@ -2046,7 +2069,7 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
      * 只有"等比 + 正 + 真拿到了另一个字号的字体"才走换字号，否则逐字形几何变换。
      */
     const ql_coord_t font_fx =
-        (ql_coord_t)((int64_t)g->scale_fx * elem_len_fx_gl(g) / QL_SCALE_ONE);
+        (ql_coord_t)((int64_t)dscale(g) * elem_len_fx_gl(g) / QL_SCALE_ONE);
     const int uniform_pos = (g->draw.elem_x_fx > 0 &&
                              g->draw.elem_x_fx == g->draw.elem_y_fx);
     const QLFont *scaled = ql_draw2d_device_font(font, font_fx);
@@ -2054,25 +2077,25 @@ static void gl_draw_text(QLDraw2D *self, const QLFont *font, const char *text, i
     const QLFont *dev = crisp ? scaled : font;
     g->draw.text_geo = (!crisp && (g->draw.elem_x_fx != QL_SCALE_ONE ||
                                    g->draw.elem_y_fx != QL_SCALE_ONE));
-    g->draw.text_px = (g->scale_fx != QL_SCALE_ONE)
-                          ? ql_scale_len(g->draw.elem_px, g->scale_fx)
+    g->draw.text_px = (dscale(g) != QL_SCALE_ONE)
+                          ? ql_scale_len(g->draw.elem_px, dscale(g))
                           : g->draw.elem_px;
-    g->draw.text_py = (g->scale_fx != QL_SCALE_ONE)
-                          ? ql_scale_len(g->draw.elem_py, g->scale_fx)
+    g->draw.text_py = (dscale(g) != QL_SCALE_ONE)
+                          ? ql_scale_len(g->draw.elem_py, dscale(g))
                           : g->draw.elem_py;
     /* 排版在设备像素里进行：字形位图与 quad 是一一对应的，不能再缩放 */
     /* 行高是 CSS px；排版在设备像素里做，所以按同样的比例换算 */
     QLTextStyle local = *ts;
     /* 行高按**垂直轴**缩放，理由见 qldraw2d.c 的 cpu_draw_text */
     const ql_coord_t vert_fx =
-        (crisp) ? (ql_coord_t)((int64_t)g->scale_fx * g->draw.elem_y_fx / QL_SCALE_ONE)
-                : g->scale_fx;
+        (crisp) ? (ql_coord_t)((int64_t)dscale(g) * g->draw.elem_y_fx / QL_SCALE_ONE)
+                : dscale(g);
     if (local.line_h > 0)
         local.line_h = ql_scale_len(local.line_h, vert_fx);
 
     QLRect tb = crisp ? gsx(g, box)
-                      : ((g->scale_fx == QL_SCALE_ONE) ? box
-                                                       : ql_scale_rect(box, g->scale_fx));
+                      : ((dscale(g) == QL_SCALE_ONE) ? box
+                                                     : ql_scale_rect(box, dscale(g)));
     ql_draw2d_text_layout(self, dev, text, len, tb, &local, gl_emit_glyph);
 }
 
@@ -2577,7 +2600,7 @@ static GLuint layer_mask_tex(QLGfxGL *g, int i, const QLImage *m)
 static QLRect gl_layer_dev_rect(QLGfxGL *g, QLRect bounds)
 {
     const QLRect e = elem_rect_gl(g, bounds);
-    const ql_coord_t scale = (g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE;
+    const ql_coord_t scale = dscale(g);
     const int64_t ax = (int64_t)e.x * QL_FX_ONE + g->draw.offset_x_fx;
     const int64_t ay = (int64_t)e.y * QL_FX_ONE + g->draw.offset_y_fx;
     const int64_t bx = (int64_t)(e.x + e.w) * QL_FX_ONE + g->draw.offset_x_fx;
@@ -2638,10 +2661,8 @@ static int gl_layer_begin(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx *
     g->height = dev.h;
     g->clip = ql_rect_make(0, 0, dev.w, dev.h);
     g->clip_active = 0;
-    self->offset_x_fx -= (ql_coord_t)(((int64_t)dev.x * QL_FX_ONE * QL_FX_ONE) /
-                                     ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
-    self->offset_y_fx -= (ql_coord_t)(((int64_t)dev.y * QL_FX_ONE * QL_FX_ONE) /
-                                     ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
+    self->offset_x_fx -= (ql_coord_t)(((int64_t)dev.x * QL_FX_ONE * QL_FX_ONE) / dscale(g));
+    self->offset_y_fx -= (ql_coord_t)(((int64_t)dev.y * QL_FX_ONE * QL_FX_ONE) / dscale(g));
     g->layer_depth++;
     return 1;
 }
@@ -2769,8 +2790,7 @@ static void gl_layer_draw(QLGfxGL *g, int i, int pass, GLuint tex, GLuint blur_t
              * 要乘 dpr（等比缩放与线性变换可交换）。
              * 四边形仍是平行四边形，所以 uv 在它上面的双线性插值 = 精确的仿射映射。
              */
-            const float dpr = (g->scale_fx > 0) ? (float)g->scale_fx / (float)QL_SCALE_ONE
-                                                : 1.0f;
+            const float dpr = (float)dscale(g) / (float)QL_SCALE_ONE;
             const float ma = (float)fx->mat[0] / (float)QL_FX_ONE;
             const float mb = (float)fx->mat[1] / (float)QL_FX_ONE;
             const float mc = (float)fx->mat[2] / (float)QL_FX_ONE;
@@ -2827,10 +2847,8 @@ static int gl_layer_end(QLDraw2D *self)
     g->clip = L->saved_clip;
     g->clip_active = L->saved_clip_active;
     glViewport(0, 0, (GLsizei)g->width, (GLsizei)g->height);
-    self->offset_x_fx += (ql_coord_t)(((int64_t)L->dev.x * QL_FX_ONE * QL_FX_ONE) /
-                                      ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
-    self->offset_y_fx += (ql_coord_t)(((int64_t)L->dev.y * QL_FX_ONE * QL_FX_ONE) /
-                                      ((g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE));
+    self->offset_x_fx += (ql_coord_t)(((int64_t)L->dev.x * QL_FX_ONE * QL_FX_ONE) / dscale(g));
+    self->offset_y_fx += (ql_coord_t)(((int64_t)L->dev.y * QL_FX_ONE * QL_FX_ONE) / dscale(g));
     glEnable(GL_SCISSOR_TEST);
     if (g->clip_active)
         glScissor((int)g->clip.x, (int)(g->height - ql_rect_bottom(g->clip)),
@@ -2941,6 +2959,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->css_w = width;
     g->css_h = height;
     g->scale_fx = QL_SCALE_ONE;
+    g->zoom_fx = QL_SCALE_ONE;
     g->offscreen = (flags & QL_GFX_GL_OFFSCREEN) ? 1 : 0;
     g->mask_rx = -1.0f;
     g->mask_ry = -1.0f;
@@ -3440,7 +3459,7 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     g->draw.draw_text = gl_draw_text;
     g->draw.blit_image = gl_blit_image;
     g->draw.flush = NULL;
-    g->draw.scale_fx = g->scale_fx;
+    g->draw.scale_fx = dscale(g);
     g->draw.alpha = 255;       /* 整体透明度默认不透明 */
     g->draw.offset_x_fx = 0;
     g->draw.offset_y_fx = 0;
@@ -3459,7 +3478,31 @@ void ql_gfx_gl_set_scale(QLGfxGL *gfx, ql_coord_t scale_fx)
     if (gfx == NULL)
         return;
     gfx->scale_fx = (scale_fx > 0) ? scale_fx : QL_SCALE_ONE;
-    gfx->draw.scale_fx = gfx->scale_fx;
+    gfx->draw.scale_fx = dscale(gfx);
+}
+
+void ql_gfx_gl_set_zoom(QLGfxGL *gfx, ql_coord_t zoom_fx)
+{
+    if (gfx == NULL)
+        return;
+    gfx->zoom_fx = (zoom_fx > 0) ? zoom_fx : QL_SCALE_ONE;
+    gfx->draw.scale_fx = dscale(gfx);
+    /* 保留模式的画布老内容是按旧比例画的，整块作废 */
+    gfx->fbo_fresh = 1;
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    if (gfx->use_wayland) {
+        /*
+         * Wayland 给的是 surface 逻辑坐标（= 窗口 CSS px），而布局基准是
+         * `窗口 / zoom`，所以要让外壳把坐标除掉 zoom。
+         */
+        gfx->wl.coord_div_fx = gfx->zoom_fx;
+    }
+#endif
+}
+
+ql_coord_t ql_gfx_gl_zoom(const QLGfxGL *gfx)
+{
+    return (gfx != NULL && gfx->zoom_fx > 0) ? gfx->zoom_fx : QL_SCALE_ONE;
 }
 
 QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx)
@@ -4151,7 +4194,8 @@ int ql_gfx_gl_poll(QLGfxGL *g)
         default:
             if (ql_x11_clip_handle_event(&ev))
                 break;                 /* 剪贴板协议事件 */
-            ql_x11_push_input_scaled(&ev, &g->buttons, g->scale_fx, g->xic);
+            /* 设备 px → 应用 CSS：除的是 DPR × zoom（zoom 时布局基准变小） */
+            ql_x11_push_input_scaled(&ev, &g->buttons, dscale(g), g->xic);
             break;
         }
     }
@@ -4428,12 +4472,9 @@ void ql_gfx_gl_size(const QLGfxGL *g, ql_coord_t *out_w, ql_coord_t *out_h)
     ql_coord_t w = 0, h = 0;
     if (g != NULL)
     {
-        w = (g->scale_fx > 0 && g->scale_fx != QL_SCALE_ONE)
-                ? ql_unscale_len(g->width, g->scale_fx)
-                : g->width;
-        h = (g->scale_fx > 0 && g->scale_fx != QL_SCALE_ONE)
-                ? ql_unscale_len(g->height, g->scale_fx)
-                : g->height;
+        const ql_coord_t sc = dscale(g);
+        w = (sc != QL_SCALE_ONE) ? ql_unscale_len(g->width, sc) : g->width;
+        h = (sc != QL_SCALE_ONE) ? ql_unscale_len(g->height, sc) : g->height;
     }
     if (out_w != NULL)
         *out_w = w;
@@ -4447,6 +4488,19 @@ void ql_gfx_gl_device_size(const QLGfxGL *g, ql_coord_t *out_w, ql_coord_t *out_
         *out_w = (g != NULL) ? g->width : 0;
     if (out_h != NULL)
         *out_h = (g != NULL) ? g->height : 0;
+}
+
+void ql_gfx_gl_window_size(const QLGfxGL *g, ql_coord_t *out_w, ql_coord_t *out_h)
+{
+    const ql_coord_t dpr = (g != NULL && g->scale_fx > 0) ? g->scale_fx : QL_SCALE_ONE;
+    if (out_w != NULL)
+        *out_w = (g != NULL) ? ((dpr == QL_SCALE_ONE) ? g->width
+                                                     : ql_unscale_len(g->width, dpr))
+                             : 0;
+    if (out_h != NULL)
+        *out_h = (g != NULL) ? ((dpr == QL_SCALE_ONE) ? g->height
+                                                     : ql_unscale_len(g->height, dpr))
+                             : 0;
 }
 
 void ql_gfx_gl_close(QLGfxGL *g)

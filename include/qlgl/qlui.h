@@ -1635,6 +1635,32 @@ typedef struct {
     uint8_t              phase;   /* 0 = 未起播，1 = 正在 animation-delay 里，2 = 播放中 */
 } QLUIAnimRun;
 
+/* ============================== 触摸手势 ============================== */
+
+/* 一个触摸点（界面层自己维护：后端只报"哪根手指在哪、还有几根"） */
+typedef struct {
+    int32_t    id;
+    ql_coord_t x, y;
+    uint8_t    active;
+} QLUITouchPoint;
+
+/* 捏合（双指）回调的相位 */
+enum {
+    QL_UI_PINCH_BEGIN  = 0,
+    QL_UI_PINCH_UPDATE = 1,
+    QL_UI_PINCH_END    = 2,
+};
+
+/*
+ * 双指捏合回调。`scale_fx` 是**相对手势开始时的倍数**（26.6 定点，
+ * `QL_SCALE_ONE` = 1.0），`cx/cy` 是两指中心（应用坐标 = CSS px）。
+ *
+ * 库**不替你决定缩放什么** —— 要缩放整页就把它喂给 `ql_gfx_gl_set_zoom()`，
+ * 要缩放某个元素就自己换算。这样一处识别、两种用法都不吃亏。
+ */
+typedef void (*ql_ui_pinch_cb)(QLUIRoot *ui, ql_coord_t cx, ql_coord_t cy,
+                               ql_coord_t scale_fx, int phase, void *user);
+
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, struct QLUINodeRT *node, void *user_data);
 
 /* 图像热区被点击（`<area>`）；`index` 是 doc->areas 下标 */
@@ -1692,6 +1718,21 @@ struct QLUIRoot {
     QLUINodeRT    *scroll_drag;
     ql_coord_t     scroll_drag_y0;
     ql_coord_t     scroll_drag_scroll0;
+
+    /* ----- 触摸手势（没人碰屏幕时全为 0，零额外开销） ----- */
+    QLUITouchPoint touches[QL_CFG_UI_TOUCH_MAX];
+    uint8_t        touch_count;      /* 还按着几根手指 */
+    uint8_t        touch_moved;      /* 这一轮手势已经超过 slop（算拖动、不算点击） */
+    uint8_t        touch_ignore;     /* 捏合结束后剩下的手指不再当鼠标，直到全抬起 */
+    int32_t        touch_primary;    /* 单指手势是哪根手指（id） */
+    ql_coord_t     touch_x0, touch_y0;    /* 按下点（判断 slop） */
+    ql_coord_t     touch_x, touch_y;      /* 上一次位置（算位移） */
+    QLUINodeRT    *touch_scroll;      /* 拖动滚动目标（按下时定下，之后不再变） */
+    ql_coord_t     touch_scroll_x0, touch_scroll_y0;   /* 目标在按下时的安全位置 */
+    uint8_t        pinch_active;
+    ql_coord_t     pinch_span0;       /* 手势开始时的两指间距 */
+    ql_ui_pinch_cb pinch_cb;
+    void          *pinch_user;
 
     /*
      * Grid 布局的临时区（只增不减；文档里没有 grid 容器时全是 NULL）。
@@ -1818,11 +1859,29 @@ const QLUIStyle *ql_ui_node_style(const QLUINodeRT *node);
 QLRect      ql_ui_node_rect(const QLUINodeRT *node);
 const char *ql_ui_tag_name(uint16_t tag);
 
-/* 运行期只允许改文本（结构在构建期固定，见 Web兼容设计 §12.5） */
+/*
+ * 运行期只允许改文本（结构在构建期固定，见 Web兼容设计 §12.5）。
+ *
+ * **不复制**：`text` 的指针直接存进节点，**必须一直有效**（字面量、
+ * 静态缓冲、或你自己管理生命周期的字符串）。传栈上局部缓冲 = 画面出乱码
+ * （指针悬空了，不崩已经是运气）。本库零分配是刻意的，别为了图方便复制。
+ */
 ql_err_t    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 
 /* 交互状态：命中测试 + 状态位 + 点击回调 */
 void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
+
+/*
+ * 双指捏合：接上回调就能收到 BEGIN / UPDATE / END。
+ *
+ * 触摸事件由后端原样上报（`QL_INPUT_TOUCH`），**单指当鼠标、双指当捏合**
+ * 的判定在界面层做：单指按在可滚动容器里拖动超过 `QL_CFG_UI_TOUCH_SLOP`
+ * 就改成拖内容滚动（手机没有滚轮），第二根手指落下则把这次按下作废
+ * （不合成 click）并转入捏合。
+ */
+void        ql_ui_set_pinch_cb(QLUIRoot *ui, ql_ui_pinch_cb cb, void *user);
+
+
 /* ------------------------------ 输入框 ------------------------------ */
 
 /*

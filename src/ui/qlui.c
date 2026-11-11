@@ -1687,6 +1687,30 @@ static ql_coord_t natural_cross(const QLUINodeRT *node, int row)
  */
 static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
                               ql_coord_t avail_w, ql_coord_t basis_h);
+/*
+ * "纯测量"模式：布局只为了拿到尺寸（flex 项、表格单元格、多栏、绝对定位的
+ * 上下居中都这么用），位置是假的。
+ *
+ * 这期间**不能**动运行期状态：`apply_scroll()` 会把滚动偏移夹到本轮算出来的
+ * 可滚范围里，而测量那几轮的容器高度是临时值（实测 flex 里 `.list` 一轮
+ * 540、一轮 538、最后才 336）—— 夹一次就把用户的滚动位置清成 0 了
+ * （现象：手机布局里 flex + overflow:auto 的列表**根本滚不动**）。
+ */
+static int s_measuring;
+
+static ql_coord_t layout_node(QLUINodeRT *node, ql_coord_t x, ql_coord_t y,
+                              ql_coord_t avail_w, ql_coord_t avail_h);
+
+/* 只取尺寸的一次布局（位置无关） */
+static ql_coord_t layout_measure(QLUINodeRT *node, ql_coord_t avail_w)
+{
+    const int prev = s_measuring;
+    s_measuring = 1;
+    const ql_coord_t h = layout_node(node, 0, 0, avail_w, -1);
+    s_measuring = prev;
+    return h;
+}
+
 static ql_coord_t layout_flex_children(QLUINodeRT *node, ql_coord_t content_x,
                                        ql_coord_t content_y, ql_coord_t content_w,
                                        ql_coord_t avail_h, int definite_h);
@@ -1843,7 +1867,7 @@ static void layout_absolute(QLUINodeRT *child, QLRect cb, ql_coord_t viewport_w)
     if (has_t) {
         y = cb.y + t;
     } else if (has_b) {
-        (void)layout_node(child, x, 0, avail_w, cb.h);
+        (void)layout_measure(child, avail_w);
         y = cb.y + cb.h - b - child->border_box.h - margin_v(child, cb.w);
     } else {
         y = cb.y;        /* 都没给：贴在包含块左上（CSS 的 static position 未实现） */
@@ -2783,6 +2807,9 @@ static void focus_step(QLUIRoot *ui, int dir)
 static void apply_scroll(QLUINodeRT *node, ql_coord_t cx, ql_coord_t cy,
                          ql_coord_t cw, ql_coord_t ch)
 {
+    if (s_measuring)
+        return;                 /* 测量的那一轮高度是临时的，别动滚动状态 */
+
     const QLUIStyle *s = node->style;
     const int auto_x = (s->overflow_x == QL_UI_OVERFLOW_AUTO);
     const int auto_y = (s->overflow_y == QL_UI_OVERFLOW_AUTO);
@@ -4461,7 +4488,7 @@ static ql_coord_t layout_table_children(QLUIRoot *ui, QLUINodeRT *table,
             if (!collapse && cs > 1)
                 w += gap * (cs - 1);
             if (rs == 1) {
-                const ql_coord_t h = layout_node(cell, 0, 0, w, -1);
+                const ql_coord_t h = layout_measure(cell, w);
                 if (h > rowh[r])
                     rowh[r] = h;
             }
@@ -4517,7 +4544,7 @@ static ql_coord_t layout_table_children(QLUIRoot *ui, QLUINodeRT *table,
                 w += colw[k];
             if (!collapse && cs > 1)
                 w += gap * (cs - 1);
-            const ql_coord_t need = layout_node(cell, 0, 0, w, -1);
+            const ql_coord_t need = layout_measure(cell, w);
             ql_coord_t have = collapse ? 0 : gap * (last - r);
             for (int k = r; k <= last; k++)
                 have += rowh[k];
@@ -4745,7 +4772,7 @@ static ql_coord_t layout_columns_children(QLUINodeRT *node, ql_coord_t content_x
     for (QLUINodeRT *c = node->first_child; c != NULL; c = c->next_sibling) {
         if (c->style->display == QL_UI_DISPLAY_NONE || is_out_of_flow(c->style))
             continue;
-        const ql_coord_t adv = layout_node(c, 0, 0, col_w, -1) + margin_v(c, col_w);
+        const ql_coord_t adv = layout_measure(c, col_w) + margin_v(c, col_w);
         total += adv;
         if (adv > tallest)
             tallest = adv;
@@ -5139,7 +5166,7 @@ static void measure_flex_items(QLUINodeRT *node, ql_coord_t content_w)
             }
         }
 
-        (void)layout_node(c, 0, 0, content_w, -1);  /* 位置无关紧要，只取尺寸 */
+        (void)layout_measure(c, content_w);         /* 位置无关紧要，只取尺寸 */
     }
 }
 
@@ -10658,6 +10685,303 @@ static QLUINodeRT *nearest_scrollable(QLUINodeRT *node)
     return NULL;
 }
 
+/* ------------------------------ 触摸手势 ------------------------------ */
+
+/*
+ * 触摸到"界面语义"的翻译就在这一层，因为只有这里知道按在谁身上。
+ *
+ *   - 单指：等同鼠标（按下/移动/抬起，松开时合成 click）；
+ *   - 单指按在可滚动容器里拖动超过 slop：改成**拖内容滚动**，并且不算点击
+ *     （手机上没有滚轮，手指滚不了列表就等于不能滚）；
+ *   - 双指：捏合。第二根手指落下时把单指那次"按下"作废（没有 click），
+ *     之后按两指间距的倍数回调给应用；
+ *   - 捏合结束后剩下的那根手指**不当鼠标**，直到全部抬起 —— 否则缩放完
+ *     手指一抬就会在落点上误触发一次点击。
+ */
+static void touch_reset(QLUIRoot *ui)
+{
+    ui->touch_count = 0;
+    ui->touch_moved = 0;
+    ui->touch_ignore = 0;
+    ui->touch_primary = -1;
+    ui->touch_scroll = NULL;
+    ui->pinch_active = 0;
+    ui->pinch_span0 = 0;
+    for (int i = 0; i < QL_CFG_UI_TOUCH_MAX; i++)
+        ui->touches[i].active = 0;
+}
+
+static int touch_find(const QLUIRoot *ui, int32_t id)
+{
+    for (int i = 0; i < QL_CFG_UI_TOUCH_MAX; i++)
+        if (ui->touches[i].active && ui->touches[i].id == id)
+            return i;
+    return -1;
+}
+
+static int touch_free_slot(const QLUIRoot *ui)
+{
+    for (int i = 0; i < QL_CFG_UI_TOUCH_MAX; i++)
+        if (!ui->touches[i].active)
+            return i;
+    return -1;
+}
+
+/* 两指间距（整数像素，够用来算倍数） */
+static ql_coord_t touch_span(const QLUITouchPoint *a, const QLUITouchPoint *b)
+{
+    const int64_t dx = (int64_t)b->x - a->x;
+    const int64_t dy = (int64_t)b->y - a->y;
+    int64_t d2 = dx * dx + dy * dy;
+    /* 整数开方就够：只要比值，误差远小于一个像素 */
+    int64_t r = 0;
+    for (int64_t bit = (int64_t)1 << 30; bit != 0; bit >>= 1) {
+        const int64_t t = r + bit;
+        if (t * t <= d2)
+            r = t;
+    }
+    return (ql_coord_t)r;
+}
+
+/* 前两个活跃点的中心 */
+static void touch_center(const QLUIRoot *ui, ql_coord_t *cx, ql_coord_t *cy)
+{
+    const QLUITouchPoint *a = NULL, *b = NULL;
+    for (int i = 0; i < QL_CFG_UI_TOUCH_MAX; i++) {
+        if (!ui->touches[i].active)
+            continue;
+        if (a == NULL)
+            a = &ui->touches[i];
+        else {
+            b = &ui->touches[i];
+            break;
+        }
+    }
+    if (a == NULL) {
+        *cx = *cy = 0;
+        return;
+    }
+    if (b == NULL) {
+        *cx = a->x;
+        *cy = a->y;
+        return;
+    }
+    *cx = (ql_coord_t)(((int64_t)a->x + b->x) / 2);
+    *cy = (ql_coord_t)(((int64_t)a->y + b->y) / 2);
+}
+
+/*
+ * 作废"当前这次按下"：清掉 :active / 拖动选字 / 滚动条拖动，**不合成 click**。
+ * 捏合接管、或者手指拖出去取消时都要走这里。
+ */
+static void press_abort(QLUIRoot *ui)
+{
+    ui->scroll_drag = NULL;
+    ui->input_drag = 0;
+    for (uint16_t i = 0; i < ui->node_count; i++)
+        if ((ui->nodes[i].flags & QL_UI_RT_ACTIVE) != 0)
+            set_state_chain(&ui->nodes[i], QL_UI_RT_ACTIVE, 0);
+}
+
+/* 捏合开始：把单指那次交互作废，记下基准间距 */
+static void pinch_begin(QLUIRoot *ui)
+{
+    press_abort(ui);
+    ql_coord_t cx = 0, cy = 0;
+    touch_center(ui, &cx, &cy);
+    const QLUITouchPoint *a = NULL, *b = NULL;
+    for (int i = 0; i < QL_CFG_UI_TOUCH_MAX && b == NULL; i++) {
+        if (!ui->touches[i].active)
+            continue;
+        if (a == NULL)
+            a = &ui->touches[i];
+        else
+            b = &ui->touches[i];
+    }
+    if (a == NULL || b == NULL)
+        return;
+    ui->pinch_active = 1;
+    ui->pinch_span0 = touch_span(a, b);
+    if (ui->pinch_span0 < 1)
+        ui->pinch_span0 = 1;       /* 两指重合：别除零 */
+    if (ui->pinch_cb != NULL)
+        ui->pinch_cb(ui, cx, cy, QL_SCALE_ONE, QL_UI_PINCH_BEGIN, ui->pinch_user);
+}
+
+static void pinch_update(QLUIRoot *ui)
+{
+    if (!ui->pinch_active || ui->pinch_cb == NULL)
+        return;
+    const QLUITouchPoint *a = NULL, *b = NULL;
+    for (int i = 0; i < QL_CFG_UI_TOUCH_MAX && b == NULL; i++) {
+        if (!ui->touches[i].active)
+            continue;
+        if (a == NULL)
+            a = &ui->touches[i];
+        else
+            b = &ui->touches[i];
+    }
+    if (a == NULL || b == NULL)
+        return;
+    const ql_coord_t span = touch_span(a, b);
+    ql_coord_t cx = 0, cy = 0;
+    touch_center(ui, &cx, &cy);
+    const ql_coord_t scale = (ql_coord_t)(((int64_t)span * QL_SCALE_ONE) /
+                                          ui->pinch_span0);
+    ui->pinch_cb(ui, cx, cy, scale, QL_UI_PINCH_UPDATE, ui->pinch_user);
+}
+
+static void pinch_end(QLUIRoot *ui)
+{
+    const int was = ui->pinch_active;
+    ui->pinch_active = 0;
+    ui->touch_ignore = 1;          /* 剩下的手指别再当鼠标 */
+    if (was && ui->pinch_cb != NULL) {
+        ql_coord_t cx = 0, cy = 0;
+        touch_center(ui, &cx, &cy);
+        ui->pinch_cb(ui, cx, cy, QL_SCALE_ONE, QL_UI_PINCH_END, ui->pinch_user);
+    }
+}
+
+static void touch_down(QLUIRoot *ui, const QLInputEvent *ev)
+{
+    const int slot = touch_free_slot(ui);
+    if (slot < 0)
+        return;
+    ui->touches[slot].id = (int32_t)ev->touch_id;
+    ui->touches[slot].x = ev->x;
+    ui->touches[slot].y = ev->y;
+    ui->touches[slot].active = 1;
+    ui->touch_count++;
+
+    if (ui->pinch_active) {
+        pinch_update(ui);          /* 第三根手指落下：按新的两指中心继续 */
+        return;
+    }
+    if (ui->touch_count >= 2) {
+        pinch_begin(ui);
+        return;
+    }
+
+    /* 第一根手指：当鼠标按下 */
+    ui->touch_primary = (int32_t)ev->touch_id;
+    ui->touch_x0 = ev->x;
+    ui->touch_y0 = ev->y;
+    ui->touch_x = ev->x;
+    ui->touch_y = ev->y;
+    ui->touch_moved = 0;
+    ui->touch_scroll = NULL;
+    (void)ql_ui_pointer_down(ui, ev->x, ev->y);
+}
+
+static void touch_move(QLUIRoot *ui, const QLInputEvent *ev)
+{
+    const int slot = touch_find(ui, (int32_t)ev->touch_id);
+    if (slot < 0)
+        return;
+    ui->touches[slot].x = ev->x;
+    ui->touches[slot].y = ev->y;
+
+    if (ui->pinch_active) {
+        pinch_update(ui);
+        return;
+    }
+    if (ui->touch_ignore || (int32_t)ev->touch_id != ui->touch_primary)
+        return;
+
+    /*
+     * slop：超过阈值才算拖动。真实手指按下时抖 2~3px 很常见，
+     * 不设阈值会把每次点按都认成"拖了一下"，click 全丢。
+     */
+    if (!ui->touch_moved) {
+        const ql_coord_t ax = (ev->x > ui->touch_x0) ? ev->x - ui->touch_x0
+                                                     : ui->touch_x0 - ev->x;
+        const ql_coord_t ay = (ev->y > ui->touch_y0) ? ev->y - ui->touch_y0
+                                                     : ui->touch_y0 - ev->y;
+        if (ax < QL_CFG_UI_TOUCH_SLOP && ay < QL_CFG_UI_TOUCH_SLOP) {
+            ui->touch_x = ev->x;
+            ui->touch_y = ev->y;
+            return;
+        }
+        ui->touch_moved = 1;
+        /* 拖动开始：定下滚动目标（按下的那一刻命中谁就滚谁） */
+        QLUINodeRT *hit = ql_ui_hit_test(ui, ui->touch_x0, ui->touch_y0);
+        ui->touch_scroll = nearest_scrollable(hit);
+        ui->touch_scroll_x0 = (ui->touch_scroll != NULL) ? ui->touch_scroll->scroll_x : 0;
+        ui->touch_scroll_y0 = (ui->touch_scroll != NULL) ? ui->touch_scroll->scroll_y : 0;
+    }
+
+    if (ui->touch_scroll != NULL) {
+        /*
+         * 手指往上推 → 内容往上走 → scroll_y 变大。用"按下点 + 累计位移"
+         * 算目标位置（而不是每帧加增量），这样中途被夹紧也不会积累误差。
+         */
+        QLUINodeRT *sc = ui->touch_scroll;
+        const ql_coord_t want_y = ui->touch_scroll_y0 - (ev->y - ui->touch_y0);
+        const ql_coord_t want_x = ui->touch_scroll_x0 - (ev->x - ui->touch_x0);
+        /*
+         * 用 `scroll_by`（差量）而不是 `scroll_to`：前者内部会重排一次，
+         * 滚动偏移是烘进布局的 —— 只改 scroll_y 不重排，下一帧看到的还是老位置。
+         */
+        const ql_coord_t dx = want_x - sc->scroll_x;
+        const ql_coord_t dy = want_y - sc->scroll_y;
+        if (dx != 0 || dy != 0)
+            (void)ql_ui_scroll_by(ui, sc, dx, dy);
+        ui->touch_x = ev->x;
+        ui->touch_y = ev->y;
+        return;
+    }
+
+    (void)ql_ui_pointer_move(ui, ev->x, ev->y);
+    ui->touch_x = ev->x;
+    ui->touch_y = ev->y;
+}
+
+static void touch_up(QLUIRoot *ui, const QLInputEvent *ev, int cancel)
+{
+    const int slot = touch_find(ui, (int32_t)ev->touch_id);
+    if (slot >= 0) {
+        ui->touches[slot].active = 0;
+        if (ui->touch_count > 0)
+            ui->touch_count--;
+    }
+
+    if (ui->pinch_active) {
+        if (ui->touch_count < 2)
+            pinch_end(ui);
+        if (ui->touch_count == 0)
+            touch_reset(ui);
+        return;
+    }
+
+    if (ui->touch_ignore || (int32_t)ev->touch_id != ui->touch_primary) {
+        if (ui->touch_count == 0)
+            touch_reset(ui);
+        return;
+    }
+
+    if (cancel || ui->touch_moved || ui->touch_scroll != NULL) {
+        /* 拖动/取消：松手不合成 click */
+        press_abort(ui);
+        if (ui->touch_scroll != NULL)
+            ql_ui_layout(ui, ui->width, ui->height);
+    } else {
+        (void)ql_ui_pointer_up(ui, ev->x, ev->y);
+    }
+    if (ui->touch_count == 0)
+        touch_reset(ui);
+    else
+        ui->touch_primary = -1;     /* 单指手势结束，剩下的手指不再接管 */
+}
+
+void ql_ui_set_pinch_cb(QLUIRoot *ui, ql_ui_pinch_cb cb, void *user)
+{
+    if (ui == NULL)
+        return;
+    ui->pinch_cb = cb;
+    ui->pinch_user = user;
+}
+
 /* ------------------------------ 接入输入系统 ------------------------------ */
 
 void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
@@ -10677,6 +11001,15 @@ void ql_ui_input_event(QLUIRoot *ui, const QLInputEvent *ev)
         break;
     case QL_INPUT_POINTER_LEAVE:
         ql_ui_pointer_move(ui, -1, -1);
+        break;
+    case QL_INPUT_TOUCH:
+        switch (ev->button) {
+        case QL_TOUCH_DOWN:   touch_down(ui, ev); break;
+        case QL_TOUCH_MOVE:   touch_move(ui, ev); break;
+        case QL_TOUCH_UP:     touch_up(ui, ev, 0); break;
+        case QL_TOUCH_CANCEL: touch_up(ui, ev, 1); break;
+        default: break;
+        }
         break;
     case QL_INPUT_WHEEL: {
         /*

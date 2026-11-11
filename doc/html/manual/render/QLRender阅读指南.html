@@ -189,6 +189,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='../../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -810,6 +811,50 @@ QLGfxGL.scale_fx     ───────────────────�
 拿到的才是真的这一帧。设备像素尺寸用 <code>ql_gfx_gl_device_size()</code>
 （<code>ql_gfx_gl_size()</code> 给的是 CSS px，高 DPI 下两者不等）。</p>
 </blockquote>
+<h3 id="1073-ql_gfx_gl_set_zoom">10.7.3 应用级缩放（<code>ql_gfx_gl_set_zoom</code>）：双指捏合的落点</h3>
+<p>DPR（<code>scale_fx</code>）管的是"帧缓冲多大"；<strong>应用缩放</strong>（<code>zoom_fx</code>）管的是"同样的缓冲里
+内容画多大"。两者相乘才是 CSS px → 设备像素的系数（内部叫 <code>dscale()</code>）。</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_gfx_gl_set_zoom</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">QL_SCALE_ONE</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">2</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 150% */</span>
+<span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">win_w</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">QL_SCALE_ONE</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">z</span><span class="p">,</span><span class="w"> </span><span class="n">win_h</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">QL_SCALE_ONE</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">z</span><span class="p">);</span>
+</code></pre></div>
+
+<p>约定三条：</p>
+<ol>
+<li><strong>布局基准 = 窗口 / zoom</strong>（<code>ql_gfx_gl_window_size()</code> 拿窗口逻辑尺寸，
+   <code>ql_gfx_gl_size()</code> 给的已经是除过 zoom 的值）；</li>
+<li><strong>输入坐标后端负责换算</strong>：X11 按 <code>设备像素 / (DPR×zoom)</code>，Wayland 外壳按
+   <code>逻辑坐标 / zoom</code> —— 界面层只会看到自己那套 CSS 坐标；</li>
+<li>改完 zoom 内部会把保留模式画布作废（<code>fbo_fresh</code>），调用方整屏重绘一帧即可。</li>
+</ol>
+<p>为什么这么做而不是"改字号/改宽度"：那要重解析 CSS、重算 em/rem，而且文字会重排；
+按缩放系数画是纯几何的，只重排一次布局基准，字形还按新尺寸重新取字体（放大后是清晰的）。</p>
+<table>
+<thead>
+<tr>
+<th>抓图相关</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_gfx_gl_device_size()</code></td>
+<td>帧缓冲<strong>设备像素</strong>尺寸（抓图/stride 用它）</td>
+</tr>
+<tr>
+<td><code>ql_gfx_gl_window_size()</code></td>
+<td>窗口<strong>逻辑</strong>尺寸（不含 zoom，算布局基准用它）</td>
+</tr>
+<tr>
+<td><code>ql_gfx_gl_size()</code></td>
+<td>当前布局基准（已经是 <code>窗口 / zoom</code>）</td>
+</tr>
+<tr>
+<td><code>ql_gfx_gl_flush_frame()</code></td>
+<td>落盘但<strong>不交换</strong>：抓图必须在这一步之后、<code>end()</code> 之前</td>
+</tr>
+</tbody>
+</table>
+<p>验证：<code>example/37_touch --zoom 150</code> 抓窗口帧，X11 与 Wayland 两个 GPU 后端逐字节相同。</p>
 <p>验证：<code>test_wayland</code>（<code>QLGL_TEST_WAYLAND=1</code>）在 1x/2x 两种缩放下断言
 "设备像素 = CSS × scale"以及"10 CSS px 的红方块正好覆盖 10×scale 个设备像素"；
 同一界面在 X11 与 Wayland 两个 GPU 后端抓窗口帧<strong>逐字节相同</strong>，

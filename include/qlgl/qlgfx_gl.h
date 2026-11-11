@@ -44,6 +44,11 @@ void ql_gfx_gl_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
  * 要用它算 stride；`ql_gfx_gl_size()` 给的是 CSS px，高 DPI 下两者不等。
  */
 void ql_gfx_gl_device_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
+/*
+ * 窗口的**逻辑尺寸**（= 设备像素 / DPR，**不含** zoom）。做页面缩放时，
+ * 布局基准 = 这个 / zoom；`ql_gfx_gl_size()` 给的是已经被 zoom 除过的值。
+ */
+void ql_gfx_gl_window_size(const QLGfxGL *gfx, ql_coord_t *out_w, ql_coord_t *out_h);
 
 /* 把 X11 剪贴板接到这个界面（Ctrl+C/X/V 生效）。可在窗口建好之后调一次。 */
 void ql_gfx_gl_attach_clipboard(QLGfxGL *gfx, QLUIRoot *ui);
@@ -89,6 +94,22 @@ void     ql_gfx_gl_close(QLGfxGL *gfx);
  * 例：1200×800 的窗口、2x DPR → 传 QL_SCALE_ONE * 2，布局按 600×400 CSS px。
  */
 void      ql_gfx_gl_set_scale(QLGfxGL *gfx, ql_coord_t scale_fx);
+
+/*
+ * 应用级缩放（"页面缩放"，双指捏合 / Ctrl+滚轮的落点）。`zoom_fx` 是 26.6
+ * 定点倍数，`QL_SCALE_ONE` = 1.0。
+ *
+ * 与 `ql_gfx_gl_set_scale()` 的区别：那个是 DPR，决定**帧缓冲多大**；
+ * 这个是"同样的缓冲里内容画多大" —— 窗口尺寸和缓冲都不变。所以：
+ *
+ *   - 布局要按 `CSS 尺寸 = 窗口 / zoom` 算（`ql_ui_layout(ui, w/zoom, h/zoom)`）；
+ *   - 输入坐标后端会自动除掉 zoom，界面层拿到的永远是它自己的 CSS 坐标；
+ *   - 改完内部已把保留模式画布作废，调用方整屏重绘一次即可。
+ *
+ * 库里不做平滑：调用方按手势每帧设一次，天然就是平滑的。
+ */
+void      ql_gfx_gl_set_zoom(QLGfxGL *gfx, ql_coord_t zoom_fx);
+ql_coord_t ql_gfx_gl_zoom(const QLGfxGL *gfx);
 
 /* 每帧：begin → 用 ql_gfx_gl_draw() 得到的接口绘制 → end */
 void     ql_gfx_gl_begin(QLGfxGL *gfx, ql_color_t clear_color);

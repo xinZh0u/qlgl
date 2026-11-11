@@ -189,6 +189,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='../../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -333,6 +334,10 @@ main img.shot { max-width: 100%; }
 <td>滚轮 / 触控板滚动</td>
 </tr>
 <tr>
+<td><code>QL_INPUT_TOUCH</code></td>
+<td>触摸点（<code>button</code> 里放相位 <code>QL_TOUCH_DOWN/MOVE/UP/CANCEL</code>，另带 <code>touch_id</code> / <code>touch_count</code>）</td>
+</tr>
+<tr>
 <td><code>QL_INPUT_KEY_DOWN</code> / <code>QL_INPUT_KEY_UP</code></td>
 <td>键盘</td>
 </tr>
@@ -422,9 +427,14 @@ main img.shot { max-width: 100%; }
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_wheel</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">dx</span><span class="p">,</span><span class="w"> </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">dy</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_key</span><span class="p">(</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">down</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">mods</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">utf8</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_input_push_touch</span><span class="p">(</span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">phase</span><span class="p">,</span>
+<span class="w">                            </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">touch_id</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">touch_count</span><span class="p">);</span>
 </code></pre></div>
 
 <blockquote>
+<p><strong>触摸不走指针事件</strong>：后端只报"哪根手指、在哪儿、手上还有几根"，
+单指当鼠标 / 单指拖滚动 / 双指捏合这些手势在界面层认
+（见《QLUI API 手册》"触摸手势"与教程 <code>26_touch.md</code>）。</p>
 <p>这些函数<strong>只入队不派发</strong>。要在测试里立刻看到效果，记得跟一句 <code>ql_input_dispatch()</code>。</p>
 </blockquote>
 <hr />

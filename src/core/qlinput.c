@@ -62,6 +62,7 @@ static void track_state(const QLInputEvent *ev)
         s_y = ev->y;
         break;
     case QL_INPUT_WHEEL:
+    case QL_INPUT_TOUCH:
         s_x = ev->x;
         s_y = ev->y;
         break;
@@ -171,6 +172,26 @@ ql_err_t ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy)
     ev.y = y;
     ev.dx = dx;
     ev.dy = dy;
+    ev.buttons = s_buttons;
+    ev.mods = s_mods;
+    return ql_input_push(&ev);
+}
+
+/*
+ * 触摸点：一次一根手指的状态变化。`touch_count` 由后端数（它看得见所有点），
+ * 界面层靠它区分"单指拖动"和"双指捏合"。
+ */
+ql_err_t ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+                             uint8_t touch_id, uint8_t touch_count)
+{
+    QLInputEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = QL_INPUT_TOUCH;
+    ev.x = x;
+    ev.y = y;
+    ev.button = phase;
+    ev.touch_id = touch_id;
+    ev.touch_count = touch_count;
     ev.buttons = s_buttons;
     ev.mods = s_mods;
     return ql_input_push(&ev);

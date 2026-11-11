@@ -31,11 +31,25 @@ typedef enum {
     QL_INPUT_POINTER_UP,        /* 按钮抬起 */
     QL_INPUT_POINTER_LEAVE,     /* 指针离开窗口表面 */
     QL_INPUT_WHEEL,             /* 滚轮/触控板滚动 */
+    /*
+     * 触摸点（`wl_touch` 那一类）。**后端只管原样上报**每个手指的
+     * 按下/移动/抬起，不合成指针事件 —— 单指当鼠标用、双指捏合放大，
+     * 这些手势全在界面层认（那里才有"按在哪个元素上"的信息）。
+     */
+    QL_INPUT_TOUCH,
     QL_INPUT_KEY_DOWN,
     QL_INPUT_KEY_UP,
     QL_INPUT_TEXT,              /* 已翻译好的 UTF-8 字符输入 */
     QL_INPUT_TYPE_COUNT
 } QLInputType;
+
+/* 触摸相位（`QLInputEvent.button` 里放这个） */
+enum {
+    QL_TOUCH_DOWN = 1,
+    QL_TOUCH_MOVE = 2,
+    QL_TOUCH_UP   = 3,
+    QL_TOUCH_CANCEL = 4,     /* 合成器取消（来电、手势被系统接管…），按"抬起"处理但不算点击 */
+};
 
 /* ----- 逻辑键码 -----
  * 可打印字符直接用 ASCII（'a'..'z'、'0'..'9'、标点），
@@ -103,9 +117,11 @@ typedef struct {
     uint32_t key;         /* QLKey（键盘事件） */
     uint32_t time_ms;     /* 事件时间戳，0 表示未知（用于双击判定，M1 未用） */
     uint8_t  type;        /* QLInputType */
-    uint8_t  button;      /* 本次事件涉及的按钮（QL_BUTTON_*） */
+    uint8_t  button;      /* 本次事件涉及的按钮（QL_BUTTON_*）或触摸相位（QL_TOUCH_*） */
     uint8_t  buttons;     /* 当前按住的按钮位图 */
     uint8_t  mods;        /* QL_MOD_* */
+    uint8_t  touch_id;    /* 触摸点编号（同一根手指同一编号） */
+    uint8_t  touch_count; /* 当前还按着几根手指（含这一根） */
     char     text[8];     /* UTF-8 字符，type == QL_INPUT_TEXT 时有效 */
 } QLInputEvent;
 
@@ -120,6 +136,8 @@ ql_err_t    ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons);
 ql_err_t    ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down);
 ql_err_t    ql_input_push_leave(void);
 ql_err_t    ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy);
+ql_err_t    ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+                                 uint8_t touch_id, uint8_t touch_count);
 ql_err_t    ql_input_push_key(uint32_t key, int down, uint8_t mods);
 ql_err_t    ql_input_push_text(const char *utf8);
 

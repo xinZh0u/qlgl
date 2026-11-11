@@ -189,6 +189,7 @@ main img.shot { max-width: 100%; }
 <a href='../../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
 <a href='../../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
 <a href='../../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='../../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
 <h4>设计文档</h4>
 <a class='sub-item' href='../../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
 <a class='sub-item' href='../../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -1213,12 +1214,18 @@ ql_text_wrap_ex(font, text, max_w, out, max_lines, keep_trailing)
 </tr>
 </tbody>
 </table>
-<p><strong>两个坑</strong></p>
+<p><strong>三个坑</strong></p>
 <ol>
 <li>拖动滚动条时如果先走 <code>set_state_chain(node, ACTIVE, 1)</code>，整个列表会闪一下 <code>:active</code>
    样式。所以 <code>pointer_down</code> 里必须先判滚动条热区，命中就直接接管。</li>
 <li><code>translate_subtree</code> 会一并平移 <code>abs_cb</code>，所以容器里的绝对定位子元素也跟着滚
    —— 这是对的（CSS 里绝对定位相对的是 padding box，滚动会让它移动）。</li>
+<li><strong>测量不能动滚动状态</strong>。flex 要"先测量每项主轴尺寸"，测量那几轮会真的跑一遍
+   <code>layout_node()</code>，而容器高度在那几轮还是临时值（实测 <code>.list</code> 一轮 540、一轮 538、
+   最后才 336）。<code>apply_scroll()</code> 若按临时值夹一次滚动偏移，用户的滚动位置就被
+   清成 0 了 —— 现象是 <strong>flex 列里的 <code>overflow:auto</code> 列表根本滚不动</strong>。
+   所以测量走 <code>layout_measure()</code>（置 <code>s_measuring</code>），期间 <code>apply_scroll()</code> 直接返回。
+   回归测试：<code>test_scroll</code> 第 11 节（滚到 60 → 再排一次 → 还是 60）。</li>
 </ol>
 <hr />
 <h3 id="57">5.7 输入框：唯一的运行期可变文本</h3>
@@ -1352,6 +1359,55 @@ select 自己，那就是"再点一次关掉"，必须 <strong>return</strong>�
 <p>焦点本身只做两件事：点亮 <code>QL_UI_RT_FOCUS</code>（<code>:focus</code> 样式靠它，<code>state_chain</code> 一路传到父级），
 以及决定键盘事件归谁。<strong>绘制不读焦点</strong>，所以焦点变化只标脏、不重排。</p>
 <hr />
+<h3 id="510">5.10 触摸手势：单指当鼠标、双指捏合</h3>
+<p>后端只上报 <code>QL_INPUT_TOUCH</code>（手指 id、坐标、<strong>手上还有几根</strong>），合成/识别全在这里 ——
+和命中测试一样，只有界面层知道"按在谁身上"。</p>
+<table>
+<thead>
+<tr>
+<th>事件</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DOWN</code>（第 1 根）</td>
+<td>记 <code>touch_primary</code> + 按下点，走 <code>ql_ui_pointer_down()</code></td>
+</tr>
+<tr>
+<td><code>MOVE</code>（位移 &lt; <code>QL_CFG_UI_TOUCH_SLOP</code>）</td>
+<td>只更新位置（手指抖 2~3px 不能算拖动）</td>
+</tr>
+<tr>
+<td><code>MOVE</code>（≥ slop）</td>
+<td><code>touch_moved = 1</code>；定下 <code>touch_scroll</code>（按下点的最近可滚祖先），之后按 <strong>按下点 + 累计位移</strong> 算目标位置走 <code>ql_ui_scroll_by()</code></td>
+</tr>
+<tr>
+<td><code>DOWN</code>（第 2 根）</td>
+<td><code>press_abort()</code> 作废那次按下（无 click）→ <code>QL_UI_PINCH_BEGIN</code></td>
+</tr>
+<tr>
+<td><code>MOVE</code>（捏合中）</td>
+<td><code>QL_UI_PINCH_UPDATE</code>，倍数 = 当前间距 / 基准间距</td>
+</tr>
+<tr>
+<td><code>UP</code>（捏合中抬起一根）</td>
+<td><code>QL_UI_PINCH_END</code>，<code>touch_ignore = 1</code>（剩下的手指不再当鼠标）</td>
+</tr>
+<tr>
+<td><code>UP</code>（单指）</td>
+<td>拖过 → 不合成 click；没拖过 → <code>ql_ui_pointer_up()</code></td>
+</tr>
+<tr>
+<td><code>CANCEL</code></td>
+<td>同 <code>UP</code> 但不合成 click</td>
+</tr>
+</tbody>
+</table>
+<p>两个刻意的选择：<strong>用累计位移而不是增量</strong>（滚到边界再往回拖不会少走一截）；
+<strong>倍数相对手势开始</strong>（增量式会随手指抖动累积漂移）。</p>
+<p>捏合只给应用"倍数"，缩放什么由应用决定（整页 → <code>ql_gfx_gl_set_zoom()</code>）。
+细节见教程 <code>26_touch.md</code>，实现见 <code>qlui.c</code> 的"触摸手势"一节。</p>
 <h3 id="55-qlui-blob">5.5 <code>.qlui</code> blob：换界面不用重编译</h3>
 <div class="highlight"><pre><span></span><code>                    ┌──▶ ui_demo.c ──▶ 编译器 ──▶ .rodata ──▶ ql_ui_build()
 index.html + index.css ──qltext cc──┤

@@ -733,12 +733,18 @@ ql_ui_scroll_by() → node->scroll_y → ql_ui_layout() → 布局末尾 transla
 | 滚轮 | `ql_ui_input_event` 的 `QL_INPUT_WHEEL` | 命中 → 往上找最近可滚祖先；**一格 = `QL_CFG_UI_WHEEL_STEP_PX`（默认 50px ≈ 3 行）**，滚到底继续交给父级 |
 | 拖滚动条 | `ql_ui_pointer_down/move/up` | 右侧 10px 热区；拖动**不算点击**（`scroll_drag` 非空直接吞掉） |
 
-**两个坑**
+**三个坑**
 
 1. 拖动滚动条时如果先走 `set_state_chain(node, ACTIVE, 1)`，整个列表会闪一下 `:active`
    样式。所以 `pointer_down` 里必须先判滚动条热区，命中就直接接管。
 2. `translate_subtree` 会一并平移 `abs_cb`，所以容器里的绝对定位子元素也跟着滚
    —— 这是对的（CSS 里绝对定位相对的是 padding box，滚动会让它移动）。
+3. **测量不能动滚动状态**。flex 要"先测量每项主轴尺寸"，测量那几轮会真的跑一遍
+   `layout_node()`，而容器高度在那几轮还是临时值（实测 `.list` 一轮 540、一轮 538、
+   最后才 336）。`apply_scroll()` 若按临时值夹一次滚动偏移，用户的滚动位置就被
+   清成 0 了 —— 现象是 **flex 列里的 `overflow:auto` 列表根本滚不动**。
+   所以测量走 `layout_measure()`（置 `s_measuring`），期间 `apply_scroll()` 直接返回。
+   回归测试：`test_scroll` 第 11 节（滚到 60 → 再排一次 → 还是 60）。
 
 ---
 
@@ -806,6 +812,28 @@ select 自己，那就是"再点一次关掉"，必须 **return**，否则会立
 以及决定键盘事件归谁。**绘制不读焦点**，所以焦点变化只标脏、不重排。
 
 ---
+
+### 5.10 触摸手势：单指当鼠标、双指捏合
+
+后端只上报 `QL_INPUT_TOUCH`（手指 id、坐标、**手上还有几根**），合成/识别全在这里 ——
+和命中测试一样，只有界面层知道"按在谁身上"。
+
+| 事件 | 处理 |
+|---|---|
+| `DOWN`（第 1 根） | 记 `touch_primary` + 按下点，走 `ql_ui_pointer_down()` |
+| `MOVE`（位移 < `QL_CFG_UI_TOUCH_SLOP`） | 只更新位置（手指抖 2~3px 不能算拖动） |
+| `MOVE`（≥ slop） | `touch_moved = 1`；定下 `touch_scroll`（按下点的最近可滚祖先），之后按 **按下点 + 累计位移** 算目标位置走 `ql_ui_scroll_by()` |
+| `DOWN`（第 2 根） | `press_abort()` 作废那次按下（无 click）→ `QL_UI_PINCH_BEGIN` |
+| `MOVE`（捏合中） | `QL_UI_PINCH_UPDATE`，倍数 = 当前间距 / 基准间距 |
+| `UP`（捏合中抬起一根） | `QL_UI_PINCH_END`，`touch_ignore = 1`（剩下的手指不再当鼠标） |
+| `UP`（单指） | 拖过 → 不合成 click；没拖过 → `ql_ui_pointer_up()` |
+| `CANCEL` | 同 `UP` 但不合成 click |
+
+两个刻意的选择：**用累计位移而不是增量**（滚到边界再往回拖不会少走一截）；
+**倍数相对手势开始**（增量式会随手指抖动累积漂移）。
+
+捏合只给应用"倍数"，缩放什么由应用决定（整页 → `ql_gfx_gl_set_zoom()`）。
+细节见教程 `26_touch.md`，实现见 `qlui.c` 的"触摸手势"一节。
 
 ### 5.5 `.qlui` blob：换界面不用重编译
 
