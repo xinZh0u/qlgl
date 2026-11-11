@@ -385,11 +385,12 @@ static void box_pass(const uint8_t *src, uint8_t *dst, int w, int h, int r, int 
 static inline float ql_smoothstep(float e0, float e1, float x);
 
 /*
- * 圆角矩形覆盖率（0..1），与 GPU 片元着色器里的 sdRoundBox + smoothstep(-0.5,0.5)
- * 同一个公式 —— 两条后端在圆角边界上的软硬必须一致，否则 golden 比对会抖。
- * (px, py) 是像素中心相对矩形中心的偏移，hw/hh 是半宽半高，r 是圆角半径。
+ * 圆角矩形的有符号距离（设备像素）：轮廓上 0、里面为负、外面为正。
+ * 与 GPU 片元着色器里的 sdRoundBox 是同一条公式 —— 两条后端在圆角边界上的
+ * 软硬必须一致，否则 golden 比对会抖。
+ * (px, py) 是相对矩形中心的偏移，hw/hh 是半宽半高，r 是圆角半径。
  */
-static float round_box_cov(float px, float py, float hw, float hh, float r)
+static float round_box_sd(float px, float py, float hw, float hh, float r)
 {
     float qx = fabsf(px) - hw + r;
     float qy = fabsf(py) - hh + r;
@@ -398,100 +399,133 @@ static float round_box_cov(float px, float py, float hw, float hh, float r)
     float d = (qx > qy ? qx : qy);
     if (d > 0.0f)
         d = 0.0f;
-    d += sqrtf(mx * mx + my * my) - r;
-    return 1.0f - ql_smoothstep(-0.5f, 0.5f, d);
+    return d + sqrtf(mx * mx + my * my) - r;
 }
 
-/* 把 r 区域里的像素就地模糊（不含圆角裁剪） */
-static void blur_rect_in_place(QLCanvas *canvas, QLRect r, int radius)
+/* 圆角矩形覆盖率（0..1）：SDF 过 ±0.5px 的 smoothstep，等价于 1px 抗锯齿边 */
+static float round_box_cov(float px, float py, float hw, float hh, float r)
 {
-
-    const int w = (int)r.w, h = (int)r.h;
-    const size_t bytes = (size_t)w * (size_t)h * 3u;
-    uint8_t *a = (uint8_t *)ql_mem_alloc(bytes);
-    uint8_t *b = (uint8_t *)ql_mem_alloc(bytes);
-    if (a == NULL || b == NULL) {
-        ql_mem_free(a);
-        ql_mem_free(b);
-        return;
-    }
-
-    /* 取出来（去掉 padding，变成紧凑的 RGB 三元组） */
-    for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
-            raw_px_get(canvas, r.x + x, r.y + y,
-                       a + ((size_t)y * (size_t)w + (size_t)x) * 3u);
-
-    /* 两趟 (H,V) 近似高斯：一次盒式卷积是方的，两次叠加接近钟形 */
-    for (int it = 0; it < 2; it++) {
-        box_pass(a, b, w, h, radius, 1);
-        box_pass(b, a, w, h, radius, 0);
-    }
-
-    for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
-            raw_px_set(canvas, r.x + x, r.y + y,
-                       a + ((size_t)y * (size_t)w + (size_t)x) * 3u);
-
-    ql_mem_free(a);
-    ql_mem_free(b);
+    return 1.0f - ql_smoothstep(-0.5f, 0.5f, round_box_sd(px, py, hw, hh, r));
 }
 
 /*
- * 圆角裁剪：模糊是方框的，而元素是圆角的 —— 不裁剪的话，四个圆角缺口里会
- * 渗出"方的模糊块"（颜色跑到元素边框盒之外，CSS 里不该出现）。
+ * 折射（`backdrop-filter: refract(<N>px)`）的采样偏移。
  *
- * 只处理四个角落的 corner×corner 方块：那里是唯一"可能落在圆角之外"的地方。
- * 做法是**模糊之前先存下这四块的原像素**，模糊完按覆盖率把它们混回去
- * （cov=1 用模糊结果、cov=0 用原像素、边缘按 cov 混合），等价于 GPU 那边
- * 用 alpha 混合把模糊结果只写进圆角内。
+ * 玻璃边缘像一圈"透镜斜面"：越靠近轮廓，采样点越往**外**推，轮廓里那一圈
+ * 于是显示外面一圈被压扁的场景 —— 液态玻璃的"折射"就来自这里。
+ *
+ *   t      = clamp(1 - 深度 / 斜面宽度, 0, 1)   深度 = -SDF，轮廓处 0
+ *   offset = normalize((p - c) / 半宽半高) * refract * t²
+ *
+ * 轮廓处最强（t=1），往里到一个"斜面宽度"就衰减到 0 —— 再往里完全不受影响。
+ * （反过来写会变成"整块一起平移"，看着像贴纸错位，不像玻璃。）
+ * 斜面宽度取短边的 1/4：与元素尺寸成比例，小玻璃也是"一圈"而不是"半块"。
+ * GPU 侧逐字对应（见 qlgfx_gl.c 的 mode 4 分支）。
  */
-static void apply_round_clip(QLCanvas *canvas, QLRect r, ql_coord_t corner,
-                             uint8_t *const *saved, const QLRect *saved_r)
-{
-    const float hw = (float)r.w * 0.5f;
-    const float hh = (float)r.h * 0.5f;
-    const float cx = (float)r.x + hw;
-    const float cy = (float)r.y + hh;
+#define QL_BACKDROP_BEVEL 0.25f
 
-    for (int k = 0; k < 4; k++) {
-        const QLRect q = saved_r[k];
-        if (ql_rect_is_empty(q))
-            continue;
-        for (int y = 0; y < (int)q.h; y++) {
-            for (int x = 0; x < (int)q.w; x++) {
-                const ql_coord_t px = q.x + x, py = q.y + y;
-                const float cov = round_box_cov((float)px + 0.5f - cx,
-                                                (float)py + 0.5f - cy, hw, hh,
-                                                (float)corner);
-                if (cov >= 0.999f)
-                    continue;
-                const uint8_t *src = saved[k] +
-                                     ((size_t)y * (size_t)q.w + (size_t)x) * 3u;
-                if (cov <= 0.001f) {
-                    raw_px_set(canvas, px, py, src);
-                    continue;
-                }
-                uint8_t cur[4];
-                raw_px_get(canvas, px, py, cur);
-                uint8_t mix[4];
-                for (int c = 0; c < 3; c++) {
-                    const float v = (float)cur[c] * cov + (float)src[c] * (1.0f - cov);
-                    mix[c] = (uint8_t)(v + 0.5f);
-                }
-                raw_px_set(canvas, px, py, mix);
-            }
-        }
+static void refract_offset(float px, float py, float cx, float cy, float hw,
+                           float hh, float depth, int refract, float *ox,
+                           float *oy)
+{
+    *ox = 0.0f;
+    *oy = 0.0f;
+    if (refract <= 0)
+        return;
+    const float nx = (px - cx) / hw;
+    const float ny = (py - cy) / hh;
+    const float len = sqrtf(nx * nx + ny * ny);
+    if (len < 1e-3f)
+        return;                     /* 正中心：方向没有意义 */
+    const float band = QL_BACKDROP_BEVEL * (hw < hh ? hw : hh);
+    float t = (band > 0.0f) ? (1.0f - depth / band) : 0.0f;
+    if (t <= 0.0f)
+        return;
+    if (t > 1.0f)
+        t = 1.0f;
+    const float k = (float)refract * t * t / len;
+    *ox = nx * k;
+    *oy = ny * k;
+}
+
+/* ---- 临时缓冲：模糊在紧凑 RGB 三元组里做，最后只把元素盒子内写回画布 ---- */
+
+static uint8_t *buf_alloc(int w, int h)
+{
+    return (uint8_t *)ql_mem_alloc((size_t)w * (size_t)h * 3u);
+}
+
+static void buf_read(const QLCanvas *c, QLRect r, uint8_t *buf)
+{
+    for (int y = 0; y < (int)r.h; y++)
+        for (int x = 0; x < (int)r.w; x++)
+            raw_px_get(c, r.x + x, r.y + y,
+                       buf + ((size_t)y * (size_t)r.w + (size_t)x) * 3u);
+}
+
+/* 双线性采样：`fx/fy` 是缓冲坐标（像素中心在 +0.5 处），需要插值才不出锯齿 */
+static void buf_sample(const uint8_t *buf, int w, int h, float fx, float fy,
+                       uint8_t *rgb)
+{
+    fx -= 0.5f;
+    fy -= 0.5f;
+    if (fx < 0.0f)
+        fx = 0.0f;
+    if (fy < 0.0f)
+        fy = 0.0f;
+    if (fx > (float)(w - 1))
+        fx = (float)(w - 1);
+    if (fy > (float)(h - 1))
+        fy = (float)(h - 1);
+
+    const int x0 = (int)fx, y0 = (int)fy;
+    const int x1 = (x0 + 1 < w) ? x0 + 1 : x0;
+    const int y1 = (y0 + 1 < h) ? y0 + 1 : y0;
+    const float tx = fx - (float)x0, ty = fy - (float)y0;
+    const uint8_t *p00 = buf + ((size_t)y0 * (size_t)w + (size_t)x0) * 3u;
+    const uint8_t *p10 = buf + ((size_t)y0 * (size_t)w + (size_t)x1) * 3u;
+    const uint8_t *p01 = buf + ((size_t)y1 * (size_t)w + (size_t)x0) * 3u;
+    const uint8_t *p11 = buf + ((size_t)y1 * (size_t)w + (size_t)x1) * 3u;
+    for (int c = 0; c < 3; c++) {
+        const float top = (float)p00[c] + ((float)p10[c] - (float)p00[c]) * tx;
+        const float bot = (float)p01[c] + ((float)p11[c] - (float)p01[c]) * tx;
+        const float v = top + (bot - top) * ty;
+        rgb[c] = (uint8_t)(v + 0.5f);
     }
 }
 
-/* 通用入口：先算好裁剪后的区域，再决定要不要做圆角收尾 */
+/*
+ * 三段盒式卷积 ≈ 高斯：标准差 σ 与盒半径 r 的关系是
+ *   σ² = 3·((2r+1)² - 1) / 12   ⇒   r = (√(4σ²+1) - 1) / 2
+ * 两段是三角形核（边缘有一道"折线"），三段才接近钟形 —— 大半径时肉眼可辨。
+ */
+static int box_radius_of_sigma(int sigma)
+{
+    const float s = (float)sigma;
+    const float r = (sqrtf(4.0f * s * s + 1.0f) - 1.0f) * 0.5f;
+    int ri = (int)(r + 0.5f);
+    if (ri < 1)
+        ri = 1;
+    return ri;
+}
+
+static void buf_blur(uint8_t *a, uint8_t *b, int w, int h, int radius)
+{
+    box_pass(a, b, w, h, radius, 1);
+    box_pass(b, a, w, h, radius, 0);
+    box_pass(a, b, w, h, radius, 1);
+    box_pass(b, a, w, h, radius, 0);
+    /* 第 5/6 趟只做垂直方向的一次，凑成 3 段 × 2 方向 */
+    box_pass(a, b, w, h, radius, 1);
+    box_pass(b, a, w, h, radius, 0);
+}
+
 /*
  * 饱和度：与 `filter: saturate()` 同一套 CSS 系数（0.213/0.715/0.072），
  * GPU 侧的 backdrop 分支用的是同一组数，两条后端才对得上。
- * `sat` 是百分比（100 = 不变）。
+ * `sat` 是百分比（0 或 100 = 不变）。
  */
-static void saturate_rect(QLCanvas *canvas, QLRect r, uint8_t sat)
+static void buf_saturate(uint8_t *a, int w, int h, uint8_t sat, int ri, int bi)
 {
     if (sat == 0 || sat == 100)
         return;
@@ -516,99 +550,140 @@ static void saturate_rect(QLCanvas *canvas, QLRect r, uint8_t sat)
      * B,G,R,A —— 颜色矩阵必须先按通道语义取出来，否则红蓝权重会互换。
      * 模糊本身与通道无关，所以别处不用关心这件事。
      */
-    const int ri = (canvas->format == QL_COLOR_ARGB8888) ? 2 : 0;
-    const int bi = (canvas->format == QL_COLOR_ARGB8888) ? 0 : 2;
-    uint8_t px[3];
-    for (ql_coord_t y = r.y; y < ql_rect_bottom(r); y++) {
-        for (ql_coord_t x = r.x; x < ql_rect_right(r); x++) {
-            raw_px_get(canvas, x, y, px);
-            const int32_t orr = px[ri], og = px[1], ob = px[bi];
+    for (int y = 0; y < h; y++) {
+        uint8_t *row = a + (size_t)y * (size_t)w * 3u;
+        for (int x = 0; x < w; x++) {
+            uint8_t *p = row + (size_t)x * 3u;
+            const int32_t orr = p[ri], og = p[1], ob = p[bi];
             int32_t nr = (rr * orr + rg * og + rb * ob) / 100;
             int32_t ng = (gr * orr + gg * og + gb * ob) / 100;
             int32_t nb = (br * orr + bg * og + bb * ob) / 100;
-            px[ri] = (uint8_t)(nr < 0 ? 0 : (nr > 255 ? 255 : nr));
-            px[1] = (uint8_t)(ng < 0 ? 0 : (ng > 255 ? 255 : ng));
-            px[bi] = (uint8_t)(nb < 0 ? 0 : (nb > 255 ? 255 : nb));
-            raw_px_set(canvas, x, y, px);
+            p[ri] = (uint8_t)(nr < 0 ? 0 : (nr > 255 ? 255 : nr));
+            p[1] = (uint8_t)(ng < 0 ? 0 : (ng > 255 ? 255 : ng));
+            p[bi] = (uint8_t)(nb < 0 ? 0 : (nb > 255 ? 255 : nb));
         }
     }
 }
 
+/*
+ * 毛玻璃本体。
+ *
+ * **采样必须比元素盒子大一圈**：CSS 的 backdrop-filter 取的是"元素背后那片
+ * 背景"再模糊，模糊核当然会读到盒子外面。只糊盒子内部、边缘靠"钳位"补的话，
+ * 盒子里得到的是**这块方形的均值色** —— 半径一大就成了灰扑扑的一块，
+ * 而且盒子四边会留下一个方形的边（颜色和周围的真实背景对不上）。
+ * 现在按 `2·box半径 + 折射 + 2` 外扩采样，再把结果只写进圆角轮廓内。
+ */
 static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
-                                   ql_coord_t corner, uint8_t sat)
+                                   ql_coord_t corner, uint8_t sat, int refract)
 {
     if (canvas == NULL || canvas->buffer == NULL)
         return QL_ERR_INVAL;
-    if (radius <= 0)
+    if (radius <= 0 && refract <= 0)
         return QL_OK;
+    if (radius < 0)
+        radius = 0;
+    if (refract < 0)
+        refract = 0;
 
-    QLRect r = ql_rect_intersect(rect, ql_rect_make(0, 0, canvas->width, canvas->height));
+    const QLRect frame = ql_rect_make(0, 0, canvas->width, canvas->height);
+    const QLRect r = ql_rect_intersect(rect, frame);
     if (ql_rect_is_empty(r))
         return QL_OK;
-    if (radius > r.w + r.h)
-        radius = (int)(r.w + r.h);   /* 大半径没有更多信息，别白扫 */
 
     const ql_coord_t maxc = (r.w < r.h ? r.w : r.h) / 2;
     if (corner > maxc)
         corner = maxc;
 
-    /* 圆角：先把四个角落方块的原像素留一份，模糊完再按覆盖率混回去 */
-    uint8_t *saved[4] = { NULL, NULL, NULL, NULL };
-    QLRect saved_r[4];
-    int nsaved = 0;
-    if (corner > 0) {
-        const ql_coord_t cs = corner + 1;   /* 多留 1px 给抗锯齿边界 */
-        const QLRect q[4] = {
-            { r.x, r.y, cs, cs },
-            { ql_rect_right(r) - cs, r.y, cs, cs },
-            { r.x, ql_rect_bottom(r) - cs, cs, cs },
-            { ql_rect_right(r) - cs, ql_rect_bottom(r) - cs, cs, cs },
-        };
-        for (int k = 0; k < 4; k++) {
-            saved_r[k] = ql_rect_intersect(q[k], r);
-            if (ql_rect_is_empty(saved_r[k]))
+    const int boxr = (radius > 0) ? box_radius_of_sigma(radius) : 0;
+
+    /*
+     * 外扩量：三段盒式卷积的支持半径是 3·boxr，折射会再往外取 refract 像素。
+     * 内存不够就退到更小的外扩（老行为），再不行才放弃 —— 总比不出画面好。
+     */
+    ql_coord_t pad = (ql_coord_t)(boxr * 3 + refract + 2);
+    QLRect ex;
+    uint8_t *a = NULL;
+    uint8_t *b = NULL;
+    for (;;) {
+        ex = ql_rect_intersect(
+            ql_rect_make(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2), frame);
+        a = buf_alloc((int)ex.w, (int)ex.h);
+        b = buf_alloc((int)ex.w, (int)ex.h);
+        if (a != NULL && b != NULL)
+            break;
+        ql_mem_free(a);
+        ql_mem_free(b);
+        a = NULL;
+        b = NULL;
+        if (pad == 0)
+            return QL_ERR_NOMEM;
+        pad /= 2;
+    }
+
+    buf_read(canvas, ex, a);
+    if (boxr > 0)
+        buf_blur(a, b, (int)ex.w, (int)ex.h, boxr);
+    /*
+     * `raw_px_get/set` 给的是内存顺序，32 位格式是小端 0xAARRGGBB（字节序 B,G,R,A）
+     * —— 颜色矩阵必须先按通道语义取出来，否则红蓝权重会互换。
+     */
+    const int ri = (canvas->format == QL_COLOR_ARGB8888) ? 2 : 0;
+    const int bi = (canvas->format == QL_COLOR_ARGB8888) ? 0 : 2;
+    buf_saturate(a, (int)ex.w, (int)ex.h, sat, ri, bi);
+
+    /*
+     * 写回：只碰元素盒子**之内、圆角轮廓**里的像素。轮廓外（四个圆角缺口、
+     * 以及外扩出来的那一圈）原样不动 —— 这正是 CSS backdrop-filter 的语义。
+     */
+    const float hw = (float)r.w * 0.5f;
+    const float hh = (float)r.h * 0.5f;
+    const float cx = (float)r.x + hw;
+    const float cy = (float)r.y + hh;
+    const float fc = (float)corner;
+
+    for (ql_coord_t y = r.y; y < ql_rect_bottom(r); y++) {
+        for (ql_coord_t x = r.x; x < ql_rect_right(r); x++) {
+            const float px = (float)x + 0.5f;
+            const float py = (float)y + 0.5f;
+            const float cov = round_box_cov(px - cx, py - cy, hw, hh, fc);
+            if (cov <= 0.0f)
                 continue;
-            const size_t n = (size_t)saved_r[k].w * (size_t)saved_r[k].h * 3u;
-            saved[k] = (uint8_t *)ql_mem_alloc(n);
-            if (saved[k] == NULL)
-                break;
-            for (int y = 0; y < (int)saved_r[k].h; y++)
-                for (int x = 0; x < (int)saved_r[k].w; x++)
-                    raw_px_get(canvas, saved_r[k].x + x, saved_r[k].y + y,
-                               saved[k] + ((size_t)y * (size_t)saved_r[k].w +
-                                           (size_t)x) * 3u);
-            nsaved++;
-        }
-        if (nsaved != 4) {          /* 内存不够：退回不裁圆角，总比不出画面好 */
-            for (int k = 0; k < 4; k++) {
-                ql_mem_free(saved[k]);
-                saved[k] = NULL;
+            float ox = 0.0f, oy = 0.0f;
+            if (refract > 0) {
+                const float depth = -round_box_sd(px - cx, py - cy, hw, hh, fc);
+                refract_offset(px, py, cx, cy, hw, hh, depth, refract, &ox, &oy);
             }
-            corner = 0;
+            uint8_t src[4];
+            buf_sample(a, (int)ex.w, (int)ex.h, px + ox - (float)ex.x,
+                       py + oy - (float)ex.y, src);
+            if (cov < 0.999f) {
+                /* 轮廓边上的抗锯齿：与模糊前的原像素按覆盖率混合 */
+                uint8_t cur[4];
+                raw_px_get(canvas, x, y, cur);
+                for (int c = 0; c < 3; c++)
+                    src[c] = (uint8_t)((float)src[c] * cov +
+                                       (float)cur[c] * (1.0f - cov) + 0.5f);
+            }
+            raw_px_set(canvas, x, y, src);
         }
     }
 
-    blur_rect_in_place(canvas, r, radius);
-    saturate_rect(canvas, r, sat);
-
-    if (corner > 0)
-        apply_round_clip(canvas, r, corner, saved, saved_r);
-    for (int k = 0; k < 4; k++)
-        ql_mem_free(saved[k]);
+    ql_mem_free(a);
+    ql_mem_free(b);
     return QL_OK;
 }
 
 ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat)
 {
-    return backdrop_blur_impl(canvas, rect, radius, 0, sat);
+    return backdrop_blur_impl(canvas, rect, radius, 0, sat, 0);
 }
 
 ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
-                                       ql_coord_t corner, uint8_t sat)
+                                       ql_coord_t corner, uint8_t sat, int refract)
 {
-    return backdrop_blur_impl(canvas, rect, radius, corner, sat);
+    return backdrop_blur_impl(canvas, rect, radius, corner, sat, refract);
 }
-
 /* smoothstep，与 GPU 片元着色器同一公式，保证两条后端视觉一致 */
 static inline float ql_smoothstep(float e0, float e1, float x)
 {

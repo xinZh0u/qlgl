@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QLGL JS 宿主与前端框架支持（设计草案） · QLGL</title>
+<style>
+:root {
+  --text: #333;
+  --text-muted: rgba(51, 51, 51, .65);
+  --primary: #1c76e4;
+  --bg: #fff;
+  --side-bg: #151515;
+  --side-fg: #fafafa;
+  --side-primary: rgb(144, 194, 255);
+  --side-hover: rgba(127, 127, 127, .2);
+  --side-sel: #1c76e4;
+  --side-search: rgba(127, 127, 127, .25);
+  --side-search-focus: rgba(127, 127, 127, .38);
+  --box-bg: rgba(135, 135, 135, .085);
+  --box-radius: .35rem;
+  --line: rgba(51, 51, 51, .12);
+  --side-w: 17.5rem;
+  --toc-w: 15.5rem;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC",
+          "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Source Code Pro", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font: 15px/1.6 var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.shell { display: flex; align-items: flex-start; }
+
+/* ---------------- 左侧深色导航（GTK 风格） ---------------- */
+.sidebar {
+  position: sticky; top: 0;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  height: 100vh; overflow-y: auto;
+  padding: 1.2rem 1rem 3rem;
+  background: var(--side-bg);
+  color: var(--side-fg);
+  color-scheme: dark;
+  font-size: 13.5px;
+  scrollbar-width: thin;
+}
+.sidebar::-webkit-scrollbar { width: 9px; }
+.sidebar::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 9px; }
+.sidebar .brand { display: block; padding: .2rem .5rem 1rem; }
+.sidebar .brand b {
+  display: block; font-size: 1.45rem; letter-spacing: .02em; color: #fff;
+  font-weight: 900;
+}
+.sidebar .brand span { font-size: .8rem; opacity: .7; }
+.sidebar a { text-decoration: none; }
+
+.search { position: relative; margin: 0 0 1rem; }
+.search input {
+  width: 100%; border: 0; border-radius: 50px;
+  padding: 8px 14px; font-size: 13.5px; outline: 0;
+  background: var(--side-search); color: var(--side-fg);
+  transition: background-color .15s ease;
+}
+.search input::placeholder { color: rgba(250, 250, 250, .55); }
+.search input:hover, .search input:focus { background: var(--side-search-focus); }
+.results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  max-height: 60vh; overflow-y: auto; z-index: 50;
+  background: #232323; border: 1px solid #3a3a3a; border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .5); padding: 6px;
+}
+.results .hit {
+  display: block; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  color: var(--side-fg);
+}
+.results .hit:hover, .results .hit.sel { background: var(--side-sel); }
+.results .hit .t { display: block; font-size: 13.5px; }
+.results .hit .c { display: block; font-size: 11.5px; opacity: .62; }
+.results .hit.sel .c { opacity: .85; }
+.results .empty { padding: 10px; font-size: 12.5px; opacity: .6; }
+
+.sec { border-top: 1px solid rgba(255, 255, 255, .07); padding: .5rem 0 .2rem; }
+.sec > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; font-weight: 700; font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .55);
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before {
+  content: "▸"; font-size: 10px; transition: transform .15s ease; opacity: .8;
+}
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > summary:hover { color: rgba(250, 250, 250, .85); }
+.sec a {
+  display: block; padding: .25rem .55rem; margin-bottom: .1rem;
+  border-radius: var(--box-radius); color: var(--side-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sec a:hover { background: var(--side-hover); color: var(--side-fg); }
+.sec a.current { background: var(--side-sel); color: #fff; font-weight: 600; }
+.sec .mod {
+  display: block; padding: .55rem .55rem .15rem;
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .4);
+}
+.sec .mod:first-child { padding-top: .2rem; }
+.sidebar .gen {
+  margin: 1.4rem .5rem 0; font-size: 11px; opacity: .45; line-height: 1.5;
+}
+
+/* ---------------- 正文 ---------------- */
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 3rem 3rem 6rem;
+  box-shadow: 0 0 134px rgba(0, 0, 0, .07);
+}
+main .inner { max-width: 54rem; margin: 0 auto; }
+main h1, main h2, main h3, main h4, main h5 {
+  font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
+}
+main h1 { font-size: 2.05rem; margin: 0 0 .3rem; }
+main .eyebrow {
+  font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 0 .15rem;
+}
+main .lead { color: var(--text-muted); font-size: 1rem; margin: .6rem 0 2rem; }
+main h2 {
+  font-size: 1.45rem; margin: 2.4rem 0 .7rem;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 1.18rem; margin: 1.8rem 0 .5rem; }
+main h4 { font-size: 1.02rem; margin: 1.4rem 0 .4rem; color: var(--text-muted); }
+main p { margin: .7rem 0; }
+main ul, main ol { margin: .7rem 0; padding-left: 1.5rem; }
+main li { margin: .25rem 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 2.2rem 0; }
+main blockquote {
+  margin: 1rem 0; padding: .5rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: var(--box-bg); border-radius: 0 var(--box-radius) var(--box-radius) 0;
+  color: var(--text-muted);
+}
+main blockquote p { margin: .3rem 0; }
+
+code {
+  font: .86em/1.5 var(--mono);
+  background: var(--box-bg); padding: .12em .35em;
+  border-radius: 4px;
+}
+pre {
+  margin: 1rem 0; padding: .8rem 1rem; overflow-x: auto;
+  background: var(--box-bg); border-radius: var(--box-radius);
+}
+pre code { background: none; padding: 0; font-size: .86rem; }
+
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid var(--line); padding: .4rem .65rem; text-align: left; }
+th { background: var(--box-bg); font-weight: 650; }
+tbody tr:nth-child(even) { background: rgba(135, 135, 135, .04); }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #a626a4; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #4078f2; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #a0a1a7; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #986801; }
+.highlight .nf, .highlight .n { color: #383a42; }
+.highlight .cp, .highlight .cpf { color: #a0a1a7; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 1.2rem 0;
+  border: 1px solid var(--line); border-radius: var(--box-radius);
+}
+
+/* ---------------- 右侧页内目录 ---------------- */
+.toc {
+  position: sticky; top: 0;
+  flex: 0 0 var(--toc-w); width: var(--toc-w);
+  max-height: 100vh; overflow-y: auto;
+  padding: 3rem .8rem 3rem .4rem;
+  font-size: 12.5px;
+}
+.toc h5 {
+  margin: 0 0 .5rem; font-size: 10.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: .15rem 0; }
+.toc a {
+  display: block; padding: .16rem .4rem; border-radius: 5px;
+  color: var(--text-muted); line-height: 1.4;
+}
+.toc a:hover { background: var(--box-bg); color: var(--primary); text-decoration: none; }
+.toc .lv3 { padding-left: 1rem; font-size: 12px; }
+
+/* 翻页 */
+.pager {
+  display: flex; gap: .8rem; margin-top: 3rem; padding-top: 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: .6rem .9rem; border: 1px solid var(--line);
+  border-radius: var(--box-radius); color: var(--text);
+}
+.pager a:hover { background: var(--box-bg); text-decoration: none; }
+.pager .dir { display: block; font-size: 11px; color: var(--text-muted); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+         gap: .7rem; margin: 1rem 0 2rem; }
+.cards a {
+  display: block; padding: .8rem 1rem; color: var(--text);
+  background: var(--box-bg); border-radius: var(--box-radius);
+  border: 1px solid transparent;
+}
+.cards a:hover { border-color: var(--primary); text-decoration: none; }
+.cards b { display: block; font-size: .95rem; margin-bottom: .15rem; }
+.cards span { font-size: .82rem; color: var(--text-muted); }
+.sec-title { font-size: 1.2rem; font-weight: 800; margin: 2rem 0 .1rem; }
+.sec-desc { color: var(--text-muted); font-size: .88rem; margin: 0 0 .6rem; }
+
+@media (max-width: 1180px) {
+  .toc { display: none; }
+}
+@media (max-width: 820px) {
+  .shell { display: block; }
+  .sidebar { position: static; height: auto; width: auto; flex: none; }
+  main { padding: 1.6rem 1.1rem 4rem; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class='shell'>
+<aside class='sidebar'>
+<div class='brand'><a href='index.html' style='color:inherit'><b>QLGL</b><span>C11 界面库 · 文档</span></a></div>
+<div class='search'><input id='q' type='text' placeholder='搜索页面与章节…' autocomplete='off' spellcheck='false'><div id='qres' class='results' hidden></div></div>
+<details class='sec'><summary>入门</summary>
+<a href='tutorial/01_basics.html' title='基础知识'>基础知识</a>
+<a href='tutorial/02_text.html' title='文本'>文本</a>
+<a href='tutorial/03_layout.html' title='布局'>布局</a>
+<a href='tutorial/04_interaction.html' title='交互'>交互</a>
+<a href='tutorial/05_animation.html' title='动画'>动画</a>
+<a href='tutorial/06_theme.html' title='换皮肤'>换皮肤</a>
+<a href='tutorial/07_advanced.html' title='进阶'>进阶</a>
+</details>
+<details class='sec'><summary>界面与控件</summary>
+<a href='tutorial/08_tags.html' title='标签与语义'>标签与语义</a>
+<a href='tutorial/09_scroll.html' title='滚动'>滚动</a>
+<a href='tutorial/11_input.html' title='输入控件'>输入控件</a>
+<a href='tutorial/13_form.html' title='多行输入与表单'>多行输入与表单</a>
+<a href='tutorial/26_touch.html' title='触摸：单指点按 · 拖动滚动 · 双指缩放'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+</details>
+<details class='sec'><summary>布局与文本</summary>
+<a href='tutorial/12_text.html' title='空白与上下标'>空白与上下标</a>
+<a href='tutorial/19_grid.html' title='Grid：二维布局，以及 border-image'>Grid：二维布局，以及 border-image</a>
+<a href='tutorial/22_table.html' title='表格：display: table 全家 + colspan / rowspan'>表格：display: table 全家 + colspan / rowspan</a>
+<a href='tutorial/23_columns.html' title='多栏：column-count / column-width / column-rule'>多栏：column-count / column-width / column-rule</a>
+<a href='tutorial/24_text_stack.html' title='文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向'>文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向</a>
+</details>
+<details class='sec'><summary>视觉与动效</summary>
+<a href='tutorial/15_backdrop.html' title='毛玻璃叠在动的背景上'>毛玻璃叠在动的背景上</a>
+<a href='tutorial/20_filter.html' title='离屏图层：filter / mix-blend-mode / mask / 组透明度'>离屏图层：filter / mix-blend-mode / mask / 组透明度</a>
+<a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
+<a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+</details>
+<details class='sec'><summary>语法与兼容</summary>
+<a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
+<a href='tutorial/14_css3.html' title='CSS3 补全：真实页面天天用的那几件'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='tutorial/18_css3_more.html' title='CSS3 补全收官：状态选择器、文本细节、背景图'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+</details>
+<details class='sec'><summary>性能</summary>
+<a href='tutorial/17_perf.html' title='性能诊断与 MCU 基准'>性能诊断与 MCU 基准</a>
+</details>
+<details class='sec'><summary>API 手册</summary>
+<span class='mod'>QLObject —— 对象系统：类、属性、信号</span>
+<a href='manual/object/QLObject阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/object/QLObject API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLText —— 文本：字体、字形、UTF-8</span>
+<a href='manual/text/QLText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/text/QLText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
+<a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
+<a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLRender —— 渲染：画布、GPU 后端、脏区</span>
+<a href='manual/render/QLRender阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/render/QLRender API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLAnim —— 动效：帧时钟、缓动、补间</span>
+<a href='manual/anim/QLAnim阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/anim/QLAnim API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
+<a href='manual/input/QLInput阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+</details>
+<details class='sec'><summary>规范与清单</summary>
+<a href='manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
+<a href='manual/ui/CSS3进度规划.html' title='CSS 进度规划'>CSS 进度规划</a>
+<a href='manual/ui/CSS3开发日志.html' title='CSS 开发日志'>CSS 开发日志</a>
+<a href='manual/ui/HTML5标签覆盖与裁剪.html' title='HTML5 标签覆盖与 MCU 裁剪'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a href='manual/ui/HTML5标签进度规划.html' title='HTML5 标签进度规划'>HTML5 标签进度规划</a>
+<a href='manual/ui/HTML5标签开发日志.html' title='HTML5 标签开发日志'>HTML5 标签开发日志</a>
+</details>
+<details class='sec' open><summary>设计文档</summary>
+<a href='图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a href='底层实现设计.html' title='QLGL 底层实现设计（v0.1 草案）'>QLGL 底层实现设计（v0.1 草案）</a>
+<a href='第三方依赖.html' title='第三方依赖与许可'>第三方依赖与许可</a>
+<a href='迁移指南.html' title='从 Web 迁到 QLGL：写法对照与坑'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a href='Web兼容设计.html' title='Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）'>Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）</a>
+<a href='对比与取舍.html' title='与主流框架对比：qlgl 站在哪一格'>与主流框架对比：qlgl 站在哪一格</a>
+<a href='开发规划.html' title='QLGL 开发规划'>QLGL 开发规划</a>
+<a href='bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
+<a href='性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<a href='JS宿主与框架支持.html' class='current' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
+<a href='跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+</details>
+<p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
+</aside>
+<main><div class='inner'>
+<p class='eyebrow'>设计文档</p>
+<h1>QLGL JS 宿主与前端框架支持（设计草案）</h1>
+<p class='lead'>1. 帧与事件已经可被外部驱动。qlgfxglbegin()/beginrects() → qluirender() → qlgfxglend() 是非阻塞的；事件走 qlgfxglpoll() + qluiinputevent()。 所以&quot;换一个主循环&quot;不需要改渲染骨架。 2. 绑定只是&quot;最后一公</p>
+<blockquote>
+<p>状态：<strong>草案，未排期</strong>。本文只描述方案与边界，不代表已承诺实现。</p>
+<p>一句话：<strong>qlgl 依旧是纯 C、依旧不含 JS 引擎</strong>；把 qlgl 当成"原生 UI 工具包"，
+由 Node.js 这类宿主进程通过 N-API 调用它 —— 于是 HTML/CSS/JS 三件套里，
+HTML/CSS 由 qlgl 负责（构建期编译），JS 由宿主负责（V8/QuickJS 都行）。
+再进一步，Vue/React 用<strong>自定义渲染器</strong>（而不是 DOM 仿真）接到 qlgl 上。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 目标与非目标</h2>
+<h3 id="11">1.1 目标</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>目标</th>
+<th>验收形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>G1</td>
+<td>qlgl 的 C API 能被 Node.js 直接调用（N-API 绑定）</td>
+<td><code>require('qlgl')</code> 能开窗、加载 <code>.qlui</code>、跑帧、收事件</td>
+</tr>
+<tr>
+<td>G2</td>
+<td>宿主可以自由驱动帧与事件（不复用 <code>ex_run</code>）</td>
+<td>用 <code>uv_timer</code> 泵帧的 demo 跑满 60fps</td>
+</tr>
+<tr>
+<td>G3</td>
+<td>运行期可改界面（建/删/移动节点、改文本、换样式）</td>
+<td>JS 里点击按钮 → 新节点出现且<strong>只重画脏区</strong></td>
+</tr>
+<tr>
+<td>G4</td>
+<td>用 Vue/React 写界面，产物落到 qlgl</td>
+<td>一个 Todo 示例：组件化写法、无 DOM API</td>
+</tr>
+<tr>
+<td>G5</td>
+<td>MCU / 移动档<strong>零影响</strong></td>
+<td>关掉开关后编译产物与今天逐字节相同</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12">1.2 非目标（明确不做）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>不做</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N1</td>
+<td>在 qlgl 内部嵌 JS 引擎 / WebView</td>
+<td>保持纯 C、可裁剪、<code>-Werror</code> 无外部运行时（沿用 <a href="开发规划.html">开发规划 §6</a> 红线）</td>
+</tr>
+<tr>
+<td>N2</td>
+<td>模拟浏览器 DOM / CSSOM（jsdom 路线）</td>
+<td>那等于自己写半个浏览器，且要求运行期选择器匹配——直接违背红线</td>
+</tr>
+<tr>
+<td>N3</td>
+<td>"现成网页/网页库零改动移植"</td>
+<td>qlgl 的布局/选择器是 Web 的<strong>子集</strong>，边界见 <a href="tutorial/10_vs_web.html">10_vs_web</a></td>
+</tr>
+<tr>
+<td>N4</td>
+<td>在 MCU 上跑 JS</td>
+<td>V8 几十 MB、QuickJS 也需要几百 KB + 堆；MCU 档只保留"构建期 HTML/CSS"</td>
+</tr>
+<tr>
+<td>N5</td>
+<td>多语言绑定一次做全</td>
+<td>先把 Node 这条打通，其它宿主（Python/Rust）等 API 稳定后照抄</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-qlgl">2. 定位：qlgl 是"工具包"，不是"运行时"</h2>
+<div class="highlight"><pre><span></span><code>┌──────────────── 宿主进程（Node.js，V8 跑应用逻辑）────────────────┐
+│  Vue/React 组件                                                   │
+│        │ 自定义渲染器（react-reconciler / createRenderer）        │
+│        ▼                                                          │
+│  qlgl 绑定层（N-API，薄）                                         │
+│        │ 建节点 / 改 class / setText / 读 rect / 注册回调          │
+└────────┼──────────────────────────────────────────────────────────┘
+         ▼
+┌──────────────── qlgl（纯 C）──────────────────────────────────────┐
+│ 布局 · 绘制（CPU/GL）· 命中测试 · 输入/IME/剪贴板 · 脏区          │
+└───────────────────────────────────────────────────────────────────┘
+         ▲ 每帧：poll 事件 → 输入派发 → （必要时）布局 → begin/render/end
+└────────┴── 构建期：HTML+CSS → .qlui（含&quot;类名→样式&quot;查表）
+</code></pre></div>
+
+<p>三个关键判断：</p>
+<hr />
+<h2 id="3">3. 线程与帧模型</h2>
+<h3 id="31">3.1 两种方案</h3>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>结构</th>
+<th>优点</th>
+<th>缺点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. 同线程</strong>（推荐起步）</td>
+<td>窗口 + GL + qlgl 全在 Node 主线程；<code>uv_timer</code>（或 vsync 等待）每帧泵一次</td>
+<td>绑定的每个调用都是<strong>同步</strong>的，<code>rect()</code>/<code>setText()</code> 语义干净；实现最省</td>
+<td>长 JS 任务（&gt;16ms）会掉帧；JS 卡死 = 界面卡死</td>
+</tr>
+<tr>
+<td><strong>B. 分离线程</strong>（后续优化）</td>
+<td><code>worker_threads</code> 的 worker 独占窗口 + GL；主线程 JS 通过 <code>napi_threadsafe_function</code> 投递</td>
+<td>JS 与渲染互不阻塞</td>
+<td><strong>读尺寸只能返回上一帧结果</strong>；框架的"强制布局后读"语义要改写；调试更难</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结论</strong>：P0–P3 一律走 A。qlgl 单帧成本很低（本机 720p CPU 光栅 1.37ms、GL &lt;0.5ms），
+真正的风险是"JS 自己算太久"，而那是应用的问题，不是绑定也能救的。
+B 作为 P4 可选优化，<strong>必须先有"读尺寸=上一帧"的语义共识</strong>再动手。</p>
+<h3 id="32-a">3.2 每帧的顺序（方案 A）</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* uv_timer 回调，或 vsync 等待返回后 */</span>
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_gfx_gl_poll</span><span class="p">(</span><span class="n">gfx</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">          </span><span class="cm">/* 窗口事件 */</span>
+<span class="w">    </span><span class="cm">/* 键盘/指针事件由 qlgl 转成 QLInputEvent，再 ql_ui_input_event() 送进去 */</span>
+<span class="p">}</span>
+<span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_consume_dirty</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="n">MAX</span><span class="p">);</span>
+<span class="kt">int</span><span class="w"> </span><span class="n">full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">bg</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">full</span><span class="p">)</span><span class="w"> </span><span class="n">ql_ui_render</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">);</span>
+<span class="k">else</span><span class="w">      </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="n">ql_ui_render_rect</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="n">areas</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+<span class="n">ql_gfx_gl_end</span><span class="p">(</span><span class="n">gfx</span><span class="p">);</span>
+<span class="cm">/* 帧末：跑 requestAnimationFrame 回调（下一帧才会生效） */</span>
+</code></pre></div>
+
+<p><strong>布局时机</strong>：宿主改树 → 标脏（<code>QL_UI_RT_DIRTY</code> + 子树标记）→ 帧开始时若有
+"需要重排"标记，先 <code>ql_ui_layout()</code> 再画。<strong>回调里不当场重排</strong>（与现有
+<code>set_state_chain</code> 的"标脏 + 帧末派发"保持一致）。</p>
+<hr />
+<h2 id="4">4. 引擎侧必须补的能力（真正的关口）</h2>
+<h3 id="41">4.1 运行期树变更</h3>
+<p>现状：<code>doc → QLUIRoot</code> 之后树基本只读，只有 <code>ql_ui_set_text()</code>。</p>
+<p>需要的最小集合（P1）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="p">;</span><span class="w">            </span><span class="cm">/* 即 nodes[] 下标，0xFFFF = 无效 */</span>
+
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_create</span><span class="w"> </span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span>
+<span class="w">                            </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">style</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 分配 + 挂到 parent 末尾 */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_destroy</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">id</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 子树整体回收 */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_insert</span><span class="w"> </span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">parent</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">child</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">before</span><span class="p">);</span><span class="w">  </span><span class="cm">/* 0xFFFF = 末尾 */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_set_text</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">utf8</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_set_style</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">style</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_set_class</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">class_mask</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_node_set_inline</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeId</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">decls</span><span class="p">);</span><span class="w"> </span><span class="cm">/* &quot;color:red;...&quot; */</span>
+</code></pre></div>
+
+<p>约束（对应红线）：</p>
+<ul>
+<li><strong>节点池预分配</strong>：<code>QL_CFG_UI_MAX_NODES</code> 固定容量，<code>create</code> 失败返回错误而不是扩容；
+  "稳态零 malloc" 靠"池满即失败 + 构建期给足上限"守住。</li>
+<li><strong>销毁不挪动其它节点</strong>：<code>nodes[]</code> 用空闲链表，<code>QLUINodeId</code> 稳定（框架会持有它做 diff）。</li>
+<li><strong>文本/内联样式的字节池同样有上限</strong>（<code>QL_CFG_UI_MAX_RT_TEXT</code> / <code>…_RT_STYLE</code>），
+  外来字符串一律有界拷贝。</li>
+</ul>
+<h3 id="42">4.2 运行期样式：用"查表"绕开红线 ★</h3>
+<p>红线是"<strong>不做运行期选择器匹配</strong>"。这条不能破，但可以<strong>换一种等价的东西</strong>：</p>
+<ol>
+<li>构建期把每条规则编译进 <strong><code>类名 → 样式条目</code></strong> 的表；</li>
+<li>每个类分配一个 <strong>bit</strong>（<code>class_mask</code> 最多 32 个类/节点，覆盖组件库足够）；</li>
+<li>运行期"换 class" = 改一个 <code>uint32</code> + <strong>查预计算表</strong> 得到最终 <code>QLUIStyle</code> 索引。</li>
+</ol>
+<p>两种查找方式，按命中率取舍：</p>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>做法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预计算（优先）</td>
+<td>构建期枚举"常见类组合 → 样式索引"，运行时 O(1)；组合数超过上限就对剩余组合留空</td>
+<td>体积略增；组合爆炸有上限兜底</td>
+</tr>
+<tr>
+<td>现场级联（兜底）</td>
+<td>用构建期留下的"规则表 + 特异性/书写顺序"，对当前 mask 走一遍级联</td>
+<td>与"运行期匹配"不同：<strong>不做选择器匹配</strong>，只对已知类集合做排序合并</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>说明：级联兜底<strong>不解析选择器</strong>（选择器在构建期已经消解成"类集合 + 优先级"），
+所以红线"不做运行期 CSS 匹配"依然成立。这一点必须在实现时写进代码注释，
+否则以后容易被误读成"打开了运行期匹配"。</p>
+</blockquote>
+<p>内联样式（<code>set_inline</code>）走<strong>现有解析器</strong>（<code>qlui_parse.c</code> 里那段声明解析），
+写进该节点的 <code>style_copy</code>；解析器可以被编译开关整体摘掉（MCU 档必然是摘掉的）。</p>
+<h3 id="43-p1">4.3 事件模型（P1）</h3>
+<p>qlgl 已有命中测试 + hover/active/focus + 点击合成。绑定层需要补的只是<strong>语义</strong>：</p>
+<ul>
+<li>命中节点 → 沿父链<strong>冒泡</strong>，JS 侧拿到 <code>{ type, target, currentTarget, clientX/Y, key }</code>；</li>
+<li>支持 <code>stopPropagation()</code>；<code>preventDefault()</code> 只对 qlgl 自己实现过的默认行为生效
+  （滚动、文本框输入），其余情况是 no-op（文档里写清楚）；</li>
+<li>捕获阶段先不做（组件库罕用，先留接口）；</li>
+<li>键盘：<code>keydown/keyup</code> 从 <code>QLInputEvent</code> 映射，<code>key</code> 用 DOM 的名字表（子集）；</li>
+<li><code>requestAnimationFrame</code> = 下一帧泵之前统一回调；<code>queueMicrotask</code> 交给 V8 自己。</li>
+</ul>
+<h3 id="44">4.4 增量布局：先测再优化</h3>
+<p>现状 <code>ql_ui_layout(ui,w,h)</code> 是<strong>整树</strong>。基准数据：211 节点全树 layout 0.034ms，
+所以 P1 先<strong>不做增量布局</strong>，每帧需要时整树重排即可；等真实应用出现"千节点 + 高频改"
+再考虑"只重排脏子树"，那时必须有 bench 支撑，不许凭感觉提前优化。</p>
+<hr />
+<h2 id="5-n-api">5. 绑定层设计（N-API）</h2>
+<h3 id="51">5.1 形态</h3>
+<ul>
+<li>一个 <code>addon.node</code>：链接 <code>libqlgl.a</code> + 平台依赖（EGL/Wayland/X11/FreeType）。</li>
+<li>JS 句柄 = <strong>整数节点 id</strong>（可序列化、可跨 worker、无需 finalizer 兜底）。</li>
+<li>JS 侧不持有裸指针；所有调用第一参数是 <code>QLUIRoot *</code>（包在 <code>External</code> 里，一个 root 一个）。</li>
+<li>版本校验：加载 <code>.qlui</code> 时比对 <code>QL_UI_BLOB_VERSION</code>，不一致<strong>明确报错</strong>（不静默降级）。</li>
+</ul>
+<h3 id="52-js-api">5.2 JS 侧 API 草案（命令式，供自定义渲染器使用）</h3>
+<div class="highlight"><pre><span></span><code><span class="kd">const</span><span class="w"> </span><span class="nx">qlgl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">require</span><span class="p">(</span><span class="s1">&#39;qlgl&#39;</span><span class="p">);</span>
+
+<span class="kd">const</span><span class="w"> </span><span class="nx">win</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">qlgl</span><span class="p">.</span><span class="nx">createWindow</span><span class="p">({</span><span class="w"> </span><span class="nx">w</span><span class="o">:</span><span class="w"> </span><span class="mf">720</span><span class="p">,</span><span class="w"> </span><span class="nx">h</span><span class="o">:</span><span class="w"> </span><span class="mf">460</span><span class="p">,</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;demo&#39;</span><span class="w"> </span><span class="p">});</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">win</span><span class="p">.</span><span class="nx">createRootFromFile</span><span class="p">(</span><span class="s1">&#39;app.qlui&#39;</span><span class="p">);</span><span class="w">   </span><span class="c1">// 或 createRootFromSource(html, css)</span>
+
+<span class="kd">const</span><span class="w"> </span><span class="nx">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">root</span><span class="p">.</span><span class="nx">createNode</span><span class="p">(</span><span class="nx">root</span><span class="p">.</span><span class="nx">rootId</span><span class="p">,</span><span class="w"> </span><span class="nx">root</span><span class="p">.</span><span class="nx">styleByClass</span><span class="p">(</span><span class="s1">&#39;btn&#39;</span><span class="p">));</span><span class="w"> </span><span class="c1">// style id</span>
+<span class="nx">root</span><span class="p">.</span><span class="nx">setText</span><span class="p">(</span><span class="nx">id</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;点我&#39;</span><span class="p">);</span>
+<span class="nx">root</span><span class="p">.</span><span class="nx">setClassMask</span><span class="p">(</span><span class="nx">id</span><span class="p">,</span><span class="w"> </span><span class="nx">root</span><span class="p">.</span><span class="nx">classBit</span><span class="p">(</span><span class="s1">&#39;btn&#39;</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nx">root</span><span class="p">.</span><span class="nx">classBit</span><span class="p">(</span><span class="s1">&#39;btn-primary&#39;</span><span class="p">));</span>
+<span class="nx">root</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="nx">id</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;click&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="nx">ev</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* ... */</span><span class="w"> </span><span class="p">});</span>
+
+<span class="nx">root</span><span class="p">.</span><span class="nx">frame</span><span class="p">();</span><span class="w">            </span><span class="c1">// 手动泵一帧（示例/测试用）</span>
+<span class="nx">win</span><span class="p">.</span><span class="nx">setFrameDriver</span><span class="p">(</span><span class="s1">&#39;vsync&#39;</span><span class="p">);</span><span class="w">   </span><span class="c1">// 由绑定层接管帧（正式用法）</span>
+<span class="nx">root</span><span class="p">.</span><span class="nx">requestAnimationFrame</span><span class="p">((</span><span class="nx">t</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">});</span>
+<span class="nx">root</span><span class="p">.</span><span class="nx">rect</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span><span class="w">           </span><span class="c1">// =&gt; {x,y,w,h}（上一帧的边框盒）</span>
+</code></pre></div>
+
+<p><code>styleByClass(name)</code> / <code>classBit(name)</code> 由构建期产出的"样式表"决定；
+<code>.qlui</code> 里已经带着这份表，所以<strong>不需要在运行时再解析 CSS 文本</strong>。</p>
+<hr />
+<h2 id="6">6. 框架接入</h2>
+<h3 id="61-reactp2">6.1 React（P2）</h3>
+<p><code>react-reconciler</code> 的 host config 只实现这十来个方法即可（<strong>不碰 DOM</strong>）：</p>
+<table>
+<thead>
+<tr>
+<th>host config</th>
+<th>落到 qlgl</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>createInstance(type, props)</code></td>
+<td><code>createNode</code> + 把 <code>className</code> 拆成 <code>class_mask</code></td>
+</tr>
+<tr>
+<td><code>createTextInstance(text)</code></td>
+<td><code>createNode(textNode)</code> + <code>setText</code></td>
+</tr>
+<tr>
+<td><code>appendChild / insertBefore / removeChild</code></td>
+<td><code>insert / destroy</code></td>
+</tr>
+<tr>
+<td><code>commitUpdate(type, old, new)</code></td>
+<td>只 diff 变化项：<code>setClassMask</code> / <code>setText</code> / <code>setInline</code></td>
+</tr>
+<tr>
+<td><code>prepareUpdate</code></td>
+<td>返回差异位图，避免整 props 重放</td>
+</tr>
+</tbody>
+</table>
+<p>事件：<code>onClick</code> 等由绑定层的"冒泡 → JS 分发"提供，React 侧用极小的合成事件包装。
+调度：<code>requestAnimationFrame</code> + <code>queueMicrotask</code>；React 18 的 <code>MessageChannel</code> 需求
+用一个 <code>setImmediate</code> 垫片满足。</p>
+<p><strong>工具链</strong>：<code>vite-plugin-qlgl</code> —— 构建期做三件事：
+1. 收集 CSS → 调 <code>tools/qlui</code> 的解析器产出"类名 → 样式"表 + <code>.qlui</code>；
+2. 生成首帧静态树（首屏可以是"已经排版好的 HTML"）；
+3. 把 JS bundle 作为外部资源交给宿主（qlgl 不关心）。</p>
+<h3 id="62-vue-3p3">6.2 Vue 3（P3）</h3>
+<p><code>@vue/runtime-core</code> 的 <code>createRenderer({ createElement, insert, remove, patchProp, … })</code>，
+映射与上表一一对应。Vue 的 <code>patchProp</code> 是逐属性调用，天然适配 <code>setInline</code>。
+唯一额外需求：<code>nextTick</code>（<code>queueMicrotask</code> 即可）。</p>
+<hr />
+<h2 id="7">7. 红线修订建议（需先批准，才动代码）</h2>
+<table>
+<thead>
+<tr>
+<th>红线（现状）</th>
+<th>建议改成</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不做 DOM API / JS 引擎</td>
+<td><strong>qlgl 本体不做</strong>；允许<strong>宿主进程</strong>（Node/QuickJS）提供 JS 与 DOM 子集，<code>desktop-js</code> 档启用</td>
+<td>保持纯 C 与可裁剪；JS 在进程里但不在库里</td>
+</tr>
+<tr>
+<td>不做运行期 CSS 匹配</td>
+<td>允许<strong>运行期按"类集合"查表/合并</strong>，<strong>禁止</strong>运行期解析选择器</td>
+<td>选择器仍在构建期消解，性能根基不变</td>
+</tr>
+<tr>
+<td>稳态零 malloc</td>
+<td>运行期建树改成<strong>定容节点池</strong>；池满即失败（不静默扩容）</td>
+<td>保住 MCU 的确定性</td>
+</tr>
+<tr>
+<td>同一份源，两个平台</td>
+<td>新增平台档 <strong><code>desktop-js</code></strong>（Node 宿主）；MCU/移动档不编 JS 相关代码</td>
+<td>与 <code>qlui --platform</code> 的降级报告机制一致</td>
+</tr>
+</tbody>
+</table>
+<p>新增一条需要写进规范的约束：</p>
+<blockquote>
+<p><strong>JS 宿主是可选档</strong>：<code>QLGL_BUILD_JS_HOST=OFF</code> 时，编译产物（<code>.a</code> 内容、golden）
+与今天逐字节一致。</p>
+</blockquote>
+<hr />
+<h2 id="8">8. 里程碑与验收</h2>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>验收（可测）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P0</strong>（约 1 周）</td>
+<td>N-API 绑定：开窗、<code>load .qlui</code>、<code>setText</code>、点击/输入回调、uv 泵帧</td>
+<td>Node 里跑通现有某个例程；点击后改一行文字；连续 300 帧无泄漏（ASan）</td>
+</tr>
+<tr>
+<td><strong>P1</strong>（2–4 周）</td>
+<td>§4.1 树变更 + §4.2 类查找 + §4.3 事件冒泡</td>
+<td>JS 命令式 demo：动态列表增删 100 项，脏区只重画改动块；节点池满返回明确错误</td>
+</tr>
+<tr>
+<td><strong>P2</strong>（2–3 周）</td>
+<td><code>qlgl-reconciler</code> + <code>vite-plugin-qlgl</code></td>
+<td>React 版 Todo：增删改、输入框、无 DOM API 依赖</td>
+</tr>
+<tr>
+<td><strong>P3</strong>（约 2 周）</td>
+<td>Vue <code>createRenderer</code> 适配</td>
+<td>Vue 版同一 Todo，行为与 P2 一致</td>
+</tr>
+<tr>
+<td><strong>P4</strong>（可选）</td>
+<td>预编译分发、TS 类型、README、CI 矩阵；视需要做 worker 线程方案</td>
+<td><code>npm i</code> 后在 Linux/macOS 上开箱跑；CI 覆盖 binding</td>
+</tr>
+</tbody>
+</table>
+<p>每阶段结束必须：<code>ctest</code> 全绿、<code>bench</code> 无回归、文档同步更新。</p>
+<hr />
+<h2 id="9">9. 性能与裁剪成本</h2>
+<p>三块能力都能做成<strong>功能包</strong>（<code>QL_FEAT_*</code>），关闭时对静态路径零成本。
+唯一需要小心的是"删节点把紧凑数组打出洞"这一处，方案见 9.1。</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>静态档（不开）</th>
+<th>开启后</th>
+<th>MCU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行期树变更</td>
+<td>池头部字段与函数全编掉；<code>nodes[]</code> 仍由 doc 精确决定</td>
+<td>删除/插入 = O(children) 链接修复，低频</td>
+<td>预设全 0</td>
+</tr>
+<tr>
+<td>运行期样式（类查表）</td>
+<td>查表不进 blob</td>
+<td>每表项 4–8B，几百项 ≈ 几 KB；切换 = 改一个 <code>uint32</code> + 查表</td>
+<td>预设全 0</td>
+</tr>
+<tr>
+<td>增量布局</td>
+<td>不存在</td>
+<td>属<strong>优化</strong>而非功能：默认关，整树 layout 仍是默认行为</td>
+<td>永不启用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="91">9.1 节点删除：为什么可以不付代价</h3>
+<p><code>nodes[]</code> 现在是<strong>构建期按 doc 节点数分配的紧凑数组</strong>，布局/绘制/脏区都按
+<code>node_count</code> 顺序扫。删节点若留"墓碑"，每个热循环都要多一次 flag 判断（经验值 1–3%）。</p>
+<p>三个选项：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>静态路径开销</th>
+<th>句柄稳定性</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>墓碑（保留洞）</td>
+<td>热循环各 +1 次判断</td>
+<td>稳定</td>
+<td>简单，但不理想</td>
+</tr>
+<tr>
+<td><strong>swap-remove（紧凑）</strong></td>
+<td><strong>0</strong>（数组永远紧凑）</td>
+<td>句柄 = <code>(slot &lt;&lt; k) \| 代际</code></td>
+<td>✅ 推荐</td>
+</tr>
+<tr>
+<td>侵入式链表</td>
+<td>指针追逐，缓存不友好</td>
+<td>稳定</td>
+<td>不推荐</td>
+</tr>
+</tbody>
+</table>
+<p>swap-remove 的代价集中在删除那一刻：把最后一个节点搬进空位，修 <code>parent/first_child/
+next_sibling</code> 中的引用，并把该 slot 的代际 +1（旧句柄自然失效 → 顺手挡掉悬垂句柄）。
+删除是低频操作，这个代价可接受；换来的是<strong>热路径一行都不用改</strong>。</p>
+<h3 id="92">9.2 内存：只有一项"不用也涨"</h3>
+<p>节点池要预留增量空间（运行期新建节点用），这是唯一"即使不开功能也占内存"的部分。
+做成显式配置，避免 MCU 被默默吃掉：</p>
+<div class="highlight"><pre><span></span><code><span class="cp">#ifndef QL_CFG_UI_RT_NODE_HEADROOM</span>
+<span class="cp">#define QL_CFG_UI_RT_NODE_HEADROOM   256   </span><span class="cm">/* MCU 预设设 0 */</span>
+<span class="cp">#endif</span>
+</code></pre></div>
+
+<h3 id="93-ci">9.3 验收阈值（写进 CI）</h3>
+<ul>
+<li><code>bench100</code> / <code>showcase</code>：全树 layout、全量重绘时间变化 <strong>≤ 1%</strong></li>
+<li><code>libqlgl.a</code> 文本段：关闭时 <strong>0 字节</strong>变化；开启时 <strong>≤ 4 KB</strong></li>
+<li>关闭时静态档 golden <strong>逐字节一致</strong>（现有 <code>test_golden</code> 已能验）</li>
+<li>打开 <code>QL_FEAT_UI_RT_MUTATE=1</code> 后跑 ASan/UBSan，节点池满必须返回明确错误</li>
+</ul>
+<h3 id="94-ifdef">9.4 不要用 <code>#ifdef</code> 散落实现</h3>
+<p>沿用既有做法：能力差异走 <code>QL_FEAT_*</code> + <code>qlui --platform</code> 的<strong>构建期降级报告</strong>，
+用到了没编进来的能力就<strong>报错</strong>（"不静默降级"红线）。</p>
+<hr />
+<h2 id="10">10. 风险</h2>
+<table>
+<thead>
+<tr>
+<th>风险</th>
+<th>概率</th>
+<th>影响</th>
+<th>缓解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行期建树把"零 malloc"搞崩</td>
+<td>中</td>
+<td>MCU 档退化</td>
+<td>定容节点池 + 池满即失败 + 断言；P1 必须跑 UBSan/ASan</td>
+</tr>
+<tr>
+<td>类组合爆炸导致预计算表过大</td>
+<td>中</td>
+<td>体积涨</td>
+<td>组合数设上限，超出走现场级联；组件库层面约定少类名</td>
+</tr>
+<tr>
+<td>长 JS 任务掉帧被当成"qlgl 性能差"</td>
+<td>高</td>
+<td>口碑</td>
+<td>帧时间拆分（<code>qlperf</code>）里区分"JS 耗时 / 布局 / 绘制"，文档写清</td>
+</tr>
+<tr>
+<td>绑定层跨平台依赖（EGL/Wayland/X11）</td>
+<td>中</td>
+<td>安装困难</td>
+<td>预编译二进制 + 明确的运行期依赖报错</td>
+</tr>
+<tr>
+<td>框架版本漂移（reconciler 内部 API 变动）</td>
+<td>中</td>
+<td>维护成本</td>
+<td>P2 锁版本；JS 侧适配层单独一个包，可独立升级</td>
+</tr>
+<tr>
+<td>需求漂移成"做浏览器"</td>
+<td>中</td>
+<td>方向失控</td>
+<td>本文 §1.2 非目标 + <a href="tutorial/10_vs_web.html">10_vs_web</a> 边界表</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11_1">11. 待决问题</h2>
+<ol>
+<li><strong>宿主线程</strong>：P0 用方案 A（同线程）是否可接受？B 的触发条件是什么（例如"UI 出现 &gt;2000 节点"）。</li>
+<li><strong>框架优先级</strong>：React 先行还是 Vue 先行（哪个组件库生态更贴近目标用户）。</li>
+<li><strong>打包形态</strong>：单进程（Node + qlgl 同进程）还是"渲染子进程 + IPC"（更稳、更慢）？</li>
+<li><strong>文本输入</strong>：IME 组合过程要不要暴露给 JS（<code>compositionstart/update/end</code>）？</li>
+<li><strong>是否发布 npm 包</strong>：发布意味着要维护版本矩阵与 ABI 承诺，需要先有 CI 跨平台构建能力。</li>
+</ol>
+<hr />
+<h2 id="12_1">12. 与其它文档的关系</h2>
+<ul>
+<li>兼容边界：<a href="tutorial/10_vs_web.html">10_vs_web</a>、<a href="Web兼容设计.html">Web兼容设计</a> §7.3</li>
+<li>红线与排期：<a href="开发规划.html">开发规划</a> §6</li>
+<li>绘制/脏区机制：<a href="底层实现设计.html">底层实现设计</a>、<a href="性能诊断.html">性能诊断</a></li>
+<li>构建期编译链：<code>tools/qlui</code>、<a href="底层实现设计.html">底层实现设计</a> 的 "HTML/CSS → blob" 一节</li>
+</ul><div class='pager'>
+<a href='性能诊断.html'><span class='dir'>上一页</span>性能诊断：怎么量、怎么判、往哪儿改</a>
+<a class='next' href='跨端一致性.html'><span class='dir'>下一页</span>跨端一致性：一份代码多端可跑的边界</a>
+</div>
+</div></main>
+<aside class='toc'><h5>本页内容</h5><ul>
+<li><a href='#1'>1. 目标与非目标</a></li>
+<li class='lv3'><a href='#11'>1.1 目标</a></li>
+<li class='lv3'><a href='#12'>1.2 非目标（明确不做）</a></li>
+<li><a href='#2-qlgl'>2. 定位：qlgl 是&quot;工具包&quot;，不是&quot;运行时&quot;</a></li>
+<li><a href='#3'>3. 线程与帧模型</a></li>
+<li class='lv3'><a href='#31'>3.1 两种方案</a></li>
+<li class='lv3'><a href='#32-a'>3.2 每帧的顺序（方案 A）</a></li>
+<li><a href='#4'>4. 引擎侧必须补的能力（真正的关口）</a></li>
+<li class='lv3'><a href='#41'>4.1 运行期树变更</a></li>
+<li class='lv3'><a href='#42'>4.2 运行期样式：用&quot;查表&quot;绕开红线 ★</a></li>
+<li class='lv3'><a href='#43-p1'>4.3 事件模型（P1）</a></li>
+<li class='lv3'><a href='#44'>4.4 增量布局：先测再优化</a></li>
+<li><a href='#5-n-api'>5. 绑定层设计（N-API）</a></li>
+<li class='lv3'><a href='#51'>5.1 形态</a></li>
+<li class='lv3'><a href='#52-js-api'>5.2 JS 侧 API 草案（命令式，供自定义渲染器使用）</a></li>
+<li><a href='#6'>6. 框架接入</a></li>
+<li class='lv3'><a href='#61-reactp2'>6.1 React（P2）</a></li>
+<li class='lv3'><a href='#62-vue-3p3'>6.2 Vue 3（P3）</a></li>
+<li><a href='#7'>7. 红线修订建议（需先批准，才动代码）</a></li>
+<li><a href='#8'>8. 里程碑与验收</a></li>
+<li><a href='#9'>9. 性能与裁剪成本</a></li>
+<li class='lv3'><a href='#91'>9.1 节点删除：为什么可以不付代价</a></li>
+<li class='lv3'><a href='#92'>9.2 内存：只有一项&quot;不用也涨&quot;</a></li>
+<li class='lv3'><a href='#93-ci'>9.3 验收阈值（写进 CI）</a></li>
+<li class='lv3'><a href='#94-ifdef'>9.4 不要用 #ifdef 散落实现</a></li>
+<li><a href='#10'>10. 风险</a></li>
+<li><a href='#11_1'>11. 待决问题</a></li>
+<li><a href='#12_1'>12. 与其它文档的关系</a></li>
+</ul></aside>
+</div>
+<script src='search-index.js'></script>
+<script>var PREFIX='';
+(function () {
+  var IDX = window.QLGL_SEARCH || [];
+  var box = document.getElementById('q');
+  var panel = document.getElementById('qres');
+  if (!box || !panel) return;
+  var sel = -1, hits = [];
+
+  function esc(s) { return s; }
+
+  function render() {
+    panel.textContent = '';
+    if (!hits.length) {
+      var d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '没有匹配的页面';
+      panel.appendChild(d);
+      panel.hidden = false;
+      return;
+    }
+    hits.forEach(function (h, i) {
+      var a = document.createElement('a');
+      a.className = 'hit' + (i === sel ? ' sel' : '');
+      a.href = PREFIX + h.u;
+      var t = document.createElement('span');
+      t.className = 't';
+      t.textContent = h.t;
+      var c = document.createElement('span');
+      c.className = 'c';
+      c.textContent = h.b;
+      a.appendChild(t); a.appendChild(c);
+      panel.appendChild(a);
+    });
+    panel.hidden = false;
+  }
+
+  function search(q) {
+    q = q.trim().toLowerCase();
+    if (!q) { panel.hidden = true; hits = []; return; }
+    var out = [];
+    for (var i = 0; i < IDX.length; i++) {
+      var e = IDX[i], t = e.t.toLowerCase(), s = 0;
+      if (t === q) s = 100;
+      else if (t.indexOf(q) === 0) s = 90;
+      else if (t.indexOf(q) >= 0) s = 70;
+      else if (e.k && e.b && e.b.toLowerCase().indexOf(q) >= 0) s = 30;
+      if (s > 0) out.push({ s: s + (e.k ? 0 : 8), e: e });
+    }
+    out.sort(function (x, y) { return y.s - x.s || x.e.t.length - y.e.t.length; });
+    hits = out.slice(0, 18).map(function (o) { return o.e; });
+    sel = hits.length ? 0 : -1;
+    render();
+  }
+
+  box.addEventListener('input', function () { search(box.value); });
+  box.addEventListener('focus', function () { if (box.value.trim()) search(box.value); });
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!hits.length) return;
+      sel = (sel + (ev.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length;
+      render();
+    } else if (ev.key === 'Enter') {
+      if (sel >= 0 && hits[sel]) window.location.href = PREFIX + hits[sel].u;
+    } else if (ev.key === 'Escape') {
+      panel.hidden = true; box.blur();
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (!panel.contains(ev.target) && ev.target !== box) panel.hidden = true;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === '/' && document.activeElement !== box &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      ev.preventDefault(); box.focus(); box.select();
+    }
+  });
+})();
+</script>
+</body>
+</html>

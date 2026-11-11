@@ -274,7 +274,7 @@ main img {
 <a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西'>液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -326,6 +326,8 @@ main img {
 <a href='../../开发规划.html' title='QLGL 开发规划'>QLGL 开发规划</a>
 <a href='../../bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
 <a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<a href='../../JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
+<a href='../../跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
@@ -1808,13 +1810,52 @@ blob <strong>v36</strong>；<code>qltext cc</code> 的 C 生成器与全部 gold
 </ol>
 <p><strong>验证</strong>：新增例程 <code>example/42_translate_pct</code>（六格，每格里用 <code>::before</code> 画一块灰色
 "原位置"参照物），<code>--dump</code> 自检输出 <code>(-45,-17) / (90,0) / (0,34) / (45,0) /
-(-22,0) / (9,-25)</code> —— 最后一格证明 y 用的是<strong>高度</strong>（50 × -50% = -25）；
-<code>ctest</code> 88/88。</p>
-<p><strong>顺手记下的伪元素已知差异</strong>：<code>.x::before{content:""}</code> + <code>.x.y::before{top:12px}</code>
-这种"不同选择器补样式"的写法，本库要求<strong>两条都写 <code>content</code></strong>（分组按"选择器完全相同"）。
-浏览器按"元素匹配到哪些规则"合并，只写一次即可。要做的话得把伪元素展开从
+(-22,0) / (9,-25)</code> —— 最后一格证明 y 用的是<strong>高度</strong>（50 × -50% = -25）。</p>
+<p><strong>连带修掉的真 bug（GL 后端的几何裁剪）</strong>：<code>clip_quad()</code> 拿<strong>没加绘制偏移</strong>的矩形
+去和<strong>屏幕坐标</strong>的 <code>g-&gt;clip</code> 求交，而偏移是在裁完之后才加到顶点上的。于是带
+<code>transform: translate()</code> 的元素在<strong>脏区重绘</strong>时会被误裁掉：脏区正好落在位移后的
+位置、而未偏移的盒子与它不相交 → 求交为空 → 整块消失；全帧重绘时裁剪框是整个
+窗口，所以看不出来（现象就是"鼠标一放上去内容就没了"）。
+修法：<code>clip_quad()</code> 里先把裁剪框按当前偏移搬到元素自己的坐标系
+（<code>clip - offset</code>）再求交。同一段还有两个兄弟坑，一并记在这里：
+<code>gl_set_mask()</code> 关闭时没清 <code>poly_n</code>、<code>ql_canvas_set_mask()</code> 关闭时没清 <code>mask_pn</code>
+（都用"关闭统一走 set_mask(-1)"这个入口，必须两个都清）。</p>
+<hr />
+<h4 id="1821">18.21 伪元素：不同选择器补样式的已知差异（未修）</h4>
+<p><code>.x::before{content:""}</code> + <code>.x.y::before{top:12px}</code> 这种"不同选择器补样式"的写法，
+本库要求<strong>两条都写 <code>content</code></strong>（分组按"选择器完全相同"）。</p>
+<p>浏览器按"元素匹配到哪些规则"合并，只写一次即可。要做的话得把伪元素展开从
 "先按选择器分组、再遍历节点"改成"逐节点收集命中的伪元素规则"，属于展开算法的重构，
-本次没动。</p><div class='pager'>
+本次没动。</p>
+<hr />
+<h4 id="1822-backdrop-filter-refract-2026-11-11">18.22 <code>backdrop-filter: refract()</code> —— 玻璃边缘的折射（2026-11-11）</h4>
+<p><strong>问题</strong>：只有 <code>blur()</code> 的玻璃是一块<strong>均匀的毛面</strong>，边缘没有任何"厚度"，怎么调都不像
+Apple 那套液态玻璃。参考稿（CodePen）用的是内联 SVG 滤镜：
+<code>feGaussianBlur</code> 模糊 + <code>feDisplacementMap</code> 按法线图位移。</p>
+<p><strong>做法</strong>：把它拆成两个 CSS 函数，语义一一对应。</p>
+<ol>
+<li><code>blur(&lt;N&gt;px)</code> —— 毛面（对应 <code>feGaussianBlur</code>）。</li>
+<li><code>refract(&lt;N&gt;px)</code> —— <strong>轮廓附近把采样点沿法线方向往外推</strong>，最多 N px；圆心不推。
+   等价于 <code>feDisplacementMap</code>，但不需要内联滤镜图，参数就是一个像素半径。</li>
+<li><code>saturate(&lt;N&gt;%)</code> —— 模糊会把颜色洗淡，这里推回去。</li>
+</ol>
+<p><strong>实现要点（CPU 与 GL 同一套顺序与参数）</strong>：</p>
+<ul>
+<li><strong>采样范围外扩</strong>：从 <code>rect</code> 扩出 <code>blur 半径 + refract</code>。模糊核本来就会读盒子外面，
+  只糊盒内再靠钳位补边，得到的是"这块方形的均值色"，半径一大就发灰、四边留方边。</li>
+<li><strong>只写轮廓之内</strong>：结果按圆角覆盖率与模糊前的原像素混合，轮廓外一个像素都不动
+  （否则四个圆角缺口里渗出方的模糊块）。</li>
+<li><strong>三段盒式卷积</strong>近似高斯：两段是三角核，边缘有一道可见折线；三段才接近钟形。</li>
+<li>接口上是 <code>backdrop_blur_round(..., corner, sat, refract)</code>；<code>refract == 0</code> 时行为与
+  上一版逐像素一致（旧例程的截图不受影响）。</li>
+</ul>
+<p><strong>为什么 <code>blur()</code> 要小</strong>：半径一大，背后就被糊成均值色 → 灰塑料。例程取 6px，
+厚度全部由 <code>refract(14px)</code> 提供；悬停时折射加倍到 26px。</p>
+<p><strong>验证</strong>：<code>example/38_liquid_glass</code> 整版重写成参考稿那套（水彩背景 + 玻璃圆盘 + 白色加号），
+<code>QL_EX_WINDOW_DUMP</code> 抓真窗口帧确认折射可见、圆角缺口无方形渗出；
+<code>ctest</code> 88/88（<code>blur.qlg</code> / <code>showcase.qlg</code> 基准随三段卷积一起重建）。</p>
+<p><strong>顺带的版本变更</strong>：<code>QLUIStyle</code> 多一个 <code>backdrop_refract</code> 字节 →
+<code>QL_UI_BLOB_VERSION</code> <strong>37 → 38</strong>，所有 golden 重建。</p><div class='pager'>
 <a href='../../manual/ui/CSS3进度规划.html'><span class='dir'>上一页</span>CSS 进度规划</a>
 <a class='next' href='../../manual/ui/HTML5标签覆盖与裁剪.html'><span class='dir'>下一页</span>HTML5 标签覆盖与 MCU 裁剪</a>
 </div>

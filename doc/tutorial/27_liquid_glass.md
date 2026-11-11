@@ -1,155 +1,133 @@
-# 液态玻璃：`backdrop-filter` 的玻璃按钮 + 背后会动的东西
+# 液态玻璃：`blur` + `saturate` + `refract` 的玻璃圆盘
 
-<img src="../img/38-liquid-glass.png" alt="深色流动背景上的玻璃药丸、玻璃按钮与玻璃气球" width="630">
+<img src="../img/38-liquid-glass.png" alt="水彩背景上的玻璃圆盘：边缘一圈折射，中间一个白色加号" width="630">
 
-完整程序：`example/38_liquid_glass/`
+完整程序：`example/38_liquid_glass/`（对照稿：codepen.io/Mikhail-Bespalov/pen/MYwrMNy）
 
-> 想直接看效果：`./build/example/example_38_liquid_glass`。
-> 按住按钮会看到它变亮（`:active`），右上角那个玻璃气球会自己走，
-> 走到哪儿就把哪儿的背景吃掉一块做成模糊。
+> 直接看效果：`./build/example/example_38_liquid_glass`
+>
+> - **悬停**圆盘：折射半径 14px → 26px（边缘那圈"厚度"变厚），同时整体放大 2%、白底变亮
+> - **点一下**圆盘：下面那行字换一次
 
 ---
 
-## 1. 玻璃 = 三层，少一层就变"灰色塑料"
+## 1. 参考稿的全部秘密就四个数值
 
-| 层 | 实现 | 作用 |
+| # | 数值 | 作用 |
 |---|---|---|
-| ① 背后模糊 + 染色 | `backdrop-filter: blur(40px) saturate(150%)` + `background-color: rgba(...,0.1~0.2)` | 玻璃"透过去"的那部分 |
-| ② 亮边 + 内高光 | `border: 1px solid #FFFFFF` + `box-shadow: inset 0 1px 0 rgba(255,255,255,.55)` | 玻璃的**厚度**感 |
-| ③ 投影 | `box-shadow: 0 10px 30px rgba(0,0,0,.38)` | 玻璃**浮在**背景上 |
-
-只做 ① 会得到一块"灰蒙蒙的毛玻璃"；②③ 才是让人认出"这是玻璃"的东西。
-这三样都是纯绘制，不增加模糊次数。
-
-**`saturate()` 不是装饰**：模糊是加权平均，糊完的"均值色"饱和度必然下降，
-玻璃看上去就像蒙了层灰塑料。真实玻璃、Apple 的 Liquid Glass 都是"糊完再把颜色
-推回来"，经验值 140%~180%。这个例程里外层 `.scene` 推 150%、玻璃自己再推 150%
-（两层叠加，玻璃底下那片颜色才够亮）。
+| ① | `background-color: rgba(255,255,255,.08)` | 玻璃本身几乎不挡光 —— **这一个 alpha 决定"透不透"** |
+| ② | `border: 2px solid rgba(255,255,255,.6)` | 一圈亮边，玻璃的"截面" |
+| ③ | `box-shadow: 0 16px 32px rgba(0,0,0,.12)` | 很淡的投影，玻璃于是"浮"在背景上 |
+| ④ | `backdrop-filter: blur(6px) saturate(140%) refract(14px)` | 毛面 + 提色 + **边缘折射** |
 
 ```css
-.head, .dock, .btn, .puck {
-  backdrop-filter: blur(40px) saturate(150%);
-  background-color: rgba(226, 236, 255, 0.12);
-  background-image: linear-gradient(180deg, #FFFFFF, #DCE8F8);
-  border-width: 1px;
-  border-style: solid;
-  border-color: #E9EFF9;
-  box-shadow: inset 0px 1px 0px rgba(255, 255, 255, 0.55),
-              0px 10px 30px rgba(0, 0, 0, 0.38);
+.glass {
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(6px) saturate(140%) refract(14px);
 }
 ```
 
-## 2. 背后的"东西"：整层一次模糊
+> ① 是最容易写错的地方：alpha 拉到 0.2 以上立刻变成"白塑料"，0.08 才是玻璃。
 
-五个 400~520px 的色块互相重叠、各自 `transform: translate()` 动画（零重排），
-外面套一层 `filter: blur() saturate()`：
+## 2. `refract()`：参考稿里那个 `feDisplacementMap`
 
-```css
-.scene {
-  filter: blur(14px) saturate(150%);   /* 一个离屏图层，**不是**五个 */
-}
-```
+参考稿的滤镜链是 **`feGaussianBlur` + `feDisplacementMap`**：先轻度模糊，再按一张法线
+图把像素**位移**。位移集中在轮廓附近，于是玻璃边缘看起来像一块有厚度的透镜。
 
-色块自己先用"到透明"的径向渐变做了柔边，所以外面这层 `blur()` 只要收一下毛边：
+本库把这两步写成两个函数，语义一一对应：
 
-```css
-.b1 { background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0)); }
-```
-
-> 渐变的两个色标可以**各带自己的 alpha**（这条是本例程逼出来的库能力，见 §3.1）。
-> 写成不透明的止色（`#9B0F45`）得到的是硬边圆盘，必须靠大半径 `blur()` 去糊；
-> 止色写 `rgba(...,0)` 就得到一团柔光斑，`blur()` 只负责最后那点毛边。
-
-> 给每个色块各加一次 `filter` 会让图层数乘 5。容器上一次就够，
-> 因为 `filter` 是对"合成后的结果"生效 —— 这也是 CSS 的语义。
-
-色块要**大且重叠**，保证任何位置的玻璃后面都有颜色。玻璃最容易翻车的场景是
-"底下是深色空白"——那看起来就是一块灰塑料。
-
-## 3. 这个例程逼出来的三个真 bug / 限制
-
-写的时候一路"看着不对就查"，查到三件事，两件已经修进库里：
-
-### 3.1 渐变的两个色标共用一个 alpha（**已修**）
-
-```css
-background-color: rgba(226, 236, 255, 0.12);        /* ← 透不透由它决定 */
-background-image: linear-gradient(180deg, #FFFFFF, #DCE8F8);  /* ← 只做明暗 */
-```
-
-一开始本库一个背景只有**一个** alpha：`rgba()` 写在渐变色标里会被忽略。
-于是"上亮下透"的渐变（玻璃最常用的那种）做不出来，只能"整体 alpha + 明暗层次"，
-色块也只能是硬边圆盘、靠大半径模糊去糊。
-
-后来补上了：两个色标各带自己的 alpha，插值时"颜色 + alpha"两组分量一起插。
-
-```css
-background-image: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,255,255,0));
-background-image: radial-gradient(circle, #FF2D6F, rgba(255, 45, 111, 0));   /* 柔边光斑 */
-```
-
-**兼容规则**：两个色标都不写 alpha 时，渐变的 alpha 沿用 `background-color` 的
-（旧行为不变，也正是 `transition: background-color` 能改玻璃"透光度"的原因）；
-一旦色标自己带了 alpha，就以渐变里的为准。
-
-### 3.2 `box-shadow: inset` + 圆角=半边长 → 四角被涂满（**已修**）
-
-玻璃按钮/气球都是"药丸"或正圆，也就是 `border-radius` 正好等于半边长。
-这种形状下 SDF 是圆角轮廓的，矩形四角落在轮廓**外面**，而内阴影的覆盖率公式
-在那一片恒等于 1 —— 于是四个角被整片涂成阴影色，看起来像"圆外面套了个方框"。
-
-CPU 侧的 `ql_canvas_fill_inset_shadow()` 用 `round_row_span()` 限定在轮廓内，所以
-**只有 GPU 有这个问题**，而且离屏对拍没覆盖到（当时没有圆角 + 内阴影的用例）。
-
-修法是片元里再乘一个"在轮廓内"的覆盖率：
-
-```glsl
-float cov = 1.0 - smoothstep(0.0, max(border, 1.0), -d);
-cov *= 1.0 - smoothstep(-0.5, 0.5, d);      /* ← 新增 */
-```
-
-回归测试加在 `test_gl_vs_cpu`（"box-shadow: inset + 正圆 / 药丸"两例）：
-改回去立刻报 `差异 2.07%`。
-
-### 3.3 `transition` 只认这七个属性
-
-```css
-transition: background-color 180ms ease-out, border-color 180ms ease-out;
-```
-
-按下时**只改** `background-color` / `border-color`，不改 `background-image` ——
-后者不在可过渡列表里，写了会在**构建期报错**（本库的原则是不静默忽略）。
-
-可过渡属性：`background-color` / `opacity` / `color` / `border-color` /
-`border-radius` / `transform` / `clip-path`。
-
-## 4. 玻璃叠玻璃
-
-按钮坐在玻璃"托盘"上（`.dock` 里放 `.btn`）。这是最容易出问题的地方：
-后画的元素模糊的必须是"**已经画好**的背景"，包括托盘自己。
-
-本库的实现顺序天然满足这一点（`backdrop-filter` 在画自己背景**之前**采样），
-所以玻璃套玻璃直接就能用，不需要额外处理。
-
-## 5. 性能
-
-| 项 | 数值（本机 1920×1080、GPU 后端） |
+| 参考稿 | 本库 |
 |---|---|
-| 帧时间 p50 | **6.92 ms**（≈144 fps，跟 vsync） |
-| 其中等 swap | 6.64 ms（几乎全是等垂直同步） |
-| 实际渲染 | 约 0.3 ms |
+| `feGaussianBlur stdDeviation≈4` | `blur(<N>px)` |
+| `feDisplacementMap` | `refract(<N>px)` |
+| 饱和调整 | `saturate(<N>%)` |
 
-代价主要在**模糊次数**：5 个玻璃元素各一次 backdrop 模糊 + 场景一次
-`filter` 模糊。想更快就减少玻璃元素数量或降低 `blur()` 半径
-（半径直接决定降采样的盒半径）。
+**`refract(N)` 的语义**：越靠近轮廓，采样点沿**法线方向往外推**，最多 N px；圆心处
+完全不推。所以圆盘看起来是"把外面的颜色折进来了"。
 
-CPU 后端（`--dump`）也能跑，画面基本一致，只是模糊是逐像素盒式近似、边缘略硬。
+- 半径怎么选：大约是**亮边宽度的 5~10 倍**。例程的圆盘 300px，取 14px；悬停时 26px。
+- 只写 `refract()` 也可以 —— 那就是一块干净的放大镜；只写 `blur()` 就是普通毛玻璃。
+  两者一起写才是"液态"。
+- 三个函数任意顺序、可以只写其中一部分；写其它函数（`brightness()` 等）**构建期报错**。
 
-## 6. 背景为什么不会出现"色带"
+## 3. 为什么 `blur()` 只有 6px
 
-大面积模糊背景最容易露馅的不是模糊本身，而是 **8 位量化**：一段"100px 才变一个
-色阶"的缓渐变压进 256 档就是一条条竖直色带（这个例程最初就是这样，肉眼很明显）。
+模糊的目的是"看不清细节"，不是"看不见东西"。半径一大，背景就被糊成一团均值色，
+玻璃立刻变灰塑料。参考稿只有 ~4px，这里取 6px。
 
-修法是在"float → 8 位"的那一下加有序抖动（4×4 Bayer，±0.5 色阶），
-平均色不变、台阶被打散成看不见的噪点。技术细节见
-`doc/手册/render/QLRender阅读指南.md` §16；`QLGL_GL_NDITHER=1` 可以关掉它做 A/B 对比。
+**厚度感来自 `refract()`，不是来自模糊半径。**
+
+## 4. 背后那张"水彩"是程序算出来的
+
+```css
+#root { background-image: url(watercolor); background-size: cover; }
+```
+
+`url(watercolor)` 不是文件，而是 `ql_ui_register_image()` 在运行期注册的一张位图
+（`main.c` 的 `build_watercolor()`）：
+
+- 11 个色斑（暖橙 → 紫蓝）+ 18 个小花瓣（白/黄/粉）+ 一层纸纹；
+- 纸纹用整数 LCG，**不依赖 `rand()`**，跨平台逐像素一致；
+- 花瓣边缘只有 ~1.5px 的过渡 —— 它们就是**模糊与折射的试纸**：糊多了会消失，
+  折射不够会看不出弯折。
+
+`.scene` 里那 5 团慢慢漂移的薄雾是 `radial-gradient` + `transform` 动画，
+**它们不模糊** —— 糊不糊是玻璃自己的事（图层数只有一层）。
+
+## 5. 实现上必须做对的三件事
+
+1. **采样范围要比盒子大一圈**（`radius + refract`）。模糊核本来就要读盒子外面：
+   只糊盒内、边缘靠钳位补的话，得到的是"这块方形的均值色"，半径一大就发灰，
+   四边还会留一圈方形的边。
+2. **结果只写进轮廓之内**（按圆角覆盖率与原像素混合），轮廓外一个像素都不动 ——
+   否则四个圆角缺口里会渗出"方的模糊块"。
+3. **三段盒式卷积近似高斯**。两段是三角核，边缘有一道可见的折线；三段才接近钟形。
+
+CPU 与 GL 两个后端走同一套参数与顺序，`test_gl_vs_cpu` 对着色器做逐像素对拍。
+
+## 6. 限制（都是明确报错，不静默降级）
+
+| 限制 | 说明 |
+|---|---|
+| 函数集合 | 只有 `blur()` / `saturate()` / `refract()`，其它函数构建期报错 |
+| 不可过渡 | `backdrop-filter` **不在**可过渡属性列表里 → 悬停时折射半径是**瞬变**，不是渐变 |
+| 平台档 | 属于 `QL_FEAT_CSS_BLUR`（PC 档特性）；MCU 档恒关 |
+| 层数 | 玻璃套玻璃天然可用（先采样"已画好的内容"，再画自己），但每多一层就多一次模糊 |
+
+## 7. 性能（本机 720×460、GL 后端、240 帧）
+
+| 项 | 数值 |
+|---|---|
+| 帧时间 p50 / p95 | **16.62 ms** / 17.68 ms |
+| 其中等 swap | 16.33 ms（几乎全是等垂直同步） |
+| 实际渲染 | 约 **0.3 ms** |
+
+也就是：一帧的预算几乎全花在 vsync 上，真正画一张"水彩 + 折射玻璃"只要零点几毫秒。
+成本主要随**玻璃元素数量**线性增长（每块玻璃一次模糊 + 一次折射位移）。
+
+## 8. 写玻璃时踩过的三个坑（都已修 / 都已记录）
+
+### 8.1 渐变的两个色标共用一个 alpha（**已修**）
+
+以前一个背景只有**一个** alpha：`rgba()` 写在渐变色标里会被忽略，于是"上亮下透"
+的玻璃做不出来。现在两个色标各带自己的 alpha，插值时"颜色 + alpha"一起插。
+兼容规则：两个色标都不写 alpha 时沿用 `background-color` 的 alpha。
+
+### 8.2 `box-shadow: inset` + 圆角=半边长 → 四角被涂满（**已修**）
+
+正圆/药丸的圆角正好等于半边长，矩形四角落在轮廓**外面**，而内阴影的覆盖率公式
+在那一片恒等于 1 —— 四个角被整片涂成阴影色，看着像"圆外面套了个方框"。
+修法是片元里再乘一个"在轮廓内"的覆盖率；回归测试在 `test_gl_vs_cpu`。
+
+### 8.3 `transition` 只认这七个属性
+
+`background-color` / `opacity` / `color` / `border-color` / `border-radius` /
+`transform` / `clip-path`。写别的会在**构建期报错**（不静默忽略）。
+
+所以例程的悬停过渡只写了两个：
+
+```css
+transition: background-color 220ms ease-out, transform 220ms ease-out;
+```

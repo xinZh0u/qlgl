@@ -473,6 +473,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `transform: translate()` | ✅ | R | 加到绘制偏移上，**不进布局**（零重排） |
+| `transform: translate()` 的**百分比**（`translate(-50%,-50%)` 居中） | ✅ | R | 相对元素**自身**边框盒（x → 宽、y → 高）。构建期存百分数 + `tf_pct` 标记，布局后 `resolve_tf_pct()` 折成 px 写进样式副本（开发日志 §18.20）。**限制**：不能与 `rotate/skew/matrix` 同一条声明（矩阵构建期定型）、`@keyframes` 里不支持 |
 | `transform: scale()` | ✅ | R | 允许负值（几何压扁 + 镜像） |
 | `transform: scaleX()` / `scaleY()` | ✅ | R | 假 3D 翻转就靠它 |
 | `transform: rotate()` | ✅ | F | M9.4：离屏图层 + 仿射重采样（§18.11）。**依赖 `QL_FEAT_CSS_FILTER_LAYER`**，裁掉时构建期报错 |
@@ -506,11 +507,12 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `backdrop-filter: blur() saturate()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；`saturate(<N>%)` 把糊完的均值色推艳（`0`/`100%` = 不变），两个函数任意顺序、可只写一个；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
+| `backdrop-filter: blur() saturate()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；`saturate(<N>%)` 把糊完的均值色推艳（`0`/`100%` = 不变），三个函数任意顺序、可只写其中一个；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
+| `backdrop-filter: refract(<N>px)` | ✅ | O | **qlgl 扩展（CSS 没有这个函数）**：轮廓附近把采样点沿法线往外推，玻璃边缘于是有透镜般的厚度；等价于参考稿里的 SVG `feDisplacementMap`。采样范围按 `blur 半径 + refract` 外扩，结果只写进圆角轮廓内。见 [§18.22](CSS3开发日志.md)、[液态玻璃教程](../../tutorial/27_liquid_glass.md) |
 | `filter: blur(<N>px)` | ✅ | O | **离屏图层**（§18.10）：元素先合成到临时图再整体糊。9 抽头可分离高斯，抽头间距 = N/2，两条后端同一公式。MCU 档恒关 |
 | `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | ✅ | O | 颜色矩阵族，同一图层里可链式（最多 6 个）；`1.2` 与 `120%` 等价 |
 | `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`drop-shadow` **不接受** `spread`（CSS 也没有） |
-| `filter: url(#svg)` / `backdrop-filter` 的其它函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者只有 `blur()` + `saturate()` 两个（`brightness`/`contrast`/`hue-rotate` 等明确报错，不静默忽略） |
+| `filter: url(#svg)` / `backdrop-filter` 的其它函数 | ❌ | X | 前者要内联 SVG 滤镜图；后者只有 `blur()` + `saturate()` + `refract()`（`brightness`/`contrast`/`hue-rotate` 等明确报错，不静默忽略） |
 | `clip-path: circle()` / `ellipse()` | ✅ | R | 子树级**椭圆**遮罩（圆心恒在元素中心）；GPU 顶点属性带 `(cx,cy,rx,ry)`，CPU 同一公式 |
 | `clip-path: inset()` | ✅ | R | **与裁剪矩形求交**，两后端精确、零额外成本（B9） |
 | `clip-path: polygon()` | ✅ | F | B9：顶点进 doc 池（同形状去重）→ 绘制期解析覆盖率（奇偶内点 + 到最近边距离），CPU/GPU 同公式、零图层 |

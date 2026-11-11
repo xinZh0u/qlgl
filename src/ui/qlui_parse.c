@@ -2294,6 +2294,33 @@ static const char *const k_corner_names[4] = { "top-left", "top-right",
                                                "bottom-right", "bottom-left" };
 
 /* transform 里的 px 参数：`-40px` 或 `0` */
+static int tf_px(const char *token, const char *where, int *out);
+
+/*
+ * `translate()` 的分量：px / 0 照旧；百分比存**百分数**并把 `*is_pct` 置 1 ——
+ * 它相对元素自身的边框盒（x → 宽、y → 高），构建期算不出来，
+ * 由 `resolve_tf_pct()` 在布局后折成 px。
+ */
+static int tf_len(const char *token, const char *where, int *out, int *is_pct)
+{
+    char t[64];
+    trim_lower(token, t, sizeof(t));
+    size_t n = strlen(t);
+    if (n > 1 && t[n - 1u] == '%') {
+        char num[64];
+        memcpy(num, t, n - 1u);
+        num[n - 1u] = '\0';
+        const char *end = NULL;
+        double v = 0;
+        if (match_number(num, &end, &v) && *end == '\0' && v > -1000.0 && v < 1000.0) {
+            *out = (int)py_round(v);
+            *is_pct = 1;
+            return 1;
+        }
+    }
+    return tf_px(token, where, out);
+}
+
 static int tf_px(const char *token, const char *where, int *out)
 {
     char t[64];
@@ -2606,16 +2633,19 @@ static int parse_transform_origin(const char *text, const char *where,
  */
 static int parse_transform(const char *text, const char *where, int *tx, int *ty,
                            int *scx, int *scy, QLUIXform *out_mat, int *has_mat,
-                           int allow_matrix)
+                           int allow_matrix, uint8_t *pct_mask)
 {
     *tx = *ty = 0;
     *scx = *scy = 1000;
     if (has_mat != NULL)
         *has_mat = 0;
+    if (pct_mask != NULL)
+        *pct_mask = 0;
 
     double mat[6];
     xf_identity(mat);
     int want_mat = 0;
+    int pct_used = 0;
 
     char t[192];
     size_t k = 0;
@@ -2693,16 +2723,33 @@ static int parse_transform(const char *text, const char *where, int *tx, int *ty
         }
 
         if (strcmp(fn, "translate") == 0) {
-            if (nargs < 1 || !tf_px(args[0], where, tx))
+            int px_x = 0, px_y = 0;
+            if (nargs < 1 || !tf_len(args[0], where, tx, &px_x))
                 return 0;
-            if (nargs > 1 && !tf_px(args[1], where, ty))
+            if (nargs > 1 && !tf_len(args[1], where, ty, &px_y))
                 return 0;
+            if (pct_mask != NULL) {
+                *pct_mask |= (uint8_t)(px_x ? 1 : 0);
+                *pct_mask |= (uint8_t)(px_y ? 2 : 0);
+            }
+            if (px_x || px_y)
+                pct_used = 1;
         } else if (strcmp(fn, "translatex") == 0) {
-            if (nargs < 1 || !tf_px(args[0], where, tx))
+            int px_x = 0;
+            if (nargs < 1 || !tf_len(args[0], where, tx, &px_x))
                 return 0;
+            if (pct_mask != NULL && px_x)
+                *pct_mask |= 1;
+            if (px_x)
+                pct_used = 1;
         } else if (strcmp(fn, "translatey") == 0) {
-            if (nargs < 1 || !tf_px(args[0], where, ty))
+            int px_y = 0;
+            if (nargs < 1 || !tf_len(args[0], where, ty, &px_y))
                 return 0;
+            if (pct_mask != NULL && px_y)
+                *pct_mask |= 2;
+            if (px_y)
+                pct_used = 1;
         } else if (strcmp(fn, "scale") == 0) {
             if (nargs < 1)
                 return 0;
@@ -2852,6 +2899,24 @@ static int parse_transform(const char *text, const char *where, int *tx, int *ty
         set_error("%s: 无法解析的 transform '%s'", where, text);
     if (seen == 0)
         return 0;
+
+    if (pct_used) {
+        /*
+         * 百分比 translate 要等元素尺寸，只能在布局后折成 px；
+         * 而矩阵（rotate/skew/matrix）在构建期就把 translate 折进去了 ——
+         * 两者没法同时成立，明确报错而不是算出一个错的矩阵。
+         */
+        if (want_mat) {
+            set_error("%s: translate 的百分比不能和 rotate/skew/matrix 组合"
+                      "（矩阵要构建期定型，百分比要布局后才算得出）", where);
+            return 0;
+        }
+        if (!allow_matrix) {
+            set_error("%s: @keyframes 里的 translate 暂不支持百分比"
+                      "（帧表存的是整数 px）", where);
+            return 0;
+        }
+    }
 
     if (want_mat) {
         if (out_mat == NULL || has_mat == NULL) {
@@ -9698,7 +9763,7 @@ static int kf_compile(const KfDefs *kfs, KfTable *tab, KfRanges *ranges)
 
             if ((props & KF_TRANS) != 0) {
                 if (!parse_transform(decls_get(d, "transform"), where, &tfx, &tfy, &scx,
-                                     &scy, NULL, NULL, 0)) {
+                                     &scy, NULL, NULL, 0, NULL)) {
                     ql_mem_free(idx);
                     return 0;
                 }
@@ -12179,14 +12244,19 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     }
 
     /*
-     * 毛玻璃：`backdrop-filter: blur(<N>px) [saturate(<M>%)]`（两种函数任意顺序，
-     * 也可以只写其中一个）。
+     * 毛玻璃：`backdrop-filter: blur(<N>px) [saturate(<M>%)] [refract(<K>px)]`
+     * （函数任意顺序，也可以只写其中一部分）。
      *
      * `saturate()` 是 v37 加的：模糊之后把背景颜色推艳。只有模糊的话玻璃后面
      * 是一片灰蒙蒙的均值色 —— Apple 的"液态玻璃"看起来通透正是靠这一步。
+     *
+     * `refract()` 是 v38 加的：在轮廓附近把采样点往外推一圈（透镜斜面）。
+     * 它替代不了 blur —— 两个一起写才是"液态玻璃"：`blur()` 给毛面，
+     * `refract()` 给厚度。只有 refract 也可以（干净的放大镜）。
      */
     int backdrop = 0;
     int backdrop_sat = 0;
+    int backdrop_refract = 0;
     if ((v = decls_get(st, "backdrop-filter")) != NULL) {
         char low[96];
         size_t k = 0;
@@ -12239,8 +12309,9 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                 const char *f = fn[i];
                 const size_t fl = strlen(f);
                 if (fl < 4u || f[fl - 1u] != ')') {
-                    set_error("%s: backdrop-filter 只认识 blur(<N>px) 与 "
-                              "saturate(<N>%%)（收到 '%s'）", where, v);
+                    set_error("%s: backdrop-filter 只认识 blur(<N>px)、"
+                              "saturate(<N>%%) 与 refract(<N>px)（收到 '%s'）",
+                              where, v);
                     return 0;
                 }
                 if (strncmp(f, "blur(", 5) == 0) {
@@ -12298,9 +12369,35 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                     /* 100% = 不变；存 0 表示"没写"，好让下游少一次判断 */
                     if (backdrop_sat == 100)
                         backdrop_sat = 0;
+                } else if (strncmp(f, "refract(", 8) == 0) {
+                    const char *arg = f + 8;
+                    const size_t al = fl - 9u;      /* 去掉 "refract(" 与 ")" */
+                    if (al <= 2u || strncmp(arg + al - 2u, "px", 2) != 0) {
+                        set_error("%s: backdrop-filter: refract 需要 px 单位"
+                                  "（收到 '%s'）", where, v);
+                        return 0;
+                    }
+                    char nb[32];
+                    size_t m = (al - 2u < sizeof(nb) - 1u) ? al - 2u : sizeof(nb) - 1u;
+                    memcpy(nb, arg, m);
+                    nb[m] = '\0';
+                    double d = 0;
+                    const char *e2 = NULL;
+                    if (!match_number(nb, &e2, &d) || *e2 != '\0') {
+                        set_error("%s: backdrop-filter: refract 参数看不懂（收到 '%s'）",
+                                  where, v);
+                        return 0;
+                    }
+                    backdrop_refract = (int)py_round(d);
+                    if (backdrop_refract < 0 || backdrop_refract > 64) {
+                        set_error("%s: backdrop-filter: refract 半径必须在 0~64px",
+                                  where);
+                        return 0;
+                    }
                 } else {
-                    set_error("%s: backdrop-filter 只认识 blur(<N>px) 与 "
-                              "saturate(<N>%%)（收到 '%s'）", where, v);
+                    set_error("%s: backdrop-filter 只认识 blur(<N>px)、"
+                              "saturate(<N>%%) 与 refract(<N>px)（收到 '%s'）",
+                              where, v);
                     return 0;
                 }
             }
@@ -12801,9 +12898,10 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     int tf_x = 0, tf_y = 0, sc_x = 1000, sc_y = 1000;
     QLUIXform xform;
     int has_xform = 0;
+    uint8_t tf_pct = 0;
     memset(&xform, 0, sizeof(xform));
     if (!parse_transform((v = decls_get(st, "transform")) != NULL ? v : "none", where,
-                         &tf_x, &tf_y, &sc_x, &sc_y, &xform, &has_xform, 1))
+                         &tf_x, &tf_y, &sc_x, &sc_y, &xform, &has_xform, 1, &tf_pct))
         return 0;
 
     /* `transform-origin`：默认 50% 50%（元素中心），与 CSS 一致 */
@@ -12971,6 +13069,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     }
     out->tf_x = (int16_t)tf_x;
     out->tf_y = (int16_t)tf_y;
+    out->tf_pct = tf_pct;
     out->sc_x = (int16_t)sc_x;
     out->sc_y = (int16_t)sc_y;
     out->anim = (uint16_t)anim_idx;
@@ -13051,6 +13150,7 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
     out->order = (int16_t)order;
     out->backdrop_blur = (uint8_t)backdrop;
     out->backdrop_sat = (uint8_t)backdrop_sat;
+    out->backdrop_refract = (uint8_t)backdrop_refract;
     out->line_h = (int16_t)line_h;
     out->white_space = (uint8_t)white_space;
     out->baseline_dy = (int8_t)baseline_dy;

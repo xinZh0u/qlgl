@@ -1,4 +1,6 @@
 <div id="root">
+  <!-- 水彩背景在根元素的 background-image 里；这一层只是几团慢慢流动的薄雾。
+       两者都**不模糊** —— 糊不糊是玻璃自己的事。 -->
   <div class="scene">
     <div class="blob b1"></div>
     <div class="blob b2"></div>
@@ -8,30 +10,12 @@
   </div>
 
   <div class="stage">
-    <div class="head">
-      <div class="dot"></div>
-      <div class="head-text">Liquid Glass</div>
+    <!-- 玻璃圆盘：8% 白底 + 2px 亮边 + 一圈淡投影 -->
+    <div class="glass" id="glass">
+      <!-- 中间的 +：两条圆头白条，竖的那条转 90° -->
+      <div class="bar h"></div>
+      <div class="bar v"></div>
     </div>
-
-    <div class="title">液态玻璃按钮</div>
-    <div class="sub">后面有东西在动 · 透过玻璃能看到它被模糊、被染色</div>
-
-    <div class="dock">
-      <div class="btn" id="b1">
-        <div class="btn-label">分享</div>
-      </div>
-      <div class="btn" id="b2">
-        <div class="btn-label">收藏</div>
-      </div>
-      <div class="btn primary" id="b3">
-        <div class="btn-label">开始</div>
-      </div>
-    </div>
-
-    <div class="puck"></div>
-
-    <div class="status">
-      <div class="status-text" id="status">点一下玻璃按钮试试</div>
-    </div>
+    <div class="hint" id="hint">悬停玻璃看折射 · 点一下改这行字</div>
   </div>
 </div>

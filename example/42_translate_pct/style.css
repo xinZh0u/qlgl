@@ -1,0 +1,158 @@
+/*
+ * `transform: translate(<x>%, <y>%)` —— 人工可视化测试。
+ *
+ * 百分比相对**元素自身**的边框盒：x 用宽、y 用高。平移不进布局
+ * （绘制期把偏移加到画面上），所以 px 写法一直是构建期就能算的；
+ * 百分比要等盒子尺寸，构建期算不出来，只能在布局后折成 px。
+ *
+ * 每格里的**灰块**是盒子本来的位置（用 ::before 画的参照物），
+ * 蓝/青块是位移之后的样子。六个格子依次验证：
+ *   ① translate(-50%,-50%)   向左上各挪自身一半 → 45 / 17
+ *   ② translateX(100%)       右移自身宽 → 90
+ *   ③ translateY(100%)       下移自身高 → 34
+ *   ④ translateX(50%)        右移半个宽 → 45
+ *   ⑤ translateX(-25%)       左移 1/4 宽 → -22
+ *   ⑥ 高盒子 translateY(-50%) 用**高度**算 → -25
+ *
+ * 另外把鼠标移到任一块上（触发脏区重绘）应该**一点变化都没有** ——
+ * 这条正是上一轮暴露 GL 裁剪 bug 的地方（带位移的元素被脏区误裁掉）。
+ */
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #FFFFFF;
+  color: #1F2328;
+  font-size: 12px;
+}
+
+.h1 {
+  position: absolute;
+  left: 20px;
+  top: 14px;
+  font-size: 15px;
+  color: #0969DA;
+}
+
+.sub {
+  position: absolute;
+  left: 20px;
+  top: 38px;
+  width: 680px;
+  font-size: 11px;
+  color: #57606A;
+  white-space: normal;
+  line-height: 16px;
+}
+
+.row {
+  position: absolute;
+  left: 16px;
+  top: 82px;
+  display: flex;
+  gap: 16px;
+}
+
+.row2 {
+  position: absolute;
+  left: 16px;
+  top: 186px;
+  display: flex;
+  gap: 16px;
+}
+
+.cell {
+  width: 210px;
+}
+
+.frame {
+  position: relative;
+  height: 74px;
+  border-width: 1px;
+  border-style: dashed;
+  border-color: #D0D7DE;
+  border-radius: 6px;
+}
+
+/* 参照物：盒子没位移时该在哪 */
+.frame::before {
+  content: "";
+  position: absolute;
+  left: 60px;
+  top: 20px;
+  width: 90px;
+  height: 34px;
+  border-radius: 6px;
+  background-color: #E5E7EB;
+}
+
+/*
+ * 注意：**每个选择器都得自己写 content**。`.frame.t` 与 `.frame` 是两个不同的
+ * 选择器，引擎按"选择器完全相同"分组合并，所以这里不能省（浏览器里能省，
+ * 因为它是按"元素匹配到哪些规则"合并的 —— 见文档里记的已知差异）。
+ */
+.frame.t::before {
+  content: "";
+  top: 12px;
+  height: 50px;
+}
+
+.box {
+  position: absolute;
+  left: 60px;
+  top: 20px;
+  width: 90px;
+  height: 34px;
+  border-radius: 6px;
+  background-color: #2563EB;
+  color: #FFFFFF;
+  font-size: 10px;
+  text-align: center;
+  line-height: 34px;
+}
+
+/* ⑥ 的盒子更高，才能看出 y 的百分比用的是**高度** */
+.tall {
+  position: absolute;
+  left: 60px;
+  top: 12px;
+  width: 90px;
+  height: 50px;
+  border-radius: 6px;
+  background-color: #0EA5A4;
+  color: #FFFFFF;
+  font-size: 10px;
+  text-align: center;
+  line-height: 50px;
+  transform: translate(10%, -50%);
+}
+
+.center {
+  transform: translate(-50%, -50%);
+}
+
+.right {
+  transform: translateX(100%);
+}
+
+.down {
+  transform: translateY(100%);
+}
+
+.half {
+  transform: translateX(50%);
+}
+
+.neg {
+  transform: translateX(-25%);
+}
+
+.cap {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #57606A;
+  text-align: center;
+}

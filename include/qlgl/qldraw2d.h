@@ -260,7 +260,7 @@ struct QLDraw2D {
                       QLRect box, const QLTextStyle *ts);
 
     /*
-     * 毛玻璃（CSS px）：把 `rect` 区域里**已经画好的内容**就地模糊。
+     * 毛玻璃（CSS px）：把 `rect` 区域里**已经画好的内容**模糊掉。
      * NULL = 该后端不支持（上层跳过该效果并告警一次）。
      * `sigma` 是高斯标准差（CSS `blur()` 的语义），后端自行换算成盒式半径。
      * `sat` = `backdrop-filter: saturate(<N>%)` 的百分比（0 或 100 = 不变）。
@@ -269,11 +269,13 @@ struct QLDraw2D {
     void (*backdrop_blur)(QLDraw2D *self, QLRect rect, int sigma, uint8_t sat);
 
     /*
-     * 同上，但把模糊结果裁进圆角矩形（`corner` = 圆角半径，CSS px，0 = 直角）。
+     * 同上，但把模糊结果裁进圆角矩形（`corner` = 圆角半径，CSS px，0 = 直角），
+     * 并按 `refract`（CSS px，0 = 关闭）在轮廓附近做一圈折射：采样点越靠近轮廓
+     * 越往外推，玻璃边缘于是有"透镜"的厚度感。
      * 可选：为 NULL 时上层退回 `backdrop_blur`，表现为圆角缺口里渗出方形模糊。
      */
     void (*backdrop_blur_round)(QLDraw2D *self, QLRect rect, int sigma,
-                               ql_coord_t corner, uint8_t sat);
+                               ql_coord_t corner, uint8_t sat, int refract);
 
     /* 后端可选的批次提交（GPU 用；CPU 为 NULL） */
     /*
@@ -503,16 +505,17 @@ static inline int ql_draw2d_backdrop_blur(QLDraw2D *d2d, QLRect rect, int sigma,
 }
 
 /*
- * 毛玻璃 + 圆角裁剪。`corner <= 0` 或后端没有圆角版本时退回方形模糊。
+ * 毛玻璃 + 圆角裁剪（+ 折射）。`corner <= 0` 且没有折射时退回方形模糊。
  * 返回 1 表示做了模糊（调用方据此调整自身背景）。
  */
 static inline int ql_draw2d_backdrop_blur_round(QLDraw2D *d2d, QLRect rect,
                                                 int sigma, ql_coord_t corner,
-                                                uint8_t sat)
+                                                uint8_t sat, int refract)
 {
-    if (corner > 0 && d2d != NULL && d2d->backdrop_blur_round != NULL &&
-        sigma > 0 && !ql_rect_is_empty(rect)) {
-        d2d->backdrop_blur_round(d2d, rect, sigma, corner, sat);
+    if ((corner > 0 || refract > 0) && d2d != NULL &&
+        d2d->backdrop_blur_round != NULL && (sigma > 0 || refract > 0) &&
+        !ql_rect_is_empty(rect)) {
+        d2d->backdrop_blur_round(d2d, rect, sigma, corner, sat, refract);
         return 1;
     }
     return ql_draw2d_backdrop_blur(d2d, rect, sigma, sat);

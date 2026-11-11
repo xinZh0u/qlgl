@@ -274,7 +274,7 @@ main img {
 <a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西'>液态玻璃：backdrop-filter 的玻璃按钮 + 背后会动的东西</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -326,6 +326,8 @@ main img {
 <a href='../../开发规划.html' title='QLGL 开发规划'>QLGL 开发规划</a>
 <a href='../../bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
 <a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<a href='../../JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
+<a href='../../跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
@@ -2281,7 +2283,13 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>backdrop-filter: blur() saturate()</code></td>
 <td>✅</td>
 <td>R</td>
-<td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；<code>saturate(&lt;N&gt;%)</code> 把糊完的均值色推艳（<code>0</code>/<code>100%</code> = 不变），两个函数任意顺序、可只写一个；结果裁进 <code>border-radius</code>；自己带 <code>transform: translate</code> 时采样区跟着走；下层动画实时跟随</td>
+<td>毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；<code>saturate(&lt;N&gt;%)</code> 把糊完的均值色推艳（<code>0</code>/<code>100%</code> = 不变），三个函数任意顺序、可只写其中一个；结果裁进 <code>border-radius</code>；自己带 <code>transform: translate</code> 时采样区跟着走；下层动画实时跟随</td>
+</tr>
+<tr>
+<td><code>backdrop-filter: refract(&lt;N&gt;px)</code></td>
+<td>✅</td>
+<td>O</td>
+<td><strong>qlgl 扩展（CSS 没有这个函数）</strong>：轮廓附近把采样点沿法线往外推，玻璃边缘于是有透镜般的厚度；等价于参考稿里的 SVG <code>feDisplacementMap</code>。采样范围按 <code>blur 半径 + refract</code> 外扩，结果只写进圆角轮廓内。见 <a href="CSS3开发日志.html">§18.22</a>、<a href="../../tutorial/27_liquid_glass.html">液态玻璃教程</a></td>
 </tr>
 <tr>
 <td><code>filter: blur(&lt;N&gt;px)</code></td>
@@ -2305,7 +2313,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>filter: url(#svg)</code> / <code>backdrop-filter</code> 的其它函数</td>
 <td>❌</td>
 <td>X</td>
-<td>前者要内联 SVG 滤镜图；后者只有 <code>blur()</code> + <code>saturate()</code> 两个（<code>brightness</code>/<code>contrast</code>/<code>hue-rotate</code> 等明确报错，不静默忽略）</td>
+<td>前者要内联 SVG 滤镜图；后者只有 <code>blur()</code> + <code>saturate()</code> + <code>refract()</code>（<code>brightness</code>/<code>contrast</code>/<code>hue-rotate</code> 等明确报错，不静默忽略）</td>
 </tr>
 <tr>
 <td><code>clip-path: circle()</code> / <code>ellipse()</code></td>

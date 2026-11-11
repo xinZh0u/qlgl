@@ -666,9 +666,13 @@ static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma, uint8_t sa
     (void)ql_canvas_backdrop_blur(ctx->canvas, dev, r, sat);
 }
 
-/* 带圆角裁剪：模糊只写进圆角矩形内，四个缺口保持原样（与 GPU 同一语义） */
+/*
+ * 带圆角裁剪 + 折射：模糊只写进圆角矩形内，四个缺口保持原样（与 GPU 同一语义）。
+ * 采样会外扩一圈（模糊核 + 折射），所以带 transform 的元素也必须传"现在"的位置 ——
+ * 位置错了，外扩采到的就是它没动之前那块背景。
+ */
 static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
-                                    ql_coord_t corner, uint8_t sat)
+                                    ql_coord_t corner, uint8_t sat, int refract)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     if (ctx->canvas == NULL)
@@ -676,12 +680,17 @@ static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
 
     QLRect dev = dev_rect_of(self, rect);
     ql_coord_t fx = (self->scale_fx > 0) ? self->scale_fx : QL_SCALE_ONE;
-    int r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
-    if (r < 1)
-        r = 1;
+    int r = 0;
+    if (sigma > 0) {
+        r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
+        if (r < 1)
+            r = 1;
+    }
     const ql_coord_t cdev =
         (ql_coord_t)(((int64_t)corner * fx) / QL_SCALE_ONE);
-    (void)ql_canvas_backdrop_blur_round(ctx->canvas, dev, r, cdev, sat);
+    const int fdev = (int)(((int64_t)refract * fx) / QL_SCALE_ONE);
+    (void)ql_canvas_backdrop_blur_round(ctx->canvas, dev, r, cdev, sat,
+                                        fdev > 0 ? fdev : 0);
 }
 
 static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,

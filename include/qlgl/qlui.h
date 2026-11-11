@@ -485,8 +485,13 @@ typedef struct {
     QLUILength  clip_box[4];
     uint16_t    clip_pts;
     uint8_t     clip_pt_n;
-    /* 对齐填充，将来加小字段不用再抬版本 */
-    uint8_t     clip_reserved;
+    /*
+ * `transform: translate()` 用了百分比时的标记（bit0 = tf_x、bit1 = tf_y）。
+ * 百分比相对**元素自身**的边框盒（x → 宽、y → 高），构建期不知道尺寸，
+ * 所以 `tf_x/tf_y` 先存百分数，等布局期 `resolve_tf_pct()` 折成 px 写回样式副本。
+ * 这个字节原来是 `clip_reserved` 填充位，占用不变 → blob 布局不变、不用升版本。
+ */
+    uint8_t     tf_pct;
 
     /* ----- transform（只有 translate，不进布局） -----
      * 绘制期把它加到绘制偏移上，所以移动元素**零重排**；
@@ -534,6 +539,14 @@ typedef struct {
      * 玻璃后面是一片灰蒙蒙的均值色，看不出"玻璃"。
      */
     uint8_t     backdrop_sat;
+    /*
+     * `backdrop-filter: refract(<N>px)`（v38），0 = 没写。
+     *
+     * 在轮廓附近把采样点往外推一圈，玻璃边缘于是有"透镜"的厚度感 ——
+     * 只有 blur 的玻璃是一块均匀的毛玻璃，折射才让它像**有形状的**玻璃。
+     * 半径越大轮廓那一圈弯折越明显；做成圆角/圆形时就是 Apple 那套液态玻璃。
+     */
+    uint8_t     backdrop_refract;
 
     /*
      * line-height（px）。0 = `normal`，用字体自己的 line_height（= ascent + descent）。
@@ -2162,10 +2175,12 @@ int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *ou
  *     `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums`
  *     （variant_flags）；`border-radius: a / b` 椭圆圆角（radius_v[4]）；
  *     `box-shadow` 的 spread（复用 QLUIShadow.reserved）。QLUIStyle 368 → **396**
+ * 38: + `backdrop-filter: refract(<N>px)`（backdrop_refract）与 `translate(%%)` 的
+ *     `tf_pct` 标记。QLUIStyle 布局变了 → 所有 golden 一起重建
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    37u
+#define QL_UI_BLOB_VERSION    38u
 
 typedef struct {
     uint32_t magic;

@@ -444,6 +444,8 @@ static const char *FS_SRC =
     "  float border = v_params.y;\n"
     "  float mode = v_params.z;\n"
     "  float cov;\n"
+    /* 毛玻璃的采样坐标：默认就是 v_uv，折射（mode 4）会把它挪一点 */
+    "  vec2 buv = v_uv;\n"
     /*
      * 圆遮罩先算成 m，**所有出口**都要乘上它。
      * 原来这段放在 mode 分派之后，径向渐变分支提前 return，于是
@@ -528,6 +530,21 @@ static const char *FS_SRC =
     /* 毛玻璃：uv 盖住整个矩形，形状仍是同一个圆角 SDF */
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
     "    cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
+    /*
+     * 折射（`backdrop-filter: refract(Npx)`，量存在 v_params.y 且已按 uv 折算）：
+     * 轮廓附近像一圈透镜斜面，越贴边采样点越往外推，轮廓里那一圈显示的是外面
+     * 被压扁的场景。公式与 CPU 侧 refract_offset() 逐字对应：
+     *   t = clamp(1 - 深度 / 斜面宽, 0, 1)，offset = normalize(n) * refract * t²
+     * 斜面宽 = 短边的 1/4：轮廓处最强，往里一个斜面宽就归零。
+     */
+    "    if (v_params.y > 0.0) {\n"
+    "      vec2 n = v_local / max(v_half, vec2(0.5));\n"
+    "      float l = length(n);\n"
+    "      float band = 0.25 * max(min(v_half.x, v_half.y), 0.5);\n"
+    "      float t = clamp(1.0 + d / band, 0.0, 1.0);\n"
+    "      if (l > 1e-3)\n"
+    "        buv += vec2(n.x, -n.y) / l * (v_params.y * t * t);\n"
+    "    }\n"
     "  } else if (mode > 2.5) {\n"
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
     "    cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
@@ -554,7 +571,7 @@ static const char *FS_SRC =
      * 系数与 CPU 侧（`filter: saturate()` 与 `ql_canvas` 的 saturate_rect）
      * 完全同一组：0.213 / 0.715 / 0.072 —— 两条后端才对得上。
      */
-    "    vec3 bg = texture(u_bg, v_uv).rgb;\n"
+    "    vec3 bg = texture(u_bg, clamp(buv, vec2(0.0), vec2(1.0))).rgb;\n"
     "    if (v_params.w > 0.5 && abs(v_params.w - 100.0) > 0.5) {\n"
     "      float gy = dot(bg, vec3(0.213, 0.715, 0.072));\n"
     "      bg = clamp(mix(vec3(gy), bg, v_params.w / 100.0), 0.0, 1.0);\n"
@@ -962,26 +979,39 @@ static void color_at(ql_color_t a, ql_color_t b, int t, float *out)
                       (uint32_t)QL_COLOR_GET_B(b) * u) / 255u) / 255.0f;
 }
 
+static inline float off_x_of(QLGfxGL *g);
+static inline float off_y_of(QLGfxGL *g);
+
 /*
  * 几何裁剪：把四边形的范围与当前裁剪求交。
  *
  * 本后端是**单批次**（整帧一次 glDrawArrays），所以不能用 scissor 逐图元裁剪，
  * 只能在发顶点时就把四边形切到裁剪框里。形状参数（hx/hy/radius/border/渐变跨度）
  * 必须继续用**未裁剪**的矩形，否则片元里的 SDF 会算错——被裁掉的只是光栅化范围。
+ *
+ * 空间要对齐：传进来的 `bx0..by1` 是**没加绘制偏移**的坐标（偏移在 emit 时才加到
+ * 顶点上），而 `g->clip` 是屏幕坐标。所以先把裁剪框按当前偏移搬到元素自己的
+ * 坐标系里求交，否则带 `transform: translate()` 的元素会被脏区/父级裁剪误裁掉
+ * （脏区重绘时整块消失，全帧重绘却正常——因为那时裁剪框是整个窗口）。
  */
 static int clip_quad(QLGfxGL *g, float bx0, float by0, float bx1, float by1,
                      float *qx0, float *qy0, float *qx1, float *qy1)
 {
     float x0 = bx0, y0 = by0, x1 = bx1, y1 = by1;
     if (g->clip_active) {
-        if (x0 < (float)g->clip.x)
-            x0 = (float)g->clip.x;
-        if (y0 < (float)g->clip.y)
-            y0 = (float)g->clip.y;
-        if (x1 > (float)ql_rect_right(g->clip))
-            x1 = (float)ql_rect_right(g->clip);
-        if (y1 > (float)ql_rect_bottom(g->clip))
-            y1 = (float)ql_rect_bottom(g->clip);
+        const float ox = off_x_of(g), oy = off_y_of(g);
+        const float cx0 = (float)g->clip.x - ox;
+        const float cy0 = (float)g->clip.y - oy;
+        const float cx1 = (float)ql_rect_right(g->clip) - ox;
+        const float cy1 = (float)ql_rect_bottom(g->clip) - oy;
+        if (x0 < cx0)
+            x0 = cx0;
+        if (y0 < cy0)
+            y0 = cy0;
+        if (x1 > cx1)
+            x1 = cx1;
+        if (y1 > cy1)
+            y1 = cy1;
     }
     if (x0 >= x1 || y0 >= y1)
         return 0;
@@ -1786,16 +1816,16 @@ static void blur_pass(QLGfxGL *g, int src, int dst, float dx, float dy, float uw
  *   4. 恢复帧缓冲/视口，发一个 mode 4 的四边形（片元里采样 u_bg）。
  */
 static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
-                                   ql_coord_t corner, uint8_t sat);
+                                   ql_coord_t corner, uint8_t sat, int refract);
 
 /* 直角版本 = 圆角半径为 0，保留旧入口（外部可能只认识 backdrop_blur） */
 static void gl_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma, uint8_t sat)
 {
-    gl_backdrop_blur_round(self, rect, sigma, 0, sat);
+    gl_backdrop_blur_round(self, rect, sigma, 0, sat, 0);
 }
 
 static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
-                                   ql_coord_t corner, uint8_t sat)
+                                   ql_coord_t corner, uint8_t sat, int refract)
 {
     QLGfxGL *g = (QLGfxGL *)self->user;
     if (g == NULL || g->blur_prog == 0)
@@ -1816,14 +1846,27 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
         return;
 
     ql_coord_t sc = gsl(g, sigma);
+    ql_coord_t rc = (refract > 0) ? gsl(g, refract) : 0;
     int rad = (int)(sc / 2);            /* 半分辨率下，盒半径 = 半分辨率像素数 */
-    if (rad < 1)
+    if (rad < 1 && sigma > 0)
         rad = 1;
     if (rad > 32)
         rad = 32;
 
-    const int bw = (int)((dev.w + 1) / 2);
-    const int bh = (int)((dev.h + 1) / 2);
+    /*
+     * 采样范围必须比元素盒子大一圈（与 CPU 侧同一口径）：9 抽头的最大偏移是
+     * 4·span = sc 个半分辨率像素 = 2·sc 个设备像素，折射再往外套 rc 像素。
+     * 只糊盒子内部的话，盒子里是"这块方形的均值色"，盒子四边还会留下方形的边。
+     */
+    const ql_coord_t pad = (ql_coord_t)(sc * 2 + rc + 2);
+    QLRect ex = ql_rect_make(dev.x - pad, dev.y - pad, dev.w + pad * 2,
+                             dev.h + pad * 2);
+    ex = ql_rect_intersect(ex, ql_rect_make(0, 0, g->width, g->height));
+    if (ql_rect_is_empty(ex))
+        return;
+
+    const int bw = (int)((ex.w + 1) / 2);
+    const int bh = (int)((ex.h + 1) / 2);
 
     /* 目标帧缓冲：保留模式下是 FBO，否则是默认帧缓冲 */
     const GLuint target = (g->fbo_valid) ? g->fbo : 0;
@@ -1834,16 +1877,23 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
         return;
 
     /* 1. 降采样复制：源是自上而下的设备坐标，GL 的 y 反过来 */
-    const GLint sy0 = (GLint)(g->height - ql_rect_bottom(dev));
-    const GLint sy1 = (GLint)(g->height - dev.y);
+    const GLint sy0 = (GLint)(g->height - ql_rect_bottom(ex));
+    const GLint sy1 = (GLint)(g->height - ex.y);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g->blur_fbo[0]);
     glDisable(GL_SCISSOR_TEST);
-    glBlitFramebuffer((GLint)dev.x, sy0, (GLint)ql_rect_right(dev), sy1, 0, 0, bw,
+    glBlitFramebuffer((GLint)ex.x, sy0, (GLint)ql_rect_right(ex), sy1, 0, 0, bw,
                       bh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
-    /* 2. 两趟可分离模糊（9 抽头，抽头间距 = 半径/4 个纹素） */
-    const float span = (float)rad / 4.0f;
+    /*
+     * 2. 两趟可分离模糊（9 抽头高斯）。
+     *
+     * 抽头间距要按**标准差**算：9 个抽头的那组权重 σ ≈ 2（抽头为单位），
+     * 所以 `span = σ_半分辨率 / 2 = sc / 4` 个纹素才对得上 CSS 的 blur(Npx)。
+     * 早先写成 `rad/4`（= sc/8）把高斯糊窄了一半 —— CPU 与 GPU 的玻璃
+     * 一对比就能看出来（CPU 的中间色比 GPU 多一倍）。
+     */
+    const float span = (float)sc / 4.0f;
     /* 纹理可能比这次需要的更大：有效区域是左上角 bw x bh */
     const float uw = (float)bw / (float)g->blur_w;
     const float uh = (float)bh / (float)g->blur_h;
@@ -1860,7 +1910,11 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     v.hx = (float)dev.w * 0.5f;
     v.hy = (float)dev.h * 0.5f;
     v.use_tex = 4.0f;
-    v.border = -1.0f;
+    /*
+     * mode 4 借 `a_params.y`（border，别的模式里是描边宽度）传真元：折射量
+     * **按 uv 计**（一个设备像素的位移换算成 uv 增量）。0 = 不折射。
+     */
+    v.border = (rc > 0 && dev.w > 0) ? ((float)rc * uw / (float)dev.w) : 0.0f;
     /*
      * 圆角半径走的是同一个 SDF：片元里 `cov` 会把方框边缘的 alpha 压到 0，
      * 于是模糊结果只写进圆角内，四个缺口保留原本已画好的内容 —— 正是 CSS 语义。
@@ -1896,8 +1950,12 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
          * 铺满的话，小玻璃会显示"上一次那块更大的玻璃被压扁"的内容 ——
          * 现象就是模糊位置和背后的物体对不上。
          */
-        v.u = (xs[k] - (float)dev.x) / (float)(dev.w > 0 ? dev.w : 1) * uw;
-        v.v = (1.0f - (ys[k] - (float)dev.y) / (float)(dev.h > 0 ? dev.h : 1)) * uh;
+        /*
+         * uv 相对**外扩后**的 `ex` 算：纹理里存的是 ex 那一块，元素盒子只占中间。
+         * （照旧按 dev 铺满的话，玻璃会显示"被压扁的外圈"，模糊位置对不上。）
+         */
+        v.u = (xs[k] - (float)ex.x) / (float)(ex.w > 0 ? ex.w : 1) * uw;
+        v.v = (1.0f - (ys[k] - (float)ex.y) / (float)(ex.h > 0 ? ex.h : 1)) * uh;
         emit_vertex(g, &v);
     }
 }

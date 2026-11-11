@@ -119,20 +119,25 @@ void ql_canvas_set_color_matrix(QLCanvas *canvas, const int32_t m[12], int on);
 int  ql_canvas_mask_active(const QLCanvas *canvas);
 
 /*
- * 毛玻璃（`backdrop-filter: blur()`）：把**矩形区域里已经画好的内容**就地模糊。
+ * 毛玻璃（`backdrop-filter: blur()`）：把**矩形区域里已经画好的内容**模糊掉。
  *
  * 为什么就地做：本架构没有保留式场景图，但画布本身就是"前面已经画完的东西"，
  * 所以模糊它等于模糊"元素背后"。调用顺序是"先模糊、再画元素自己的背景"。
  *
- * `rect` 与 `radius` 都是**设备像素**。半径按 2 趟可分离盒式卷积近似高斯
- * （CSS 的参数是高斯标准差，这里取 box 半径 = sigma 并做两趟，视觉接近）。
- * 区域边缘做钳位（不采样区域外），所以不会把外面的颜色"吸进来"。
+ * `rect` 与 `radius` 都是**设备像素**。`radius` 是高斯标准差（CSS 语义），
+ * 内部换算成三段盒式卷积的盒半径 —— 两段是三角形核，边缘有一道折线，三段才
+ * 接近钟形。
  *
- * 代价：一次调用要 4 趟（H/V × 2）扫描 + 两块临时缓冲，**只在真有 blur 的元素上发生**。
+ * **采样范围比 rect 大一圈**（支持半径 + 折射），因为模糊核本来就会读到元素
+ * 盒子外面：只糊盒子内部、边缘靠钳位补的话，得到的是"这块方形的均值色"，
+ * 半径一大就成灰扑扑的一块，盒子四边还会留下一圈方形的边。
+ * 结果只写进 rect（以及圆角轮廓）之内的像素，轮廓外一个像素都不动。
+ *
+ * 代价：一次调用要 6 趟（H/V × 3）扫描 + 两块临时缓冲，**只在真有 blur 的元素上发生**。
  * 只支持 8/16/24/32 位的 RGB 系格式；Alpha 通道不参与模糊（合成时才用得到）。
  */
 /*
- * 毛玻璃：把 rect 区域里**已经画好的内容**就地模糊。
+ * 毛玻璃：把 rect 区域里**已经画好的内容**模糊掉。
  *
  * `sat` = `backdrop-filter: saturate(<N>%)` 的百分比（0 或 100 = 不变）。
  * 模糊之后把颜色推艳 —— 玻璃后面那片"均值色"才不会灰扑扑的。
@@ -140,16 +145,15 @@ int  ql_canvas_mask_active(const QLCanvas *canvas);
 ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat);
 
 /*
- * 同上，但把结果裁进**圆角矩形**（`corner` = 圆角半径，设备像素，0 等价于上一个）。
+ * 同上，但把结果裁进**圆角矩形**（`corner` = 圆角半径，设备像素，0 等价于上一个），
+ * 并按 `refract`（`backdrop-filter: refract(<N>px)`，设备像素，0 = 关闭）在轮廓
+ * 附近做一圈**折射**：越靠近轮廓，采样点越往外推 —— 玻璃边缘的"透镜感"。
  *
- * 为什么需要它：模糊本身是方框运算，而元素常常是圆角的。不裁的话四个圆角缺口里
- * 会渗出"方的模糊块" —— 颜色跑到元素边框盒之外，CSS 里不该出现。
- *
- * 实现上只处理四个 corner×corner 角落（唯一可能落在圆角之外的部分）：模糊前存下
- * 原像素，模糊后按圆角覆盖率混回去。开销与 corner² 成正比，通常几百个像素。
+ * 轮廓外的像素原样保留（四个圆角缺口不会渗出方的模糊块），轮廓上按覆盖率与
+ * 模糊前的原像素混合，等价于 GPU 那边用 alpha 混合只写进圆角内。
  */
 ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
-                                       ql_coord_t corner, uint8_t sat);
+                                       ql_coord_t corner, uint8_t sat, int refract);
 
 /* ----- 原语 ----- */
 void ql_canvas_clear(QLCanvas *canvas, ql_color_t color);

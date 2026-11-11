@@ -292,7 +292,7 @@ QL_TEST_BEGIN("test_effects")
 
         fresh(white);
         ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
-        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, rad, 0);
+        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, rad, 0, 0);
 
         int leaked = 0;
         for (ql_coord_t y = 0; y < H; y++)
@@ -322,7 +322,7 @@ QL_TEST_BEGIN("test_effects")
 
         fresh(white);
         ql_canvas_fill_rect(&s_canvas, ql_rect_make(18, 0, 62, 80), red);
-        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, 0, 0);
+        ql_canvas_backdrop_blur_round(&s_canvas, bg_box, 4, 0, 0, 0);
         int rect_diff = 0;
         for (ql_coord_t y = 0; y < H; y++)
             for (ql_coord_t x = 0; x < W; x++)

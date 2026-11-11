@@ -225,7 +225,8 @@ css:12: 不支持的属性 'float'
 | `float` / `clear` | 用 flex；文字环绕没有实现 |
 | `transform` 的 3D（`perspective()` / `rotate3d()` / `matrix3d()`） | 只有**仿射** 2D：`translate()` / `scale()` / `rotate()` / `skew()` / `matrix()` |
 | `clip-path: path()` / `clip-path: url(#…)` | `circle()` / `ellipse()` / `inset()` / `polygon()` 都支持；`at x y` / `round R` / `evenodd` 报错 |
-| `backdrop-filter` 除 `blur()` / `saturate()` 之外的函数 | 报错，不静默忽略（`brightness()` / `hue-rotate()` 等） |
+| `backdrop-filter` 除 `blur()` / `saturate()` / `refract()` 之外的函数 | 报错，不静默忽略（`brightness()` / `hue-rotate()` 等） |
+| `backdrop-filter: refract(<N>px)` 本身 | **qlgl 扩展**：CSS 里没有这个函数（浏览器要等效效果得写内联 SVG `feDisplacementMap`），只在本库可用 |
 | `vertical-align: middle` / 长度值 | 只有 `baseline` / `sub` / `super` |
 | `flex-wrap: wrap-reverse` | 只有 `nowrap` / `wrap` |
 | `overscroll-behavior` / `scroll-snap-*` | 无（惯性 / 吸附是平台层的事） |

@@ -5805,6 +5805,28 @@ static void move_extent(const QLUINodeRT *node, ql_coord_t *lo_x, ql_coord_t *lo
 }
 
 /*
+ * `transform: translate(50%, -20%)`：构建期把百分数存进 tf_x/tf_y 并打上
+ * `tf_pct` 标记，这里在**布局后**（边框盒已知）折成 px 写回样式副本。
+ * 之后绘制、命中、paint_box 膨胀读到的都是 px，因此那些代码一行都不用改。
+ *
+ * 百分比相对元素**自身**的边框盒：x → 宽、y → 高（与 CSS 一致）。
+ */
+static void resolve_tf_pct(QLUINodeRT *node)
+{
+    const QLUIStyle *s = node->style;
+    if (s == NULL || s->tf_pct == 0)
+        return;
+    QLUIStyle *c = ensure_style_copy(node);
+    if (c == NULL)
+        return;
+    if ((c->tf_pct & 1) != 0)
+        c->tf_x = (int16_t)((int32_t)node->border_box.w * c->tf_x / 100);
+    if ((c->tf_pct & 2) != 0)
+        c->tf_y = (int16_t)((int32_t)node->border_box.h * c->tf_y / 100);
+    c->tf_pct = 0;                 /* 已经折过，别重复折 */
+}
+
+/*
  * 自上而下累加 transform：静态值（含祖先）存进 tf_abs_*，
  * 动画/变体带来的额外位移（同样含祖先）存进 tf_dev_*。
  * 绘制时不用它——绘制按生效样式逐层加偏移；这里只为 paint_box 服务。
@@ -5817,6 +5839,7 @@ static void resolve_transform(QLUINodeRT *node, ql_coord_t ax, ql_coord_t ay,
      * 入参 ax/ay 是**祖先**的平移，lo/hi 是祖先的动画位移区间。
      * 本节点自己也要算进去：自己的 transform 同样平移自己（渲染时先设偏移再画自己）。
      */
+    resolve_tf_pct(node);          /* 百分比位移 → px（写进样式副本） */
     const QLUIStyle *s = node->style;
     const ql_coord_t sdx = (s != NULL) ? s->tf_x : 0;
     const ql_coord_t sdy = (s != NULL) ? s->tf_y : 0;
@@ -8145,9 +8168,11 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
      * 带上 border-radius：模糊是方框运算，圆角缺口里不该渗出方形的模糊块。
      * 四角不同时取最大的那个（模糊只看外轮廓，差异肉眼不可见）。
      */
-    if (!inv && s->backdrop_blur > 0 && !ql_rect_is_empty(box))
+    if (!inv && (s->backdrop_blur > 0 || s->backdrop_refract > 0) &&
+        !ql_rect_is_empty(box))
         (void)ql_draw2d_backdrop_blur_round(d2d, box, (int)s->backdrop_blur,
-                                            ql_ui_radius_max(s), s->backdrop_sat);
+                                            ql_ui_radius_max(s), s->backdrop_sat,
+                                            (int)s->backdrop_refract);
 
     ql_coord_t r4[4];
     style_radii4(s, r4);
@@ -10062,7 +10087,7 @@ static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
     int any_blur = 0;
     for (uint16_t i = 0; i < ui->node_count; i++) {
         const QLUIStyle *st = ql_ui_node_style(&ui->nodes[i]);
-        if (st->backdrop_blur > 0 || st->filter_n > 0) {
+        if (st->backdrop_blur > 0 || st->backdrop_refract > 0 || st->filter_n > 0) {
             any_blur = 1;
             break;
         }
@@ -10080,7 +10105,8 @@ static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
             for (uint16_t i = 0; i < ui->node_count; i++) {
                 const QLUINodeRT *node = &ui->nodes[i];
                 const QLUIStyle *st = ql_ui_node_style(node);
-                if (st->backdrop_blur <= 0 && st->filter_n <= 0)
+                if (st->backdrop_blur <= 0 && st->backdrop_refract <= 0 &&
+                    st->filter_n <= 0)
                     continue;
                 /*
                  * 带 `filter` 的元素要按**滤镜外扩**算脏区：模糊/投影会读到
@@ -10088,6 +10114,19 @@ static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
                  * 这里多扩一圈 `blur·3 + |drop-shadow|`，和绘制时的 bounds 同口径。
                  */
                 QLRect g = node->paint_box;
+                /*
+                 * 毛玻璃的脏区还要再包住它**采样**的那一圈：模糊核 + 折射会读
+                 * 到盒子外面，只重绘盒子内部的话外圈读到的是上一帧的背景，
+                 * 玻璃边上就会出现一道对不上的接缝。口径与后端一致：
+                 * 模糊的支持半径 ≈ 3·σ，折射再往外套 refract 像素。
+                 */
+                if (st->backdrop_blur > 0 || st->backdrop_refract > 0) {
+                    const ql_coord_t pad =
+                        (ql_coord_t)((int)st->backdrop_blur * 3 +
+                                     (int)st->backdrop_refract + 2);
+                    g = ql_rect_make(g.x - pad, g.y - pad, g.w + pad * 2,
+                                     g.h + pad * 2);
+                }
                 if (st->filter_n > 0) {
                     ql_coord_t pad = 0;
                     for (uint8_t oi = 0; oi < st->filter_n && oi < 6u; oi++) {
