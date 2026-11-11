@@ -130,6 +130,7 @@ python3 tools/qltext/qltext.py cc \
 | `35_text_stack` | B8 文本栈：`@font-face`（运行期探测系统字体）、家族列表与逐字回退、真粗体/真斜体、连字开关、阿拉伯文 RTL |
 | `36_clip_filter` | B9：`clip-path` 的 circle/ellipse/inset/polygon 四种形状、纯颜色 `filter` 走单批次（不进离屏图层）、`small-caps` / `tabular-nums`、`text-align: justify`、椭圆圆角、阴影 `spread` |
 | `37_touch` | 触摸：单指点按 / 单指拖动滚动（`overflow` 容器）/ 双指捏合缩放整页（`ql_gfx_gl_set_zoom`），手机形态布局 + `--zoom` 截图 |
+| `38_liquid_glass` | 液态玻璃：`backdrop-filter: blur()` 的玻璃按钮/药丸/气球 + 背后会动的色块（`filter: blur()` 整层一次离屏），三层材质（模糊染色 / 亮边内阴影 / 镜面反射），`:active` 只在 `background-color` 上过渡 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 

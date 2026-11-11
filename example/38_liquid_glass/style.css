@@ -1,0 +1,314 @@
+/*
+ * 液态玻璃（Apple "Liquid Glass" 那一路）：深色饱和背景 + 会动的色块 +
+ * `backdrop-filter: blur()` 的玻璃控件。
+ *
+ * 玻璃的三层"材质"（缺一层就不像玻璃）：
+ *   1. 背后模糊 + 染色   → `backdrop-filter: blur(Npx)` + 半透明渐变底
+ *   2. 边缘高光          → 1px 亮边 + `inset` 白色上高光 / 深色下内阴影
+ *   3. 镜面反射条        → `.sheen` 那层斜向渐变（顶端更亮、底下透明）
+ *
+ * 本库只支持 `backdrop-filter: blur(<N>px)`（不支持 saturate/brightness），
+ * 所以"玻璃底下颜色更鲜"这件事是用**背景本身就很饱和** + 半透明暖色叠加来凑的。
+ */
+#root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-image: linear-gradient(180deg, #0A1024, #071A26);
+  font-size: 12px;
+  color: #FFFFFF;
+  overflow: hidden;
+}
+
+/* ---- 下层：会动的色块。absolute + transform 动画，零重排 ---- */
+/*
+ * 整层一起模糊：`filter: blur()` 走**离屏图层**，一层就够（比给每个色块
+ * 各加一次 filter 便宜得多）。色块于是从"硬边圆盘"变成一团团流动的颜色。
+ * 顺手 `saturate()` 把颜色推艳一点 —— Apple 的玻璃后面也是提高饱和度的。
+ */
+.scene {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  filter: blur(20px) saturate(150%);
+}
+
+/*
+ * 每块都很大（400~520px）且互相重叠，保证**任何位置**的玻璃后面都有颜色。
+ * 玻璃最容易翻车的场景就是"底下是深色空白" —— 那看起来就是一块灰塑料。
+ */
+.blob {
+  position: absolute;
+}
+
+.b1 {
+  border-radius: 240px;
+  left: -60px;
+  top: -120px;
+  width: 480px;
+  height: 480px;
+  background-image: radial-gradient(circle, #FF2D6F, #9B0F45);
+  animation: drift1 7000ms ease-in-out infinite alternate;
+}
+
+.b2 {
+  border-radius: 260px;
+  left: 300px;
+  top: -140px;
+  width: 520px;
+  height: 520px;
+  background-image: radial-gradient(circle, #00D8FF, #005A78);
+  animation: drift2 8600ms ease-in-out infinite alternate;
+}
+
+.b3 {
+  border-radius: 230px;
+  left: -80px;
+  top: 220px;
+  width: 460px;
+  height: 460px;
+  background-image: radial-gradient(circle, #8B5CF6, #3A1E7A);
+  animation: drift3 6100ms ease-in-out infinite alternate;
+}
+
+.b4 {
+  border-radius: 240px;
+  left: 380px;
+  top: 240px;
+  width: 480px;
+  height: 480px;
+  background-image: radial-gradient(circle, #FFC24B, #8A5A0C);
+  animation: drift4 9400ms ease-in-out infinite alternate;
+}
+
+.b5 {
+  border-radius: 210px;
+  left: 180px;
+  top: 60px;
+  width: 420px;
+  height: 420px;
+  background-image: radial-gradient(circle, #23E5A0, #0A6146);
+  animation: drift5 5200ms ease-in-out infinite alternate;
+}
+
+/* 轨迹互相穿插：玻璃按钮底下永远有东西经过 */
+@keyframes drift1 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(240px, 150px);
+  }
+}
+
+@keyframes drift2 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(-260px, 190px);
+  }
+}
+
+@keyframes drift3 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(300px, -120px);
+  }
+}
+
+@keyframes drift4 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(-320px, -160px);
+  }
+}
+
+@keyframes drift5 {
+  from {
+    transform: translate(0px, 0px);
+  }
+  to {
+    transform: translate(120px, 200px);
+  }
+}
+
+/* ---- 上层内容 ---- */
+.stage {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 三种玻璃共用：模糊 + 半透明底 + 亮边 + 内阴影高光 */
+.glass-pill,
+.head,
+.status,
+.btn {
+  backdrop-filter: blur(40px);
+  border-width: 1px;
+  border-style: solid;
+  border-color: #E9EFF9;
+  /* box-shadow 最多两层（多写的构建期报错）：
+     上高光（inset 白） + 投影（黑） */
+  box-shadow: inset 0px 1px 0px rgba(255, 255, 255, 0.55),
+              0px 10px 30px rgba(0, 0, 0, 0.38);
+}
+
+.head,
+.status {
+  /* 玻璃的"透"由 background-color 的 alpha 决定；渐变只负责上亮下暗的明暗层次
+     （本库一个背景只有一个 alpha，渐变的两个色标共用它） */
+  background-color: rgba(235, 245, 255, 0.22);
+  background-image: linear-gradient(180deg, #FFFFFF, #E8F1FF);
+  border-radius: 15px;
+  height: 30px;
+  padding: 0px 14px 0px 12px;
+  display: flex;
+  align-items: center;
+}
+
+.head {
+  position: absolute;
+  left: 24px;
+  top: 22px;
+  width: 132px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background-color: #7CFFB2;
+  margin-right: 8px;
+  box-shadow: 0px 0px 8px rgba(124, 255, 178, 0.9);
+}
+
+.head-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.title {
+  font-size: 30px;
+  color: #FFFFFF;
+  text-shadow: 0px 2px 16px rgba(0, 0, 0, 0.55);
+}
+
+.sub {
+  margin-top: 8px;
+  margin-bottom: 26px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* 玻璃"托盘"：按钮们坐在同一块玻璃上，玻璃套玻璃 */
+.dock {
+  background-color: rgba(226, 236, 255, 0.07);
+  background-image: linear-gradient(180deg, #FFFFFF, #CBDCF0);
+  backdrop-filter: blur(30px);
+  border-radius: 30px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #DCE5F2;
+  box-shadow: inset 0px 1px 0px rgba(255, 255, 255, 0.45),
+              0px 16px 40px rgba(0, 0, 0, 0.42);
+  padding: 10px;
+  width: 330px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 单个按钮：药丸形，靠渐变 + 内阴影做"厚度" */
+.btn {
+  position: relative;
+  width: 92px;
+  height: 44px;
+  border-radius: 22px;
+  /*
+   * 渐变（background-image）是画在 background-color **之上**的，所以按下时
+   * 只改底下那层颜色就够了 —— 渐变这层不用动。
+   * 这也是刻意的：本库的 `transition` 只对 background-color / opacity /
+   * color / border-color / border-radius / transform / clip-path 生效，
+   * 拿 background-image 去过渡会**在构建期报错**（不静默忽略）。
+   */
+  background-color: rgba(226, 236, 255, 0.12);
+  background-image: linear-gradient(180deg, #FFFFFF, #DCE8F8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 180ms ease-out, border-color 180ms ease-out;
+}
+
+.btn-label {
+  font-size: 13px;
+  color: #FFFFFF;
+}
+
+/* 主按钮：玻璃里掺一点品牌色，看起来像"有色玻璃" */
+.primary {
+  background-color: rgba(80, 145, 255, 0.55);
+  background-image: linear-gradient(180deg, #DCEEFF, #6FA8FF);
+  border-color: #D8ECFF;
+}
+
+/* 按下：变亮 + 阴影收紧 + 亮边加强（模拟"被压进去"） */
+.btn:active {
+  background-color: rgba(255, 255, 255, 0.52);
+  border-color: #FFFFFF;
+}
+
+.status {
+  margin-top: 22px;
+  width: 300px;
+  height: 32px;
+  border-radius: 16px;
+}
+
+.status-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+
+/* ---- 会自己走的玻璃球：模糊区域跟着它一起移动 ---- */
+.puck {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 76px;
+  height: 76px;
+  border-radius: 38px;
+  background-color: rgba(240, 248, 255, 0.20);
+  background-image: linear-gradient(180deg, #FFFFFF, #D7E4F6);
+  backdrop-filter: blur(40px);
+  border-width: 1px;
+  border-style: solid;
+  border-color: #FFFFFF;
+  box-shadow: inset 0px 1px 0px rgba(255, 255, 255, 0.75),
+              0px 12px 28px rgba(0, 0, 0, 0.40);
+  animation: puck 5200ms ease-in-out infinite alternate;
+}
+
+@keyframes puck {
+  from {
+    transform: translate(560px, 60px);
+  }
+  to {
+    transform: translate(96px, 330px);
+  }
+}

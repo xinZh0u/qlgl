@@ -488,6 +488,18 @@ g->resize_pending = 1;                                     /* 让界面层重排
 > 拿到的才是真的这一帧。设备像素尺寸用 `ql_gfx_gl_device_size()`
 > （`ql_gfx_gl_size()` 给的是 CSS px，高 DPI 下两者不等）。
 
+### 10.7.2.2 屏幕空间 SDF 的三个"只在真窗口里看得见"的坑
+
+都是同一个形状函数 `sdRoundBox` 用错地方：
+
+| 症状 | 原因 | 修法 |
+|---|---|---|
+| 药丸/正圆外面的四个角被涂满阴影色 | `box-shadow: inset` 只算了"离边界多远"，没乘"在不在轮廓内"；圆角 = 半边长时矩形四角在轮廓**外**，那片覆盖率恒为 1 | 片元里再乘 `1 - smoothstep(-0.5, 0.5, d)`（CPU 侧本来就用 `round_row_span` 限定在轮廓内） |
+| 内阴影/毛玻璃在圆角缺口里渗出方形 | 同上 | 同上（`backdrop_blur_round` 已经带上半径，别退化成 `backdrop_blur`） |
+
+守住它的是 `test_gl_vs_cpu`：CPU 与 GPU 逐像素对拍，加了两例
+"`box-shadow: inset` + 正圆 / + 药丸"。把乘法去掉会立刻红（`差异 2.07%`）。
+
 ### 10.7.3 应用级缩放（`ql_gfx_gl_set_zoom`）：双指捏合的落点
 
 DPR（`scale_fx`）管的是"帧缓冲多大"；**应用缩放**（`zoom_fx`）管的是"同样的缓冲里

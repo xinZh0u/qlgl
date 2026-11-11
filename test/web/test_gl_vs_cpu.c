@@ -656,6 +656,26 @@ QL_TEST_BEGIN("test_gl_vs_cpu")
               "background-color:#1E7A4A;"
               "clip-path:polygon(0 0, 100% 0, 82% 100%, 18% 100%)}",
               "clip-path: polygon（梯形）" },
+            /*
+             * `box-shadow: inset` + **圆角半径等于半边长**（药丸/圆形）。
+             *
+             * 这个组合曾经在 GPU 上把四个角整片涂成阴影色：SDF 是圆角轮廓的，
+             * 圆角=半边长时矩形四角落在轮廓**外面**，内阴影的覆盖率公式在那
+             * 一片恒等于 1（CPU 侧用 round_row_span 限定在轮廓内，所以没事）。
+             * 现象是"药丸按钮外面套了个方形的白色阴影框"。
+             */
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#101820}"
+              "#b{position:absolute;left:40px;top:22px;width:80px;height:80px;"
+              "border-radius:40px;background-color:#3C4A5A;"
+              "box-shadow:inset 0px 1px 0px rgba(255,255,255,0.75)}",
+              "box-shadow: inset + 正圆" },
+            { "<div id=r><div id=b></div></div>",
+              "#r{width:160px;height:120px;background-color:#101820}"
+              "#b{position:absolute;left:24px;top:44px;width:112px;height:34px;"
+              "border-radius:17px;background-color:#3C4A5A;"
+              "box-shadow:inset 0px 2px 6px rgba(255,255,255,0.6)}",
+              "box-shadow: inset + 药丸" },
         };
 
         for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>液态玻璃：`backdrop-filter` 的玻璃按钮 + 背后会动的东西 · QLGL</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --fg: #1f2328;
+  --fg-dim: #59636e;
+  --line: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --side-w: 260px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.65 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC",
+        "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶栏 */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 52px; padding: 0 20px;
+  background: #24292f; color: #fff;
+  border-bottom: 1px solid #1b1f23;
+}
+header.top .brand { font-weight: 600; font-size: 16px; letter-spacing: .3px; }
+header.top .brand small { font-weight: 400; opacity: .65; margin-left: 8px; font-size: 12px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 13px; }
+header.top nav a { color: #d0d7de; }
+header.top nav a:hover { color: #fff; }
+
+/* 两栏 */
+.layout { display: flex; align-items: flex-start; }
+aside.side {
+  position: sticky; top: 52px;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  max-height: calc(100vh - 52px); overflow-y: auto;
+  padding: 18px 12px 40px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  font-size: 13.5px;
+}
+aside.side h4 {
+  margin: 16px 8px 6px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+aside.side h4:first-child { margin-top: 0; }
+aside.side a {
+  display: block; padding: 4px 8px; border-radius: 5px;
+  color: var(--fg); line-height: 1.4;
+}
+aside.side a:hover { background: #eaeef2; text-decoration: none; }
+aside.side a.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+aside.side a.sub-item {
+  padding-left: 18px; font-size: 12.6px; color: var(--fg-dim);
+}
+aside.side a.sub-item.active { background: #ddf4ff; color: #0a3069; font-weight: 600; }
+
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 28px 40px 80px;
+  max-width: 900px;
+}
+
+/* 正文 */
+main h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.3px; }
+main h1 + .subtitle { color: var(--fg-dim); margin: 0 0 22px; font-size: 14px; }
+main h2 {
+  font-size: 21px; margin: 38px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 16.5px; margin: 26px 0 8px; }
+main h4 { font-size: 14.5px; margin: 20px 0 6px; color: var(--fg-dim); }
+main p { margin: 10px 0; }
+main ul, main ol { margin: 10px 0; padding-left: 26px; }
+main li { margin: 4px 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+main blockquote {
+  margin: 14px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: #f6f8fa; color: var(--fg-dim);
+}
+main blockquote p { margin: 4px 0; }
+
+/* 行内代码与代码块 */
+code {
+  font: 12.7px/1.5 "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--code-bg); padding: .16em .38em; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 14px 0; padding: 13px 15px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 7px;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 12.7px; }
+
+/* 表格 */
+table { border-collapse: collapse; margin: 14px 0; width: 100%; font-size: 13.6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #cf222e; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #0a3069; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #6e7781; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #0550ae; }
+.highlight .nf, .highlight .n { color: #8250df; }
+.highlight .cp, .highlight .cpf { color: #6e7781; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+main img.shot { max-width: 100%; }
+
+/* 页面底部翻页 */
+.pager {
+  display: flex; gap: 14px; margin-top: 46px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--fg);
+}
+.pager a:hover { background: var(--bg-alt); text-decoration: none; }
+.pager .dir { display: block; font-size: 11.5px; color: var(--fg-dim); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+.cards a {
+  flex: 1 1 220px; padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg);
+}
+.cards a:hover { background: var(--bg-alt); text-decoration: none; border-color: var(--accent); }
+.cards b { display: block; font-size: 15px; margin-bottom: 4px; }
+.cards span { font-size: 12.8px; color: var(--fg-dim); }
+
+@media (max-width: 860px) {
+  aside.side { display: none; }
+  main { padding: 20px 18px 60px; }
+}
+</style>
+</head>
+<body>
+<header class='top'>
+  <span class='brand'>QLGL<small>C11 界面库 · 文档</small></span>
+  <nav><a href='../index.html'>首页</a><a href='../tutorial/01_basics.html'>教程</a><a href='../manual/ui/QLUI API手册.html'>CSS 参考</a></nav>
+</header>
+<div class='layout'>
+<aside class='side'>
+<h4>导航</h4>
+<a href='../index.html'>首页</a>
+<h4>入门教程</h4>
+<a href='../tutorial/01_basics.html'>基础知识</a>
+<a href='../tutorial/02_text.html'>文本</a>
+<a href='../tutorial/03_layout.html'>布局</a>
+<a href='../tutorial/04_interaction.html'>交互</a>
+<a href='../tutorial/05_animation.html'>动画</a>
+<a href='../tutorial/06_theme.html'>换皮肤</a>
+<a href='../tutorial/07_advanced.html'>进阶</a>
+<a href='../tutorial/08_tags.html'>标签与语义</a>
+<a href='../tutorial/09_scroll.html'>滚动</a>
+<a href='../tutorial/10_vs_web.html'>与 Web 的差别</a>
+<a href='../tutorial/11_input.html'>输入控件</a>
+<a href='../tutorial/12_text.html'>空白与上下标</a>
+<a href='../tutorial/13_form.html'>多行输入与表单</a>
+<a href='../tutorial/14_css3.html'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='../tutorial/15_backdrop.html'>毛玻璃叠在动的背景上</a>
+<a href='../tutorial/16_css_gallery.html'>CSS 效果检阅：十六个例程</a>
+<a href='../tutorial/17_perf.html'>性能诊断与 MCU 基准</a>
+<a href='../tutorial/18_css3_more.html'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+<a href='../tutorial/19_grid.html'>Grid：二维布局，以及 `border-image`</a>
+<a href='../tutorial/20_filter.html'>离屏图层：`filter` / `mix-blend-mode` / `mask` / 组透明度</a>
+<a href='../tutorial/21_transform.html'>旋转光栅：`transform: rotate()` / `skew()` / `matrix()`</a>
+<a href='../tutorial/22_table.html'>表格：`display: table` 全家 + `colspan` / `rowspan`</a>
+<a href='../tutorial/23_columns.html'>多栏：`column-count` / `column-width` / `column-rule`</a>
+<a href='../tutorial/24_text_stack.html'>文本栈：`@font-face` / 家族列表 / 真字重 / 连字 / 双向</a>
+<a href='../tutorial/25_clip_filter.html'>`clip-path` 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='../tutorial/26_touch.html'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+<a href='../tutorial/27_liquid_glass.html' class='active'>液态玻璃：`backdrop-filter` 的玻璃按钮 + 背后会动的东西</a>
+<h4>设计文档</h4>
+<a class='sub-item' href='../design/图像管线设计.html'>图像管线设计（`&lt;img&gt;` / 解码 / 绘制）</a>
+<a class='sub-item' href='../design/EMBED后端设计.html'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a class='sub-item' href='../design/底层实现设计.html'>QLGL 底层实现设计（v0.1 草案）</a>
+<a class='sub-item' href='../design/第三方依赖.html'>第三方依赖与许可</a>
+<a class='sub-item' href='../design/迁移指南.html'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a class='sub-item' href='../design/Web兼容设计.html'>Web 兼容设计（HTML/CSS 子集；**不做 JS，不碰 WebView**）</a>
+<a class='sub-item' href='../design/对比与取舍.html'>与主流框架对比：qlgl 站在哪一格</a>
+<a class='sub-item' href='../design/开发规划.html'>QLGL 开发规划</a>
+<a class='sub-item' href='../design/bench.html'>性能基线（bench.md）</a>
+<a class='sub-item' href='../design/性能诊断.html'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<h4>QLObject</h4>
+<a class='sub-item' href='../manual/object/QLObject阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/object/QLObject API手册.html'>API 手册</a>
+<h4>QLText</h4>
+<a class='sub-item' href='../manual/text/QLText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/text/QLText API手册.html'>API 手册</a>
+<h4>QLUI</h4>
+<a class='sub-item' href='../manual/ui/QLUI阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/ui/CSS3覆盖与裁剪.html'>CSS 覆盖与裁剪（全量清单）</a>
+<a class='sub-item' href='../manual/ui/HTML5标签覆盖与裁剪.html'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a class='sub-item' href='../manual/ui/QLUI API手册.html'>API 手册</a>
+<h4>QLUIText</h4>
+<a class='sub-item' href='../manual/uitext/QLUIText阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/uitext/QLUIText API手册.html'>API 手册</a>
+<h4>QLRender</h4>
+<a class='sub-item' href='../manual/render/QLRender阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/render/QLRender API手册.html'>API 手册</a>
+<h4>QLAnim</h4>
+<a class='sub-item' href='../manual/anim/QLAnim阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/anim/QLAnim API手册.html'>API 手册</a>
+<h4>QLInput</h4>
+<a class='sub-item' href='../manual/input/QLInput阅读指南.html'>阅读指南</a>
+<a class='sub-item' href='../manual/input/QLInput API手册.html'>API 手册</a>
+</aside>
+<main>
+<h1 id="backdrop-filter">液态玻璃：<code>backdrop-filter</code> 的玻璃按钮 + 背后会动的东西</h1>
+<p><img src="../img/38-liquid-glass.png" alt="深色流动背景上的玻璃药丸、玻璃按钮与玻璃气球" width="630"></p>
+<p>完整程序：<code>example/38_liquid_glass/</code></p>
+<blockquote>
+<p>想直接看效果：<code>./build/example/example_38_liquid_glass</code>。
+按住按钮会看到它变亮（<code>:active</code>），右上角那个玻璃气球会自己走，
+走到哪儿就把哪儿的背景吃掉一块做成模糊。</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 玻璃 = 三层，少一层就变"灰色塑料"</h2>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>实现</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 背后模糊 + 染色</td>
+<td><code>backdrop-filter: blur(40px)</code> + <code>background-color: rgba(...,0.1~0.2)</code></td>
+<td>玻璃"透过去"的那部分</td>
+</tr>
+<tr>
+<td>② 亮边 + 内高光</td>
+<td><code>border: 1px solid #FFFFFF</code> + <code>box-shadow: inset 0 1px 0 rgba(255,255,255,.55)</code></td>
+<td>玻璃的<strong>厚度</strong>感</td>
+</tr>
+<tr>
+<td>③ 投影</td>
+<td><code>box-shadow: 0 10px 30px rgba(0,0,0,.38)</code></td>
+<td>玻璃<strong>浮在</strong>背景上</td>
+</tr>
+</tbody>
+</table>
+<p>只做 ① 会得到一块"灰蒙蒙的毛玻璃"；②③ 才是让人认出"这是玻璃"的东西。
+这三样都是纯绘制，不增加模糊次数。</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">head</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">dock</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">btn</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">puck</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">40</span><span class="kt">px</span><span class="p">);</span>
+<span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">226</span><span class="p">,</span><span class="w"> </span><span class="mi">236</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.12</span><span class="p">);</span>
+<span class="w">  </span><span class="k">background-image</span><span class="p">:</span><span class="w"> </span><span class="nb">linear-gradient</span><span class="p">(</span><span class="mi">180</span><span class="kt">deg</span><span class="p">,</span><span class="w"> </span><span class="mh">#FFFFFF</span><span class="p">,</span><span class="w"> </span><span class="mh">#DCE8F8</span><span class="p">);</span>
+<span class="w">  </span><span class="k">border-width</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="k">border-style</span><span class="p">:</span><span class="w"> </span><span class="kc">solid</span><span class="p">;</span>
+<span class="w">  </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#E9EFF9</span><span class="p">;</span>
+<span class="w">  </span><span class="k">box-shadow</span><span class="p">:</span><span class="w"> </span><span class="kc">inset</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="mi">0</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.55</span><span class="p">),</span>
+<span class="w">              </span><span class="mi">0</span><span class="kt">px</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="w"> </span><span class="mi">30</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mf">0.38</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2 id="2">2. 背后的"东西"：整层一次模糊</h2>
+<p>五个 400~520px 的色块互相重叠、各自 <code>transform: translate()</code> 动画（零重排），
+外面套一层 <code>filter: blur() saturate()</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">scene</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">20</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mi">150</span><span class="kt">%</span><span class="p">);</span><span class="w">   </span><span class="c">/* 一个离屏图层，**不是**五个 */</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<blockquote>
+<p>给每个色块各加一次 <code>filter</code> 会让图层数乘 5。容器上一次就够，
+因为 <code>filter</code> 是对"合成后的结果"生效 —— 这也是 CSS 的语义。</p>
+</blockquote>
+<p>色块要<strong>大且重叠</strong>，保证任何位置的玻璃后面都有颜色。玻璃最容易翻车的场景是
+"底下是深色空白"——那看起来就是一块灰塑料。</p>
+<h2 id="3-bug">3. 这个例程逼出来的三个真 bug / 限制</h2>
+<p>写的时候一路"看着不对就查"，查到三件事，两件已经修进库里：</p>
+<h3 id="31-alpha">3.1 渐变的两个色标共用一个 alpha（限制，未改）</h3>
+<div class="highlight"><pre><span></span><code><span class="nt">background-color</span><span class="o">:</span><span class="w"> </span><span class="nt">rgba</span><span class="o">(</span><span class="nt">226</span><span class="o">,</span><span class="w"> </span><span class="nt">236</span><span class="o">,</span><span class="w"> </span><span class="nt">255</span><span class="o">,</span><span class="w"> </span><span class="nt">0</span><span class="p">.</span><span class="nc">12</span><span class="o">);</span><span class="w">        </span><span class="c">/* ← 透不透由它决定 */</span>
+<span class="nt">background-image</span><span class="o">:</span><span class="w"> </span><span class="nt">linear-gradient</span><span class="o">(</span><span class="nt">180deg</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">FFFFFF</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">DCE8F8</span><span class="o">);</span><span class="w">  </span><span class="c">/* ← 只做明暗 */</span>
+</code></pre></div>
+
+<p>本库一个背景只有<strong>一个</strong> alpha：<code>rgba()</code> 写在渐变色标里会被忽略。所以"上亮下透"
+的渐变（玻璃最常用的那种）做不出来，只能"整体 alpha + 明暗层次"。
+要真做得更细，需要给渐变的每个色标单独存 alpha。</p>
+<p>另外渐变目前只支持<strong>两个</strong>色标、只支持水平/垂直方向、<code>radial-gradient</code> 只支持圆心在中心。</p>
+<h3 id="32-box-shadow-inset">3.2 <code>box-shadow: inset</code> + 圆角=半边长 → 四角被涂满（<strong>已修</strong>）</h3>
+<p>玻璃按钮/气球都是"药丸"或正圆，也就是 <code>border-radius</code> 正好等于半边长。
+这种形状下 SDF 是圆角轮廓的，矩形四角落在轮廓<strong>外面</strong>，而内阴影的覆盖率公式
+在那一片恒等于 1 —— 于是四个角被整片涂成阴影色，看起来像"圆外面套了个方框"。</p>
+<p>CPU 侧的 <code>ql_canvas_fill_inset_shadow()</code> 用 <code>round_row_span()</code> 限定在轮廓内，所以
+<strong>只有 GPU 有这个问题</strong>，而且离屏对拍没覆盖到（当时没有圆角 + 内阴影的用例）。</p>
+<p>修法是片元里再乘一个"在轮廓内"的覆盖率：</p>
+<div class="highlight"><pre><span></span><code><span class="kt">float</span><span class="w"> </span><span class="n">cov</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">smoothstep</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="n">max</span><span class="p">(</span><span class="n">border</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0</span><span class="p">),</span><span class="w"> </span><span class="o">-</span><span class="n">d</span><span class="p">);</span>
+<span class="n">cov</span><span class="w"> </span><span class="o">*=</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">smoothstep</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span><span class="w"> </span><span class="n">d</span><span class="p">);</span><span class="w">      </span><span class="cm">/* ← 新增 */</span>
+</code></pre></div>
+
+<p>回归测试加在 <code>test_gl_vs_cpu</code>（"box-shadow: inset + 正圆 / 药丸"两例）：
+改回去立刻报 <code>差异 2.07%</code>。</p>
+<h3 id="33-transition">3.3 <code>transition</code> 只认这七个属性</h3>
+<div class="highlight"><pre><span></span><code><span class="nt">transition</span><span class="o">:</span><span class="w"> </span><span class="nt">background-color</span><span class="w"> </span><span class="nt">180ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">,</span><span class="w"> </span><span class="nt">border-color</span><span class="w"> </span><span class="nt">180ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">;</span>
+</code></pre></div>
+
+<p>按下时<strong>只改</strong> <code>background-color</code> / <code>border-color</code>，不改 <code>background-image</code> ——
+后者不在可过渡列表里，写了会在<strong>构建期报错</strong>（本库的原则是不静默忽略）。</p>
+<p>可过渡属性：<code>background-color</code> / <code>opacity</code> / <code>color</code> / <code>border-color</code> /
+<code>border-radius</code> / <code>transform</code> / <code>clip-path</code>。</p>
+<h2 id="4">4. 玻璃叠玻璃</h2>
+<p>按钮坐在玻璃"托盘"上（<code>.dock</code> 里放 <code>.btn</code>）。这是最容易出问题的地方：
+后画的元素模糊的必须是"<strong>已经画好</strong>的背景"，包括托盘自己。</p>
+<p>本库的实现顺序天然满足这一点（<code>backdrop-filter</code> 在画自己背景<strong>之前</strong>采样），
+所以玻璃套玻璃直接就能用，不需要额外处理。</p>
+<h2 id="5">5. 性能</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>数值（本机 1920×1080、GPU 后端）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>帧时间 p50</td>
+<td><strong>6.93 ms</strong>（≈144 fps，跟 vsync）</td>
+</tr>
+<tr>
+<td>其中等 swap</td>
+<td>6.64 ms（几乎全是等垂直同步）</td>
+</tr>
+<tr>
+<td>实际渲染</td>
+<td>约 0.3 ms</td>
+</tr>
+</tbody>
+</table>
+<p>代价主要在<strong>模糊次数</strong>：5 个玻璃元素各一次 backdrop 模糊 + 场景一次
+<code>filter</code> 模糊。想更快就减少玻璃元素数量或降低 <code>blur()</code> 半径
+（半径直接决定降采样的盒半径）。</p>
+<p>CPU 后端（<code>--dump</code>）也能跑，画面基本一致，只是模糊是逐像素盒式近似、边缘略硬。</p>
+<div class='pager'>
+<a href='../tutorial/26_touch.html'><span class='dir'>上一页</span>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+<a class='next' href='../manual/object/QLObject API手册.html'><span class='dir'>下一页</span>QLObject API 手册（对象系统 v0.1）</a>
+</div>
+</main>
+</div>
+</body>
+</html>

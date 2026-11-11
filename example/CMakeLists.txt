@@ -61,6 +61,7 @@ set(QL_EXAMPLES
     35_text_stack
     36_clip_filter
     37_touch
+    38_liquid_glass
 )
 
 foreach(e ${QL_EXAMPLES})

@@ -490,9 +490,20 @@ static const char *FS_SRC =
      * 必须排在最前面：下面的分支是按"从大到小"夹逼写的，7 会先命中 mode>4.5 的图片分支。
      */
     "  if (mode > 6.5) {\n"
+    /*
+     * 内阴影：越贴近边界越浓，深入 blur 之后归零。
+     *
+     * **必须再乘一个"在轮廓内"的覆盖率**。`srgb` 里的 `d` 对圆角矩形是**圆角
+     * 轮廓**的 SDF：圆角半径等于半边长时（药丸/圆形），矩形四角就落在轮廓
+     * **外面**（d > 0），此时 `1 - smoothstep(0, b, -d)` 恒等于 1 —— 于是四个
+     * 角被整片涂成阴影色，看起来是"方形的内部阴影框住一个圆"。
+     * CPU 侧的 `ql_canvas_fill_inset_shadow` 用 `round_row_span()` 限定在轮廓内，
+     * 所以只有 GPU 有这个问题（真窗口才看得见，离屏对拍没覆盖到）。
+     */
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
     "    float dd = -d;\n"
     "    float cov = 1.0 - smoothstep(0.0, max(border, 1.0), dd);\n"
+    "    cov *= 1.0 - smoothstep(-0.5, 0.5, d);\n"
     "    return vec4(v_color.rgb, v_color.a * cov * m);\n"
     "  }\n"
     "  if (mode > 4.5) {\n"
