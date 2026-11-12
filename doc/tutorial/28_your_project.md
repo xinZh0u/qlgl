@@ -231,9 +231,21 @@ ql_disp_mem_save_ppm(disp, "out.ppm");
 编译，而你的程序按"关"编译 → 同一份头文件在两个翻译单元里尺寸不同 → 运行期读到
 错位的字段，症状是"颜色/圆角/文字莫名奇妙"。
 
-**所以：能力开关不随 `.pc` / `Config.cmake` 导出成字符串，而是通过
-`target_compile_definitions(qlgl PUBLIC ...)` 传递到链 `qlgl::qlgl` 的目标上。**
-用 2.1 / 2.2 就自动正确；只有 2.3 手工链接需要你自己抄。
+**所以库必须把这份宏带给消费者**，而且两条路径必须是同一份值：
+
+| 路径 | 宏从哪来 |
+|---|---|
+| `find_package` | 导出文件里的 `INTERFACE_COMPILE_DEFINITIONS` |
+| `pkg-config` | `qlgl.pc` 的 `Cflags: -D...`（由同一个 target 属性生成） |
+
+两端同源（`target_compile_definitions(qlgl PUBLIC ...)`），所以用 2.1 / 2.2
+就自动正确；**只有 2.3 手工链接需要你自己抄全**。
+
+怎么看自己那份构建到底有哪些开关：
+
+```bash
+grep Cflags $(pkg-config --variable=pcfiledir qlgl)/qlgl.pc
+```
 
 ### 6.2 头文件要按需包含
 

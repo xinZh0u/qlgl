@@ -597,9 +597,31 @@ sudo<span class="w"> </span>cmake<span class="w"> </span>--install<span class="w
 <p><code>QLUIStyle</code> 等结构体的<strong>布局</strong>受 <code>QL_FEAT_*</code> 影响。库按"开 <code>QL_FEAT_CSS_BLUR=1</code>"
 编译，而你的程序按"关"编译 → 同一份头文件在两个翻译单元里尺寸不同 → 运行期读到
 错位的字段，症状是"颜色/圆角/文字莫名奇妙"。</p>
-<p><strong>所以：能力开关不随 <code>.pc</code> / <code>Config.cmake</code> 导出成字符串，而是通过
-<code>target_compile_definitions(qlgl PUBLIC ...)</code> 传递到链 <code>qlgl::qlgl</code> 的目标上。</strong>
-用 2.1 / 2.2 就自动正确；只有 2.3 手工链接需要你自己抄。</p>
+<p><strong>所以库必须把这份宏带给消费者</strong>，而且两条路径必须是同一份值：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>宏从哪来</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>find_package</code></td>
+<td>导出文件里的 <code>INTERFACE_COMPILE_DEFINITIONS</code></td>
+</tr>
+<tr>
+<td><code>pkg-config</code></td>
+<td><code>qlgl.pc</code> 的 <code>Cflags: -D...</code>（由同一个 target 属性生成）</td>
+</tr>
+</tbody>
+</table>
+<p>两端同源（<code>target_compile_definitions(qlgl PUBLIC ...)</code>），所以用 2.1 / 2.2
+就自动正确；<strong>只有 2.3 手工链接需要你自己抄全</strong>。</p>
+<p>怎么看自己那份构建到底有哪些开关：</p>
+<div class="highlight"><pre><span></span><code>grep<span class="w"> </span>Cflags<span class="w"> </span><span class="k">$(</span>pkg-config<span class="w"> </span>--variable<span class="o">=</span>pcfiledir<span class="w"> </span>qlgl<span class="k">)</span>/qlgl.pc
+</code></pre></div>
+
 <h3 id="62">6.2 头文件要按需包含</h3>
 <p>伞头文件 <code>&lt;qlgl/qlgl.h&gt;</code> 一次包含全部，最省事。单独包含某个头文件也可以
 （每个头文件都是自包含的），但<strong>不要在伞头文件之后重复 include 子头文件</strong>去"补定义"，

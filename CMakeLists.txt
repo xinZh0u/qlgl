@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.16)
 
 project(qlgl LANGUAGES C VERSION 0.1.0)
 
+# **必须在 `add_library` / `target_include_directories` 之前**：那里的
+# `$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>` 是**配置期字符串展开**，
+# 若此时 `CMAKE_INSTALL_INCLUDEDIR` 还没定义，就展开成空串 → 导出的
+# `qlglTargets.cmake` 里 `INTERFACE_INCLUDE_DIRECTORIES` 丢掉
+# `${_IMPORT_PREFIX}/include`，消费方编译期报 "qlgl/qlgl.h: 没有那个文件"。
+# 注意这个 bug **会自己藏起来**：`include(GNUInstallDirs)` 把值写进 CMakeCache，
+# 所以同一个 build 目录再 configure 一次就"好了"，只有全新配置才复现。
+include(GNUInstallDirs)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)          # 严格 -std=c11，防止误用 POSIX/编译器扩展
@@ -20,6 +29,12 @@ add_library(qlgl STATIC ${QLGL_SRC})
 target_include_directories(qlgl PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+# 守卫：这里展开为空串时，安装包会丢掉 `${_IMPORT_PREFIX}/include`，
+# 消费方编译期才报 "qlgl/qlgl.h 找不到"（而本仓内部构建完全正常）。
+if(NOT CMAKE_INSTALL_INCLUDEDIR)
+    message(FATAL_ERROR "QLGL: CMAKE_INSTALL_INCLUDEDIR 为空 —— "
+                        "include(GNUInstallDirs) 必须在本行之前")
+endif()
 target_compile_options(qlgl PRIVATE -Wall -Wextra)
 # libm 是自己用的（缓动曲线、SDF、颜色插值），不借 FreeType 的传递依赖 ——
 # 之前关掉 FreeType 之后例程集体链接失败，就是这个"顺手用别人的 -lm"
@@ -64,11 +79,17 @@ endif()
 if(NOT DEFINED QL_FEAT_IMG_GIF)
     set(QL_FEAT_IMG_GIF ${_ql_preset_gif})
 endif()
-add_compile_definitions(QL_FEAT_IMG_BMP=${QL_FEAT_IMG_BMP}
-                        QL_FEAT_IMG_QOI=${QL_FEAT_IMG_QOI}
-                        QL_FEAT_IMG_PNG=${QL_FEAT_IMG_PNG}
-                        QL_FEAT_IMG_GIF=${QL_FEAT_IMG_GIF}
-                        QL_FEAT_IMG_PLATFORM=${QL_FEAT_IMG_PLATFORM})
+# 一项一个宏。两处都用这份列表：`add_compile_definitions` 给本仓所有目标，
+# `target_compile_definitions(PUBLIC)` 让消费方（find_package）也能看到 ——
+# 后者的值最终会被写进 `qlgl.pc` 的 `Cflags`（见文件末尾），两条消费路径同源。
+set(QL_IMG_DEFS
+    QL_FEAT_IMG_BMP=${QL_FEAT_IMG_BMP}
+    QL_FEAT_IMG_QOI=${QL_FEAT_IMG_QOI}
+    QL_FEAT_IMG_PNG=${QL_FEAT_IMG_PNG}
+    QL_FEAT_IMG_GIF=${QL_FEAT_IMG_GIF}
+    QL_FEAT_IMG_PLATFORM=${QL_FEAT_IMG_PLATFORM})
+add_compile_definitions(${QL_IMG_DEFS})
+target_compile_definitions(qlgl PUBLIC ${QL_IMG_DEFS})
 
 option(QLGL_BUILD_TESTS "构建 test/ 下的示例与单元测试" ON)
 option(QLGL_BUILD_EXAMPLES "构建 example/ 下的基本例程" ON)
@@ -512,11 +533,13 @@ endif()
 # 或者非 CMake 的工程：
 #     pkg-config --cflags --libs qlgl
 #
-# 说明：能力开关（`QL_FEAT_*`）**不随包导出** —— 它们是"这一份构建的属性"，
-# 静态库的调用方如果编译期看到的宏与库里不一致，结构体布局就会错位。
-# 所以 `qlgl.pc` 与 `qlglConfig.cmake` 只导出 include 目录与链接依赖。
-include(GNUInstallDirs)
-
+# 说明：能力开关（`QL_FEAT_*` / `QLGL_ENABLE_*`）**必须**随包导出，且两条消费
+# 路径（`qlglTargets.cmake` 与 `qlgl.pc`）必须是同一份值：
+#   - 头文件里有 `#error` 守卫（如 `QL_FEAT_CSS_FONT_STACK=1` 要求 FreeType）；
+#   - 它们还决定结构体布局，调用方看到的宏与库里不一致就会读错位。
+# 所以 `target_compile_definitions(qlgl PUBLIC ...)` 是唯一来源：
+# CMake 侧由导出文件自动带上，pkg-config 侧在文件末尾从
+# `INTERFACE_COMPILE_DEFINITIONS` 读出来写进 `Cflags`。
 install(TARGETS qlgl
         EXPORT qlglTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -611,6 +634,22 @@ if(QL_CFG_HAVE_DLOPEN_PC)
 elseif(UNIX)
     set(QL_PC_LIBS "${QL_PC_LIBS} -ldl")
 endif()
+# 能力宏必须带给 pkg-config 的消费者：头文件里有 `#if QL_FEAT_*` 与
+# `#error` 守卫（例如 `QL_FEAT_CSS_FONT_STACK=1` 要求 `QLGL_ENABLE_FREETYPE=1`），
+# 而且这些宏还决定结构体布局。少了它们，消费方要么直接 `#error`，要么编译过后
+# 与库看到的结构体尺寸不一致。
+#
+# 取值**只有一个来源**：直接读 target 的 `INTERFACE_COMPILE_DEFINITIONS`
+# （与 CMake 导出路径 `qlglTargets.cmake` 完全同一份），不在这里重抄一遍，
+# 否则以后新增一个开关就会漏。
+get_target_property(_ql_pc_iface_defs qlgl INTERFACE_COMPILE_DEFINITIONS)
+set(QL_PC_DEFS "")
+if(_ql_pc_iface_defs)
+    foreach(_d IN LISTS _ql_pc_iface_defs)
+        string(APPEND QL_PC_DEFS " -D${_d}")
+    endforeach()
+endif()
+
 # 用 `${pcfiledir}` 相对定位，这样 `cmake --install --prefix <任意目录>` 之后
 # 不用重新生成 .pc（否则里面写死的 prefix 会指向 configure 时的默认路径）。
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qlgl.pc
@@ -622,7 +661,7 @@ includedir=\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}
 Name: qlgl
 Description: CSS+HTML 的 GUI 库（HTML/CSS 编译成静态数据、CPU/GPU 双后端、可裁到 MCU）
 Version: ${PROJECT_VERSION}
-Cflags: -I\${includedir}
+Cflags: -I\${includedir}${QL_PC_DEFS}
 Libs: -L\${libdir} -lqlgl ${QL_PC_LIBS}
 ")
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qlgl.pc
