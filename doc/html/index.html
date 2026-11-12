@@ -284,6 +284,9 @@ main img {
 <details class='sec'><summary>性能</summary>
 <a href='tutorial/17_perf.html' title='性能诊断与 MCU 基准'>性能诊断与 MCU 基准</a>
 </details>
+<details class='sec'><summary>集成与部署</summary>
+<a href='tutorial/28_your_project.html' title='在自己的工程里用 QLGL'>在自己的工程里用 QLGL</a>
+</details>
 <details class='sec'><summary>API 手册</summary>
 <span class='mod'>QLObject —— 对象系统：类、属性、信号</span>
 <a href='manual/object/QLObject阅读指南.html' title='阅读指南'>阅读指南</a>
@@ -346,6 +349,8 @@ main img {
 <div class='cards'><a href='tutorial/10_vs_web.html'><b>与 Web 的差别</b><span>这一章把&quot;从浏览器稿子搬到 QLGL&quot;会踩到的坑一次讲完。</span></a><a href='tutorial/14_css3.html'><b>CSS3 补全：真实页面天天用的那几件</b><span>这一章讲 2026-11 补进本库的一批 CSS 能力。它们都不是&quot;高级特效&quot;， 而是写真实页面绕不开的东西 —— 缺了就得手工加 class、手工算颜色、手工插图标。</span></a><a href='tutorial/18_css3_more.html'><b>CSS3 补全收官：状态选择器、文本细节、背景图</b><span>三个伪类的共同点：在构建期就编好另一份样式，运行期只翻一个状态位。</span></a></div>
 <h2 class='sec-title'>性能</h2><p class='sec-desc'>帧时间拆分、掉帧案例、MCU 基准</p>
 <div class='cards'><a href='tutorial/17_perf.html'><b>性能诊断与 MCU 基准</b><span>这一章讲怎么量，以及怎么判读量出来的数。</span></a></div>
+<h2 class='sec-title'>集成与部署</h2><p class='sec-desc'>把 qlgl 装进系统、接到自己的工程里</p>
+<div class='cards'><a href='tutorial/28_your_project.html'><b>在自己的工程里用 QLGL</b><span>前面 27 章都在讲&quot;怎么写界面&quot;。这一章讲怎么把它接到你的工程里：</span></a></div>
 <h2 class='sec-title'>API 手册</h2><p class='sec-desc'>按模块：阅读指南（为什么）→ API 手册（怎么用）</p>
 <div class='cards'><a href='manual/object/QLObject API手册.html'><b>QLObject API 手册（对象系统 v0.1）</b><span>配套阅读：QLObject阅读指南 · 设计依据：底层实现设计</span></a><a href='manual/object/QLObject阅读指南.html'><b>QLObject 阅读指南</b><span>带&quot;自动生成&quot;的文件由 tools/qlgen/qlgen.py 产出，CI 里用 qlgen.py --check 校验是否与源码同步。</span></a><a href='manual/text/QLText API手册.html'><b>QLText / 字体 API 手册（v0.1）</b><span>配套阅读：QLText 阅读指南 · 相关：QLUI API手册（界面里的文本样式）</span></a><a href='manual/text/QLText阅读指南.html'><b>QLText / 字体系统 阅读指南</b><span>ofsy 是负值（墨迹在基线之上），这正是&quot;基线对齐&quot;的由来：不同字形的 boxh 与 ofsy 不同，但它们的基线一致，所以同一行文字看起来是齐的。</span></a><a href='manual/ui/QLUI API手册.html'><b>QLUI / HTML+CSS 编译 API 手册（v0.1）</b><span>配套阅读：QLUI 阅读指南 · 定位：Web 兼容设计 §7</span></a><a href='manual/ui/QLUI阅读指南.html'><b>QLUI / HTML+CSS 编译 阅读指南</b><span>CMakeLists.txt 里用 addcustomcommand 声明依赖，改 HTML/CSS 会自动重新生成（与 Qt 的 .ui 体验一致）。</span></a><a href='manual/uitext/QLUIText API手册.html'><b>QLUIText API 手册</b><span>运行期把 HTML + CSS 编译成 QLUIDoc。头文件：qlgl/qluitext.h（已被 qlgl/qlgl.h 包含）。</span></a><a href='manual/uitext/QLUIText阅读指南.html'><b>QLUIText 阅读指南</b><span>qluiloadtext(html, css) 把一份 HTML + CSS 文本编译成 QLUIDoc。</span></a><a href='manual/render/QLRender API手册.html'><b>QLRender / GPU 后端 API 手册（v0.1）</b><span>配套：QLRender 阅读指南 · 定位：Web 兼容设计 §7</span></a><a href='manual/render/QLRender阅读指南.html'><b>QLRender / GPU 后端 阅读指南</b><span>唯一分界点就是 QLDraw2D。 上层（布局、控件）一行都不需要知道用的是 CPU 还是 GPU。</span></a><a href='manual/anim/QLAnim API手册.html'><b>QLAnim / 帧时钟与补间动画 API手册（v0.1）</b><span>配套阅读：QLAnim 阅读指南</span></a><a href='manual/anim/QLAnim阅读指南.html'><b>QLAnim / 帧时钟与补间动画 阅读指南</b><span>依赖方向：qlanim 不依赖 qlui、不依赖任何绘制后端，只依赖 qlgl.h 的 qlerrt。 反向依赖是单向的：qlui → qlanim。</span></a><a href='manual/input/QLInput API手册.html'><b>QLInput / 交互 API 手册（v0.1）</b><span>配套阅读：QLInput 阅读指南 · 界面与命中测试：QLUI API手册</span></a><a href='manual/input/QLInput阅读指南.html'><b>QLInput / 交互系统 阅读指南</b><span>后端只认识&quot;坐标 + 按钮 + 键码&quot;，界面层只认识节点树。中间隔一个定长队列， 换来三件事：</span></a></div>
 <h2 class='sec-title'>规范与清单</h2><p class='sec-desc'>HTML / CSS 支持到哪一步、还差什么、怎么排期</p>

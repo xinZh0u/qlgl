@@ -75,6 +75,9 @@ TUTORIAL_SECTIONS = [
     ("性能", "帧时间拆分、掉帧案例、MCU 基准", [
         "17_perf",
     ]),
+    ("集成与部署", "把 qlgl 装进系统、接到自己的工程里", [
+        "28_your_project",
+    ]),
 ]
 
 # 规范与清单：在 doc/手册/ui/ 下，但不属于 QLUI API
