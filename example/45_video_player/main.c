@@ -142,12 +142,15 @@ int main(int argc, char **argv)
 {
     const char *path = NULL;
     const char *dump = NULL;
+    const char *size = NULL;
     int seconds = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--seconds") == 0 && i + 1 < argc)
             seconds = atoi(argv[++i]);
         else if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
             dump = argv[++i];
+        else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc)
+            size = argv[++i];
         else if (path == NULL)
             path = argv[i];
     }
@@ -185,12 +188,12 @@ int main(int argc, char **argv)
         "<div class=row><button>暂停</button></div>"
         "</div>",
         "#root { width: 100%; height: 100%; padding: 10px;"
-        " box-sizing: border-box; background-color: #FFFFFF;"
-        " color: #1F2328; font-size: 12px; }"
+        " box-sizing: border-box; display: flex; flex-direction: column;"
+        " background-color: #FFFFFF; color: #1F2328; font-size: 12px; }"
         ".name { font-size: 14px; color: #0969DA; margin-bottom: 6px;"
         " white-space: nowrap; overflow: hidden; }"
-        "video { width: 100%; height: 220px; background-color: #000000;"
-        " margin-bottom: 8px; }"
+        "video { flex: 1 1 0px; width: 100%; height: auto;"
+        " background-color: #000000; margin-bottom: 8px; }"
         ".time { color: #57606A; margin-bottom: 4px; }"
         "progress { width: 100%; height: 12px; margin-bottom: 8px; }"
         ".row { display: flex; }"
@@ -226,6 +229,11 @@ int main(int argc, char **argv)
         return 1;
     }
     (void)ql_window_bind_ui(app.win, app.ui);
+    if (size != NULL) {
+        int sw = 0, sh = 0;
+        if (sscanf(size, "%dx%d", &sw, &sh) == 2 && sw > 0 && sh > 0)
+            (void)ql_window_resize(app.win, sw, sh);
+    }
     ql_window_set_event_filter(app.win, on_event, &app);
     ql_media_play(app.media);
 

@@ -160,6 +160,8 @@ QL_TEST_BEGIN("test_media_video_fake")
         }
         QL_CHECK(frames >= 5);
         QL_CHECK(serial >= 5);
+        /* 纯视频（没有音轨）也要走系统时钟，位置不能永远停在 0 */
+        QL_CHECK(ql_media_position_ms(m) > 100);
         QL_CHECK_EQ(ql_media_state(m), QL_MEDIA_ENDED);
         printf("  frames=%d serial=%d last_pts=%lld\n", frames, serial,
                (long long)last_pts);
@@ -183,6 +185,19 @@ QL_TEST_BEGIN("test_media_video_fake")
         QL_CHECK_EQ(ql_media_play(m), QL_OK);
         sleep_ms(120);
         QL_CHECK(ql_media_video_serial(m) > s1);
+        /* 暂停后拖动：也要把目标位置的帧显示出来（seek preview） */
+        QL_CHECK_EQ(ql_media_pause(m), QL_OK);
+        QL_CHECK_EQ(ql_media_seek(m, 700), QL_OK);
+        sleep_ms(150);
+        {
+            const QLMediaVideoFrame *pf = ql_media_acquire_frame(m);
+            QL_CHECK(pf != NULL);
+            if (pf != NULL) {
+                printf("  paused-seek pts=%lld\n", (long long)pf->pts_us);
+                QL_CHECK(pf->pts_us >= 600000);
+                ql_media_frame_release(pf);
+            }
+        }
         ql_media_close(m);
     }
 

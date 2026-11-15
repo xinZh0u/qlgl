@@ -49,6 +49,8 @@ typedef struct {
     int              demux_eof;
     int              adrain_sent, adrain_done;
     int              vdrain_sent, vdrain_done;
+    int              vwait_key;      /* seek 之后先解到关键帧再出图 */
+    int              vdrop;          /* 等关键帧时丢掉的帧数（防永久等待） */
 
     int64_t          duration_ms;
     int              rate, channels;
@@ -414,6 +416,22 @@ static int ff_read_video(void *h, uint8_t *dst, int dst_bytes,
     for (;;) {
         int ret = avcodec_receive_frame(f->vdec, f->vframe);
         if (ret == 0) {
+            /*
+             * 跳转键帧：WebM/录屏的 GOP 可能很长，seek 落在 GOP 中间时
+             * 解码器会一直 "Discarding interframe without a prior keyframe"，
+             * 画面看起来像卡死。这里先丢到第一个关键帧再出图；丢太多
+             * （没有索引的畸形文件）就放弃等待，别让播放永久停住。
+             */
+            if (f->vwait_key) {
+                const int key = (f->vframe->flags & AV_FRAME_FLAG_KEY) != 0;
+                if (!key && f->vdrop < 300) {
+                    f->vdrop++;
+                    av_frame_unref(f->vframe);
+                    continue;
+                }
+                f->vwait_key = 0;
+                f->vdrop = 0;
+            }
             uint8_t *planes[4] = { dst, NULL, NULL, NULL };
             int strides[4] = { f->vw * 4, 0, 0, 0 };
             sws_scale(f->vsws, (const uint8_t *const *)f->vframe->data,
@@ -471,6 +489,8 @@ static QLErr ff_seek(void *h, int64_t ms)
     f->vdrain_sent = f->vdrain_done = 0;
     f->pending_frames = 0;
     f->pending_pos = 0;
+    f->vwait_key = (f->vdec != NULL);
+    f->vdrop = 0;
     if (f->swr != NULL) {
         swr_close(f->swr);
         (void)swr_init(f->swr);

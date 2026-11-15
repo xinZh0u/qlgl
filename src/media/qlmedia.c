@@ -214,6 +214,7 @@ struct QLMedia {
     int             seek_req;
     int64_t         seek_ms;
     int             flush_req;   /* 暂停时让工作线程丢掉设备缓冲 */
+    int             seek_preview;/* seek 后即使暂停也要出第一帧 */
 
     QLMediaState    state;
     int64_t         duration_ms;
@@ -278,6 +279,8 @@ static int64_t pos_locked(QLMedia *m)
     return m->base_ms + (f * 1000) / (m->rate > 0 ? m->rate : 48000);
 }
 
+static int64_t position_locked(QLMedia *m);
+
 int64_t ql_media_position_ms(const QLMedia *cm)
 {
     if (cm == NULL)
@@ -286,7 +289,7 @@ int64_t ql_media_position_ms(const QLMedia *cm)
     pthread_mutex_lock(&m->mu);
     int64_t pos;
     if (m->state == QL_MEDIA_PLAYING) {
-        pos = pos_locked(m);
+        pos = position_locked(m);
     } else if (m->state == QL_MEDIA_ENDED && m->duration_ms > 0) {
         pos = m->duration_ms;
     } else {
@@ -303,8 +306,13 @@ static int64_t now_us_mono(void)
     return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
-/* 音画同步用：有音频就以"耳朵听到的位置"为准，否则用系统时钟 */
-static int64_t clock_ms_locked(QLMedia *m)
+/*
+ * 播放位置（调用方持锁）：
+ *   - 有音频（且设备打开成功）：设备时钟 = 已写帧数 − 设备延迟；
+ *   - 纯视频 / 设备不可用：系统单调钟（从 play/seek 起算）。
+ * 视频-only 文件如果走设备时钟，frames 永远为 0，进度条会卡死。
+ */
+static int64_t position_locked(QLMedia *m)
 {
     if (m->has_audio && m->sink_ctx != NULL)
         return pos_locked(m);
@@ -312,6 +320,11 @@ static int64_t clock_ms_locked(QLMedia *m)
     if (e < 0)
         e = 0;
     return m->base_ms + e;
+}
+
+static int64_t clock_ms_locked(QLMedia *m)
+{
+    return position_locked(m);
 }
 
 static QLMediaVideoFrame *frame_free_slot(QLMedia *m)
@@ -343,14 +356,25 @@ static void frame_drop(QLMedia *m, QLMediaVideoFrame *f)
 /* 解码/呈现一帧；在 worker 里、不持锁调用 */
 static void video_step(QLMedia *m)
 {
+    int preview = 0;
     if (m->vpending != NULL) {
         pthread_mutex_lock(&m->mu);
-        const int live = m->playing && !m->paused;
+        preview = m->seek_preview;
+        const int live = (m->playing && !m->paused) || preview;
         const int64_t clock = clock_ms_locked(m);
         pthread_mutex_unlock(&m->mu);
 
         if (!live)
             return;
+        if (preview) {
+            /* 暂停/播完后拖动进度条：把目标位置的帧显示出来 */
+            frame_publish(m, m->vpending);
+            m->vpending = NULL;
+            pthread_mutex_lock(&m->mu);
+            m->seek_preview = 0;
+            pthread_mutex_unlock(&m->mu);
+            return;
+        }
         const int64_t pts = m->vpending->pts_us;
         if (pts <= clock * 1000 + 5000)
             frame_publish(m, m->vpending);
@@ -378,6 +402,9 @@ static void video_step(QLMedia *m)
                                     (int)m->vframe_bytes, &w, &h, &pts);
     if (r <= 0) {
         f->in_use = 0;
+        pthread_mutex_lock(&m->mu);
+        m->seek_preview = 0;      /* 没有更多帧：别让 worker 空转 */
+        pthread_mutex_unlock(&m->mu);
         if (r < 0) {
             pthread_mutex_lock(&m->mu);
             snprintf(m->err, sizeof(m->err), "video decode error");
@@ -496,7 +523,7 @@ static void *media_thread(void *arg)
 
     for (;;) {
         pthread_mutex_lock(&m->mu);
-        while (!m->quit && !m->seek_req && !m->flush_req &&
+        while (!m->quit && !m->seek_req && !m->flush_req && !m->seek_preview &&
                (!m->playing || m->paused))
             pthread_cond_wait(&m->cv, &m->mu);
         if (m->quit)
@@ -571,7 +598,7 @@ static void *media_thread(void *arg)
                 pthread_mutex_unlock(&m->mu);
             } else {
                 pthread_mutex_lock(&m->mu);
-                m->base_ms = pos_locked(m);
+                m->base_ms = position_locked(m);
                 m->frames = 0;
                 m->playing = 0;
                 set_state(m, QL_MEDIA_ENDED);
@@ -717,7 +744,7 @@ QLErr ql_media_play(QLMedia *m)
 
     pthread_mutex_lock(&m->mu);
 
-    if (m->sink_ctx == NULL) {
+    if (m->has_audio && m->sink_ctx == NULL) {
         if (m->sink == NULL)
             m->sink = &s_null_sink;
         if (m->sink->open(&m->sink_ctx, m->rate, m->channels) != 0) {
@@ -772,7 +799,7 @@ QLErr ql_media_pause(QLMedia *m)
         return QL_OK;
     }
 
-    const int64_t pos = pos_locked(m);
+    const int64_t pos = position_locked(m);
     m->base_ms = pos;
     m->frames = 0;
     m->paused = 1;
@@ -797,6 +824,7 @@ QLErr ql_media_seek(QLMedia *m, int64_t ms)
     m->seek_ms = ms;
     m->base_ms = ms;
     m->frames = 0;
+    m->seek_preview = m->has_video ? 1 : 0;
     if (m->state == QL_MEDIA_ENDED)
         set_state(m, m->playing ? QL_MEDIA_PLAYING : QL_MEDIA_READY);
     pthread_cond_broadcast(&m->cv);
