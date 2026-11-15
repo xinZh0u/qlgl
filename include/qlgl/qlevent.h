@@ -86,6 +86,8 @@ typedef enum {
 uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb_t cb, void *user_data);
 ql_err_t ql_disconnect(QLObject *obj, uint32_t conn_id);
 int      ql_disconnect_all(QLObject *obj);
+/* 内部：对象析构时立即回收连接（不等派发结束，对象内存马上就要释放） */
+void     ql_event_force_disconnect_all(QLObject *obj);
 uint32_t ql_event_conn_count(QLObject *obj);
 
 /* ----- 派发 ----- */

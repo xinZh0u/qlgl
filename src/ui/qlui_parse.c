@@ -3055,7 +3055,14 @@ static int parse_clip_path(const char *text, const char *where, ClipPathDef *out
 
     char t[512];
     size_t k = 0;
-    for (const char *s = text; *s != '\0' && k + 1u < sizeof(t); s++) {
+    const char *s = text;
+    for (; *s != '\0'; s++) {
+        if (k + 1u >= sizeof(t)) {
+            /* 以前直接停下、拿截断的前缀继续解析：超长声明的尾部被静默忽略 */
+            set_error("%s: clip-path 值过长（上限 %u 字节）", where,
+                      (unsigned)(sizeof(t) - 1u));
+            return 0;
+        }
         const char c = *s;
         t[k++] = (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
     }
@@ -3954,6 +3961,7 @@ static const struct {
     { "border-radius",    QL_UI_TRANS_RADIUS },
     { "transform",        QL_UI_TRANS_XFORM },
     { "clip-path",        QL_UI_TRANS_CLIP },
+    { "backdrop-filter",  QL_UI_TRANS_BACKDROP },
 };
 #define K_TRANS_PROPS_N (sizeof(k_trans_props) / sizeof(k_trans_props[0]))
 
@@ -12250,7 +12258,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
      * `saturate()` 是 v37 加的：模糊之后把背景颜色推艳。只有模糊的话玻璃后面
      * 是一片灰蒙蒙的均值色 —— Apple 的"液态玻璃"看起来通透正是靠这一步。
      *
-     * `refract()` 是 v38 加的：在轮廓附近把采样点往外推一圈（透镜斜面）。
+     * `refract()` 是 v38 加的：整块玻璃像一枚厚透镜，位移随归一化半径增长，
+     * 轮廓处最大且朝圆心采样（内部画面被压进边缘一圈，形成参考稿那种环形折光）。
      * 它替代不了 blur —— 两个一起写才是"液态玻璃"：`blur()` 给毛面，
      * `refract()` 给厚度。只有 refract 也可以（干净的放大镜）。
      */
@@ -12389,8 +12398,8 @@ static int compile_style(const Decls *st, const char *where, const KfRanges *ran
                         return 0;
                     }
                     backdrop_refract = (int)py_round(d);
-                    if (backdrop_refract < 0 || backdrop_refract > 64) {
-                        set_error("%s: backdrop-filter: refract 半径必须在 0~64px",
+                    if (backdrop_refract < 0 || backdrop_refract > 255) {
+                        set_error("%s: backdrop-filter: refract 半径必须在 0~255px",
                                   where);
                         return 0;
                     }

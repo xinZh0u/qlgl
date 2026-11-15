@@ -87,6 +87,26 @@ QL_TEST_BEGIN("test_str")
     QL_CHECK_STR(ql_str_data(NULL), "");
     QL_CHECK(!ql_str_equals(NULL, "x"));
 
+    /* 8. 长度加一的溢出必须被拒绝，而不是回绕后越界写 */
+    QL_CHECK_EQ(ql_str_set_n(&s, "x", UINT32_MAX), QL_ERR_INVAL);
+    QL_CHECK(ql_str_len(&s) <= 1);
+
+    /* 9. 自追加 / 以自身子串赋值：扩容后不能从旧缓冲区读 */
+    ql_str_free(&s);
+    ql_str_init(&s);
+    QL_CHECK_EQ(ql_str_set(&s, "hello"), QL_OK);
+    QL_CHECK_EQ(ql_str_append(&s, ql_str_data(&s)), QL_OK);
+    QL_CHECK_STR(ql_str_data(&s), "hellohello");
+    QL_CHECK_EQ(ql_str_set_n(&s, ql_str_data(&s) + 5, 5), QL_OK);
+    QL_CHECK_STR(ql_str_data(&s), "hello");
+    QL_CHECK_EQ(ql_str_append(&s, ql_str_data(&s) + 1), QL_OK);
+    QL_CHECK_STR(ql_str_data(&s), "helloello");
+
+    /* 10. set_static 指向自身缓冲区：退化成拷贝，不能先 free 再登记 */
+    QL_CHECK_EQ(ql_str_set_static(&s, ql_str_data(&s) + 1), QL_OK);
+    QL_CHECK_STR(ql_str_data(&s), "elloello");
+    QL_CHECK_EQ(s.own, 1);
+
     ql_str_free(&s);
 
 QL_TEST_END()

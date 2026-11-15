@@ -135,6 +135,7 @@ ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect
     canvas->height = driver->height;
     canvas->format = driver->format;
     canvas->scale_fx = (driver->scale_fx > 0) ? driver->scale_fx : QL_SCALE_ONE;
+    canvas->disp = driver;    /* 之后 ql_disp_set_scale() 会实时同步到这块画布 */
     canvas->clip = ql_rect_intersect(clip, ql_rect_make(0, 0, driver->width, driver->height));
     canvas->mask_r = -1;      /* 默认关闭（memset 是 0，那会被当成"半径 0 = 全裁"） */
     canvas->mask_ry = -1;
@@ -145,8 +146,10 @@ ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect
 
 void ql_canvas_set_scale(QLCanvas *canvas, ql_coord_t scale_fx)
 {
-    if (canvas != NULL)
+    if (canvas != NULL) {
         canvas->scale_fx = (scale_fx > 0) ? scale_fx : QL_SCALE_ONE;
+        canvas->disp = NULL;   /* 显式设过就不再跟随驱动 */
+    }
 }
 
 ql_err_t ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver)
@@ -258,12 +261,18 @@ void ql_canvas_set_color_matrix(QLCanvas *canvas, const int32_t m[12], int on)
 /* 一个颜色过一遍矩阵（16.16 定点，结果截到 0..255） */
 static inline void cm_apply(const QLCanvas *c, uint8_t *r, uint8_t *g, uint8_t *b)
 {
-    const int32_t ri = *r, gi = *g, bi = *b;
+    /* 系数是公开 API 传入的 int32，与 0..255 直接相乘可能溢出，全程用 64 位 */
+    const int64_t ri = *r, gi = *g, bi = *b;
     /* 偏移是"色值 * 65536"，所以右移 16 位就是色值增量 */
-    const int32_t o0 = c->cm[3] >> 16, o1 = c->cm[7] >> 16, o2 = c->cm[11] >> 16;
-    int32_t nr = ((c->cm[0] * ri + c->cm[1] * gi + c->cm[2] * bi) >> 16) + o0;
-    int32_t ng = ((c->cm[4] * ri + c->cm[5] * gi + c->cm[6] * bi) >> 16) + o1;
-    int32_t nb = ((c->cm[8] * ri + c->cm[9] * gi + c->cm[10] * bi) >> 16) + o2;
+    const int64_t o0 = (int64_t)c->cm[3] >> 16;
+    const int64_t o1 = (int64_t)c->cm[7] >> 16;
+    const int64_t o2 = (int64_t)c->cm[11] >> 16;
+    const int64_t nr = (((int64_t)c->cm[0] * ri + (int64_t)c->cm[1] * gi +
+                         (int64_t)c->cm[2] * bi) >> 16) + o0;
+    const int64_t ng = (((int64_t)c->cm[4] * ri + (int64_t)c->cm[5] * gi +
+                         (int64_t)c->cm[6] * bi) >> 16) + o1;
+    const int64_t nb = (((int64_t)c->cm[8] * ri + (int64_t)c->cm[9] * gi +
+                         (int64_t)c->cm[10] * bi) >> 16) + o2;
     *r = (uint8_t)(nr < 0 ? 0 : (nr > 255 ? 255 : nr));
     *g = (uint8_t)(ng < 0 ? 0 : (ng > 255 ? 255 : ng));
     *b = (uint8_t)(nb < 0 ? 0 : (nb > 255 ? 255 : nb));
@@ -283,8 +292,9 @@ static inline void raw_px_get(const QLCanvas *c, ql_coord_t x, ql_coord_t y,
     const uint8_t *row = c->buffer + (uint32_t)y * c->stride;
     switch (c->format) {
     case QL_COLOR_RGB565: {
-        const uint16_t *p = (const uint16_t *)(const void *)(row + (uint32_t)x * 2u);
-        uint16_t v = *p;
+        /* stride 只保证 >= width*2，不保证偶数：不能直接按 uint16_t* 解引用 */
+        uint16_t v;
+        memcpy(&v, row + (uint32_t)x * 2u, sizeof(v));
         rgb[0] = (uint8_t)(((uint32_t)((v >> 11) & 0x1Fu) * 255u) / 31u);
         rgb[1] = (uint8_t)(((uint32_t)((v >> 5) & 0x3Fu) * 255u) / 63u);
         rgb[2] = (uint8_t)(((uint32_t)(v & 0x1Fu) * 255u) / 31u);
@@ -313,9 +323,10 @@ static inline void raw_px_set(QLCanvas *c, ql_coord_t x, ql_coord_t y,
     uint8_t *row = c->buffer + (uint32_t)y * c->stride;
     switch (c->format) {
     case QL_COLOR_RGB565: {
-        uint16_t *p = (uint16_t *)(void *)(row + (uint32_t)x * 2u);
-        *p = (uint16_t)(((uint32_t)(rgb[0] & 0xF8u) << 8) |
-                        ((uint32_t)(rgb[1] & 0xFCu) << 3) | ((uint32_t)rgb[2] >> 3));
+        const uint16_t v = (uint16_t)(((uint32_t)(rgb[0] & 0xF8u) << 8) |
+                                      ((uint32_t)(rgb[1] & 0xFCu) << 3) |
+                                      ((uint32_t)rgb[2] >> 3));
+        memcpy(row + (uint32_t)x * 2u, &v, sizeof(v));
         break;
     }
     case QL_COLOR_RGB888: {
@@ -411,22 +422,25 @@ static float round_box_cov(float px, float py, float hw, float hh, float r)
 /*
  * 折射（`backdrop-filter: refract(<N>px)`）的采样偏移。
  *
- * 玻璃边缘像一圈"透镜斜面"：越靠近轮廓，采样点越往**外**推，轮廓里那一圈
- * 于是显示外面一圈被压扁的场景 —— 液态玻璃的"折射"就来自这里。
+ * 参考稿（codepen MYwrMNy）的 SVG 滤镜里是一张 200×200 的**法线图**：
+ *   R/G 通道 = 0.5 - 单位径向 × f(t)        （t = 归一化半径，0 圆心、1 轮廓）
+ *   实测 f(1) ≈ 0.476 → 轮廓处的位移 ≈ 0.48 × 盒子尺寸（320px 的圆盘约 152px）
+ * 位移方向朝**圆心**：轮廓那一圈采样的是内部被压扁的画面，玻璃才有"厚透镜"的
+ * 环形折光；往外推只会把外圈颜色晕进来，看起来像一张模糊贴纸。
  *
- *   t      = clamp(1 - 深度 / 斜面宽度, 0, 1)   深度 = -SDF，轮廓处 0
- *   offset = normalize((p - c) / 半宽半高) * refract * t²
- *
- * 轮廓处最强（t=1），往里到一个"斜面宽度"就衰减到 0 —— 再往里完全不受影响。
- * （反过来写会变成"整块一起平移"，看着像贴纸错位，不像玻璃。）
- * 斜面宽度取短边的 1/4：与元素尺寸成比例，小玻璃也是"一圈"而不是"半块"。
+ * 径向曲线用 `0.46·t + 0.54·t⁶` 拟合那张图（最大误差 ≈ 0.016）：
+ * 前段近似线性和缓增长，最外 10% 才急剧抬升 —— 这就是参考稿边缘那圈强折光的来源。
  * GPU 侧逐字对应（见 qlgfx_gl.c 的 mode 4 分支）。
  */
-#define QL_BACKDROP_BEVEL 0.25f
+static float refract_profile(float t)
+{
+    const float t2 = t * t;
+    const float t6 = t2 * t2 * t2;
+    return 0.46f * t + 0.54f * t6;
+}
 
 static void refract_offset(float px, float py, float cx, float cy, float hw,
-                           float hh, float depth, int refract, float *ox,
-                           float *oy)
+                           float hh, int refract, float *ox, float *oy)
 {
     *ox = 0.0f;
     *oy = 0.0f;
@@ -437,15 +451,13 @@ static void refract_offset(float px, float py, float cx, float cy, float hw,
     const float len = sqrtf(nx * nx + ny * ny);
     if (len < 1e-3f)
         return;                     /* 正中心：方向没有意义 */
-    const float band = QL_BACKDROP_BEVEL * (hw < hh ? hw : hh);
-    float t = (band > 0.0f) ? (1.0f - depth / band) : 0.0f;
-    if (t <= 0.0f)
-        return;
+    float t = len;
     if (t > 1.0f)
         t = 1.0f;
-    const float k = (float)refract * t * t / len;
-    *ox = nx * k;
-    *oy = ny * k;
+    const float k = (float)refract * refract_profile(t) / len;
+    /* 朝圆心采样（与参考稿法线图同向） */
+    *ox = -nx * k;
+    *oy = -ny * k;
 }
 
 /* ---- 临时缓冲：模糊在紧凑 RGB 三元组里做，最后只把元素盒子内写回画布 ---- */
@@ -595,19 +607,35 @@ static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
     if (corner > maxc)
         corner = maxc;
 
+    /*
+     * 半径上界：核宽超过图像本身没有额外信息，只会让 2r+1 / 3r+pad 溢出，
+     * 并让 box_pass 的初始窗口循环退化成"每行扫 2r 个像素"。
+     */
+    {
+        const int dim_max = (r.w > r.h) ? (int)r.w : (int)r.h;
+        const int cap = (dim_max < 4096) ? dim_max : 4096;
+        if (radius > cap)
+            radius = cap;
+    }
+
     const int boxr = (radius > 0) ? box_radius_of_sigma(radius) : 0;
 
     /*
-     * 外扩量：三段盒式卷积的支持半径是 3·boxr，折射会再往外取 refract 像素。
-     * 内存不够就退到更小的外扩（老行为），再不行才放弃 —— 总比不出画面好。
+     * 外扩量：三段盒式卷积的支持半径是 3·boxr。
+     * 折射现在是**朝圆心**采样，不会读到盒子外面，所以不再需要为它外扩。
+     * 内存不够就退到更小的外扩，再不行才放弃 —— 总比不出画面好。
      */
-    ql_coord_t pad = (ql_coord_t)(boxr * 3 + refract + 2);
+    ql_coord_t pad = (ql_coord_t)(boxr * 3 + 2);
     QLRect ex;
     uint8_t *a = NULL;
     uint8_t *b = NULL;
     for (;;) {
-        ex = ql_rect_intersect(
-            ql_rect_make(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2), frame);
+        const ql_coord_t x0 = ql_coord_sub_sat(r.x, pad);
+        const ql_coord_t y0 = ql_coord_sub_sat(r.y, pad);
+        const ql_coord_t x1 = ql_coord_add_sat(ql_rect_right(r), pad);
+        const ql_coord_t y1 = ql_coord_add_sat(ql_rect_bottom(r), pad);
+        ex = ql_rect_intersect(ql_rect_make(x0, y0, ql_coord_sub_sat(x1, x0),
+                                            ql_coord_sub_sat(y1, y0)), frame);
         a = buf_alloc((int)ex.w, (int)ex.h);
         b = buf_alloc((int)ex.w, (int)ex.h);
         if (a != NULL && b != NULL)
@@ -650,10 +678,7 @@ static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
             if (cov <= 0.0f)
                 continue;
             float ox = 0.0f, oy = 0.0f;
-            if (refract > 0) {
-                const float depth = -round_box_sd(px - cx, py - cy, hw, hh, fc);
-                refract_offset(px, py, cx, cy, hw, hh, depth, refract, &ox, &oy);
-            }
+            refract_offset(px, py, cx, cy, hw, hh, refract, &ox, &oy);
             uint8_t src[4];
             buf_sample(a, (int)ex.w, (int)ex.h, px + ox - (float)ex.x,
                        py + oy - (float)ex.y, src);

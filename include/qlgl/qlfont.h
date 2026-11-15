@@ -166,6 +166,13 @@ void ql_font_reset_defaults(void);
 int32_t ql_utf8_decode(const char *text, uint32_t *codepoint);
 
 /*
+ * 带长度的解码：最多读 len 字节，**不会**越过缓冲区末尾。
+ * 用于显式长度的文本路径（bidi / 整形 / 输入法）。
+ * 成功返回字节数（1..4）；非法或截断返回 1 且 *codepoint = 0xFFFD。
+ */
+int32_t ql_utf8_decode_n(const char *text, size_t len, uint32_t *codepoint);
+
+/*
  * `text[0..len)` 里**最长的合法 UTF-8 前缀**长度。
  * 截断（`len` 落在字符中间）或出现非法字节时，返回最后一个完整字符的边界。
  * 输入法给的文本、剪贴板来的半截字节，都该先过一道这个再用。

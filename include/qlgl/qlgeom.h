@@ -49,8 +49,29 @@ static inline int ql_rect_is_empty(QLRect r)
     return r.w <= 0 || r.h <= 0;
 }
 
-static inline ql_coord_t ql_rect_right(QLRect r)  { return r.x + r.w; }
-static inline ql_coord_t ql_rect_bottom(QLRect r) { return r.y + r.h; }
+/* 边界运算一律走 64 位并夹到 int32：x + w 在极端坐标下会溢出 */
+static inline ql_coord_t ql_coord_add_sat(ql_coord_t a, ql_coord_t b)
+{
+    int64_t sum = (int64_t)a + (int64_t)b;
+    if (sum > INT32_MAX)
+        return INT32_MAX;
+    if (sum < INT32_MIN)
+        return INT32_MIN;
+    return (ql_coord_t)sum;
+}
+
+static inline ql_coord_t ql_coord_sub_sat(ql_coord_t a, ql_coord_t b)
+{
+    int64_t diff = (int64_t)a - (int64_t)b;
+    if (diff > INT32_MAX)
+        return INT32_MAX;
+    if (diff < INT32_MIN)
+        return INT32_MIN;
+    return (ql_coord_t)diff;
+}
+
+static inline ql_coord_t ql_rect_right(QLRect r)  { return ql_coord_add_sat(r.x, r.w); }
+static inline ql_coord_t ql_rect_bottom(QLRect r) { return ql_coord_add_sat(r.y, r.h); }
 
 static inline QLRect ql_rect_intersect(QLRect a, QLRect b)
 {
@@ -60,7 +81,7 @@ static inline QLRect ql_rect_intersect(QLRect a, QLRect b)
     ql_coord_t y2 = ql_rect_bottom(a) < ql_rect_bottom(b) ? ql_rect_bottom(a) : ql_rect_bottom(b);
     if (x2 <= x1 || y2 <= y1)
         return ql_rect_make(0, 0, 0, 0);
-    return ql_rect_make(x1, y1, x2 - x1, y2 - y1);
+    return ql_rect_make(x1, y1, ql_coord_sub_sat(x2, x1), ql_coord_sub_sat(y2, y1));
 }
 
 static inline QLRect ql_rect_union(QLRect a, QLRect b)
@@ -73,7 +94,7 @@ static inline QLRect ql_rect_union(QLRect a, QLRect b)
     ql_coord_t y1 = a.y < b.y ? a.y : b.y;
     ql_coord_t x2 = ql_rect_right(a) > ql_rect_right(b) ? ql_rect_right(a) : ql_rect_right(b);
     ql_coord_t y2 = ql_rect_bottom(a) > ql_rect_bottom(b) ? ql_rect_bottom(a) : ql_rect_bottom(b);
-    return ql_rect_make(x1, y1, x2 - x1, y2 - y1);
+    return ql_rect_make(x1, y1, ql_coord_sub_sat(x2, x1), ql_coord_sub_sat(y2, y1));
 }
 
 static inline int ql_rect_overlaps(QLRect a, QLRect b)

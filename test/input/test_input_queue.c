@@ -50,6 +50,18 @@ static void chain_sink(const QLInputEvent *ev, void *user)
     }
 }
 
+/* 只关心文本字段：验证按码点边界截断 */
+static char s_last_text[16];
+
+static void text_sink(const QLInputEvent *ev, void *user)
+{
+    QL_UNUSED(user);
+    if (ev->type != QL_INPUT_TEXT)
+        return;
+    memset(s_last_text, 0, sizeof(s_last_text));
+    memcpy(s_last_text, ev->text, sizeof(ev->text));
+}
+
 QL_TEST_BEGIN("test_input_queue")
 
     ql_input_reset();
@@ -89,6 +101,12 @@ QL_TEST_BEGIN("test_input_queue")
         /* 还没 dispatch，但坐标已经更新了 */
         QL_CHECK_EQ((int)ql_input_x(), 33);
         QL_CHECK_EQ((int)ql_input_y(), 44);
+
+        /* 移动事件自带的按钮快照也要同步到查询状态 */
+        QL_CHECK_EQ(ql_input_push_move(33, 44, QL_BUTTON_BIT_RIGHT), QL_OK);
+        QL_CHECK_EQ((int)ql_input_buttons(), (int)QL_BUTTON_BIT_RIGHT);
+        QL_CHECK_EQ(ql_input_push_move(33, 44, 0), QL_OK);
+        QL_CHECK_EQ((int)ql_input_buttons(), 0);
 
         QL_CHECK_EQ(ql_input_push_button(33, 44, QL_BUTTON_BIT_LEFT, 1), QL_OK);
         QL_CHECK_EQ((int)ql_input_buttons(), (int)QL_BUTTON_BIT_LEFT);
@@ -155,7 +173,21 @@ QL_TEST_BEGIN("test_input_queue")
         ql_input_set_sink(NULL, NULL);
     }
 
-    /* ---------- 6. reset 清空队列与状态 ---------- */
+    /* ---------- 6. 文本按 UTF-8 码点边界截断 ---------- */
+    {
+        ql_input_reset();
+        ql_input_set_sink(text_sink, NULL);
+        /* "字" = 3 字节，三次共 9 字节；text[8] 只能放 7 字节，
+         * 修复前会留下 2 个完整字符 + 1 个残字节 */
+        QL_CHECK_EQ(ql_input_push_text("字字字"), QL_OK);
+        QL_CHECK_EQ(ql_input_dispatch(), 1);
+        const size_t n = strlen(s_last_text);
+        QL_CHECK_EQ(n, 6u);
+        QL_CHECK_EQ(ql_utf8_valid_len(s_last_text, n), n);
+        ql_input_set_sink(NULL, NULL);
+    }
+
+    /* ---------- 7. reset 清空队列与状态 ---------- */
     {
         ql_input_reset();
         QL_CHECK_EQ(ql_input_push_button(7, 8, QL_BUTTON_BIT_LEFT, 1), QL_OK);

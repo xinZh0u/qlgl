@@ -21,6 +21,8 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
+#include <qlgl/qlgl.h>
+
 #define QL_CLIP_MAX 1024
 
 static Display *s_clip_dpy;
@@ -47,6 +49,16 @@ static void ql_x11_clip_attach(Display *dpy, Window win)
 
 static void ql_x11_clip_detach(void)
 {
+    /*
+     * 异步粘贴状态必须一起清掉：旧 Display 上的请求永远不会再收到
+     * SelectionNotify，留着 s_clip_waiting 会让重建之后的粘贴一直"等"。
+     */
+    s_clip_waiting = 0;
+    s_clip_in_ready = 0;
+    s_clip_in_len = 0;
+    s_clip_in[0] = '\0';
+    s_clip_out_len = 0;
+    s_clip_out[0] = '\0';
     s_clip_dpy = NULL;
     s_clip_win = 0;
 }
@@ -57,8 +69,10 @@ static void ql_x11_clip_set_text(const char *utf8)
     if (s_clip_dpy == NULL)
         return;
     size_t n = (utf8 != NULL) ? strlen(utf8) : 0u;
-    if (n > (size_t)QL_CLIP_MAX - 1u)
+    if (n > (size_t)QL_CLIP_MAX - 1u) {
         n = (size_t)QL_CLIP_MAX - 1u;
+        n = ql_utf8_valid_len(utf8, n);    /* 截断点退到码点边界 */
+    }
     if (n > 0)
         memcpy(s_clip_out, utf8, n);
     s_clip_out[n] = '\0';
@@ -75,7 +89,9 @@ static int ql_x11_clip_get_text(char *buf, size_t cap)
     if (buf == NULL || cap == 0)
         return 0;
     if (s_clip_in_ready) {
-        const size_t n = (s_clip_in_len < cap - 1u) ? s_clip_in_len : cap - 1u;
+        size_t n = (s_clip_in_len < cap - 1u) ? s_clip_in_len : cap - 1u;
+        if (n < s_clip_in_len)
+            n = ql_utf8_valid_len(s_clip_in, n);
         if (n > 0)
             memcpy(buf, s_clip_in, n);
         buf[n] = '\0';
@@ -142,9 +158,11 @@ static int ql_x11_clip_handle_event(XEvent *ev)
                                    &type, &fmt, &n, &rest, &data) == Success &&
                 data != NULL) {
                 if (fmt == 8 && n > 0) {
-                    const size_t k = (n < (unsigned long)QL_CLIP_MAX - 1ul)
-                                         ? (size_t)n
-                                         : (size_t)QL_CLIP_MAX - 1u;
+                    size_t k = (n < (unsigned long)QL_CLIP_MAX - 1ul)
+                                   ? (size_t)n
+                                   : (size_t)QL_CLIP_MAX - 1u;
+                    if (k < (size_t)n)
+                        k = ql_utf8_valid_len((const char *)data, k);
                     memcpy(s_clip_in, data, k);
                     s_clip_in_len = k;
                 }

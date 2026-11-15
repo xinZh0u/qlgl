@@ -99,6 +99,19 @@ static void dst_put(const Dst *d, uint16_t x, uint16_t y, uint8_t r, uint8_t g, 
     }
 }
 
+static size_t s_decode_budget;      /* 0 = 用编译期默认 */
+
+void ql_image_set_decode_budget(size_t max_decoded_bytes)
+{
+    s_decode_budget = max_decoded_bytes;
+}
+
+size_t ql_image_decode_budget(void)
+{
+    return (s_decode_budget != 0) ? s_decode_budget
+                                  : (size_t)QL_CFG_IMAGE_MAX_DECODED_BYTES;
+}
+
 /* 分配输出缓冲；尺寸上界检查全在这里做（先除后乘） */
 static uint8_t *dst_alloc(Dst *d, uint16_t w, uint16_t h, uint8_t format)
 {
@@ -111,7 +124,7 @@ static uint8_t *dst_alloc(Dst *d, uint16_t w, uint16_t h, uint8_t format)
     if (stride > 0xFFFFu)
         return NULL;
     const uint64_t len = stride * h;
-    if (len > QL_CFG_IMAGE_MAX_BYTES * 8u)   /* 解码后允许比编码大，但仍要有界 */
+    if (len > ql_image_decode_budget())   /* 解码后允许比编码大，但仍要有界 */
         return NULL;
 
     uint8_t *px = (uint8_t *)ql_mem_calloc(1, (size_t)len);
@@ -151,6 +164,35 @@ static uint16_t rd_u16be(const uint8_t *p)
 }
 
 /*
+ * BITFIELDS 通道掩码 → 8 位通道：
+ * 按掩码的最低置位求移位、按连续位宽求缩放（565 的 5/6 位放大到 8 位），
+ * 不再假设掩码恰好是 0x00FF0000/0x0000FF00/0x000000FF。
+ */
+static uint8_t mask_to8(uint32_t px, uint32_t mask)
+{
+    if (mask == 0)
+        return 0;
+
+    unsigned shift = 0;
+    while (shift < 32u && ((mask >> shift) & 1u) == 0u)
+        shift++;
+
+    const uint32_t m = mask >> shift;
+    unsigned bits = 0;
+    while (bits < 32u && ((m >> bits) & 1u) != 0u)
+        bits++;
+    if (bits == 0u)
+        return 0;
+
+    const uint32_t v = (px & mask) >> shift;
+    if (bits >= 8u)
+        return (uint8_t)(v >> (bits - 8u));
+
+    const uint32_t maxv = (1u << bits) - 1u;
+    return (uint8_t)((v * 255u + maxv / 2u) / maxv);
+}
+
+/*
  * BMP：只做 UI 素材常见的那些 —— 24/32 位真彩、8 位调色板、BITFIELDS（565/888）。
  * **不解** RLE4/RLE8（压缩位图在 UI 素材里基本见不到，解它不如明确报错）。
  */
@@ -163,39 +205,45 @@ static int decode_bmp(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
 
     const uint32_t data_off = rd_u32le(d + 10);
     const uint32_t hdr_size = rd_u32le(d + 14);
-    if (n < 14u + hdr_size || hdr_size < 12u)
+    /* 14 + hdr_size 在 uint32 里会回绕，先扩到 64 位再比 */
+    if ((uint64_t)hdr_size + 14u > (uint64_t)n || hdr_size < 12u)
         return QL_ERR_INVAL;
 
     int32_t w = 0, h = 0;
     uint16_t bpp = 0;
     uint32_t compression = 0;
     uint32_t palette_used = 0;
-    uint32_t palette_off = 14u + 11u;   /* BITMAPINFOHEADER 里调色板紧跟着 */
+    uint32_t palette_off = 14u + hdr_size;   /* V3/V4/V5：调色板紧跟在 DIB 头之后 */
+    uint32_t palette_entry = 4u;             /* B,G,R,0；COREHEADER 是 3 字节 */
     if (hdr_size >= 40u) {
         w = (int32_t)rd_u32le(d + 18);
         h = (int32_t)rd_u32le(d + 22);
         bpp = rd_u16le(d + 28);
         compression = rd_u32le(d + 30);
         palette_used = rd_u32le(d + 46);
-        palette_off = 14u + 40u;
     } else {
         /* BITMAPCOREHEADER：宽度高度是 uint16 */
         w = (int32_t)rd_u16le(d + 18);
         h = (int32_t)rd_u16le(d + 20);
         bpp = rd_u16le(d + 24);
         palette_off = 14u + 12u;
+        palette_entry = 3u;
     }
 
     const int top_down = (h < 0);
-    if (top_down)
+    if (top_down) {
+        if (h == INT32_MIN)             /* -INT32_MIN 不可表示 */
+            return QL_ERR_INVAL;
         h = -h;
+    }
     if (w <= 0 || h <= 0)
         return QL_ERR_INVAL;
     if (w > 0xFFFF || h > 0xFFFF)
         return QL_ERR_INVAL;
     if (compression != 0u && compression != 3u)
         return QL_ERR_UNSUPPORTED;      /* RLE 不做 */
-    if (bpp != 8u && bpp != 24u && bpp != 32u)
+    /* BITFIELDS 允许 16 位（565）与 32 位（888）；其余格式只收 8/24/32 */
+    if (bpp != 8u && bpp != 24u && bpp != 32u && !(compression == 3u && bpp == 16u))
         return QL_ERR_UNSUPPORTED;
 
     Dst dst;
@@ -209,18 +257,19 @@ static int decode_bmp(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
         return QL_ERR_INVAL;            /* 文件被截断：不猜 */
     }
 
-    /* BITFIELDS 的通道掩码（compression==3） */
+    /* BITFIELDS 的通道掩码（compression==3）：V3 的掩码跟在头后面，V4/V5 在头里面 */
     uint32_t mask_r = 0, mask_g = 0, mask_b = 0;
     if (compression == 3u) {
         const uint32_t fo = 14u + 40u;
-        if (n < fo + 12u) {
+        if ((uint64_t)fo + 12u > (uint64_t)n) {
             ql_mem_free(dst.px);
             return QL_ERR_INVAL;
         }
         mask_r = rd_u32le(d + fo);
         mask_g = rd_u32le(d + fo + 4);
         mask_b = rd_u32le(d + fo + 8);
-        palette_off = fo + 12u;
+        if (hdr_size == 40u)
+            palette_off = fo + 12u;    /* 掩码挤在头后面 */
     }
 
     for (int32_t y = 0; y < h; y++) {
@@ -235,8 +284,8 @@ static int decode_bmp(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
                     ql_mem_free(dst.px);
                     return QL_ERR_INVAL;
                 }
-                const uint32_t po = palette_off + (uint32_t)idx * 4u;   /* B,G,R,0 */
-                if (n < po + 3u) {
+                const uint32_t po = palette_off + (uint32_t)idx * palette_entry;
+                if ((uint64_t)po + palette_entry > (uint64_t)n) {
                     ql_mem_free(dst.px);
                     return QL_ERR_INVAL;
                 }
@@ -247,12 +296,17 @@ static int decode_bmp(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
                 b = row[x * 3 + 0];
                 g = row[x * 3 + 1];
                 r = row[x * 3 + 2];
+            } else if (bpp == 16u && compression == 3u) {
+                const uint32_t px = rd_u16le(row + x * 2);
+                r = mask_to8(px, mask_r);
+                g = mask_to8(px, mask_g);
+                b = mask_to8(px, mask_b);
             } else {   /* 32 位 */
                 const uint32_t px = rd_u32le(row + x * 4);
                 if (compression == 3u) {
-                    r = (uint8_t)((px & mask_r) >> 16);
-                    g = (uint8_t)((px & mask_g) >> 8);
-                    b = (uint8_t)(px & mask_b);
+                    r = mask_to8(px, mask_r);
+                    g = mask_to8(px, mask_g);
+                    b = mask_to8(px, mask_b);
                 } else {
                     b = row[x * 4 + 0];
                     g = row[x * 4 + 1];
@@ -361,6 +415,14 @@ static int decode_qoi(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
         index[h6][3] = a;
     }
 
+    /*
+     * QOI 规范要求像素数据之后是 8 字节结束标记 00×7 + 01。
+     * 不校验的话，截断的流只要够解出 w*h 个像素就会被当成好图。
+     */
+    static const uint8_t qoi_end[8] = { 0, 0, 0, 0, 0, 0, 0, 1 };
+    if (p + sizeof(qoi_end) > n || memcmp(d + p, qoi_end, sizeof(qoi_end)) != 0)
+        goto bad;
+
     memset(out, 0, sizeof(*out));
     out->px = dst.px;
     out->len = (uint32_t)dst.stride * dst.h;
@@ -442,15 +504,22 @@ static int png_next_idat(PngIdat *s)
             s->next = next_hdr;
             continue;
         }
-        /* 第一段要跳 zlib 头；所有段都要在 Adler-32 之前收住 */
-        const size_t off = data_off + s->skip;
-        s->skip = 0;
+        /* 第一段要跳 zlib 头；头可能跨 IDAT 边界，所以按"流内字节数"扣 */
+        size_t off = data_off;
+        size_t avail = (size_t)clen;
+        if (s->skip > 0) {
+            const size_t drop = (s->skip < avail) ? s->skip : avail;
+            off += drop;
+            avail -= drop;
+            s->skip -= drop;
+        }
         s->next = next_hdr;
-        if (off >= s->stop || off < data_off) {
+        if (avail == 0)
+            continue;                  /* 这个 IDAT 全被 zlib 头吃掉了 */
+        if (off >= s->stop) {
             s->done = 1;
             return 0;
         }
-        size_t avail = (size_t)clen - (off - data_off);
         const size_t room = s->stop - off;
         if (avail > room)
             avail = room;
@@ -459,6 +528,29 @@ static int png_next_idat(PngIdat *s)
         s->p = s->d + off;
         s->left = avail;
         return 1;
+    }
+    return 0;
+}
+
+/* 取 zlib 流的头两个字节：允许它们被拆在相邻的两个 IDAT 里 */
+static int png_idat_head(const uint8_t *d, size_t n, size_t first_hdr, uint8_t out[2])
+{
+    size_t got = 0;
+    for (size_t co = first_hdr; co + 12u <= n; ) {
+        const uint32_t clen = rd_u32be(d + co);
+        const uint8_t *ct = d + co + 4u;
+        if ((size_t)clen > n || co + 12u + (size_t)clen > n)
+            return 0;
+        if (png_is(ct, "IEND"))
+            break;
+        if (png_is(ct, "IDAT")) {
+            const uint8_t *cd = d + co + 8u;
+            for (uint32_t k = 0; k < clen && got < 2u; k++)
+                out[got++] = cd[k];
+            if (got == 2u)
+                return 1;
+        }
+        co += 12u + (size_t)clen;
     }
     return 0;
 }
@@ -651,7 +743,7 @@ static int decode_png(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
      * 而输出 RGBA8888 只有 4 —— 所以预算取"解码预算的 2 倍 + 每行 1 字节"，
      * 这样 1024×1024 的 16 位 RGBA 正好卡在边上而不被误杀。
      */
-    if (raw_size64 > (uint64_t)QL_CFG_IMAGE_MAX_BYTES * 16u + (uint64_t)ph)
+    if (raw_size64 > (uint64_t)ql_image_decode_budget() * 2u + (uint64_t)ph)
         return QL_ERR_INVAL;
 
     /* ---- 扫一遍块：取 PLTE / tRNS，并记住第一个 IDAT ---- */
@@ -664,6 +756,7 @@ static int decode_png(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
     size_t first_idat_hdr = 0;         /* 第一个 IDAT 的 chunk 头偏移 */
     size_t first_idat = 0;             /* 第一个 IDAT 的 **数据** 起始偏移 */
     size_t last_idat_end = 0;          /* 最后一个 IDAT 的数据结尾（CRC 之前） */
+    size_t idat_total = 0;             /* 所有 IDAT 数据字节之和 */
     for (size_t co = PNG_SIG_LEN; co + 12u <= n;) {
         const uint32_t clen = rd_u32be(d + co);
         const uint8_t *ct = d + co + 4u;
@@ -678,6 +771,7 @@ static int decode_png(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
                 first_idat = co + 8u;
             }
             last_idat_end = co + 8u + (size_t)clen;
+            idat_total += (size_t)clen;
         } else if (png_is(ct, "PLTE")) {
             if (clen == 0u || (clen % 3u) != 0u || clen > 768u)
                 return QL_ERR_INVAL;
@@ -700,15 +794,18 @@ static int decode_png(const QLImageDecodeReq *req, QLImage *out, uint8_t outf)
         co += 12u + (size_t)clen;
     }
     /* zlib 头（2）+ 至少一个 DEFLATE 字节 + Adler-32（4） */
-    if (first_idat == 0 || last_idat_end < first_idat + 7u)
+    if (first_idat == 0 || idat_total < 7u)
         return QL_ERR_INVAL;           /* 没有像素数据 / 短到不可能是 zlib 流 */
     if (ctype == 3 && plte_n == 0)
         return QL_ERR_INVAL;           /* 调色板图必须有 PLTE */
 
     /* 校验 zlib 头：CM=8（DEFLATE）、CINFO<=7、FCHECK、FDICT==0 */
     {
-        const uint8_t cmf = d[first_idat];
-        const uint8_t flg = d[first_idat + 1u];
+        uint8_t zh[2];
+        if (!png_idat_head(d, n, first_idat_hdr, zh))
+            return QL_ERR_INVAL;
+        const uint8_t cmf = zh[0];
+        const uint8_t flg = zh[1];
         if ((cmf & 0x0Fu) != 8u || (cmf >> 4) > 7u)
             return QL_ERR_UNSUPPORTED; /* 压缩方法是别的（PNG 只定义了 0=zlib） */
         if ((((uint32_t)cmf << 8) | (uint32_t)flg) % 31u != 0u)
@@ -1306,8 +1403,22 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
     memset(out, 0, sizeof(*out));
     s_err[0] = '\0';
 
-    if (req->len == 0 || req->len > QL_CFG_IMAGE_MAX_BYTES)
+    if (req->len == 0)
         return QL_ERR_INVAL;
+    /* RAW 的 "len" 是**像素字节**（不是编码文件），走解码预算；
+     * 其它格式的 len 是输入文件大小，走编码预算。 */
+    if (req->src_format == QL_IMAGE_SRC_RAW) {
+        if (req->len > ql_image_decode_budget())
+            return QL_ERR_INVAL;
+    } else if (req->src_format != QL_IMAGE_SRC_AUTO &&
+               req->len > QL_CFG_IMAGE_MAX_ENCODED_BYTES) {
+        return QL_ERR_INVAL;
+    } else if (req->src_format == QL_IMAGE_SRC_AUTO &&
+               req->len > QL_CFG_IMAGE_MAX_ENCODED_BYTES) {
+        /* AUTO 也可能是 RAW 调用方误传；先按编码上限拒绝，避免把 51MB
+         * 的裸像素当"待探测的图片"扫一遍。 */
+        return QL_ERR_INVAL;
+    }
 
     uint8_t fmt = req->src_format;
     if (fmt == QL_IMAGE_SRC_AUTO) {

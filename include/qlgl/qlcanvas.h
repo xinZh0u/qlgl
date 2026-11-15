@@ -54,7 +54,24 @@ typedef struct {
      */
     int32_t    cm[12];
     uint8_t    cm_on;
+
+    /*
+     * 从哪个显示驱动继承缩放。非 NULL 时以驱动为准（ql_canvas_scale_fx()），
+     * 这样 ql_disp_set_scale() 对**已构造**的画布也生效；
+     * ql_canvas_set_scale() 会清掉它，表示"这块画布自己说了算"。
+     */
+    const QLDispDriver *disp;
 } QLCanvas;
+
+/* 画布当前生效的缩放：优先跟随绑定驱动，其次用本地值 */
+static inline ql_coord_t ql_canvas_scale_fx(const QLCanvas *canvas)
+{
+    if (canvas == NULL)
+        return QL_SCALE_ONE;
+    if (canvas->disp != NULL && canvas->disp->scale_fx > 0)
+        return canvas->disp->scale_fx;
+    return (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+}
 
 /* 由显示驱动构造画布，clip 默认整屏 */
 ql_err_t ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver);
@@ -69,14 +86,12 @@ void ql_canvas_set_scale(QLCanvas *canvas, ql_coord_t scale_fx);
 /* CSS px 下的画布尺寸（= 设备尺寸 / 缩放）。布局用这个，不要用 width/height */
 static inline ql_coord_t ql_canvas_css_width(const QLCanvas *canvas)
 {
-    ql_coord_t fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
-    return ql_unscale_len_ceil(canvas->width, fx);
+    return ql_unscale_len_ceil(canvas->width, ql_canvas_scale_fx(canvas));
 }
 
 static inline ql_coord_t ql_canvas_css_height(const QLCanvas *canvas)
 {
-    ql_coord_t fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
-    return ql_unscale_len_ceil(canvas->height, fx);
+    return ql_unscale_len_ceil(canvas->height, ql_canvas_scale_fx(canvas));
 }
 
 /* 单像素读写（屏幕坐标，自动按 format 转换） */
@@ -146,8 +161,8 @@ ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint
 
 /*
  * 同上，但把结果裁进**圆角矩形**（`corner` = 圆角半径，设备像素，0 等价于上一个），
- * 并按 `refract`（`backdrop-filter: refract(<N>px)`，设备像素，0 = 关闭）在轮廓
- * 附近做一圈**折射**：越靠近轮廓，采样点越往外推 —— 玻璃边缘的"透镜感"。
+ * 并按 `refract`（`backdrop-filter: refract(<N>px)`，设备像素，0 = 关闭）做
+ * **厚透镜折射**：位移随半径增长、轮廓处最大、方向朝圆心（内部画面被压进边缘一圈）。
  *
  * 轮廓外的像素原样保留（四个圆角缺口不会渗出方的模糊块），轮廓上按覆盖率与
  * 模糊前的原像素混合，等价于 GPU 那边用 alpha 混合只写进圆角内。

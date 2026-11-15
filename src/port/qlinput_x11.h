@@ -113,6 +113,27 @@ static void ql_x11_push_text_utf8(const char *s)
     }
 }
 
+/*
+ * 没有 XIC 时 `XLookupString()` 返回的是 **Latin-1**，不是 UTF-8。
+ * 直接丢给上面的 UTF-8 切片器会把 0xE9 当成三字节首字节、发现后面不够就整段丢弃。
+ */
+static void ql_x11_push_text_latin1(const char *s, int n)
+{
+    char out[128];
+    size_t o = 0;
+    for (int i = 0; i < n && o + 2 < sizeof(out); i++) {
+        const unsigned char c = (unsigned char)s[i];
+        if (c < 0x80u) {
+            out[o++] = (char)c;
+        } else {
+            out[o++] = (char)(0xC0u | (c >> 6));
+            out[o++] = (char)(0x80u | (c & 0x3Fu));
+        }
+    }
+    out[o] = '\0';
+    ql_x11_push_text_utf8(out);
+}
+
 static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t scale_fx,
                                      XIC xic)
 {
@@ -186,6 +207,7 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
                 char buf[64];
                 KeySym dummy = NoSymbol;
                 int n = 0;
+                const int via_im = (xic != NULL);
                 if (xic != NULL) {
                     /*
                      * XIM 路径：走 Xutf8LookupString 才能拿到输入法提交的
@@ -206,8 +228,12 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
                 }
                 if (n > 0 && (unsigned char)buf[0] >= 0x20u &&
                     (unsigned char)buf[0] != 0x7Fu) {
-                    buf[n] = '\0';
-                    ql_x11_push_text_utf8(buf);
+                    if (via_im) {
+                        buf[n] = '\0';
+                        ql_x11_push_text_utf8(buf);
+                    } else {
+                        ql_x11_push_text_latin1(buf, n);   /* XLookupString 是 Latin-1 */
+                    }
                 }
             }
             if (key != QL_KEY_NONE)

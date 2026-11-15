@@ -177,14 +177,17 @@ ql_err_t ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms, u
     /* 时长 0：直接落到终值，仍然走一次 apply + done（调用方逻辑统一） */
     if (dur_ms == 0) {
         QLAnimSlot *old = find_slot(key);
-        if (old != NULL)
+        if (old != NULL) {
             old->key = NULL;
+            memset(old, 0, sizeof(*old));
+        }
 
         key->cur = *to;
         apply(user, &key->cur);
+        /* 先清 used 再回调：done 里可以立刻给同一个 key 重新起动画 */
+        key->used = 0;
         if (done != NULL)
             done(user);
-        key->used = 0;
         return QL_OK;
     }
 
@@ -195,6 +198,7 @@ ql_err_t ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms, u
             /* 槽位满：不排队（排队会让延迟无限累积），直接落终值 */
             key->cur = *to;
             apply(user, &key->cur);
+            key->used = 0;
             if (done != NULL)
                 done(user);
             QL_LOGW("anim: slots full (%d), converging immediately", QL_CFG_ANIM_MAX);
@@ -258,13 +262,23 @@ uint32_t ql_anim_tick(uint32_t now_ms)
         s->started = 1;
 
         if (t >= 1.0f) {
-            /* 收尾：确保落在精确终值上（避免浮点累计误差留一点点尾巴） */
-            s->key->cur = s->to;
+            /*
+             * 收尾：确保落在精确终值上（避免浮点累计误差留一点点尾巴）。
+             * 先把槽位清空再调 done —— done 里常常用同一个 key 起下一条动画，
+             * 若此时槽位仍登记着旧动画，新动画会被收尾逻辑立刻抹掉。
+             */
+            QLAnimKey *key = s->key;
+            const ql_anim_done_fn done = s->done;
+            void *user = s->user;
+
+            key->cur = s->to;
             s->apply(s->user, &s->to);
-            if (s->done != NULL)
-                s->done(s->user);
-            s->key->used = 0;
+
             memset(s, 0, sizeof(*s));
+            key->used = 0;
+
+            if (done != NULL)
+                done(user);
         } else {
             active++;
         }

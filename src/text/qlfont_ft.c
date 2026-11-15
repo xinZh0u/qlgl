@@ -16,6 +16,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include <stdlib.h>
 #include <string.h>
 
 #define QL_FT_DEFAULT_CACHE   2048
@@ -597,7 +598,15 @@ int ql_font_family_register(const char *family, const char *path, int weight, in
 {
     if (path == NULL || path[0] == '\0')
         return 0;
-    /* 先真的读一遍：坏路径/坏文件在这里就报错，不留到绘制时 */
+    /* 先检查路径长度：add_entry() 会改注册表（新建条目 / 清掉旧缓存），
+     * 长度不合法时必须在它之前失败，否则"注册失败"却已经污染了全局状态。 */
+    const size_t pn = strlen(path);
+    if (pn + 1 > QL_FAMILY_PATH_MAX) {
+        QL_LOGE("font: @font-face \"%s\": path too long (%u bytes, max %u)", family,
+                (unsigned)pn, (unsigned)(QL_FAMILY_PATH_MAX - 1));
+        return 0;
+    }
+    /* 再真的读一遍：坏路径/坏文件在这里就报错，不留到绘制时 */
     long size = 0;
     void *data = read_file(path, &size);
     if (data == NULL) {
@@ -609,11 +618,6 @@ int ql_font_family_register(const char *family, const char *path, int weight, in
     const int slot = add_entry(family, weight, italic);
     if (slot < 0)
         return 0;
-    const size_t pn = strlen(path);
-    if (pn + 1 > QL_FAMILY_PATH_MAX) {
-        QL_LOGE("font: @font-face \"%s\": path too long", family);
-        return 0;
-    }
     memcpy(s_faces[slot].path, path, pn + 1);
     s_faces[slot].mem = NULL;
     s_faces[slot].mem_size = 0;
@@ -699,12 +703,16 @@ const QLFont *ql_font_family_font(int family_id, int weight, int italic, int pix
     font->family_id = (uint16_t)(idx + 1);
 
     QLFTCache *c = (QLFTCache *)ql_mem_calloc(1, sizeof(QLFTCache));
-    if (c != NULL) {
-        c->px = pixel_size;
-        c->font = font;
-        c->next = e->cache;
-        e->cache = c;
+    if (c == NULL) {
+        /* 没人登记这个字体 = 永远不会被 reset 释放：宁可这次不返回 */
+        QL_LOGE("font: family cache node alloc failed, font discarded");
+        ql_font_destroy(font);
+        return NULL;
     }
+    c->px = pixel_size;
+    c->font = font;
+    c->next = e->cache;
+    e->cache = c;
     return font;
 }
 
@@ -752,6 +760,27 @@ static QLFont *default_factory(int pixel_size)
     return ql_font_ft_load(s_default_path, s_default_face, pixel_size);
 }
 
+void ql_font_autoload_system(void)
+{
+    if (ql_font_default_file() != NULL)
+        return;                        /* 应用已经指定过，尊重它 */
+
+    const char *env = getenv("QLGL_FONT");
+    if (env != NULL && env[0] != '\0' && ql_font_set_default_file(env, -1))
+        return;
+
+    static const char *cands[] = {
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/PingFang.ttc",
+        "C:/Windows/Fonts/msyh.ttc",
+    };
+    for (size_t i = 0; i < sizeof(cands) / sizeof(cands[0]); i++)
+        if (ql_font_set_default_file(cands[i], -1))
+            return;
+}
+
 int ql_font_set_default_file(const char *path, int face_index)
 {
     if (path == NULL) {
@@ -768,8 +797,12 @@ int ql_font_set_default_file(const char *path, int face_index)
     ql_font_destroy(probe);
 
     size_t n = strlen(path);
-    if (n + 1 > sizeof(s_default_path))
-        n = sizeof(s_default_path) - 1;
+    if (n + 1 > sizeof(s_default_path)) {
+        /* 截断后工厂会去打开一个不存在的路径：直接失败，别记录半截 */
+        QL_LOGE("font: default path too long (%u bytes, max %u)",
+                (unsigned)n, (unsigned)(sizeof(s_default_path) - 1));
+        return 0;
+    }
     memcpy(s_default_path, path, n);
     s_default_path[n] = '\0';
     s_default_face = face_index;

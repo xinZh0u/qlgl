@@ -53,16 +53,27 @@ static void bh_init(BenchHtml *h, size_t cap)
 
 static void bh_add(BenchHtml *h, const char *fmt, ...)
 {
-    if (!h->ok || h->n + 1 >= h->cap)
+    if (!h->ok)
         return;
+    if (h->n + 1 >= h->cap) {
+        h->ok = 0;                 /* 容量不够：截断的 HTML 不能当成功输入 */
+        return;
+    }
     va_list ap;
     va_start(ap, fmt);
     const int w = vsnprintf(h->buf + h->n, h->cap - h->n, fmt, ap);
     va_end(ap);
-    if (w < 0)
+    if (w < 0) {
         h->ok = 0;
-    else
-        h->n += (size_t)w;
+        return;
+    }
+    /* vsnprintf 返回的是"本该写入的长度"：装不下 = 已被截断，必须失败 */
+    if ((size_t)w >= h->cap - h->n) {
+        h->ok = 0;
+        h->n = h->cap - 1u;
+        return;
+    }
+    h->n += (size_t)w;
 }
 
 static QLUIDoc *bh_finish(BenchHtml *h, const char *css, const char *name)

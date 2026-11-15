@@ -6,7 +6,13 @@
 
 ql_fixed_t ql_fixed_from_int(int32_t value)
 {
-    return (ql_fixed_t)(value * QL_FIXED_ONE);
+    /* Q16.16 的 int32 只能表示 [-32768, 32767]，超出就饱和到边界 */
+    int64_t v = (int64_t)value * QL_FIXED_ONE;
+    if (v > INT32_MAX)
+        v = INT32_MAX;
+    else if (v < INT32_MIN)
+        v = INT32_MIN;
+    return (ql_fixed_t)v;
 }
 
 ql_fixed_t ql_fixed_mul(ql_fixed_t a, ql_fixed_t b)
@@ -19,15 +25,25 @@ ql_fixed_t ql_fixed_div(ql_fixed_t a, ql_fixed_t b)
 {
     if (b == 0)
         return 0;
-    return (ql_fixed_t)(((int64_t)a << QL_FIXED_SHIFT) / (int64_t)b);
+    /* 用乘法代替左移：负数左移在 C 里是未定义行为 */
+    int64_t numerator = (int64_t)a * (int64_t)QL_FIXED_ONE;
+    int64_t result = numerator / (int64_t)b;
+    if (result > INT32_MAX)
+        result = INT32_MAX;
+    else if (result < INT32_MIN)
+        result = INT32_MIN;
+    return (ql_fixed_t)result;
 }
 
 int32_t ql_fixed_to_int(ql_fixed_t value)
 {
-    /* 四舍五入到整数，负数同样向上进位 */
-    if (value >= 0)
-        return (int32_t)((value + (QL_FIXED_ONE / 2)) >> QL_FIXED_SHIFT);
-    return -(int32_t)(((-value) + (QL_FIXED_ONE / 2)) >> QL_FIXED_SHIFT);
+    /* 四舍五入到整数；用 64 位做中间运算，避免 -INT32_MIN 溢出 */
+    int64_t v = (int64_t)value;
+    if (v >= 0)
+        v = (v + (QL_FIXED_ONE / 2)) >> QL_FIXED_SHIFT;
+    else
+        v = -(((-v) + (QL_FIXED_ONE / 2)) >> QL_FIXED_SHIFT);
+    return (int32_t)v;
 }
 
 QLValue ql_value_none(void)
@@ -118,7 +134,7 @@ uint32_t ql_value_get_uint(QLValue value, uint32_t fallback)
     case QL_VALUE_INT:   return (uint32_t)value.v.i;
     case QL_VALUE_BOOL:  return (uint32_t)value.v.b;
     case QL_VALUE_COLOR: return value.v.u;
-    case QL_VALUE_FIXED: return (uint32_t)value.v.f;
+    case QL_VALUE_FIXED: return (uint32_t)ql_fixed_to_int(value.v.f);
     default:             return fallback;
     }
 }
@@ -128,7 +144,13 @@ ql_fixed_t ql_value_get_fixed(QLValue value, ql_fixed_t fallback)
     switch (value.type) {
     case QL_VALUE_FIXED: return value.v.f;
     case QL_VALUE_INT:   return ql_fixed_from_int(value.v.i);
-    case QL_VALUE_UINT:  return (ql_fixed_t)(value.v.u * QL_FIXED_ONE);
+    case QL_VALUE_UINT:  {
+        /* u * 65536 在 32 位里会溢出，先扩到 64 位再夹到边界 */
+        int64_t v = (int64_t)value.v.u * QL_FIXED_ONE;
+        if (v > INT32_MAX)
+            v = INT32_MAX;
+        return (ql_fixed_t)v;
+    }
     default:             return fallback;
     }
 }

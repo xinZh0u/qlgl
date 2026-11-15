@@ -332,6 +332,27 @@ QL_TEST_BEGIN("test_effects")
         ql_disp_mem_destroy(ref);
     }
 
+    /* ---------- N2. refract：朝圆心采样，轮廓处位移最大 ---------- */
+    /*
+     * 参考稿（codepen MYwrMNy）的 feDisplacementMap 是一张法线图：位移随半径
+     * 增长、轮廓处最大，方向**朝圆心**。这里用"圆心一小块红"把它钉住：
+     * 轮廓内侧的像素必须采到圆心附近（变红），而不是采到盒子外面的白。
+     */
+    {
+        const QLRect box = ql_rect_make(10, 10, 60, 60);
+        const ql_color_t red = QL_COLOR_RGB(0xFF, 0x00, 0x00);
+
+        fresh(white);
+        ql_canvas_fill_rect(&s_canvas, ql_rect_make(34, 34, 12, 12), red);
+        ql_canvas_backdrop_blur_round(&s_canvas, box, 0, 0, 0, 30);
+
+        QL_CHECK_EQ(px(40, 40), red);       /* 圆心不动 */
+        QL_CHECK_EQ(px(69, 40), red);       /* 右边缘朝内采到圆心 */
+        QL_CHECK_EQ(px(11, 40), red);       /* 左边缘同理 */
+        QL_CHECK_EQ(px(9, 40), white);      /* 盒子外一个像素都不动 */
+        QL_CHECK_EQ(px(70, 40), white);
+    }
+
     /* ---------- O. 渐变色标各自带 alpha ---------- */
     /*
      * CSS 允许 `linear-gradient(rgba(255,0,0,1), rgba(255,0,0,0))` ——

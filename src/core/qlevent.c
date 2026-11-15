@@ -137,20 +137,47 @@ ql_err_t ql_disconnect(QLObject *obj, uint32_t conn_id)
     return QL_ERR_INVAL;
 }
 
-int ql_disconnect_all(QLObject *obj)
+void ql_event_force_disconnect_all(QLObject *obj)
 {
     if (obj == NULL)
-        return 0;
+        return;
 
-    int count = 0;
     uint16_t cur = (uint16_t)obj->conn_head;
     obj->conn_head = QL_CONN16_NONE;
     while (cur != QL_CONN16_NONE) {
         uint16_t next = s_pool[cur].next;
         pool_push(cur);
-        count++;
         cur = next;
     }
+}
+
+int ql_disconnect_all(QLObject *obj)
+{
+    if (obj == NULL)
+        return 0;
+
+    /*
+     * 派发中不能立即回收槽位：dispatch() 已经缓存了 next 下标，
+     * 归还后会被 ql_connect() 复用，导致新监听器混进本次派发。
+     * 这里只标记删除，留给 ql_emit 顶层的 conn_gc() 统一回收。
+     */
+    if (s_emit_depth > 0) {
+        int count = 0;
+        for (uint16_t i = (uint16_t)obj->conn_head; i != QL_CONN16_NONE;
+             i = s_pool[i].next) {
+            if (s_pool[i].in_use && !s_pool[i].removed) {
+                s_pool[i].removed = 1;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    int count = 0;
+    for (uint16_t i = (uint16_t)obj->conn_head; i != QL_CONN16_NONE;
+         i = s_pool[i].next)
+        count++;
+    ql_event_force_disconnect_all(obj);
     return count;
 }
 
@@ -250,6 +277,12 @@ static const QLEventDesc *event_desc(QLObject *obj, ql_event_t event)
 #define QL_EVENT_FLAG_DEFAULT_IMPL \
     (QL_EVENT_FLAG_BUBBLE | QL_EVENT_FLAG_STOPPABLE | QL_EVENT_FLAG_DEFAULT)
 
+/* 只有登记了 STOPPABLE 的事件才允许 stop_propagation 生效 */
+static int stop_requested(const QLEvent *event, uint32_t flags)
+{
+    return event->stop_propagation && (flags & QL_EVENT_FLAG_STOPPABLE) != 0;
+}
+
 static int dispatch(QLObject *current, QLEvent *event, uint32_t flags)
 {
     int count = 0;
@@ -263,8 +296,9 @@ static int dispatch(QLObject *current, QLEvent *event, uint32_t flags)
             event->conn_id = conn->conn_id;
             conn->cb(event);
             count++;
-            if (event->stop_propagation)
-                return count;
+            /* 停止后续监听的调用，但默认处理是独立语义，下面仍要执行 */
+            if (stop_requested(event, flags))
+                break;
         }
         i = next;
     }
@@ -297,6 +331,15 @@ int ql_emit(QLObject *obj, ql_event_t event, const QLEventArgs *args)
     for (QLObject *node = obj; node != NULL && depth < QL_CFG_EVENT_PATH_MAX;
          node = node->parent) {
         path[depth++] = node;
+        if (depth == QL_CFG_EVENT_PATH_MAX && node->parent != NULL) {
+            static int warned;
+            if (!warned) {
+                warned = 1;
+                QL_LOGW("ql_emit: object depth exceeds QL_CFG_EVENT_PATH_MAX (%d), "
+                        "events will not reach higher ancestors",
+                        QL_CFG_EVENT_PATH_MAX);
+            }
+        }
     }
 
     QLEvent ev;
@@ -317,15 +360,15 @@ int ql_emit(QLObject *obj, ql_event_t event, const QLEventArgs *args)
     int count = 0;
 
     if ((flags & QL_EVENT_FLAG_CAPTURE) != 0) {
-        for (int i = depth - 1; i > 0 && !ev.stop_propagation; i--)
+        for (int i = depth - 1; i > 0 && !stop_requested(&ev, flags); i--)
             count += dispatch(path[i], &ev, flags);
     }
 
-    if (!ev.stop_propagation)
+    if (!stop_requested(&ev, flags))
         count += dispatch(obj, &ev, flags);
 
     if ((flags & QL_EVENT_FLAG_BUBBLE) != 0) {
-        for (int i = 1; i < depth && !ev.stop_propagation; i++)
+        for (int i = 1; i < depth && !stop_requested(&ev, flags); i++)
             count += dispatch(path[i], &ev, flags);
     }
 

@@ -342,12 +342,12 @@ fail:
         x->image->data = NULL;          /* 像素内存归我们管 */
         XDestroyImage(x->image);
     }
-    if (x->gc != NULL)
-        if (x->xic != NULL)
+    if (x->xic != NULL)
         XDestroyIC(x->xic);
     if (x->xim != NULL)
         XCloseIM(x->xim);
-    XFreeGC(dpy, x->gc);
+    if (x->gc != NULL)                  /* GC 之前就失败时是 NULL，不能白调 XFreeGC */
+        XFreeGC(dpy, x->gc);
     if (x->win != 0)
         XDestroyWindow(dpy, x->win);
     XCloseDisplay(dpy);

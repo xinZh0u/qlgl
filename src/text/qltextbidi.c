@@ -65,7 +65,8 @@ int ql_text_bidi_has_rtl(const char *text, int32_t len)
     int32_t i = 0;
     while ((len < 0 ? text[i] != '\0' : i < len) && text[i] != '\0') {
         uint32_t cp = 0;
-        const int32_t used = ql_utf8_decode(text + i, &cp);
+        const int32_t used = (len < 0) ? ql_utf8_decode(text + i, &cp)
+                                       : ql_utf8_decode_n(text + i, (size_t)(len - i), &cp);
         if (used <= 0)
             break;
         if (ql_text_bidi_is_rtl_cp(cp))
@@ -196,11 +197,12 @@ typedef uint32_t QLBidiFlags;
  * U+FE70.. 的呈现形式）。我们已经把整形交给 HarfBuzz 了，再替换一遍就是重复整形
  * （而且 HarfBuzz 面对呈现形式字符不会再连写，阿拉伯文会变成一溜孤立形）。
  */
-typedef int (*ql_fribidi_types_fn)(const QLBidiChar *str, QLBidiStrIndex len,
-                                   QLBidiCharType *bidi_types);
-typedef int (*ql_fribidi_brackets_fn)(const QLBidiChar *str, QLBidiStrIndex len,
-                                      const QLBidiCharType *bidi_types,
-                                      QLBidiBracketType *bracket_types);
+typedef void (*ql_fribidi_types_fn)(const QLBidiChar *str, QLBidiStrIndex len,
+                                    QLBidiCharType *bidi_types);
+/* 上游返回 void：不能把返回值当"成功与否"来查 */
+typedef void (*ql_fribidi_brackets_fn)(const QLBidiChar *str, QLBidiStrIndex len,
+                                       const QLBidiCharType *bidi_types,
+                                       QLBidiBracketType *bracket_types);
 typedef int (*ql_fribidi_levels_fn)(const QLBidiCharType *bidi_types,
                                     const QLBidiBracketType *bracket_types,
                                     QLBidiStrIndex len, QLBidiParType *pbase_dir,
@@ -287,10 +289,10 @@ static int fribidi_load(void)
         const QLBidiChar ltr_ch = (QLBidiChar)'a';
         const QLBidiChar rtl_ch = 0x05D0u;      /* ALEF */
         QLBidiCharType t = 0;
-        if (s_fb_types(&ltr_ch, 1, &t) != 0)
-            s_fb_par_ltr = (QLBidiParType)t;
-        if (s_fb_types(&rtl_ch, 1, &t) != 0)
-            s_fb_par_rtl = (QLBidiParType)t;
+        s_fb_types(&ltr_ch, 1, &t);
+        s_fb_par_ltr = (QLBidiParType)t;
+        s_fb_types(&rtl_ch, 1, &t);
+        s_fb_par_rtl = (QLBidiParType)t;
     }
 
     s_fribidi_state = 1;
@@ -333,7 +335,7 @@ int32_t ql_text_bidi_log2vis(const char *text, int32_t len, int par_rtl, char *o
     int32_t n = 0;
     for (int32_t i = 0; i < total;) {
         uint32_t cp = 0;
-        const int32_t used = ql_utf8_decode(text + i, &cp);
+        const int32_t used = ql_utf8_decode_n(text + i, (size_t)(total - i), &cp);
         if (used <= 0)
             break;
         if (n >= QL_BIDI_MAX_CPS)
@@ -353,10 +355,11 @@ int32_t ql_text_bidi_log2vis(const char *text, int32_t len, int par_rtl, char *o
         QLBidiStrIndex map[QL_BIDI_MAX_CPS];
         QLBidiParType par = par_rtl ? s_fb_par_rtl : s_fb_par_ltr;
 
-        if (s_fb_types(cps, n, types) != 0) {
+        if (s_fb_types != NULL) {
+            s_fb_types(cps, n, types);
             memset(brackets, 0, (size_t)n * sizeof(brackets[0]));
             if (s_fb_brackets != NULL)
-                (void)s_fb_brackets(cps, n, types, brackets);
+                s_fb_brackets(cps, n, types, brackets);
             if (s_fb_levels(types, brackets, n, &par, flv) != 0) {
                 /*
                  * reorder_line 把 visual_str 重排成视觉顺序（只换位置，**不改字形**

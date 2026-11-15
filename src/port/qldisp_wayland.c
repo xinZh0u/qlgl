@@ -79,9 +79,10 @@ static void buffer_release(void *data, struct wl_buffer *buffer)
 
 static const struct wl_buffer_listener buffer_listener = { .release = buffer_release };
 
-static int create_buffer(QLDispWayland *w, QLWaylandBuffer *slot)
+static int create_buffer(QLDispWayland *w, QLWaylandBuffer *slot, ql_coord_t width,
+                        ql_coord_t height, uint32_t stride)
 {
-    const size_t size = (size_t)w->stride * (size_t)w->base.height;
+    const size_t size = (size_t)stride * (size_t)height;
 
     int fd = create_shm_file(size);
     if (fd < 0) {
@@ -96,10 +97,14 @@ static int create_buffer(QLDispWayland *w, QLWaylandBuffer *slot)
     }
 
     struct wl_shm_pool *pool = wl_shm_create_pool(w->wl.shm, fd, (int32_t)size);
-    slot->buffer = wl_shm_pool_create_buffer(pool, 0, (int32_t)w->base.width,
-                                             (int32_t)w->base.height,
-                                             (int32_t)w->stride,
-                                             WL_SHM_FORMAT_XRGB8888);
+    if (pool == NULL) {
+        QL_LOGE("wayland: wl_shm_create_pool failed");
+        munmap(data, size);
+        close(fd);
+        return 0;
+    }
+    slot->buffer = wl_shm_pool_create_buffer(pool, 0, (int32_t)width, (int32_t)height,
+                                             (int32_t)stride, WL_SHM_FORMAT_XRGB8888);
     wl_shm_pool_destroy(pool);
     close(fd);
 
@@ -110,7 +115,7 @@ static int create_buffer(QLDispWayland *w, QLWaylandBuffer *slot)
     slot->data = (uint8_t *)data;
     slot->size = size;
     slot->busy = 0;
-    wl_buffer_add_listener(slot->buffer, &buffer_listener, slot);
+    /* listener 要等槽位真正装进 w->buffers 之后再挂（user_data 必须是稳定地址） */
     return 1;
 }
 
@@ -145,15 +150,41 @@ static int buffers_rebuild(QLDispWayland *w)
     if (pw <= 0 || ph <= 0)
         return 0;
 
-    buffers_release(w);
-
     const uint32_t stride = (uint32_t)pw * 4u;
     uint8_t *pixels = (uint8_t *)ql_mem_calloc(1, (size_t)stride * (size_t)ph);
     if (pixels == NULL)
         return 0;
+
+    /*
+     * 先在新槽位里建好全部 shm 缓冲区，成功之后才释放旧的：
+     * 中途失败时旧缓冲区仍然完整，画面可以继续按旧尺寸显示。
+     */
+    QLWaylandBuffer fresh[QL_WL_BUFFERS];
+    memset(fresh, 0, sizeof(fresh));
+    for (int i = 0; i < QL_WL_BUFFERS; i++) {
+        if (!create_buffer(w, &fresh[i], pw, ph, stride)) {
+            QL_LOGE("wayland: cannot create shm buffer %d (scale %d)", i,
+                    (int)w->wl.scale);
+            for (int k = 0; k < QL_WL_BUFFERS; k++) {
+                if (fresh[k].buffer != NULL)
+                    wl_buffer_destroy(fresh[k].buffer);
+                if (fresh[k].data != NULL)
+                    munmap(fresh[k].data, fresh[k].size);
+            }
+            ql_mem_free(pixels);
+            return 0;
+        }
+    }
+
+    buffers_release(w);
     ql_mem_free(w->pixels);
     w->pixels = pixels;
     w->stride = stride;
+
+    for (int i = 0; i < QL_WL_BUFFERS; i++) {
+        w->buffers[i] = fresh[i];
+        wl_buffer_add_listener(w->buffers[i].buffer, &buffer_listener, &w->buffers[i]);
+    }
 
     w->base.width = pw;
     w->base.height = ph;
@@ -164,12 +195,6 @@ static int buffers_rebuild(QLDispWayland *w)
     if (w->wl.surface != NULL)
         wl_surface_set_buffer_scale(w->wl.surface, w->wl.scale);
 
-    for (int i = 0; i < QL_WL_BUFFERS; i++)
-        if (!create_buffer(w, &w->buffers[i])) {
-            QL_LOGE("wayland: cannot create shm buffer %d (scale %d)", i,
-                    (int)w->wl.scale);
-            return 0;
-        }
     w->current = 0;
     return 1;
 }
@@ -208,6 +233,8 @@ static int wayland_flush(QLDispDriver *self, QLRect area)
     }
 
     QLWaylandBuffer *slot = &w->buffers[w->pending];
+    if (slot->data == NULL || w->pixels == NULL)
+        return 0;                      /* 重建失败留下的空槽：本帧不画，也不能往空指针拷 */
     for (ql_coord_t y = area.y; y < ql_rect_bottom(area); y++)
         memcpy(slot->data + (size_t)y * w->stride + (size_t)area.x * 4u,
                w->pixels + (size_t)y * w->stride + (size_t)area.x * 4u,
@@ -346,8 +373,13 @@ int ql_disp_wayland_poll(QLDispDriver *driver)
         if (qlwl_take_resize(&w->wl, &nw, &nh)) {
             w->css_w = nw;
             w->css_h = nh;
-            (void)buffers_rebuild(w);
-            w->wl.resize_pending = 1;
+            if (!buffers_rebuild(w)) {
+                /* 失败：旧缓冲区还在，下一帧再试一次重建 */
+                QL_LOGE("wayland: resize rebuild failed, keeping old buffers");
+                w->wl.resize_pending = 1;
+            } else {
+                w->wl.resize_pending = 1;
+            }
         }
     }
 

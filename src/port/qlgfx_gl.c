@@ -188,6 +188,7 @@ struct QLGfxGL {
     GLint            u_viewport;
     GLint            u_atlas;
     GLint            u_bg;
+    GLint            u_bg_max;
     GLuint           atlas_tex;
 
     QLGLVertex      *verts;
@@ -408,6 +409,7 @@ static const char *FS_SRC =
     "in vec4 v_radii;\n"
     "uniform sampler2D u_atlas;\n"
     "uniform sampler2D u_bg;\n"
+    "uniform vec2 u_bg_max;\n"
     "uniform sampler2D u_image;\n"
     "uniform vec2 u_viewport;\n"
     /*
@@ -532,18 +534,21 @@ static const char *FS_SRC =
     "    cov = 1.0 - smoothstep(-0.5, 0.5, d);\n"
     /*
      * 折射（`backdrop-filter: refract(Npx)`，量存在 v_params.y 且已按 uv 折算）：
-     * 轮廓附近像一圈透镜斜面，越贴边采样点越往外推，轮廓里那一圈显示的是外面
-     * 被压扁的场景。公式与 CPU 侧 refract_offset() 逐字对应：
-     *   t = clamp(1 - 深度 / 斜面宽, 0, 1)，offset = normalize(n) * refract * t²
-     * 斜面宽 = 短边的 1/4：轮廓处最强，往里一个斜面宽就归零。
+     * 整块玻璃像一枚厚透镜 —— 位移随归一化半径增长（0.46t + 0.54t⁶），
+     * 在轮廓处最大，并且**朝圆心**采样（内部画面被压进边缘一圈）。
+     * 与 CPU 侧 refract_offset() 逐字对应。
      */
     "    if (v_params.y > 0.0) {\n"
     "      vec2 n = v_local / max(v_half, vec2(0.5));\n"
     "      float l = length(n);\n"
-    "      float band = 0.25 * max(min(v_half.x, v_half.y), 0.5);\n"
-    "      float t = clamp(1.0 + d / band, 0.0, 1.0);\n"
+    "      float t = clamp(l, 0.0, 1.0);\n"
+    /*
+     * 与 CPU 的 refract_profile() 逐字一致：0.46·t + 0.54·t⁶。参考稿的
+     * 法线图在轮廓处位移最大、且**朝圆心**采样（内部画面被压进边缘一圈）。
+     */
+    "      float g = 0.46 * t + 0.54 * pow(t, 6.0);\n"
     "      if (l > 1e-3)\n"
-    "        buv += vec2(n.x, -n.y) / l * (v_params.y * t * t);\n"
+    "        buv -= vec2(n.x, -n.y) / l * (v_params.y * g);\n"
     "    }\n"
     "  } else if (mode > 2.5) {\n"
     "    float d = sdRoundBox(v_local, v_half, radius);\n"
@@ -571,7 +576,12 @@ static const char *FS_SRC =
      * 系数与 CPU 侧（`filter: saturate()` 与 `ql_canvas` 的 saturate_rect）
      * 完全同一组：0.213 / 0.715 / 0.072 —— 两条后端才对得上。
      */
-    "    vec3 bg = texture(u_bg, clamp(buv, vec2(0.0), vec2(1.0))).rgb;\n"
+    /*
+     * 模糊纹理是"只增不减"复用的：有效内容只在左上角 (uw, uh)，右边/下边是
+     * 上一次更大的玻璃留下的残留。夹到 [0,1] 会把那些残留读进来（小玻璃边缘
+     * 出现"别处的颜色"）；必须夹到 u_bg_max。
+     */
+    "    vec3 bg = texture(u_bg, clamp(buv, vec2(0.0), u_bg_max)).rgb;\n"
     "    if (v_params.w > 0.5 && abs(v_params.w - 100.0) > 0.5) {\n"
     "      float gy = dot(bg, vec3(0.213, 0.715, 0.072));\n"
     "      bg = clamp(mix(vec3(gy), bg, v_params.w / 100.0), 0.0, 1.0);\n"
@@ -695,6 +705,7 @@ static int build_program(QLGfxGL *g)
     g->u_viewport = glGetUniformLocation(g->program, "u_viewport");
     g->u_atlas = glGetUniformLocation(g->program, "u_atlas");
     g->u_bg = glGetUniformLocation(g->program, "u_bg");
+    g->u_bg_max = glGetUniformLocation(g->program, "u_bg_max");
     g->u_image = glGetUniformLocation(g->program, "u_image");
     g->u_cm = glGetUniformLocation(g->program, "u_cm");
     g->u_cm_on = glGetUniformLocation(g->program, "u_cm_on");
@@ -1855,10 +1866,10 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
 
     /*
      * 采样范围必须比元素盒子大一圈（与 CPU 侧同一口径）：9 抽头的最大偏移是
-     * 4·span = sc 个半分辨率像素 = 2·sc 个设备像素，折射再往外套 rc 像素。
-     * 只糊盒子内部的话，盒子里是"这块方形的均值色"，盒子四边还会留下方形的边。
+     * 4·span = sc 个半分辨率像素 = 2·sc 个设备像素。折射朝圆心采样、不读外面，
+     * 所以只按模糊核外扩。
      */
-    const ql_coord_t pad = (ql_coord_t)(sc * 2 + rc + 2);
+    const ql_coord_t pad = (ql_coord_t)(sc * 2 + 2);
     QLRect ex = ql_rect_make(dev.x - pad, dev.y - pad, dev.w + pad * 2,
                              dev.h + pad * 2);
     ex = ql_rect_intersect(ex, ql_rect_make(0, 0, g->width, g->height));
@@ -1888,12 +1899,12 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     /*
      * 2. 两趟可分离模糊（9 抽头高斯）。
      *
-     * 抽头间距要按**标准差**算：9 个抽头的那组权重 σ ≈ 2（抽头为单位），
-     * 所以 `span = σ_半分辨率 / 2 = sc / 4` 个纹素才对得上 CSS 的 blur(Npx)。
-     * 早先写成 `rad/4`（= sc/8）把高斯糊窄了一半 —— CPU 与 GPU 的玻璃
-     * 一对比就能看出来（CPU 的中间色比 GPU 多一倍）。
+     * 抽头间距要按**标准差**算：这组 9 抽头权重的 σ ≈ 1.69（抽头为单位），
+     * 要得到 CSS 的 σ = sc 个设备像素，抽头间距 = sc / (1.69 * 2) ≈ sc / 3.4
+     * 个半分辨率纹素。实测 `sc/4` 的 10-90 边缘宽度只有 CPU 的 ~70%（明显更清晰），
+     * `sc/3` 与 CPU 的 σ≈6.5 基本一致 —— 两条后端的玻璃要糊得一样厚。
      */
-    const float span = (float)sc / 4.0f;
+    const float span = (float)sc / 3.0f;
     /* 纹理可能比这次需要的更大：有效区域是左上角 bw x bh */
     const float uw = (float)bw / (float)g->blur_w;
     const float uh = (float)bh / (float)g->blur_h;
@@ -1913,8 +1924,10 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     /*
      * mode 4 借 `a_params.y`（border，别的模式里是描边宽度）传真元：折射量
      * **按 uv 计**（一个设备像素的位移换算成 uv 增量）。0 = 不折射。
+     * 分母必须是 `ex.w`：顶点 uv 是按外扩后的 ex 铺的，按 dev.w 算会让位移
+     * 被放大 (1 + 2·pad/dev.w) 倍。
      */
-    v.border = (rc > 0 && dev.w > 0) ? ((float)rc * uw / (float)dev.w) : 0.0f;
+    v.border = (rc > 0 && ex.w > 0) ? ((float)rc * uw / (float)ex.w) : 0.0f;
     /*
      * 圆角半径走的是同一个 SDF：片元里 `cov` 会把方框边缘的 alpha 压到 0，
      * 于是模糊结果只写进圆角内，四个缺口保留原本已画好的内容 —— 正是 CSS 语义。
@@ -1926,6 +1939,9 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
      * 只有 backdrop 这一档用得上它，别的图元 pad 恒为 0。
      */
     v.pad = (float)sat;
+    /* 模糊纹理只有左上角 uw × uh 是这次的玻璃内容，采样必须夹在这里 */
+    if (g->u_bg_max >= 0)
+        glUniform2f(g->u_bg_max, uw, uh);
     v.a = 1.0f;
     v.r = 1.0f;
     v.g = 1.0f;
@@ -1958,6 +1974,11 @@ static void gl_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
         v.v = (1.0f - (ys[k] - (float)ex.y) / (float)(ex.h > 0 ? ex.h : 1)) * uh;
         emit_vertex(g, &v);
     }
+    /*
+     * u_bg_max 是 uniform：这块玻璃的 (uw, uh) 必须在**本批**绘制前生效。
+     * 不立刻 flush 的话，后面别的图元会和它攒在一起，用最后一块玻璃的 uv 上限。
+     */
+    flush_batch(g);
 }
 
 static void gl_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
@@ -4075,6 +4096,8 @@ static void flush_batch(QLGfxGL *g)
         glBindTexture(GL_TEXTURE_2D, (g->blur_tex[0] != 0) ? g->blur_tex[0]
                                                           : g->bg_dummy_tex);
         glUniform1i(g->u_bg, 1);
+        /* 默认整张纹理；mode 4 的玻璃会在 gl_backdrop_blur_round 里覆盖成有效区域 */
+        glUniform2f(g->u_bg_max, 1.0f, 1.0f);
 
         /*
          * u_image 同理：采样器必须绑东西。没有图片的批次绑 1x1 占位纹理，

@@ -56,6 +56,11 @@ static void track_state(const QLInputEvent *ev)
 {
     switch (ev->type) {
     case QL_INPUT_POINTER_MOVE:
+        s_x = ev->x;
+        s_y = ev->y;
+        /* 移动事件自带按钮快照，直接同步（push_button 的位运算只处理按下/抬起） */
+        s_buttons = ev->buttons;
+        break;
     case QL_INPUT_POINTER_DOWN:
     case QL_INPUT_POINTER_UP:
         s_x = ev->x;
@@ -221,8 +226,13 @@ ql_err_t ql_input_push_text(const char *utf8)
     ev.x = s_x;
     ev.y = s_y;
     ev.buttons = s_buttons;
-    for (size_t i = 0; i + 1 < sizeof(ev.text) && utf8[i] != '\0'; i++)
-        ev.text[i] = utf8[i];
+    /* 按 UTF-8 码点边界截断：宁可不收最后一个不完整的字符 */
+    size_t n = strlen(utf8);
+    if (n > sizeof(ev.text) - 1u)
+        n = ql_utf8_valid_len(utf8, sizeof(ev.text) - 1u);
+    if (n > 0)
+        memcpy(ev.text, utf8, n);
+    ev.text[n] = '\0';
     return ql_input_push(&ev);
 }
 

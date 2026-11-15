@@ -75,82 +75,99 @@ static int jpeg_decode(const uint8_t *data, size_t len, uint8_t out_format, QLIm
 {
     (void)out_format;                  /* 只产出 RGBA8888，由调用方转换 */
 
-    struct jpeg_decompress_struct cinfo;
-    JpegErr jerr;
-    memset(&cinfo, 0, sizeof(cinfo));
-    memset(&jerr, 0, sizeof(jerr));
-
     /*
-     * 像素缓冲声明在 setjmp **之前**：libjpeg 可能在扫描行中途 error_exit，
-     * 那时 px 已经分配了 —— 如果它是在 setjmp 之后才声明的，longjmp 回来时
-     * 它的值是不确定的（C 标准规定非 volatile 的局部变量在 longjmp 后失效）。
+     * cinfo/jerr 放在堆上而不是栈上：libjpeg 会在解码途中修改它们，
+     * 而 longjmp 回到 setjmp 之后，栈上"被修改过的非 volatile 局部对象"
+     * 的值按 C 标准是不确定的。堆对象的地址与生命周期不受 longjmp 影响。
      */
+    struct jpeg_decompress_struct *cinfo =
+        (struct jpeg_decompress_struct *)ql_mem_calloc(1, sizeof(*cinfo));
+    JpegErr *jerr = (JpegErr *)ql_mem_calloc(1, sizeof(*jerr));
     uint8_t *volatile px = NULL;
 
-    cinfo.err = jpeg_std_error(&jerr.pub);
-    jerr.pub.error_exit = jpeg_on_error;
-    jerr.pub.emit_message = jpeg_on_emit;
-    jerr.msg[0] = '\0';
-
-    if (setjmp(jerr.jb) != 0) {
-        /* libjpeg 说这条路走不通：把它的文案原样带出去 */
-        jpeg_destroy_decompress(&cinfo);
-        if (px != NULL)
-            ql_mem_free((void *)px);
+    if (cinfo == NULL || jerr == NULL) {
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         if (err != NULL && err_cap > 0)
-            snprintf(err, err_cap, "%s", jerr.msg);
+            snprintf(err, err_cap, "out of memory");
         return -1;
     }
 
-    jpeg_create_decompress(&cinfo);
-    jpeg_mem_src_impl(&cinfo, data, len);
-    jpeg_read_header(&cinfo, TRUE);
+    cinfo->err = jpeg_std_error(&jerr->pub);
+    jerr->pub.error_exit = jpeg_on_error;
+    jerr->pub.emit_message = jpeg_on_emit;
+    jerr->msg[0] = '\0';
+
+    if (setjmp(jerr->jb) != 0) {
+        /* libjpeg 说这条路走不通：把它的文案原样带出去 */
+        jpeg_destroy_decompress(cinfo);
+        ql_mem_free((void *)px);
+        if (err != NULL && err_cap > 0)
+            snprintf(err, err_cap, "%s", jerr->msg);
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
+        return -1;
+    }
+
+    jpeg_create_decompress(cinfo);
+    jpeg_mem_src_impl(cinfo, data, len);
+    jpeg_read_header(cinfo, TRUE);
 
     /* 灰度图也走 RGBA：上屏逻辑不需要知道源是几通道 */
-    cinfo.out_color_space = JCS_EXT_RGBA;
-    jpeg_start_decompress(&cinfo);
+    cinfo->out_color_space = JCS_EXT_RGBA;
+    jpeg_start_decompress(cinfo);
 
-    if (cinfo.output_width == 0u || cinfo.output_height == 0u ||
-        cinfo.output_width > 0xFFFFu || cinfo.output_height > 0xFFFFu) {
-        jpeg_destroy_decompress(&cinfo);
+    if (cinfo->output_width == 0u || cinfo->output_height == 0u ||
+        cinfo->output_width > 0xFFFFu || cinfo->output_height > 0xFFFFu) {
+        jpeg_destroy_decompress(cinfo);
         if (err != NULL && err_cap > 0)
-            snprintf(err, err_cap, "尺寸非法（%ux%u）", (unsigned)cinfo.output_width,
-                     (unsigned)cinfo.output_height);
+            snprintf(err, err_cap, "尺寸非法（%ux%u）", (unsigned)cinfo->output_width,
+                     (unsigned)cinfo->output_height);
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         return -1;
     }
-    if (cinfo.output_components != 4) {
-        jpeg_destroy_decompress(&cinfo);
+    if (cinfo->output_components != 4) {
+        jpeg_destroy_decompress(cinfo);
         if (err != NULL && err_cap > 0)
             snprintf(err, err_cap, "不支持的颜色空间（%d 通道）",
-                     (int)cinfo.output_components);
+                     (int)cinfo->output_components);
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         return -1;
     }
 
-    const uint32_t w = cinfo.output_width;
-    const uint32_t h = cinfo.output_height;
+    const uint32_t w = cinfo->output_width;
+    const uint32_t h = cinfo->output_height;
     /* 上界纪律与自有解码器一致（先除后乘） */
     if (w > QL_CFG_IMAGE_MAX_PIXELS / h) {
-        jpeg_destroy_decompress(&cinfo);
+        jpeg_destroy_decompress(cinfo);
         if (err != NULL && err_cap > 0)
             snprintf(err, err_cap, "尺寸超过 QL_CFG_IMAGE_MAX_PIXELS（%ux%u）",
                      (unsigned)w, (unsigned)h);
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         return -1;
     }
 
     const uint32_t stride = w * 4u;
     const uint64_t total = (uint64_t)stride * h;
-    if (stride > 0xFFFFu || total > QL_CFG_IMAGE_MAX_BYTES * 16u) {
-        jpeg_destroy_decompress(&cinfo);
+    if (stride > 0xFFFFu || total > ql_image_decode_budget()) {
+        jpeg_destroy_decompress(cinfo);
         if (err != NULL && err_cap > 0)
             snprintf(err, err_cap, "解码后字节数超过上限（%u 字节）", (unsigned)total);
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         return -1;
     }
 
     px = (uint8_t *)ql_mem_alloc((size_t)total);
     if (px == NULL) {
-        jpeg_destroy_decompress(&cinfo);
+        jpeg_destroy_decompress(cinfo);
         if (err != NULL && err_cap > 0)
             snprintf(err, err_cap, "out of memory");
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         return -1;
     }
 
@@ -160,23 +177,25 @@ static int jpeg_decode(const uint8_t *data, size_t len, uint8_t out_format, QLIm
      * 不做整幅翻转、也不需要额外的一行中转。
      */
     JSAMPROW row = NULL;
-    while (cinfo.output_scanline < cinfo.output_height) {
-        row = px + (size_t)cinfo.output_scanline * stride;
-        if (jpeg_read_scanlines(&cinfo, &row, 1) != 1)
+    while (cinfo->output_scanline < cinfo->output_height) {
+        row = px + (size_t)cinfo->output_scanline * stride;
+        if (jpeg_read_scanlines(cinfo, &row, 1) != 1)
             break;                     /* 数据提前结束：下面按"行数不够"处理 */
     }
-    const int rows_ok = (cinfo.output_scanline == cinfo.output_height);
-    const unsigned got_rows = (unsigned)cinfo.output_scanline;
+    const int rows_ok = (cinfo->output_scanline == cinfo->output_height);
+    const unsigned got_rows = (unsigned)cinfo->output_scanline;
 
-    jpeg_finish_decompress(&cinfo);
-    jpeg_destroy_decompress(&cinfo);
+    jpeg_finish_decompress(cinfo);
+    jpeg_destroy_decompress(cinfo);
 
     /* rows_ok 为假、或解的过程中见过 EOF 警告，都按"残图"处理 */
-    if (!rows_ok || jerr.truncated) {
-        ql_mem_free(px);
+    if (!rows_ok || jerr->truncated) {
+        ql_mem_free((void *)px);
         if (err != NULL && err_cap > 0)
             snprintf(err, err_cap, "数据提前结束（只解出 %u/%u 行，残缺的图不画）",
                      got_rows, (unsigned)h);
+        ql_mem_free(cinfo);
+        ql_mem_free(jerr);
         return -1;
     }
 
@@ -188,6 +207,8 @@ static int jpeg_decode(const uint8_t *data, size_t len, uint8_t out_format, QLIm
     out->stride = (uint16_t)stride;
     out->format = QL_IMAGE_RGBA8888;
     out->owned = 1;
+    ql_mem_free(cinfo);
+    ql_mem_free(jerr);
     return 1;
 }
 

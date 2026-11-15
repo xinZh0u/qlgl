@@ -167,8 +167,12 @@ void ql_layer_blur(uint8_t *rgba, int w, int h, int radius)
         step = 1;
     const size_t bytes = (size_t)w * (size_t)h * 4u;
     uint8_t *tmp = (uint8_t *)ql_mem_alloc(bytes);
-    if (tmp == NULL)
+    if (tmp == NULL) {
+        /* 静默返回会让"模糊"变成"原图"：调用方必须看得见降级 */
+        QL_LOGE("ql_layer_blur: 临时缓冲分配失败（%u 字节），本次不模糊",
+                (unsigned)bytes);
         return;
+    }
     gauss_pass4(rgba, tmp, w, h, step, 1);
     gauss_pass4(tmp, rgba, w, h, step, 0);
     ql_mem_free(tmp);
@@ -334,8 +338,11 @@ void ql_layer_drop_shadow(uint8_t *rgba, int w, int h, const QLDraw2DLayerFx *fx
 
     const size_t bytes = (size_t)w * (size_t)h * 4u;
     uint8_t *sh = (uint8_t *)ql_mem_alloc(bytes);
-    if (sh == NULL)
+    if (sh == NULL) {
+        QL_LOGE("ql_layer_drop_shadow: 阴影缓冲分配失败（%u 字节），本次不画阴影",
+                (unsigned)bytes);
         return;
+    }
 
     /* 1. 抽出图层 alpha，平移到 (dx,dy) */
     memset(sh, 0, bytes);

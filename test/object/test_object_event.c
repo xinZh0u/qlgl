@@ -100,6 +100,23 @@ static void cb_args(QLEvent *event)
     QL_CHECK(event->current_target == g_c);
 }
 
+/* 目标监听器自己停止传播：默认处理仍应执行 */
+static void cb_stop_self(QLEvent *event)
+{
+    trace_push('s');
+    ql_event_stop_propagation(event);
+}
+
+/* 派发中断开全部并立刻重连：新监听器不能混进本轮派发 */
+static int g_reconnect_hits;
+static void cb_reconnect(QLEvent *event) { QL_UNUSED(event); g_reconnect_hits++; }
+static void cb_disconnect_and_reconnect(QLEvent *event)
+{
+    trace_push('d');
+    ql_disconnect_all(event->current_target);
+    ql_connect(event->current_target, QL_EVT_EVENT_DATA, cb_reconnect, NULL);
+}
+
 QL_TEST_BEGIN("test_object_event")
 
     QLType type = QL_REGISTER(ql_evt, QL_TYPE_OBJECT);
@@ -158,6 +175,58 @@ QL_TEST_BEGIN("test_object_event")
     QL_CHECK_EQ(ql_emit(g_c, QL_EVT_EVENT_DATA, NULL), 3);
     QL_CHECK_STR(g_trace, "cba");
     QL_CHECK_EQ(g_default_count, 0);
+
+    /*
+     * 5b. 停止传播与默认处理是两件事：
+     *     目标自己 stop_propagation 后不再冒泡，但默认处理照常执行；
+     *     未登记 STOPPABLE 的事件则完全忽略 stop_propagation。
+     */
+    {
+        QLObject *p = ql_object_new(type);
+        QLObject *t = ql_object_new(type);
+        QL_CHECK(p && t);
+        QL_CHECK_EQ(ql_object_set_parent(t, p), QL_OK);
+
+        /* 父节点监听 PING，只记 trace */
+        QL_CHECK(ql_connect(p, QL_EVT_EVENT_PING, cb_a, NULL) != QL_CONN_ID_NONE);
+        QL_CHECK(ql_connect(t, QL_EVT_EVENT_PING, cb_stop_self, NULL) != QL_CONN_ID_NONE);
+
+        trace_reset();
+        g_default_count = 0;
+        QL_CHECK_EQ(ql_emit(t, QL_EVT_EVENT_PING, NULL), 1);   /* 只数监听器回调 */
+        QL_CHECK_STR(g_trace, "s");                            /* 父节点没收到 */
+        QL_CHECK_EQ(g_default_count, 1);                       /* 默认处理仍执行 */
+
+        /* DATA 没有 STOPPABLE：stop 无效，仍冒泡到父节点 */
+        QL_CHECK(ql_connect(p, QL_EVT_EVENT_DATA, cb_a, NULL) != QL_CONN_ID_NONE);
+        QL_CHECK_EQ(ql_disconnect_all(t), 1);
+        QL_CHECK(ql_connect(t, QL_EVT_EVENT_DATA, cb_stop_self, NULL) != QL_CONN_ID_NONE);
+        trace_reset();
+        g_default_count = 0;
+        QL_CHECK_EQ(ql_emit(t, QL_EVT_EVENT_DATA, NULL), 2);
+        QL_CHECK_STR(g_trace, "sa");
+        QL_CHECK_EQ(g_default_count, 0);
+
+        ql_object_unref(t);
+        ql_object_unref(p);
+    }
+
+    /* 5c. 回调里 disconnect_all + 立刻重连：新监听器不参与本轮派发 */
+    {
+        QLObject *o = ql_object_new(type);
+        QL_CHECK(o != NULL);
+        QL_CHECK(ql_connect(o, QL_EVT_EVENT_DATA, cb_disconnect_and_reconnect, NULL) !=
+                 QL_CONN_ID_NONE);
+        g_reconnect_hits = 0;
+        trace_reset();
+        QL_EMIT_0(o, QL_EVT_EVENT_DATA);
+        QL_CHECK_STR(g_trace, "d");
+        QL_CHECK_EQ(g_reconnect_hits, 0);        /* 重连的那个不参与本轮 */
+        QL_EMIT_0(o, QL_EVT_EVENT_DATA);
+        QL_CHECK_EQ(g_reconnect_hits, 1);        /* 下一轮才收到 */
+        QL_CHECK_EQ(ql_disconnect_all(o), 1);
+        ql_object_unref(o);
+    }
 
     /* 6. 参数打包：整型 + 字符串，回调里按索引取 */
     g_arg_hits = 0;

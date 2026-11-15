@@ -40,7 +40,11 @@ uint32_t ql_disp_buffer_size(QLColorFormat format, ql_coord_t width, ql_coord_t 
     uint32_t bytes = ql_disp_format_bytes((uint8_t)format);
     if (bytes == 0 || width <= 0 || height <= 0)
         return 0;
-    return (uint32_t)width * bytes * (uint32_t)height;
+    /* 先在 64 位里算：width*bytes*height 在 uint32 里会回绕成很小的值 */
+    const uint64_t total = (uint64_t)width * (uint64_t)bytes * (uint64_t)height;
+    if (total > UINT32_MAX)
+        return 0;
+    return (uint32_t)total;
 }
 
 ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t stride,
@@ -54,10 +58,16 @@ ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t strid
     if (bytes == 0)
         return QL_ERR_INVAL;
 
-    uint32_t min_stride = (uint32_t)width * bytes;
+    const uint64_t min_stride64 = (uint64_t)width * (uint64_t)bytes;
+    if (min_stride64 > UINT32_MAX)
+        return QL_ERR_INVAL;
+    const uint32_t min_stride = (uint32_t)min_stride64;
     if (stride == 0)
         stride = min_stride;
     if (stride < min_stride)
+        return QL_ERR_INVAL;
+    /* stride * height 也必须能寻址，否则后续行地址会回绕 */
+    if ((uint64_t)stride * (uint64_t)height > (uint64_t)SIZE_MAX)
         return QL_ERR_INVAL;
 
     memset(driver, 0, sizeof(*driver));
@@ -136,8 +146,14 @@ QLDispDriver *ql_disp_mem_create(ql_coord_t width, ql_coord_t height, QLColorFor
     if (mem == NULL)
         return NULL;
 
-    uint32_t stride = (uint32_t)width * bytes * 4u;   /* 故意带冗余，顺带验证 stride 支持 */
-    uint32_t size = stride * (uint32_t)height;
+    const uint64_t stride64 = (uint64_t)width * (uint64_t)bytes * 4u;   /* 故意带冗余，顺带验证 stride 支持 */
+    const uint64_t size64 = stride64 * (uint64_t)height;
+    if (stride64 > UINT32_MAX || size64 > (uint64_t)SIZE_MAX || size64 == 0) {
+        ql_mem_free(mem);
+        return NULL;
+    }
+    const uint32_t stride = (uint32_t)stride64;
+    const uint32_t size = (uint32_t)size64;
     mem->pixels = (uint8_t *)ql_mem_calloc(1, size);
     if (mem->pixels == NULL) {
         ql_mem_free(mem);
@@ -259,16 +275,25 @@ ql_err_t ql_disp_mem_save_ppm(QLDispDriver *driver, const char *path)
         return QL_ERR_INVAL;
     }
 
-    fprintf(fp, "P6\n%d %d\n255\n", (int)driver->width, (int)driver->height);
-    for (ql_coord_t y = 0; y < driver->height; y++) {
+    int ok = (fprintf(fp, "P6\n%d %d\n255\n", (int)driver->width, (int)driver->height) > 0);
+    for (ql_coord_t y = 0; ok && y < driver->height; y++) {
         for (ql_coord_t x = 0; x < driver->width; x++) {
             ql_color_t c = ql_disp_mem_pixel(driver, x, y);
-            fputc((int)QL_COLOR_GET_R(c), fp);
-            fputc((int)QL_COLOR_GET_G(c), fp);
-            fputc((int)QL_COLOR_GET_B(c), fp);
+            if (fputc((int)QL_COLOR_GET_R(c), fp) == EOF ||
+                fputc((int)QL_COLOR_GET_G(c), fp) == EOF ||
+                fputc((int)QL_COLOR_GET_B(c), fp) == EOF) {
+                ok = 0;
+                break;
+            }
         }
     }
 
-    fclose(fp);
+    if (fclose(fp) != 0)
+        ok = 0;
+
+    if (!ok) {
+        QL_LOGE("ql_disp_mem_save_ppm: 写入 %s 失败（磁盘或文件系统错误）", path);
+        return QL_ERR_INVAL;
+    }
     return QL_OK;
 }

@@ -355,6 +355,48 @@ QL_TEST_BEGIN("test_image")
         /* 截断的文件：不猜，直接失败 */
         req.len = 60;
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+
+        /*
+         * 16 位 BI_BITFIELDS（RGB565）：以前直接 UNSUPPORTED；
+         * 通道掩码也不能当成固定 0x00FF0000 那套来移位。
+         */
+        {
+            static uint8_t b16[66 + 4];
+            memset(b16, 0, sizeof(b16));
+            b16[0] = 'B'; b16[1] = 'M';
+            v32 = sizeof(b16);
+            memcpy(b16 + 2, &v32, 4);
+            v32 = 66;                     /* bfOffBits：头部 54 + 3 个掩码 */
+            memcpy(b16 + 10, &v32, 4);
+            v32 = 40;
+            memcpy(b16 + 14, &v32, 4);
+            i32 = 1;
+            memcpy(b16 + 18, &i32, 4);
+            memcpy(b16 + 22, &i32, 4);
+            v16 = 1;
+            memcpy(b16 + 26, &v16, 2);
+            v16 = 16;
+            memcpy(b16 + 28, &v16, 2);
+            v32 = 3;                      /* BI_BITFIELDS */
+            memcpy(b16 + 30, &v32, 4);
+            v32 = sizeof(b16);
+            memcpy(b16 + 34, &v32, 4);
+            v32 = 0xF800u; memcpy(b16 + 54, &v32, 4);
+            v32 = 0x07E0u; memcpy(b16 + 58, &v32, 4);
+            v32 = 0x001Fu; memcpy(b16 + 62, &v32, 4);
+            v16 = 0xF800u;                /* 红 */
+            memcpy(b16 + 66, &v16, 2);
+
+            req.data = b16;
+            req.len = sizeof(b16);
+            req.out_format = QL_IMAGE_RGBA8888;
+            QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
+            QL_CHECK_EQ((int)img.w, 1);
+            QL_CHECK_EQ((int)img.px[0], 0xFF);
+            QL_CHECK_EQ((int)img.px[1], 0x00);
+            QL_CHECK_EQ((int)img.px[2], 0x00);
+            ql_mem_free((void *)img.px);
+        }
 #else
         /* 这个构建把 BMP 解码器裁了：同一份字节必须明确说"不支持"，不猜 */
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_UNSUPPORTED);
@@ -376,6 +418,9 @@ QL_TEST_BEGIN("test_image")
         qoi[p++] = 0xFE; qoi[p++] = 0x00; qoi[p++] = 0xFF; qoi[p++] = 0x00;  /* 绿 */
         qoi[p++] = 0xFE; qoi[p++] = 0x00; qoi[p++] = 0x00; qoi[p++] = 0xFF;  /* 蓝 */
         qoi[p++] = 0xFE; qoi[p++] = 0xFF; qoi[p++] = 0xFF; qoi[p++] = 0xFF;  /* 白 */
+        /* 规范要求的 8 字节结束标记：00×7 + 01 */
+        qoi[p++] = 0x00; qoi[p++] = 0x00; qoi[p++] = 0x00; qoi[p++] = 0x00;
+        qoi[p++] = 0x00; qoi[p++] = 0x00; qoi[p++] = 0x00; qoi[p++] = 0x01;
 
         QLImageDecodeReq req;
         memset(&req, 0, sizeof(req));
@@ -397,6 +442,12 @@ QL_TEST_BEGIN("test_image")
         memcpy(qoi + 4, &bw, 4);
         memcpy(qoi + 8, &bh, 4);
         req.len = 14 + 4;
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+
+        /* 结束标记缺失：像素够也不能当成功（规范要求 00×7 + 01） */
+        memcpy(qoi + 4, &w, 4);
+        memcpy(qoi + 8, &h, 4);
+        req.len = p - 1;
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
 #else
         QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_UNSUPPORTED);
@@ -834,6 +885,39 @@ QL_TEST_BEGIN("test_image")
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
+    }
+
+    /* ---------- 21. 运行时解码预算：高分辨率壁纸靠它放开 --- */
+    /*
+     * 默认预算是 `QL_CFG_IMAGE_MAX_DECODED_BYTES`（16MB）；桌面应用读 4K/竖屏壁纸
+     * 时用 `ql_image_set_decode_budget()` 临时放开。RAW 的 len 是**像素字节**，
+     * 所以这条路径也必须受同一预算约束。
+     */
+    {
+        static uint8_t raw[100 * 100 * 4];        /* 40KB */
+        QLImageDecodeReq req;
+        memset(&req, 0, sizeof(req));
+        req.data = raw;
+        req.len = sizeof(raw);
+        req.src_format = QL_IMAGE_SRC_RAW;
+        req.pixel_format = QL_IMAGE_RGBA8888;
+        req.w = 100;
+        req.h = 100;
+
+        QLImage img;
+        QL_CHECK_EQ(ql_image_decode_budget(), (size_t)QL_CFG_IMAGE_MAX_DECODED_BYTES);
+
+        ql_image_set_decode_budget(16u * 1024u);   /* 比 40KB 小 → 拒绝 */
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_ERR_INVAL);
+
+        ql_image_set_decode_budget(64u * 1024u);   /* 放开 → 成功（RAW 零拷贝） */
+        QL_CHECK_EQ(ql_image_decode(&req, &img), QL_OK);
+        QL_CHECK_EQ((int)img.w, 100);
+        QL_CHECK_EQ(img.owned, 0);
+        QL_CHECK(img.px == raw);
+
+        ql_image_set_decode_budget(0);             /* 恢复默认 */
+        QL_CHECK_EQ(ql_image_decode_budget(), (size_t)QL_CFG_IMAGE_MAX_DECODED_BYTES);
     }
 
     ql_disp_mem_destroy(s_disp);

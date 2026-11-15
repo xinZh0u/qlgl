@@ -305,7 +305,9 @@ static void sample_once(pid_t pid, double t0, unsigned long long *last_ticks,
         s->gpu_proc_pct = 0;
     } else if (dt > 0) {
         s->cpu_pct = (double)(ticks - *last_ticks) / (double)hz / dt * 100.0;
-        s->gpu_proc_pct = (double)(gpu - *last_gpu) / (dt * 1e9) * 100.0;
+        /* 关闭 DRM fd / 重建 GPU 上下文会让累计值变小：不能当无符号减法 */
+        const unsigned long long gpu_delta = (gpu >= *last_gpu) ? (gpu - *last_gpu) : 0;
+        s->gpu_proc_pct = (double)gpu_delta / (dt * 1e9) * 100.0;
     }
     s->gpu_busy_pct = sysfs_gpu_busy();
     proc_mem_threads(pid, &s->rss_mb, &s->threads);

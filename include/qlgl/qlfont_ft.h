@@ -68,6 +68,13 @@ int ql_font_set_default_file(const char *path, int face_index);
 /* 当前默认字体文件；没设置返回 NULL */
 const char *ql_font_default_file(void);
 
+/*
+ * 桌面自动字体：`qlgl_init()` 调用。`QLGL_FONT` 环境变量优先，否则按常见
+ * 系统路径找一份能显示中文的字体；找不到就保持内置位图字体（不报错）。
+ * MCU（没有 FreeType）不会调用到这里；应用自己调过 set_default_file 时不动。
+ */
+void ql_font_autoload_system(void);
+
 /* 字形缓存上限（超过后新字形不再生成，日志告警一次） */
 void ql_font_ft_set_cache_limit(uint32_t glyphs);
 

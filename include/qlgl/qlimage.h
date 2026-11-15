@@ -81,6 +81,19 @@ typedef struct {
     uint16_t       w, h;         /* **输入**是 RAW 时的尺寸（其他格式由文件头决定） */
 } QLImageDecodeReq;
 
+/*
+ * 解码后的像素预算（字节）。`max_decoded_bytes == 0` = 用
+ * `QL_CFG_IMAGE_MAX_DECODED_BYTES` 的编译期默认值。
+ *
+ * 桌面应用读高分辨率壁纸时（4K RGBA 就是 33MB）可以在**局部**放开：
+ *     ql_image_set_decode_budget(128u << 20);
+ *     ql_image_decode(...);
+ *     ql_image_set_decode_budget(0);      // 恢复默认
+ * MCU 上不要动它（默认值本来就按小内存调过）。
+ */
+void   ql_image_set_decode_budget(size_t max_decoded_bytes);
+size_t ql_image_decode_budget(void);
+
 /* 返回 QL_OK / QL_ERR_INVAL / QL_ERR_NOMEM / QL_ERR_UNSUPPORTED */
 int ql_image_decode(const QLImageDecodeReq *req, QLImage *out);
 

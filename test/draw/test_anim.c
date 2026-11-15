@@ -40,6 +40,20 @@ static void on_done(void *user)
     s_done_count++;
 }
 
+/* done 回调里用同一个 key 起下一条动画 */
+static QLAnimKey    *s_restart_key;
+static QLAnimValue   s_restart_to;
+static int           s_restart_done;
+
+static void on_done_restart(void *user)
+{
+    QL_UNUSED(user);
+    s_restart_done++;
+    if (s_restart_done == 1)
+        ql_anim_start(s_restart_key, &s_restart_to, 100, QL_EASE_LINEAR, 0,
+                      on_apply, on_done_restart, NULL);
+}
+
 /* 颜色过渡：r 通道从 0 到 255 */
 static void color_target(QLAnimValue *v, float r, float g, float b, float a)
 {
@@ -228,6 +242,33 @@ QL_TEST_BEGIN("test_anim")
         QL_CHECK_EQ(tick_to(0xFFFFFFF0u + 50u), 1);
         QL_CHECK(fabsf(s_last.v[0] - 50.0f) < 0.5f);
         QL_CHECK_EQ(tick_to(0xFFFFFFF0u + 100u), 0);
+        ql_anim_reset();
+    }
+
+    /* ---------- 8. 完成回调里重启同一 key：新动画不能被收尾逻辑清掉 ---------- */
+    {
+        ql_anim_reset();
+        QLAnimKey key;
+        memset(&key, 0, sizeof(key));
+        color_target(&key.cur, 0, 0, 0, 0);
+        color_target(&s_restart_to, 100, 0, 0, 0);
+        s_restart_key = &key;
+        s_restart_done = 0;
+
+        s_now = 0;
+        QL_CHECK_EQ(ql_anim_start(&key, &s_restart_to, 100, QL_EASE_LINEAR, 0,
+                                  on_apply, on_done_restart, NULL), QL_OK);
+
+        QL_CHECK_EQ(tick_to(100), 0);            /* 第一条结束，done 里起了第二条 */
+        QL_CHECK_EQ(s_restart_done, 1);
+        QL_CHECK_EQ(ql_anim_active(), 1);        /* 新动画还活着 */
+        QL_CHECK_EQ(key.used, 1);
+
+        QL_CHECK_EQ(tick_to(150), 1);            /* 新动画正常推进 */
+        QL_CHECK_EQ(tick_to(200), 0);            /* 新动画结束 */
+        QL_CHECK_EQ(s_restart_done, 2);
+        QL_CHECK_EQ(ql_anim_active(), 0);
+        QL_CHECK_EQ(key.used, 0);
         ql_anim_reset();
     }
 

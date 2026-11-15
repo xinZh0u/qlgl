@@ -12,8 +12,8 @@
 /* 头部 16 字节：既记录大小，也保证 payload 与 16 字节对齐 */
 typedef struct {
     uint32_t magic;
-    uint32_t size;
-    uint64_t reserved;
+    uint32_t reserved;
+    uint64_t size;        /* 64 位：size_t 参数不能截断成 32 位 */
 } QLMemHeader;
 
 #define QL_MEM_MAGIC    0x514C4D45u   /* 'QLME' */
@@ -38,16 +38,19 @@ static void ensure_allocator(void)
 
 void ql_mem_set_allocator(const QLAllocator *alloc)
 {
-    if (alloc == NULL) {
+    /* 三个回调必须来自同一个分配器族；缺任何一个就整组回落默认，
+     * 否则会出现"自定义 alloc 得到的指针交给默认 free"这类混用。 */
+    if (alloc == NULL || alloc->alloc == NULL || alloc->realloc == NULL ||
+        alloc->free == NULL) {
+        if (alloc != NULL)
+            QL_LOGW("ql_mem_set_allocator: alloc/realloc/free 必须同时提供，"
+                    "整组回落到默认 malloc 族");
         s_alloc.alloc   = default_alloc;
         s_alloc.realloc = default_realloc;
         s_alloc.free    = default_free;
         return;
     }
     s_alloc = *alloc;
-    if (s_alloc.alloc == NULL)   s_alloc.alloc   = default_alloc;
-    if (s_alloc.free == NULL)    s_alloc.free    = default_free;
-    if (s_alloc.realloc == NULL) s_alloc.realloc = default_realloc;
 }
 
 void *ql_mem_alloc(size_t size)
@@ -58,12 +61,14 @@ void *ql_mem_alloc(size_t size)
     ensure_allocator();
 
 #if QL_CFG_MEM_TRACK
+    if (size > SIZE_MAX - sizeof(QLMemHeader))   /* 头部加法溢出 */
+        return NULL;
     size_t total = sizeof(QLMemHeader) + size;
     QLMemHeader *header = (QLMemHeader *)s_alloc.alloc(total);
     if (header == NULL)
         return NULL;
     header->magic = QL_MEM_MAGIC;
-    header->size = (uint32_t)size;
+    header->size = (uint64_t)size;
     header->reserved = 0;
     s_stats.alloc_count++;
     s_stats.bytes_live += size;
@@ -130,7 +135,7 @@ void *ql_mem_realloc(void *ptr, size_t size)
         QL_LOGE("ql_mem_realloc: bad header at %p", ptr);
         return NULL;
     }
-    size_t old_size = header->size;
+    size_t old_size = (size_t)header->size;
     void *fresh = ql_mem_alloc(size);
     if (fresh == NULL)
         return NULL;

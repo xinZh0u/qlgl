@@ -20,7 +20,8 @@ typedef struct {
     size_t bytes_peak;    /* 峰值存活字节数 */
 } QLMemStats;
 
-/* 必须在 qlgl_init() 之前调用；传 NULL 恢复默认 malloc 族 */
+/* 必须在 qlgl_init() 之前调用；传 NULL 恢复默认 malloc 族。
+ * 三个回调必须同时非空（同一分配器族）；任一为 NULL 时整组回落到默认族。 */
 void ql_mem_set_allocator(const QLAllocator *alloc);
 
 void *ql_mem_alloc(size_t size);

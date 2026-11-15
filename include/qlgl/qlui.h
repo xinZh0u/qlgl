@@ -543,9 +543,9 @@ typedef struct {
     /*
      * `backdrop-filter: refract(<N>px)`（v38），0 = 没写。
      *
-     * 在轮廓附近把采样点往外推一圈，玻璃边缘于是有"透镜"的厚度感 ——
-     * 只有 blur 的玻璃是一块均匀的毛玻璃，折射才让它像**有形状的**玻璃。
-     * 半径越大轮廓那一圈弯折越明显；做成圆角/圆形时就是 Apple 那套液态玻璃。
+     * 整块玻璃像一枚厚透镜：位移随归一化半径增长（0.46t + 0.54t⁶），轮廓处
+     * 最大、方向**朝圆心**（与参考稿那张法线图一致）。只有 blur 的玻璃是一块
+     * 均匀的毛玻璃，折射才让它像**有形状的**玻璃。N 取 ≈ 0.48 × 盒子尺寸。
      */
     uint8_t     backdrop_refract;
 
@@ -1183,7 +1183,8 @@ static inline uint8_t ql_ui_style_object_fit(const QLUIStyle *s)
 #define QL_UI_TRANS_RADIUS  0x10u   /* border-radius（圆角/圆形揭示） */
 #define QL_UI_TRANS_XFORM   0x20u   /* transform：translate + scale（一起动，拆开没有意义） */
 #define QL_UI_TRANS_CLIP    0x40u   /* clip-path 半径（圆形揭示） */
-#define QL_UI_TRANS_ALL     0x7Fu
+#define QL_UI_TRANS_BACKDROP 0x80u  /* backdrop-filter：blur / saturate / refract 一起插值 */
+#define QL_UI_TRANS_ALL     0xFFu
 
 /* ----- 关键帧动画（@keyframes）的静态表 ----- */
 
@@ -2284,5 +2285,28 @@ const char *ql_ui_doc_last_error(void);
  * ql_ui_free 会一并释放，调用方不需要再管 doc。
  */
 QLUIRoot *ql_ui_load_file(const char *path);
+
+/*
+ * 用 CPU 光栅把当前界面渲染成一张 PPM（P6）。内部先按 w×h 布局。
+ * 不依赖 GL / 窗口，CI 与文档截图用。成功返回 1。
+ */
+int ql_ui_dump_ppm(QLUIRoot *ui, ql_coord_t w, ql_coord_t h, const char *path);
+
+/*
+ * 运行期文本入口的别名：`ql_ui_load_html()` == `ql_ui_load_text()`。
+ * 语义：解析 HTML/CSS，返回 QLUIDoc（**不**建树，调用方随后 `ql_ui_build()`）。
+ */
+QLUIDoc *ql_ui_load_html(const char *html, const char *css);
+
+/*
+ * 直接读 HTML/CSS 两个文件并建好运行期树（doc 归 root 所有，`ql_ui_free` 一并释放）。
+ * 这是 hello world 用的最高层入口：
+ *
+ *     QLUIRoot *ui = ql_ui_load_html_file("index.html", "style.css");
+ *
+ * 只 build，不 layout：布局尺寸由窗口决定（`ql_window_bind_ui()` 会做一次）。
+ * 失败返回 NULL，解析错误见 `ql_ui_text_last_error()`。
+ */
+QLUIRoot *ql_ui_load_html_file(const char *html_path, const char *css_path);
 
 #endif /* QLGL_UI_H */

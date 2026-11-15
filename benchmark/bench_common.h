@@ -148,6 +148,21 @@ static void bench_opts_parse(BenchOpts *o, int argc, char **argv)
         else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
             bench_usage(argv[0]);
             exit(0);
+        } else if (strcmp(a, "--backend") == 0 || strcmp(a, "--scene") == 0 ||
+                   strcmp(a, "--mode") == 0 || strcmp(a, "--scale") == 0 ||
+                   strcmp(a, "--frames") == 0 || strcmp(a, "--seconds") == 0 ||
+                   strcmp(a, "--size") == 0 || strcmp(a, "--vsync") == 0 ||
+                   strcmp(a, "--retained") == 0 || strcmp(a, "--fps-cap") == 0 ||
+                   strcmp(a, "--dump") == 0) {
+            /* 已知选项但没跟值：以前会静默用默认值跑 */
+            fprintf(stderr, "benchmark: 选项 %s 缺少参数\n", a);
+            bench_usage(argv[0]);
+            exit(2);
+        } else {
+            /* 拼错的参数以前会被忽略，最后报告看上去仍然正常 */
+            fprintf(stderr, "benchmark: 未知参数 %s\n", a);
+            bench_usage(argv[0]);
+            exit(2);
         }
     }
     /* 两个都是"上限"：谁先到就停。至少要有一个，否则会跑到关窗口 */

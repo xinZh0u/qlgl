@@ -17,21 +17,15 @@ int ql_rect_contains_round(QLRect r, ql_coord_t px, ql_coord_t py, ql_coord_t ra
     if (radius <= 0)
         return 1;
 
-    ql_coord_t ix1 = r.x + radius;
-    ql_coord_t iy1 = r.y + radius;
-    ql_coord_t ix2 = ql_rect_right(r) - 1 - radius;
-    ql_coord_t iy2 = ql_rect_bottom(r) - 1 - radius;
+    const ql_coord_t ix1 = ql_coord_add_sat(r.x, radius);
+    const ql_coord_t iy1 = ql_coord_add_sat(r.y, radius);
+    const ql_coord_t ix2 = ql_coord_sub_sat(ql_coord_sub_sat(ql_rect_right(r), 1), radius);
+    const ql_coord_t iy2 = ql_coord_sub_sat(ql_coord_sub_sat(ql_rect_bottom(r), 1), radius);
 
-    ql_coord_t dx = 0;
-    ql_coord_t dy = 0;
-    if (px < ix1)
-        dx = ix1 - px;
-    else if (px > ix2)
-        dx = px - ix2;
-    if (py < iy1)
-        dy = iy1 - py;
-    else if (py > iy2)
-        dy = py - iy2;
+    /* 全部扩到 64 位：半径超过 46340 时 dx*dx + dy*dy 会溢出 int32 */
+    const int64_t dx = (px < ix1) ? (int64_t)ix1 - px : (px > ix2 ? (int64_t)px - ix2 : 0);
+    const int64_t dy = (py < iy1) ? (int64_t)iy1 - py : (py > iy2 ? (int64_t)py - iy2 : 0);
+    const int64_t rr = (int64_t)radius * (int64_t)radius;
 
-    return dx * dx + dy * dy <= radius * radius;
+    return dx * dx + dy * dy <= rr;
 }

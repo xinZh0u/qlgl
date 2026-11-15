@@ -224,6 +224,11 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
 {
     if (doc == NULL || doc->node_count == 0 || doc->nodes == NULL)
         return NULL;
+    /* 有节点就必须有样式表：下面会把 styles[0] 当兜底解引用 */
+    if (doc->styles == NULL || doc->style_count == 0) {
+        QL_LOGE("ql_ui_build: doc has %u nodes but no style table", (unsigned)doc->node_count);
+        return NULL;
+    }
 
     QLUIRoot *ui = (QLUIRoot *)ql_mem_calloc(1, sizeof(QLUIRoot));
     if (ui == NULL)
@@ -355,8 +360,10 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
             /* 初始值 = 解析期带进来的文本（`value` 属性或 `<textarea>` 的内容） */
             const char *init = rt->text;
             size_t n = (init != NULL) ? strlen(init) : 0u;
-            if (n > (size_t)cap - 1u)
+            if (n > (size_t)cap - 1u) {
                 n = (size_t)cap - 1u;
+                n = ql_utf8_valid_len(init, n);   /* 别把多字节字符劈开 */
+            }
             if (n > 0)
                 memcpy(in->buf, init, n);
             in->buf[n] = '\0';
@@ -608,6 +615,94 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
 QLUIRoot *ql_ui_build(const QLUIDoc *doc)
 {
     return build_internal(doc, 0);
+}
+
+/* 读整个文件（HTML/CSS 入口用；失败返回 NULL） */
+static char *read_text_file(const char *path)
+{
+    if (path == NULL)
+        return NULL;
+    FILE *f = fopen(path, "rb");
+    if (f == NULL)
+        return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    const long n = ftell(f);
+    if (n < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    char *buf = (char *)ql_mem_alloc((size_t)n + 1u);
+    if (buf == NULL) {
+        fclose(f);
+        return NULL;
+    }
+    const size_t got = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[got] = '\0';
+    return buf;
+}
+
+QLUIDoc *ql_ui_load_html(const char *html, const char *css)
+{
+    return ql_ui_load_text(html, css);
+}
+
+QLUIRoot *ql_ui_load_html_file(const char *html_path, const char *css_path)
+{
+    char *html = read_text_file(html_path);
+    if (html == NULL) {
+        QL_LOGE("ui: cannot read \"%s\"", html_path != NULL ? html_path : "(null)");
+        return NULL;
+    }
+    char *css = (css_path != NULL) ? read_text_file(css_path) : NULL;
+    if (css_path != NULL && css == NULL) {
+        QL_LOGE("ui: cannot read \"%s\"", css_path);
+        ql_mem_free(html);
+        return NULL;
+    }
+
+    QLUIDoc *doc = ql_ui_load_text(html, css != NULL ? css : "");
+    ql_mem_free(html);
+    ql_mem_free(css);
+    if (doc == NULL) {
+        QL_LOGE("ui: parse failed: %s", ql_ui_text_last_error());
+        return NULL;
+    }
+
+    QLUIRoot *ui = build_internal(doc, 1);   /* root 持有 doc */
+    if (ui == NULL)
+        ql_ui_doc_free(doc);
+    return ui;
+}
+
+int ql_ui_dump_ppm(QLUIRoot *ui, ql_coord_t w, ql_coord_t h, const char *path)
+{
+    if (ui == NULL || path == NULL || w <= 0 || h <= 0)
+        return 0;
+    ql_ui_layout(ui, w, h);
+
+    QLDispDriver *disp = ql_disp_mem_create(w, h, QL_COLOR_RGB888);
+    if (disp == NULL)
+        return 0;
+
+    QLCanvas canvas;
+    int ok = 0;
+    if (ql_canvas_from_disp(&canvas, disp) == QL_OK) {
+        ql_color_t bg = QL_COLOR_RGB(0xFF, 0xFF, 0xFF);
+        if (ui->node_count > 0) {
+            const QLUIStyle *s = ql_ui_node_style(&ui->nodes[0]);
+            if (s != NULL && s->bg_alpha > 0)
+                bg = s->bg_color;
+        }
+        ql_canvas_clear(&canvas, bg);
+        ql_ui_render_canvas(ui, &canvas);
+        ok = (ql_disp_mem_save_ppm(disp, path) == QL_OK);
+    }
+    ql_disp_mem_destroy(disp);
+    return ok;
 }
 
 QLUIRoot *ql_ui_load_file(const char *path)
@@ -8665,7 +8760,7 @@ void ql_ui_render_canvas(QLUIRoot *ui, QLCanvas *canvas)
      * 画布的 clip 是**设备像素**，而整棵 ui 树的坐标是 CSS px，所以要换回 CSS px
      * （近边向下、远边向上取整，保证覆盖全部设备像素）。
      */
-    ql_coord_t scale_fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+    ql_coord_t scale_fx = ql_canvas_scale_fx(canvas);
     ui->root_clip = ql_unscale_rect(canvas->clip, scale_fx);
     ui->root_clip_valid = 1;
 
@@ -9478,6 +9573,21 @@ static void trans_apply(void *user, const QLAnimValue *v)
                   ((float)t->to.clip_r - (float)t->from.clip_r) * p;
         t->style.clip_r = (uint16_t)kf_i16(r);
     }
+    /*
+     * backdrop-filter：三个参数一起插值。折射半径是"悬停变厚"的唯一来源，
+     * 不插值的话鼠标一放上去整块玻璃会瞬间跳一下（参考稿是 0.3s 的渐强）。
+     */
+    if ((t->props & QL_UI_TRANS_BACKDROP) != 0) {
+        t->style.backdrop_blur = kf_u8((float)t->from.backdrop_blur +
+                                       ((float)t->to.backdrop_blur -
+                                        (float)t->from.backdrop_blur) * p);
+        t->style.backdrop_sat = kf_u8((float)t->from.backdrop_sat +
+                                      ((float)t->to.backdrop_sat -
+                                       (float)t->from.backdrop_sat) * p);
+        t->style.backdrop_refract = kf_u8((float)t->from.backdrop_refract +
+                                          ((float)t->to.backdrop_refract -
+                                           (float)t->from.backdrop_refract) * p);
+    }
 
     /* 只把这一块标脏：主循环用 ql_ui_consume_dirty 拿到区域后局部重绘 */
     t->node->flags |= QL_UI_RT_DIRTY;
@@ -10115,15 +10225,13 @@ static int dirty_expand_for_blur(QLUIRoot *ui, QLRect *out, int n, int max)
                  */
                 QLRect g = node->paint_box;
                 /*
-                 * 毛玻璃的脏区还要再包住它**采样**的那一圈：模糊核 + 折射会读
-                 * 到盒子外面，只重绘盒子内部的话外圈读到的是上一帧的背景，
-                 * 玻璃边上就会出现一道对不上的接缝。口径与后端一致：
-                 * 模糊的支持半径 ≈ 3·σ，折射再往外套 refract 像素。
+                 * 毛玻璃的脏区要包住它**采样**的那一圈：模糊核会读到盒子外面，
+                 * 只重绘盒子内部的话外圈读到的是上一帧的背景，玻璃边上就会出现
+                 * 一道对不上的接缝。口径与后端一致：支持半径 ≈ 3·σ。
+                 * （折射朝圆心采样，不读盒子外面，不需要额外扩张。）
                  */
-                if (st->backdrop_blur > 0 || st->backdrop_refract > 0) {
-                    const ql_coord_t pad =
-                        (ql_coord_t)((int)st->backdrop_blur * 3 +
-                                     (int)st->backdrop_refract + 2);
+                if (st->backdrop_blur > 0) {
+                    const ql_coord_t pad = (ql_coord_t)((int)st->backdrop_blur * 3 + 2);
                     g = ql_rect_make(g.x - pad, g.y - pad, g.w + pad * 2,
                                      g.h + pad * 2);
                 }
@@ -10537,8 +10645,12 @@ void ql_ui_input_preedit_apply(QLUIRoot *ui, int chg_first, int chg_len,
         char ins[sizeof(ui->preedit)];
         const uint16_t ins_len = preedit_copy_in(ins, sizeof(ins), insert);
         size_t k = ins_len;
-        if (k > cap - 1u)
+        if (k > cap - 1u) {
             k = cap - 1u;
+            /* 截断点退回到码点边界：ins 已按合法前缀生成，ins[k] 一定可读 */
+            while (k > 0 && ((unsigned char)ins[k] & 0xC0u) == 0x80u)
+                k--;
+        }
         memcpy(ui->preedit + b0, ins, k);
         n = (uint16_t)(b0 + k);
     }
@@ -10665,8 +10777,10 @@ ql_err_t ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value
 
     size_t n = (value != NULL) ? strlen(value) : 0u;
     /* 容量按控件类型取：`<textarea>` 是 512，不是 `<input>` 的 96 */
-    if (n > (size_t)input_cap(in) - 1u)
+    if (n > (size_t)input_cap(in) - 1u) {
         n = (size_t)input_cap(in) - 1u;
+        n = ql_utf8_valid_len(value, n);   /* 截断点退到码点边界 */
+    }
     if (n > 0)
         memcpy(in->buf, value, n);
     in->buf[n] = '\0';

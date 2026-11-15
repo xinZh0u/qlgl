@@ -628,6 +628,23 @@ static FILE *open_out(const char *out_dir, const char *ident, const char *ext)
     return f;
 }
 
+/*
+ * 收尾：ferror 能看到所有 fprintf/fputc 是否失败过，fclose 能抓住最后的
+ * flush 失败（磁盘满 / 配额 / I/O 错）。任何一个失败都要让工具返回非 0，
+ * 否则生成的是残缺文件，直到编译器报语法错才暴露。
+ */
+static int close_out(FILE *f, const char *out_dir, const char *ident, const char *ext)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s%s", out_dir, ident, ext);
+    int ok = (ferror(f) == 0);
+    if (fclose(f) != 0)
+        ok = 0;
+    if (!ok)
+        fprintf(stderr, "qltext: 写出 \"%s\" 失败（磁盘或文件系统错误）\n", path);
+    return ok;
+}
+
 
 typedef struct {
     const char *html;
@@ -884,8 +901,8 @@ static int collect_assets(const QLUIDoc *doc, const Args *a, Assets *out)
     return 1;
 }
 
-static void write_source(const QLUIDoc *doc, const char *ident, const char *out_dir,
-                         const Assets *assets)
+static int write_source(const QLUIDoc *doc, const char *ident, const char *out_dir,
+                        const Assets *assets)
 {
     FILE *f = open_out(out_dir, ident, ".c");
     size_t pool_len = ql_ui_doc_text_pool_size(doc);
@@ -1333,10 +1350,10 @@ static void write_source(const QLUIDoc *doc, const char *ident, const char *out_
                 assets->count, (unsigned)assets->data_len, ident, ident);
     }
     fprintf(f, "};\n");
-    fclose(f);
+    return close_out(f, out_dir, ident, ".c");
 }
 
-static void write_header(const char *ident, const char *out_dir)
+static int write_header(const char *ident, const char *out_dir)
 {
     FILE *f = open_out(out_dir, ident, ".h");
 
@@ -1357,7 +1374,7 @@ static void write_header(const char *ident, const char *out_dir)
             "\n"
             "#endif /* QLUI_%s_H */\n",
             guard, guard, ident, guard);
-    fclose(f);
+    return close_out(f, out_dir, ident, ".h");
 }
 
 /*
@@ -1365,7 +1382,7 @@ static void write_header(const char *ident, const char *out_dir)
  * blob 的序列化格式只在 C 侧实现一次（src/ui/qlui_blob.c），这里只负责
  * "把生成的 doc 交给工具"，不重复实现二进制布局。
  */
-static void write_blob_helper(const char *ident, const char *out_dir)
+static int write_blob_helper(const char *ident, const char *out_dir)
 {
     FILE *f = open_out(out_dir, ident, "_blob.c");
     fprintf(f,
@@ -1380,7 +1397,7 @@ static void write_blob_helper(const char *ident, const char *out_dir)
             "    return &%s_doc;\n"
             "}\n",
             ident, ident);
-    fclose(f);
+    return close_out(f, out_dir, ident, "_blob.c");
 }
 
 /* ------------------------------------------------------------------ */
@@ -1702,12 +1719,15 @@ int main(int argc, char **argv)
         }
     } else {
         ensure_dir(a.out);
-        write_source(doc, ident, a.out, &assets);
-        write_header(ident, a.out);
-        write_blob_helper(ident, a.out);
-        printf("qltext: %s -> %s/%s.c（%u 节点，%u 样式，%zu 字节文本）\n", sname,
-               a.out, ident, (unsigned)doc->node_count,
-               (unsigned)doc->style_count, pool);
+        if (!write_source(doc, ident, a.out, &assets) ||
+            !write_header(ident, a.out) ||
+            !write_blob_helper(ident, a.out)) {
+            rc = 1;
+        } else {
+            printf("qltext: %s -> %s/%s.c（%u 节点，%u 样式，%zu 字节文本）\n", sname,
+                   a.out, ident, (unsigned)doc->node_count,
+                   (unsigned)doc->style_count, pool);
+        }
     }
 
     ql_ui_doc_free(doc);

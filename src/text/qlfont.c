@@ -199,14 +199,19 @@ uint8_t ql_font_glyph_alpha(const QLFont *font, const QLGlyph *glyph, int32_t x,
     }
 }
 
-int32_t ql_utf8_decode(const char *text, uint32_t *codepoint)
+/*
+ * 校验并解码一个 UTF-8 序列；成功返回字节数（1..4）并写入 *codepoint，
+ * 非法/长度不足返回 0。
+ *
+ * 除了 continuation 字节的形状，还要拒绝：过长编码（overlong）、
+ * 代理项（U+D800..U+DFFF）与超过 U+10FFFF 的码点。
+ */
+static int32_t utf8_seq(const uint8_t *s, size_t n, uint32_t *codepoint)
 {
-    if (text == NULL || codepoint == NULL)
+    if (n == 0)
         return 0;
 
-    const uint8_t *s = (const uint8_t *)text;
-    uint8_t b0 = s[0];
-
+    const uint8_t b0 = s[0];
     if (b0 < 0x80u) {
         *codepoint = b0;
         return 1;
@@ -215,53 +220,79 @@ int32_t ql_utf8_decode(const char *text, uint32_t *codepoint)
     int32_t need = 0;
     uint32_t cp = 0;
     if ((b0 & 0xE0u) == 0xC0u) {
-        need = 1; cp = b0 & 0x1Fu;
+        need = 1;
+        cp = b0 & 0x1Fu;
     } else if ((b0 & 0xF0u) == 0xE0u) {
-        need = 2; cp = b0 & 0x0Fu;
+        need = 2;
+        cp = b0 & 0x0Fu;
     } else if ((b0 & 0xF8u) == 0xF0u) {
-        need = 3; cp = b0 & 0x07u;
+        if (b0 > 0xF4u)                 /* F5..F7 永远不合法 */
+            return 0;
+        need = 3;
+        cp = b0 & 0x07u;
     } else {
-        *codepoint = 0xFFFDu;
-        return 1;
+        return 0;                       /* 孤立续字节 / 非法首字节 */
     }
 
+    if ((size_t)need + 1u > n)
+        return 0;                       /* 缓冲区在这里截断 */
+
     for (int32_t i = 1; i <= need; i++) {
-        uint8_t b = s[i];
-        if ((b & 0xC0u) != 0x80u) {
-            *codepoint = 0xFFFDu;
-            return 1;                 /* 截断：只消费当前字节，避免死循环 */
-        }
+        const uint8_t b = s[i];
+        if ((b & 0xC0u) != 0x80u)
+            return 0;
         cp = (cp << 6) | (uint32_t)(b & 0x3Fu);
     }
 
+    /* 最短编码：2 字节至少 0x80，3 字节至少 0x800，4 字节至少 0x10000 */
+    if ((need == 1 && cp < 0x80u) || (need == 2 && cp < 0x800u) ||
+        (need == 3 && cp < 0x10000u))
+        return 0;
+    if (cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu))
+        return 0;
+
     *codepoint = cp;
     return need + 1;
+}
+
+int32_t ql_utf8_decode_n(const char *text, size_t len, uint32_t *codepoint)
+{
+    if (text == NULL || codepoint == NULL || len == 0)
+        return 0;
+
+    const int32_t used = utf8_seq((const uint8_t *)text, len, codepoint);
+    if (used > 0)
+        return used;
+
+    *codepoint = 0xFFFDu;
+    return 1;                 /* 非法：只消费当前字节，避免死循环 */
+}
+
+int32_t ql_utf8_decode(const char *text, uint32_t *codepoint)
+{
+    if (text == NULL || codepoint == NULL)
+        return 0;
+
+    /*
+     * 无长度版本按规范是"NUL 结尾字符串"。遇到截断的首字节时，utf8_seq
+     * 会在读到 '\0' 的 continuation 检查处失败，不会越过结尾。
+     */
+    return ql_utf8_decode_n(text, 4u, codepoint);
 }
 
 size_t ql_utf8_valid_len(const char *text, size_t len)
 {
     if (text == NULL)
         return 0;
+
+    const uint8_t *s = (const uint8_t *)text;
     size_t i = 0;
     while (i < len) {
-        const unsigned char c = (unsigned char)text[i];
-        size_t clen;
-        if (c < 0x80u)
-            clen = 1;
-        else if ((c & 0xE0u) == 0xC0u)
-            clen = 2;
-        else if ((c & 0xF0u) == 0xE0u)
-            clen = 3;
-        else if ((c & 0xF8u) == 0xF0u)
-            clen = 4;
-        else
-            return i;                  /* 孤儿续字节 / 非法首字节 */
-        if (i + clen > len)
-            return i;                  /* 尾巴被截断 */
-        for (size_t k = 1; k < clen; k++)
-            if (((unsigned char)text[i + k] & 0xC0u) != 0x80u)
-                return i;
-        i += clen;
+        uint32_t cp = 0;
+        const int32_t used = utf8_seq(s + i, len - i, &cp);
+        if (used == 0)
+            return i;                  /* 非法字节或尾巴被截断 */
+        i += (size_t)used;
     }
     return i;
 }
@@ -269,6 +300,9 @@ size_t ql_utf8_valid_len(const char *text, size_t len)
 int32_t ql_utf8_encode(uint32_t codepoint, char *buf)
 {
     if (buf == NULL)
+        return 0;
+    /* 只接受 Unicode scalar value：代理项与超出 U+10FFFF 的值一律不编 */
+    if (codepoint > 0x10FFFFu || (codepoint >= 0xD800u && codepoint <= 0xDFFFu))
         return 0;
 
     if (codepoint < 0x80u) {

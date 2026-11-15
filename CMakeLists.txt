@@ -57,11 +57,10 @@ if(QLGL_IMG_PRESET STREQUAL "raw-only")
     set(_ql_preset_qoi 0)
     set(_ql_preset_png 0)
     set(_ql_preset_platform 0)
+    set(_ql_preset_gif 0)          # raw-only 只吃构建期 RAW：GIF 也不该编进来
 elseif(QLGL_IMG_PRESET STREQUAL "lean")
     set(_ql_preset_png 0)
     set(_ql_preset_platform 0)
-    set(_ql_preset_gif 0)
-elseif(QLGL_IMG_PRESET STREQUAL "raw-only")
     set(_ql_preset_gif 0)
 endif()
 if(NOT DEFINED QL_FEAT_IMG_BMP)
@@ -278,9 +277,11 @@ if(QLGL_BUILD_TESTS AND TARGET qltext)
     endif()
 endif()
 if(NOT QLGL_BUILD_TEXT_PARSER)
-    # 全库唯一吃外部文本的地方；不编它就没有任何运行期解析
-    list(REMOVE_ITEM QLGL_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/qlui_parse.c)
-    target_sources(qlgl PRIVATE ${QLGL_SRC})
+    # 全库唯一吃外部文本的地方；不编它就没有任何运行期解析。
+    # 注意：不能用 list(REMOVE_ITEM) —— qlgl 目标在 add_library 时已经把
+    # QLGL_SRC 全量收进去了，改列表不会从已有目标里移除源文件。
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/ui/qlui_parse.c
+        PROPERTIES HEADER_FILE_ONLY TRUE)
 endif()
 
 option(QLGL_BUILD_WAYLAND "构建 Linux Wayland 窗口后端" ON)

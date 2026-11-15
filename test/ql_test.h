@@ -23,7 +23,10 @@ static int ql_test_failures;
         if (qlgl_init() != QL_OK) {                                          \
             printf("  [FAIL] qlgl_init 失败\n");                             \
             return 1;                                                        \
-        }
+        }                                                                    \
+        /* 测试固定用内置位图字体：桌面构建的 qlgl_init() 会自动找系统字体，    \
+         * 文本度量会依赖机器上装了什么字体，也会在退出前留一份字体缓存。 */  \
+        ql_font_set_default_file(NULL, -1);
 
 #define QL_TEST_END()                                                        \
         {                                                                    \

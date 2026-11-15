@@ -253,7 +253,8 @@ static int builtin_shape_raw(const QLFont *font, const char *text, int32_t len,
 
     while ((len < 0 ? text[i] != '\0' : i < len) && text[i] != '\0') {
         uint32_t cp = 0;
-        const int32_t used = ql_utf8_decode(text + i, &cp);
+        const int32_t used = (len < 0) ? ql_utf8_decode(text + i, &cp)
+                                       : ql_utf8_decode_n(text + i, (size_t)(len - i), &cp);
         if (used <= 0)
             break;
 
@@ -447,6 +448,15 @@ static int32_t hb_shape_run(const QLFont *font, const char *text, int32_t from, 
     }
 
     ql_coord_t pen = (pen_io != NULL) ? *pen_io : 0;
+
+    /*
+     * 先把这一行用到的字形全部登记进字体缓存，再取指针：
+     * 动态 FreeType 字体插入新字形时会扩容并 memmove 已有 QLGlyph，
+     * 逐次"查找→保存指针"会让前面保存的指针在后面的插入中失效。
+     */
+    for (unsigned k = 0; k < gn; k++)
+        (void)ql_font_find_glyph_id(font, info[k].codepoint);
+
     int32_t n = 0;
     for (unsigned k = 0; k < gn; k++) {
         const uint32_t gid = info[k].codepoint;
@@ -458,7 +468,8 @@ static int32_t hb_shape_run(const QLFont *font, const char *text, int32_t from, 
         uint32_t cp = 0;
         const uint32_t cluster = info[k].cluster;
         if (cluster < (uint32_t)(to - from))
-            (void)ql_utf8_decode(text + from + cluster, &cp);
+            (void)ql_utf8_decode_n(text + from + cluster,
+                                   (size_t)((to - from) - (int32_t)cluster), &cp);
 
         const ql_coord_t total = adv + spacing_after(cp, opt);
         if (out != NULL && n < cap) {
@@ -526,7 +537,7 @@ static int split_runs(const QLFont *font, const char *text, int32_t total, Shape
     int32_t i = 0;
     while (i < total) {
         uint32_t cp = 0;
-        const int32_t used = ql_utf8_decode(text + i, &cp);
+        const int32_t used = ql_utf8_decode_n(text + i, (size_t)(total - i), &cp);
         if (used <= 0)
             break;
         if (n >= cap)
@@ -546,7 +557,7 @@ static int split_runs(const QLFont *font, const char *text, int32_t total, Shape
             int dir = 0;
             while (k < total) {
                 uint32_t c2 = 0;
-                const int32_t u2 = ql_utf8_decode(text + k, &c2);
+                const int32_t u2 = ql_utf8_decode_n(text + k, (size_t)(total - k), &c2);
                 if (u2 <= 0)
                     break;
                 const int d2 = strong_dir(c2);
@@ -562,7 +573,7 @@ static int split_runs(const QLFont *font, const char *text, int32_t total, Shape
         int32_t j = i + used;
         while (j < total) {
             uint32_t cp2 = 0;
-            const int32_t u2 = ql_utf8_decode(text + j, &cp2);
+            const int32_t u2 = ql_utf8_decode_n(text + j, (size_t)(total - j), &cp2);
             if (u2 <= 0)
                 break;
             const QLFont *o2 = font;

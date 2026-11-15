@@ -373,7 +373,22 @@
 #define QL_CFG_UI_AREA_MAX          16      /* 一个界面最多几个 <area> 热区（0 = 整套裁掉） */
 #endif
 #ifndef QL_CFG_IMAGE_MAX_BYTES
-#define QL_CFG_IMAGE_MAX_BYTES      (512u * 1024u)   /* 单张编码字节上限 */
+#define QL_CFG_IMAGE_MAX_BYTES      (512u * 1024u)   /* 解码后像素字节预算的基数 */
+#endif
+/*
+ * 输入文件（编码字节）的上限。只用于 `ql_image_decode()` 的第一道拒绝，
+ * **不影响**解码后的内存预算（那条由 `QL_CFG_IMAGE_MAX_BYTES × 系数` 管）。
+ * 桌面读一张照片常常 >512KB，所以单独给一个更宽的上限；MCU 可以把它调小。
+ */
+#ifndef QL_CFG_IMAGE_MAX_ENCODED_BYTES
+#define QL_CFG_IMAGE_MAX_ENCODED_BYTES (32u * 1024u * 1024u)
+#endif
+/*
+ * 解码后**像素缓冲**的上限（字节）。与编码上限分开：桌面壁纸常见 1080p，
+ * RGBA 就要 8.3 MB。MCU 档把它调小即可（这里只是上限，不占静态内存）。
+ */
+#ifndef QL_CFG_IMAGE_MAX_DECODED_BYTES
+#define QL_CFG_IMAGE_MAX_DECODED_BYTES (16u * 1024u * 1024u)
 #endif
 #ifndef QL_CFG_IMAGE_MAX_PIXELS
 #define QL_CFG_IMAGE_MAX_PIXELS     (4096u * 4096u)  /* 解码后像素数上限 */

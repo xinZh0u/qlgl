@@ -108,6 +108,16 @@ typedef struct {
     wl_fixed_t pointer_y;
     uint32_t   last_serial;       /* set_selection 要用"最近一次输入事件"的 */
 
+    /*
+     * 按键重复：Wayland 不会替客户端重复发 key，客户端得按 repeat_info
+     * 自己造。rate = 每秒次数，delay = 首次重复的毫秒数。
+     * repeat_code == QL_KEY_NONE 表示当前没有按住的重复键。
+     */
+    uint32_t   kb_repeat_code;
+    uint32_t   kb_repeat_next_ms;
+    int32_t    kb_repeat_rate;
+    int32_t    kb_repeat_delay;
+
     /* 高 DPI */
     QLWlOutput outputs[QLWL_MAX_OUTPUTS];
     int        output_count;
@@ -236,6 +246,58 @@ static void qlwl_kb_leave(void *data, struct wl_keyboard *kb, uint32_t serial,
     (void)data; (void)kb; (void)serial; (void)s;
 }
 
+/* US 布局的 Shift 符号表（没有 xkbcommon 时的近似） */
+static char qlwl_us_shift(char c)
+{
+    switch (c) {
+    case '1': return '!';
+    case '2': return '@';
+    case '3': return '#';
+    case '4': return '$';
+    case '5': return '%';
+    case '6': return '^';
+    case '7': return '&';
+    case '8': return '*';
+    case '9': return '(';
+    case '0': return ')';
+    case '-': return '_';
+    case '=': return '+';
+    case '[': return '{';
+    case ']': return '}';
+    case '\\': return '|';
+    case ';': return ':';
+    case '\'': return '"';
+    case ',': return '<';
+    case '.': return '>';
+    case '/': return '?';
+    case '`': return '~';
+    case ' ': return ' ';
+    default: return c;
+    }
+}
+
+/* 按当前修饰键把基础字符变成实际要输入的文本 */
+static void qlwl_kb_emit_text(QLWlWindow *w, uint32_t code)
+{
+    if (code >= 0x80u)
+        return;                        /* 非 ASCII：交给输入法 */
+    if ((w->mods & (QL_MOD_CTRL | QL_MOD_ALT | QL_MOD_META)) != 0)
+        return;
+
+    char c = (char)code;
+    if (c >= 'a' && c <= 'z') {
+        /* CapsLock 与 Shift 对字母是异或关系 */
+        const int upper = ((w->mods & QL_MOD_SHIFT) != 0) ^
+                          ((w->mods & QL_MOD_CAPS) != 0);
+        if (upper)
+            c = (char)(c - 'a' + 'A');
+    } else if ((w->mods & QL_MOD_SHIFT) != 0) {
+        c = qlwl_us_shift(c);
+    }
+    char buf[2] = { c, '\0' };
+    ql_input_push_text(buf);
+}
+
 static void qlwl_kb_key(void *data, struct wl_keyboard *kb, uint32_t serial,
                         uint32_t time, uint32_t key, uint32_t state);
 
@@ -261,7 +323,15 @@ static void qlwl_kb_modifiers(void *data, struct wl_keyboard *kb, uint32_t seria
 
 static void qlwl_kb_repeat(void *data, struct wl_keyboard *kb, int32_t rate, int32_t delay)
 {
-    (void)data; (void)kb; (void)rate; (void)delay;
+    (void)kb;
+    QLWlWindow *w = (QLWlWindow *)data;
+    if (w == NULL)
+        return;
+    /* rate <= 0 表示合成器要求关闭重复 */
+    w->kb_repeat_rate = (rate > 0) ? rate : 0;
+    w->kb_repeat_delay = (delay > 0) ? delay : 0;
+    if (w->kb_repeat_rate == 0)
+        w->kb_repeat_code = QL_KEY_NONE;
 }
 
 static const struct wl_keyboard_listener qlwl_kb_listener = {
@@ -397,23 +467,36 @@ static void qlwl_touch_sync(QLWlWindow *w)
     w->touch_active_count = n;
 }
 
-static int qlwl_touch_slot(QLWlWindow *w, int32_t id)
+/* 只查找：未知/已释放的触点返回 -1（motion/up 不能顺手分配新槽） */
+static int qlwl_touch_find(QLWlWindow *w, int32_t id)
 {
     for (int i = 0; i < QLWL_MAX_TOUCH; i++)
         if (w->touches[i].active && w->touches[i].id == id)
             return i;
+    return -1;
+}
+
+static int qlwl_touch_slot(QLWlWindow *w, int32_t id)
+{
+    const int found = qlwl_touch_find(w, id);
+    if (found >= 0)
+        return found;
     for (int i = 0; i < QLWL_MAX_TOUCH; i++)
         if (!w->touches[i].active)
             return i;
     return -1;
 }
 
+/*
+ * 公开事件的 touch_id 只有 8 位，而 Wayland 的 id 是 int32_t。
+ * 这里不直接窄化 id（0 与 256 会撞），而是用**槽下标**当稳定记号：
+ * 同一次触摸从 down 到 up 期间槽不变，所以界面层能正确匹配。
+ */
 static void qlwl_touch_push(QLWlWindow *w, wl_fixed_t x, wl_fixed_t y, uint8_t phase,
-                            int32_t id)
+                            uint8_t token)
 {
     qlwl_touch_sync(w);
-    (void)ql_input_push_touch(qlwl_css_x(w, x), qlwl_css_x(w, y), phase,
-                              (uint8_t)((id < 0) ? 0 : id),
+    (void)ql_input_push_touch(qlwl_css_x(w, x), qlwl_css_x(w, y), phase, token,
                               (uint8_t)((w->touch_active_count > 255)
                                             ? 255 : w->touch_active_count));
 }
@@ -434,7 +517,7 @@ static void qlwl_touch_down(void *data, struct wl_touch *t, uint32_t serial,
     w->touches[slot].active = 1;
     w->pointer_x = x;
     w->pointer_y = y;
-    qlwl_touch_push(w, x, y, QL_TOUCH_DOWN, id);
+    qlwl_touch_push(w, x, y, QL_TOUCH_DOWN, (uint8_t)slot);
 }
 
 static void qlwl_touch_up(void *data, struct wl_touch *t, uint32_t serial,
@@ -443,13 +526,13 @@ static void qlwl_touch_up(void *data, struct wl_touch *t, uint32_t serial,
     (void)t; (void)time;
     QLWlWindow *w = (QLWlWindow *)data;
     w->last_serial = serial;
-    const int slot = qlwl_touch_slot(w, id);
+    const int slot = qlwl_touch_find(w, id);
     if (slot < 0)
-        return;
+        return;                    /* 从没见过的 ID：不发伪 up */
     const wl_fixed_t x = w->touches[slot].x;
     const wl_fixed_t y = w->touches[slot].y;
     w->touches[slot].active = 0;
-    qlwl_touch_push(w, x, y, QL_TOUCH_UP, id);
+    qlwl_touch_push(w, x, y, QL_TOUCH_UP, (uint8_t)slot);
 }
 
 static void qlwl_touch_motion(void *data, struct wl_touch *t, uint32_t time,
@@ -457,14 +540,14 @@ static void qlwl_touch_motion(void *data, struct wl_touch *t, uint32_t time,
 {
     (void)t; (void)time;
     QLWlWindow *w = (QLWlWindow *)data;
-    const int slot = qlwl_touch_slot(w, id);
+    const int slot = qlwl_touch_find(w, id);
     if (slot < 0)
         return;
     w->touches[slot].x = x;
     w->touches[slot].y = y;
     w->pointer_x = x;
     w->pointer_y = y;
-    qlwl_touch_push(w, x, y, QL_TOUCH_MOVE, id);
+    qlwl_touch_push(w, x, y, QL_TOUCH_MOVE, (uint8_t)slot);
 }
 
 static void qlwl_touch_frame(void *data, struct wl_touch *t)
@@ -757,7 +840,13 @@ static void qlwl_clip_send(void *data, struct wl_data_source *src, const char *m
 
 static void qlwl_clip_cancelled(void *data, struct wl_data_source *src)
 {
-    (void)data;
+    QLWlWindow *w = (QLWlWindow *)data;
+    /*
+     * 合成器换掉了 selection 所有者：这个 source 已经作废。
+     * 必须把指针清掉，否则之后 set()/close() 还会再 destroy 一次悬空代理。
+     */
+    if (w != NULL && w->clip_source == src)
+        w->clip_source = NULL;
     wl_data_source_destroy(src);
 }
 
@@ -779,8 +868,10 @@ static void qlwl_clip_set(const char *utf8, void *user)
         return;
 
     size_t n = (utf8 != NULL) ? strlen(utf8) : 0u;
-    if (n > (size_t)QLWL_CLIP_MAX - 1u)
+    if (n > (size_t)QLWL_CLIP_MAX - 1u) {
         n = (size_t)QLWL_CLIP_MAX - 1u;
+        n = ql_utf8_valid_len(utf8, n);    /* 截断点退到码点边界 */
+    }
     if (n > 0)
         memcpy(w->clip_out, utf8, n);
     w->clip_out[n] = '\0';
@@ -810,7 +901,9 @@ static int qlwl_clip_get(char *buf, size_t cap, void *user)
 
     if (w->clip_in_ready) {
         const size_t have = (size_t)w->clip_in_len;
-        const size_t n = (have < cap - 1u) ? have : cap - 1u;
+        size_t n = (have < cap - 1u) ? have : cap - 1u;
+        if (n < have)
+            n = ql_utf8_valid_len(w->clip_in, n);   /* 截断别劈开字符 */
         if (n > 0)
             memcpy(buf, w->clip_in, n);
         buf[n] = '\0';
@@ -846,6 +939,8 @@ static int qlwl_clip_get(char *buf, size_t cap, void *user)
             if (n == 0) {                    /* EOF：内容到齐 */
                 close(w->clip_pipe);
                 w->clip_pipe = -1;
+                /* 只接受完整的码点：超容量截断不能留下半个字符 */
+                w->clip_in_len = (int)ql_utf8_valid_len(w->clip_in, (size_t)w->clip_in_len);
                 w->clip_in[w->clip_in_len] = '\0';
                 w->clip_in_ready = 1;
                 break;
@@ -854,6 +949,7 @@ static int qlwl_clip_get(char *buf, size_t cap, void *user)
                 return 0;                    /* 还没写完，下一帧再问 */
             close(w->clip_pipe);
             w->clip_pipe = -1;
+            w->clip_in_len = (int)ql_utf8_valid_len(w->clip_in, (size_t)w->clip_in_len);
             w->clip_in[w->clip_in_len] = '\0';
             w->clip_in_ready = 1;
             break;
@@ -886,13 +982,45 @@ static void qlwl_kb_key(void *data, struct wl_keyboard *kb, uint32_t serial,
      * 可打印字符顺带合成文本输入（没有 xkbcommon 时按 US 布局近似）。
      * 原生 Wayland 下真正的中文/拼音要靠 `zwp_text_input_v3`，那是下一步。
      */
-    if (down && code < 0x80 &&
-        (w->mods & (QL_MOD_CTRL | QL_MOD_ALT | QL_MOD_META)) == 0) {
-        char buf[2] = { (char)code, '\0' };
-        if ((w->mods & QL_MOD_SHIFT) != 0 && buf[0] >= 'a' && buf[0] <= 'z')
-            buf[0] = (char)(buf[0] - 'a' + 'A');
-        ql_input_push_text(buf);
+    if (down) {
+        qlwl_kb_emit_text(w, code);
+        /* 记下"可能要重复"的键；rate 为 0 表示合成器不要重复 */
+        if (w->kb_repeat_rate > 0) {
+            w->kb_repeat_code = code;
+            w->kb_repeat_next_ms =
+                ql_anim_now_ms() + (uint32_t)((w->kb_repeat_delay > 0)
+                                                  ? w->kb_repeat_delay : 500);
+        } else {
+            w->kb_repeat_code = QL_KEY_NONE;
+        }
+    } else if (w->kb_repeat_code == code) {
+        w->kb_repeat_code = QL_KEY_NONE;
     }
+}
+
+/*
+ * 主循环每帧调用：到了重复时间就补发一次 key-down（+ 文本）。
+ * Wayland 的 wl_keyboard 不会自己重复按键，这一步只能客户端做。
+ */
+static QLWL_MAYBE_UNUSED void qlwl_kb_repeat_tick(QLWlWindow *w)
+{
+    if (w == NULL || w->kb_repeat_code == QL_KEY_NONE || w->kb_repeat_rate <= 0)
+        return;
+
+    const uint32_t now = ql_anim_now_ms();
+    if ((int32_t)(now - w->kb_repeat_next_ms) < 0)
+        return;
+
+    const uint32_t code = w->kb_repeat_code;
+    ql_input_push_key(code, 1, w->mods);
+    qlwl_kb_emit_text(w, code);
+
+    uint32_t step = 1000u / (uint32_t)w->kb_repeat_rate;
+    if (step == 0)
+        step = 1;
+    w->kb_repeat_next_ms += step;
+    if (w->kb_repeat_next_ms == 0)      /* 极端情况：时钟回绕 */
+        w->kb_repeat_next_ms = now + step;
 }
 
 /* ------------------------------ seat / registry ------------------------------ */
@@ -941,27 +1069,33 @@ static void qlwl_registry_global(void *data, struct wl_registry *reg, uint32_t n
                                  const char *iface, uint32_t version)
 {
     QLWlWindow *w = (QLWlWindow *)data;
-    (void)version;
+
+    /* 客户端请求的版本不能高于服务端公布的版本（否则协议错误） */
+#define QLWL_BIND_VER(want) ((version < (uint32_t)(want)) ? version : (uint32_t)(want))
 
     if (strcmp(iface, wl_compositor_interface.name) == 0) {
         w->compositor = (struct wl_compositor *)wl_registry_bind(
-            reg, name, &wl_compositor_interface, 4);
+            reg, name, &wl_compositor_interface, QLWL_BIND_VER(4));
     } else if (strcmp(iface, wl_shm_interface.name) == 0) {
-        w->shm = (struct wl_shm *)wl_registry_bind(reg, name, &wl_shm_interface, 1);
+        w->shm = (struct wl_shm *)wl_registry_bind(reg, name, &wl_shm_interface,
+                                                   QLWL_BIND_VER(1));
     } else if (strcmp(iface, xdg_wm_base_interface.name) == 0) {
-        w->wm_base = (struct xdg_wm_base *)wl_registry_bind(reg, name,
-                                                           &xdg_wm_base_interface, 1);
-        xdg_wm_base_add_listener(w->wm_base, &qlwl_wm_listener, w);
+        w->wm_base = (struct xdg_wm_base *)wl_registry_bind(
+            reg, name, &xdg_wm_base_interface, QLWL_BIND_VER(1));
+        if (w->wm_base != NULL)
+            xdg_wm_base_add_listener(w->wm_base, &qlwl_wm_listener, w);
     } else if (strcmp(iface, wl_seat_interface.name) == 0) {
-        w->seat = (struct wl_seat *)wl_registry_bind(reg, name, &wl_seat_interface, 5);
-        wl_seat_add_listener(w->seat, &qlwl_seat_listener, w);
+        w->seat = (struct wl_seat *)wl_registry_bind(reg, name, &wl_seat_interface,
+                                                     QLWL_BIND_VER(5));
+        if (w->seat != NULL)
+            wl_seat_add_listener(w->seat, &qlwl_seat_listener, w);
     } else if (strcmp(iface, wl_data_device_manager_interface.name) == 0) {
         w->data_mgr = (struct wl_data_device_manager *)wl_registry_bind(
-            reg, name, &wl_data_device_manager_interface, 1);
+            reg, name, &wl_data_device_manager_interface, QLWL_BIND_VER(1));
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         if (w->output_count < QLWL_MAX_OUTPUTS) {
             struct wl_output *o = (struct wl_output *)wl_registry_bind(
-                reg, name, &wl_output_interface, 2);
+                reg, name, &wl_output_interface, QLWL_BIND_VER(2));
             if (o != NULL) {
                 w->outputs[w->output_count].obj = o;
                 w->outputs[w->output_count].scale = 1;
@@ -970,6 +1104,7 @@ static void qlwl_registry_global(void *data, struct wl_registry *reg, uint32_t n
             }
         }
     }
+#undef QLWL_BIND_VER
 }
 
 static void qlwl_registry_remove(void *data, struct wl_registry *reg, uint32_t name)
@@ -1015,6 +1150,11 @@ static QLWL_MAYBE_UNUSED int qlwl_open(QLWlWindow *w, const char *title, int32_t
         return 0;
     }
     w->registry = wl_display_get_registry(w->dpy);
+    if (w->registry == NULL) {
+        QL_LOGE("wayland: wl_display_get_registry failed");
+        qlwl_close(w);
+        return 0;
+    }
     wl_registry_add_listener(w->registry, &qlwl_registry_listener, w);
     wl_display_roundtrip(w->dpy);      /* 全局对象 */
     wl_display_roundtrip(w->dpy);      /* seat 能力 / output scale */
@@ -1027,10 +1167,25 @@ static QLWL_MAYBE_UNUSED int qlwl_open(QLWlWindow *w, const char *title, int32_t
     }
 
     w->surface = wl_compositor_create_surface(w->compositor);
+    if (w->surface == NULL) {
+        QL_LOGE("wayland: wl_compositor_create_surface failed");
+        qlwl_close(w);
+        return 0;
+    }
     wl_surface_add_listener(w->surface, &qlwl_surf_listener, w);
     w->xdg_surface = xdg_wm_base_get_xdg_surface(w->wm_base, w->surface);
+    if (w->xdg_surface == NULL) {
+        QL_LOGE("wayland: xdg_wm_base_get_xdg_surface failed");
+        qlwl_close(w);
+        return 0;
+    }
     xdg_surface_add_listener(w->xdg_surface, &qlwl_xdg_listener, w);
     w->toplevel = xdg_surface_get_toplevel(w->xdg_surface);
+    if (w->toplevel == NULL) {
+        QL_LOGE("wayland: xdg_surface_get_toplevel failed");
+        qlwl_close(w);
+        return 0;
+    }
     xdg_toplevel_add_listener(w->toplevel, &qlwl_toplevel_listener, w);
     xdg_toplevel_set_title(w->toplevel, w->title);
     xdg_toplevel_set_app_id(w->toplevel, "qlgl");
@@ -1147,6 +1302,8 @@ static QLWL_MAYBE_UNUSED int qlwl_pump(QLWlWindow *w)
     }
     if (wl_display_dispatch_pending(w->dpy) < 0)
         return 0;
+
+    qlwl_kb_repeat_tick(w);
 
     return w->closed ? 0 : 1;
 }

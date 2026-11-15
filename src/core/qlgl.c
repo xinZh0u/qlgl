@@ -67,6 +67,10 @@ ql_err_t qlgl_init(void)
     }
 
     s_initialized = 1;
+#if defined(QLGL_ENABLE_FREETYPE)
+    /* 桌面：没有指定字体时找一份系统字体；MCU 构建不会进这里 */
+    ql_font_autoload_system();
+#endif
     QL_LOGI("QLGL %s ready, %u builtin classes", qlgl_version(),
             (unsigned)ql_builtin_class_count);
     return QL_OK;

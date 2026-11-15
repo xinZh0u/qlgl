@@ -720,30 +720,90 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         (doc->font_list_count > 0 && doc->font_name_count == 0) ||
         (doc->font_face_count > 0 && doc->font_faces == NULL)) {
         set_error_str("font tables are inconsistent");
-        ql_mem_free(doc);
-        return NULL;
+        goto fail;
     }
     for (uint16_t i = 0; i < doc->font_face_count; i++) {
         if (doc->font_faces[i].family >= doc->text_count ||
             doc->font_faces[i].src >= doc->text_count) {
             set_error_str("@font-face entry out of range");
-            ql_mem_free(doc);
-            return NULL;
+            goto fail;
         }
     }
     for (uint16_t i = 0; i < doc->font_list_count; i++) {
         if ((uint32_t)doc->font_lists[i].first + doc->font_lists[i].count >
             doc->font_name_count) {
             set_error_str("font-family list out of range");
-            ql_mem_free(doc);
-            return NULL;
+            goto fail;
         }
         for (uint16_t k = 0; k < doc->font_lists[i].count; k++) {
             if (doc->font_names[doc->font_lists[i].first + k] >= doc->text_count) {
                 set_error_str("font-family name out of range");
-                ql_mem_free(doc);
-                return NULL;
+                goto fail;
             }
+        }
+    }
+
+    /* 有节点却没有任何样式：build_internal 会读 styles[0]，必须在加载时拒绝 */
+    if (doc->node_count > 0 && (doc->style_count == 0 || doc->styles == NULL)) {
+        set_error_str("nodes present but style table is empty");
+        goto fail;
+    }
+
+    /*
+     * 节点内部引用：样式/文本/树指针都要落在各自表内。
+     * 这些字段是构建期生成的，但 blob 是外来数据，损坏的索引会让
+     * build_internal() 直接越界读。
+     */
+    if (doc->text_count > 0 && (doc->text_offsets == NULL || doc->text_pool == NULL)) {
+        set_error_str("text table references a missing pool");
+        goto fail;
+    }
+    for (uint16_t i = 0; i < doc->node_count; i++) {
+        const QLUINode *nd = &doc->nodes[i];
+        const uint16_t style_refs[] = {
+            nd->style,          nd->style_hover,      nd->style_active,
+            nd->style_focus,    nd->style_disabled,   nd->style_checked,
+            nd->style_placeholder,
+        };
+        for (size_t k = 0; k < sizeof(style_refs) / sizeof(style_refs[0]); k++) {
+            if (style_refs[k] != 0xFFFFu && style_refs[k] >= doc->style_count) {
+                set_error_str("node style index out of range");
+                goto fail;
+            }
+        }
+        if ((nd->text != 0xFFFFu && nd->text >= doc->text_count) ||
+            (nd->placeholder != 0xFFFFu && nd->placeholder >= doc->text_count)) {
+            set_error_str("node text index out of range");
+            goto fail;
+        }
+        if ((nd->parent != 0xFFFFu && nd->parent >= doc->node_count) ||
+            (nd->first_child != 0xFFFFu && nd->first_child >= doc->node_count) ||
+            (nd->next_sibling != 0xFFFFu && nd->next_sibling >= doc->node_count)) {
+            set_error_str("node tree index out of range");
+            goto fail;
+        }
+    }
+
+    /* 每条文本偏移都要指向池内部，并且字符串在池内以 NUL 结尾 */
+    for (uint16_t i = 0; i < doc->text_count; i++) {
+        const uint32_t off = doc->text_offsets[i];
+        if (off >= pool_size ||
+            memchr(doc->text_pool + off, '\0', pool_size - off) == NULL) {
+            set_error_str("text offset out of range or not NUL-terminated");
+            goto fail;
+        }
+    }
+
+    /* 图像条目：名字是文本下标，字节区间必须在 image_data 段内 */
+    for (uint16_t i = 0; i < doc->image_count; i++) {
+        const QLUIImageSrc *im = &doc->images[i];
+        if (im->name != 0xFFFFu && im->name >= doc->text_count) {
+            set_error_str("image name index out of range");
+            goto fail;
+        }
+        if ((uint64_t)im->off + (uint64_t)im->len > (uint64_t)doc->image_data_size) {
+            set_error_str("image data range out of bounds");
+            goto fail;
         }
     }
 
@@ -754,15 +814,18 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
             doc->nodes[a->img].tag != (uint16_t)QL_UI_TAG_IMG ||
             (uint32_t)a->coord_off + (uint32_t)a->ncoord > doc->area_coord_count) {
             set_error_str("<area> entry out of range or not bound to <img>");
-            ql_mem_free(doc);
-            ql_mem_free(arena);
-            return NULL;
+            goto fail;
         }
     }
 
     doc->arena = arena;
 
     return doc;
+
+fail:
+    ql_mem_free(doc);
+    ql_mem_free(arena);
+    return NULL;
 }
 
 /* 读取上限：防止误把巨大文件当 .qlui 读进内存 */

@@ -84,6 +84,9 @@ typedef struct {
     double        t0;
     double        busy;
     int           kind;   /* 0=内存 1=wayland 2=x11 */
+    /* 本帧实际改动的设备像素范围：end() 只把这块交给 flush() */
+    QLRect        flush_rect;
+    int           flush_full;
 } CpuBackend;
 
 static int cpu_poll(BenchBackend *bb)
@@ -128,6 +131,8 @@ static void cpu_begin(BenchBackend *bb, ql_color_t bg)
 {
     CpuBackend *b = (CpuBackend *)bb;
     b->t0 = bench_now_ms();
+    b->flush_full = 1;
+    b->flush_rect = ql_rect_make(0, 0, b->disp->width, b->disp->height);
     ql_canvas_clear(&b->canvas, bg);
 }
 
@@ -135,12 +140,16 @@ static int cpu_begin_rects(BenchBackend *bb, ql_color_t bg, const QLRect *r, int
 {
     CpuBackend *b = (CpuBackend *)bb;
     b->t0 = bench_now_ms();
+    b->flush_full = 0;
+    b->flush_rect = ql_rect_make(0, 0, 0, 0);
     if (n <= 0) {
         /* 没有脏区：什么都不清，调用方也不该画（返回 0 = 不是整屏） */
         return 0;
     }
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < n; i++) {
         ql_canvas_fill_rect(&b->canvas, r[i], bg);
+        b->flush_rect = (i == 0) ? r[i] : ql_rect_union(b->flush_rect, r[i]);
+    }
     return 0;
 }
 
@@ -152,8 +161,23 @@ static QLDraw2D *cpu_draw(BenchBackend *bb)
 static void cpu_end(BenchBackend *bb)
 {
     CpuBackend *b = (CpuBackend *)bb;
-    if (b->disp->flush != NULL)
-        b->disp->flush(b->disp, ql_rect_make(0, 0, b->disp->width, b->disp->height));
+    if (b->disp->flush != NULL) {
+        /*
+         * 脏区模式只把本帧真正的改动范围交出去：以前固定 flush 整屏，
+         * X11/Wayland 窗口模式下等于每帧全屏传输，"dirty" 量不到增量收益。
+         */
+        /*
+         * 脏区来自 UI 层（CSS px），flush 要的是设备像素。DPR != 1 时
+         * 换算取整可能漏掉边缘，直接退回整屏（本来也只是 benchmark）。
+         */
+        if (!b->flush_full && ql_canvas_scale_fx(&b->canvas) != QL_SCALE_ONE)
+            b->flush_full = 1;
+        QLRect area = b->flush_full
+                          ? ql_rect_make(0, 0, b->disp->width, b->disp->height)
+                          : b->flush_rect;
+        if (!ql_rect_is_empty(area))
+            b->disp->flush(b->disp, area);
+    }
     if (b->disp->flush_done != NULL)
         b->disp->flush_done(b->disp);
     b->busy = bench_now_ms() - b->t0;

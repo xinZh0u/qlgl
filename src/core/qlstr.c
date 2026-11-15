@@ -24,6 +24,20 @@ void ql_str_free(QLStr *str)
     str->policy = QL_STR_COMPACT;
 }
 
+/* 源指针是否落在 str 自己的缓冲区里：扩容会释放旧块，必须换算成偏移 */
+static int source_offset(const QLStr *str, const char *text, uint32_t *offset)
+{
+    if (str->own && str->data != NULL && text != NULL) {
+        const uintptr_t base = (uintptr_t)str->data;
+        const uintptr_t p = (uintptr_t)text;
+        if (p >= base && p < base + (uintptr_t)str->capacity) {
+            *offset = (uint32_t)(p - base);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* 确保容量能放下 need 字节（含结尾 '\0'）；成功返回 QL_OK */
 static ql_err_t ensure_capacity(QLStr *str, uint32_t need)
 {
@@ -38,8 +52,13 @@ static ql_err_t ensure_capacity(QLStr *str, uint32_t need)
     uint32_t capacity;
     if (str->policy == QL_STR_AMORTIZED) {
         capacity = (str->capacity > 0) ? str->capacity : 16;
-        while (capacity < need)
+        while (capacity < need) {
+            if (capacity > UINT32_MAX / 2u) {      /* 再翻倍会回绕，直接取 need */
+                capacity = need;
+                break;
+            }
             capacity *= 2;
+        }
         if (capacity < need)                       /* 溢出保护 */
             capacity = need;
     } else {
@@ -56,9 +75,11 @@ static ql_err_t ensure_capacity(QLStr *str, uint32_t need)
         fresh = (char *)ql_mem_alloc(capacity);
         if (fresh == NULL)
             return QL_ERR_NOMEM;
-        if (str->len > 0 && str->data != NULL)
-            memcpy(fresh, str->data, str->len);
-        fresh[str->len] = '\0';
+        /* 只读视图的 len 可能大于新容量（例如 set_n 缩小），按容量截断 */
+        uint32_t copy = (str->len < capacity) ? str->len : capacity - 1u;
+        if (copy > 0 && str->data != NULL)
+            memcpy(fresh, str->data, copy);
+        fresh[copy] = '\0';
     }
 
     str->data = fresh;
@@ -86,11 +107,25 @@ ql_err_t ql_str_set_n(QLStr *str, const char *text, uint32_t len)
     if (text == NULL)
         return ql_str_clear(str);
 
-    uint32_t need = len + 1;
+    if (len == UINT32_MAX)                 /* len + 1 回绕 */
+        return QL_ERR_INVAL;
+
+    uint32_t need = len + 1u;
+
+    /*
+     * 源可能指向自身缓冲区：缩容时 ql_mem_realloc 会丢掉尾巴，
+     * 所以先把源搬到缓冲区开头，之后的扩容/缩容都不会再有别名问题。
+     */
+    uint32_t src_off = 0;
+    if (source_offset(str, text, &src_off)) {
+        memmove(str->data, str->data + src_off, len);
+        text = NULL;                        /* 已经就位，无需再拷 */
+    }
+
     if (ensure_capacity(str, need) != QL_OK)
         return QL_ERR_NOMEM;
 
-    if (len > 0)
+    if (text != NULL && len > 0)
         memmove(str->data, text, len);
     str->data[len] = '\0';
     str->len = len;
@@ -108,6 +143,12 @@ ql_err_t ql_str_set_static(QLStr *str, const char *text)
 {
     if (str == NULL)
         return QL_ERR_INVAL;
+
+    uint32_t off = 0;
+    if (text != NULL && source_offset(str, text, &off)) {
+        /* 指向自身缓冲区：不能先 free 再登记，退化成拷贝语义 */
+        return ql_str_set_n(str, text, (uint32_t)strlen(text));
+    }
 
     if (str->own && str->data != NULL)
         ql_mem_free(str->data);
@@ -129,8 +170,17 @@ ql_err_t ql_str_append(QLStr *str, const char *text)
         return QL_OK;
 
     uint32_t old_len = str->len;
-    if (ensure_capacity(str, old_len + extra + 1) != QL_OK)
+    if (extra > UINT32_MAX - old_len - 1u)     /* old_len + extra + 1 会回绕 */
         return QL_ERR_NOMEM;
+
+    uint32_t src_off = 0;
+    const int aliased = source_offset(str, text, &src_off);
+
+    if (ensure_capacity(str, old_len + extra + 1u) != QL_OK)
+        return QL_ERR_NOMEM;
+
+    if (aliased)
+        text = str->data + src_off;
 
     memmove(str->data + old_len, text, extra);
     str->len = old_len + extra;

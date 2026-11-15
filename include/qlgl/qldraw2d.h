@@ -270,8 +270,8 @@ struct QLDraw2D {
 
     /*
      * 同上，但把模糊结果裁进圆角矩形（`corner` = 圆角半径，CSS px，0 = 直角），
-     * 并按 `refract`（CSS px，0 = 关闭）在轮廓附近做一圈折射：采样点越靠近轮廓
-     * 越往外推，玻璃边缘于是有"透镜"的厚度感。
+     * 并按 `refract`（CSS px，0 = 关闭）做厚透镜折射：位移随半径增长、轮廓处
+     * 最大、方向朝圆心（内部画面被压进边缘一圈）。
      * 可选：为 NULL 时上层退回 `backdrop_blur`，表现为圆角缺口里渗出方形模糊。
      */
     void (*backdrop_blur_round)(QLDraw2D *self, QLRect rect, int sigma,

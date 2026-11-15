@@ -65,7 +65,12 @@ static int32_t wrap_next(const QLFont *font, const char *t, int32_t pos, int32_t
         return end;
 
     const ql_coord_t ls = (opt != NULL) ? opt->letter_spacing : 0;
+    const ql_coord_t ws = (opt != NULL) ? opt->word_spacing : 0;
+    const uint8_t tab_size = (opt != NULL) ? opt->tab_size : 0;
     const int break_any = (opt != NULL) ? (opt->break_any != 0) : 0;
+
+    const QLGlyph *space = (ws != 0 || tab_size != 0) ? ql_font_find_glyph(font, ' ')
+                                                      : NULL;
 
     ql_coord_t w = 0;
     int32_t last_break = -1;      /* 候选断点（空格之后 / CJK 边界） */
@@ -73,32 +78,40 @@ static int32_t wrap_next(const QLFont *font, const char *t, int32_t pos, int32_t
 
     while (i < end) {
         uint32_t cp = 0;
-        int32_t used = ql_utf8_decode(t + i, &cp);
+        int32_t used = ql_utf8_decode_n(t + i, (size_t)(end - i), &cp);
         if (used <= 0)
             break;
 
-        const QLGlyph *g = ql_font_find_glyph(font, cp);
-        const ql_coord_t adv = (g != NULL) ? g->adv_w : 0;
+        ql_coord_t adv;
+        if (cp == (uint32_t)'\t' && tab_size != 0) {
+            /* 与绘制路径一致：制表符按 tab_size 个空格的宽度计 */
+            adv = ((space != NULL) ? space->adv_w : 0) * (ql_coord_t)tab_size;
+        } else {
+            const QLGlyph *g = ql_font_find_glyph(font, cp);
+            adv = (g != NULL) ? g->adv_w : 0;
+        }
+        /* word-spacing 只加在空格之后（CSS 规则），绘制侧也是这么算的 */
+        const ql_coord_t extra = (cp == (uint32_t)' ') ? ws : 0;
 
         /*
          * 宽度里**必须算上空格**：不然后面接的词会被当成"还放得下"，
          * 一行实际宽 120px 却以为只有 90px（这个 bug 第一次实现时就有）。
          * 行尾空格在断行后由 trim_line_end() 去掉，不影响视觉。
          */
-        if (w + adv + ls > max_w && i > pos) {
+        if (w + adv + ls + extra > max_w && i > pos) {
             if (last_break > pos)
                 return last_break;
             /* 没有可用的软断点：硬断在当前字符前（超长单词/长串数字） */
             return i;
         }
-        w += adv + ls;
+        w += adv + ls + extra;
 
         if (is_space_cp(cp)) {
             /* 空格之后是断点；跳过连续空白，下一行不以前导空格开头 */
             int32_t j = i + used;
             while (j < end) {
                 uint32_t c2 = 0;
-                int32_t u2 = ql_utf8_decode(t + j, &c2);
+                int32_t u2 = ql_utf8_decode_n(t + j, (size_t)(end - j), &c2);
                 if (u2 <= 0 || !is_space_cp(c2))
                     break;
                 j += u2;
@@ -296,12 +309,25 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
     /* `len < 0` 时按 NUL 结尾；有显式长度时截一段临时缓冲交给折行函数 */
     char buf[256];
+    char *heap = NULL;
     const char *src = text;
     if (len >= 0) {
-        int32_t n = (len < (int32_t)sizeof(buf)) ? len : (int32_t)sizeof(buf) - 1;
-        memcpy(buf, text, (size_t)n);
-        buf[n] = '\0';
-        src = buf;
+        if (len < (int32_t)sizeof(buf)) {
+            memcpy(buf, text, (size_t)len);
+            buf[len] = '\0';
+            src = buf;
+        } else {
+            /*
+             * 旧实现固定裁到 255 字节：长文本只画前缀，且可能劈开 UTF-8。
+             * 超长时按需分配完整副本（函数末尾释放）。
+             */
+            heap = (char *)ql_mem_alloc((size_t)len + 1u);
+            if (heap == NULL)
+                return;
+            memcpy(heap, text, (size_t)len);
+            heap[len] = '\0';
+            src = heap;
+        }
     }
 
     QLTextWrapOpt opt;
@@ -503,6 +529,8 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 
         baseline += line_step;
     }
+
+    ql_mem_free(heap);
 }
 
 /* ------------------------------ CPU 后端 ------------------------------ */
@@ -1041,10 +1069,20 @@ static QLRect cpu_layer_dev_rect(QLDraw2D *self, QLRect bounds)
         return ql_rect_make(0, 0, 0, 0);
     ql_coord_t w = x1 - x0;
     ql_coord_t h = y1 - y0;
-    /* 上限：一块哑光缓冲 3 B/px。设错了也不该把内存吃光（约 12 MB 封顶） */
+    /*
+     * 上限：一块哑光缓冲 3 B/px（约 12 MB 封顶）。
+     * 超限时**不用图层**（返回空矩形 → 调用方按普通绘制回退），而不是把
+     * 宽高改成 4096×1024 继续画 —— 那样只有左上角会被处理和合成，
+     * 其余内容会静默消失，还会把图层压扁。
+     */
     if ((int64_t)w * (int64_t)h > 4096 * 1024) {
-        w = 4096;
-        h = 1024;
+        static int warned;
+        if (!warned) {
+            warned = 1;
+            QL_LOGW("cpu layer: 图层面积 %dx%d 超过 4096x1024，本次不使用离屏图层"
+                    "（滤镜/遮罩/混合模式将被跳过）", (int)w, (int)h);
+        }
+        return ql_rect_make(0, 0, 0, 0);
     }
     return ql_rect_make(x0, y0, w, h);
 }
@@ -1163,7 +1201,14 @@ static int cpu_layer_end(QLDraw2D *self)
     QLCanvas *dst = ctx->canvas;
     const size_t npx = (size_t)dev.w * (size_t)dev.h;
     uint8_t *rgba = (uint8_t *)ql_mem_alloc(npx * 4u);
-    if (rgba != NULL) {
+    if (rgba == NULL) {
+        /*
+         * 两遍哑光都已经画完，此时没有"原画布内容"可以回退：只能明确报错。
+         * 以前这里是静默跳过，整块内容直接从画面上消失且没有任何痕迹。
+         */
+        QL_LOGE("cpu layer: RGBA 缓冲分配失败（%u 字节），图层内容无法合成",
+                (unsigned)(npx * 4u));
+    } else {
         ql_layer_reconstruct(ctx->layer[i].matte[0], ctx->layer[i].matte[1], dev.w,
                              dev.h, rgba);
         if (fx.blur > 0) {
@@ -1236,7 +1281,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->draw_text = cpu_draw_text;
     out->blit_image = cpu_blit_image;
     out->flush = NULL;
-    out->scale_fx = (canvas->scale_fx > 0) ? canvas->scale_fx : QL_SCALE_ONE;
+    out->scale_fx = ql_canvas_scale_fx(canvas);
     out->offset_x_fx = 0;
     out->offset_y_fx = 0;
     out->mask_r = -1;

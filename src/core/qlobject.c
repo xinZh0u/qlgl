@@ -180,7 +180,7 @@ static void object_destroy(QLObject *self)
     }
 
     /* 2. 事件连接归还池 */
-    ql_disconnect_all(self);
+    ql_event_force_disconnect_all(self);
 
     /* 3. deinit：派生 → 根 */
     QLObjectClass *chain[QL_CFG_MAX_INHERIT_DEPTH];
@@ -275,7 +275,11 @@ ql_err_t ql_object_set_parent(QLObject *self, QLObject *parent)
 
 ql_err_t ql_object_add_child(QLObject *parent, QLObject *child)
 {
-    if (child == NULL)
+    /*
+     * parent == NULL 时 set_parent(child, NULL) 是合法的"解绑"，
+     * 随后还会 unref 掉调用方这一份引用 —— 等于静默销毁 child。
+     */
+    if (parent == NULL || child == NULL)
         return QL_ERR_INVAL;
 
     ql_err_t err = ql_object_set_parent(child, parent);
