@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;） · QLGL</title>
+<style>
+:root {
+  --text: #333;
+  --text-muted: rgba(51, 51, 51, .65);
+  --primary: #1c76e4;
+  --bg: #fff;
+  --side-bg: #151515;
+  --side-fg: #fafafa;
+  --side-primary: rgb(144, 194, 255);
+  --side-hover: rgba(127, 127, 127, .2);
+  --side-sel: #1c76e4;
+  --side-search: rgba(127, 127, 127, .25);
+  --side-search-focus: rgba(127, 127, 127, .38);
+  --box-bg: rgba(135, 135, 135, .085);
+  --box-radius: .35rem;
+  --line: rgba(51, 51, 51, .12);
+  --side-w: 17.5rem;
+  --toc-w: 15.5rem;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC",
+          "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Source Code Pro", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font: 15px/1.6 var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.shell { display: flex; align-items: flex-start; }
+
+/* ---------------- 左侧深色导航（GTK 风格） ---------------- */
+.sidebar {
+  position: sticky; top: 0;
+  flex: 0 0 var(--side-w); width: var(--side-w);
+  height: 100vh; overflow-y: auto;
+  padding: 1.2rem 1rem 3rem;
+  background: var(--side-bg);
+  color: var(--side-fg);
+  color-scheme: dark;
+  font-size: 13.5px;
+  scrollbar-width: thin;
+}
+.sidebar::-webkit-scrollbar { width: 9px; }
+.sidebar::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 9px; }
+.sidebar .brand { display: block; padding: .2rem .5rem 1rem; }
+.sidebar .brand b {
+  display: block; font-size: 1.45rem; letter-spacing: .02em; color: #fff;
+  font-weight: 900;
+}
+.sidebar .brand span { font-size: .8rem; opacity: .7; }
+.sidebar a { text-decoration: none; }
+
+.search { position: relative; margin: 0 0 1rem; }
+.search input {
+  width: 100%; border: 0; border-radius: 50px;
+  padding: 8px 14px; font-size: 13.5px; outline: 0;
+  background: var(--side-search); color: var(--side-fg);
+  transition: background-color .15s ease;
+}
+.search input::placeholder { color: rgba(250, 250, 250, .55); }
+.search input:hover, .search input:focus { background: var(--side-search-focus); }
+.results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  max-height: 60vh; overflow-y: auto; z-index: 50;
+  background: #232323; border: 1px solid #3a3a3a; border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .5); padding: 6px;
+}
+.results .hit {
+  display: block; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  color: var(--side-fg);
+}
+.results .hit:hover, .results .hit.sel { background: var(--side-sel); }
+.results .hit .t { display: block; font-size: 13.5px; }
+.results .hit .c { display: block; font-size: 11.5px; opacity: .62; }
+.results .hit.sel .c { opacity: .85; }
+.results .empty { padding: 10px; font-size: 12.5px; opacity: .6; }
+
+.sec { border-top: 1px solid rgba(255, 255, 255, .07); padding: .5rem 0 .2rem; }
+.sec > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; font-weight: 700; font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .55);
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before {
+  content: "▸"; font-size: 10px; transition: transform .15s ease; opacity: .8;
+}
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > summary:hover { color: rgba(250, 250, 250, .85); }
+.sec a {
+  display: block; padding: .25rem .55rem; margin-bottom: .1rem;
+  border-radius: var(--box-radius); color: var(--side-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sec a:hover { background: var(--side-hover); color: var(--side-fg); }
+.sec a.current { background: var(--side-sel); color: #fff; font-weight: 600; }
+.sec .mod {
+  display: block; padding: .55rem .55rem .15rem;
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: rgba(250, 250, 250, .4);
+}
+.sec .mod:first-child { padding-top: .2rem; }
+.sidebar .gen {
+  margin: 1.4rem .5rem 0; font-size: 11px; opacity: .45; line-height: 1.5;
+}
+
+/* ---------------- 正文 ---------------- */
+main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 3rem 3rem 6rem;
+  box-shadow: 0 0 134px rgba(0, 0, 0, .07);
+}
+main .inner { max-width: 54rem; margin: 0 auto; }
+main h1, main h2, main h3, main h4, main h5 {
+  font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
+}
+main h1 { font-size: 2.05rem; margin: 0 0 .3rem; }
+main .eyebrow {
+  font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 0 .15rem;
+}
+main .lead { color: var(--text-muted); font-size: 1rem; margin: .6rem 0 2rem; }
+main h2 {
+  font-size: 1.45rem; margin: 2.4rem 0 .7rem;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+}
+main h3 { font-size: 1.18rem; margin: 1.8rem 0 .5rem; }
+main h4 { font-size: 1.02rem; margin: 1.4rem 0 .4rem; color: var(--text-muted); }
+main p { margin: .7rem 0; }
+main ul, main ol { margin: .7rem 0; padding-left: 1.5rem; }
+main li { margin: .25rem 0; }
+main hr { border: 0; border-top: 1px solid var(--line); margin: 2.2rem 0; }
+main blockquote {
+  margin: 1rem 0; padding: .5rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: var(--box-bg); border-radius: 0 var(--box-radius) var(--box-radius) 0;
+  color: var(--text-muted);
+}
+main blockquote p { margin: .3rem 0; }
+
+code {
+  font: .86em/1.5 var(--mono);
+  background: var(--box-bg); padding: .12em .35em;
+  border-radius: 4px;
+}
+pre {
+  margin: 1rem 0; padding: .8rem 1rem; overflow-x: auto;
+  background: var(--box-bg); border-radius: var(--box-radius);
+}
+pre code { background: none; padding: 0; font-size: .86rem; }
+
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid var(--line); padding: .4rem .65rem; text-align: left; }
+th { background: var(--box-bg); font-weight: 650; }
+tbody tr:nth-child(even) { background: rgba(135, 135, 135, .04); }
+
+/* 代码高亮（pygments） */
+.highlight .k, .highlight .kd, .highlight .kn { color: #a626a4; }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #4078f2; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #a0a1a7; font-style: italic; }
+.highlight .mi, .highlight .mf { color: #986801; }
+.highlight .nf, .highlight .n { color: #383a42; }
+.highlight .cp, .highlight .cpf { color: #a0a1a7; }
+
+main img {
+  max-width: 100%; height: auto; display: block; margin: 1.2rem 0;
+  border: 1px solid var(--line); border-radius: var(--box-radius);
+}
+
+/* ---------------- 右侧页内目录 ---------------- */
+.toc {
+  position: sticky; top: 0;
+  flex: 0 0 var(--toc-w); width: var(--toc-w);
+  max-height: 100vh; overflow-y: auto;
+  padding: 3rem .8rem 3rem .4rem;
+  font-size: 12.5px;
+}
+.toc h5 {
+  margin: 0 0 .5rem; font-size: 10.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: .15rem 0; }
+.toc a {
+  display: block; padding: .16rem .4rem; border-radius: 5px;
+  color: var(--text-muted); line-height: 1.4;
+}
+.toc a:hover { background: var(--box-bg); color: var(--primary); text-decoration: none; }
+.toc .lv3 { padding-left: 1rem; font-size: 12px; }
+
+/* 翻页 */
+.pager {
+  display: flex; gap: .8rem; margin-top: 3rem; padding-top: 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.pager a {
+  flex: 1 1 0; padding: .6rem .9rem; border: 1px solid var(--line);
+  border-radius: var(--box-radius); color: var(--text);
+}
+.pager a:hover { background: var(--box-bg); text-decoration: none; }
+.pager .dir { display: block; font-size: 11px; color: var(--text-muted); }
+.pager .next { text-align: right; }
+
+/* 首页卡片 */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+         gap: .7rem; margin: 1rem 0 2rem; }
+.cards a {
+  display: block; padding: .8rem 1rem; color: var(--text);
+  background: var(--box-bg); border-radius: var(--box-radius);
+  border: 1px solid transparent;
+}
+.cards a:hover { border-color: var(--primary); text-decoration: none; }
+.cards b { display: block; font-size: .95rem; margin-bottom: .15rem; }
+.cards span { font-size: .82rem; color: var(--text-muted); }
+.sec-title { font-size: 1.2rem; font-weight: 800; margin: 2rem 0 .1rem; }
+.sec-desc { color: var(--text-muted); font-size: .88rem; margin: 0 0 .6rem; }
+
+@media (max-width: 1180px) {
+  .toc { display: none; }
+}
+@media (max-width: 820px) {
+  .shell { display: block; }
+  .sidebar { position: static; height: auto; width: auto; flex: none; }
+  main { padding: 1.6rem 1.1rem 4rem; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class='shell'>
+<aside class='sidebar'>
+<div class='brand'><a href='index.html' style='color:inherit'><b>QLGL</b><span>C11 界面库 · 文档</span></a></div>
+<div class='search'><input id='q' type='text' placeholder='搜索页面与章节…' autocomplete='off' spellcheck='false'><div id='qres' class='results' hidden></div></div>
+<details class='sec'><summary>入门</summary>
+<a href='tutorial/01_basics.html' title='基础知识'>基础知识</a>
+<a href='tutorial/02_text.html' title='文本'>文本</a>
+<a href='tutorial/03_layout.html' title='布局'>布局</a>
+<a href='tutorial/04_interaction.html' title='交互'>交互</a>
+<a href='tutorial/05_animation.html' title='动画'>动画</a>
+<a href='tutorial/06_theme.html' title='换皮肤'>换皮肤</a>
+<a href='tutorial/07_advanced.html' title='进阶'>进阶</a>
+</details>
+<details class='sec'><summary>界面与控件</summary>
+<a href='tutorial/08_tags.html' title='标签与语义'>标签与语义</a>
+<a href='tutorial/09_scroll.html' title='滚动'>滚动</a>
+<a href='tutorial/11_input.html' title='输入控件'>输入控件</a>
+<a href='tutorial/13_form.html' title='多行输入与表单'>多行输入与表单</a>
+<a href='tutorial/26_touch.html' title='触摸：单指点按 · 拖动滚动 · 双指缩放'>触摸：单指点按 · 拖动滚动 · 双指缩放</a>
+</details>
+<details class='sec'><summary>布局与文本</summary>
+<a href='tutorial/12_text.html' title='空白与上下标'>空白与上下标</a>
+<a href='tutorial/19_grid.html' title='Grid：二维布局，以及 border-image'>Grid：二维布局，以及 border-image</a>
+<a href='tutorial/22_table.html' title='表格：display: table 全家 + colspan / rowspan'>表格：display: table 全家 + colspan / rowspan</a>
+<a href='tutorial/23_columns.html' title='多栏：column-count / column-width / column-rule'>多栏：column-count / column-width / column-rule</a>
+<a href='tutorial/24_text_stack.html' title='文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向'>文本栈：@font-face / 家族列表 / 真字重 / 连字 / 双向</a>
+</details>
+<details class='sec'><summary>视觉与动效</summary>
+<a href='tutorial/15_backdrop.html' title='毛玻璃叠在动的背景上'>毛玻璃叠在动的背景上</a>
+<a href='tutorial/20_filter.html' title='离屏图层：filter / mix-blend-mode / mask / 组透明度'>离屏图层：filter / mix-blend-mode / mask / 组透明度</a>
+<a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
+<a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
+<a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
+</details>
+<details class='sec'><summary>语法与兼容</summary>
+<a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
+<a href='tutorial/14_css3.html' title='CSS3 补全：真实页面天天用的那几件'>CSS3 补全：真实页面天天用的那几件</a>
+<a href='tutorial/18_css3_more.html' title='CSS3 补全收官：状态选择器、文本细节、背景图'>CSS3 补全收官：状态选择器、文本细节、背景图</a>
+</details>
+<details class='sec'><summary>性能</summary>
+<a href='tutorial/17_perf.html' title='性能诊断与 MCU 基准'>性能诊断与 MCU 基准</a>
+</details>
+<details class='sec'><summary>集成与部署</summary>
+<a href='tutorial/28_your_project.html' title='在自己的工程里用 QLGL'>在自己的工程里用 QLGL</a>
+</details>
+<details class='sec'><summary>API 手册</summary>
+<span class='mod'>QLObject —— 对象系统：类、属性、信号</span>
+<a href='manual/object/QLObject阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/object/QLObject API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLText —— 文本：字体、字形、UTF-8</span>
+<a href='manual/text/QLText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/text/QLText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
+<a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
+<a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLRender —— 渲染：画布、GPU 后端、脏区</span>
+<a href='manual/render/QLRender阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/render/QLRender API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLAnim —— 动效：帧时钟、缓动、补间</span>
+<a href='manual/anim/QLAnim阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/anim/QLAnim API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
+<a href='manual/input/QLInput阅读指南.html' title='阅读指南'>阅读指南</a>
+<a href='manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+</details>
+<details class='sec'><summary>规范与清单</summary>
+<a href='manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
+<a href='manual/ui/CSS3进度规划.html' title='CSS 进度规划'>CSS 进度规划</a>
+<a href='manual/ui/CSS3开发日志.html' title='CSS 开发日志'>CSS 开发日志</a>
+<a href='manual/ui/HTML5标签覆盖与裁剪.html' title='HTML5 标签覆盖与 MCU 裁剪'>HTML5 标签覆盖与 MCU 裁剪</a>
+<a href='manual/ui/HTML5标签进度规划.html' title='HTML5 标签进度规划'>HTML5 标签进度规划</a>
+<a href='manual/ui/HTML5标签开发日志.html' title='HTML5 标签开发日志'>HTML5 标签开发日志</a>
+</details>
+<details class='sec' open><summary>设计文档</summary>
+<a href='图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='媒体播放设计.html' class='current' title='媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）'>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
+<a href='平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
+<a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
+<a href='底层实现设计.html' title='QLGL 底层实现设计（v0.1 草案）'>QLGL 底层实现设计（v0.1 草案）</a>
+<a href='第三方依赖.html' title='第三方依赖与许可'>第三方依赖与许可</a>
+<a href='迁移指南.html' title='从 Web 迁到 QLGL：写法对照与坑'>从 Web 迁到 QLGL：写法对照与坑</a>
+<a href='Web兼容设计.html' title='Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）'>Web 兼容设计（HTML/CSS 子集；不做 JS，不碰 WebView）</a>
+<a href='对比与取舍.html' title='与主流框架对比：qlgl 站在哪一格'>与主流框架对比：qlgl 站在哪一格</a>
+<a href='开发规划.html' title='QLGL 开发规划'>QLGL 开发规划</a>
+<a href='bench.html' title='性能基线（bench.md）'>性能基线（bench.md）</a>
+<a href='性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
+<a href='JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
+<a href='跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+</details>
+<p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
+</aside>
+<main><div class='inner'>
+<p class='eyebrow'>设计文档</p>
+<h1>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</h1>
+<p class='lead'>这份文档定四件事：播放引擎怎么分层、时钟和线程谁说了算、 帧怎么落到 CPU/GL 两个后端、&lt;track&gt; 和容器字幕分别归谁。 和图像管线一样，红线是外来数据必须有界：媒体文件是典型的&quot;不可信、可畸形、 可能很大&quot;的输入，任何一条路径都不许 OOM、越界或死循环。</p>
+<blockquote>
+<p>状态：<strong>设计草案（2026-11-15）</strong>。目标读者：要实现媒体后端、音视频输出、
+字幕轨与 <code>&lt;video&gt;</code> 布局/绘制的人。
+相关：<a href="平台后端设计.html">平台后端设计</a>（回调表套路）、
+<a href="图像管线设计.html">图像管线设计</a>（外来数据必须有界、<code>blit_image</code>）、
+<a href="manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>（现状：三个标签都还是占位）。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 结论摘要</h2>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>决定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用什么解码</td>
+<td><strong>FFmpeg</strong>（libavformat / libavcodec / libavutil / libswscale / libswresample），默认后端，<strong>运行期可选</strong></td>
+</tr>
+<tr>
+<td>自己写吗</td>
+<td>不写。容器解析 + 编解码器 + 重采样都不是这个库该做的事</td>
+</tr>
+<tr>
+<td>分层</td>
+<td><code>QLMedia</code>（状态机/时钟/队列）+ <code>QLMediaBackend</code>（解码接缝）+ <code>QLAudioSink</code>（音频设备接缝），与 <code>QLPlatform</code> 同一套路（弱符号 + <code>ql_*_set_backend()</code>）</td>
+</tr>
+<tr>
+<td>线程</td>
+<td>每个 <code>QLMedia</code> <strong>一个工作线程</strong>（demux + 解码 + 预填充），UI 线程只取"最新一帧"和"已解码 PCM"</td>
+</tr>
+<tr>
+<td>A/V 同步</td>
+<td><strong>音频设备时钟为主</strong>；没有音频/没开声音时用 <code>CLOCK_MONOTONIC</code>；视频迟到超过 ~80ms 直接丢</td>
+</tr>
+<tr>
+<td>视频呈现</td>
+<td>CPU 后端：<code>sws_scale</code> 到画布格式；GL 后端：三平面纹理 + BT.601/709 矩阵 shader（<strong>不落 CPU</strong>）</td>
+</tr>
+<tr>
+<td>音频输出</td>
+<td>一期 ALSA；PulseAudio / WASAPI / AAudio 作为后端补充；回调里只做环形缓冲拷贝</td>
+</tr>
+<tr>
+<td><code>&lt;track&gt;</code></td>
+<td><strong>和 FFmpeg 无关</strong>：WebVTT 解析 + 按时间取 cue + 由 QLUI 画 overlay</td>
+</tr>
+<tr>
+<td>容器内嵌字幕</td>
+<td>FFmpeg 的 subtitle stream，走同一条 overlay 通道（与 <code>&lt;track&gt;</code> 并列，优先级：用户选的轨 &gt; 容器默认）</td>
+</tr>
+<tr>
+<td>现状兼容</td>
+<td>没有媒体能力/没有后端时，<code>&lt;video&gt;</code>/<code>&lt;audio&gt;</code> 仍退回现有"占位盒"，页面不炸</td>
+</tr>
+<tr>
+<td>MCU</td>
+<td><code>QL_FEAT_MEDIA=0</code>（默认）。将来可以是"只解 MJPEG + PCM"的极简后端，不链 FFmpeg</td>
+</tr>
+<tr>
+<td>许可</td>
+<td>FFmpeg 默认 LGPL-2.1+；<strong>不要开 <code>--enable-gpl</code></strong>，否则整库变 GPL</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1">1. 目标与非目标</h2>
+<p><strong>目标</strong></p>
+<ol>
+<li><code>&lt;video src&gt;</code> 能播本地文件，画面进 QLUI 的盒子（<code>object-fit</code> / 圆角 / 裁剪复用现有路径），
+   有声音、有进度、能暂停/拖动/循环，卡顿时<strong>丢帧而不是越拖越晚</strong>。</li>
+<li><code>&lt;audio src&gt;</code> 只出声、不占布局（与浏览器一致：<code>&lt;audio&gt;</code> 无 <code>controls</code> 时没有盒子）。</li>
+<li><code>&lt;track kind=subtitles src=x.vtt&gt;</code> 能按时间显示字幕，样式走最小子集（颜色/字号/底）。</li>
+<li>解码在后台线程，UI 线程<strong>永不阻塞</strong>；静止（暂停）时零解码、零唤醒。</li>
+<li>外来输入有界：尺寸、时长、码率、队列深度都有上限；畸形文件只报错，不崩。</li>
+</ol>
+<p><strong>非目标（明确不做）</strong></p>
+<ul>
+<li><code>controls</code> 原生控件（播放条）。本库的哲学是"界面用 HTML/CSS 写"，
+  播放条就是一个 <code>&lt;div&gt;</code> + 几个按钮；一期只提供事件和 API，<strong>不画控件</strong>。</li>
+<li>HLS / DASH / DRM。一期只做"一个 URL/路径 = 一个文件"。</li>
+<li>录制、摄像头（<code>getUserMedia</code>）、屏幕捕获。</li>
+<li>视频编码。只解不编。</li>
+<li>多路视频同屏（画中画/分屏）。一期限制 <code>QL_CFG_MEDIA_MAX_STREAMS</code>（默认 2：1 视频 + 1 音频），
+  多实例留接口但不保证。</li>
+<li><code>requestVideoFrameCallback</code>、<code>MediaSource</code>、Web Audio API。</li>
+<li>硬件解码一期不做（接口留 <code>hw</code> 字段；VAAPI/VideoToolbox 二期）。</li>
+<li>动画 GIF/APNG（图像管线已有结论：只取首帧）。</li>
+</ul>
+<hr />
+<h2 id="2-html">2. HTML 语义与元素模型</h2>
+<h3 id="21">2.1 三个标签的现状与目标</h3>
+<table>
+<thead>
+<tr>
+<th>标签</th>
+<th>现在</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;video&gt;</code></td>
+<td><code>QL_UI_TAG_VIDEO</code>，占位盒，子内容不渲染</td>
+<td>替换型元素：固有尺寸来自媒体（默认 300×150），有画面、有事件</td>
+</tr>
+<tr>
+<td><code>&lt;audio&gt;</code></td>
+<td><code>QL_UI_TAG_AUDIO</code>，矮占位盒</td>
+<td><strong>零盒子</strong>（<code>display:none</code> 语义），只出声；<code>controls</code> 也由应用自己写</td>
+</tr>
+<tr>
+<td><code>&lt;track&gt;</code></td>
+<td><code>QL_UI_TAG_TRACK</code>，<code>display:none</code></td>
+<td>保持 <code>display:none</code>；但构建期要把它<strong>挂到父 <code>&lt;video&gt;</code>/<code>&lt;audio&gt;</code> 的轨道表</strong>上</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>迁移注意：<code>&lt;audio&gt;</code> 从"矮占位盒"改成"无盒"会改变现有页面的布局。
+关闭媒体能力（<code>QL_FEAT_UI_MEDIA=0</code>）时保留旧行为（占位盒），
+打开时按浏览器语义走。</p>
+</blockquote>
+<h3 id="22">2.2 属性（一期认这些，其余忽略）</h3>
+<table>
+<thead>
+<tr>
+<th>元素</th>
+<th>属性</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;video&gt;</code> / <code>&lt;audio&gt;</code></td>
+<td><code>src</code></td>
+<td>本地路径或 <code>file://</code>；构建期原样存进文本池，运行期由 <code>QLMedia</code> 打开</td>
+</tr>
+<tr>
+<td></td>
+<td><code>poster</code></td>
+<td>视频首帧出来前显示的图（资源名，复用 <code>&lt;img&gt;</code> 的资源表）</td>
+</tr>
+<tr>
+<td></td>
+<td><code>width</code> / <code>height</code></td>
+<td>覆盖固有尺寸（CSS <code>width/height</code> 仍然优先，走盒模型）</td>
+</tr>
+<tr>
+<td></td>
+<td><code>muted</code> / <code>volume</code></td>
+<td>音量</td>
+</tr>
+<tr>
+<td></td>
+<td><code>loop</code></td>
+<td>播完回 0</td>
+</tr>
+<tr>
+<td></td>
+<td><code>autoplay</code></td>
+<td>允许自动播放；<strong>桌面默认尊重该属性</strong>，移动端由应用决定</td>
+</tr>
+<tr>
+<td></td>
+<td><code>preload</code></td>
+<td><code>none</code> / <code>metadata</code> / <code>auto</code>（默认 <code>metadata</code>：只读头，不解码）</td>
+</tr>
+<tr>
+<td></td>
+<td><code>playsinline</code></td>
+<td>认下来但无操作（没有全屏概念）</td>
+</tr>
+<tr>
+<td><code>&lt;track&gt;</code></td>
+<td><code>kind</code></td>
+<td><code>subtitles</code> / <code>captions</code> / <code>descriptions</code> / <code>chapters</code> / <code>metadata</code>；一期只渲染 <code>subtitles</code>/<code>captions</code></td>
+</tr>
+<tr>
+<td></td>
+<td><code>src</code></td>
+<td>WebVTT 文件（<code>.vtt</code>）</td>
+</tr>
+<tr>
+<td></td>
+<td><code>srclang</code> / <code>label</code> / <code>default</code></td>
+<td>轨道选择</td>
+</tr>
+<tr>
+<td><code>&lt;source&gt;</code></td>
+<td><code>src</code> / <code>type</code></td>
+<td>多个候选源：一期只取<strong>第一个能打开的</strong>（按顺序尝试）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>没有 JS</strong>：所以没有 <code>video.play()</code>。控制走 C API（§9），
+页面里的按钮通过 <code>ql_ui_set_click_cb</code> 回调到应用，应用再调 <code>ql_media_play()</code>。
+这也是"HTML 写界面、C 写逻辑"的分工，和现有事件/输入模型一致。</p>
+<h3 id="23">2.3 资源从哪来</h3>
+<ul>
+<li><strong>不在构建期转码</strong>：视频动辄几十 MB，塞进 C 数组不现实。
+  <code>qltext</code> 只把 <code>src</code> 当<strong>字符串</strong>存下来（和 <code>&lt;img&gt;</code> 的资源名同一个文本池）。</li>
+<li>小音频（提示音）可以走 <code>&lt;img&gt;</code> 那套"构建期嵌入"：<code>qltext --embed-media name=file</code>，
+  产物是字节数组，运行期 <code>ql_media_open_mem()</code>。一期先只做路径，嵌入二期。</li>
+<li>找不到文件 = <code>QL_ERR_IO</code> + 明确日志 + 占位盒（不崩、不猜）。</li>
+</ul>
+<hr />
+<h2 id="3">3. 能力开关与预设</h2>
+<p>沿用"能力正交、各自可裁、组合都合法"的规则（与图像管线一致）。</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>宏</th>
+<th>默认</th>
+<th>关掉的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;video&gt;</code>/<code>&lt;audio&gt;</code> 标签</td>
+<td><code>QL_FEAT_UI_MEDIA</code></td>
+<td>1（桌面）/ 0（MCU 预设）</td>
+<td>三个标签回到占位盒/<code>display:none</code></td>
+</tr>
+<tr>
+<td>播放引擎核心</td>
+<td><code>QL_FEAT_MEDIA</code></td>
+<td>= <code>QL_FEAT_UI_MEDIA</code></td>
+<td>没有 <code>QLMedia</code>，标签永远占位</td>
+</tr>
+<tr>
+<td>FFmpeg 后端</td>
+<td><code>QL_FEAT_MEDIA_FFMPEG</code></td>
+<td>构建期找到 FFmpeg 才 1</td>
+<td>只能用注册进来的其他后端（或没有）</td>
+</tr>
+<tr>
+<td>视频通路</td>
+<td><code>QL_FEAT_MEDIA_VIDEO</code></td>
+<td>= <code>QL_FEAT_MEDIA</code></td>
+<td><code>&lt;video&gt;</code> 只出声/只显示 poster</td>
+</tr>
+<tr>
+<td>音频通路</td>
+<td><code>QL_FEAT_MEDIA_AUDIO</code></td>
+<td>= <code>QL_FEAT_MEDIA</code></td>
+<td>静音播放（时钟退回系统单调钟）</td>
+</tr>
+<tr>
+<td>WebVTT 字幕</td>
+<td><code>QL_FEAT_MEDIA_WEBVTT</code></td>
+<td>= <code>QL_FEAT_UI_MEDIA</code></td>
+<td>无 <code>&lt;track&gt;</code> 渲染，容器字幕也不显示</td>
+</tr>
+<tr>
+<td>网络流</td>
+<td><code>QL_FEAT_MEDIA_NET</code></td>
+<td>0</td>
+<td>只允许本地路径</td>
+</tr>
+<tr>
+<td>硬件解码</td>
+<td><code>QL_FEAT_MEDIA_HW</code></td>
+<td>0（二期）</td>
+<td>恒软解</td>
+</tr>
+</tbody>
+</table>
+<p>容量与队列（<code>qlconfig.h</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>默认</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_MEDIA_MAX_STREAMS</code></td>
+<td>2</td>
+<td>每实例最多几路流（1 视频 + 1 音频）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MEDIA_FRAME_POOL</code></td>
+<td>4</td>
+<td>视频帧池大小（同时存活的帧数）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MEDIA_VIDEO_QUEUE</code></td>
+<td>3</td>
+<td>解码完成待呈现的帧数上限</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MEDIA_AUDIO_QUEUE</code></td>
+<td>8</td>
+<td>已解码 PCM 块数上限</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MEDIA_MAX_DIM</code></td>
+<td>8192</td>
+<td>单边像素上限（防"4K 视频"变炸弹）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_MEDIA_MAX_PIXELS</code></td>
+<td>4096×2160</td>
+<td>总像素上限（解码前用容器信息挡）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4">4. 分层与接缝</h2>
+<div class="highlight"><pre><span></span><code>QLUI（&lt;video&gt;/&lt;audio&gt;/&lt;track&gt; 三个元素、布局、overlay）
+  └─ QLMedia（一个媒体实例：状态机、时钟、队列、事件）
+       ├─ QLMediaBackend  ← 解码接缝（ffmpeg 默认；MCU 可换 MJPEG）
+       │     · open/close/seek/read_video/read_audio
+       │     · 输出 QLMediaVideoFrame（YUV 平面 + pts）与 PCM 块
+       ├─ QLAudioSink     ← 设备接缝（ALSA 默认；Pulse/WASAPI/AAudio）
+       └─ 时钟：音频设备时钟 / 系统单调钟
+</code></pre></div>
+
+<p>和 <code>QLPlatform</code> 完全同构：</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 应用/板级覆盖；不设置就用默认（桌面 = ffmpeg + ALSA） */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_media_set_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMediaBackend</span><span class="w"> </span><span class="o">*</span><span class="n">backend</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLMediaBackend</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_backend</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+
+<span class="cm">/* 弱符号：MCU 板级文件定义同名强符号即可覆盖 */</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLMediaBackend</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_backend_default</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">const</span><span class="w"> </span><span class="n">QLAudioSink</span><span class="w">    </span><span class="o">*</span><span class="nf">ql_audio_sink_default</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div>
+
+<p><strong>为什么要有接缝</strong>：FFmpeg 在 MCU 上完全不成立（体积、浮点、文件系统）。
+把"解码"和"出声"关在 vtable 后面，<code>QLMedia</code> 的时钟/队列/状态机就能被
+一个假后端完整测掉（见 §12），将来换 MJPEG/ADPCM 也不用动 UI 层。</p>
+<hr />
+<h2 id="5">5. 一次播放的数据流</h2>
+<div class="highlight"><pre><span></span><code>ql_media_open(path)
+   │  读容器头（不解码）：时长、流数、尺寸、帧率、采样率
+   ▼
+ql_media_play()
+   │
+   ├─ 工作线程 loop：
+   │    av_read_frame → 视频包队列 / 音频包队列（有界，满了就阻塞）
+   │    视频解码 → 帧池取一块 → 解码进 YUV 平面 → pts 入&quot;待呈现&quot;
+   │    音频解码 → swr_convert → 16bit 立体声 → SPSC 环形缓冲（给设备回调）
+   │
+   ├─ 音频设备回调（独立线程）：
+   │    从环形缓冲取 N 帧 → 写设备；欠载补静音并记一次 underrun
+   │
+   └─ UI 线程（每帧）：
+        ql_media_acquire_frame() → 拿到&quot;该显示了&quot;的最新帧（或 NULL）
+        → CPU: sws_scale → canvas blit / GL: 上传三平面 + shader
+        → 释放帧（还池）
+</code></pre></div>
+
+<p><strong>边界规则</strong></p>
+<ul>
+<li>队列全部有界：包队列 8、视频帧 3、音频块 8。满了让工作线程阻塞，而不是吃内存。</li>
+<li>帧池固定 <code>QL_CFG_MEDIA_FRAME_POOL</code> 个，<code>acquire_frame()</code> <strong>不阻塞</strong>；
+  没有新帧就返回 NULL（上一帧继续显示）。</li>
+<li>音频回调里<strong>不分配、不加锁</strong>：只用无锁 SPSC 环形缓冲（读写下标原子推进）。</li>
+<li>UI 线程不做 <code>av_*</code> 调用，也不做 <code>sws_scale</code>（GL 后端连转换都不做）。</li>
+</ul>
+<hr />
+<h2 id="6-av">6. 时钟与 A/V 同步</h2>
+<h3 id="61">6.1 主时钟</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>主时钟</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>有音频且没静音</td>
+<td><strong>音频设备时钟</strong>：<code>pts_played = 写入设备的字节数 / 每秒字节数 - 设备缓冲延迟</code>（ALSA 用 <code>snd_pcm_delay()</code>）</td>
+</tr>
+<tr>
+<td>无音频 / <code>muted</code> / 音频后端打开失败</td>
+<td><code>CLOCK_MONOTONIC</code>，从 <code>play()</code> 起算，暂停时冻结</td>
+</tr>
+<tr>
+<td>暂停</td>
+<td>时钟停走；恢复时把基准点后移暂停时长</td>
+</tr>
+</tbody>
+</table>
+<p>对外暴露：</p>
+<div class="highlight"><pre><span></span><code><span class="kt">int64_t</span><span class="w"> </span><span class="nf">ql_media_clock_us</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 当前播放位置（微秒） */</span>
+</code></pre></div>
+
+<h3 id="62">6.2 视频呈现策略</h3>
+<div class="highlight"><pre><span></span><code>pts &lt;= clock + 5ms        → 立刻呈现
+clock + 5ms &lt; pts &lt; +80ms → 等（UI 层把下一帧时间告诉主循环，别空转）
+pts &lt; clock - 80ms        → 丢帧（跳过，不呈现），并记一次 late_drop
+</code></pre></div>
+
+<ul>
+<li>连续丢帧超过 ~500ms：<strong>重新对齐</strong>（把时钟基准挪到该帧 pts），避免"永远追不上"。</li>
+<li>60fps 视频要求主循环能 16ms 醒一次：<code>QLWindow</code> 现在的空闲等待固定 32ms，
+  需要新增"下一个截止时间"查询（动画 + 媒体共用）：</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLUI 侧汇总：动画 / 媒体 / 光标闪烁，谁最近就返回谁；没有返回 -1 */</span>
+<span class="kt">int</span><span class="w"> </span><span class="nf">ql_ui_next_deadline_ms</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>ql_window_poll()</code> 的 <code>wait(timeout)</code> 取 <code>min(32, deadline)</code>。</p>
+<h3 id="63-seek">6.3 拖动（seek）</h3>
+<div class="highlight"><pre><span></span><code><span class="n">ql_media_seek</span><span class="p">(</span><span class="n">ms</span><span class="p">)</span>
+</code></pre></div>
+
+<p>工作线程收到命令后：<code>avformat_seek_file(...)</code> → <code>avcodec_flush_buffers()</code> →
+清空包/帧队列 → 重置音频环形缓冲 → <strong>时钟基准改到目标 pts</strong>。
+seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
+<hr />
+<h2 id="7">7. 视频呈现：两个后端</h2>
+<h3 id="71">7.1 帧的表示</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLMediaVideoFrame</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int32_t</span><span class="w">  </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int64_t</span><span class="w">  </span><span class="n">pts_us</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">format</span><span class="p">;</span><span class="w">        </span><span class="cm">/* QL_MEDIA_FMT_YUV420P / NV12 / RGB565 / RGBA8888 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">planes</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 1~3 */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int32_t</span><span class="w">  </span><span class="n">stride</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">      </span><span class="n">refs</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 帧池引用计数 */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w">    </span><span class="o">*</span><span class="n">pool</span><span class="p">;</span><span class="w">          </span><span class="cm">/* 归还用 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLMediaVideoFrame</span><span class="p">;</span>
+</code></pre></div>
+
+<p><strong>永远是"借用"</strong>：<code>ql_media_acquire_frame()</code> 返回带引用的帧，画完必须
+<code>ql_media_frame_release(frame)</code>，否则帧池耗尽、解码线程阻塞（这是设计上的背压）。</p>
+<h3 id="72-cpu">7.2 CPU 后端</h3>
+<ul>
+<li><code>sws_scale</code> 到画布的 <code>QLColorFormat</code>（RGB565/RGB888/ARGB8888）。</li>
+<li>尺寸不匹配时同时做缩放（<code>SWS_BILINEAR</code>）；<code>object-fit</code> 的裁剪在 QLUI 层做。</li>
+<li>代价：1080p @60 每帧约 2~5ms（桌面 x86），720p 约 1~2ms。
+  MCU 档不提供该路径（<code>QL_FEAT_MEDIA=0</code>）。</li>
+<li>目标矩形每一帧都要<strong>标脏</strong>：视频盒子的 <code>QLRect</code> 入脏区，走现有局部重绘。</li>
+</ul>
+<h3 id="73-gl">7.3 GL 后端</h3>
+<ul>
+<li>三个平面各上传一张 <code>GL_LUMINANCE</code>（GLES3 用 <code>GL_R8</code>）纹理，
+  只在 <code>pts</code> 变化时上传（同一帧重复绘制不重复传）。</li>
+<li>片元着色器做 BT.601/709 矩阵 + <code>object-fit</code> 的 UV 变换；
+  色彩范围（limited/full）从容器/解码器元数据取，取不到按 limited。</li>
+<li>圆角/裁剪复用现有的 SDF + mask，不做第二套。</li>
+<li>与"保留式脏区"的交互：视频区域每帧必然脏，因此<strong>含视频的窗口</strong>实际是每帧重绘该矩形；
+  静止（暂停）时回到零重绘。</li>
+</ul>
+<h3 id="74-poster">7.4 poster 与首帧</h3>
+<ul>
+<li><code>poster</code> 有值：解码前显示图片（复用图像资源表）。</li>
+<li>没有 poster：显示空白（透明）而不是黑块——黑块会让人以为"加载失败"。</li>
+</ul>
+<hr />
+<h2 id="8">8. 音频输出</h2>
+<h3 id="81">8.1 接口</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLAudioSink</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">open</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">**</span><span class="n">out</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">rate</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">channels</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">format</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">period_frames</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">close</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">start</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">);</span><span class="w">            </span><span class="cm">/* 回调开始拉数据 */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">pause</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">paused</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* 设备回调：buf 里填 frames 帧，返回实际写入帧数；欠载返回 0 */</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">write</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">frames</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">delay_frames</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">);</span><span class="w">     </span><span class="cm">/* 设备里还剩多少帧没播（做时钟用） */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_volume</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">percent</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* 内部：由 QLMedia 注册的&quot;要数据&quot;回调 */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_pull</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">pull</span><span class="p">)(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="p">),</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLAudioSink</span><span class="p">;</span>
+</code></pre></div>
+
+<ul>
+<li>一期实现：<strong>ALSA</strong>（<code>snd_pcm_*</code>），<code>SND_PCM_FORMAT_S16_LE</code>、立体声、
+  48kHz 优先（设备不支持就 <code>swr</code> 转）。</li>
+<li>设备打不开：<code>QL_FEAT_MEDIA_AUDIO</code> 仍在，但实例退化成"静音 + 系统时钟"，
+  打一条 <code>QL_LOGW</code>（不是错误——蓝牙耳机没连上也应该能播视频）。</li>
+<li>音量在 <code>swr</code> 之后乘（S16 乘法带饱和），或交给 ALSA 的 softvol；一期用前者，
+  保证所有后端行为一致。</li>
+</ul>
+<h3 id="82">8.2 欠载与漂移</h3>
+<ul>
+<li>欠载（underrun）：补静音，累计计数；连续欠载说明解码跟不上 → 日志一次。</li>
+<li>时钟漂移：音频时钟与系统时钟的偏差不主动纠正；视频追音频。</li>
+<li>设备热插拔：一期不管（ALSA 默认设备重开）；二期加 <code>snd_pcm_recover</code> + 重建。</li>
+</ul>
+<hr />
+<h2 id="9-c-api">9. 公共 C API（草案）</h2>
+<div class="highlight"><pre><span></span><code><span class="cm">/* ---------- 生命周期 ---------- */</span>
+<span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">src</span><span class="p">);</span><span class="w">            </span><span class="cm">/* 只读头，不解码 */</span>
+<span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_open_mem</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_media_close</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+
+<span class="cm">/* ---------- 控制 ---------- */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_play</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_pause</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_seek</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">ms</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_set_volume</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">percent</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 0~100 */</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_media_set_muted</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">muted</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_media_set_loop</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">loop</span><span class="p">);</span>
+
+<span class="cm">/* ---------- 状态（UI 每帧读，都是常量时间） ---------- */</span>
+<span class="kt">int64_t</span><span class="w"> </span><span class="nf">ql_media_duration_ms</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="kt">int64_t</span><span class="w"> </span><span class="nf">ql_media_position_ms</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_media_state</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span><span class="w">   </span><span class="cm">/* QL_MEDIA_IDLE/OPENING/READY/PLAYING/PAUSED/ENDED/ERROR */</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_media_has_video</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">     </span><span class="nf">ql_media_has_audio</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+
+<span class="cm">/* ---------- 视频帧 ---------- */</span>
+<span class="n">QLMediaVideoFrame</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_acquire_frame</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 不阻塞；无新帧 NULL */</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_media_frame_release</span><span class="p">(</span><span class="n">QLMediaVideoFrame</span><span class="w"> </span><span class="o">*</span><span class="n">f</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">  </span><span class="nf">ql_media_frame_wait_ms</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span><span class="w">           </span><span class="cm">/* 下一帧还有多久（喂 wait） */</span>
+
+<span class="cm">/* ---------- 字幕 ---------- */</span>
+<span class="kt">int</span><span class="w">  </span><span class="nf">ql_media_track_count</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">  </span><span class="nf">ql_media_set_track</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span><span class="w">          </span><span class="cm">/* -1 = 关 */</span>
+<span class="cm">/* 观众要的文字（含容器字幕与选中的 &lt;track&gt;），UI 每帧取一次 */</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_subtitle_text</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+
+<span class="cm">/* ---------- 事件 ---------- */</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">QL_MEDIA_EV_READY</span><span class="p">,</span><span class="w">       </span><span class="cm">/* 元数据就绪（尺寸/时长可读） */</span>
+<span class="w">    </span><span class="n">QL_MEDIA_EV_STATE</span><span class="p">,</span><span class="w">       </span><span class="cm">/* 状态变了 */</span>
+<span class="w">    </span><span class="n">QL_MEDIA_EV_ENDED</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_MEDIA_EV_ERROR</span><span class="p">,</span>
+<span class="w">    </span><span class="n">QL_MEDIA_EV_BUFFERING</span><span class="p">,</span><span class="w">   </span><span class="cm">/* 二期：网络流 */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLMediaEventType</span><span class="p">;</span>
+<span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_media_event_fn</span><span class="p">)(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="n">QLMediaEventType</span><span class="w"> </span><span class="n">ev</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">ql_media_set_event_cb</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="n">ql_media_event_fn</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+</code></pre></div>
+
+<p>约定：</p>
+<ul>
+<li>所有 API 都可以在 UI 线程调用；内部只投递命令，不阻塞等解码。</li>
+<li><code>ql_media_position_ms()</code> 在 <code>PLAYING</code> 时读时钟，其它状态读"最后已知位置"。</li>
+<li>错误码：<code>QL_ERR_INVAL</code>（参数/路径）、<code>QL_ERR_IO</code>（打不开）、
+  <code>QL_ERR_UNSUPPORTED</code>（没有后端/编解码器）、<code>QL_ERR_NOMEM</code>。</li>
+</ul>
+<h3 id="91-qlui">9.1 与 QLUI 的绑定</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 构建期：&lt;video id=v src=&quot;a.mp4&quot;&gt; 的节点绑定一个媒体实例 */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_bind_media</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">node_id</span><span class="p">,</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="cm">/* 或者按节点指针（构建路径没有 id 时） */</span>
+<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_bind_media_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+</code></pre></div>
+
+<p>绑定之后：布局用媒体的固有尺寸（还没读到就用 <code>width/height</code> 或 300×150），
+绘制时 QLUI 调 <code>ql_media_acquire_frame()</code>，有帧就画、没帧就画 poster/空。</p>
+<hr />
+<h2 id="10-track-webvtt">10. <code>&lt;track&gt;</code> 与 WebVTT</h2>
+<h3 id="101">10.1 归谁</h3>
+<table>
+<thead>
+<tr>
+<th>来源</th>
+<th>谁解析</th>
+<th>谁绘制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;track src=x.vtt&gt;</code></td>
+<td><strong>本库自己的 WebVTT 解析器</strong>（纯文本，几十 KB）</td>
+<td>QLUI overlay</td>
+</tr>
+<tr>
+<td>容器内嵌字幕（MKV/MP4 的 subtitle stream）</td>
+<td>FFmpeg</td>
+<td>同上（文本走 <code>ql_media_subtitle_text()</code>）</td>
+</tr>
+<tr>
+<td>硬字幕（压进画面的）</td>
+<td>不需处理（已经在像素里）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><code>&lt;track&gt;</code> <strong>不使用 FFmpeg</strong>：VTT 解析不需要任何编解码库，也因此
+<code>QL_FEAT_MEDIA_WEBVTT=1</code> 而 <code>QL_FEAT_MEDIA_FFMPEG=0</code> 是合法组合（静态字幕页）。</p>
+<h3 id="102">10.2 解析与模型</h3>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">start_ms</span><span class="p">,</span><span class="w"> </span><span class="n">end_ms</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">text</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 文本池下标（构建期）或堆字符串（运行期） */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">line</span><span class="p">;</span><span class="w">        </span><span class="cm">/* 0~100，默认 90（底部） */</span>
+<span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">align</span><span class="p">;</span><span class="w">       </span><span class="cm">/* start/center/end */</span>
+<span class="p">}</span><span class="w"> </span><span class="n">QLVTTCue</span><span class="p">;</span>
+</code></pre></div>
+
+<ul>
+<li>文件格式：<code>WEBVTT</code> 头 + 可选 <code>NOTE</code>/<code>STYLE</code>（<code>STYLE</code> 一期忽略）+ cue 块。</li>
+<li>文本内联标签：<code>&lt;b&gt; &lt;i&gt; &lt;u&gt; &lt;c.class&gt; &lt;v Speaker&gt;</code> → 一期只保留纯文本 +
+  <code>&lt;b&gt;/&lt;i&gt;</code> 两个开关位（不建富文本树，避免第二个排版器）。</li>
+<li>时间轴：cue 按 <code>start_ms</code> 排序，<code>ql_media_position_ms()</code> 二分查当前 cue。</li>
+<li>构建期可选：<code>qltext</code> 把 <code>.vtt</code> 预解析成 C 表（和 HTML 一样），运行期零解析；
+  运行期路径保留给"外部字幕文件"。</li>
+</ul>
+<h3 id="103">10.3 绘制</h3>
+<ul>
+<li>overlay 是 <code>QLUI</code> 的一个合成层，画在视频帧之上、控件之下。</li>
+<li>默认样式（可被 CSS 覆盖一部分）：
+  <code>css
+  video::cue { color: #fff; font-size: 5%; text-shadow: 0 1px 2px #000; }</code>
+  一期不支持 <code>::cue</code> 选择器（等于给解析器加伪元素），改为<strong>内置默认样式 +
+  三个可配项</strong>：<code>ql_ui_media_set_cue_style(fg, bg_alpha, size_pct)</code>。</li>
+<li>多行：按视频盒子宽度折行（复用现有文本折行）。</li>
+<li>描边：CPU 后端用"四向偏移 + 底色半透明条"两种之一；GL 后端用 SDF 描边（二期）。</li>
+</ul>
+<hr />
+<h2 id="11">11. 构建、依赖与许可</h2>
+<h3 id="111-cmake">11.1 CMake</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">option</span><span class="p">(</span><span class="s">QLGL_BUILD_MEDIA</span><span class="w"> </span><span class="s2">&quot;构建 &lt;audio&gt;/&lt;video&gt;/&lt;track&gt; 与 QLMedia&quot;</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+
+<span class="nb">if</span><span class="p">(</span><span class="s">QLGL_BUILD_MEDIA</span><span class="p">)</span>
+<span class="w">    </span><span class="nb">find_package</span><span class="p">(</span><span class="s">PkgConfig</span><span class="w"> </span><span class="s">QUIET</span><span class="p">)</span>
+<span class="w">    </span><span class="nb">if</span><span class="p">(</span><span class="s">PkgConfig_FOUND</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">pkg_check_modules</span><span class="p">(</span><span class="s">FFMPEG</span><span class="w"> </span><span class="s">QUIET</span>
+<span class="w">            </span><span class="s">libavformat&gt;=60</span><span class="w"> </span><span class="s">libavcodec&gt;=60</span><span class="w"> </span><span class="s">libavutil&gt;=58</span>
+<span class="w">            </span><span class="s">libswscale&gt;=7</span><span class="w"> </span><span class="s">libswresample&gt;=4</span><span class="p">)</span>
+<span class="w">    </span><span class="nb">endif</span><span class="p">()</span>
+<span class="w">    </span><span class="nb">if</span><span class="p">(</span><span class="s">FFMPEG_FOUND</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">target_sources</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">src/media/qlmedia.c</span><span class="w"> </span><span class="s">src/media/qlmedia_ffmpeg.c</span>
+<span class="w">                                  </span><span class="s">src/media/qlaudio_alsa.c</span><span class="w"> </span><span class="s">src/media/qlwebvtt.c</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">target_include_directories</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">FFMPEG_INCLUDE_DIRS</span><span class="o">}</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">FFMPEG_LIBRARIES</span><span class="o">}</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">target_compile_definitions</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">QL_FEAT_MEDIA_FFMPEG=1</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">message</span><span class="p">(</span><span class="s">STATUS</span><span class="w"> </span><span class="s2">&quot;QLGL: FFmpeg 媒体后端已启用&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="nb">else</span><span class="p">()</span>
+<span class="w">        </span><span class="nb">target_compile_definitions</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">QL_FEAT_MEDIA_FFMPEG=0</span><span class="p">)</span>
+<span class="w">        </span><span class="nb">message</span><span class="p">(</span><span class="s">STATUS</span><span class="w"> </span><span class="s2">&quot;QLGL: 未找到 FFmpeg，&lt;video&gt; 只能用注册进来的后端&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="nb">endif</span><span class="p">()</span>
+<span class="nb">endif</span><span class="p">()</span>
+</code></pre></div>
+
+<ul>
+<li>FFmpeg <strong>动态链接</strong>（<code>pkg-config</code> 默认就是 <code>-lavformat</code> 等）。</li>
+<li>版本下限按 FFmpeg 6.0（<code>avformat &gt;= 60</code>）。Qt 6.5 自带的是 FFmpeg 7.1，
+  两者 API 差异集中在 <code>AVCodecParameters</code>/<code>ch_layout</code>，用 <code>#if LIBAVUTIL_VERSION_MAJOR</code>
+  分隔即可。</li>
+<li><code>QLGL_BUILD_MEDIA=OFF</code> 时<strong>整个 <code>src/media/</code> 不参与编译</strong>，头文件里的
+  声明保留（返回 <code>QL_ERR_UNSUPPORTED</code> 的桩），与 <code>TEXT_PARSER=OFF</code> 的教训一致：
+  要么在配置期挡，要么给桩，不能让用户撞链接错误。</li>
+</ul>
+<h3 id="112">11.2 许可（必须写进发布说明）</h3>
+<table>
+<thead>
+<tr>
+<th>选择</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认 FFmpeg（LGPL-2.1+，动态链接）</td>
+<td>本库仍可用 MIT/BSD 发布；分发时要带上 FFmpeg 的版权与源码获取方式</td>
+</tr>
+<tr>
+<td><code>--enable-gpl</code>（libx264、libx265、某些滤镜）</td>
+<td><strong>整条链接链变 GPL</strong>，闭源产品不能用</td>
+</tr>
+<tr>
+<td><code>--enable-nonfree</code>（如 fdk-aac）</td>
+<td><strong>不可再分发</strong></td>
+</tr>
+<tr>
+<td>静态链接 FFmpeg</td>
+<td>LGPL 要求提供可重新链接的目标文件，工程上更麻烦；优先动态</td>
+</tr>
+</tbody>
+</table>
+<p>建议：仓库里<strong>不 vendored FFmpeg</strong>，只写"系统装 <code>libavformat-dev</code> 等"；
+发布包按发行版方式依赖。示例/测试如果需要一个"自带样本"，用
+<code>ffmpeg</code> 现场生成（见 §12），不把二进制塞进仓库。</p>
+<h3 id="113-alsa">11.3 ALSA</h3>
+<ul>
+<li><code>find_package(ALSA)</code> 或 <code>pkg_check_modules(ALSA alsa)</code>；没有就
+  <code>QL_FEAT_MEDIA_AUDIO=0</code> 或退化成"空音频后端"（静音 + 系统时钟）。</li>
+<li>只链 <code>libasound</code>，不用 Pulse 的 native API 一期（PipeWire 的 ALSA 兼容层够用）。</li>
+</ul>
+<hr />
+<h2 id="12">12. 测试计划</h2>
+<p>媒体最容易变成"只能手测"的模块。这里刻意把<strong>能被确定性测试的部分</strong>和
+<strong>只能手测的部分</strong>分开。</p>
+<h3 id="121-ctest">12.1 确定性测试（进 ctest）</h3>
+<table>
+<thead>
+<tr>
+<th>测什么</th>
+<th>怎么测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时钟 / 丢帧策略</td>
+<td>假后端：按脚本产出 pts 序列，假"音频时钟"按固定步长推进；断言呈现/丢弃的帧号序列</td>
+</tr>
+<tr>
+<td>队列与背压</td>
+<td>假后端快速产帧，UI 故意不取；断言队列封顶、工作线程阻塞而不是吃内存</td>
+</tr>
+<tr>
+<td>帧池生命周期</td>
+<td>acquire/release 配平；ASan 下泄漏检查；<code>close()</code> 时未归还的帧被回收</td>
+</tr>
+<tr>
+<td>seek 状态机</td>
+<td>脚本化命令序列（play → seek → pause → play），断言 flush/时钟基准/队列清空</td>
+</tr>
+<tr>
+<td>事件顺序</td>
+<td>READY → STATE(PLAYING) → ENDED，且不重复</td>
+</tr>
+<tr>
+<td>WebVTT 解析</td>
+<td>正常/跨行/带标签/坏时间戳/CRLF/BOM；golden 文本</td>
+</tr>
+<tr>
+<td>cue 查找</td>
+<td>边界（cue 结束时刻、相邻 cue 相接、空档）</td>
+</tr>
+<tr>
+<td>音频环形缓冲</td>
+<td>单元测试：单生产者单消费者、绕回、欠载补零、采样计数</td>
+</tr>
+<tr>
+<td>重采样</td>
+<td><code>swr</code> 的配置生成（48k→44.1k、5.1→立体声）用固定输入断言输出长度误差 &lt; 1 帧</td>
+</tr>
+<tr>
+<td>有界性</td>
+<td>伪造"时长/尺寸/码率"超限的容器头，断言在解码前就被拒</td>
+</tr>
+</tbody>
+</table>
+<p><strong>假后端</strong>（<code>test/media/fake_backend.c</code>）就是 PC 上的"MCU 版"：
+不依赖 FFmpeg/ALSA，产出合成 YUV（例如渐变色块 + 帧号）和 PCM（正弦波）。
+<code>QL_FEAT_MEDIA_FFMPEG=0</code> 的构建里也能跑完整测试。</p>
+<h3 id="122">12.2 需要真实解码器的测试</h3>
+<ul>
+<li>构建期用系统 <code>ffmpeg</code> 生成 1 秒样本（<code>testsrc2</code> 8 帧 + <code>sine</code>），
+  没有 <code>ffmpeg</code> 就 <code>SKIP</code>（不把二进制塞仓库）。</li>
+<li>断言：能打开、能解出 ≥ N 帧、帧尺寸正确、pts 单调、能 seek 到中间、
+  能播完触发 ENDED。</li>
+<li>像素正确性：解码出的第一帧做 hash（只比"是否稳定"，不比跨版本一致）。</li>
+</ul>
+<h3 id="123-ci">12.3 只能手测（写进验收清单，不进 CI）</h3>
+<ul>
+<li>声音是否连续（欠载计数应为 0）、音画是否同步（口型偏移 &lt; 80ms）；</li>
+<li>4K 视频 CPU/GL 两条路径的帧率与 CPU 占用；</li>
+<li>蓝牙/HDMI 切换、设备独占时的降级；</li>
+<li>拖动进度条时的观感（seek 后首帧延迟）。</li>
+</ul>
+<hr />
+<h2 id="13">13. 分阶段计划</h2>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>验收</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>M1（音频）</strong></td>
+<td><code>QLMedia</code> 核心（状态机/时钟/队列）+ FFmpeg 音频解码 + ALSA 输出 + <code>&lt;audio&gt;</code> 无盒语义</td>
+<td>本地 mp3/wav 连续播放 5 分钟，欠载 0；暂停/恢复/seek 正确；假后端测试全绿</td>
+</tr>
+<tr>
+<td><strong>M2（视频，CPU）</strong></td>
+<td>视频解码 + 帧池 + <code>sws_scale</code> + <code>&lt;video&gt;</code> 布局（固有尺寸/<code>object-fit</code>）+ 脏区</td>
+<td>720p@30 播放流畅、音画同步；暂停零重绘；窗口缩放正确</td>
+</tr>
+<tr>
+<td><strong>M3（视频，GL + 字幕）</strong></td>
+<td>YUV 三平面纹理 + shader 矩阵；<code>&lt;track&gt;</code> WebVTT 解析 + overlay 绘制；容器字幕文本</td>
+<td>1080p@60 GL 路径 CPU 占用显著低于 CPU 路径；字幕时间轴准确</td>
+</tr>
+<tr>
+<td><strong>M4（打磨）</strong></td>
+<td>循环/音量/多源 <code>&lt;source&gt;</code>/poster/事件完善；<code>QL_FEAT_MEDIA_NET</code>（http）；VAAPI 硬解</td>
+<td>断网/坏文件/超限输入不崩；硬解开关可回退软解</td>
+</tr>
+</tbody>
+</table>
+<p>每个阶段都保持"关掉能力 = 回到占位盒"，不允许出现"半开半关"的中间态。</p>
+<hr />
+<h2 id="14-qt">14. 与 Qt 的对照（抄什么、不抄什么）</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Qt 6</th>
+<th>本库</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>后端</td>
+<td>FFmpeg 默认 + 平台原生（<code>QT_MEDIA_BACKEND</code>）</td>
+<td>FFmpeg 默认 + <code>QLMediaBackend</code> 弱符号（MCU 可换）</td>
+</tr>
+<tr>
+<td>帧接口</td>
+<td><code>QVideoSink</code>（最新一帧，可丢弃）</td>
+<td><code>ql_media_acquire_frame()</code>（同一语义，引用计数）</td>
+</tr>
+<tr>
+<td>渲染</td>
+<td><code>QVideoWidget</code>/<code>VideoOutput</code>，可零拷贝 RHI 纹理</td>
+<td>QLUI 的替换型元素；GL 走 YUV shader，CPU 走 <code>sws_scale</code></td>
+</tr>
+<tr>
+<td>音频</td>
+<td><code>QAudioSink</code> + 平台设备</td>
+<td><code>QLAudioSink</code>，一期 ALSA</td>
+</tr>
+<tr>
+<td>时钟</td>
+<td>音频为主，播放器内部管理</td>
+<td>同左，暴露 <code>ql_media_clock_us()</code></td>
+</tr>
+<tr>
+<td>线程</td>
+<td>播放器 + 每流线程 + 事件循环</td>
+<td>一个工作线程 + UI 线程，模型更小</td>
+</tr>
+<tr>
+<td>字幕</td>
+<td>容器轨 + <code>subtitleText</code>；<strong>不解析 WebVTT 文件</strong></td>
+<td>容器轨 + <strong>自己的 WebVTT 解析</strong>（HTML 语义要求）</td>
+</tr>
+<tr>
+<td>控制</td>
+<td><code>QMediaPlayer</code> 富 API + QML 控件</td>
+<td>最小 C API + 用户自己写 HTML 控件</td>
+</tr>
+<tr>
+<td>许可</td>
+<td>Qt 商业/LGPL + FFmpeg LGPL</td>
+<td>库自身许可不变 + FFmpeg LGPL（动态）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>值得抄的</strong>：帧 sink 的"只留最新一帧 + 可丢"、音频主时钟、后端可替换。
+<strong>不要抄的</strong>：<code>QMediaPlayer</code> 那种大而全的对象、每流线程 + 信号槽跨线程、
+把控件也做进框架。</p>
+<hr />
+<h2 id="15">15. 风险与备选</h2>
+<table>
+<thead>
+<tr>
+<th>风险</th>
+<th>影响</th>
+<th>应对</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FFmpeg 体积（动态库 ~几十 MB）</td>
+<td>桌面包变大</td>
+<td>只链需要的 5 个库；不 vendored；文档说明</td>
+</tr>
+<tr>
+<td>LGPL 合规</td>
+<td>分发受限</td>
+<td>动态链接 + 随包附许可与源码获取说明；禁 GPL 组件</td>
+</tr>
+<tr>
+<td>解码线程与 UI 竞争</td>
+<td>卡顿/掉帧</td>
+<td>有界队列 + 帧池 + UI 只取最新帧；<code>--stats</code> 观察</td>
+</tr>
+<tr>
+<td>4K 软解跟不上</td>
+<td>花屏/音画不同步</td>
+<td>丢帧策略 + 明确日志；二期硬解</td>
+</tr>
+<tr>
+<td>ALSA 设备五花八门</td>
+<td>没声音</td>
+<td>打不开就静音降级；<code>QL_LOGW</code>；文档给排查命令</td>
+</tr>
+<tr>
+<td>畸形媒体</td>
+<td>崩溃/越界</td>
+<td>容器信息先验（尺寸/时长上限）+ 解码 API 的返回值全检查 + ASan/fuzz</td>
+</tr>
+<tr>
+<td>WebVTT 需求膨胀（<code>::cue</code>、区域）</td>
+<td>变成第二个排版器</td>
+<td>一期只做纯文本 + 两个内联标签 + 固定默认样式</td>
+</tr>
+<tr>
+<td>平台差异（Windows/macOS）</td>
+<td>后端要各写一份</td>
+<td>先 Linux；<code>QLMediaBackend</code>/<code>QLAudioSink</code> 已经留好位置</td>
+</tr>
+</tbody>
+</table>
+<p><strong>备选方案</strong>（评估过，不采用）：</p>
+<ul>
+<li><strong>平台原生播放器</strong>（GStreamer/Media Foundation/AVFoundation）：
+  每个平台一套，行为不一致，且和"单线程自绘"的架构冲突。作为二期可选后端可以。</li>
+<li><strong>自带解码器</strong>：视频编解码（H.264/VP9/AV1）不是这个库的战场，体积和正确性都不划算。</li>
+<li><strong>只做 <code>&lt;audio&gt;</code> 不做 <code>&lt;video&gt;</code></strong>：可以做，但 <code>&lt;video&gt;</code> 是 HTML 的"第一屏需求"，
+  留到二期的代价是接口要重设计。</li>
+</ul>
+<hr />
+<h2 id="16">16. 开放问题（实现前要定）</h2>
+<ol>
+<li><code>&lt;audio&gt;</code> 从"矮占位盒"改成"无盒"是否接受一个可见的布局变化？
+   （建议接受；关掉媒体能力时保留旧行为。）</li>
+<li>一个页面允许多少个 <code>QLMedia</code> 实例？（建议一期 1 个视频 + 1 个音频，
+   超出在 <code>ql_ui_bind_media()</code> 返回 <code>QL_ERR_UNSUPPORTED</code>。）</li>
+<li><code>poster</code> 的尺寸语义：按视频盒子拉伸还是 <code>object-fit</code>？（建议与 <code>&lt;img&gt;</code> 一致。）</li>
+<li>字幕文本进不进文本池？（构建期进池省内存；运行期外部 VTT 只能堆分配。）</li>
+<li><code>QLWindow</code> 的 32ms 等待是否改成"由 UI 给截止时间"？（建议改，动画也受益。）</li>
+<li>是否需要"无声视频不打开音频设备"的显式开关？（<code>muted</code> 已能表达，建议不需要。）</li>
+<li>测试样本的许可：用 <code>ffmpeg</code> 现场生成（推荐），还是提交 20KB 的公有领域样本？</li>
+</ol><div class='pager'>
+<a href='图像管线设计.html'><span class='dir'>上一页</span>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a class='next' href='平台后端设计.html'><span class='dir'>下一页</span>平台后端设计（QLPlatform）</a>
+</div>
+</div></main>
+<aside class='toc'><h5>本页内容</h5><ul>
+<li><a href='#0'>0. 结论摘要</a></li>
+<li><a href='#1'>1. 目标与非目标</a></li>
+<li><a href='#2-html'>2. HTML 语义与元素模型</a></li>
+<li class='lv3'><a href='#21'>2.1 三个标签的现状与目标</a></li>
+<li class='lv3'><a href='#22'>2.2 属性（一期认这些，其余忽略）</a></li>
+<li class='lv3'><a href='#23'>2.3 资源从哪来</a></li>
+<li><a href='#3'>3. 能力开关与预设</a></li>
+<li><a href='#4'>4. 分层与接缝</a></li>
+<li><a href='#5'>5. 一次播放的数据流</a></li>
+<li><a href='#6-av'>6. 时钟与 A/V 同步</a></li>
+<li class='lv3'><a href='#61'>6.1 主时钟</a></li>
+<li class='lv3'><a href='#62'>6.2 视频呈现策略</a></li>
+<li class='lv3'><a href='#63-seek'>6.3 拖动（seek）</a></li>
+<li><a href='#7'>7. 视频呈现：两个后端</a></li>
+<li class='lv3'><a href='#71'>7.1 帧的表示</a></li>
+<li class='lv3'><a href='#72-cpu'>7.2 CPU 后端</a></li>
+<li class='lv3'><a href='#73-gl'>7.3 GL 后端</a></li>
+<li class='lv3'><a href='#74-poster'>7.4 poster 与首帧</a></li>
+<li><a href='#8'>8. 音频输出</a></li>
+<li class='lv3'><a href='#81'>8.1 接口</a></li>
+<li class='lv3'><a href='#82'>8.2 欠载与漂移</a></li>
+<li><a href='#9-c-api'>9. 公共 C API（草案）</a></li>
+<li class='lv3'><a href='#91-qlui'>9.1 与 QLUI 的绑定</a></li>
+<li><a href='#10-track-webvtt'>10. &amp;lt;track&amp;gt; 与 WebVTT</a></li>
+<li class='lv3'><a href='#101'>10.1 归谁</a></li>
+<li class='lv3'><a href='#102'>10.2 解析与模型</a></li>
+<li class='lv3'><a href='#103'>10.3 绘制</a></li>
+<li><a href='#11'>11. 构建、依赖与许可</a></li>
+<li class='lv3'><a href='#111-cmake'>11.1 CMake</a></li>
+<li class='lv3'><a href='#112'>11.2 许可（必须写进发布说明）</a></li>
+<li class='lv3'><a href='#113-alsa'>11.3 ALSA</a></li>
+<li><a href='#12'>12. 测试计划</a></li>
+<li class='lv3'><a href='#121-ctest'>12.1 确定性测试（进 ctest）</a></li>
+<li class='lv3'><a href='#122'>12.2 需要真实解码器的测试</a></li>
+<li class='lv3'><a href='#123-ci'>12.3 只能手测（写进验收清单，不进 CI）</a></li>
+<li><a href='#13'>13. 分阶段计划</a></li>
+<li><a href='#14-qt'>14. 与 Qt 的对照（抄什么、不抄什么）</a></li>
+<li><a href='#15'>15. 风险与备选</a></li>
+<li><a href='#16'>16. 开放问题（实现前要定）</a></li>
+</ul></aside>
+</div>
+<script src='search-index.js'></script>
+<script>var PREFIX='';
+(function () {
+  var IDX = window.QLGL_SEARCH || [];
+  var box = document.getElementById('q');
+  var panel = document.getElementById('qres');
+  if (!box || !panel) return;
+  var sel = -1, hits = [];
+
+  function esc(s) { return s; }
+
+  function render() {
+    panel.textContent = '';
+    if (!hits.length) {
+      var d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '没有匹配的页面';
+      panel.appendChild(d);
+      panel.hidden = false;
+      return;
+    }
+    hits.forEach(function (h, i) {
+      var a = document.createElement('a');
+      a.className = 'hit' + (i === sel ? ' sel' : '');
+      a.href = PREFIX + h.u;
+      var t = document.createElement('span');
+      t.className = 't';
+      t.textContent = h.t;
+      var c = document.createElement('span');
+      c.className = 'c';
+      c.textContent = h.b;
+      a.appendChild(t); a.appendChild(c);
+      panel.appendChild(a);
+    });
+    panel.hidden = false;
+  }
+
+  function search(q) {
+    q = q.trim().toLowerCase();
+    if (!q) { panel.hidden = true; hits = []; return; }
+    var out = [];
+    for (var i = 0; i < IDX.length; i++) {
+      var e = IDX[i], t = e.t.toLowerCase(), s = 0;
+      if (t === q) s = 100;
+      else if (t.indexOf(q) === 0) s = 90;
+      else if (t.indexOf(q) >= 0) s = 70;
+      else if (e.k && e.b && e.b.toLowerCase().indexOf(q) >= 0) s = 30;
+      if (s > 0) out.push({ s: s + (e.k ? 0 : 8), e: e });
+    }
+    out.sort(function (x, y) { return y.s - x.s || x.e.t.length - y.e.t.length; });
+    hits = out.slice(0, 18).map(function (o) { return o.e; });
+    sel = hits.length ? 0 : -1;
+    render();
+  }
+
+  box.addEventListener('input', function () { search(box.value); });
+  box.addEventListener('focus', function () { if (box.value.trim()) search(box.value); });
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!hits.length) return;
+      sel = (sel + (ev.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length;
+      render();
+    } else if (ev.key === 'Enter') {
+      if (sel >= 0 && hits[sel]) window.location.href = PREFIX + hits[sel].u;
+    } else if (ev.key === 'Escape') {
+      panel.hidden = true; box.blur();
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (!panel.contains(ev.target) && ev.target !== box) panel.hidden = true;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === '/' && document.activeElement !== box &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      ev.preventDefault(); box.focus(); box.select();
+    }
+  });
+})();
+</script>
+</body>
+</html>
