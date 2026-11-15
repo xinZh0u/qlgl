@@ -274,7 +274,7 @@ main img {
 <a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='../../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -1858,7 +1859,62 @@ Apple 那套液态玻璃。参考稿（CodePen）用的是内联 SVG 滤镜：
 <code>QL_EX_WINDOW_DUMP</code> 抓真窗口帧确认折射可见、圆角缺口无方形渗出；
 <code>ctest</code> 88/88（<code>blur.qlg</code> / <code>showcase.qlg</code> 基准随三段卷积一起重建）。</p>
 <p><strong>顺带的版本变更</strong>：<code>QLUIStyle</code> 多一个 <code>backdrop_refract</code> 字节 →
-<code>QL_UI_BLOB_VERSION</code> <strong>37 → 38</strong>，所有 golden 重建。</p><div class='pager'>
+<code>QL_UI_BLOB_VERSION</code> <strong>37 → 38</strong>，所有 golden 重建。</p>
+<blockquote>
+<p><strong>2026-11-15 修订（对照参考稿实测）</strong>：上面写的"往外推"和 14px 都不对。
+把参考稿的位移图（200×200 PNG）解出来实测：R/G 编码的是<strong>朝圆心</strong>的位移场，
+曲线 ≈ <code>0.46·t + 0.54·t⁶</code>，轮廓处最大值 ≈ <strong>0.48 × 盒子尺寸</strong>（320px 盘 ≈ 152px）。
+例程因此改成 <code>refract(143px)</code>（300px 盘），并去掉参考稿里并不存在的 <code>saturate()</code>。
+<code>QLUIStyle</code> 字段与 blob 版本不变，只是 <code>refract()</code> 的位移方向与径向曲线按参考稿修正；
+教程 27 已同步。</p>
+</blockquote>
+<hr />
+<h4 id="1823-backdrop-filter-2026-11-15">18.23 <code>backdrop-filter</code> 可过渡 + 背景照片输入（2026-11-15）</h4>
+<p><strong>问题 1</strong>：<code>transition</code> 的可过渡属性里没有 <code>backdrop-filter</code>。玻璃在 <code>:hover</code> 里把
+<code>refract(143px)</code> 换成 <code>200px</code> 时整块会瞬间跳一下，而参考稿是 0.3s 的渐强。</p>
+<p><strong>做法</strong>：加一个过渡位 <code>QL_UI_TRANS_BACKDROP</code>（<code>0x80</code>，<code>QL_UI_TRANS_ALL</code> 变成 <code>0xFF</code>），
+<code>trans_apply()</code> 里把 <code>backdrop_blur / backdrop_sat / backdrop_refract</code> 一起按进度插值；
+解析器的可过渡属性表加 <code>"backdrop-filter"</code>。回归测试 <code>test_transition_backdrop</code>。</p>
+<p><strong>问题 2</strong>：参考稿的 <code>border: 2px solid transparent</code> 在本库里会被画成<strong>纯白 2px 硬边</strong>
+——<code>QLUIStyle.border_color4</code> 只有 <code>0xRRGGBB</code>，没有 alpha 通道。这就是"边缘白色过于突兀"的根因。</p>
+<p><strong>做法</strong>：例程不再用边框画亮边，改成 <code>box-shadow: 0 0 3px 1px rgba(255,255,255,.55)</code>
+（1px 实心 + 3px 弥散）。这是<strong>文档化的限制</strong>：半透明边框请用 box-shadow / 内阴影。</p>
+<p><strong>问题 3</strong>：例程原来在 C 里现算一张 512×328 的水彩图当背景，细节与真实照片差得远，
+玻璃的模糊/折射都看不出来。</p>
+<p><strong>做法</strong>：删掉生成代码，改成 <code>--image &lt;path&gt;</code> 运行期解码并注册成 <code>photo</code>；
+<code>#photo-wrap</code> 纵向可滚动，滚轮由例程的事件过滤器接住（玻璃铺满整屏，界面层的命中链
+里没有可滚动祖先），直接 <code>ql_ui_scroll_by()</code>。同时把图像尺寸上限拆成两条：</p>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>默认</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QL_CFG_IMAGE_MAX_ENCODED_BYTES</code></td>
+<td>32 MB</td>
+<td>输入文件（编码字节）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_IMAGE_MAX_DECODED_BYTES</code></td>
+<td>16 MB</td>
+<td>解码后像素缓冲（1080p RGBA ≈ 8.3 MB）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>高分辨率壁纸</strong>（4K / 手机竖屏 2700×4800，整幅 RGBA ≈ 52MB）用运行时 API 放开预算：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_image_set_decode_budget</span><span class="p">(</span><span class="mi">256u</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="mi">20</span><span class="p">);</span><span class="w">   </span><span class="c1">// 解这一张时放开</span>
+<span class="n">ql_image_decode</span><span class="p">(...);</span>
+<span class="n">ql_image_set_decode_budget</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span><span class="w">            </span><span class="c1">// 恢复默认</span>
+</code></pre></div>
+
+<p>例程随后做一次 box-filter 降采样（宽 ≤ 2×窗口、总像素 ≤ 6M），只保留显示所需的像素。
+<code>raw</code> 格式的 <code>len</code> 是像素字节，也走这条预算；其它格式的 <code>len</code> 是文件大小，走编码上限。</p>
+<p><strong>验证</strong>：<code>ctest</code> 88/88；<code>build-san</code>（ASan+UBSan）88/88；
+<code>example_38_liquid_glass --image photo.jpg --scroll 250 --dump</code> 确认背景滚动、玻璃位置不变。</p><div class='pager'>
 <a href='../../manual/ui/CSS3进度规划.html'><span class='dir'>上一页</span>CSS 进度规划</a>
 <a class='next' href='../../manual/ui/HTML5标签覆盖与裁剪.html'><span class='dir'>下一页</span>HTML5 标签覆盖与 MCU 裁剪</a>
 </div>

@@ -29,8 +29,9 @@ example/06_theme/
 ```
 
 ```c
-/* 结构只写一次：换皮肤就是换这一个文件名 */
-QLUIDoc *doc = ex_load_ui("index.html", "dark.css");
+/* 结构只写一次：换皮肤就是换这一个 CSS 文件 */
+QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html",
+                                   QL_EX_DIR "/dark.css");
 ```
 
 ## 为什么这很便宜
@@ -41,16 +42,17 @@ QLUIDoc *doc = ex_load_ui("index.html", "dark.css");
 所以"换皮肤"的成本 = 一次编译。可以直接这么写：
 
 ```c
-void apply_theme(const char *css_path)
+void apply_theme(QLWindow *win, const char *css_path)
 {
-    QLUIDoc *doc = ex_load_ui("index.html", css_path);   /* 结构每次都一样 */
-    if (doc == NULL) {
+    /* 结构每次都一样，只是 CSS 换了 */
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", css_path);
+    if (ui == NULL) {
         fprintf(stderr, "皮肤编译失败，保留旧皮肤：%s\n",
                 ql_ui_text_last_error());
-        return;                                    /* ← 失败就不换，别半个正确 */
+        return;                        /* ← 失败就不换，别半个正确 */
     }
-    QLUIRoot *ui = ql_ui_build(doc);
-    /* ... 用新的 ui 替换旧的（旧的 ql_ui_free + ql_ui_doc_free） */
+    ql_window_set_ui(win, ui);         /* 摘旧 root 的输入汇 */
+    /* 旧 root 仍归你：ql_ui_free(旧 ui) */
 }
 ```
 

@@ -274,7 +274,7 @@ main img {
 <a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -523,7 +524,7 @@ main img {
 <p>Mesa 的 Present/XCB 路径在合成器忙于重配窗口时不会及时收到 frame callback，
 最坏会一直等到它的 1 秒超时（实测复现过 <code>swap max 1000.8ms</code>）。</p>
 <h3 id="23">2.3 两个修复</h3>
-<p><strong>① 事件驱动循环（例程 + <code>common.h</code>）</strong></p>
+<p><strong>① 事件驱动循环（<code>QLWindow</code> 的默认主循环）</strong></p>
 <p>以前每帧都 <code>begin → render → swap</code>，静止的界面也每秒交换 144 次。
 现在默认"有脏区才画"：<code>ql_ui_consume_dirty()</code> 拿到脏矩形，没有脏区就
 <code>ql_gfx_gl_wait()</code>（<code>poll(2)</code>）阻塞等事件。拖动时"一个 ConfigureNotify 画一帧"，

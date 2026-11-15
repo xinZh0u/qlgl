@@ -1822,7 +1822,30 @@ const char *ql_ui_doc_last_error(void);
 | `ql_ui_doc_free` | 对**静态 doc（`arena == NULL`）是空操作**，可以无脑调用 |
 | `ql_ui_load_file` | 失败返回 NULL 并打错误日志，原因也可用 `ql_ui_doc_last_error()` |
 
-### 6.5.4 失败原因
+### 6.5.4 运行期文本（HTML/CSS 文件）与截图
+
+```c
+/* 读两个文件 → 解析 → 建运行期树；root 持有 doc，ql_ui_free 一并释放 */
+QLUIRoot *ui = ql_ui_load_html_file("index.html", "style.css");
+
+/* 只解析文本（= ql_ui_load_text 的别名），doc 由调用方释放 */
+QLUIDoc *doc = ql_ui_load_html(html_text, css_text);
+
+/* CPU 离屏截图（无 GL / 无窗口也能跑） */
+int ok = ql_ui_dump_ppm(ui, 640, 380, "/tmp/x.ppm");
+```
+
+| 函数 | 说明 |
+|---|---|
+| `ql_ui_load_html_file(html, css)` | 读文件 + 解析 + 建树；失败返回 NULL，root **持有** doc |
+| `ql_ui_load_html(html, css)` | 只解析，等价 `ql_ui_load_text`；doc 独立所有权 |
+| `ql_ui_dump_ppm(ui, w, h, path)` | 按 w×h 布局并用 CPU 渲染一帧 P6；成功返回 1 |
+
+窗口/主循环（输入法、剪贴板、脏区重绘）见 `<qlgl/qlwindow.h>`：
+`ql_window_create()` → `ql_window_bind_ui()` → `ql_window_run()` →
+`ql_window_destroy()`。窗口**不拥有** root，释放顺序是先窗口后界面。
+
+### 6.5.5 失败原因
 
 加载失败**一律返回 NULL**，绝不"跳过坏数据继续画"。原因用
 `ql_ui_doc_last_error()` 取（静态缓冲，非线程安全）：

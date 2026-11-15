@@ -274,7 +274,7 @@ main img {
 <a href='../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -421,31 +422,38 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 </code></pre></div>
 
 <p>程序这边只负责"读进来 → 编译 → 显示"：</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;common.h&quot;</span>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
 
 <span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">**</span><span class="n">argv</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">qlgl_init</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_OK</span><span class="p">)</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
-<span class="w">    </span><span class="n">ex_load_font</span><span class="p">();</span>
 
-<span class="w">    </span><span class="cm">/* ① 编译界面：读 index.html + style.css（相对例程目录，见 common.h） */</span>
-<span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_load_ui</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;style.css&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">doc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cm">/* ① 编译界面：读 HTML/CSS → 解析 → 建运行期树（doc 归 ui 所有） */</span>
+<span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_html_file</span><span class="p">(</span><span class="n">QL_EX_DIR</span><span class="w"> </span><span class="s">&quot;/index.html&quot;</span><span class="p">,</span>
+<span class="w">                                       </span><span class="n">QL_EX_DIR</span><span class="w"> </span><span class="s">&quot;/style.css&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ui</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;界面编译失败：%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_text_last_error</span><span class="p">());</span>
 <span class="w">        </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="cm">/* ② 建运行期树 */</span>
-<span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* ② 开窗口（输入法/剪贴板/高 DPI/脏区重绘都在里面） */</span>
+<span class="w">    </span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_window_create</span><span class="p">(</span><span class="s">&quot;QLGL · 01 window&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w"> </span><span class="n">QL_WINDOW_GL</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">win</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
+<span class="w">        </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="cm">/* ③ 跑起来（窗口或离屏渲染） */</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">rc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_run</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;QLGL · 01 window&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="n">argv</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* ③ 跑起来（`--dump out.ppm` 可以只出一帧） */</span>
+<span class="w">    </span><span class="n">ql_window_bind_ui</span><span class="p">(</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">rc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_window_run_args</span><span class="p">(</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="n">argv</span><span class="p">);</span>
 
-<span class="w">    </span><span class="cm">/* ④ 收尾 */</span>
+<span class="w">    </span><span class="cm">/* ④ 收尾：窗口不拥有 ui，顺序是先窗口后界面 */</span>
+<span class="w">    </span><span class="n">ql_window_destroy</span><span class="p">(</span><span class="n">win</span><span class="p">);</span>
 <span class="w">    </span><span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_ui_doc_free</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
 <span class="w">    </span><span class="n">qlgl_shutdown</span><span class="p">();</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">rc</span><span class="p">;</span>
 <span class="p">}</span>
@@ -457,15 +465,26 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 走的是同一批文件，见<a href="07_advanced.html">进阶</a>。</p>
 </blockquote>
 <h3 id="1-qlgl_init">① <code>qlgl_init()</code> 与字体</h3>
-<p><code>qlgl_init()</code> 初始化内存统计、字体、输入队列。所有程序开头都要调，
+<p><code>qlgl_init()</code> 初始化内存统计、字体缓存、输入队列。所有程序开头都要调，
 结尾配一个 <code>qlgl_shutdown()</code>。</p>
-<p><code>ex_load_font()</code> 是例程里的样板代码，作用是<strong>指定一个矢量字体文件</strong>：</p>
-<div class="highlight"><pre><span></span><code><span class="n">ql_font_set_default_file</span><span class="p">(</span><span class="s">&quot;/usr/share/fonts/.../NotoSansCJK-Regular.ttc&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">);</span>
+<p>桌面构建（带 FreeType）里，<code>qlgl_init()</code> 会<strong>自动找一份系统字体</strong>
+（<code>QLGL_FONT</code> 环境变量优先，然后 Noto CJK / 文泉驿 / DejaVu）。不设也能跑，
+但会回落到内置的位图字体 —— 那个只有 ASCII，中文全是空白。要指定字体：</p>
+<div class="highlight"><pre><span></span><code><span class="n">ql_font_set_default_file</span><span class="p">(</span><span class="s">&quot;/path/to/font.ttc&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">);</span><span class="w">   </span><span class="c1">// 在 qlgl_init() 之后</span>
 </code></pre></div>
 
-<p>不设也能跑，但会回落到内置的位图字体 —— 那个只有 ASCII，中文全是空白。
-可以用环境变量 <code>QLGL_FONT</code> 覆盖，方便换字体。</p>
-<h3 id="2-ql_ui_load_texthtml-css">② <code>ql_ui_load_text(html, css)</code></h3>
+<h3 id="2-ql_ui_load_html_filehtml_path-css_path">② <code>ql_ui_load_html_file(html_path, css_path)</code></h3>
+<p>一步完成"读文件 → 解析 → 建运行期树"，返回的 root <strong>持有</strong> doc，
+<code>ql_ui_free(ui)</code> 会一并释放。等价的低层写法是：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_html</span><span class="p">(</span><span class="n">html_text</span><span class="p">,</span><span class="w"> </span><span class="n">css_text</span><span class="p">);</span><span class="w">   </span><span class="c1">// 或 ql_ui_load_text()</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span><span class="w">                       </span><span class="c1">// 不持有 doc</span>
+<span class="p">...</span>
+<span class="n">ql_ui_free</span><span class="p">(</span><span class="n">ui</span><span class="p">);</span>
+<span class="n">ql_ui_doc_free</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
+</code></pre></div>
+
+<p>嵌入/静态表场景用低层写法；一般应用用 <code>ql_ui_load_html_file()</code> 就够了。</p>
+<h3 id="3-ql_ui_load_texthtml-css">③ <code>ql_ui_load_text(html, css)</code></h3>
 <p>它把文本编译成一个 <code>QLUIDoc</code>。这个 doc 里全是<strong>扁平数组 + <code>uint16</code> 下标</strong>：</p>
 <div class="highlight"><pre><span></span><code>nodes[]      每个元素的标签、父子兄弟关系、样式下标、文本下标
 styles[]     去重后的样式（QLUIStyle，每个 116 字节）
@@ -518,7 +537,8 @@ free 路径不可能发生。</p>
 <li><a href='#_1'>准备环境</a></li>
 <li><a href='#_2'>一个程序的四步</a></li>
 <li class='lv3'><a href='#1-qlgl_init'>① qlgl_init() 与字体</a></li>
-<li class='lv3'><a href='#2-ql_ui_load_texthtml-css'>② ql_ui_load_text(html, css)</a></li>
+<li class='lv3'><a href='#2-ql_ui_load_html_filehtml_path-css_path'>② ql_ui_load_html_file(html_path, css_path)</a></li>
+<li class='lv3'><a href='#3-ql_ui_load_texthtml-css'>③ ql_ui_load_text(html, css)</a></li>
 <li class='lv3'><a href='#3-ql_ui_builddoc'>③ ql_ui_build(doc)</a></li>
 <li class='lv3'><a href='#4'>④ 所有权：两份东西，两次释放</a></li>
 <li><a href='#_3'>编译期编译长什么样</a></li>

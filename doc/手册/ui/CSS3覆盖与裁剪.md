@@ -322,7 +322,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 | `background-attachment` / `-clip` / `-origin` | ❌ | N | 在"界面元素"上用不到 |
 | `border`（简写） | ✅ | R | `<width>px <style> <color>`，三段任意顺序 |
 | `border-width` | ✅ | R | 1 / 2 / 4 个值（上右下左） |
-| `border-color` | ✅ | R | 1 / 2 / 4 个颜色（上右下左） |
+| `border-color` | ✅ | R | 1 / 2 / 4 个颜色（上右下左）。**不含 alpha**：`transparent` 会被画成实色；半透明亮边用 `box-shadow` |
 | `border-style` | ✅ | R | `solid` / `dashed` / `dotted` / `none`。虚线是**沿边切段填矩形**（不碰 SDF，CPU 与 GL 同一条路径），图案尺寸跟线宽走（dashed 段 3w 缝 2w、dotted 点 1w 缝 1w）。已知差异：与 `border-radius` 同用时按直角画；`double` / `groove` 等仍报错 |
 | `border-{top,right,bottom,left}`（单边简写） | ✅ | R | 与 `border` 同一套 token 判别，写进那一边的长写属性 |
 | `border-*-width` / `-style` / `-color` | ✅ | R | 单边长写；布局按四边各自的宽度内缩内容盒 |
@@ -490,7 +490,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
-| `transition`（简写） | ⚠️ | T | 可过渡：`background-color` `opacity` `color` `border-color` `border-radius` `transform` `clip-path`。逗号分组支持，但**各段必须共用同一组时长/缓动**（库里只有一份 `trans_ms`/`trans_ease`），不同时长报错 |
+| `transition`（简写） | ⚠️ | T | 可过渡：`background-color` `opacity` `color` `border-color` `border-radius` `transform` `clip-path` `backdrop-filter`（blur/saturate/refract 一起插值）。逗号分组支持，但**各段必须共用同一组时长/缓动**（库里只有一份 `trans_ms`/`trans_ease`），不同时长报错 |
 | `transition-property` | ✅ | T | `all` 或上面那批，可列多个（位图） |
 | `transition-duration` | ✅ | T | |
 | `transition-timing-function` | ✅ | T | 具名缓动 + `steps(n)` + `cubic-bezier(a,b,c,d)`（§18.16） |
@@ -508,7 +508,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | 属性 | 状态 | 原因 | 备注 |
 |---|---|---|---|
 | `backdrop-filter: blur() saturate()` | ✅ | R | 毛玻璃；读"已画好的内容"就地模糊，有独立小着色器；`saturate(<N>%)` 把糊完的均值色推艳（`0`/`100%` = 不变），三个函数任意顺序、可只写其中一个；结果裁进 `border-radius`；自己带 `transform: translate` 时采样区跟着走；下层动画实时跟随 |
-| `backdrop-filter: refract(<N>px)` | ✅ | O | **qlgl 扩展（CSS 没有这个函数）**：轮廓附近把采样点沿法线往外推，玻璃边缘于是有透镜般的厚度；等价于参考稿里的 SVG `feDisplacementMap`。采样范围按 `blur 半径 + refract` 外扩，结果只写进圆角轮廓内。见 [§18.22](CSS3开发日志.md)、[液态玻璃教程](../../tutorial/27_liquid_glass.md) |
+| `backdrop-filter: refract(<N>px)` | ✅ | O | **qlgl 扩展（CSS 没有这个函数）**：厚透镜位移，随半径增长、轮廓处最大、朝圆心采样（0.46t + 0.54t⁶，上限 255px）；等价于参考稿里的 SVG `feDisplacementMap`。采样只按 `3·blur` 外扩（折射朝内采，不读盒外），结果只写进圆角轮廓内。见 [§18.22](CSS3开发日志.md)、[液态玻璃教程](../../tutorial/27_liquid_glass.md) |
 | `filter: blur(<N>px)` | ✅ | O | **离屏图层**（§18.10）：元素先合成到临时图再整体糊。9 抽头可分离高斯，抽头间距 = N/2，两条后端同一公式。MCU 档恒关 |
 | `filter: brightness/contrast/saturate/grayscale/sepia/invert/hue-rotate/opacity` | ✅ | O | 颜色矩阵族，同一图层里可链式（最多 6 个）；`1.2` 与 `120%` 等价 |
 | `filter: drop-shadow(<dx> <dy> [blur] [color])` | ✅ | O | 影子取 **alpha 形状**（跟着圆角/透明洞走）；颜色默认 `currentColor`；`drop-shadow` **不接受** `spread`（CSS 也没有） |

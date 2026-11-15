@@ -274,7 +274,7 @@ main img {
 <a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -364,7 +365,7 @@ HTML/CSS 由 qlgl 负责（构建期编译），JS 由宿主负责（V8/QuickJS 
 </tr>
 <tr>
 <td>G2</td>
-<td>宿主可以自由驱动帧与事件（不复用 <code>ex_run</code>）</td>
+<td>宿主可以自由驱动帧与事件（不复用 <code>QLWindow</code> 的主循环）</td>
 <td>用 <code>uv_timer</code> 泵帧的 demo 跑满 60fps</td>
 </tr>
 <tr>

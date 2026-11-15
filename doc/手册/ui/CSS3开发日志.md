@@ -1188,3 +1188,53 @@ Apple 那套液态玻璃。参考稿（CodePen）用的是内联 SVG 滤镜：
 
 **顺带的版本变更**：`QLUIStyle` 多一个 `backdrop_refract` 字节 →
 `QL_UI_BLOB_VERSION` **37 → 38**，所有 golden 重建。
+
+> **2026-11-15 修订（对照参考稿实测）**：上面写的"往外推"和 14px 都不对。
+> 把参考稿的位移图（200×200 PNG）解出来实测：R/G 编码的是**朝圆心**的位移场，
+> 曲线 ≈ `0.46·t + 0.54·t⁶`，轮廓处最大值 ≈ **0.48 × 盒子尺寸**（320px 盘 ≈ 152px）。
+> 例程因此改成 `refract(143px)`（300px 盘），并去掉参考稿里并不存在的 `saturate()`。
+> `QLUIStyle` 字段与 blob 版本不变，只是 `refract()` 的位移方向与径向曲线按参考稿修正；
+> 教程 27 已同步。
+
+---
+
+#### 18.23 `backdrop-filter` 可过渡 + 背景照片输入（2026-11-15）
+
+**问题 1**：`transition` 的可过渡属性里没有 `backdrop-filter`。玻璃在 `:hover` 里把
+`refract(143px)` 换成 `200px` 时整块会瞬间跳一下，而参考稿是 0.3s 的渐强。
+
+**做法**：加一个过渡位 `QL_UI_TRANS_BACKDROP`（`0x80`，`QL_UI_TRANS_ALL` 变成 `0xFF`），
+`trans_apply()` 里把 `backdrop_blur / backdrop_sat / backdrop_refract` 一起按进度插值；
+解析器的可过渡属性表加 `"backdrop-filter"`。回归测试 `test_transition_backdrop`。
+
+**问题 2**：参考稿的 `border: 2px solid transparent` 在本库里会被画成**纯白 2px 硬边**
+——`QLUIStyle.border_color4` 只有 `0xRRGGBB`，没有 alpha 通道。这就是"边缘白色过于突兀"的根因。
+
+**做法**：例程不再用边框画亮边，改成 `box-shadow: 0 0 3px 1px rgba(255,255,255,.55)`
+（1px 实心 + 3px 弥散）。这是**文档化的限制**：半透明边框请用 box-shadow / 内阴影。
+
+**问题 3**：例程原来在 C 里现算一张 512×328 的水彩图当背景，细节与真实照片差得远，
+玻璃的模糊/折射都看不出来。
+
+**做法**：删掉生成代码，改成 `--image <path>` 运行期解码并注册成 `photo`；
+`#photo-wrap` 纵向可滚动，滚轮由例程的事件过滤器接住（玻璃铺满整屏，界面层的命中链
+里没有可滚动祖先），直接 `ql_ui_scroll_by()`。同时把图像尺寸上限拆成两条：
+
+| 宏 | 默认 | 含义 |
+|---|---|---|
+| `QL_CFG_IMAGE_MAX_ENCODED_BYTES` | 32 MB | 输入文件（编码字节） |
+| `QL_CFG_IMAGE_MAX_DECODED_BYTES` | 16 MB | 解码后像素缓冲（1080p RGBA ≈ 8.3 MB） |
+
+**高分辨率壁纸**（4K / 手机竖屏 2700×4800，整幅 RGBA ≈ 52MB）用运行时 API 放开预算：
+
+```c
+ql_image_set_decode_budget(256u << 20);   // 解这一张时放开
+ql_image_decode(...);
+ql_image_set_decode_budget(0);            // 恢复默认
+```
+
+例程随后做一次 box-filter 降采样（宽 ≤ 2×窗口、总像素 ≤ 6M），只保留显示所需的像素。
+`raw` 格式的 `len` 是像素字节，也走这条预算；其它格式的 `len` 是文件大小，走编码上限。
+
+**验证**：`ctest` 88/88；`build-san`（ASan+UBSan）88/88；
+`example_38_liquid_glass --image photo.jpg --scroll 250 --dump` 确认背景滚动、玻璃位置不变。

@@ -274,7 +274,7 @@ main img {
 <a href='../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -360,24 +361,26 @@ main img {
 <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 </code></pre></div>
 
-<div class="highlight"><pre><span></span><code><span class="cm">/* 结构只写一次：换皮肤就是换这一个文件名 */</span>
-<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_load_ui</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;dark.css&quot;</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 结构只写一次：换皮肤就是换这一个 CSS 文件 */</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_html_file</span><span class="p">(</span><span class="n">QL_EX_DIR</span><span class="w"> </span><span class="s">&quot;/index.html&quot;</span><span class="p">,</span>
+<span class="w">                                   </span><span class="n">QL_EX_DIR</span><span class="w"> </span><span class="s">&quot;/dark.css&quot;</span><span class="p">);</span>
 </code></pre></div>
 
 <h2 id="_1">为什么这很便宜</h2>
 <p>编译一次是毫秒级的，而且<strong>产物就是静态表</strong> —— 换完皮肤之后，运行期的性能与
 "构建期编译出来的"完全一样：没有解析、没有匹配、没有额外的间接层。</p>
 <p>所以"换皮肤"的成本 = 一次编译。可以直接这么写：</p>
-<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">apply_theme</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css_path</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">apply_theme</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">css_path</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ex_load_ui</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">css_path</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 结构每次都一样 */</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">doc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cm">/* 结构每次都一样，只是 CSS 换了 */</span>
+<span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_html_file</span><span class="p">(</span><span class="n">QL_EX_DIR</span><span class="w"> </span><span class="s">&quot;/index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">css_path</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ui</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;皮肤编译失败，保留旧皮肤：%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
 <span class="w">                </span><span class="n">ql_ui_text_last_error</span><span class="p">());</span>
-<span class="w">        </span><span class="k">return</span><span class="p">;</span><span class="w">                                    </span><span class="cm">/* ← 失败就不换，别半个正确 */</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span><span class="w">                        </span><span class="cm">/* ← 失败就不换，别半个正确 */</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
-<span class="w">    </span><span class="cm">/* ... 用新的 ui 替换旧的（旧的 ql_ui_free + ql_ui_doc_free） */</span>
+<span class="w">    </span><span class="n">ql_window_set_ui</span><span class="p">(</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span><span class="w">         </span><span class="cm">/* 摘旧 root 的输入汇 */</span>
+<span class="w">    </span><span class="cm">/* 旧 root 仍归你：ql_ui_free(旧 ui) */</span>
 <span class="p">}</span>
 </code></pre></div>
 

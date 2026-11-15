@@ -274,7 +274,7 @@ main img {
 <a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='../../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -1491,7 +1492,7 @@ PC/Mobile 装得下就必须做 —— 这是这次重新定档的核心变化�
 <td><code>border-color</code></td>
 <td>✅</td>
 <td>R</td>
-<td>1 / 2 / 4 个颜色（上右下左）</td>
+<td>1 / 2 / 4 个颜色（上右下左）。<strong>不含 alpha</strong>：<code>transparent</code> 会被画成实色；半透明亮边用 <code>box-shadow</code></td>
 </tr>
 <tr>
 <td><code>border-style</code></td>
@@ -2212,7 +2213,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>transition</code>（简写）</td>
 <td>⚠️</td>
 <td>T</td>
-<td>可过渡：<code>background-color</code> <code>opacity</code> <code>color</code> <code>border-color</code> <code>border-radius</code> <code>transform</code> <code>clip-path</code>。逗号分组支持，但<strong>各段必须共用同一组时长/缓动</strong>（库里只有一份 <code>trans_ms</code>/<code>trans_ease</code>），不同时长报错</td>
+<td>可过渡：<code>background-color</code> <code>opacity</code> <code>color</code> <code>border-color</code> <code>border-radius</code> <code>transform</code> <code>clip-path</code> <code>backdrop-filter</code>（blur/saturate/refract 一起插值）。逗号分组支持，但<strong>各段必须共用同一组时长/缓动</strong>（库里只有一份 <code>trans_ms</code>/<code>trans_ease</code>），不同时长报错</td>
 </tr>
 <tr>
 <td><code>transition-property</code></td>
@@ -2292,7 +2293,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>backdrop-filter: refract(&lt;N&gt;px)</code></td>
 <td>✅</td>
 <td>O</td>
-<td><strong>qlgl 扩展（CSS 没有这个函数）</strong>：轮廓附近把采样点沿法线往外推，玻璃边缘于是有透镜般的厚度；等价于参考稿里的 SVG <code>feDisplacementMap</code>。采样范围按 <code>blur 半径 + refract</code> 外扩，结果只写进圆角轮廓内。见 <a href="CSS3开发日志.html">§18.22</a>、<a href="../../tutorial/27_liquid_glass.html">液态玻璃教程</a></td>
+<td><strong>qlgl 扩展（CSS 没有这个函数）</strong>：厚透镜位移，随半径增长、轮廓处最大、朝圆心采样（0.46t + 0.54t⁶，上限 255px）；等价于参考稿里的 SVG <code>feDisplacementMap</code>。采样只按 <code>3·blur</code> 外扩（折射朝内采，不读盒外），结果只写进圆角轮廓内。见 <a href="CSS3开发日志.html">§18.22</a>、<a href="../../tutorial/27_liquid_glass.html">液态玻璃教程</a></td>
 </tr>
 <tr>
 <td><code>filter: blur(&lt;N&gt;px)</code></td>

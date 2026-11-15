@@ -137,7 +137,8 @@ X11 显示后端和 GL 后端共用，键码表只有一份。
 ### 关闭窗口
 
 **后端不把 Esc/q 当关闭键**（否则应用自己收不到 Esc）。
-需要"按 Esc 退出"就在自己装的汇里判断（`example/common.h` 就是这么做的）：
+`QLWindow` 的默认主循环已经替应用装好了汇；自己驱动循环时，需要"按 Esc 退出"
+就在自己装的汇里判断：
 
 ```c
 static void sink(const QLInputEvent *ev, void *user)

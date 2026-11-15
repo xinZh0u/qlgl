@@ -87,31 +87,38 @@ cmake --build build -j --target example_01_window
 程序这边只负责"读进来 → 编译 → 显示"：
 
 ```c
-#include "common.h"
+#include <stdio.h>
+#include <qlgl/qlgl.h>
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_load_font();
 
-    /* ① 编译界面：读 index.html + style.css（相对例程目录，见 common.h） */
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    /* ① 编译界面：读 HTML/CSS → 解析 → 建运行期树（doc 归 ui 所有） */
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html",
+                                       QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
 
-    /* ② 建运行期树 */
-    QLUIRoot *ui = ql_ui_build(doc);
+    /* ② 开窗口（输入法/剪贴板/高 DPI/脏区重绘都在里面） */
+    QLWindow *win = ql_window_create("QLGL · 01 window", 240, 120, QL_WINDOW_GL);
+    if (win == NULL) {
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
 
-    /* ③ 跑起来（窗口或离屏渲染） */
-    const int rc = ex_run(ui, 240, 120, "QLGL · 01 window", argc, argv);
+    /* ③ 跑起来（`--dump out.ppm` 可以只出一帧） */
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
 
-    /* ④ 收尾 */
+    /* ④ 收尾：窗口不拥有 ui，顺序是先窗口后界面 */
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }
@@ -123,19 +130,33 @@ int main(int argc, char **argv)
 
 ### ① `qlgl_init()` 与字体
 
-`qlgl_init()` 初始化内存统计、字体、输入队列。所有程序开头都要调，
+`qlgl_init()` 初始化内存统计、字体缓存、输入队列。所有程序开头都要调，
 结尾配一个 `qlgl_shutdown()`。
 
-`ex_load_font()` 是例程里的样板代码，作用是**指定一个矢量字体文件**：
+桌面构建（带 FreeType）里，`qlgl_init()` 会**自动找一份系统字体**
+（`QLGL_FONT` 环境变量优先，然后 Noto CJK / 文泉驿 / DejaVu）。不设也能跑，
+但会回落到内置的位图字体 —— 那个只有 ASCII，中文全是空白。要指定字体：
 
 ```c
-ql_font_set_default_file("/usr/share/fonts/.../NotoSansCJK-Regular.ttc", -1);
+ql_font_set_default_file("/path/to/font.ttc", -1);   // 在 qlgl_init() 之后
 ```
 
-不设也能跑，但会回落到内置的位图字体 —— 那个只有 ASCII，中文全是空白。
-可以用环境变量 `QLGL_FONT` 覆盖，方便换字体。
+### ② `ql_ui_load_html_file(html_path, css_path)`
 
-### ② `ql_ui_load_text(html, css)`
+一步完成"读文件 → 解析 → 建运行期树"，返回的 root **持有** doc，
+`ql_ui_free(ui)` 会一并释放。等价的低层写法是：
+
+```c
+QLUIDoc *doc = ql_ui_load_html(html_text, css_text);   // 或 ql_ui_load_text()
+QLUIRoot *ui = ql_ui_build(doc);                       // 不持有 doc
+...
+ql_ui_free(ui);
+ql_ui_doc_free(doc);
+```
+
+嵌入/静态表场景用低层写法；一般应用用 `ql_ui_load_html_file()` 就够了。
+
+### ③ `ql_ui_load_text(html, css)`
 
 它把文本编译成一个 `QLUIDoc`。这个 doc 里全是**扁平数组 + `uint16` 下标**：
 

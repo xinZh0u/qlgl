@@ -274,7 +274,7 @@ main img {
 <a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='../../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -448,7 +449,8 @@ main img {
 
 <ul>
 <li><code>ql_mem_set_allocator</code> 应在 <code>qlgl_init</code> <strong>之前</strong>调用；</li>
-<li>三个回调可部分为 <code>NULL</code>，缺省部分自动回落到 <code>malloc/realloc/free</code>；</li>
+<li>三个回调必须<strong>同时提供</strong>且来自同一个分配器族；任一为 <code>NULL</code> 时整组回落到
+  <code>malloc/realloc/free</code>（避免自定义 <code>alloc</code> 得到的指针交给默认 <code>free</code>）；</li>
 <li><code>QL_CFG_MEM_TRACK=1</code> 时每次分配带 16 字节头部：记录大小 + magic，重复释放/越界写会打错误日志而不是静默崩溃；</li>
 <li><code>ql_mem_stats</code> 的 <code>bytes_live</code> 是<strong>当前存活的 payload 字节数</strong>（不含头部），测试里用它做泄漏断言。</li>
 </ul>

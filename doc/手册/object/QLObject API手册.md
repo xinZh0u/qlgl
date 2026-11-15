@@ -60,7 +60,8 @@ void  ql_mem_reset_stats(void);
 ```
 
 - `ql_mem_set_allocator` 应在 `qlgl_init` **之前**调用；
-- 三个回调可部分为 `NULL`，缺省部分自动回落到 `malloc/realloc/free`；
+- 三个回调必须**同时提供**且来自同一个分配器族；任一为 `NULL` 时整组回落到
+  `malloc/realloc/free`（避免自定义 `alloc` 得到的指针交给默认 `free`）；
 - `QL_CFG_MEM_TRACK=1` 时每次分配带 16 字节头部：记录大小 + magic，重复释放/越界写会打错误日志而不是静默崩溃；
 - `ql_mem_stats` 的 `bytes_live` 是**当前存活的 payload 字节数**（不含头部），测试里用它做泄漏断言。
 

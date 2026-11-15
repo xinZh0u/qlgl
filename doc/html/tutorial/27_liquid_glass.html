@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>液态玻璃：blur + saturate + refract 的玻璃圆盘 · QLGL</title>
+<title>液态玻璃：blur + refract 的玻璃圆盘 · QLGL</title>
 <style>
 :root {
   --text: #333;
@@ -274,7 +274,7 @@ main img {
 <a href='../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../tutorial/27_liquid_glass.html' class='current' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../tutorial/27_liquid_glass.html' class='current' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -336,14 +337,17 @@ main img {
 </aside>
 <main><div class='inner'>
 <p class='eyebrow'>视觉与动效</p>
-<h1>液态玻璃：blur + saturate + refract 的玻璃圆盘</h1>
-<p class='lead'>参考稿的滤镜链是 feGaussianBlur + feDisplacementMap：先轻度模糊，再按一张法线 图把像素位移。位移集中在轮廓附近，于是玻璃边缘看起来像一块有厚度的透镜。</p>
-<p><img src="../img/38-liquid-glass.png" alt="水彩背景上的玻璃圆盘：边缘一圈折射，中间一个白色加号" width="630"></p>
+<h1>液态玻璃：blur + refract 的玻璃圆盘</h1>
+<p class='lead'>参考稿的滤镜链是 feGaussianBlur + feDisplacementMap：先轻度模糊，再按一张 200×200 的法线图把像素位移。把那张图解出来实测：R/G 通道编码的是一个 朝圆心的位移场</p>
+<p><img src="../img/38-liquid-glass.png" alt="玻璃圆盘：边缘一圈折射，中间一个白色加号" width="630"></p>
 <p>完整程序：<code>example/38_liquid_glass/</code>（对照稿：codepen.io/Mikhail-Bespalov/pen/MYwrMNy）</p>
 <blockquote>
-<p>直接看效果：<code>./build/example/example_38_liquid_glass</code></p>
+<p>直接看效果（背景是<strong>你给的图片</strong>，不再由程序生成）：</p>
+<p><code>bash
+./build/example/example_38_liquid_glass --image ~/Pictures/watercolor.jpg</code></p>
 <ul>
-<li><strong>悬停</strong>圆盘：折射半径 14px → 26px（边缘那圈"厚度"变厚），同时整体放大 2%、白底变亮</li>
+<li><strong>滚轮</strong>：上下滚动背景照片（玻璃固定在中间，所以同一块玻璃会折过照片的不同部分）</li>
+<li><strong>悬停</strong>圆盘：折射半径 143px → 200px（0.22s 插值过去），同时整体放大 2%、白底变亮</li>
 <li><strong>点一下</strong>圆盘：下面那行字换一次</li>
 </ul>
 </blockquote>
@@ -365,8 +369,8 @@ main img {
 </tr>
 <tr>
 <td>②</td>
-<td><code>border: 2px solid rgba(255,255,255,.6)</code></td>
-<td>一圈亮边，玻璃的"截面"</td>
+<td><code>box-shadow: 0 0 3px 1px rgba(255,255,255,.55)</code></td>
+<td>一圈柔和的亮边（参考稿是 2px 硬环，深色照片上太刺眼）</td>
 </tr>
 <tr>
 <td>③</td>
@@ -375,24 +379,34 @@ main img {
 </tr>
 <tr>
 <td>④</td>
-<td><code>backdrop-filter: blur(6px) saturate(140%) refract(14px)</code></td>
-<td>毛面 + 提色 + <strong>边缘折射</strong></td>
+<td><code>backdrop-filter: blur(6px) refract(143px)</code></td>
+<td>毛面 + <strong>整块厚透镜折射</strong></td>
 </tr>
 </tbody>
 </table>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">glass</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.08</span><span class="p">);</span>
-<span class="w">  </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.6</span><span class="p">);</span>
-<span class="w">  </span><span class="k">box-shadow</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="w"> </span><span class="mi">32</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mf">0.12</span><span class="p">);</span>
-<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">6</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nb">saturate</span><span class="p">(</span><span class="mi">140</span><span class="kt">%</span><span class="p">)</span><span class="w"> </span><span class="nf">refract</span><span class="p">(</span><span class="mi">14</span><span class="kt">px</span><span class="p">);</span>
+<span class="w">  </span><span class="k">box-shadow</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">3</span><span class="kt">px</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.55</span><span class="p">),</span>
+<span class="w">              </span><span class="mi">0</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="w"> </span><span class="mi">32</span><span class="kt">px</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mf">0.12</span><span class="p">);</span>
+<span class="w">  </span><span class="n">backdrop-filter</span><span class="p">:</span><span class="w"> </span><span class="nb">blur</span><span class="p">(</span><span class="mi">6</span><span class="kt">px</span><span class="p">)</span><span class="w"> </span><span class="nf">refract</span><span class="p">(</span><span class="mi">143</span><span class="kt">px</span><span class="p">);</span>
+<span class="w">  </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">background-color</span><span class="w"> </span><span class="mi">220</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">,</span><span class="w"> </span><span class="k">transform</span><span class="w"> </span><span class="mi">220</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">,</span>
+<span class="w">              </span><span class="n">backdrop-filter</span><span class="w"> </span><span class="mi">220</span><span class="kt">ms</span><span class="w"> </span><span class="kc">ease-out</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
 
 <blockquote>
 <p>① 是最容易写错的地方：alpha 拉到 0.2 以上立刻变成"白塑料"，0.08 才是玻璃。</p>
+<p><strong>不要写 <code>border: 2px solid transparent</code></strong>：本库的 <code>border-color</code> 没有 alpha 通道
+（<code>QLUIStyle.border_color4</code> 是 <code>0xRRGGBB</code>），透明会被当成纯白 —— 看起来就是一圈
+很突兀的白边。亮边请用 <code>box-shadow</code>。</p>
 </blockquote>
 <h2 id="2-refract-fedisplacementmap">2. <code>refract()</code>：参考稿里那个 <code>feDisplacementMap</code></h2>
-<p>本库把这两步写成两个函数，语义一一对应：</p>
+<div class="highlight"><pre><span></span><code>位移 = 0.5 - 单位径向 × f(t)      t = 归一化半径（0 圆心、1 轮廓）
+实测 f(1) ≈ 0.476 → 轮廓处的最大位移 ≈ 0.48 × 盒子尺寸
+</code></pre></div>
+
+<p>也就是说：位移<strong>朝圆心</strong>，随半径增长，轮廓处最大 —— 边缘那一圈显示的是内部画面被
+压扁后的结果，像一块厚透镜。本库用 <code>0.46·t + 0.54·t⁶</code> 拟合这条曲线（最大误差 ≈ 0.016）：</p>
 <table>
 <thead>
 <tr>
@@ -402,56 +416,71 @@ main img {
 </thead>
 <tbody>
 <tr>
-<td><code>feGaussianBlur stdDeviation≈4</code></td>
-<td><code>blur(&lt;N&gt;px)</code></td>
+<td><code>feGaussianBlur stdDeviation≈0.02</code>（objectBoundingBox）</td>
+<td><code>blur(&lt;N&gt;px)</code>（320px 盒子 ≈ 6.4px）</td>
 </tr>
 <tr>
-<td><code>feDisplacementMap</code></td>
-<td><code>refract(&lt;N&gt;px)</code></td>
-</tr>
-<tr>
-<td>饱和调整</td>
-<td><code>saturate(&lt;N&gt;%)</code></td>
+<td><code>feDisplacementMap</code>（法线图，朝圆心）</td>
+<td><code>refract(&lt;N&gt;px)</code>（同一方向、同一条径向曲线）</td>
 </tr>
 </tbody>
 </table>
-<p><strong><code>refract(N)</code> 的语义</strong>：越靠近轮廓，采样点沿<strong>法线方向往外推</strong>，最多 N px；圆心处
-完全不推。所以圆盘看起来是"把外面的颜色折进来了"。</p>
+<p><strong><code>refract(N)</code> 的语义</strong>：圆心处不动，越靠外位移越大，轮廓处最多 <strong>N px</strong>，方向朝圆心。</p>
 <ul>
-<li>半径怎么选：大约是<strong>亮边宽度的 5~10 倍</strong>。例程的圆盘 300px，取 14px；悬停时 26px。</li>
+<li>半径怎么选：<strong>≈ 0.48 × 盒子尺寸</strong>。例程的圆盘 300px，取 143px；悬停时 200px（1.4×）。</li>
 <li>只写 <code>refract()</code> 也可以 —— 那就是一块干净的放大镜；只写 <code>blur()</code> 就是普通毛玻璃。
   两者一起写才是"液态"。</li>
-<li>三个函数任意顺序、可以只写其中一部分；写其它函数（<code>brightness()</code> 等）<strong>构建期报错</strong>。</li>
+<li>函数任意顺序、可以只写其中一部分；写其它函数（<code>brightness()</code> 等）<strong>构建期报错</strong>。</li>
+<li>上限 255px（<code>backdrop_refract</code> 是 8 位字段）。</li>
 </ul>
-<h2 id="3-blur-6px">3. 为什么 <code>blur()</code> 只有 6px</h2>
-<p>模糊的目的是"看不清细节"，不是"看不见东西"。半径一大，背景就被糊成一团均值色，
-玻璃立刻变灰塑料。参考稿只有 ~4px，这里取 6px。</p>
-<p><strong>厚度感来自 <code>refract()</code>，不是来自模糊半径。</strong></p>
-<h2 id="4">4. 背后那张"水彩"是程序算出来的</h2>
-<div class="highlight"><pre><span></span><code><span class="p">#</span><span class="nn">root</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">background-image</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">watercolor</span><span class="p">);</span><span class="w"> </span><span class="k">background-size</span><span class="p">:</span><span class="w"> </span><span class="kc">cover</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<h2 id="3-backdrop-filter">3. 悬停：<code>backdrop-filter</code> 也是可过渡属性</h2>
+<p>折射半径是"玻璃变厚"的唯一来源，不插值的话鼠标一放上去整块玻璃会瞬间跳一下。
+所以 <code>transition</code> 里要写 <code>backdrop-filter</code>（本库会同时插值 <code>blur</code> / <code>saturate</code> /
+<code>refract</code> 三个参数）：</p>
+<div class="highlight"><pre><span></span><code><span class="nt">transition</span><span class="o">:</span><span class="w"> </span><span class="nt">background-color</span><span class="w"> </span><span class="nt">220ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">,</span><span class="w"> </span><span class="nt">transform</span><span class="w"> </span><span class="nt">220ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">,</span>
+<span class="w">            </span><span class="nt">backdrop-filter</span><span class="w"> </span><span class="nt">220ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">;</span>
 </code></pre></div>
 
-<p><code>url(watercolor)</code> 不是文件，而是 <code>ql_ui_register_image()</code> 在运行期注册的一张位图
-（<code>main.c</code> 的 <code>build_watercolor()</code>）：</p>
+<p>注意本库的 <code>transition</code> <strong>只支持一组时长/缓动</strong>（<code>trans_ms</code> / <code>trans_ease</code> 只有一份），
+三段写不同时长会在构建期报错。回归测试：<code>test_transition_backdrop</code>。</p>
+<h2 id="4-blur-6px">4. 为什么 <code>blur()</code> 只有 6px</h2>
+<p>模糊的目的是"看不清细节"，不是"看不见东西"。半径一大，背景就被糊成一团均值色，
+玻璃立刻变灰塑料。参考稿的 <code>stdDeviation="0.02"</code> 在 320px 的圆盘上就是 6.4px，这里取 6px。</p>
+<p><strong>厚度感来自 <code>refract()</code>，不是来自模糊半径。</strong></p>
+<h2 id="5-image">5. 背景照片：<code>--image</code> + 滚轮滚动</h2>
+<p>背景不再由程序生成（旧版本用 LCG 画了一张水彩图）。现在：</p>
+<div class="highlight"><pre><span></span><code>./example_38_liquid_glass<span class="w"> </span>--image<span class="w"> </span>photo.jpg
+./example_38_liquid_glass<span class="w"> </span>--image<span class="w"> </span>photo.png<span class="w"> </span>--size<span class="w"> </span>900x600
+./example_38_liquid_glass<span class="w"> </span>--image<span class="w"> </span>photo.jpg<span class="w"> </span>--scroll<span class="w"> </span><span class="m">250</span><span class="w"> </span>--dump<span class="w"> </span>/tmp/g.ppm
+</code></pre></div>
+
 <ul>
-<li>11 个色斑（暖橙 → 紫蓝）+ 18 个小花瓣（白/黄/粉）+ 一层纸纹；</li>
-<li>纸纹用整数 LCG，<strong>不依赖 <code>rand()</code></strong>，跨平台逐像素一致；</li>
-<li>花瓣边缘只有 ~1.5px 的过渡 —— 它们就是<strong>模糊与折射的试纸</strong>：糊多了会消失，
-  折射不够会看不出弯折。</li>
+<li>运行期解码（PNG / BMP / QOI；构建带 libjpeg 后端时也支持 JPEG），
+  注册成资源名 <code>photo</code>，对应 <code>&lt;img src="photo"&gt;</code>；</li>
+<li><strong>高分辨率壁纸直接支持</strong>：解码时临时放开像素预算
+  （<code>ql_image_set_decode_budget(256MB)</code>），解完按窗口需要的尺寸做一次
+  box-filter 降采样（宽 ≤ 2×窗口、夹在 1280~2048，总像素 ≤ 6M），
+  只保留显示用的那份像素。2700×4800 的手机壁纸 → 1440×2560；</li>
+<li>输入文件上限 32MB（<code>QL_CFG_IMAGE_MAX_ENCODED_BYTES</code>），像素上限
+  <code>QL_CFG_IMAGE_MAX_PIXELS</code>（默认 4096×4096）；</li>
+<li>照片显示得比窗口高（<code>__PHOTO_H__</code> 由 <code>main.c</code> 按图片比例替换成具体 px，
+  且至少 1.6×窗口高），放在 <code>overflow-y: scroll</code> 的容器里；</li>
+<li>滚轮由例程自己的<strong>事件过滤器</strong>接住，直接对容器调用 <code>ql_ui_scroll_by()</code>：
+  玻璃/舞台铺满整屏，命中链里没有可滚动祖先，靠界面层自己的命中测试滚不到照片。</li>
 </ul>
-<p><code>.scene</code> 里那 5 团慢慢漂移的薄雾是 <code>radial-gradient</code> + <code>transform</code> 动画，
-<strong>它们不模糊</strong> —— 糊不糊是玻璃自己的事（图层数只有一层）。</p>
-<h2 id="5">5. 实现上必须做对的三件事</h2>
+<p>没有 <code>--image</code> 时程序会打印用法退出；也可以把图片放到例程目录、命名
+<code>background.png</code> / <code>background.jpg</code> 作为默认背景。</p>
+<h2 id="6">6. 实现上必须做对的三件事</h2>
 <ol>
-<li><strong>采样范围要比盒子大一圈</strong>（<code>radius + refract</code>）。模糊核本来就要读盒子外面：
+<li><strong>模糊的采样范围要比盒子大一圈</strong>（按 <code>3·σ</code>）。模糊核本来就要读盒子外面：
    只糊盒内、边缘靠钳位补的话，得到的是"这块方形的均值色"，半径一大就发灰，
-   四边还会留一圈方形的边。</li>
+   四边还会留一圈方形的边。折射朝圆心采样、不读盒子外面，不需要为它外扩。</li>
 <li><strong>结果只写进轮廓之内</strong>（按圆角覆盖率与原像素混合），轮廓外一个像素都不动 ——
    否则四个圆角缺口里会渗出"方的模糊块"。</li>
 <li><strong>三段盒式卷积近似高斯</strong>。两段是三角核，边缘有一道可见的折线；三段才接近钟形。</li>
 </ol>
 <p>CPU 与 GL 两个后端走同一套参数与顺序，<code>test_gl_vs_cpu</code> 对着色器做逐像素对拍。</p>
-<h2 id="6">6. 限制（都是明确报错，不静默降级）</h2>
+<h2 id="7">7. 限制（都是明确报错，不静默降级）</h2>
 <table>
 <thead>
 <tr>
@@ -465,8 +494,16 @@ main img {
 <td>只有 <code>blur()</code> / <code>saturate()</code> / <code>refract()</code>，其它函数构建期报错</td>
 </tr>
 <tr>
-<td>不可过渡</td>
-<td><code>backdrop-filter</code> <strong>不在</strong>可过渡属性列表里 → 悬停时折射半径是<strong>瞬变</strong>，不是渐变</td>
+<td><code>refract</code> 上限</td>
+<td>0~255px（<code>backdrop_refract</code> 是 8 位字段）</td>
+</tr>
+<tr>
+<td>边框 alpha</td>
+<td><code>border-color</code> 没有 alpha 通道：<code>transparent</code> 会被画成实色，半透明亮边请用 <code>box-shadow</code></td>
+</tr>
+<tr>
+<td>过渡时长</td>
+<td><code>transition</code> 各段必须共用同一组时长/缓动</td>
 </tr>
 <tr>
 <td>平台档</td>
@@ -478,7 +515,7 @@ main img {
 </tr>
 </tbody>
 </table>
-<h2 id="7-720460gl-240">7. 性能（本机 720×460、GL 后端、240 帧）</h2>
+<h2 id="8-720460gl-240">8. 性能（本机 720×460、GL 后端、240 帧）</h2>
 <table>
 <thead>
 <tr>
@@ -501,23 +538,20 @@ main img {
 </tr>
 </tbody>
 </table>
-<p>也就是：一帧的预算几乎全花在 vsync 上，真正画一张"水彩 + 折射玻璃"只要零点几毫秒。
+<p>一帧的预算几乎全花在 vsync 上，真正画一张"照片 + 折射玻璃"只要零点几毫秒。
 成本主要随<strong>玻璃元素数量</strong>线性增长（每块玻璃一次模糊 + 一次折射位移）。</p>
-<h2 id="8">8. 写玻璃时踩过的三个坑（都已修 / 都已记录）</h2>
-<h3 id="81-alpha">8.1 渐变的两个色标共用一个 alpha（<strong>已修</strong>）</h3>
+<h2 id="9">9. 写玻璃时踩过的坑（都已修 / 都已记录）</h2>
+<h3 id="91-alpha">9.1 渐变的两个色标共用一个 alpha（<strong>已修</strong>）</h3>
 <p>以前一个背景只有<strong>一个</strong> alpha：<code>rgba()</code> 写在渐变色标里会被忽略，于是"上亮下透"
 的玻璃做不出来。现在两个色标各带自己的 alpha，插值时"颜色 + alpha"一起插。
 兼容规则：两个色标都不写 alpha 时沿用 <code>background-color</code> 的 alpha。</p>
-<h3 id="82-box-shadow-inset">8.2 <code>box-shadow: inset</code> + 圆角=半边长 → 四角被涂满（<strong>已修</strong>）</h3>
+<h3 id="92-box-shadow-inset">9.2 <code>box-shadow: inset</code> + 圆角=半边长 → 四角被涂满（<strong>已修</strong>）</h3>
 <p>正圆/药丸的圆角正好等于半边长，矩形四角落在轮廓<strong>外面</strong>，而内阴影的覆盖率公式
 在那一片恒等于 1 —— 四个角被整片涂成阴影色，看着像"圆外面套了个方框"。
 修法是片元里再乘一个"在轮廓内"的覆盖率；回归测试在 <code>test_gl_vs_cpu</code>。</p>
-<h3 id="83-transition">8.3 <code>transition</code> 只认这七个属性</h3>
+<h3 id="93-transition">9.3 <code>transition</code> 的可过渡属性</h3>
 <p><code>background-color</code> / <code>opacity</code> / <code>color</code> / <code>border-color</code> / <code>border-radius</code> /
-<code>transform</code> / <code>clip-path</code>。写别的会在<strong>构建期报错</strong>（不静默忽略）。</p>
-<p>所以例程的悬停过渡只写了两个：</p>
-<div class="highlight"><pre><span></span><code><span class="nt">transition</span><span class="o">:</span><span class="w"> </span><span class="nt">background-color</span><span class="w"> </span><span class="nt">220ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">,</span><span class="w"> </span><span class="nt">transform</span><span class="w"> </span><span class="nt">220ms</span><span class="w"> </span><span class="nt">ease-out</span><span class="o">;</span>
-</code></pre></div><div class='pager'>
+<code>transform</code> / <code>clip-path</code> / <code>backdrop-filter</code>。写别的会在<strong>构建期报错</strong>（不静默忽略）。</p><div class='pager'>
 <a href='../tutorial/16_css_gallery.html'><span class='dir'>上一页</span>CSS 效果检阅：十六个例程</a>
 <a class='next' href='../tutorial/10_vs_web.html'><span class='dir'>下一页</span>与 Web 的差别</a>
 </div>
@@ -525,15 +559,16 @@ main img {
 <aside class='toc'><h5>本页内容</h5><ul>
 <li><a href='#1'>1. 参考稿的全部秘密就四个数值</a></li>
 <li><a href='#2-refract-fedisplacementmap'>2. refract()：参考稿里那个 feDisplacementMap</a></li>
-<li><a href='#3-blur-6px'>3. 为什么 blur() 只有 6px</a></li>
-<li><a href='#4'>4. 背后那张&quot;水彩&quot;是程序算出来的</a></li>
-<li><a href='#5'>5. 实现上必须做对的三件事</a></li>
-<li><a href='#6'>6. 限制（都是明确报错，不静默降级）</a></li>
-<li><a href='#7-720460gl-240'>7. 性能（本机 720×460、GL 后端、240 帧）</a></li>
-<li><a href='#8'>8. 写玻璃时踩过的三个坑（都已修 / 都已记录）</a></li>
-<li class='lv3'><a href='#81-alpha'>8.1 渐变的两个色标共用一个 alpha（已修）</a></li>
-<li class='lv3'><a href='#82-box-shadow-inset'>8.2 box-shadow: inset + 圆角=半边长 → 四角被涂满（已修）</a></li>
-<li class='lv3'><a href='#83-transition'>8.3 transition 只认这七个属性</a></li>
+<li><a href='#3-backdrop-filter'>3. 悬停：backdrop-filter 也是可过渡属性</a></li>
+<li><a href='#4-blur-6px'>4. 为什么 blur() 只有 6px</a></li>
+<li><a href='#5-image'>5. 背景照片：--image + 滚轮滚动</a></li>
+<li><a href='#6'>6. 实现上必须做对的三件事</a></li>
+<li><a href='#7'>7. 限制（都是明确报错，不静默降级）</a></li>
+<li><a href='#8-720460gl-240'>8. 性能（本机 720×460、GL 后端、240 帧）</a></li>
+<li><a href='#9'>9. 写玻璃时踩过的坑（都已修 / 都已记录）</a></li>
+<li class='lv3'><a href='#91-alpha'>9.1 渐变的两个色标共用一个 alpha（已修）</a></li>
+<li class='lv3'><a href='#92-box-shadow-inset'>9.2 box-shadow: inset + 圆角=半边长 → 四角被涂满（已修）</a></li>
+<li class='lv3'><a href='#93-transition'>9.3 transition 的可过渡属性</a></li>
 </ul></aside>
 </div>
 <script src='../search-index.js'></script>

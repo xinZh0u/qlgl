@@ -274,7 +274,7 @@ main img {
 <a href='tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/ui/QLUI API手册.html' title='API 手册'>API 手册</a>
+<a href='manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -955,7 +956,17 @@ PNG 容器（chunk / 反过滤 / 颜色转换）
 <tr>
 <td><code>QL_CFG_IMAGE_MAX_BYTES</code></td>
 <td>512 KB</td>
-<td>单张<strong>编码</strong>字节上限（超出直接拒绝）</td>
+<td>解码后像素字节预算的基数（×8 / ×16，按格式）</td>
+</tr>
+<tr>
+<td><code>QL_CFG_IMAGE_MAX_ENCODED_BYTES</code></td>
+<td>32 MB</td>
+<td>输入文件（编码字节）上限；调小可限制 MCU 读入量</td>
+</tr>
+<tr>
+<td><code>QL_CFG_IMAGE_MAX_DECODED_BYTES</code></td>
+<td>16 MB</td>
+<td>解码后像素缓冲上限（1080p RGBA ≈ 8.3 MB）；可用 <code>ql_image_set_decode_budget()</code> 运行期临时放开</td>
 </tr>
 <tr>
 <td><code>QL_CFG_IMAGE_MAX_PIXELS</code></td>

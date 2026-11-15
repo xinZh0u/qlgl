@@ -274,7 +274,7 @@ main img {
 <a href='../../tutorial/21_transform.html' title='旋转光栅：transform: rotate() / skew() / matrix()'>旋转光栅：transform: rotate() / skew() / matrix()</a>
 <a href='../../tutorial/25_clip_filter.html' title='clip-path 的四种形状 · 纯颜色滤镜 · 字体变体'>clip-path 的四种形状 · 纯颜色滤镜 · 字体变体</a>
 <a href='../../tutorial/16_css_gallery.html' title='CSS 效果检阅：十六个例程'>CSS 效果检阅：十六个例程</a>
-<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + saturate + refract 的玻璃圆盘'>液态玻璃：blur + saturate + refract 的玻璃圆盘</a>
+<a href='../../tutorial/27_liquid_glass.html' title='液态玻璃：blur + refract 的玻璃圆盘'>液态玻璃：blur + refract 的玻璃圆盘</a>
 </details>
 <details class='sec'><summary>语法与兼容</summary>
 <a href='../../tutorial/10_vs_web.html' title='与 Web 的差别'>与 Web 的差别</a>
@@ -297,6 +297,7 @@ main img {
 <span class='mod'>QLUI —— 界面：HTML/CSS → 静态数据</span>
 <a href='../../manual/ui/QLUI阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/ui/QLUI API手册.html' class='current' title='API 手册'>API 手册</a>
+<a href='../../manual/ui/QLWindow API手册.html' title='API 手册'>API 手册</a>
 <span class='mod'>QLUIText —— 运行期 HTML/CSS 解析</span>
 <a href='../../manual/uitext/QLUIText阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='../../manual/uitext/QLUIText API手册.html' title='API 手册'>API 手册</a>
@@ -3073,7 +3074,43 @@ preedit"那次回调 —— 实测它有概率晚一步（松键才到），中�
 </tr>
 </tbody>
 </table>
-<h3 id="654">6.5.4 失败原因</h3>
+<h3 id="654-htmlcss">6.5.4 运行期文本（HTML/CSS 文件）与截图</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 读两个文件 → 解析 → 建运行期树；root 持有 doc，ql_ui_free 一并释放 */</span>
+<span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_html_file</span><span class="p">(</span><span class="s">&quot;index.html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;style.css&quot;</span><span class="p">);</span>
+
+<span class="cm">/* 只解析文本（= ql_ui_load_text 的别名），doc 由调用方释放 */</span>
+<span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_html</span><span class="p">(</span><span class="n">html_text</span><span class="p">,</span><span class="w"> </span><span class="n">css_text</span><span class="p">);</span>
+
+<span class="cm">/* CPU 离屏截图（无 GL / 无窗口也能跑） */</span>
+<span class="kt">int</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_dump_ppm</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">640</span><span class="p">,</span><span class="w"> </span><span class="mi">380</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp/x.ppm&quot;</span><span class="p">);</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ql_ui_load_html_file(html, css)</code></td>
+<td>读文件 + 解析 + 建树；失败返回 NULL，root <strong>持有</strong> doc</td>
+</tr>
+<tr>
+<td><code>ql_ui_load_html(html, css)</code></td>
+<td>只解析，等价 <code>ql_ui_load_text</code>；doc 独立所有权</td>
+</tr>
+<tr>
+<td><code>ql_ui_dump_ppm(ui, w, h, path)</code></td>
+<td>按 w×h 布局并用 CPU 渲染一帧 P6；成功返回 1</td>
+</tr>
+</tbody>
+</table>
+<p>窗口/主循环（输入法、剪贴板、脏区重绘）见 <code>&lt;qlgl/qlwindow.h&gt;</code>：
+<code>ql_window_create()</code> → <code>ql_window_bind_ui()</code> → <code>ql_window_run()</code> →
+<code>ql_window_destroy()</code>。窗口<strong>不拥有</strong> root，释放顺序是先窗口后界面。</p>
+<h3 id="655">6.5.5 失败原因</h3>
 <p>加载失败<strong>一律返回 NULL</strong>，绝不"跳过坏数据继续画"。原因用
 <code>ql_ui_doc_last_error()</code> 取（静态缓冲，非线程安全）：</p>
 <table>
@@ -3114,7 +3151,7 @@ preedit"那次回调 —— 实测它有概率晚一步（松键才到），中�
 </tr>
 </tbody>
 </table>
-<h3 id="655">6.5.5 容量上限</h3>
+<h3 id="655_1">6.5.5 容量上限</h3>
 <div class="highlight"><pre><span></span><code><span class="cp">#define QL_CFG_UI_MAX_NODES         4096</span>
 <span class="cp">#define QL_CFG_UI_MAX_STYLES        4096</span>
 <span class="cp">#define QL_CFG_UI_MAX_TEXT_BYTES    (64u * 1024u)</span>
@@ -3295,8 +3332,9 @@ MCU 上按实际页面调小，例如 256 / 256 / 8K。</p>
 <li class='lv3'><a href='#651'>6.5.1 最常用：一行加载</a></li>
 <li class='lv3'><a href='#652-doc'>6.5.2 想自己管 doc</a></li>
 <li class='lv3'><a href='#653-api'>6.5.3 API 一览</a></li>
-<li class='lv3'><a href='#654'>6.5.4 失败原因</a></li>
-<li class='lv3'><a href='#655'>6.5.5 容量上限</a></li>
+<li class='lv3'><a href='#654-htmlcss'>6.5.4 运行期文本（HTML/CSS 文件）与截图</a></li>
+<li class='lv3'><a href='#655'>6.5.5 失败原因</a></li>
+<li class='lv3'><a href='#655_1'>6.5.5 容量上限</a></li>
 <li class='lv3'><a href='#656-c'>6.5.6 与静态 C 数据混用</a></li>
 <li><a href='#66-mcu'>6.6 跑到 MCU 上：只需要接两样东西</a></li>
 <li><a href='#7'>7. 限制一览</a></li>
