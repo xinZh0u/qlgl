@@ -105,6 +105,7 @@ struct QLGfxGL {
      */
     int              use_wayland;
     QLInput         *in;            /* 每窗口输入实例；NULL = 进程默认 */
+    QLClipX11        clip_x11;      /* 每窗口剪贴板状态（X11 路径） */
 #if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
     QLWlWindow       wl;
     struct wl_egl_window *wl_egl;
@@ -4550,7 +4551,7 @@ int ql_gfx_gl_poll(QLGfxGL *g)
                 XUnsetICFocus(g->xic);
             break;
         default:
-            if (ql_x11_clip_handle_event(&ev))
+            if (ql_x11_clip_handle_event(&g->clip_x11, &ev))
                 break;                 /* 剪贴板协议事件 */
             /* 设备 px → 应用 CSS：除的是 DPR × zoom（zoom 时布局基准变小） */
             ql_x11_push_input_scaled(&ev, &g->buttons, dscale(g), g->xic, g->in);
@@ -4563,14 +4564,12 @@ int ql_gfx_gl_poll(QLGfxGL *g)
 /* --- 剪贴板：把 X11 实现接到界面层（QLUIClipboard 接口） --- */
 static void gl_clip_set(const char *utf8, void *user)
 {
-    (void)user;
-    ql_x11_clip_set_text(utf8);
+    ql_x11_clip_set_text((QLClipX11 *)user, utf8);
 }
 
 static int gl_clip_get(char *buf, size_t cap, void *user)
 {
-    (void)user;
-    return ql_x11_clip_get_text(buf, cap);
+    return ql_x11_clip_get_text((QLClipX11 *)user, buf, cap);
 }
 
 static const QLUIClipboard s_gl_clip = { gl_clip_set, gl_clip_get };
@@ -4587,8 +4586,8 @@ void ql_gfx_gl_attach_clipboard(QLGfxGL *g, QLUIRoot *ui)
 #endif
     if (g->dpy == NULL || g->win == 0)
         return;
-    ql_x11_clip_attach(g->dpy, g->win);
-    ql_ui_set_clipboard(ui, &s_gl_clip, NULL);
+    ql_x11_clip_attach(&g->clip_x11, g->dpy, g->win);
+    ql_ui_set_clipboard(ui, &s_gl_clip, &g->clip_x11);
 }
 
 /* ---------------- 输入法预编辑回调（XIMPreeditCallbacks） ---------------- */
@@ -4872,7 +4871,7 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
     if (g == NULL)
         return;
 
-    ql_x11_clip_detach();
+    ql_x11_clip_detach(&g->clip_x11);
     if (g->xic != NULL) {
         XDestroyIC(g->xic);
         g->xic = NULL;

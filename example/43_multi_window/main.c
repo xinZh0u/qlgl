@@ -25,17 +25,18 @@
 typedef struct {
     const char *name;
     int         clicks;
+    char        text[64];   /* ql_ui_set_text() 不复制：缓冲必须一直有效 */
 } Counter;
 
 static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
     Counter *c = (Counter *)user;
-    char buf[64];
     c->clicks++;
-    snprintf(buf, sizeof(buf), "%s: %d click%s", c->name, c->clicks,
+    snprintf(c->text, sizeof(c->text), "%s: %d click%s", c->name, c->clicks,
              c->clicks == 1 ? "" : "s");
-    /* 按钮文字自己更新（click 回调给的就是被点的节点） */
-    (void)ql_ui_set_text(ui, node, buf);
+    /* 按钮文字自己更新（click 回调给的就是被点的节点）。
+     * 注意 set_text 不复制：必须传长期有效的缓冲，不能传栈上的临时 buf。 */
+    (void)ql_ui_set_text(ui, node, c->text);
     printf("[%s] click #%d\n", c->name, c->clicks);
     fflush(stdout);
 }
@@ -81,8 +82,8 @@ int main(int argc, char **argv)
     if (qlgl_init() != QL_OK)
         return 1;
 
-    static Counter left  = { "left", 0 };
-    static Counter right = { "right", 0 };
+    static Counter left  = { "left", 0, "" };
+    static Counter right = { "right", 0, "" };
 
     QLUIDoc *doc_l = NULL, *doc_r = NULL;
     QLUIRoot *ui_l = make_ui("Window A", "click me", "#0969DA", &left, &doc_l);

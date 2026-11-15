@@ -485,7 +485,9 @@ flush 在真板子上是 SPI/DMA，测试里是拷进另一块内存（模拟"�
 <li><code>begin</code> 清脏区、<code>end</code> 调驱动 <code>flush()</code> / <code>flush_done()</code>；</li>
 <li>窗口缩放：<code>resize_pending</code> 里重建画布，<code>QLWindow</code> 重新布局；</li>
 <li><code>resize()</code>：X11 用 <code>XResizeWindow</code>（异步），Wayland 返回 <code>QL_ERR_UNSUPPORTED</code>；</li>
-<li>剪贴板：Wayland 与 X11 都接到 <code>QLUIClipboard</code>（X11 走 <code>qlclipboard_x11.h</code>）。</li>
+<li>剪贴板：Wayland 与 X11 都接到 <code>QLUIClipboard</code>（X11 走 <code>qlclipboard_x11.h</code>）；
+  状态是<strong>每窗口一份</strong>（<code>QLClipX11</code> / <code>QLWlWindow</code>），多窗口时各用各的
+  Display/Window，不会互相覆盖。</li>
 </ul>
 <p>调试：<code>QLGL_WINDOW_CPU=1 ./example_00_hello</code> 强制走 CPU 路径，用来和 GL 对照。</p>
 <h2 id="5">5. 测试</h2>

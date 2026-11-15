@@ -40,6 +40,7 @@ typedef struct {
     int          depth;
     int          resize_pending; /* 窗口尺寸变过，调用方需要重建画布并重排 */
     QLInput     *in;             /* 每窗口输入实例；NULL = 进程默认 */
+    QLClipX11    clip;           /* 每窗口剪贴板状态 */
     /*
      * 输入法（XIM）。和 GL 后端同一套三件套：`XSetLocaleModifiers("")` +
      * `XOpenIM` + `FocusChangeMask`/`XSetICFocus`。漏一条就"输入法活着但
@@ -308,7 +309,7 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     ql_disp_set_scale(&x->base, x11_query_scale(dpy));
 
     x->in = ql_input_default();
-    ql_x11_clip_attach(dpy, x->win);
+    ql_x11_clip_attach(&x->clip, dpy, x->win);
 
     XMapWindow(dpy, x->win);
     XFlush(dpy);
@@ -344,7 +345,7 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     return &x->base;
 
 fail:
-    ql_x11_clip_detach();
+    ql_x11_clip_detach(&x->clip);
     /* 走统一销毁路径；此时 base 可能还没初始化完，手动清理 */
     if (x->image != NULL) {
         x->image->data = NULL;          /* 像素内存归我们管 */
@@ -378,7 +379,7 @@ int ql_disp_x11_poll(QLDispDriver *driver)
         XNextEvent(x->dpy, &ev);
 
         /* 剪贴板协议（SelectionRequest/Notify/Clear）先处理掉 */
-        if (ql_x11_clip_handle_event(&ev))
+        if (ql_x11_clip_handle_event(&x->clip, &ev))
             continue;
 
         switch (ev.type) {
@@ -472,7 +473,7 @@ void ql_disp_x11_destroy(QLDispDriver *driver)
     QLDispX11 *x = (QLDispX11 *)driver;
 
     ql_disp_unset(driver);
-    ql_x11_clip_detach();
+    ql_x11_clip_detach(&x->clip);
 
     if (x->dpy != NULL) {
         if (x->xic != NULL) {
@@ -563,14 +564,12 @@ QLErr ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t heig
 
 static void x11_clip_set(const char *utf8, void *user)
 {
-    (void)user;
-    ql_x11_clip_set_text(utf8);
+    ql_x11_clip_set_text((QLClipX11 *)user, utf8);
 }
 
 static int x11_clip_get(char *buf, size_t cap, void *user)
 {
-    (void)user;
-    return ql_x11_clip_get_text(buf, cap);
+    return ql_x11_clip_get_text((QLClipX11 *)user, buf, cap);
 }
 
 static const QLUIClipboard s_x11_clip = {
@@ -580,9 +579,10 @@ static const QLUIClipboard s_x11_clip = {
 
 void ql_disp_x11_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui)
 {
-    (void)driver;
-    if (ui != NULL)
-        ql_ui_set_clipboard(ui, &s_x11_clip, NULL);
+    if (driver == NULL || ui == NULL)
+        return;
+    QLDispX11 *x = (QLDispX11 *)driver;
+    ql_ui_set_clipboard(ui, &s_x11_clip, &x->clip);
 }
 
 void ql_disp_x11_set_input(QLDispDriver *driver, QLInput *in)

@@ -66,6 +66,34 @@ QLGfxGL  *ql_window_gfx(QLWindow *win);          /* 低层能力（zoom 等） *
 int       ql_window_dump_ppm(QLWindow *win, const char *path);
 ```
 
+## 2.1 多窗口
+
+一个进程可以开多个窗口，每个窗口有自己的界面树、输入队列和剪贴板/输入法状态：
+
+```c
+QLWindow *a = ql_window_create("A", 320, 200, QL_WINDOW_GL);
+QLWindow *b = ql_window_create("B", 320, 200, QL_WINDOW_GL);
+ql_window_bind_ui(a, ui_a);
+ql_window_bind_ui(b, ui_b);
+
+while (a != NULL || b != NULL) {
+    if (a != NULL && !ql_window_poll(a)) { ql_window_destroy(a); a = NULL; }
+    if (b != NULL && !ql_window_poll(b)) { ql_window_destroy(b); b = NULL; }
+}
+```
+
+要点：
+
+- 每个 `QLWindow` 创建时拿到自己的 `QLInput`；平台后端（X11 / Wayland / GL）
+  实现了 `QLPlatform.set_input` 才会按窗口路由事件。没实现的后端（假平台、
+  MCU 板级）退回进程默认队列，等价于单窗口。
+- 剪贴板与输入法也是每窗口一份状态：X11 用它自己的 `Display` 连接应答
+  SelectionRequest，两个窗口互不覆盖。
+- 关掉一个窗口只销毁它自己，另一个继续跑；事件过滤器里的 `ui` 参数就是
+  该窗口自己的根。
+- GL 后端每帧会切回自己的上下文（`eglMakeCurrent`），不需要调用方干预。
+- 完整示例：`example/43_multi_window`（两个窗口、点击回调各自计数）。
+
 ## 3. 每次谁拥有谁
 
 - `QLWindow` **不拥有** `QLUIRoot`：`ql_window_destroy()` 只拆窗口，`ql_ui_free()` 仍由调用方调；
