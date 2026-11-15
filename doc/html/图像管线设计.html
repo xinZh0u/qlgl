@@ -321,6 +321,7 @@ main img {
 </details>
 <details class='sec' open><summary>设计文档</summary>
 <a href='图像管线设计.html' class='current' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='SVG支持设计.html' title='SVG 支持设计（构建期栅格化 + 可选运行期后端）'>SVG 支持设计（构建期栅格化 + 可选运行期后端）</a>
 <a href='媒体播放设计.html' title='媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）'>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
 <a href='平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
 <a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -416,7 +417,8 @@ main img {
 <p><strong>非目标（明确不做）</strong></p>
 <ul>
 <li>GIF/WebP/APNG 的<strong>动画</strong>播放（要帧时钟 + 帧缓冲 + 循环策略；首帧可以，动画不做）。</li>
-<li>SVG（等于第二个渲染器，见覆盖表 §5）。</li>
+<li><strong>内联 SVG</strong>（等于第二个渲染器，见覆盖表 §5）；图标级 SVG 走
+  <a href="SVG支持设计.html">SVG 支持设计</a> 的"构建期栅格化 + 可选运行期后端"。</li>
 <li>图片编辑、缩放算法的高质量版本（默认最近邻；双线性作为可选项，见 §6.2）。</li>
 <li>EXIF 方向自动旋转（PC 后端解码时由平台库处理，自有解码器不管）。</li>
 </ul>
@@ -1588,7 +1590,7 @@ PNG 与 GIF 现在可以直接吃；JPEG 需要 libjpeg 后端（<code>QLGL_BUIL
 <li>计划与分期：<a href="开发规划.html">开发规划</a> ⑱</li>
 </ul><div class='pager'>
 <a href='manual/ui/HTML5标签开发日志.html'><span class='dir'>上一页</span>HTML5 标签开发日志</a>
-<a class='next' href='媒体播放设计.html'><span class='dir'>下一页</span>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
+<a class='next' href='SVG支持设计.html'><span class='dir'>下一页</span>SVG 支持设计（构建期栅格化 + 可选运行期后端）</a>
 </div>
 </div></main>
 <aside class='toc'><h5>本页内容</h5><ul>
