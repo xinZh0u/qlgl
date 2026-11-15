@@ -3,4 +3,3 @@ build-*/
 *.o
 *.a
 Testing/
-llm_debug/
