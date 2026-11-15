@@ -15,12 +15,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__STDC_HOSTED__) && __STDC_HOSTED__
 #include <time.h>
+#endif
 
 #include <qlgl/qlgl.h>
 #include <qlgl/qlwindow.h>
 
-#define EX_FRAME_SAMPLES 4096
+/* `--stats` 的采样点数：按帧算，1024 帧 ≈ 17s@60fps */
+#define EX_FRAME_SAMPLES 1024
 
 struct QLWindow {
     const QLPlatform  *plat;
@@ -46,13 +49,34 @@ struct QLWindow {
     long       max_frames;
     int        run_seconds;
     long       frames;
-    struct timespec t_start;
-    uint32_t   frame_us[EX_FRAME_SAMPLES];
-    uint32_t   swap_us[EX_FRAME_SAMPLES];
-    uint32_t   gap_us[EX_FRAME_SAMPLES];
+    uint64_t   t_start_us;
+    /*
+     * 采样缓冲按需分配：只有 `--stats` 才占 12KB，MCU 上（没有这个开关）
+     * 不会为了统计吃掉半个堆。
+     */
+    uint32_t  *frame_us;
+    uint32_t  *swap_us;
+    uint32_t  *gap_us;
     int        stat_n;
-    struct timespec t_prev;
+    int        stat_cap;
+    uint64_t   t_prev_us;
 };
+
+/*
+ * 单调时钟（微秒）。有 OS 时用 clock_gettime；裸机/RTOS 上退回平台的
+ * 动画时间源（板级通常在 `window_open` 里用 SysTick 设好），所以
+ * `--seconds` 与帧统计在 MCU 上也能用，只是精度是毫秒。
+ */
+static uint64_t win_now_us(void)
+{
+#if defined(__STDC_HOSTED__) && __STDC_HOSTED__
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
+#else
+    return (uint64_t)ql_anim_now_ms() * 1000u;
+#endif
+}
 
 /* ------------------------------ 文件工具 ------------------------------ */
 
@@ -60,6 +84,11 @@ void *ql_file_read(const char *path, size_t *out_len)
 {
     if (out_len != NULL)
         *out_len = 0;
+#if !(defined(__STDC_HOSTED__) && __STDC_HOSTED__)
+    /* 裸机没有文件系统：直接失败，顺便避免把 stdio 的文件实现链进来 */
+    (void)path;
+    return NULL;
+#else
     if (path == NULL)
         return NULL;
     FILE *f = fopen(path, "rb");
@@ -85,6 +114,7 @@ void *ql_file_read(const char *path, size_t *out_len)
     if (out_len != NULL)
         *out_len = got;
     return buf;
+#endif /* __STDC_HOSTED__ */
 }
 
 char *ql_file_read_text(const char *path)
@@ -123,17 +153,35 @@ static int cmp_u32(const void *a, const void *b)
     return (x < y) ? -1 : (x > y) ? 1 : 0;
 }
 
+static int window_stats_alloc(QLWindow *win)
+{
+    if (win->frame_us != NULL)
+        return 1;
+    const size_t bytes = (size_t)EX_FRAME_SAMPLES * sizeof(uint32_t);
+    win->frame_us = (uint32_t *)ql_mem_alloc(bytes);
+    win->swap_us = (uint32_t *)ql_mem_alloc(bytes);
+    win->gap_us = (uint32_t *)ql_mem_alloc(bytes);
+    if (win->frame_us == NULL || win->swap_us == NULL || win->gap_us == NULL) {
+        ql_mem_free(win->frame_us);
+        ql_mem_free(win->swap_us);
+        ql_mem_free(win->gap_us);
+        win->frame_us = win->swap_us = win->gap_us = NULL;
+        return 0;
+    }
+    win->stat_cap = EX_FRAME_SAMPLES;
+    return 1;
+}
+
 static void window_stats_sample(QLWindow *win)
 {
-    if (!win->want_stats || win->stat_n >= EX_FRAME_SAMPLES)
+    if (!win->want_stats || !window_stats_alloc(win))
         return;
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (win->stat_n >= win->stat_cap)
+        return;
+    const uint64_t now_us = win_now_us();
     const int i = win->stat_n;
-    win->gap_us[i] = (i == 0) ? 0u
-        : (uint32_t)((now.tv_sec - win->t_prev.tv_sec) * 1000000 +
-                     (now.tv_nsec - win->t_prev.tv_nsec) / 1000);
-    win->t_prev = now;
+    win->gap_us[i] = (i == 0) ? 0u : (uint32_t)(now_us - win->t_prev_us);
+    win->t_prev_us = now_us;
     win->frame_us[i] = win->plat->frame_us != NULL ? win->plat->frame_us(win->pw) : 0;
     win->swap_us[i] = win->plat->swap_us != NULL ? win->plat->swap_us(win->pw) : 0;
     win->stat_n++;
@@ -141,7 +189,7 @@ static void window_stats_sample(QLWindow *win)
 
 static void window_stats_print(QLWindow *win)
 {
-    if (!win->want_stats || win->stat_n <= 0)
+    if (!win->want_stats || win->stat_n <= 0 || win->frame_us == NULL)
         return;
     const int n = win->stat_n;
     qsort(win->frame_us, (size_t)n, sizeof(uint32_t), cmp_u32);
@@ -270,12 +318,9 @@ int ql_window_poll(QLWindow *win)
     if (win == NULL || win->pw == NULL || win->quit)
         return 0;
 
-    if (win->run_seconds > 0) {
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        if (now.tv_sec - win->t_start.tv_sec >= win->run_seconds)
-            return 0;
-    }
+    if (win->run_seconds > 0 &&
+        win_now_us() - win->t_start_us >= (uint64_t)win->run_seconds * 1000000u)
+        return 0;
     if (win->plat->poll == NULL || !win->plat->poll(win->pw))
         return 0;
 
@@ -384,8 +429,8 @@ int ql_window_run_args(QLWindow *win, int argc, char **argv)
         return ok ? 0 : 1;
     }
 
-    clock_gettime(CLOCK_MONOTONIC, &win->t_start);
-    win->t_prev = win->t_start;
+    win->t_start_us = win_now_us();
+    win->t_prev_us = win->t_start_us;
     win->frames = 0;
     win->stat_n = 0;
     const int rc = ql_window_run(win);
@@ -403,6 +448,14 @@ ql_err_t ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height)
     if (err == QL_OK)
         win->need_full = 1;
     return err;
+}
+
+void ql_window_render(QLWindow *win)
+{
+    if (win == NULL)
+        return;
+    render_frame(win, NULL, 0, 1);
+    win->need_full = 0;
 }
 
 void ql_window_quit(QLWindow *win)
@@ -486,5 +539,8 @@ void ql_window_destroy(QLWindow *win)
     }
     if (win->plat != NULL && win->plat->window_close != NULL)
         win->plat->window_close(win->pw);
+    ql_mem_free(win->frame_us);
+    ql_mem_free(win->swap_us);
+    ql_mem_free(win->gap_us);
     ql_mem_free(win);
 }

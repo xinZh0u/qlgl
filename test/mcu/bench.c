@@ -21,6 +21,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <qlgl/qlgl.h>
@@ -160,5 +161,7 @@ int main(void)
                (unsigned)(ren_us / 1000), (unsigned)(ren_us % 1000));
         printf("  预算：30fps=33ms/frame，60fps=16ms/frame\n");
     }
-    return 0;
+    /* 半主机退出：main 返回后会停在 Reset_Handler 的 wfi 里，QEMU 不退出 */
+    fflush(stdout);
+    exit(0);
 }

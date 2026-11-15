@@ -65,6 +65,16 @@ void _exit(int code)
         __asm volatile("wfi");
 }
 
+/*
+ * 没有文件系统：显式实现成失败，避免 newlib 的弱 `_open` 在链接期打
+ * "_open is not implemented and will always fail"。
+ */
+int _open(const char *path, int flags, int mode)
+{
+    (void)path; (void)flags; (void)mode;
+    return -1;
+}
+
 int _close(int fd) { (void)fd; return -1; }
 int _lseek(int fd, int off, int dir) { (void)fd; (void)off; (void)dir; return -1; }
 int _read(int fd, char *buf, int len) { (void)fd; (void)buf; (void)len; return -1; }

@@ -26,7 +26,7 @@ int main(void)
 
 `ql_window_create()` + `ql_window_bind_ui()` 内部完成：
 
-- 平台窗口（X11 / Wayland + EGL/GLES3）与高 DPI 处理；
+- 平台窗口（桌面是 X11 / Wayland + EGL/GLES3，MCU 是板级帧缓冲，见 §6）与高 DPI 处理；
 - `setlocale()`（XIM 需要）与桌面系统字体自动发现（`qlgl_init()`）；
 - `ql_ui_attach_input()`、剪贴板、输入法预编辑与候选窗定位；
 - 保留式画布 + 脏区重绘：没有脏区就阻塞等事件（静止时 0 帧、0% CPU）；
@@ -115,6 +115,9 @@ qlgl_init();
   X11 → Wayland → 内存离屏，GL 失败可按 `QL_WINDOW_CPU` 走 CPU；
 - MCU 板级文件定义同名强符号 `qlgl_platform_default()` 即可覆盖，
   应用层仍然只写 `qlgl_init()`；
+- 参考实现：`test/mcu/qlplatform_board.c`（静态 RGB565 面板 + 按键环形队列 +
+  SysTick 毫秒时钟），验收程序 `test/mcu/window.c`，`./test/mcu/build.sh window`
+  一条命令在 QEMU 的 Cortex-M4 上跑完（后端覆盖、首帧、触摸、脏区、点击、时钟）；
 - 调试：`QLGL_WINDOW_CPU=1 ./example_00_hello` 强制 CPU 光栅，与 GL 对照。
 
 ## 7. 限制
@@ -122,4 +125,8 @@ qlgl_init();
 - 输入汇是**进程级单例**：一进程一窗口（与 MCU 一致）；
 - `QLWindow` 不拥有 `QLUIRoot`，也不管理 doc 的生命周期；
 - Wayland（CPU 与 GL）不能由客户端直接改窗口尺寸，`ql_window_resize()` 返回
-  `QL_ERR_UNSUPPORTED`；X11 是异步生效（ConfigureNotify）。
+  `QL_ERR_UNSUPPORTED`；X11 是异步生效（ConfigureNotify）；
+- 板级面板尺寸固定时 `ql_window_resize()` 同样返回 `QL_ERR_UNSUPPORTED`；
+- 裸机没有 `clock_gettime`：窗口层自动退回平台的时间源（板级在 `window_open`
+  里用 SysTick 设好），`--seconds`/帧统计因此是毫秒精度；
+- `--stats` 的采样缓冲按需分配（3×1024 个 uint32 ≈ 12KB），MCU 上不开就不占堆。

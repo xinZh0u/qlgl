@@ -29,7 +29,9 @@
  * 注意：这个对象**不拥有** `QLUIRoot`。`ql_ui_free()` 仍由调用方负责
  * （doc 的所有权也分三种：静态 / blob / 运行期文本）。
  *
- * MCU 上没有窗口，只用 `ql_disp_*` + `ql_ui_render_canvas()`，不会链接到这里。
+ * MCU 上也能用：板级文件定义 `qlgl_platform_default()` 强符号（静态 RGB565
+ * 帧缓冲 + 按键队列 + SysTick），应用层代码与桌面完全一样。参考实现见
+ * `test/mcu/qlplatform_board.c`，设计见 `doc/平台后端设计.md`。
  */
 #ifndef QLGL_WINDOW_H
 #define QLGL_WINDOW_H
@@ -41,7 +43,7 @@ typedef struct QLWindow QLWindow;
 
 typedef enum {
     QL_WINDOW_GL = 0,      /* GPU：EGL + GLES3（X11 / Wayland） */
-    QL_WINDOW_CPU = 1,     /* CPU 光栅（X11 / Wayland）；目前未实现 */
+    QL_WINDOW_CPU = 1,     /* CPU 光栅：X11 / Wayland / 板级帧缓冲 */
     QL_WINDOW_OFFSCREEN = 2, /* 不开窗口：离屏 FBO，配合 dump 用 */
 } QLWindowBackend;
 
@@ -51,8 +53,9 @@ typedef int (*ql_window_event_fn)(QLUIRoot *ui, const QLInputEvent *ev, void *us
 typedef int (*ql_window_frame_fn)(QLUIRoot *ui, QLWindow *win, void *user);
 
 /*
- * 建窗口。失败返回 NULL（没有 EGL/GLES3/X11/Wayland，或 CPU 后端未实现）。
- * `backend` 为 `QL_WINDOW_GL` 时窗口立刻可见（首帧由 `run/poll/render` 提交）。
+ * 建窗口。失败返回 NULL（当前平台没有可用后端，或尺寸非法）。
+ * `backend` 为 `QL_WINDOW_GL` 时窗口立刻可见（首帧由 `run/poll/render` 提交）；
+ * MCU 上板级后端通常只认 `QL_WINDOW_CPU`，传 GL 会被忽略或失败。
  */
 QLWindow *ql_window_create(const char *title, ql_coord_t width, ql_coord_t height,
                            QLWindowBackend backend);

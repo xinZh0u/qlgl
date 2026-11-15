@@ -360,7 +360,7 @@ main img {
 <h2 id="1">1. 它替你接了什么</h2>
 <p><code>ql_window_create()</code> + <code>ql_window_bind_ui()</code> 内部完成：</p>
 <ul>
-<li>平台窗口（X11 / Wayland + EGL/GLES3）与高 DPI 处理；</li>
+<li>平台窗口（桌面是 X11 / Wayland + EGL/GLES3，MCU 是板级帧缓冲，见 §6）与高 DPI 处理；</li>
 <li><code>setlocale()</code>（XIM 需要）与桌面系统字体自动发现（<code>qlgl_init()</code>）；</li>
 <li><code>ql_ui_attach_input()</code>、剪贴板、输入法预编辑与候选窗定位；</li>
 <li>保留式画布 + 脏区重绘：没有脏区就阻塞等事件（静止时 0 帧、0% CPU）；</li>
@@ -468,6 +468,9 @@ main img {
   X11 → Wayland → 内存离屏，GL 失败可按 <code>QL_WINDOW_CPU</code> 走 CPU；</li>
 <li>MCU 板级文件定义同名强符号 <code>qlgl_platform_default()</code> 即可覆盖，
   应用层仍然只写 <code>qlgl_init()</code>；</li>
+<li>参考实现：<code>test/mcu/qlplatform_board.c</code>（静态 RGB565 面板 + 按键环形队列 +
+  SysTick 毫秒时钟），验收程序 <code>test/mcu/window.c</code>，<code>./test/mcu/build.sh window</code>
+  一条命令在 QEMU 的 Cortex-M4 上跑完（后端覆盖、首帧、触摸、脏区、点击、时钟）；</li>
 <li>调试：<code>QLGL_WINDOW_CPU=1 ./example_00_hello</code> 强制 CPU 光栅，与 GL 对照。</li>
 </ul>
 <h2 id="7">7. 限制</h2>
@@ -475,7 +478,11 @@ main img {
 <li>输入汇是<strong>进程级单例</strong>：一进程一窗口（与 MCU 一致）；</li>
 <li><code>QLWindow</code> 不拥有 <code>QLUIRoot</code>，也不管理 doc 的生命周期；</li>
 <li>Wayland（CPU 与 GL）不能由客户端直接改窗口尺寸，<code>ql_window_resize()</code> 返回
-  <code>QL_ERR_UNSUPPORTED</code>；X11 是异步生效（ConfigureNotify）。</li>
+  <code>QL_ERR_UNSUPPORTED</code>；X11 是异步生效（ConfigureNotify）；</li>
+<li>板级面板尺寸固定时 <code>ql_window_resize()</code> 同样返回 <code>QL_ERR_UNSUPPORTED</code>；</li>
+<li>裸机没有 <code>clock_gettime</code>：窗口层自动退回平台的时间源（板级在 <code>window_open</code>
+  里用 SysTick 设好），<code>--seconds</code>/帧统计因此是毫秒精度；</li>
+<li><code>--stats</code> 的采样缓冲按需分配（3×1024 个 uint32 ≈ 12KB），MCU 上不开就不占堆。</li>
 </ul><div class='pager'>
 <a href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>上一页</span>QLUI / HTML+CSS 编译 阅读指南</a>
 <a class='next' href='../../manual/uitext/QLUIText API手册.html'><span class='dir'>下一页</span>QLUIText API 手册</a>

@@ -429,8 +429,8 @@ main img {
 <tbody>
 <tr>
 <td><strong>Linux 桌面</strong></td>
-<td>✅ X11 / Wayland（CPU + GL）</td>
-<td>Wayland GPU（<code>wl_egl_window</code>）</td>
+<td>✅ X11 / Wayland（CPU + GL），阻塞 wait、剪贴板、窗口 resize</td>
+<td>多窗口（输入汇是单例）</td>
 <td>低</td>
 <td>—</td>
 </tr>
@@ -471,10 +471,10 @@ main img {
 </tr>
 <tr>
 <td><strong>MCU</strong></td>
-<td>规划中</td>
-<td>只保留构建期 HTML/CSS，<strong>无 JS</strong></td>
-<td>—</td>
-<td>与 JS 宿主档互斥</td>
+<td>✅ QEMU mps2-an386（Cortex-M4）跑通 <code>QLWindow</code>：静态 RGB565、触摸队列、SysTick；只保留构建期 HTML/CSS，<strong>无 JS</strong></td>
+<td>真板驱动（SPI/DMA 刷屏、真实按键/触摸）、可选 RTOS 适配</td>
+<td>低</td>
+<td>与 JS 宿主档互斥；RAM 按 240×160 双缓冲 ≈ 150KB 起</td>
 </tr>
 </tbody>
 </table>

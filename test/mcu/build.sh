@@ -1,8 +1,10 @@
 #!/bin/sh
-# 交叉编译 + 在 QEMU 里跑 MCU 基准。
+# 交叉编译 + 在 QEMU 里跑 MCU 程序。
 #
-#   ./test/mcu/build.sh              # 编译并运行（默认 mps2-an386 / Cortex-M4）
-#   ./test/mcu/build.sh --no-run     # 只编译
+#   ./test/mcu/build.sh              # 基准（默认）：编译并运行
+#   ./test/mcu/build.sh window       # QLWindow 验收：板级平台 + 触摸 + 脏区刷屏
+#   ./test/mcu/build.sh --no-run     # 只编译（看 ROM/RAM 占用）
+#   ./test/mcu/build.sh window --no-run
 #
 # 参数通过环境变量覆盖：
 #   CPU=cortex-m4  BOARD=mps2-an386  FREQ_MHZ=200
@@ -23,14 +25,45 @@ FREQ_MHZ=${FREQ_MHZ:-200}
 CROSS=${CROSS:-arm-none-eabi-}
 QLTEXT=${QLTEXT:-$ROOT/build/qltext}
 
+# 目标程序：bench（默认，量布局/光栅）或 window（QLWindow 验收）
+TARGET=bench
+NO_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --no-run) NO_RUN=1 ;;
+        bench|window) TARGET=$arg ;;
+        *) echo "未知参数：$arg" >&2; exit 2 ;;
+    esac
+done
+
+case "$TARGET" in
+bench)
+    PAGE_HTML=$ROOT/test/mcu/bench.html
+    PAGE_CSS=$ROOT/test/mcu/bench.css
+    PAGE_NAME=mcu_bench
+    APP_SRCS="$ROOT/test/mcu/bench.c"
+    PORT_SRCS=""
+    ELF=bench.elf
+    ;;
+window)
+    PAGE_HTML=$ROOT/test/mcu/window.html
+    PAGE_CSS=$ROOT/test/mcu/window.css
+    PAGE_NAME=mcu_window
+    APP_SRCS="$ROOT/test/mcu/window.c $ROOT/test/mcu/qlplatform_board.c"
+    # 窗口层 + 平台注册表：这两个文件就是"PC 上 QLWindow 的 MCU 版"
+    PORT_SRCS="$ROOT/src/port/qlplatform.c $ROOT/src/port/qlwindow.c"
+    ELF=window.elf
+    ;;
+esac
+
 mkdir -p "$OUT"
 
 # 1) 页面 → 静态 C（构建期一次，运行期不解析 HTML/CSS）
-"$QLTEXT" cc --html "$ROOT/test/mcu/bench.html" --css "$ROOT/test/mcu/bench.css" \
-    --name mcu_bench --out "$OUT" >/dev/null
+"$QLTEXT" cc --html "$PAGE_HTML" --css "$PAGE_CSS" \
+    --name "$PAGE_NAME" --out "$OUT" >/dev/null
 
-SRCS="$ROOT/test/mcu/bench.c $ROOT/test/mcu/startup.c $ROOT/test/mcu/syscalls.c \
-      $OUT/ui_mcu_bench.c \
+SRCS="$APP_SRCS $PORT_SRCS $ROOT/test/mcu/startup.c $ROOT/test/mcu/syscalls.c \
+      $OUT/ui_${PAGE_NAME}.c \
       $ROOT/src/core/qlmem.c $ROOT/src/core/qlgl.c $ROOT/src/core/qlanim.c \
       $ROOT/src/core/qlinput.c $ROOT/src/core/qlstr.c $ROOT/src/core/qlvalue.c \
       $ROOT/src/core/qlclass.c $ROOT/src/core/qlobject.c $ROOT/src/core/qlevent.c \
@@ -45,7 +78,8 @@ SRCS="$ROOT/test/mcu/bench.c $ROOT/test/mcu/startup.c $ROOT/test/mcu/syscalls.c 
       $ROOT/src/ui/qlui.c"
 
 CFLAGS="-mcpu=$CPU -mthumb -O2 -g -std=c11 -ffreestanding -fno-common
-        -I$ROOT/include -I$OUT
+        -ffunction-sections -fdata-sections
+        -I$ROOT/include -I$ROOT/test/mcu -I$OUT
         -DQL_CFG_UI_MAX_NODES=256 -DQL_CFG_UI_MAX_STYLES=256
         -DQL_CFG_UI_FLEX_MAX_ITEMS=64
         -DQL_FEAT_CSS_FILTER_LAYER=${QL_FEAT_CSS_FILTER_LAYER:-0}
@@ -59,12 +93,12 @@ CFLAGS="-mcpu=$CPU -mthumb -O2 -g -std=c11 -ffreestanding -fno-common
 # shellcheck disable=SC2086
 "${CROSS}gcc" $CFLAGS -T "$ROOT/test/mcu/link.ld" \
     --specs=nano.specs --specs=nosys.specs \
-    -Wl,--gc-sections -Wl,-Map="$OUT/bench.map" \
-    -o "$OUT/bench.elf" $SRCS -lm
+    -Wl,--gc-sections -Wl,-Map="$OUT/${ELF%.elf}.map" \
+    -o "$OUT/$ELF" $SRCS -lm
 
-"${CROSS}size" "$OUT/bench.elf"
+"${CROSS}size" "$OUT/$ELF"
 
-if [ "$1" = "--no-run" ]; then
+if [ "$NO_RUN" = 1 ]; then
     exit 0
 fi
 
@@ -73,4 +107,4 @@ fi
 #    `align=off,sleep=off` 是必须的：默认对齐会让 QEMU 等虚拟时钟，跑得极慢。
 qemu-system-arm -M "$BOARD" -cpu "$CPU" -nographic \
     -semihosting-config enable=on,target=native \
-    -icount shift=0,align=off,sleep=off -kernel "$OUT/bench.elf"
+    -icount shift=0,align=off,sleep=off -kernel "$OUT/$ELF"

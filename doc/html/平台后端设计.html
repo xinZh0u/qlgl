@@ -392,50 +392,81 @@ CPU 后端在 <code>begin</code> 里清脏区、<code>end</code> 里把脏区 fl
 </code></pre></div>
 
 <p><code>QLWindow</code> 通过 <code>qlgl_platform()</code> 取当前后端；桌面默认后端已包含 GL 与 CPU 两套。</p>
-<h2 id="3-mcu">3. MCU 板级骨架</h2>
+<h2 id="3-mcu">3. MCU 板级实现（已跑通）</h2>
+<p>仓库里有一份可编译、可运行的完整实现：
+<strong><code>test/mcu/qlplatform_board.c</code></strong>。它不是文档示例，而是 <code>test/mcu/build.sh window</code>
+真正链接进去的后端（QEMU mps2-an386 / Cortex-M4，无 OS、无文件系统）。</p>
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="n">disp</span><span class="p">;</span><span class="w">       </span><span class="cm">/* ql_disp_init_fb 初始化：静态 RGB565 帧缓冲 */</span>
+<span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="n">disp</span><span class="p">;</span><span class="w">       </span><span class="cm">/* ql_disp_init_fb：静态 RGB565 帧缓冲 */</span>
 <span class="w">    </span><span class="n">QLCanvas</span><span class="w">     </span><span class="n">canvas</span><span class="p">;</span>
 <span class="w">    </span><span class="n">QLDraw2D</span><span class="w">     </span><span class="n">d2d</span><span class="p">;</span>
 <span class="w">    </span><span class="n">QLRect</span><span class="w">       </span><span class="n">flush</span><span class="p">;</span>
 <span class="w">    </span><span class="kt">int</span><span class="w">          </span><span class="n">full</span><span class="p">;</span>
 <span class="p">}</span><span class="w"> </span><span class="n">BoardWindow</span><span class="p">;</span>
 
+<span class="k">static</span><span class="w"> </span><span class="n">BoardWindow</span><span class="w"> </span><span class="n">s_win</span><span class="p">;</span><span class="w">              </span><span class="cm">/* 单屏：静态对象，零分配 */</span>
+
 <span class="k">static</span><span class="w"> </span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="nf">board_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span>
 <span class="w">                                    </span><span class="kt">int</span><span class="w"> </span><span class="n">backend</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">title</span><span class="p">;</span><span class="w"> </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">backend</span><span class="p">;</span>
-<span class="w">    </span><span class="n">BoardWindow</span><span class="w"> </span><span class="o">*</span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">s_board</span><span class="p">;</span><span class="w">              </span><span class="cm">/* 单屏：静态对象，零分配 */</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">fb</span><span class="p">[</span><span class="mi">320</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">240</span><span class="p">];</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_disp_init_fb</span><span class="p">(</span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">disp</span><span class="p">,</span><span class="w"> </span><span class="n">fb</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB565</span><span class="p">,</span><span class="w"> </span><span class="n">board_flush</span><span class="p">))</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">s_open</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span><span class="w">           </span><span class="cm">/* 一进程一屏（输入汇是单例） */</span>
+
+<span class="w">    </span><span class="n">BoardWindow</span><span class="w"> </span><span class="o">*</span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">s_win</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_disp_init_fb</span><span class="p">(</span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">disp</span><span class="p">,</span><span class="w"> </span><span class="n">s_fb</span><span class="p">,</span><span class="w"> </span><span class="n">QL_BOARD_W</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2u</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">,</span>
+<span class="w">                        </span><span class="n">QL_COLOR_RGB565</span><span class="p">,</span><span class="w"> </span><span class="n">board_flush</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_OK</span><span class="p">)</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
 <span class="w">    </span><span class="n">ql_canvas_from_disp</span><span class="p">(</span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">disp</span><span class="p">);</span>
 <span class="w">    </span><span class="n">ql_draw2d_canvas_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">d2d</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">canvas</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">ql_anim_set_time_source</span><span class="p">(</span><span class="n">ql_board_now_ms</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 裸机没有 clock_gettime */</span>
+<span class="w">    </span><span class="n">board_clock_init</span><span class="p">();</span><span class="w">                         </span><span class="cm">/* SysTick 1ms */</span>
+<span class="w">    </span><span class="n">s_open</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">b</span><span class="p">;</span>
 <span class="p">}</span>
-
-<span class="k">static</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">board_poll</span><span class="p">(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="n">BoardWindow</span><span class="w"> </span><span class="o">*</span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">BoardWindow</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">pw</span><span class="p">;</span>
-<span class="w">    </span><span class="n">board_read_keys</span><span class="p">();</span><span class="w">                      </span><span class="cm">/* 中断里入环形队列，这里搬到 ql_input_push_* */</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">!</span><span class="n">s_power_off</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">static</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">board_begin</span><span class="p">(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">bg</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">dirty</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="n">BoardWindow</span><span class="w"> </span><span class="o">*</span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">BoardWindow</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">pw</span><span class="p">;</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ql_canvas_clear</span><span class="p">(</span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="n">bg</span><span class="p">);</span><span class="w"> </span><span class="n">b</span><span class="o">-&gt;</span><span class="n">full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">ql_canvas_fill_rect</span><span class="p">(</span><span class="o">&amp;</span><span class="n">b</span><span class="o">-&gt;</span><span class="n">canvas</span><span class="p">,</span><span class="w"> </span><span class="n">dirty</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="n">bg</span><span class="p">);</span>
-<span class="w">    </span><span class="n">b</span><span class="o">-&gt;</span><span class="n">full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="cm">/* flush：把 dirty 矩形推进 SPI/DMA；frame_us/swap_us 可以留 NULL */</span>
 </code></pre></div>
 
-<p><code>wait()</code> 在裸机上一般是空操作或 <code>WFI</code>；<code>poll()</code> 里读按键并
-<code>ql_input_push_key()</code>（注意：<strong>不要在 ISR 里直接 push</strong>，主循环里搬）。
-桌面的 X11/Wayland CPU 后端已经用 fd 阻塞（<code>select</code> / <code>poll</code>），静止时不再定时唤醒。</p>
+<p>三件板级专属的事：</p>
+<table>
+<thead>
+<tr>
+<th>事情</th>
+<th>做法</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时间</td>
+<td>SysTick 1ms 中断累加 <code>s_ms</code>，<code>ql_anim_set_time_source()</code> 指过去</td>
+<td>裸机没有 <code>clock_gettime</code>；<code>QLWindow</code> 的 <code>--seconds</code>/帧统计会自动退回毫秒时间源</td>
+</tr>
+<tr>
+<td>输入</td>
+<td>中断只入环形队列，<code>poll()</code> 里搬进 <code>ql_input_push_*</code></td>
+<td>ISR 里不能分配、不能和主循环抢队列</td>
+</tr>
+<tr>
+<td>空闲</td>
+<td><code>wait()</code> 里 <code>WFI</code></td>
+<td>SysTick 每 1ms 一次中断，静止时省电且零轮询</td>
+</tr>
+</tbody>
+</table>
+<p><code>begin/draw/end</code> 与桌面 CPU 后端同构：清脏区 → <code>ql_ui_render*</code> → <code>flush(area)</code>；
+flush 在真板子上是 SPI/DMA，测试里是拷进另一块内存（模拟"屏幕上现在显示的内容"）。</p>
+<p><strong>两个容易踩的坑</strong>（这次都踩了）：</p>
+<ol>
+<li><strong>向量表下标</strong>：SysTick 是异常 15 → 表里第 <strong>16</strong> 项（索引 15）。
+   少写一项会让 SysTick 跳到 0 地址 → HardFault → 默认 handler 的 <code>wfi</code> 死循环，
+   现象是"程序卡住、没有输出"。<code>test/mcu/startup.c</code> 里有完整注释。</li>
+<li><strong><code>QLWindow</code> 的统计缓冲</strong>：<code>--stats</code> 的采样数组现在按需分配（1024 帧 × 3 组 ≈ 12KB），
+   否则 48KB 的 MCU 堆在 <code>ql_window_create()</code> 里就没了。</li>
+</ol>
+<p>另一个与平台无关但影响 MCU 链接的点：<code>qlui.c</code> 里保留了运行期解析入口，
+会引用 <code>qlui_parse.c</code> 的符号。MCU 构建必须开
+<code>-ffunction-sections -fdata-sections</code> + <code>-Wl,--gc-sections</code>，让没被引用的
+<code>ql_ui_load_html*</code> 整段丢掉（<code>test/mcu/build.sh</code> 已经默认打开）。</p>
 <h2 id="4-cpu">4. 桌面 CPU 光栅</h2>
 <p><code>QLPlatform</code> 的默认桌面实现里 <code>window_open(..., QL_WINDOW_CPU)</code> 走：</p>
 <ul>
@@ -448,14 +479,62 @@ CPU 后端在 <code>begin</code> 里清脏区、<code>end</code> 里把脏区 fl
 </ul>
 <p>调试：<code>QLGL_WINDOW_CPU=1 ./example_00_hello</code> 强制走 CPU 路径，用来和 GL 对照。</p>
 <h2 id="5">5. 测试</h2>
-<p><code>test/web/test_window_fake.c</code> 用假平台（内存显示 + 脚本输入）验证：</p>
+<p><code>test/web/test_window_fake.c</code> 用假平台（内存显示 + 脚本输入）验证桌面侧行为：</p>
 <ul>
 <li><code>qlgl_set_platform(&amp;fake)</code> 后 <code>ql_window_create()</code> 走假后端；</li>
 <li><code>ql_window_poll()</code> 把输入队列派发到界面层并触发点击回调；</li>
 <li><code>ql_window_dump_ppm()</code> 写出非空 PPM；</li>
-<li><code>ql_window_set_ui()</code> 换界面、<code>ql_window_quit()</code> 退出。</li>
+<li><code>ql_window_set_ui()</code> 换界面、<code>ql_window_quit()</code> 退出；</li>
+<li><code>ql_window_resize()</code> → 后端重建画布 → <code>resize_pending</code> → 重新布局。</li>
 </ul>
-<p>这个假后端就是 MCU 平台的"PC 版"：换成真实显示 flush / 按键读取即可。</p><div class='pager'>
+<p>MCU 侧是 <code>test/mcu/window.c</code>，在 QEMU 里跑同一套 <code>QLWindow</code>：</p>
+<div class="highlight"><pre><span></span><code>./test/mcu/build.sh<span class="w"> </span>window<span class="w">        </span><span class="c1"># 编译 + 在 QEMU 里跑，PASS/FAIL 看输出</span>
+./test/mcu/build.sh<span class="w"> </span>window<span class="w"> </span>--no-run<span class="w">   </span><span class="c1"># 只看 ROM/RAM</span>
+</code></pre></div>
+
+<p>它验证的是"无 OS 也能用高层 API"：</p>
+<table>
+<thead>
+<tr>
+<th>检查</th>
+<th>断言</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>后端覆盖</td>
+<td><code>qlgl_platform()-&gt;name == "mcu-board"</code>（强符号压过桌面弱符号）</td>
+</tr>
+<tr>
+<td>首帧</td>
+<td><code>ql_window_poll()</code> 触发整屏 flush（240×160）</td>
+</tr>
+<tr>
+<td>样式</td>
+<td>按钮像素 == <code>#0969DA</code> 的 RGB565</td>
+</tr>
+<tr>
+<td>触摸</td>
+<td>指针移动 → <code>:hover</code> 变色，且只刷脏区（刷新像素 &lt; 整屏）</td>
+</tr>
+<tr>
+<td>点击</td>
+<td><code>ql_ui_set_click_cb</code> 回调触发 1 次</td>
+</tr>
+<tr>
+<td>整屏重绘</td>
+<td><code>ql_window_render()</code> → 一次整屏 flush</td>
+</tr>
+<tr>
+<td>时钟</td>
+<td>SysTick 毫秒数在 64 次 <code>poll</code> 后确实前进</td>
+</tr>
+<tr>
+<td>固定面板</td>
+<td><code>ql_window_resize()</code> 返回 <code>QL_ERR_UNSUPPORTED</code></td>
+</tr>
+</tbody>
+</table><div class='pager'>
 <a href='图像管线设计.html'><span class='dir'>上一页</span>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
 <a class='next' href='EMBED后端设计.html'><span class='dir'>下一页</span>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 </div>
@@ -463,7 +542,7 @@ CPU 后端在 <code>begin</code> 里清脏区、<code>end</code> 里把脏区 fl
 <aside class='toc'><h5>本页内容</h5><ul>
 <li><a href='#1'>1. 回调表</a></li>
 <li><a href='#2'>2. 选择后端</a></li>
-<li><a href='#3-mcu'>3. MCU 板级骨架</a></li>
+<li><a href='#3-mcu'>3. MCU 板级实现（已跑通）</a></li>
 <li><a href='#4-cpu'>4. 桌面 CPU 光栅</a></li>
 <li><a href='#5'>5. 测试</a></li>
 </ul></aside>
