@@ -62,6 +62,7 @@ cmake -S . -B build && cmake --build build -j
 | `--seconds S` | 跑 S 秒后退出 |
 | `--stats` | 退出时打帧时间 p50/p95/max + 等 swap 时间 |
 | `--spin` | 每帧都渲染（性能/基准用） |
+| `--size WxH` | 改窗口尺寸（X11/GL 异步生效） |
 | `--vsync 0/1` | 强制开关垂直同步 |
 | `QL_EX_DUMP=FILE` | 与 `--dump` 同义（适合不方便传参的启动方式） |
 

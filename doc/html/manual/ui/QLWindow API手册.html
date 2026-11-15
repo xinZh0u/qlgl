@@ -378,13 +378,13 @@ main img {
 <span class="w">                           </span><span class="n">QLWindowBackend</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_window_bind_ui</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span>
 <span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_window_set_ui</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">);</span><span class="w">  </span><span class="cm">/* live reload */</span>
-<span class="kt">void</span><span class="w">      </span><span class="nf">ql_window_show</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">       </span><span class="nf">ql_window_run</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">);</span><span class="w">         </span><span class="cm">/* 阻塞到关窗 */</span>
 <span class="kt">int</span><span class="w">       </span><span class="nf">ql_window_run_args</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">**</span><span class="n">argv</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">       </span><span class="nf">ql_window_poll</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">);</span><span class="w">        </span><span class="cm">/* 手动循环：1 = 继续 */</span>
 <span class="kt">void</span><span class="w">      </span><span class="nf">ql_window_render</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 强制画一帧 */</span>
 <span class="kt">void</span><span class="w">      </span><span class="nf">ql_window_quit</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">);</span>
 <span class="kt">void</span><span class="w">      </span><span class="nf">ql_window_destroy</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">);</span>
+<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_window_resize</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">);</span>
 
 <span class="kt">void</span><span class="w"> </span><span class="nf">ql_window_set_vsync</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">on</span><span class="p">);</span>
 <span class="kt">void</span><span class="w"> </span><span class="nf">ql_window_set_bg</span><span class="p">(</span><span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="n">win</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">);</span>
@@ -435,6 +435,10 @@ main img {
 <td>每帧都渲染（性能测量用）</td>
 </tr>
 <tr>
+<td><code>--size WxH</code></td>
+<td>改窗口尺寸（X11/GL 异步生效）</td>
+</tr>
+<tr>
 <td><code>--vsync 0/1</code></td>
 <td>开关垂直同步</td>
 </tr>
@@ -442,8 +446,7 @@ main img {
 </table>
 <p>应用层直接用 <code>ql_window_run()</code> 即可，不需要这些参数。</p>
 <h2 id="5">5. 手动循环与钩子</h2>
-<div class="highlight"><pre><span></span><code><span class="n">ql_window_show</span><span class="p">(</span><span class="n">win</span><span class="p">);</span>
-<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_window_poll</span><span class="p">(</span><span class="n">win</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<div class="highlight"><pre><span></span><code><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">ql_window_poll</span><span class="p">(</span><span class="n">win</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="cm">/* 每帧逻辑放这里（poll 已处理事件/动画/脏区并画完） */</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -471,7 +474,8 @@ main img {
 <ul>
 <li>输入汇是<strong>进程级单例</strong>：一进程一窗口（与 MCU 一致）；</li>
 <li><code>QLWindow</code> 不拥有 <code>QLUIRoot</code>，也不管理 doc 的生命周期；</li>
-<li>CPU 后端的空闲等待是 32ms 定时轮询（X11/Wayland 没有暴露阻塞式 wait）。</li>
+<li>Wayland（CPU 与 GL）不能由客户端直接改窗口尺寸，<code>ql_window_resize()</code> 返回
+  <code>QL_ERR_UNSUPPORTED</code>；X11 是异步生效（ConfigureNotify）。</li>
 </ul><div class='pager'>
 <a href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>上一页</span>QLUI / HTML+CSS 编译 阅读指南</a>
 <a class='next' href='../../manual/uitext/QLUIText API手册.html'><span class='dir'>下一页</span>QLUIText API 手册</a>

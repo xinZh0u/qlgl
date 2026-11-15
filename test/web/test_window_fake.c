@@ -23,6 +23,7 @@ typedef struct {
     QLDraw2D      d2d;
     QLRect        flush;
     int           full;
+    int           resized;
 } FakeWin;
 
 static int s_clicks;
@@ -88,6 +89,30 @@ static int fake_begin(QLPlatformWindow *pw, ql_color_t bg, const QLRect *dirty, 
     return 0;
 }
 
+/* 假后端是同步的：重建内存驱动，并让 resize_pending 报一次 */
+static ql_err_t fake_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
+{
+    FakeWin *f = (FakeWin *)pw;
+    QLDispDriver *d = ql_disp_mem_create(w, h, QL_COLOR_RGB888);
+    if (d == NULL)
+        return QL_ERR_NOMEM;
+    ql_disp_mem_destroy(f->disp);
+    f->disp = d;
+    if (ql_canvas_from_disp(&f->canvas, d) != QL_OK ||
+        ql_draw2d_canvas_init(&f->d2d, &f->canvas) != QL_OK)
+        return QL_ERR_NOMEM;
+    f->resized = 1;
+    return QL_OK;
+}
+
+static int fake_resize_pending(QLPlatformWindow *pw)
+{
+    FakeWin *f = (FakeWin *)pw;
+    const int p = f->resized;
+    f->resized = 0;
+    return p;
+}
+
 static QLDraw2D *fake_draw(QLPlatformWindow *pw) { return &((FakeWin *)pw)->d2d; }
 static void fake_end(QLPlatformWindow *pw) { (void)pw; }
 
@@ -108,6 +133,8 @@ static const QLPlatform s_fake = {
     .poll = fake_poll,
     .wait = fake_wait,
     .size = fake_size,
+    .resize_pending = fake_resize_pending,
+    .resize = fake_resize,
     .begin = fake_begin,
     .draw = fake_draw,
     .end = fake_end,
@@ -149,6 +176,13 @@ QL_TEST_BEGIN("test_window_fake")
         QL_CHECK_EQ(ql_input_push_button(20, 20, QL_BUTTON_BIT_LEFT, 0), QL_OK);
         QL_CHECK_EQ(ql_window_poll(win), 1);
         QL_CHECK_EQ(s_clicks, 1);
+
+        /* 改尺寸 → 平台报 resize_pending → poll 重新布局 */
+        QL_CHECK_EQ(ql_window_resize(win, 120, 60), QL_OK);
+        QL_CHECK_EQ(ql_window_poll(win), 1);
+        ql_window_size(win, &w, &h);
+        QL_CHECK_EQ((int)w, 120);
+        QL_CHECK_EQ((int)h, 60);
 
         /* 走平台 dump（不是 GL）：文件必须存在且非空 */
         QL_CHECK_EQ(ql_window_dump_ppm(win, "/tmp/qlgl_fake.ppm"), 1);

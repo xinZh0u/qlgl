@@ -47,13 +47,13 @@ QLWindow *ql_window_create(const char *title, ql_coord_t w, ql_coord_t h,
                            QLWindowBackend backend);
 ql_err_t  ql_window_bind_ui(QLWindow *win, QLUIRoot *ui);
 ql_err_t  ql_window_set_ui(QLWindow *win, QLUIRoot *ui);  /* live reload */
-void      ql_window_show(QLWindow *win);
 int       ql_window_run(QLWindow *win);         /* 阻塞到关窗 */
 int       ql_window_run_args(QLWindow *win, int argc, char **argv);
 int       ql_window_poll(QLWindow *win);        /* 手动循环：1 = 继续 */
 void      ql_window_render(QLWindow *win);      /* 强制画一帧 */
 void      ql_window_quit(QLWindow *win);
 void      ql_window_destroy(QLWindow *win);
+ql_err_t  ql_window_resize(QLWindow *win, ql_coord_t w, ql_coord_t h);
 
 void ql_window_set_vsync(QLWindow *win, int on);
 void ql_window_set_bg(QLWindow *win, ql_color_t color);
@@ -84,6 +84,7 @@ int       ql_window_dump_ppm(QLWindow *win, const char *path);
 | `--seconds S` | 跑 S 秒后退出 |
 | `--stats` | 退出时打印帧时间 p50/p95/max 与等 swap 时间 |
 | `--spin` | 每帧都渲染（性能测量用） |
+| `--size WxH` | 改窗口尺寸（X11/GL 异步生效） |
 | `--vsync 0/1` | 开关垂直同步 |
 
 应用层直接用 `ql_window_run()` 即可，不需要这些参数。
@@ -91,7 +92,6 @@ int       ql_window_dump_ppm(QLWindow *win, const char *path);
 ## 5. 手动循环与钩子
 
 ```c
-ql_window_show(win);
 while (ql_window_poll(win)) {
     /* 每帧逻辑放这里（poll 已处理事件/动画/脏区并画完） */
 }
@@ -121,4 +121,5 @@ qlgl_init();
 
 - 输入汇是**进程级单例**：一进程一窗口（与 MCU 一致）；
 - `QLWindow` 不拥有 `QLUIRoot`，也不管理 doc 的生命周期；
-- CPU 后端的空闲等待是 32ms 定时轮询（X11/Wayland 没有暴露阻塞式 wait）。
+- Wayland（CPU 与 GL）不能由客户端直接改窗口尺寸，`ql_window_resize()` 返回
+  `QL_ERR_UNSUPPORTED`；X11 是异步生效（ConfigureNotify）。

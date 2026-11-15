@@ -164,6 +164,13 @@ QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx);
 /* 1 = 等垂直同步（默认），0 = 不限帧（基准测试用） */
 void     ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on);
 
+/*
+ * 请求把窗口改成 w×h（CSS px）。X11 异步生效：随后会走 ConfigureNotify →
+ * `ql_gfx_gl_resize_pending()`。Wayland 目前返回 QL_ERR_UNSUPPORTED
+ * （客户端不能直接定窗口尺寸，要请求合成器）。
+ */
+ql_err_t ql_gfx_gl_resize(QLGfxGL *gfx, ql_coord_t width, ql_coord_t height);
+
 /* 阻塞到 GPU 画完（基准测试用；正常渲染不要调用） */
 void     ql_gfx_gl_finish(QLGfxGL *gfx);
 

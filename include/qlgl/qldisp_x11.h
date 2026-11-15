@@ -42,6 +42,15 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
  */
 int ql_disp_x11_poll(QLDispDriver *driver);
 
+/* 阻塞等事件或超时（毫秒）；返回 1 = 继续，0 = 已关闭 */
+int ql_disp_x11_wait(QLDispDriver *driver, int timeout_ms);
+
+/* 请求窗口尺寸（XResizeWindow，异步）；返回 QL_OK 表示请求已发出 */
+ql_err_t ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t height);
+
+/* 把 X11 CLIPBOARD 接到界面（Ctrl+C/V） */
+void ql_disp_x11_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui);
+
 /*
  * 告诉输入法光标位置（候选窗定位），语义同 `ql_gfx_gl_set_ime_spot()`：
  * CSS px、视口坐标。每帧或每次光标移动后调一次即可（值没变不发 X 请求）。

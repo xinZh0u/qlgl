@@ -17,7 +17,10 @@
 #include <X11/keysym.h>
 #include <X11/Xresource.h>
 
+#include <sys/select.h>
+
 #include "qlinput_x11.h"
+#include "qlclipboard_x11.h"
 
 typedef struct {
     QLDispDriver base;
@@ -303,6 +306,8 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     x->base.flush_done = x11_flush_done;
     ql_disp_set_scale(&x->base, x11_query_scale(dpy));
 
+    ql_x11_clip_attach(dpy, x->win);
+
     XMapWindow(dpy, x->win);
     XFlush(dpy);
 
@@ -337,6 +342,7 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     return &x->base;
 
 fail:
+    ql_x11_clip_detach();
     /* 走统一销毁路径；此时 base 可能还没初始化完，手动清理 */
     if (x->image != NULL) {
         x->image->data = NULL;          /* 像素内存归我们管 */
@@ -368,6 +374,10 @@ int ql_disp_x11_poll(QLDispDriver *driver)
     while (XPending(x->dpy) > 0) {
         XEvent ev;
         XNextEvent(x->dpy, &ev);
+
+        /* 剪贴板协议（SelectionRequest/Notify/Clear）先处理掉 */
+        if (ql_x11_clip_handle_event(&ev))
+            continue;
 
         switch (ev.type) {
         case Expose:
@@ -459,6 +469,7 @@ void ql_disp_x11_destroy(QLDispDriver *driver)
     QLDispX11 *x = (QLDispX11 *)driver;
 
     ql_disp_unset(driver);
+    ql_x11_clip_detach();
 
     if (x->dpy != NULL) {
         if (x->xic != NULL) {
@@ -510,3 +521,63 @@ uint32_t ql_disp_x11_expose_count(QLDispDriver *driver)
 }
 
 #endif /* QLGL_ENABLE_X11 */
+
+int ql_disp_x11_wait(QLDispDriver *driver, int timeout_ms)
+{
+    if (driver == NULL)
+        return 0;
+    QLDispX11 *x = (QLDispX11 *)driver;
+    if (x->dpy == NULL || x->closed)
+        return 0;
+
+    /* 还有没处理的事件：立刻返回，让 poll() 去取 */
+    if (XPending(x->dpy) > 0)
+        return 1;
+
+    XFlush(x->dpy);                     /* 确保请求已经发出去 */
+    const int fd = ConnectionNumber(x->dpy);
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+    struct timeval tv;
+    tv.tv_sec = (timeout_ms > 0) ? timeout_ms / 1000 : 0;
+    tv.tv_usec = (timeout_ms > 0) ? (timeout_ms % 1000) * 1000 : 0;
+    (void)select(fd + 1, &fds, NULL, NULL, (timeout_ms >= 0) ? &tv : NULL);
+    return x->closed ? 0 : 1;
+}
+
+ql_err_t ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t height)
+{
+    if (driver == NULL || width <= 0 || height <= 0)
+        return QL_ERR_INVAL;
+    QLDispX11 *x = (QLDispX11 *)driver;
+    if (x->dpy == NULL || x->win == 0)
+        return QL_ERR_INVAL;
+    XResizeWindow(x->dpy, x->win, (unsigned)width, (unsigned)height);
+    XFlush(x->dpy);
+    return QL_OK;                       /* ConfigureNotify 里重建帧缓冲 */
+}
+
+static void x11_clip_set(const char *utf8, void *user)
+{
+    (void)user;
+    ql_x11_clip_set_text(utf8);
+}
+
+static int x11_clip_get(char *buf, size_t cap, void *user)
+{
+    (void)user;
+    return ql_x11_clip_get_text(buf, cap);
+}
+
+static const QLUIClipboard s_x11_clip = {
+    .set_text = x11_clip_set,
+    .get_text = x11_clip_get,
+};
+
+void ql_disp_x11_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui)
+{
+    (void)driver;
+    if (ui != NULL)
+        ql_ui_set_clipboard(ui, &s_x11_clip, NULL);
+}

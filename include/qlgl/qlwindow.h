@@ -21,7 +21,6 @@
  * 不想用默认主循环时也可以自己驱动：
  *
  * ```c
- * ql_window_show(win);                // 只显示，不阻塞
  * while (ql_window_poll(win)) {
  *     // ...自己的逻辑...
  * }
@@ -64,8 +63,6 @@ QLWindow *ql_window_create(const char *title, ql_coord_t width, ql_coord_t heigh
  */
 ql_err_t ql_window_bind_ui(QLWindow *win, QLUIRoot *ui);
 
-/* 只显示（非阻塞）。默认主循环里 `run()` 会自己处理，不需要单独调。 */
-void ql_window_show(QLWindow *win);
 
 /* 跑默认主循环：阻塞到关窗 / `ql_window_quit()`。返回退出码（目前恒 0）。 */
 int ql_window_run(QLWindow *win);
@@ -77,6 +74,7 @@ int ql_window_run(QLWindow *win);
  *   --seconds S     跑 S 秒后退出
  *   --stats         退出时打帧时间 p50/p95/max 与等 swap 时间
  *   --spin          每帧都渲染（性能测量用）
+ *   --size WxH      改窗口尺寸（X11/GL 异步生效）
  *   --vsync 0|1     开关垂直同步
  */
 int ql_window_run_args(QLWindow *win, int argc, char **argv);
@@ -95,6 +93,9 @@ void ql_window_render(QLWindow *win);
 
 void ql_window_quit(QLWindow *win);
 void ql_window_destroy(QLWindow *win);
+
+/* 请求改窗口尺寸（CSS px）。X11/GL 异步生效；Wayland CPU 端返回 UNSUPPORTED。 */
+ql_err_t ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height);
 
 /* 可选配置（在 bind/run 之前调用） */
 void ql_window_set_vsync(QLWindow *win, int on);

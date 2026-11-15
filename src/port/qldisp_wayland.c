@@ -463,3 +463,27 @@ void ql_disp_wayland_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui)
 }
 
 #endif /* QLGL_ENABLE_WAYLAND */
+
+int ql_disp_wayland_wait(QLDispDriver *driver, int timeout_ms)
+{
+    if (driver == NULL)
+        return 0;
+    QLDispWayland *w = (QLDispWayland *)driver;
+    if (w->wl.dpy == NULL || w->wl.closed)
+        return 0;
+
+    (void)wl_display_flush(w->wl.dpy);
+    struct pollfd pfd;
+    pfd.fd = wl_display_get_fd(w->wl.dpy);
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    (void)poll(&pfd, 1, timeout_ms);
+    return w->wl.closed ? 0 : 1;
+}
+
+ql_err_t ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
+                                ql_coord_t height)
+{
+    (void)driver; (void)width; (void)height;
+    return QL_ERR_UNSUPPORTED;       /* 尺寸由合成器决定 */
+}

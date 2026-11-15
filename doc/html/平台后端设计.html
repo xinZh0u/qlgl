@@ -434,14 +434,17 @@ CPU 后端在 <code>begin</code> 里清脏区、<code>end</code> 里把脏区 fl
 </code></pre></div>
 
 <p><code>wait()</code> 在裸机上一般是空操作或 <code>WFI</code>；<code>poll()</code> 里读按键并
-<code>ql_input_push_key()</code>（注意：<strong>不要在 ISR 里直接 push</strong>，主循环里搬）。</p>
+<code>ql_input_push_key()</code>（注意：<strong>不要在 ISR 里直接 push</strong>，主循环里搬）。
+桌面的 X11/Wayland CPU 后端已经用 fd 阻塞（<code>select</code> / <code>poll</code>），静止时不再定时唤醒。</p>
 <h2 id="4-cpu">4. 桌面 CPU 光栅</h2>
 <p><code>QLPlatform</code> 的默认桌面实现里 <code>window_open(..., QL_WINDOW_CPU)</code> 走：</p>
 <ul>
 <li><code>ql_disp_x11_create()</code>（X11）或 <code>ql_disp_wayland_create()</code>（Wayland）；</li>
 <li><code>ql_canvas_from_disp()</code> + <code>ql_draw2d_canvas_init()</code>；</li>
 <li><code>begin</code> 清脏区、<code>end</code> 调驱动 <code>flush()</code> / <code>flush_done()</code>；</li>
-<li>窗口缩放：<code>resize_pending</code> 里重建画布，<code>QLWindow</code> 重新布局。</li>
+<li>窗口缩放：<code>resize_pending</code> 里重建画布，<code>QLWindow</code> 重新布局；</li>
+<li><code>resize()</code>：X11 用 <code>XResizeWindow</code>（异步），Wayland 返回 <code>QL_ERR_UNSUPPORTED</code>；</li>
+<li>剪贴板：Wayland 与 X11 都接到 <code>QLUIClipboard</code>（X11 走 <code>qlclipboard_x11.h</code>）。</li>
 </ul>
 <p>调试：<code>QLGL_WINDOW_CPU=1 ./example_00_hello</code> 强制走 CPU 路径，用来和 GL 对照。</p>
 <h2 id="5">5. 测试</h2>

@@ -3774,6 +3774,20 @@ void ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on)
     eglSwapInterval(gfx->egdpy, gfx->vsync_eff);
 }
 
+ql_err_t ql_gfx_gl_resize(QLGfxGL *gfx, ql_coord_t width, ql_coord_t height)
+{
+    if (gfx == NULL || width <= 0 || height <= 0)
+        return QL_ERR_INVAL;
+#if defined(QLGL_ENABLE_X11)
+    if (gfx->dpy != NULL && gfx->win != 0) {
+        XResizeWindow(gfx->dpy, gfx->win, (unsigned)width, (unsigned)height);
+        XFlush(gfx->dpy);
+        return QL_OK;
+    }
+#endif
+    return QL_ERR_UNSUPPORTED;   /* Wayland：尺寸由合成器决定 */
+}
+
 /* ------------------------- 保留式脏区（FBO 画布） ------------------------- */
 
 static void fbo_release(QLGfxGL *g)

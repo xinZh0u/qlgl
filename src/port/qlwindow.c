@@ -35,7 +35,6 @@ struct QLWindow {
     ql_color_t bg;
     int        bg_set;
     int        bound;
-    int        shown;
     int        quit;
     int        need_full;
     int        input_attached;
@@ -259,14 +258,6 @@ ql_err_t ql_window_bind_ui(QLWindow *win, QLUIRoot *ui)
     return ql_window_set_ui(win, ui);
 }
 
-void ql_window_show(QLWindow *win)
-{
-    if (win == NULL)
-        return;
-    win->shown = 1;
-    win->need_full = 1;
-}
-
 int ql_window_poll(QLWindow *win)
 {
     if (win == NULL || win->pw == NULL || win->quit)
@@ -280,7 +271,6 @@ int ql_window_poll(QLWindow *win)
     }
     if (win->plat->poll == NULL || !win->plat->poll(win->pw))
         return 0;
-    win->shown = 1;
 
     if (win->ui != NULL) {
         /* 窗口被拖动/缩放：后端只报告"画布变了"，重排是界面层的事 */
@@ -340,7 +330,6 @@ int ql_window_run(QLWindow *win)
 {
     if (win == NULL || win->pw == NULL)
         return 1;
-    win->shown = 1;
     while (ql_window_poll(win)) {
         /* 主循环本体在 poll 里 */
     }
@@ -350,6 +339,7 @@ int ql_window_run(QLWindow *win)
 int ql_window_run_args(QLWindow *win, int argc, char **argv)
 {
     const char *dump = NULL;
+    int resized = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
             dump = argv[++i];
@@ -364,10 +354,24 @@ int ql_window_run_args(QLWindow *win, int argc, char **argv)
             win->run_seconds = atoi(argv[++i]);
         else if (strcmp(argv[i], "--stats") == 0)
             win->want_stats = 1;
+        else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
+            int sw = 0, sh = 0;
+            if (sscanf(argv[++i], "%dx%d", &sw, &sh) == 2 && sw > 0 && sh > 0) {
+                resized = (ql_window_resize(win, sw, sh) == QL_OK);
+                if (!resized)
+                    QL_LOGW("ql_window: --size 不受当前后端支持（Wayland 由合成器定尺寸）");
+            }
+        }
     }
     if (dump == NULL || dump[0] == '\0')
         dump = getenv("QL_EX_DUMP");
     if (dump != NULL && dump[0] != '\0') {
+        /* `--size` 是异步的（X11 ConfigureNotify）：先泵几帧，让布局跟上 */
+        if (resized) {
+            for (int i = 0; i < 8; i++)
+                if (!ql_window_poll(win))
+                    break;
+        }
         const int ok = ql_window_dump_ppm(win, dump);
         printf(ok ? "已写出 %s\n" : "写出 %s 失败\n", dump);
         return ok ? 0 : 1;
@@ -380,6 +384,18 @@ int ql_window_run_args(QLWindow *win, int argc, char **argv)
     const int rc = ql_window_run(win);
     window_stats_print(win);
     return rc;
+}
+
+ql_err_t ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height)
+{
+    if (win == NULL || win->plat == NULL || width <= 0 || height <= 0)
+        return QL_ERR_INVAL;
+    if (win->plat->resize == NULL)
+        return QL_ERR_UNSUPPORTED;
+    const ql_err_t err = win->plat->resize(win->pw, width, height);
+    if (err == QL_OK)
+        win->need_full = 1;
+    return err;
 }
 
 void ql_window_quit(QLWindow *win)

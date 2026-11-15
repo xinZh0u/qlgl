@@ -185,15 +185,23 @@ static int desktop_wait(QLPlatformWindow *pw, int timeout_ms)
         return 0;
 #endif
     }
-    /* CPU 后端没有阻塞式 wait：睡一小会儿，下一轮 poll 再看事件。
-     * 静止时每 32ms 醒一次，CPU 占用可以忽略。 */
-    if (timeout_ms > 0) {
-        struct timespec ts;
-        ts.tv_sec = timeout_ms / 1000;
-        ts.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
-        nanosleep(&ts, NULL);
+    /* CPU：真正阻塞在 X11/Wayland 的 fd 上，静止时 0 次唤醒 */
+    switch (pw->cpu_kind) {
+#if defined(QLGL_ENABLE_WAYLAND)
+    case 1: return ql_disp_wayland_wait(pw->disp, timeout_ms);
+#endif
+#if defined(QLGL_ENABLE_X11)
+    case 2: return ql_disp_x11_wait(pw->disp, timeout_ms);
+#endif
+    default:
+        if (timeout_ms > 0) {
+            struct timespec ts;
+            ts.tv_sec = timeout_ms / 1000;
+            ts.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
+            nanosleep(&ts, NULL);
+        }
+        return 1;
     }
-    return 1;
 }
 
 static void desktop_size(QLPlatformWindow *pw, ql_coord_t *w, ql_coord_t *h)
@@ -238,6 +246,28 @@ static int desktop_resize_pending(QLPlatformWindow *pw)
     if (pending && !cpu_rebind(pw))
         return 0;
     return pending;
+}
+
+static ql_err_t desktop_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
+{
+    if (pw == NULL || w <= 0 || h <= 0)
+        return QL_ERR_INVAL;
+    if (pw->kind == 0) {
+#if defined(QLGL_ENABLE_GL)
+        return ql_gfx_gl_resize(pw->gl, w, h);
+#else
+        return QL_ERR_UNSUPPORTED;
+#endif
+    }
+    switch (pw->cpu_kind) {
+#if defined(QLGL_ENABLE_X11)
+    case 2: return ql_disp_x11_resize(pw->disp, w, h);
+#endif
+#if defined(QLGL_ENABLE_WAYLAND)
+    case 1: return ql_disp_wayland_resize(pw->disp, w, h);
+#endif
+    default: return QL_ERR_UNSUPPORTED;
+    }
 }
 
 static int desktop_begin(QLPlatformWindow *pw, ql_color_t bg, const QLRect *dirty,
@@ -382,9 +412,12 @@ static void desktop_attach_clipboard(QLPlatformWindow *pw, QLUIRoot *ui)
 #if defined(QLGL_ENABLE_WAYLAND)
     if (pw->cpu_kind == 1)
         ql_disp_wayland_attach_clipboard(pw->disp, ui);
-#else
-    (void)ui;
 #endif
+#if defined(QLGL_ENABLE_X11)
+    if (pw->cpu_kind == 2)
+        ql_disp_x11_attach_clipboard(pw->disp, ui);
+#endif
+    (void)ui;
 }
 
 static void desktop_attach_ime(QLPlatformWindow *pw, QLUIRoot *ui)
@@ -459,6 +492,7 @@ static const QLPlatform s_desktop = {
     .wait = desktop_wait,
     .size = desktop_size,
     .resize_pending = desktop_resize_pending,
+    .resize = desktop_resize,
     .begin = desktop_begin,
     .draw = desktop_draw,
     .end = desktop_end,

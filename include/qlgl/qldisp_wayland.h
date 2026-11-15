@@ -38,6 +38,13 @@ QLDispDriver *ql_disp_wayland_create(const char *title, ql_coord_t width, ql_coo
 /* 处理挂起事件并返回是否继续：1 继续，0 窗口已关闭 */
 int ql_disp_wayland_poll(QLDispDriver *driver);
 
+/* 阻塞等事件或超时（毫秒）；返回 1 = 继续，0 = 已关闭 */
+int ql_disp_wayland_wait(QLDispDriver *driver, int timeout_ms);
+
+/* 请求窗口尺寸。xdg-shell 由合成器决定尺寸，这里返回 QL_ERR_UNSUPPORTED */
+ql_err_t ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
+                                ql_coord_t height);
+
 void ql_disp_wayland_destroy(QLDispDriver *driver);
 
 /* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */
