@@ -88,6 +88,7 @@ void ql_log(int level, const char *fmt, ...);
 #include "qldisp_x11.h"
 #include "qldisp_wayland.h"
 #include "qlgfx_gl.h"
+#include "qlplatform.h"
 #include "qlwindow.h"
 
 #endif /* QLGL_H */

@@ -39,8 +39,8 @@ int main(void)
 ```c
 typedef enum {
     QL_WINDOW_GL = 0,        /* GPU（EGL + GLES3） */
-    QL_WINDOW_CPU = 1,       /* CPU 光栅（尚未实现） */
-    QL_WINDOW_OFFSCREEN = 2, /* 离屏 FBO，截图/CI */
+    QL_WINDOW_CPU = 1,       /* CPU 光栅（X11 / Wayland / 内存） */
+    QL_WINDOW_OFFSCREEN = 2, /* 离屏，截图/CI */
 } QLWindowBackend;
 
 QLWindow *ql_window_create(const char *title, ql_coord_t w, ql_coord_t h,
@@ -101,8 +101,24 @@ while (ql_window_poll(win)) {
 - `ql_window_set_frame_cb()`：每帧回调，返回 1 强制整屏重画（例程 20 热重载、37 缩放）；
 - 需要更底层（zoom、自定义 GL 绘制）时 `ql_window_gfx()` 取 `QLGfxGL *`。
 
-## 6. 限制
+## 6. 平台后端
 
-- `QL_WINDOW_CPU` 尚未实现；没有 GL 的桌面环境请用 `ql_disp_*` + `ql_ui_render_canvas()`；
+`QLWindow` 只依赖 `QLPlatform` 回调表（`<qlgl/qlplatform.h>`，设计见
+[平台后端设计](../../平台后端设计.md)）：
+
+```c
+qlgl_set_platform(&my_platform);   // 在 qlgl_init() 之前；MCU / 测试 / 模拟器
+qlgl_init();
+```
+
+- 不设置时用 `qlgl_platform_default()`（弱符号）：桌面构建是
+  X11 → Wayland → 内存离屏，GL 失败可按 `QL_WINDOW_CPU` 走 CPU；
+- MCU 板级文件定义同名强符号 `qlgl_platform_default()` 即可覆盖，
+  应用层仍然只写 `qlgl_init()`；
+- 调试：`QLGL_WINDOW_CPU=1 ./example_00_hello` 强制 CPU 光栅，与 GL 对照。
+
+## 7. 限制
+
 - 输入汇是**进程级单例**：一进程一窗口（与 MCU 一致）；
-- `QLWindow` 不拥有 `QLUIRoot`，也不管理 doc 的生命周期。
+- `QLWindow` 不拥有 `QLUIRoot`，也不管理 doc 的生命周期；
+- CPU 后端的空闲等待是 32ms 定时轮询（X11/Wayland 没有暴露阻塞式 wait）。

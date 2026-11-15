@@ -36,6 +36,7 @@
 #define QLGL_WINDOW_H
 
 #include "qlgl.h"
+#include "qlplatform.h"
 
 typedef struct QLWindow QLWindow;
 

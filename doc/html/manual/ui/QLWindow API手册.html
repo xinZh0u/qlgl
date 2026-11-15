@@ -321,6 +321,7 @@ main img {
 </details>
 <details class='sec'><summary>设计文档</summary>
 <a href='../../图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
+<a href='../../平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
 <a href='../../EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
 <a href='../../底层实现设计.html' title='QLGL 底层实现设计（v0.1 草案）'>QLGL 底层实现设计（v0.1 草案）</a>
 <a href='../../第三方依赖.html' title='第三方依赖与许可'>第三方依赖与许可</a>
@@ -369,8 +370,8 @@ main img {
 <h2 id="2-api">2. API</h2>
 <div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">QL_WINDOW_GL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">        </span><span class="cm">/* GPU（EGL + GLES3） */</span>
-<span class="w">    </span><span class="n">QL_WINDOW_CPU</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">       </span><span class="cm">/* CPU 光栅（尚未实现） */</span>
-<span class="w">    </span><span class="n">QL_WINDOW_OFFSCREEN</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="cm">/* 离屏 FBO，截图/CI */</span>
+<span class="w">    </span><span class="n">QL_WINDOW_CPU</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">       </span><span class="cm">/* CPU 光栅（X11 / Wayland / 内存） */</span>
+<span class="w">    </span><span class="n">QL_WINDOW_OFFSCREEN</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="cm">/* 离屏，截图/CI */</span>
 <span class="p">}</span><span class="w"> </span><span class="n">QLWindowBackend</span><span class="p">;</span>
 
 <span class="n">QLWindow</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_window_create</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span>
@@ -452,11 +453,25 @@ main img {
 <li><code>ql_window_set_frame_cb()</code>：每帧回调，返回 1 强制整屏重画（例程 20 热重载、37 缩放）；</li>
 <li>需要更底层（zoom、自定义 GL 绘制）时 <code>ql_window_gfx()</code> 取 <code>QLGfxGL *</code>。</li>
 </ul>
-<h2 id="6">6. 限制</h2>
+<h2 id="6">6. 平台后端</h2>
+<p><code>QLWindow</code> 只依赖 <code>QLPlatform</code> 回调表（<code>&lt;qlgl/qlplatform.h&gt;</code>，设计见
+<a href="../../平台后端设计.html">平台后端设计</a>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">qlgl_set_platform</span><span class="p">(</span><span class="o">&amp;</span><span class="n">my_platform</span><span class="p">);</span><span class="w">   </span><span class="c1">// 在 qlgl_init() 之前；MCU / 测试 / 模拟器</span>
+<span class="n">qlgl_init</span><span class="p">();</span>
+</code></pre></div>
+
 <ul>
-<li><code>QL_WINDOW_CPU</code> 尚未实现；没有 GL 的桌面环境请用 <code>ql_disp_*</code> + <code>ql_ui_render_canvas()</code>；</li>
+<li>不设置时用 <code>qlgl_platform_default()</code>（弱符号）：桌面构建是
+  X11 → Wayland → 内存离屏，GL 失败可按 <code>QL_WINDOW_CPU</code> 走 CPU；</li>
+<li>MCU 板级文件定义同名强符号 <code>qlgl_platform_default()</code> 即可覆盖，
+  应用层仍然只写 <code>qlgl_init()</code>；</li>
+<li>调试：<code>QLGL_WINDOW_CPU=1 ./example_00_hello</code> 强制 CPU 光栅，与 GL 对照。</li>
+</ul>
+<h2 id="7">7. 限制</h2>
+<ul>
 <li>输入汇是<strong>进程级单例</strong>：一进程一窗口（与 MCU 一致）；</li>
-<li><code>QLWindow</code> 不拥有 <code>QLUIRoot</code>，也不管理 doc 的生命周期。</li>
+<li><code>QLWindow</code> 不拥有 <code>QLUIRoot</code>，也不管理 doc 的生命周期；</li>
+<li>CPU 后端的空闲等待是 32ms 定时轮询（X11/Wayland 没有暴露阻塞式 wait）。</li>
 </ul><div class='pager'>
 <a href='../../manual/ui/QLUI阅读指南.html'><span class='dir'>上一页</span>QLUI / HTML+CSS 编译 阅读指南</a>
 <a class='next' href='../../manual/uitext/QLUIText API手册.html'><span class='dir'>下一页</span>QLUIText API 手册</a>
@@ -468,7 +483,8 @@ main img {
 <li><a href='#3'>3. 每次谁拥有谁</a></li>
 <li><a href='#4-ql_window_run_args'>4. 开发参数（ql_window_run_args）</a></li>
 <li><a href='#5'>5. 手动循环与钩子</a></li>
-<li><a href='#6'>6. 限制</a></li>
+<li><a href='#6'>6. 平台后端</a></li>
+<li><a href='#7'>7. 限制</a></li>
 </ul></aside>
 </div>
 <script src='../../search-index.js'></script>
