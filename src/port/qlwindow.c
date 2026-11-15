@@ -28,6 +28,8 @@
 struct QLWindow {
     const QLPlatform  *plat;
     QLPlatformWindow  *pw;
+    QLInput           *in;        /* 输入实例：自己的，或进程默认（后端不支持路由） */
+    int                own_in;    /* 1 = in 由本窗口创建/释放 */
     QLUIRoot          *ui;
 
     ql_window_event_fn event_fn;
@@ -272,6 +274,25 @@ QLWindow *ql_window_create(const char *title, ql_coord_t width, ql_coord_t heigh
     win->plat = plat;
     win->pw = pw;
     win->need_full = 1;
+
+    /*
+     * 多窗口：后端能按窗口路由事件（实现了 `set_input`）时，每个窗口一条
+     * 独立队列；否则退回进程默认队列（单窗口后端 / MCU 板级 / 假平台），
+     * 行为与旧版完全一致。
+     */
+    if (plat->set_input != NULL) {
+        win->in = ql_input_create();
+        if (win->in == NULL) {
+            plat->window_close(pw);
+            ql_mem_free(win);
+            return NULL;
+        }
+        win->own_in = 1;
+        plat->set_input(pw, win->in);
+    } else {
+        win->in = ql_input_default();
+        win->own_in = 0;
+    }
     return win;
 }
 
@@ -282,17 +303,16 @@ ql_err_t ql_window_set_ui(QLWindow *win, QLUIRoot *ui)
 
     /* 换界面：先把旧 root 从输入汇上摘掉，否则悬空指针 */
     if (win->input_attached) {
-        ql_ui_detach_input();
+        ql_input_set_sink_ex(win->in, NULL, NULL);
         win->input_attached = 0;
     }
 
     win->ui = ui;
     win->bound = 1;
 
-    /* 输入：先让界面层装好自己的汇，再用"过滤器 + 界面"的复合 sink 顶上 */
-    ql_ui_attach_input(ui);
+    /* 输入：每个窗口一条队列，"过滤器 + 界面"的复合 sink 只挂在自己的实例上 */
+    ql_input_set_sink_ex(win->in, win_sink, win);
     win->input_attached = 1;
-    ql_input_set_sink(win_sink, win);
 
     if (win->plat->attach_clipboard != NULL)
         win->plat->attach_clipboard(win->pw, ui);
@@ -337,7 +357,7 @@ int ql_window_poll(QLWindow *win)
             }
         }
 
-        ql_input_dispatch();
+        ql_input_dispatch_ex(win->in);
 
         /* 输入法候选窗靠这个位置：每轮更新一次（值没变时后端直接返回） */
         if (win->plat->set_ime_spot != NULL) {
@@ -534,11 +554,16 @@ void ql_window_destroy(QLWindow *win)
     if (win == NULL)
         return;
     if (win->input_attached) {
-        ql_ui_detach_input();
+        ql_input_set_sink_ex(win->in, NULL, NULL);
         win->input_attached = 0;
     }
+    /* 先让后端松手，再销毁窗口和输入实例 */
+    if (win->plat != NULL && win->plat->set_input != NULL)
+        win->plat->set_input(win->pw, NULL);
     if (win->plat != NULL && win->plat->window_close != NULL)
         win->plat->window_close(win->pw);
+    if (win->own_in)
+        ql_input_destroy(win->in);
     ql_mem_free(win->frame_us);
     ql_mem_free(win->swap_us);
     ql_mem_free(win->gap_us);

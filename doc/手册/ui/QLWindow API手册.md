@@ -122,7 +122,9 @@ qlgl_init();
 
 ## 7. 限制
 
-- 输入汇是**进程级单例**：一进程一窗口（与 MCU 一致）；
+- **多窗口**：每个 `QLWindow` 有自己的输入队列（`QLInput`），后端实现了
+  `QLPlatform.set_input` 时事件按窗口路由；没实现的后端（假平台、MCU 板级）
+  退回进程默认队列，等价于单窗口。参考 `example/43_multi_window`；
 - `QLWindow` 不拥有 `QLUIRoot`，也不管理 doc 的生命周期；
 - Wayland（CPU 与 GL）不能由客户端直接改窗口尺寸，`ql_window_resize()` 返回
   `QL_ERR_UNSUPPORTED`；X11 是异步生效（ConfigureNotify）；

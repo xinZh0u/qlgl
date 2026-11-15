@@ -359,6 +359,8 @@ main img {
 
 <span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">poll</span><span class="p">)(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 1 = 继续，0 = 已关 */</span>
 <span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">wait</span><span class="p">)(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">timeout_ms</span><span class="p">);</span>
+<span class="w">    </span><span class="cm">/* 每窗口输入实例（多窗口）；不实现 = 退回进程默认队列（单窗口） */</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">set_input</span><span class="p">)(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">,</span><span class="w"> </span><span class="n">QLInput</span><span class="w"> </span><span class="o">*</span><span class="n">in</span><span class="p">);</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">size</span><span class="p">)(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="o">*</span><span class="n">h</span><span class="p">);</span>
 <span class="w">    </span><span class="kt">int</span><span class="w">  </span><span class="p">(</span><span class="o">*</span><span class="n">resize_pending</span><span class="p">)(</span><span class="n">QLPlatformWindow</span><span class="w"> </span><span class="o">*</span><span class="n">pw</span><span class="p">);</span>
 
@@ -382,6 +384,11 @@ main img {
 
 <p><code>begin(..., dirty, n)</code>：<code>n == 0</code> 表示整屏；返回 1 表示后端要求整屏重画。
 CPU 后端在 <code>begin</code> 里清脏区、<code>end</code> 里把脏区 flush 给显示驱动即可。</p>
+<p><code>set_input</code> 是<strong>可选</strong>能力：实现了它的后端（桌面 X11 / Wayland / GL）会为每个
+<code>QLWindow</code> 创建一条独立的 <code>QLInput</code>，事件只进自己窗口的队列；没实现的后端
+（假平台、MCU 板级）退回进程默认队列，行为与单窗口时完全一致。
+多窗口要求后端必须实现 <code>set_input</code>，并且绘制前要切回自己的 GL 上下文
+（<code>qlgfx_gl</code> 用 <code>eglMakeCurrent</code> 做这件事）。</p>
 <h2 id="2">2. 选择后端</h2>
 <ol>
 <li>应用在 <code>qlgl_init()</code> <strong>之前</strong>调 <code>qlgl_set_platform(&amp;my_platform)</code>（测试/模拟器/多后端）；</li>

@@ -83,7 +83,7 @@ static inline int32_t ql_x11_css(ql_coord_t v, ql_coord_t scale_fx)
  * `QLInputEvent.text` 只有 8 字节（含结尾 0），而输入法一次"提交"可能是
  * 一串汉字（"你好世界" = 12 字节）。所以按**码点边界**切片，别把一个汉字劈成两半。
  */
-static void ql_x11_push_text_utf8(const char *s)
+static void ql_x11_push_text_utf8(QLInput *in, const char *s)
 {
     if (s == NULL)
         return;
@@ -109,7 +109,7 @@ static void ql_x11_push_text_utf8(const char *s)
         if (n == 0)
             break;
         piece[n] = '\0';
-        (void)ql_input_push_text(piece);
+        (void)ql_input_push_text_ex(in, piece);
     }
 }
 
@@ -117,7 +117,7 @@ static void ql_x11_push_text_utf8(const char *s)
  * 没有 XIC 时 `XLookupString()` 返回的是 **Latin-1**，不是 UTF-8。
  * 直接丢给上面的 UTF-8 切片器会把 0xE9 当成三字节首字节、发现后面不够就整段丢弃。
  */
-static void ql_x11_push_text_latin1(const char *s, int n)
+static void ql_x11_push_text_latin1(QLInput *in, const char *s, int n)
 {
     char out[128];
     size_t o = 0;
@@ -131,11 +131,11 @@ static void ql_x11_push_text_latin1(const char *s, int n)
         }
     }
     out[o] = '\0';
-    ql_x11_push_text_utf8(out);
+    ql_x11_push_text_utf8(in, out);
 }
 
 static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t scale_fx,
-                                     XIC xic)
+                                     XIC xic, QLInput *in)
 {
     int is_wheel;
     int32_t wheel;
@@ -151,7 +151,7 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
         else                                         *buttons &= (uint8_t)~QL_BUTTON_BIT_MIDDLE;
         if ((ev->xmotion.state & Button3Mask) != 0)   *buttons |= QL_BUTTON_BIT_RIGHT;
         else                                         *buttons &= (uint8_t)~QL_BUTTON_BIT_RIGHT;
-        ql_input_push_move(x, y, *buttons);
+        ql_input_push_move_ex(in, x, y, *buttons);
         break;
     }
 
@@ -163,7 +163,7 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
         button = ql_x11_button_of(ev->xbutton.button, &is_wheel, &wheel);
         if (is_wheel) {
             if (down && wheel != 0)
-                ql_input_push_wheel(x, y, 0, wheel);
+                ql_input_push_wheel_ex(in, x, y, 0, wheel);
             break;
         }
         if (button == 0xFF)
@@ -172,17 +172,17 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
             *buttons |= (uint8_t)(1u << button);
         else
             *buttons &= (uint8_t)~(1u << button);
-        ql_input_push_button(x, y, button, down);
+        ql_input_push_button_ex(in, x, y, button, down);
         break;
     }
 
     case EnterNotify:
-        ql_input_push_move(ql_x11_css(ev->xcrossing.x, scale_fx),
-                           ql_x11_css(ev->xcrossing.y, scale_fx), *buttons);
+        ql_input_push_move_ex(in, ql_x11_css(ev->xcrossing.x, scale_fx),
+                              ql_x11_css(ev->xcrossing.y, scale_fx), *buttons);
         break;
 
     case LeaveNotify:
-        ql_input_push_leave();
+        ql_input_push_leave_ex(in);
         break;
 
     case KeyPress:
@@ -230,19 +230,19 @@ static void ql_x11_push_input_scaled(XEvent *ev, uint8_t *buttons, ql_coord_t sc
                     (unsigned char)buf[0] != 0x7Fu) {
                     if (via_im) {
                         buf[n] = '\0';
-                        ql_x11_push_text_utf8(buf);
+                        ql_x11_push_text_utf8(in, buf);
                     } else {
-                        ql_x11_push_text_latin1(buf, n);   /* XLookupString 是 Latin-1 */
+                        ql_x11_push_text_latin1(in, buf, n);   /* XLookupString 是 Latin-1 */
                     }
                 }
             }
             if (key != QL_KEY_NONE)
-                ql_input_push_key(key, 1, mods);
+                ql_input_push_key_ex(in, key, 1, mods);
             break;
         }
 
         if (key != QL_KEY_NONE)
-            ql_input_push_key(key, 0, mods);
+            ql_input_push_key_ex(in, key, 0, mods);
         break;
     }
 

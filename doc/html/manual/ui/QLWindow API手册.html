@@ -477,7 +477,9 @@ main img {
 </ul>
 <h2 id="7">7. 限制</h2>
 <ul>
-<li>输入汇是<strong>进程级单例</strong>：一进程一窗口（与 MCU 一致）；</li>
+<li><strong>多窗口</strong>：每个 <code>QLWindow</code> 有自己的输入队列（<code>QLInput</code>），后端实现了
+  <code>QLPlatform.set_input</code> 时事件按窗口路由；没实现的后端（假平台、MCU 板级）
+  退回进程默认队列，等价于单窗口。参考 <code>example/43_multi_window</code>；</li>
 <li><code>QLWindow</code> 不拥有 <code>QLUIRoot</code>，也不管理 doc 的生命周期；</li>
 <li>Wayland（CPU 与 GL）不能由客户端直接改窗口尺寸，<code>ql_window_resize()</code> 返回
   <code>QL_ERR_UNSUPPORTED</code>；X11 是异步生效（ConfigureNotify）；</li>

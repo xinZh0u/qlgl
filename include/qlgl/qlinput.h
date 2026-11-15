@@ -163,4 +163,41 @@ ql_coord_t ql_input_y(void);
 typedef void (*ql_input_sink)(const QLInputEvent *ev, void *user);
 void ql_input_set_sink(ql_input_sink sink, void *user);
 
+/* ----- 每窗口实例（多窗口） -----
+ * 每个 `QLWindow` 一个 `QLInput`：队列、指针/按键状态、事件汇全部独立，
+ * 后端把事件推进自己窗口的实例。上面的全局函数等价于对**进程默认实例**
+ * 操作，只用于单窗口程序和测试（保持旧行为）。
+ *
+ * 生命周期：`ql_input_create()` 分配，`ql_input_destroy()` 释放；
+ * 销毁前把 sink 清掉（`ql_input_set_sink_ex(in, NULL, NULL)`）。
+ */
+typedef struct QLInput QLInput;
+
+QLInput  *ql_input_default(void);      /* 进程默认实例（静态，永不释放） */
+QLInput  *ql_input_create(void);
+void      ql_input_destroy(QLInput *in);
+void      ql_input_reset_ex(QLInput *in);
+ql_err_t  ql_input_push_ex(QLInput *in, const QLInputEvent *ev);
+uint32_t  ql_input_pending_ex(const QLInput *in);
+int       ql_input_dispatch_ex(QLInput *in);
+void      ql_input_set_sink_ex(QLInput *in, ql_input_sink sink, void *user);
+
+ql_err_t  ql_input_push_move_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+                                uint8_t buttons);
+ql_err_t  ql_input_push_button_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+                                  uint8_t button, int down);
+ql_err_t  ql_input_push_leave_ex(QLInput *in);
+ql_err_t  ql_input_push_wheel_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+                                 int32_t dx, int32_t dy);
+ql_err_t  ql_input_push_touch_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+                                 uint8_t phase, uint8_t touch_id,
+                                 uint8_t touch_count);
+ql_err_t  ql_input_push_key_ex(QLInput *in, uint32_t key, int down, uint8_t mods);
+ql_err_t  ql_input_push_text_ex(QLInput *in, const char *utf8);
+
+uint8_t   ql_input_buttons_ex(const QLInput *in);
+uint8_t   ql_input_mods_ex(const QLInput *in);
+ql_coord_t ql_input_x_ex(const QLInput *in);
+ql_coord_t ql_input_y_ex(const QLInput *in);
+
 #endif /* QLGL_INPUT_H */

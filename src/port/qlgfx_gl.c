@@ -104,6 +104,7 @@ struct QLGfxGL {
      * `QLGL_GL_BACKEND=wayland`；没有 DISPLAY 时也会自动回落到 Wayland。
      */
     int              use_wayland;
+    QLInput         *in;            /* 每窗口输入实例；NULL = 进程默认 */
 #if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
     QLWlWindow       wl;
     struct wl_egl_window *wl_egl;
@@ -3159,6 +3160,29 @@ static void now_us(struct timespec *t)
 }
 
 /* 单调时钟的毫秒数（32 位，回绕按差值判断，与动画时钟同一套约定） */
+/*
+ * 当前 EGL 上下文属于哪个窗口。多窗口时每个 QLGfxGL 有自己的
+ * Display/Context/Surface；绘制前必须把上下文切回来，否则会画进
+ * "最后一个创建的窗口"。
+ */
+static QLGfxGL *s_current_gfx;
+
+static int gl_make_current(QLGfxGL *g)
+{
+    if (g == NULL || g->egdpy == EGL_NO_DISPLAY)
+        return 0;
+    if (s_current_gfx == g)
+        return 1;
+    s_current_gfx = g;
+    if (!eglMakeCurrent(g->egdpy, g->surface, g->surface, g->ctx)) {
+        QL_LOGE("gl: eglMakeCurrent failed (0x%x)", (unsigned)eglGetError());
+        s_current_gfx = NULL;
+        return 0;
+    }
+    s_current_gfx = g;
+    return 1;
+}
+
 static uint64_t now_us_mono(void)
 {
     struct timespec t;
@@ -3176,6 +3200,10 @@ QLGfxGL *ql_gfx_gl_create(const char *title, ql_coord_t width, ql_coord_t height
     if (g == NULL)
         return NULL;
     g->trace_im = getenv("QLGL_TRACE_IM") != NULL;   /* 建 IC 时就要用，先设 */
+    g->in = ql_input_default();
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    g->wl.in = ql_input_default();
+#endif
 
     g->width = width;
     g->height = height;
@@ -3765,6 +3793,16 @@ void ql_gfx_gl_finish(QLGfxGL *gfx)
         glFinish();
 }
 
+void ql_gfx_gl_set_input(QLGfxGL *gfx, QLInput *in)
+{
+    if (gfx == NULL)
+        return;
+    gfx->in = (in != NULL) ? in : ql_input_default();
+#if defined(QLGL_ENABLE_WAYLAND) && defined(QLGL_HAVE_WAYLAND_EGL)
+    gfx->wl.in = gfx->in;
+#endif
+}
+
 void ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on)
 {
     if (gfx == NULL || gfx->egdpy == EGL_NO_DISPLAY)
@@ -3968,6 +4006,7 @@ static int surface_sync(QLGfxGL *g)
         QL_LOGE("gl: 重建窗口表面失败 (0x%x)", (unsigned)eglGetError());
         return 0;
     }
+    s_current_gfx = NULL;
     if (!eglMakeCurrent(g->egdpy, g->surface, g->surface, g->ctx)) {
         QL_LOGE("gl: 重建表面后 eglMakeCurrent 失败 (0x%x)", (unsigned)eglGetError());
         return 0;
@@ -3982,6 +4021,7 @@ static int surface_sync(QLGfxGL *g)
 /* 绑定目标帧缓冲并设置视口（保留模式绑 FBO，否则绑默认） */
 static void begin_common(QLGfxGL *g, ql_color_t clear_color, int bind_fbo)
 {
+    (void)gl_make_current(g);
     (void)surface_sync(g);
     sync_window_background(g, clear_color);
 
@@ -4513,7 +4553,7 @@ int ql_gfx_gl_poll(QLGfxGL *g)
             if (ql_x11_clip_handle_event(&ev))
                 break;                 /* 剪贴板协议事件 */
             /* 设备 px → 应用 CSS：除的是 DPR × zoom（zoom 时布局基准变小） */
-            ql_x11_push_input_scaled(&ev, &g->buttons, dscale(g), g->xic);
+            ql_x11_push_input_scaled(&ev, &g->buttons, dscale(g), g->xic, g->in);
             break;
         }
     }
@@ -4847,6 +4887,8 @@ void ql_gfx_gl_destroy(QLGfxGL *g)
         g->ime_pa = NULL;
     }
     if (g->egdpy != EGL_NO_DISPLAY && g->egdpy != NULL) {
+        if (s_current_gfx == g)
+            s_current_gfx = NULL;
         eglMakeCurrent(g->egdpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (g->atlas_tex)
             glDeleteTextures(1, &g->atlas_tex);

@@ -164,6 +164,9 @@ QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx);
 /* 1 = 等垂直同步（默认），0 = 不限帧（基准测试用） */
 void     ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on);
 
+/* 绑定每窗口输入实例（多窗口）；NULL = 进程默认 */
+void     ql_gfx_gl_set_input(QLGfxGL *gfx, QLInput *in);
+
 /*
  * 请求把窗口改成 w×h（CSS px）。X11 异步生效：随后会走 ConfigureNotify →
  * `ql_gfx_gl_resize_pending()`。Wayland 目前返回 QL_ERR_UNSUPPORTED

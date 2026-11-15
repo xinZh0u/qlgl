@@ -35,6 +35,11 @@ typedef struct QLPlatform {
     int  (*poll)(QLPlatformWindow *pw);
     /* 空闲等待；1 = 继续，0 = 已关。可以留 NULL（不等待） */
     int  (*wait)(QLPlatformWindow *pw, int timeout_ms);
+    /*
+     * 绑定"每窗口输入实例"（多窗口）。后端把窗口事件推进这个 `QLInput`，
+     * `QLWindow` 从同一个实例派发；不实现时退回进程默认队列（单窗口兼容）。
+     */
+    void (*set_input)(QLPlatformWindow *pw, QLInput *in);
     void (*size)(QLPlatformWindow *pw, ql_coord_t *w, ql_coord_t *h);
     /* 尺寸/缩放变了：取一次清零。返回 1 时 QLWindow 会重新布局 */
     int  (*resize_pending)(QLPlatformWindow *pw);

@@ -18,6 +18,7 @@ struct QLPlatformWindow {
     int backend;                 /* QLWindowBackend */
     int kind;                    /* 0 = GL, 1 = CPU */
     int cpu_kind;                /* 0 = 内存, 1 = Wayland, 2 = X11 */
+    QLInput *in;                 /* 每窗口输入实例；NULL = 进程默认 */
 
     QLGfxGL     *gl;
     QLDispDriver *disp;
@@ -171,6 +172,28 @@ static int desktop_poll(QLPlatformWindow *pw)
     case 2: return ql_disp_x11_poll(pw->disp);
 #endif
     default: return 1;                 /* 内存驱动永不关窗 */
+    }
+}
+
+static void desktop_set_input(QLPlatformWindow *pw, QLInput *in)
+{
+    if (pw == NULL)
+        return;
+    pw->in = in;
+    if (pw->kind == 0) {
+#if defined(QLGL_ENABLE_GL)
+        ql_gfx_gl_set_input(pw->gl, in);
+#endif
+        return;
+    }
+    switch (pw->cpu_kind) {
+#if defined(QLGL_ENABLE_WAYLAND)
+    case 1: ql_disp_wayland_set_input(pw->disp, in); break;
+#endif
+#if defined(QLGL_ENABLE_X11)
+    case 2: ql_disp_x11_set_input(pw->disp, in); break;
+#endif
+    default: break;
     }
 }
 
@@ -508,6 +531,7 @@ static const QLPlatform s_desktop = {
     .window_close = desktop_close,
     .poll = desktop_poll,
     .wait = desktop_wait,
+    .set_input = desktop_set_input,
     .size = desktop_size,
     .resize_pending = desktop_resize_pending,
     .resize = desktop_resize,

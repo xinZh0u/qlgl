@@ -298,6 +298,7 @@ QLDispDriver *ql_disp_wayland_create(const char *title, ql_coord_t width, ql_coo
     QLDispWayland *w = (QLDispWayland *)ql_mem_calloc(1, sizeof(QLDispWayland));
     if (w == NULL)
         return NULL;
+    w->wl.in = ql_input_default();
 
     /* 调试用：1x 屏上强制按 N 倍分配缓冲区（验证 2x 路径） */
     int32_t scale_override = 0;
@@ -486,4 +487,12 @@ ql_err_t ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
 {
     (void)driver; (void)width; (void)height;
     return QL_ERR_UNSUPPORTED;       /* 尺寸由合成器决定 */
+}
+
+void ql_disp_wayland_set_input(QLDispDriver *driver, QLInput *in)
+{
+    if (driver == NULL)
+        return;
+    QLDispWayland *w = (QLDispWayland *)driver;
+    w->wl.in = (in != NULL) ? in : ql_input_default();
 }

@@ -45,6 +45,9 @@ int ql_disp_wayland_wait(QLDispDriver *driver, int timeout_ms);
 ql_err_t ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
                                 ql_coord_t height);
 
+/* 绑定每窗口输入实例（多窗口）；NULL = 进程默认 */
+void ql_disp_wayland_set_input(QLDispDriver *driver, QLInput *in);
+
 void ql_disp_wayland_destroy(QLDispDriver *driver);
 
 /* 请求关闭窗口：下一次 poll 返回 0，主循环随之退出 */

@@ -52,7 +52,7 @@ static void feed(Display *d, KeySym sym, unsigned state)
     s_nkey = 0;
     s_text[0] = '\0';
     uint8_t buttons = 0;
-    ql_x11_push_input_scaled(&ev, &buttons, QL_SCALE_ONE, NULL);
+    ql_x11_push_input_scaled(&ev, &buttons, QL_SCALE_ONE, NULL, NULL);
     (void)ql_input_dispatch();
 }
 #endif

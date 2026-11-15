@@ -39,6 +39,7 @@ typedef struct {
     Visual      *visual;        /* 重建 XImage 要用 */
     int          depth;
     int          resize_pending; /* 窗口尺寸变过，调用方需要重建画布并重排 */
+    QLInput     *in;             /* 每窗口输入实例；NULL = 进程默认 */
     /*
      * 输入法（XIM）。和 GL 后端同一套三件套：`XSetLocaleModifiers("")` +
      * `XOpenIM` + `FocusChangeMask`/`XSetICFocus`。漏一条就"输入法活着但
@@ -306,6 +307,7 @@ QLDispDriver *ql_disp_x11_create(const char *title, ql_coord_t width, ql_coord_t
     x->base.flush_done = x11_flush_done;
     ql_disp_set_scale(&x->base, x11_query_scale(dpy));
 
+    x->in = ql_input_default();
     ql_x11_clip_attach(dpy, x->win);
 
     XMapWindow(dpy, x->win);
@@ -422,7 +424,8 @@ int ql_disp_x11_poll(QLDispDriver *driver)
             if (x->xic != NULL && XFilterEvent(&ev, None))
                 break;
             /* 其余输入事件交给输入系统；Esc/关闭改由应用决定 */
-            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx, x->xic);
+            ql_x11_push_input_scaled(&ev, &x->buttons, x->base.scale_fx, x->xic,
+                                     x->in);
             break;
         }
     }
@@ -580,4 +583,11 @@ void ql_disp_x11_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui)
     (void)driver;
     if (ui != NULL)
         ql_ui_set_clipboard(ui, &s_x11_clip, NULL);
+}
+
+void ql_disp_x11_set_input(QLDispDriver *driver, QLInput *in)
+{
+    if (driver == NULL)
+        return;
+    ((QLDispX11 *)driver)->in = (in != NULL) ? in : ql_input_default();
 }

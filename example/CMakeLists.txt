@@ -67,6 +67,7 @@ set(QL_EXAMPLES
     40_outline
     41_radius_pct
     42_translate_pct
+    43_multi_window
 )
 
 foreach(e ${QL_EXAMPLES})

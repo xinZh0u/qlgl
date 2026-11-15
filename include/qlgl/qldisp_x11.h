@@ -51,6 +51,9 @@ ql_err_t ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t h
 /* 把 X11 CLIPBOARD 接到界面（Ctrl+C/V） */
 void ql_disp_x11_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui);
 
+/* 绑定每窗口输入实例（多窗口）；NULL = 进程默认 */
+void ql_disp_x11_set_input(QLDispDriver *driver, QLInput *in);
+
 /*
  * 告诉输入法光标位置（候选窗定位），语义同 `ql_gfx_gl_set_ime_spot()`：
  * CSS px、视口坐标。每帧或每次光标移动后调一次即可（值没变不发 X 请求）。

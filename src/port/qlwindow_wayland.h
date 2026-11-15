@@ -101,6 +101,9 @@ typedef struct {
      */
     ql_coord_t coord_div_fx;
 
+    /* 每窗口输入实例（多窗口）；NULL = 进程默认 */
+    QLInput   *in;
+
     /* 输入状态：后端自己维护，控件层不关心 */
     uint8_t    buttons;
     uint8_t    mods;
@@ -295,7 +298,7 @@ static void qlwl_kb_emit_text(QLWlWindow *w, uint32_t code)
         c = qlwl_us_shift(c);
     }
     char buf[2] = { c, '\0' };
-    ql_input_push_text(buf);
+    ql_input_push_text_ex(w->in, buf);
 }
 
 static void qlwl_kb_key(void *data, struct wl_keyboard *kb, uint32_t serial,
@@ -352,14 +355,15 @@ static void qlwl_ptr_enter(void *data, struct wl_pointer *p, uint32_t serial,
     QLWlWindow *w = (QLWlWindow *)data;
     w->pointer_x = x;
     w->pointer_y = y;
-    ql_input_push_move(qlwl_css_x(w, x), qlwl_css_x(w, y), w->buttons);
+    ql_input_push_move_ex(w->in, qlwl_css_x(w, x), qlwl_css_x(w, y), w->buttons);
 }
 
 static void qlwl_ptr_leave(void *data, struct wl_pointer *p, uint32_t serial,
                            struct wl_surface *s)
 {
-    (void)data; (void)p; (void)serial; (void)s;
-    ql_input_push_leave();
+    (void)p; (void)serial; (void)s;
+    QLWlWindow *w = (QLWlWindow *)data;
+    ql_input_push_leave_ex(w->in);
 }
 
 static void qlwl_ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
@@ -369,7 +373,7 @@ static void qlwl_ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
     QLWlWindow *w = (QLWlWindow *)data;
     w->pointer_x = x;
     w->pointer_y = y;
-    ql_input_push_move(qlwl_css_x(w, x), qlwl_css_x(w, y), w->buttons);
+    ql_input_push_move_ex(w->in, qlwl_css_x(w, x), qlwl_css_x(w, y), w->buttons);
 }
 
 static void qlwl_ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
@@ -387,7 +391,7 @@ static void qlwl_ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
         w->buttons |= (uint8_t)(1u << btn);
     else
         w->buttons &= (uint8_t)~(1u << btn);
-    ql_input_push_button(qlwl_css_x(w, w->pointer_x), qlwl_css_x(w, w->pointer_y),
+    ql_input_push_button_ex(w->in, qlwl_css_x(w, w->pointer_x), qlwl_css_x(w, w->pointer_y),
                          btn, down);
 }
 
@@ -400,7 +404,7 @@ static void qlwl_ptr_axis(void *data, struct wl_pointer *p, uint32_t time,
     const int32_t delta = (int32_t)(wl_fixed_to_double(value) * 20.0);
     const int32_t dx = (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) ? delta : 0;
     const int32_t dy = (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) ? delta : 0;
-    ql_input_push_wheel(qlwl_css_x(w, w->pointer_x), qlwl_css_x(w, w->pointer_y),
+    ql_input_push_wheel_ex(w->in, qlwl_css_x(w, w->pointer_x), qlwl_css_x(w, w->pointer_y),
                         dx, dy);
 }
 
@@ -496,7 +500,7 @@ static void qlwl_touch_push(QLWlWindow *w, wl_fixed_t x, wl_fixed_t y, uint8_t p
                             uint8_t token)
 {
     qlwl_touch_sync(w);
-    (void)ql_input_push_touch(qlwl_css_x(w, x), qlwl_css_x(w, y), phase, token,
+    (void)ql_input_push_touch_ex(w->in, qlwl_css_x(w, x), qlwl_css_x(w, y), phase, token,
                               (uint8_t)((w->touch_active_count > 255)
                                             ? 255 : w->touch_active_count));
 }
@@ -976,7 +980,7 @@ static void qlwl_kb_key(void *data, struct wl_keyboard *kb, uint32_t serial,
         return;
 
     const int down = (state == WL_KEYBOARD_KEY_STATE_PRESSED);
-    ql_input_push_key(code, down, w->mods);
+    ql_input_push_key_ex(w->in, code, down, w->mods);
 
     /*
      * 可打印字符顺带合成文本输入（没有 xkbcommon 时按 US 布局近似）。
@@ -1012,7 +1016,7 @@ static QLWL_MAYBE_UNUSED void qlwl_kb_repeat_tick(QLWlWindow *w)
         return;
 
     const uint32_t code = w->kb_repeat_code;
-    ql_input_push_key(code, 1, w->mods);
+    ql_input_push_key_ex(w->in, code, 1, w->mods);
     qlwl_kb_emit_text(w, code);
 
     uint32_t step = 1000u / (uint32_t)w->kb_repeat_rate;
