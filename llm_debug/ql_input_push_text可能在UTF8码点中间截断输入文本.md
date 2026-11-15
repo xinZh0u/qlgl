@@ -1,5 +1,7 @@
 # ql_input_push_text 可能在 UTF-8 码点中间截断输入文本
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlinput.c:229-235` `ql_utf8_valid_len()` 截到码点边界；回归 `test_input_queue`
+
 ## 问题
 
 `ql_input_push_text()` 将 UTF-8 字节逐个复制到固定大小的事件文本缓冲区，达到容量上限时直接停止，没有把截断长度退回到完整码点边界。

@@ -1,5 +1,7 @@
 # BMP BITFIELDS 通道掩码解码仅支持固定字节掩码
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlimage.c:171-193` `mask_to8()` 按掩码求移位/位宽，`:246/:299-309` 支持 16 位 BI_BITFIELDS；回归 `test_image`（RGB565 掩码）
+
 ## 问题
 
 `decode_bmp()` 读取 BITFIELDS 的 red/green/blue masks 后，使用固定的 `>> 16`、`>> 8`、不移位来提取通道，并直接截断为 8 位；没有根据掩码计算通道位数、最低位或缩放值。

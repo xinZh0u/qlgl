@@ -1,5 +1,7 @@
 # QLGL_BUILD_TEXT_PARSER 关闭后解析器仍编入库
 
+> **核对 2026-11-15**：✅ 已修 + 本次补配置期守卫 —— `CMakeLists.txt:279-285` 用 `HEADER_FILE_ONLY`；复测全新配置构建日志中 `qlui_parse` 出现 0 次；另加 `TEXT_PARSER=OFF` 与 tests/examples/benchmark 互斥的 `FATAL_ERROR`（`CMakeLists.txt:97-104`）
+
 ## 问题
 
 `QLGL_SRC` 在 `add_library(qlgl STATIC ${QLGL_SRC})` 时已经加入目标。后续 `QLGL_BUILD_TEXT_PARSER=OFF` 分支仅从普通 CMake 列表 `QLGL_SRC` 删除 `src/ui/qlui_parse.c`，再把剩余列表传给 `target_sources()`；这不会从已创建的 `qlgl` 目标中移除此前加入的解析器源文件。

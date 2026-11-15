@@ -1,5 +1,7 @@
 # libjpeg longjmp 后非 volatile 局部解码器状态不确定
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlimage_jpeg.c:78-109` `cinfo`/`jerr` 改堆分配，longjmp 路径统一释放；回归 `test_jpeg`（坏数据/截断）
+
 ## 问题
 
 `jpeg_decode()` 在 `setjmp()` 前创建局部 `cinfo` 与 `jerr`，之后把它们的地址交给 libjpeg；解码过程中 libjpeg 会修改这两个对象。错误回调 `longjmp()` 回来后，代码继续读取 `jerr.msg`，并将 `&cinfo` 传给 `jpeg_destroy_decompress()`。按 C 标准，`setjmp()` 所在函数中、在 `setjmp()` 后被修改且非 `volatile` 的自动存储期对象，其值在 `longjmp()` 后是不确定的。

@@ -1,5 +1,7 @@
 # ql_object_add_child 空父对象时会意外销毁子对象
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlobject.c:282-283` 空父在 set_parent/unref 之前返回 `QL_ERR_INVAL`
+
 ## 问题
 
 `ql_object_add_child(parent, child)` 仅检查 `child` 是否为空。若 `parent == NULL`，内部 `ql_object_set_parent(child, NULL)` 会成功（表示解绑），随后 `ql_object_add_child()` 仍无条件释放调用方持有的子对象引用。

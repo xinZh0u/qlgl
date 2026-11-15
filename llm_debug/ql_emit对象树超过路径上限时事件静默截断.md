@@ -1,5 +1,7 @@
 # `ql_emit()` 对象树超过路径上限时传播被静默截断
 
+> **核对 2026-11-15**：✅ 本次补修 —— 约束前移到构建期：`ql_object_set_parent()` 计算新树深度，超过 `QL_CFG_EVENT_PATH_MAX` 直接 `QL_ERR_INVAL`（`src/core/qlobject.c:232-262`）；上限 8→16（`include/qlgl/qlconfig.h:39-45`）；回归 `test_object_tree`（恰好 16 层可建、第 17 层被拒且树不变）+ `test_object_event`（最深层事件能到根）
+
 ## 问题
 
 `ql_emit()` 只把目标到根的前 `QL_CFG_EVENT_PATH_MAX` 个节点写入固定路径数组；到达上限后，循环静默结束，没有检查仍有未收集的父节点，也没有拒绝派发或提示。捕获和冒泡阶段因此只遍历这段被截断的路径。

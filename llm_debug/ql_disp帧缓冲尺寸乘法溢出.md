@@ -1,5 +1,7 @@
 # 显示帧缓冲尺寸计算可能溢出并分配不足
 
+> **核对 2026-11-15**：✅ 本次补修 —— `src/draw/qldisp.c:149-160` 判定从 `SIZE_MAX` 改为 `UINT32_MAX`，避免 64 位平台上恒假后 `(uint32_t)` 截断；回归 `test_canvas`（65536×16384 ARGB8888 → NULL）
+
 ## 问题位置
 
 - `src/draw/qldisp.c`：`ql_disp_buffer_size()`

@@ -1,5 +1,7 @@
 # qlui blob 未校验文本和图像资源引用范围
 
+> **核对 2026-11-15**：✅ 本次补修 —— 已校验的节点/文本/图像区间之外，补上**样式资源名下标**（`bg_image`/`border_image`/`mask_image`）与**图像条目 name 不能是 0xFFFF**（`src/ui/qlui_blob.c:796-820`）；回归 `test_ui_blob`（样式越界）与 `test_image`（资源名哨兵）
+
 ## 问题
 
 `ql_ui_doc_load_mem()` 校验 blob 段布局与若干表，但没有验证节点、样式和图像条目中的文本池索引，也没有验证 `text_offsets[]` 指向文本池内部且字符串以 NUL 结尾。它也没有验证图像条目的 `off + len` 落在 `image_data_size` 范围内。

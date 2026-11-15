@@ -1,5 +1,7 @@
 # qlui_doc_load_mem 后未校验节点样式数量与文本索引
 
+> **核对 2026-11-15**：✅ 已修 —— `src/ui/qlui_blob.c:747-800` 样式/文本/树指针逐条校验
+
 ## 问题
 
 `ql_ui_doc_load_mem()` 没有要求有节点的文档至少包含一个样式，也没有验证 `QLUINode.style` / `QLUINode.text` 是否落在对应表内。虽然运行时初始化对部分非零样式索引做了回退处理，但零样式表会令 `doc->styles == NULL`，之后仍可能读取 `doc->styles[0]`；非法文本索引则在 `build_internal()` 中直接访问 `doc->text_offsets[src->text]`。

@@ -1,5 +1,7 @@
 # `raw-only` 图像预设仍启用 GIF 解码
 
+> **核对 2026-11-15**：✅ 已修 —— `CMakeLists.txt:55-60` raw-only 分支置 `_ql_preset_gif=0`；复测 `flags.make` 里 `QL_FEAT_IMG_GIF=0`
+
 ## 问题
 
 `CMakeLists.txt` 将 `_ql_preset_gif` 默认设为 `1`。`raw-only` 分支关闭 BMP、QOI、PNG 和平台图像后端，却没有关闭 GIF；后面的另一个 `elseif(QLGL_IMG_PRESET STREQUAL "raw-only")` 本想设 `_ql_preset_gif=0`，但条件重复，永远不可达。

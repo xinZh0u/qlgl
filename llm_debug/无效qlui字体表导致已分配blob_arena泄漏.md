@@ -1,5 +1,7 @@
 # 无效 qlui 字体表导致已分配 blob arena 泄漏
 
+> **核对 2026-11-15**：✅ 已修 —— `src/ui/qlui_blob.c:821-828` 校验失败统一 `fail:` 释放 doc + arena
+
 ## 问题
 
 `ql_ui_doc_load_mem()` 先分配并复制完整 blob 到 `arena`，之后才校验字体表。若字体表不一致、`@font-face` 文本索引越界、字体列表区间越界或字体名称索引越界，错误分支只释放 `doc`，没有释放 `arena`。

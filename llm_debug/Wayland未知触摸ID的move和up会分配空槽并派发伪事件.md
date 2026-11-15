@@ -1,5 +1,7 @@
 # Wayland 未知触摸 ID 的 move 和 up 会分配空槽并派发伪事件
 
+> **核对 2026-11-15**：✅ 已修 —— 同上 `qlwl_touch_find()` 只认已激活触点（`:529/:543`）
+
 ## 问题
 
 `qlwl_touch_slot()` 同时承担“查找已激活 ID”和“为新 down 分配空槽”两种职责：找不到 ID 时会返回第一个空槽。`qlwl_touch_motion()` 与 `qlwl_touch_up()` 也调用它，因此对未跟踪的 ID 不会返回忽略状态。

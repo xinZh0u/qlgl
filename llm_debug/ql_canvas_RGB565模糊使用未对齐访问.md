@@ -1,5 +1,7 @@
 # RGB565 毛玻璃路径可能对未对齐地址执行 16 位访问
 
+> **核对 2026-11-15**：✅ 本次补修 —— 根因堵在驱动入口：`ql_disp_init_fb()` 要求 16/32 位格式的 stride 按像素对齐，否则 `QL_ERR_INVAL`（`src/draw/qldisp.c:70-77`）；blur 路径此前已改 `memcpy`（`qlcanvas.c:295-329`、`qllayer.c:423-459`）；回归 `test_canvas`（奇数 stride 被拒）
+
 ## 问题位置
 
 - `src/draw/qlcanvas.c`：`raw_px_get()`、`raw_px_set()`

@@ -283,6 +283,15 @@ static int desktop_begin(QLPlatformWindow *pw, ql_color_t bg, const QLRect *dirt
 #endif
     }
 
+    /*
+     * 显示缩放可能在运行期变（拖到另一块屏 / Wayland output scale 变化）。
+     * 画布是按驱动实时取缩放的，但 `QLDraw2D` 是 init 时快照，这里同步一次，
+     * 否则整帧都会按旧 DPR 画。
+     */
+    const ql_coord_t scale = ql_canvas_scale_fx(&pw->canvas);
+    if (pw->d2d.scale_fx != scale)
+        ql_draw2d_set_scale(&pw->d2d, scale);
+
     pw->flush_full = 0;
     pw->flush_rect = ql_rect_make(0, 0, 0, 0);
     if (n <= 0) {

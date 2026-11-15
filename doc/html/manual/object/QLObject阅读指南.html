@@ -580,7 +580,8 @@ main img {
 </ul>
 <h3 id="62-emit">6.2 一次 emit 的流程</h3>
 <div class="highlight"><pre><span></span><code>     目标 obj
-        │  路径：obj → parent → ... → root（最多 QL_CFG_EVENT_PATH_MAX 层）
+        │  路径：obj → parent → ... → root（最多 QL_CFG_EVENT_PATH_MAX 层；
+        │  超过的树在 ql_object_set_parent() 时就被拒绝，不会静默丢事件）
         ▼
 [1] 取事件描述（沿类链找 events 表）→ 得到传播标志
 [2] CAPTURE 标志：root …… 目标的父  依次派发

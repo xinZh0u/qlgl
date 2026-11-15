@@ -1,5 +1,7 @@
 # `ql_canvas` 颜色矩阵的 32 位中间乘法可能溢出
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlcanvas.c:264-278` 全程 int64 并 clamp 到 0..255
+
 ## 问题位置
 
 - `src/draw/qlcanvas.c`：`cm_apply()`

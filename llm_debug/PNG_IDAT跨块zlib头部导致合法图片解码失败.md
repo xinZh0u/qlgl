@@ -1,5 +1,7 @@
 # PNG 的 zlib 头部跨 IDAT 分块时解码失败
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlimage.c:536-556` `png_idat_head()`、`:507-518` skip 跨块分摊；回归 `test_png`（IDAT 拆 4 段）
+
 ## 问题
 
 PNG 允许把 zlib 数据流任意拆分到连续的多个 IDAT 块中，但解码器假设 2 字节 zlib 头完整位于第一个 IDAT 块：

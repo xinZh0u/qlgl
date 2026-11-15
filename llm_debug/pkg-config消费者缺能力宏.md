@@ -1,5 +1,7 @@
 # pkg-config 消费者缺能力宏：QL_FEAT_CSS_FONT_STACK 默认 1 撞上 QLGL_ENABLE_FREETYPE 未导出
 
+> **核对 2026-11-15**：✅ 已修 —— `CMakeLists.txt:643-665` 从 `INTERFACE_COMPILE_DEFINITIONS` 生成 `Cflags`
+
 ## 现象
 
 库安装后，非 CMake 工程按 README 承诺的 `pkg-config --cflags --libs qlgl` 方式使用，

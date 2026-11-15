@@ -63,7 +63,26 @@ QL_TEST_BEGIN("test_object_tree")
     QL_CHECK_EQ(ql_object_set_parent(child2, NULL), QL_OK);
     QL_CHECK_EQ(g_destroyed, 1);
 
-    /* 5. 级联销毁：unref(root) 会递归销毁 child1 → grand */
+    /* 5. 事件路径上限：恰好 QL_CFG_EVENT_PATH_MAX 层可以建，超过必须拒绝 */
+    {
+        QLObject *chain_root = ql_object_new(type);
+        QLObject *prev = chain_root;
+        QL_CHECK(chain_root != NULL);
+        for (int i = 1; i < QL_CFG_EVENT_PATH_MAX; i++) {
+            QLObject *n = ql_object_new(type);
+            QL_CHECK(n != NULL);
+            QL_CHECK_EQ(ql_object_add_child(prev, n), QL_OK);
+            prev = n;
+        }
+        QLObject *extra = ql_object_new(type);
+        QL_CHECK(extra != NULL);
+        QL_CHECK_EQ(ql_object_set_parent(extra, prev), QL_ERR_INVAL);
+        QL_CHECK(ql_object_parent(extra) == NULL);   /* 拒绝后树不变 */
+        ql_object_unref(extra);
+        ql_object_unref(chain_root);                 /* 级联销毁整条链 */
+    }
+
+    /* 6. 级联销毁：unref(root) 会递归销毁 child1 → grand */
     g_destroyed = 0;
     QL_CHECK_EQ(ql_object_ref_count(root), 1);
     ql_object_unref(root);

@@ -1,5 +1,7 @@
 # BMP DIB 头尺寸加法溢出可绕过输入长度检查
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlimage.c:208-210` 用 64 位比较 `hdr_size + 14`
+
 ## 问题位置
 
 - `src/draw/qlimage.c`：`decode_bmp()`

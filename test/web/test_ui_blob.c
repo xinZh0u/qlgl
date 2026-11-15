@@ -23,6 +23,27 @@
 #define W 320
 #define H 320
 
+/* blob 的校验和是 FNV-1a 32，覆盖 [header_size, total_size)；
+ * 测"字段校验"时要先按同一算法改校验和，否则会被 7.4 那条挡在前面。 */
+static uint32_t fnv1a(const uint8_t *p, size_t n)
+{
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < n; i++) {
+        h ^= p[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+/* 改坏 blob 里的一段并重算校验和 */
+static void patch_and_reseal(uint8_t *blob)
+{
+    QLUIDocBlobHeader h;
+    memcpy(&h, blob, sizeof(h));
+    h.checksum = fnv1a(blob + h.header_size, h.total_size - h.header_size);
+    memcpy(blob, &h, sizeof(h));
+}
+
 /* 读整个文件；失败返回 NULL */
 static uint8_t *read_all(const char *path, size_t *out_size)
 {
@@ -217,6 +238,34 @@ QL_TEST_BEGIN("test_ui_blob")
     /* 7.6 空/过小输入 */
     QL_CHECK(ql_ui_doc_load_mem(blob, 4) == NULL);
     QL_CHECK(ql_ui_doc_load_mem(NULL, need) == NULL);
+
+    /* 7.7 样式里的资源名下标越界（校验和重新封好，确保是字段校验挡住的） */
+    {
+        QLUIDocBlobHeader h;
+        memcpy(&h, blob, sizeof(h));
+        if (h.style_count > 0 && h.off_styles != 0) {
+            memcpy(bad, blob, need);
+            QLUIStyle *st = (QLUIStyle *)(void *)(bad + h.off_styles);
+            st[0].bg_image = 0xFFFEu;          /* 超过任何真实 text_count */
+            patch_and_reseal(bad);
+            QL_CHECK(ql_ui_doc_load_mem(bad, need) == NULL);
+            QL_CHECK(strstr(ql_ui_doc_last_error(), "style image") != NULL);
+        }
+    }
+
+    /* 7.8 图像条目的名字下标必须是真实下标（0xFFFF 哨兵在这里不合法） */
+    {
+        QLUIDocBlobHeader h;
+        memcpy(&h, blob, sizeof(h));
+        if (h.image_count > 0 && h.off_images != 0) {
+            memcpy(bad, blob, need);
+            QLUIImageSrc *im = (QLUIImageSrc *)(void *)(bad + h.off_images);
+            im[0].name = 0xFFFFu;
+            patch_and_reseal(bad);
+            QL_CHECK(ql_ui_doc_load_mem(bad, need) == NULL);
+            QL_CHECK(strstr(ql_ui_doc_last_error(), "image name") != NULL);
+        }
+    }
 
     ql_mem_free(bad);
     ql_mem_free(blob);

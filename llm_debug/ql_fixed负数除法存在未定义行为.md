@@ -1,5 +1,7 @@
 # `ql_fixed_div()` 对负分子执行有符号左移，行为未定义
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlvalue.c:29-35` 用 int64 构造被除数并饱和，不再左移负数
+
 ## 问题位置
 
 - `src/core/qlvalue.c`：`ql_fixed_div()`

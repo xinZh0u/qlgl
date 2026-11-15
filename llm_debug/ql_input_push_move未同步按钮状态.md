@@ -1,5 +1,7 @@
 # `ql_input_push_move()` 不会更新查询到的按钮状态
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlinput.c:58-63` MOVE 采用事件里的按钮快照；回归 `test_input_queue`
+
 ## 问题位置
 
 - `src/core/qlinput.c`：`track_state()`

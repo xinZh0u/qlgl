@@ -1,5 +1,7 @@
 # BMP 顶向下高度取反可能发生有符号溢出
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlimage.c:233-238` 先拒绝 `INT32_MIN` 再取反
+
 ## 问题位置
 
 - `src/draw/qlimage.c`：`decode_bmp()`

@@ -1,5 +1,7 @@
 # `QL_EVENT_FLAG_STOPPABLE` 未限制事件传播停止
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlevent.c:280-284` `stop_requested()` 要求登记 STOPPABLE；回归 `test_object_event`
+
 ## 问题位置
 
 - `include/qlgl/qlevent.h`：`QL_EVENT_FLAG_STOPPABLE`

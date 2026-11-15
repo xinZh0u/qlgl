@@ -1,5 +1,7 @@
 # 目标监听器停止传播会连带跳过默认处理
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlevent.c:299-315` 监听器循环 break 与默认处理解耦；回归 `test_object_event`
+
 ## 问题位置
 
 - `src/core/qlevent.c`：`dispatch()`

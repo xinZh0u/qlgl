@@ -1,5 +1,7 @@
 # Wayland 创建窗口代理未检查分配失败
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlwindow_wayland.h:1153/1170/1177` registry/surface/xdg_surface 判空并走统一关闭
+
 ## 问题
 
 `qlwl_open()` 通过 Wayland 协议创建多个代理对象后，未检查其是否为 `NULL`，便立即注册 listener 或继续调用后续代理方法。例如 `wl_compositor_create_surface()` 的结果直接传给 `wl_surface_add_listener()`，`xdg_wm_base_get_xdg_surface()` 和 `xdg_surface_get_toplevel()` 也采用相同模式。

@@ -1,5 +1,7 @@
 # `ql_str_append()` 扩容后可能从旧缓冲区读取
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlstr.c:28-39` `source_offset()` + `:176-183` 扩容后重定位；回归 `test_str`（自追加 / set_n 别名 / set_static 别名）
+
 ## 问题位置
 
 - `src/core/qlstr.c`：`ql_str_append()`

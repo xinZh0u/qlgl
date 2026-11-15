@@ -95,6 +95,13 @@ option(QLGL_BUILD_EXAMPLES "构建 example/ 下的基本例程" ON)
 option(QLGL_BUILD_BENCHMARK "构建 benchmark/ 下的可视化性能基准（bench_cpu / bench_gl）" ON)
 # 运行期 HTML/CSS 解析器（M3.5 第 3 步）。MCU 侧关掉它即零字节成本
 option(QLGL_BUILD_TEXT_PARSER "构建 ql_ui_load_text()（运行期 HTML/CSS 解析）" ON)
+# 关掉解析器时 qlui_parse.c 不参与编译，而 tests/examples/benchmark 都直接调
+# ql_ui_load_text()/ql_ui_load_html()。与其在链接期报一堆 undefined reference，
+# 不如在配置期就说清楚。
+if(NOT QLGL_BUILD_TEXT_PARSER AND (QLGL_BUILD_TESTS OR QLGL_BUILD_EXAMPLES OR QLGL_BUILD_BENCHMARK))
+    message(FATAL_ERROR "QLGL_BUILD_TEXT_PARSER=OFF 时不能同时构建 tests/examples/benchmark；"
+                        "请同时加 -DQLGL_BUILD_TESTS=OFF -DQLGL_BUILD_EXAMPLES=OFF -DQLGL_BUILD_BENCHMARK=OFF")
+endif()
 option(QLGL_BUILD_FREETYPE "构建 FreeType 矢量字体后端（中文/任意字号）" ON)
 option(QLGL_BUILD_JPEG "构建 libjpeg-turbo 平台后端（JPEG；找不到就跳过）" ON)
 

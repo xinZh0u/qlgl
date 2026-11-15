@@ -1,5 +1,7 @@
 # X11 剪贴板 detach 未清理待处理状态导致重建后粘贴卡住
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlclipboard_x11.h:50-64` detach 清 waiting/in/out 与窗口/Display
+
 ## 问题
 
 `ql_x11_clip_detach()` 仅清空 Display 和窗口句柄，没有重置 `s_clip_waiting`、`s_clip_in_ready`、输入长度或上一次剪贴板内容。如果窗口在异步粘贴请求仍等待 SelectionNotify 时被销毁，随后同进程重新创建 X11 后端，旧的 `s_clip_waiting` 会让 `ql_x11_clip_get_text()` 持续返回“仍在等待”，而新 Display 不会收到旧请求的通知。

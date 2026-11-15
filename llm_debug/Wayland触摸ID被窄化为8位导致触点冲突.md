@@ -1,5 +1,7 @@
 # Wayland 触摸 ID 被窄化为 8 位导致触点冲突
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlwindow_wayland.h:471` `qlwl_touch_find()`，对外用槽下标（0..4）当稳定记号
+
 ## 问题
 
 Wayland 的触摸 ID 是 `int32_t`，但 `qlwl_touch_push()` 在派发前将其强制转换为 `uint8_t`；负值还被统一改成 0。公开输入事件的 `touch_id` 也只有 8 位，UI 层据此匹配触点。

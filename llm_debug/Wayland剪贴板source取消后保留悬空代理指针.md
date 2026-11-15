@@ -1,5 +1,7 @@
 # Wayland 剪贴板 source 取消后保留悬空代理指针
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlwindow_wayland.h:848-849` cancelled 回调里清 `clip_source`
+
 ## 问题
 
 Wayland 剪贴板的 `qlwl_clip_cancelled()` 收到 compositor 的 `cancelled` 事件后销毁 `wl_data_source`，但没有把 `w->clip_source` 清空。该指针之后可能在 `qlwl_clip_set()` 中再次销毁，或在 `qlwl_close()` 释放窗口时再次销毁。

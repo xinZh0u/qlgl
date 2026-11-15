@@ -1,5 +1,7 @@
 # ql_value_get_uint 对 FIXED 类型返回原始定点位，未做换算
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlvalue.c:137` 与 `get_int` 对齐；`:147-153` `get_fixed(UINT)` 64 位饱和
+
 ## 现象
 
 `ql_value_get_uint()` 在遇到 `QL_VALUE_FIXED` 值时，直接把定点数的原始 32 位位型

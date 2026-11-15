@@ -1,5 +1,7 @@
 # `ql_mem_set_allocator()` 的部分回调回退会混用不兼容的分配器
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlmem.c:43-52` 三个回调必须同时非空，否则整组回落默认族
+
 ## 问题位置
 
 - `src/core/qlmem.c`：`ql_mem_set_allocator()`

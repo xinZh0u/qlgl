@@ -1,5 +1,7 @@
 # X11 无输入法时 Latin-1 按键被当作 UTF-8 而丢弃
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlinput_x11.h:120` `ql_x11_push_text_latin1()`，`:235` XLookupString 结果先转 UTF-8
+
 ## 问题
 
 没有 XIC 时，`ql_x11_push_input_scaled()` 使用 `XLookupString()` 获取可打印字符。代码注释已指出该接口返回 Latin-1，但随后无转换地把字节交给 `ql_x11_push_text_utf8()`；后者按 UTF-8 首字节模式识别字符，并在多字节序列不完整时直接停止。

@@ -1,5 +1,7 @@
 # UTF-8 辅助函数接受非法 Unicode 码点序列
 
+> **核对 2026-11-15**：✅ 已修 —— `src/text/qlfont.c:229-306` 统一 `utf8_seq()`：拒绝 overlong / 代理项 / >U+10FFFF / F5..F7，decode/valid_len/encode 共用
+
 ## 问题
 
 `ql_utf8_decode()` 只检查字节形状是否符合 2/3/4 字节模板，没有拒绝过长编码、代理项码点或大于 U+10FFFF 的码点；它还将 `F5..F7` 作为合法 4 字节首字节接受。`ql_utf8_valid_len()` 也只检查 continuation-byte 形状，因此会把这些非法序列计入“合法 UTF-8 前缀”。

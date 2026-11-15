@@ -107,6 +107,10 @@ static void cb_stop_self(QLEvent *event)
     ql_event_stop_propagation(event);
 }
 
+/* 深链测试：事件必须一路冒泡到根（路径上限内不允许截断） */
+static int g_deep_hits;
+static void cb_deep(QLEvent *event) { QL_UNUSED(event); g_deep_hits++; }
+
 /* 派发中断开全部并立刻重连：新监听器不能混进本轮派发 */
 static int g_reconnect_hits;
 static void cb_reconnect(QLEvent *event) { QL_UNUSED(event); g_reconnect_hits++; }
@@ -276,5 +280,24 @@ QL_TEST_BEGIN("test_object_event")
     ql_object_unref(g_c);
     ql_object_unref(g_b);
     ql_object_unref(g_a);
+
+    /* 11. 最深的一条链（正好 QL_CFG_EVENT_PATH_MAX 层）也要把事件送到根 */
+    {
+        QLObject *deep_root = ql_object_new(type);
+        QLObject *prev = deep_root;
+        QL_CHECK(deep_root != NULL);
+        for (int i = 1; i < QL_CFG_EVENT_PATH_MAX; i++) {
+            QLObject *n = ql_object_new(type);
+            QL_CHECK(n != NULL);
+            QL_CHECK_EQ(ql_object_add_child(prev, n), QL_OK);
+            prev = n;
+        }
+        g_deep_hits = 0;
+        QL_CHECK(ql_connect(deep_root, QL_EVT_EVENT_DATA, cb_deep, NULL) !=
+                 QL_CONN_ID_NONE);
+        QL_EMIT_0(prev, QL_EVT_EVENT_DATA);
+        QL_CHECK_EQ(g_deep_hits, 1);
+        ql_object_unref(deep_root);
+    }
 
 QL_TEST_END()

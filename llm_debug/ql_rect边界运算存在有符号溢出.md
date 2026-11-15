@@ -1,5 +1,7 @@
 # `QLRect` 边界运算未防护有符号溢出
 
+> **核对 2026-11-15**：✅ 已修 —— `include/qlgl/qlgeom.h:53-74` 新增 `ql_coord_add_sat/sub_sat`，right/bottom/intersect/union 均改用饱和运算
+
 ## 问题位置
 
 - `include/qlgl/qlgeom.h`：`ql_rect_right()`、`ql_rect_bottom()`

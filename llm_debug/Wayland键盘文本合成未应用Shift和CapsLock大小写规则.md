@@ -1,5 +1,7 @@
 # Wayland 键盘文本合成未应用 Shift 和 CapsLock 大小写规则
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlwindow_wayland.h:289-312` 字母用 `Shift ^ CapsLock`，符号按 Shift 映射
+
 ## 问题
 
 Wayland 键盘回调把 evdev 键码映射成 US 基础字符后，只在 Shift 按下时将 `a..z` 转成大写。数字与标点不应用 Shift 映射（如 Shift+1 仍产生 `1`），字母也完全忽略 CapsLock 状态。

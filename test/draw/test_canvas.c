@@ -29,6 +29,18 @@ QL_TEST_BEGIN("test_canvas")
     QL_CHECK_EQ(ql_disp_buffer_size(QL_COLOR_L8, 10, 10), 100);
     QL_CHECK_EQ(ql_disp_buffer_size((QLColorFormat)99, 10, 10), 0);
 
+    /* 显示驱动：16/32 位格式的 stride 必须按像素对齐（否则行首未对齐访问） */
+    {
+        static uint8_t oddbuf[64 * 4 * 4];
+        QLDispDriver odd;
+        QL_CHECK_EQ(ql_disp_init_fb(&odd, oddbuf, 21, 10, 4, QL_COLOR_RGB565, NULL),
+                    QL_ERR_INVAL);
+        QL_CHECK_EQ(ql_disp_init_fb(&odd, oddbuf, 20, 10, 4, QL_COLOR_RGB565, NULL),
+                    QL_OK);
+    }
+    /* 超大尺寸：不能因为 uint32 截断而"分配成功但不够大" */
+    QL_CHECK(ql_disp_mem_create(65536, 16384, QL_COLOR_ARGB8888) == NULL);
+
     QLCanvas canvas;
     QL_CHECK_EQ(ql_canvas_from_disp(&canvas, disp), QL_OK);
     QL_CHECK_EQ(canvas.width, 64);

@@ -1,5 +1,7 @@
 # 毛玻璃模糊半径过大触发整数溢出
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlcanvas.c:614-628` 半径夹到 4096、外扩用饱和运算
+
 ## 问题
 
 `ql_canvas_backdrop_blur()` / `ql_canvas_backdrop_blur_round()` 接受 `int radius`，但实现没有限制半径上界：

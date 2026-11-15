@@ -1,5 +1,7 @@
 # ql_disp_mem_save_ppm 忽略写入错误
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qldisp.c:278-297` 检查 fprintf/fputc/fclose，失败返回 `QL_ERR_INVAL` 并打日志
+
 ## 问题
 
 `ql_disp_mem_save_ppm()` 对 PPM 头部和像素数据的 `fprintf()`、`fputc()` 返回值均不检查，也忽略 `fclose()` 的失败结果；文件只要成功打开，函数最终就返回 `QL_OK`。

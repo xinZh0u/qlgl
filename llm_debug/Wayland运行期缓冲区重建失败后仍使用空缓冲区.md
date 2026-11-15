@@ -1,5 +1,7 @@
 # Wayland 运行期缓冲区重建失败后仍使用空缓冲区
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qldisp_wayland.c:157-172` 先建 `fresh[]` 全部成功再换旧，失败保留旧缓冲区
+
 ## 问题
 
 窗口尺寸或输出缩放变化时，`ql_disp_wayland_poll()` 调用 `buffers_rebuild()`，但忽略其返回值。`buffers_rebuild()` 会先销毁旧 shm 缓冲区，再分配新的帧缓冲及两个 shm 缓冲区；中途分配失败时可能留下一个或多个 `buffer/data == NULL` 的槽位。

@@ -172,7 +172,8 @@ QLEventConn s_pool[QL_CFG_EVENT_CONN_POOL];   // 默认 256 个槽位
 
 ```
      目标 obj
-        │  路径：obj → parent → ... → root（最多 QL_CFG_EVENT_PATH_MAX 层）
+        │  路径：obj → parent → ... → root（最多 QL_CFG_EVENT_PATH_MAX 层；
+        │  超过的树在 ql_object_set_parent() 时就被拒绝，不会静默丢事件）
         ▼
 [1] 取事件描述（沿类链找 events 表）→ 得到传播标志
 [2] CAPTURE 标志：root …… 目标的父  依次派发

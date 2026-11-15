@@ -38,7 +38,7 @@ const char *qlgl_version(void);
 | `QL_CFG_EVENT_CAPACITY` | 100 | 每类事件 id 数量 |
 | `QL_CFG_EVENT_ARG_MAX` | 4 | 单次事件参数上限 |
 | `QL_CFG_EVENT_CONN_POOL` | 256 | 全局事件连接池容量 |
-| `QL_CFG_EVENT_PATH_MAX` | 8 | 传播路径深度上限 |
+| `QL_CFG_EVENT_PATH_MAX` | 16 | 传播路径深度上限；挂接时检查，超深的树直接拒绝 |
 | `QL_CFG_MEM_TRACK` | 1 | 内存统计与头部校验（关掉可省 16 字节/次分配） |
 | `QL_CFG_LOG_LEVEL` | 2 | 0 关闭 / 1 错误 / 2 警告 / 3 信息 / 4 调试 |
 

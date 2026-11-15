@@ -794,10 +794,27 @@ QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size)
         }
     }
 
+    /*
+     * 样式里的资源名下标（`background-image` / `border-image` / `mask-image`）：
+     * build_internal() 会**无条件** `doc->text_offsets[idx]` 取名字，
+     * 外来 blob 里一个越界下标就是越界读。0xFFFF 是"没有"，其余必须落在池内。
+     */
+    for (uint16_t i = 0; i < doc->style_count; i++) {
+        const QLUIStyle *st = &doc->styles[i];
+        const uint16_t res[] = { st->bg_image, st->border_image, st->mask_image };
+        for (size_t k = 0; k < sizeof(res) / sizeof(res[0]); k++) {
+            if (res[k] != QL_UI_NO_IMAGE && res[k] >= doc->text_count) {
+                set_error_str("style image name index out of range");
+                goto fail;
+            }
+        }
+    }
+
     /* 图像条目：名字是文本下标，字节区间必须在 image_data 段内 */
     for (uint16_t i = 0; i < doc->image_count; i++) {
         const QLUIImageSrc *im = &doc->images[i];
-        if (im->name != 0xFFFFu && im->name >= doc->text_count) {
+        /* 名字没有"无"的情况：构建期每条资源都有名字，0xFFFF 会被直接索引 */
+        if (im->name >= doc->text_count) {
             set_error_str("image name index out of range");
             goto fail;
         }

@@ -37,7 +37,11 @@
 
 /* 事件传播路径上限（当前对象到根的最大层数） */
 #ifndef QL_CFG_EVENT_PATH_MAX
-#define QL_CFG_EVENT_PATH_MAX       8
+/*
+ * 事件传播路径（目标 → 根）最多多少个节点。挂接时就会检查，超深的树
+ * 直接拒绝（`ql_object_set_parent` 返回 QL_ERR_INVAL），不会静默丢事件。
+ */
+#define QL_CFG_EVENT_PATH_MAX       16
 #endif
 
 /*

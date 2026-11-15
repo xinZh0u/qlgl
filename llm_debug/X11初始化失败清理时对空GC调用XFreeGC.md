@@ -1,5 +1,7 @@
 # X11 初始化失败清理时对空 GC 调用 XFreeGC
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qldisp_x11.c:355` / `:483` 判空后才 `XFreeGC`
+
 ## 问题
 
 `ql_disp_x11_create()` 的 `fail` 清理路径无条件调用 `XFreeGC(dpy, x->gc)`。对象通过 `calloc` 初始化，若在创建 GC 之前的任一步骤失败（例如 `XCreateImage`、帧缓冲分配或窗口创建失败），`x->gc` 仍为 `NULL`，清理会向 X 服务器发送无效的 GC 释放请求。

@@ -224,6 +224,31 @@ void ql_object_unref(QLObject *self)
 
 /* ----- 对象树 ----- */
 
+/*
+ * 事件传播路径（`ql_emit`）用固定数组存"目标 → 根"，上限是
+ * `QL_CFG_EVENT_PATH_MAX`。以前超过上限只是**静默丢事件**（后来改成警告
+ * 一次），调用方没法知道；现在把约束挡在构建期：挂接时就算一遍新树的
+ * 深度，超限直接拒绝，保证"只要能建出来，事件就一定传得到根"。
+ */
+static int object_ancestors(const QLObject *self)
+{
+    int n = 0;
+    for (const QLObject *p = self; p != NULL; p = p->parent)
+        n++;
+    return n;
+}
+
+static int object_subtree_height(const QLObject *self)
+{
+    int best = 0;
+    for (const QLObject *c = self->first_child; c != NULL; c = c->next_sibling) {
+        const int h = object_subtree_height(c);
+        if (h > best)
+            best = h;
+    }
+    return best + 1;
+}
+
 ql_err_t ql_object_set_parent(QLObject *self, QLObject *parent)
 {
     if (self == NULL)
@@ -233,6 +258,20 @@ ql_err_t ql_object_set_parent(QLObject *self, QLObject *parent)
     for (QLObject *p = parent; p != NULL; p = p->parent) {
         if (p == self)
             return QL_ERR_INVAL;
+    }
+
+    /*
+     * 深度约束：挂上之后"最深的后代 → 根"不能超过事件路径上限。
+     * 只约束挂接（parent != NULL）；摘除永远允许。
+     */
+    if (parent != NULL) {
+        const int depth = object_ancestors(parent) + object_subtree_height(self);
+        if (depth > QL_CFG_EVENT_PATH_MAX) {
+            QL_LOGE("ql_object_set_parent: tree depth %d exceeds "
+                    "QL_CFG_EVENT_PATH_MAX (%d), events would not reach the root",
+                    depth, QL_CFG_EVENT_PATH_MAX);
+            return QL_ERR_INVAL;
+        }
     }
 
     QLObject *old_parent = self->parent;

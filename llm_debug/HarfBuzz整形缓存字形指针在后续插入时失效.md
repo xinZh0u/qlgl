@@ -1,5 +1,7 @@
 # HarfBuzz 整形过程中缓存字形指针会被后续插入失效
 
+> **核对 2026-11-15**：✅ 已修 —— `src/text/qltextshape.c:452-463` 先整行预热 `find_glyph_id()`，第二遍再取指针
+
 ## 问题
 
 `hb_shape_run()` 对每个 HarfBuzz glyph 调用 `ql_font_find_glyph_id()`，并把返回的 `QLGlyph *` 保存到输出数组；整段 glyph 都收集完后，绘制调用方才逐个读取这些指针。

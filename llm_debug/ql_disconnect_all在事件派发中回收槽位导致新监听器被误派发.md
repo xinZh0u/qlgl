@@ -1,5 +1,7 @@
 # 事件派发期间 `ql_disconnect_all()` 立即回收槽位
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlevent.c:159-174` 派发中只标记、`conn_gc()` 延后；回归 `test_object_event`（重连不串轮）
+
 ## 问题
 
 `dispatch()` 在调用监听器前缓存当前连接的 `next` 索引，以容忍回调修改连接链；但 `ql_disconnect_all()` 不检查 `s_emit_depth`，会在派发回调中立即将整条连接链的槽位归还空闲池。

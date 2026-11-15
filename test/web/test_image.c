@@ -504,6 +504,29 @@ QL_TEST_BEGIN("test_image")
                     }
                     ql_ui_doc_free(back);
                 }
+
+                /*
+                 * 资源条目的名字必须是真实文本下标：0xFFFF 是"没有"的哨兵，
+                 * 但 build 时会直接 text_offsets[name]，所以加载必须拒绝。
+                 * 改完字段要按同一算法重封校验和，否则会先撞 checksum。
+                 */
+                QLUIDocBlobHeader bh;
+                memcpy(&bh, buf, sizeof(bh));
+                if (bh.off_images != 0 && bh.image_count > 0) {
+                    QLUIImageSrc *mi = (QLUIImageSrc *)(void *)(buf + bh.off_images);
+                    const uint16_t saved = mi[0].name;
+                    mi[0].name = 0xFFFFu;
+                    uint32_t sum = 2166136261u;
+                    for (uint32_t k = bh.header_size; k < bh.total_size; k++) {
+                        sum ^= buf[k];
+                        sum *= 16777619u;
+                    }
+                    bh.checksum = sum;
+                    memcpy(buf, &bh, sizeof(bh));
+                    QL_CHECK(ql_ui_doc_load_mem(buf, size) == NULL);
+                    QL_CHECK(strstr(ql_ui_doc_last_error(), "image name") != NULL);
+                    mi[0].name = saved;
+                }
                 ql_mem_free(buf);
             }
             ql_ui_doc_free(doc);

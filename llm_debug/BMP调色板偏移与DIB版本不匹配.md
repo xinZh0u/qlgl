@@ -1,5 +1,7 @@
 # BMP 调色板偏移与 DIB 版本不匹配
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlimage.c:216-217`（`14+hdr_size`、项宽 4）、`:229-230`（COREHEADER 3 字节项）、`:271-272`（V3 BITFIELDS +12）
+
 ## 问题
 
 `decode_bmp()` 对所有 `hdr_size >= 40` 的 BMP 都将调色板偏移设为 `14 + 40`，没有跳过大于 40 字节的 V4/V5 DIB 头；同时，8 位 COREHEADER BMP 的调色板项是 3 字节 BGR，但解码器始终按 4 字节步进。

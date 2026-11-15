@@ -66,6 +66,13 @@ ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t strid
         stride = min_stride;
     if (stride < min_stride)
         return QL_ERR_INVAL;
+    /*
+     * 每行起点必须按像素宽度对齐：RGB565/ARGB8888 的绘制路径按
+     * `uint16_t*` / `uint32_t*` 解引用，奇数 stride 会造成未对齐访问
+     * （ARM 上直接 fault，x86 上是 UB）。宁可拒绝，也不让调用方踩。
+     */
+    if (bytes > 1u && (stride % bytes) != 0u)
+        return QL_ERR_INVAL;
     /* stride * height 也必须能寻址，否则后续行地址会回绕 */
     if ((uint64_t)stride * (uint64_t)height > (uint64_t)SIZE_MAX)
         return QL_ERR_INVAL;
@@ -148,7 +155,12 @@ QLDispDriver *ql_disp_mem_create(ql_coord_t width, ql_coord_t height, QLColorFor
 
     const uint64_t stride64 = (uint64_t)width * (uint64_t)bytes * 4u;   /* 故意带冗余，顺带验证 stride 支持 */
     const uint64_t size64 = stride64 * (uint64_t)height;
-    if (stride64 > UINT32_MAX || size64 > (uint64_t)SIZE_MAX || size64 == 0) {
+    /*
+     * 判据必须和 `ql_disp_buffer_size()` 一致：用 UINT32_MAX 而不是 SIZE_MAX。
+     * 后者在 64 位平台恒假，随后 `(uint32_t)size64` 会截断，分配变小但
+     * 驱动仍按原尺寸写 → 越界。
+     */
+    if (stride64 > UINT32_MAX || size64 > UINT32_MAX || size64 == 0) {
         ql_mem_free(mem);
         return NULL;
     }

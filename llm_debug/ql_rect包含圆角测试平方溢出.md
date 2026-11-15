@@ -1,5 +1,7 @@
 # `ql_rect_contains_round()` 使用 32 位乘法计算距离平方
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qlgeom.c:20-30` dx/dy/rr 全部 64 位，内部边界用饱和加减
+
 ## 问题位置
 
 - `src/draw/qlgeom.c`：`ql_rect_contains_round()`

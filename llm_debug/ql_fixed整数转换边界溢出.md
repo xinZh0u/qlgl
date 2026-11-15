@@ -1,5 +1,7 @@
 # 定点整数转换对不可表示输入缺少边界保护
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlvalue.c:10-15`（from_int 64 位 + 饱和）、`:41-46`（to_int 全程 int64）
+
 ## 问题位置
 
 - `src/core/qlvalue.c`：`ql_fixed_from_int()`

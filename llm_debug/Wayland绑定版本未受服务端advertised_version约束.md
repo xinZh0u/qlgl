@@ -1,5 +1,7 @@
 # Wayland 绑定版本未受服务端 advertised version 约束
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlwindow_wayland.h:1074` `QLWL_BIND_VER(want)` 取 `min(advertised, wanted)`，所有 bind 都走它
+
 ## 问题
 
 `qlwl_registry_global()` 忽略 registry 通知中的 `version`，对 `wl_compositor`、`wl_seat`、`wl_output` 分别固定绑定 v4、v5、v2。若合成器只公布较低版本，客户端仍请求更高版本，违反 `wl_registry.bind` 的版本上限要求，可能导致协议错误并断开连接。

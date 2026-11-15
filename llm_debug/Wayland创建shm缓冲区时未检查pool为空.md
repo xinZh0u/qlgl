@@ -1,5 +1,7 @@
 # Wayland 创建 shm 缓冲区时未检查 pool 为空
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qldisp_wayland.c:99-105` pool 为空时 munmap/close 后失败
+
 ## 问题
 
 `create_buffer()` 调用 `wl_shm_create_pool()` 后，没有检查返回值是否为 `NULL`，便将其传给 `wl_shm_pool_create_buffer()`。Wayland 客户端代理对象分配失败时，pool 创建可能返回空指针，后续调用会解引用无效代理。

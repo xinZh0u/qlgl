@@ -1,5 +1,7 @@
 # `QLStr` 长度运算溢出可导致越界访问或分配循环
 
+> **核对 2026-11-15**：✅ 已修 —— `src/core/qlstr.c:110-111` 拒绝 `UINT32_MAX`、`:173-174` append 预检、`:55-63` 扩容防溢出；回归 `test_str`（set_n 部分）
+
 ## 问题位置
 
 - `src/core/qlstr.c`：`ql_str_set_n()` 计算 `len + 1`

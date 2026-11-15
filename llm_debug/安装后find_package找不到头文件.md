@@ -1,5 +1,7 @@
 # 安装后 find_package(qlgl) 找不到头文件（INTERFACE_INCLUDE_DIRECTORIES 丢失安装目录）
 
+> **核对 2026-11-15**：✅ 已修 —— `CMakeLists.txt:12` `include(GNUInstallDirs)` 提前，`:34-37` 空值守卫
+
 ## 现象
 
 库安装到任意 prefix 后，外部工程用 `find_package(qlgl)` + `target_link_libraries(app PRIVATE qlgl::qlgl)` 时，

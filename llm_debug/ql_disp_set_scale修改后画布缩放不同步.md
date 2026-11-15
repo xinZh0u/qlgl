@@ -1,5 +1,7 @@
 # `ql_disp_set_scale()` 不会同步已构造画布的缩放
 
+> **核对 2026-11-15**：✅ 已修 + 本次补一处 —— 画布侧 `ql_canvas_scale_fx()` 实时跟随（`qlcanvas.c:138`、`qlcanvas.h:67`）；本次补上桌面 CPU 窗口长期持有的 `QLDraw2D` 快照同步（`src/port/qlplatform_desktop.c:285-294`）
+
 ## 问题位置
 
 - `include/qlgl/qldisp.h`：`ql_disp_set_scale()` 的契约注释

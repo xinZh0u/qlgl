@@ -1,5 +1,7 @@
 # Wayland 键盘忽略 repeat_info 导致按住按键不重复
 
+> **核对 2026-11-15**：✅ 已修 —— `src/port/qlwindow_wayland.h:324-333` 记录 rate/delay，`:988-992` 每帧补发
+
 ## 问题
 
 Wayland 的 `wl_keyboard` 不会自动发送传统意义上的重复按键事件；客户端需根据 `repeat_info` 给出的速率/延迟自行生成重复。当前 `qlwl_kb_repeat()` 丢弃这两个参数，`qlwl_kb_key()` 也没有启动重复计时器。

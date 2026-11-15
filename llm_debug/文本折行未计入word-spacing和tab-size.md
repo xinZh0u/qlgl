@@ -1,5 +1,7 @@
 # 文本折行未计入 `word-spacing` 和 `tab-size`
 
+> **核对 2026-11-15**：✅ 已修 —— `src/draw/qldraw2d.c:68-107` 折行与绘制同规则（空格加 word-spacing、`\t` 按 tab-size）
+
 ## 问题
 
 `QLTextWrapOpt` 暴露 `word_spacing` 与 `tab_size`，调用方也将这两个选项传入 `wrap_next()`；但 `wrap_next()` 只计算字形 advance 和 `letter_spacing`，没有将空格后的 `word_spacing` 加入宽度，也没有把制表符按 `tab_size` 个空格折算。

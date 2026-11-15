@@ -1,5 +1,7 @@
 # benchmark CPU 脏区模式仍将整屏 flush
 
+> **核对 2026-11-15**：✅ 已修 —— `benchmark/bench.c:143-179` 记录本帧脏区并集，`end()` 只 flush 该范围（DPR≠1 退整屏）
+
 ## 问题
 
 CPU 后端的 `cpu_begin_rects()` 只清理传入的脏矩形，但 `cpu_end()` 无论当前模式如何，都调用显示驱动的 `flush()` 并传入完整画布矩形。
