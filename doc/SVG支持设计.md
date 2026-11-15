@@ -169,12 +169,12 @@ typedef struct QLImageSvgBackend {
      *   err/err_cap 人类可读失败原因
      * 失败返回 QL_ERR_INVAL / QL_ERR_NOMEM / QL_ERR_UNSUPPORTED。
      */
-    ql_err_t (*render)(const void *data, size_t len,
+    QLErr (*render)(const void *data, size_t len,
                        ql_coord_t w, ql_coord_t h, uint8_t out_format,
                        QLImage *out, char *err, size_t err_cap);
 
     /* 可选：直接渲染进调用方的缓冲（GL 上传零拷贝、A8 蒙版） */
-    ql_err_t (*render_to)(const void *data, size_t len,
+    QLErr (*render_to)(const void *data, size_t len,
                           uint8_t *dst, uint32_t stride,
                           ql_coord_t w, ql_coord_t h, uint8_t out_format,
                           char *err, size_t err_cap);

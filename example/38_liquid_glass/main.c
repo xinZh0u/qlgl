@@ -389,7 +389,7 @@ int main(int argc, char **argv)
 
     /* RAW 注册也走解码预算检查（放大到 6M 像素的缓冲可能 >16MB） */
     ql_image_set_decode_budget(PHOTO_DECODE_BUDGET);
-    const ql_err_t irc = ql_ui_register_image(ui, &in);
+    const QLErr irc = ql_ui_register_image(ui, &in);
     ql_image_set_decode_budget(0);
     if (irc != QL_OK)
         printf("（提示）背景图没注册上（err=%d），只显示底色\n", (int)irc);

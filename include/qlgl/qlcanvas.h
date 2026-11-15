@@ -74,8 +74,8 @@ static inline ql_coord_t ql_canvas_scale_fx(const QLCanvas *canvas)
 }
 
 /* 由显示驱动构造画布，clip 默认整屏 */
-ql_err_t ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver);
-ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect clip);
+QLErr ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver);
+QLErr ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect clip);
 
 void ql_canvas_set_clip(QLCanvas *canvas, QLRect clip);
 QLRect ql_canvas_clip(QLCanvas *canvas);
@@ -157,7 +157,7 @@ int  ql_canvas_mask_active(const QLCanvas *canvas);
  * `sat` = `backdrop-filter: saturate(<N>%)` 的百分比（0 或 100 = 不变）。
  * 模糊之后把颜色推艳 —— 玻璃后面那片"均值色"才不会灰扑扑的。
  */
-ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat);
+QLErr ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat);
 
 /*
  * 同上，但把结果裁进**圆角矩形**（`corner` = 圆角半径，设备像素，0 等价于上一个），
@@ -167,7 +167,7 @@ ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint
  * 轮廓外的像素原样保留（四个圆角缺口不会渗出方的模糊块），轮廓上按覆盖率与
  * 模糊前的原像素混合，等价于 GPU 那边用 alpha 混合只写进圆角内。
  */
-ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
+QLErr ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
                                        ql_coord_t corner, uint8_t sat, int refract);
 
 /* ----- 原语 ----- */

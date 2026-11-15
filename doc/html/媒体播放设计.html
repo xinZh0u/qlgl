@@ -335,6 +335,7 @@ main img {
 <a href='性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
 <a href='JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
 <a href='跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+<a href='命名与API风格.html' title='命名与 API 风格'>命名与 API 风格</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
@@ -840,10 +841,10 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <span class="kt">void</span><span class="w">     </span><span class="nf">ql_media_close</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
 
 <span class="cm">/* ---------- 控制 ---------- */</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_play</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_pause</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_seek</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">ms</span><span class="p">);</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_media_set_volume</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">percent</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 0~100 */</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_media_play</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_media_pause</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_media_seek</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">ms</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_media_set_volume</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">percent</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 0~100 */</span>
 <span class="kt">void</span><span class="w">     </span><span class="nf">ql_media_set_muted</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">muted</span><span class="p">);</span>
 <span class="kt">void</span><span class="w">     </span><span class="nf">ql_media_set_loop</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">loop</span><span class="p">);</span>
 
@@ -886,9 +887,9 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 </ul>
 <h3 id="91-qlui">9.1 与 QLUI 的绑定</h3>
 <div class="highlight"><pre><span></span><code><span class="cm">/* 构建期：&lt;video id=v src=&quot;a.mp4&quot;&gt; 的节点绑定一个媒体实例 */</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_bind_media</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">node_id</span><span class="p">,</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_ui_bind_media</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">node_id</span><span class="p">,</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
 <span class="cm">/* 或者按节点指针（构建路径没有 id 时） */</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_ui_bind_media_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_ui_bind_media_node</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
 </code></pre></div>
 
 <p>绑定之后：布局用媒体的固有尺寸（还没读到就用 <code>width/height</code> 或 300×150），

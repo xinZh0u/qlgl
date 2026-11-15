@@ -47,7 +47,7 @@ uint32_t ql_disp_buffer_size(QLColorFormat format, ql_coord_t width, ql_coord_t 
     return (uint32_t)total;
 }
 
-ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t stride,
+QLErr ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t stride,
                          ql_coord_t width, ql_coord_t height, QLColorFormat format,
                          int (*flush)(QLDispDriver *self, QLRect area))
 {
@@ -88,7 +88,7 @@ ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t strid
     return QL_OK;
 }
 
-ql_err_t ql_disp_set(QLDispDriver *driver)
+QLErr ql_disp_set(QLDispDriver *driver)
 {
     if (driver == NULL)
         return QL_ERR_INVAL;
@@ -276,7 +276,7 @@ uint32_t ql_disp_mem_flush_count(QLDispDriver *driver)
     return ((QLDispMem *)driver)->flush_count;
 }
 
-ql_err_t ql_disp_mem_save_ppm(QLDispDriver *driver, const char *path)
+QLErr ql_disp_mem_save_ppm(QLDispDriver *driver, const char *path)
 {
     if (driver == NULL || path == NULL)
         return QL_ERR_INVAL;

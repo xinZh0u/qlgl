@@ -90,7 +90,7 @@ static int fake_begin(QLPlatformWindow *pw, ql_color_t bg, const QLRect *dirty, 
 }
 
 /* 假后端是同步的：重建内存驱动，并让 resize_pending 报一次 */
-static ql_err_t fake_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
+static QLErr fake_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
 {
     FakeWin *f = (FakeWin *)pw;
     QLDispDriver *d = ql_disp_mem_create(w, h, QL_COLOR_RGB888);

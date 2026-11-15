@@ -123,7 +123,7 @@ ql_color_t ql_canvas_quantize(QLCanvas *canvas, ql_color_t color)
 
 /* ------------------------------ 画布构造 ------------------------------ */
 
-ql_err_t ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect clip)
+QLErr ql_canvas_from_disp_clip(QLCanvas *canvas, QLDispDriver *driver, QLRect clip)
 {
     if (canvas == NULL || driver == NULL || driver->framebuffer == NULL)
         return QL_ERR_INVAL;
@@ -152,7 +152,7 @@ void ql_canvas_set_scale(QLCanvas *canvas, ql_coord_t scale_fx)
     }
 }
 
-ql_err_t ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver)
+QLErr ql_canvas_from_disp(QLCanvas *canvas, QLDispDriver *driver)
 {
     if (driver == NULL)
         return QL_ERR_INVAL;
@@ -586,7 +586,7 @@ static void buf_saturate(uint8_t *a, int w, int h, uint8_t sat, int ri, int bi)
  * 而且盒子四边会留下一个方形的边（颜色和周围的真实背景对不上）。
  * 现在按 `2·box半径 + 折射 + 2` 外扩采样，再把结果只写进圆角轮廓内。
  */
-static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
+static QLErr backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
                                    ql_coord_t corner, uint8_t sat, int refract)
 {
     if (canvas == NULL || canvas->buffer == NULL)
@@ -699,12 +699,12 @@ static ql_err_t backdrop_blur_impl(QLCanvas *canvas, QLRect rect, int radius,
     return QL_OK;
 }
 
-ql_err_t ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat)
+QLErr ql_canvas_backdrop_blur(QLCanvas *canvas, QLRect rect, int radius, uint8_t sat)
 {
     return backdrop_blur_impl(canvas, rect, radius, 0, sat, 0);
 }
 
-ql_err_t ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
+QLErr ql_canvas_backdrop_blur_round(QLCanvas *canvas, QLRect rect, int radius,
                                        ql_coord_t corner, uint8_t sat, int refract)
 {
     return backdrop_blur_impl(canvas, rect, radius, corner, sat, refract);

@@ -36,7 +36,7 @@ void ql_log(int level, const char *fmt, ...)
     va_end(args);
 }
 
-ql_err_t qlgl_init(void)
+QLErr qlgl_init(void)
 {
     if (s_initialized)
         return QL_OK;

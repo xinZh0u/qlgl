@@ -127,19 +127,19 @@ typedef struct {
 
 /* ----- 队列 ----- */
 void        ql_input_reset(void);                 /* 清空队列并复位指针/按键状态 */
-ql_err_t    ql_input_push(const QLInputEvent *ev);/* 入队；满则丢最旧的并返回 QL_ERR_FULL */
+QLErr    ql_input_push(const QLInputEvent *ev);/* 入队；满则丢最旧的并返回 QL_ERR_FULL */
 uint32_t    ql_input_pending(void);               /* 队列中待派发的事件数 */
 int         ql_input_dispatch(void);              /* 排空队列交给事件汇，返回处理条数 */
 
 /* 构造 + 入队的便捷函数：后端用它，测试也用它 */
-ql_err_t    ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons);
-ql_err_t    ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down);
-ql_err_t    ql_input_push_leave(void);
-ql_err_t    ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy);
-ql_err_t    ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+QLErr    ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons);
+QLErr    ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down);
+QLErr    ql_input_push_leave(void);
+QLErr    ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy);
+QLErr    ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
                                  uint8_t touch_id, uint8_t touch_count);
-ql_err_t    ql_input_push_key(uint32_t key, int down, uint8_t mods);
-ql_err_t    ql_input_push_text(const char *utf8);
+QLErr    ql_input_push_key(uint32_t key, int down, uint8_t mods);
+QLErr    ql_input_push_text(const char *utf8);
 
 /* ----- 状态查询 -----
  * 由 push 系列在入队时就更新，所以任何时候读到的都是"已入队事件"的结果。
@@ -160,8 +160,8 @@ ql_coord_t ql_input_y(void);
  *
  * 不装汇时事件被丢弃（队列照常排空）—— 没有"默认派发目标"这回事。
  */
-typedef void (*ql_input_sink)(const QLInputEvent *ev, void *user);
-void ql_input_set_sink(ql_input_sink sink, void *user);
+typedef void (*ql_input_event_cb)(const QLInputEvent *ev, void *user);
+void ql_input_set_sink(ql_input_event_cb sink, void *user);
 
 /* ----- 每窗口实例（多窗口） -----
  * 每个 `QLWindow` 一个 `QLInput`：队列、指针/按键状态、事件汇全部独立，
@@ -177,23 +177,23 @@ QLInput  *ql_input_default(void);      /* 进程默认实例（静态，永不�
 QLInput  *ql_input_create(void);
 void      ql_input_destroy(QLInput *in);
 void      ql_input_reset_ex(QLInput *in);
-ql_err_t  ql_input_push_ex(QLInput *in, const QLInputEvent *ev);
+QLErr  ql_input_push_ex(QLInput *in, const QLInputEvent *ev);
 uint32_t  ql_input_pending_ex(const QLInput *in);
 int       ql_input_dispatch_ex(QLInput *in);
-void      ql_input_set_sink_ex(QLInput *in, ql_input_sink sink, void *user);
+void      ql_input_set_sink_ex(QLInput *in, ql_input_event_cb sink, void *user);
 
-ql_err_t  ql_input_push_move_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr  ql_input_push_move_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                 uint8_t buttons);
-ql_err_t  ql_input_push_button_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr  ql_input_push_button_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                   uint8_t button, int down);
-ql_err_t  ql_input_push_leave_ex(QLInput *in);
-ql_err_t  ql_input_push_wheel_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr  ql_input_push_leave_ex(QLInput *in);
+QLErr  ql_input_push_wheel_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                  int32_t dx, int32_t dy);
-ql_err_t  ql_input_push_touch_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr  ql_input_push_touch_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                  uint8_t phase, uint8_t touch_id,
                                  uint8_t touch_count);
-ql_err_t  ql_input_push_key_ex(QLInput *in, uint32_t key, int down, uint8_t mods);
-ql_err_t  ql_input_push_text_ex(QLInput *in, const char *utf8);
+QLErr  ql_input_push_key_ex(QLInput *in, uint32_t key, int down, uint8_t mods);
+QLErr  ql_input_push_text_ex(QLInput *in, const char *utf8);
 
 uint8_t   ql_input_buttons_ex(const QLInput *in);
 uint8_t   ql_input_mods_ex(const QLInput *in);

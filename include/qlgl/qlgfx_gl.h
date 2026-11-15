@@ -143,7 +143,7 @@ void     ql_gfx_gl_flush_frame(QLGfxGL *gfx);
  *
  * 关掉（或创建 FBO 失败）时退回"每帧整屏清"，行为与不用它时完全一致。
  */
-ql_err_t ql_gfx_gl_set_retained(QLGfxGL *gfx, int on);
+QLErr ql_gfx_gl_set_retained(QLGfxGL *gfx, int on);
 
 /*
  * 只重画 rects 覆盖的区域（与 ql_ui_consume_dirty 的输出同单位）。
@@ -172,7 +172,7 @@ void     ql_gfx_gl_set_input(QLGfxGL *gfx, QLInput *in);
  * `ql_gfx_gl_resize_pending()`。Wayland 目前返回 QL_ERR_UNSUPPORTED
  * （客户端不能直接定窗口尺寸，要请求合成器）。
  */
-ql_err_t ql_gfx_gl_resize(QLGfxGL *gfx, ql_coord_t width, ql_coord_t height);
+QLErr ql_gfx_gl_resize(QLGfxGL *gfx, ql_coord_t width, ql_coord_t height);
 
 /* 阻塞到 GPU 画完（基准测试用；正常渲染不要调用） */
 void     ql_gfx_gl_finish(QLGfxGL *gfx);
@@ -193,7 +193,7 @@ uint32_t ql_gfx_gl_swap_us(QLGfxGL *gfx);
 double   ql_gfx_gl_gpu_mhz(QLGfxGL *gfx);   /* 粗略信息，可能为 0 */
 
 /* 读回像素（RGBA8888，自上而下）。离屏模式必可读；窗口模式读的是后缓冲 */
-ql_err_t ql_gfx_gl_read_pixels(QLGfxGL *gfx, uint8_t *rgba, uint32_t stride_bytes);
+QLErr ql_gfx_gl_read_pixels(QLGfxGL *gfx, uint8_t *rgba, uint32_t stride_bytes);
 
 #endif /* QLGL_ENABLE_GL */
 

@@ -45,20 +45,20 @@ typedef enum {
 
 QLWindow *ql_window_create(const char *title, ql_coord_t w, ql_coord_t h,
                            QLWindowBackend backend);
-ql_err_t  ql_window_bind_ui(QLWindow *win, QLUIRoot *ui);
-ql_err_t  ql_window_set_ui(QLWindow *win, QLUIRoot *ui);  /* live reload */
+QLErr  ql_window_bind_ui(QLWindow *win, QLUIRoot *ui);
+QLErr  ql_window_set_ui(QLWindow *win, QLUIRoot *ui);  /* live reload */
 int       ql_window_run(QLWindow *win);         /* 阻塞到关窗 */
 int       ql_window_run_args(QLWindow *win, int argc, char **argv);
 int       ql_window_poll(QLWindow *win);        /* 手动循环：1 = 继续 */
 void      ql_window_render(QLWindow *win);      /* 强制画一帧 */
 void      ql_window_quit(QLWindow *win);
 void      ql_window_destroy(QLWindow *win);
-ql_err_t  ql_window_resize(QLWindow *win, ql_coord_t w, ql_coord_t h);
+QLErr  ql_window_resize(QLWindow *win, ql_coord_t w, ql_coord_t h);
 
 void ql_window_set_vsync(QLWindow *win, int on);
 void ql_window_set_bg(QLWindow *win, ql_color_t color);
-void ql_window_set_event_filter(QLWindow *win, ql_window_event_fn fn, void *user);
-void ql_window_set_frame_cb(QLWindow *win, ql_window_frame_fn fn, void *user);
+void ql_window_set_event_filter(QLWindow *win, ql_window_event_cb fn, void *user);
+void ql_window_set_frame_cb(QLWindow *win, ql_window_frame_cb fn, void *user);
 
 void      ql_window_size(const QLWindow *win, ql_coord_t *w, ql_coord_t *h);
 QLUIRoot *ql_window_ui(const QLWindow *win);

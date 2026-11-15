@@ -75,7 +75,7 @@ static inline ql_coord_t ql_disp_css_height(const QLDispDriver *d)
 }
 
 /* 设置/获取当前活动显示（同一时刻只有一个） */
-ql_err_t       ql_disp_set(QLDispDriver *driver);
+QLErr       ql_disp_set(QLDispDriver *driver);
 QLDispDriver  *ql_disp_get(void);
 /* 仅当 driver 是当前活动显示时注销它；driver 为 NULL 时直接注销 */
 void           ql_disp_unset(QLDispDriver *driver);
@@ -83,7 +83,7 @@ void           ql_disp_set_bg_color(ql_color_t color);
 ql_color_t     ql_disp_bg_color(void);
 
 /* 把一块像素内存包装成驱动（不做任何分配） */
-ql_err_t ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t stride,
+QLErr ql_disp_init_fb(QLDispDriver *driver, void *framebuffer, uint32_t stride,
                          ql_coord_t width, ql_coord_t height, QLColorFormat format,
                          int (*flush)(QLDispDriver *self, QLRect area));
 
@@ -93,7 +93,7 @@ void          ql_disp_mem_destroy(QLDispDriver *driver);
 void          ql_disp_mem_clear(QLDispDriver *driver, ql_color_t color);
 ql_color_t    ql_disp_mem_pixel(QLDispDriver *driver, ql_coord_t x, ql_coord_t y);
 /* 输出 P6 二进制 PPM，可直接用图片查看器打开 */
-ql_err_t      ql_disp_mem_save_ppm(QLDispDriver *driver, const char *path);
+QLErr      ql_disp_mem_save_ppm(QLDispDriver *driver, const char *path);
 /* 累计的 flush 次数与最后一次 flush 的面积，测试用 */
 uint32_t      ql_disp_mem_flush_count(QLDispDriver *driver);
 

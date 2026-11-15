@@ -3812,7 +3812,7 @@ void ql_gfx_gl_set_vsync(QLGfxGL *gfx, int on)
     eglSwapInterval(gfx->egdpy, gfx->vsync_eff);
 }
 
-ql_err_t ql_gfx_gl_resize(QLGfxGL *gfx, ql_coord_t width, ql_coord_t height)
+QLErr ql_gfx_gl_resize(QLGfxGL *gfx, ql_coord_t width, ql_coord_t height)
 {
     if (gfx == NULL || width <= 0 || height <= 0)
         return QL_ERR_INVAL;
@@ -3918,7 +3918,7 @@ static int fbo_ensure(QLGfxGL *g)
     return 1;
 }
 
-ql_err_t ql_gfx_gl_set_retained(QLGfxGL *gfx, int on)
+QLErr ql_gfx_gl_set_retained(QLGfxGL *gfx, int on)
 {
     if (gfx == NULL)
         return QL_ERR_INVAL;
@@ -4966,7 +4966,7 @@ uint32_t ql_gfx_gl_frame_us(QLGfxGL *g)     { return g ? g->frame_us : 0; }
 uint32_t ql_gfx_gl_swap_us(QLGfxGL *g)      { return g ? g->swap_us : 0; }
 double   ql_gfx_gl_gpu_mhz(QLGfxGL *g)      { QL_UNUSED(g); return 0; }
 
-ql_err_t ql_gfx_gl_read_pixels(QLGfxGL *g, uint8_t *rgba, uint32_t stride_bytes)
+QLErr ql_gfx_gl_read_pixels(QLGfxGL *g, uint8_t *rgba, uint32_t stride_bytes)
 {
     if (g == NULL || rgba == NULL)
         return QL_ERR_INVAL;

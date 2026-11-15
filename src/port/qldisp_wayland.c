@@ -482,7 +482,7 @@ int ql_disp_wayland_wait(QLDispDriver *driver, int timeout_ms)
     return w->wl.closed ? 0 : 1;
 }
 
-ql_err_t ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
+QLErr ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
                                 ql_coord_t height)
 {
     (void)driver; (void)width; (void)height;

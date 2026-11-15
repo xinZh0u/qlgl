@@ -288,7 +288,7 @@ static void board_end(QLPlatformWindow *pw)
         (void)b->disp.flush(&b->disp, area);
 }
 
-static ql_err_t board_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
+static QLErr board_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
 {
     (void)pw; (void)w; (void)h;
     return QL_ERR_UNSUPPORTED;      /* 面板尺寸固定 */

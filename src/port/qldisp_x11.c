@@ -549,7 +549,7 @@ int ql_disp_x11_wait(QLDispDriver *driver, int timeout_ms)
     return x->closed ? 0 : 1;
 }
 
-ql_err_t ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t height)
+QLErr ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t height)
 {
     if (driver == NULL || width <= 0 || height <= 0)
         return QL_ERR_INVAL;

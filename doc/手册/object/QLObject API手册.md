@@ -11,7 +11,7 @@
 ## 1. 初始化
 
 ```c
-ql_err_t qlgl_init(void);
+QLErr qlgl_init(void);
 void     qlgl_shutdown(void);
 const char *qlgl_version(void);
 ```
@@ -149,7 +149,7 @@ const char    *ql_class_name(QLType type);
 | `parent` | 父类 |
 | `init` / `deinit` | 实例构造/析构钩子（父→子 / 子→父） |
 | `class_init` | 注册时调用一次，用来挂 `set_property` 等虚函数 |
-| `set_property` / `get_property` | 属性读写（返回 `ql_err_t` / `QLValue`） |
+| `set_property` / `get_property` | 属性读写（返回 `QLErr` / `QLValue`） |
 | `event` | 默认事件处理，只在目标节点、事件带 `DEFAULT` 标志时调用 |
 
 ### 5.2 定义一个新类
@@ -235,8 +235,8 @@ int            ql_object_is(QLObject *self, QLType type);   /* 含父类判断 *
 ### 对象树
 
 ```c
-ql_err_t  ql_object_set_parent(QLObject *self, QLObject *parent);
-ql_err_t  ql_object_add_child(QLObject *parent, QLObject *child);
+QLErr  ql_object_set_parent(QLObject *self, QLObject *parent);
+QLErr  ql_object_add_child(QLObject *parent, QLObject *child);
 QLObject *ql_object_parent(QLObject *self);
 QLObject *ql_object_first_child(QLObject *self);
 QLObject *ql_object_next_sibling(QLObject *self);
@@ -265,7 +265,7 @@ O(1)：`(char *)self - self->klass->priv_total + klass->priv_offset`。
 ## 7. 属性
 
 ```c
-ql_err_t ql_object_set_property(QLObject *obj, ql_property_t property, QLValue value);
+QLErr ql_object_set_property(QLObject *obj, ql_property_t property, QLValue value);
 QLValue  ql_object_get_property(QLObject *obj, ql_property_t property);
 int      ql_object_property_owner(QLObject *obj, ql_property_t property, QLType *owner_type);
 ```
@@ -296,10 +296,10 @@ enum { QL_PROPERTY_FLAG_READ = 1u << 0, /* ... */ };
 ### 8.1 连接
 
 ```c
-typedef void (*ql_event_cb_t)(QLEvent *event);
+typedef void (*ql_event_cb)(QLEvent *event);
 
-uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb_t cb, void *user_data);
-ql_err_t ql_disconnect(QLObject *obj, uint32_t conn_id);
+uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb cb, void *user_data);
+QLErr ql_disconnect(QLObject *obj, uint32_t conn_id);
 int      ql_disconnect_all(QLObject *obj);
 uint32_t ql_event_conn_count(QLObject *obj);
 ```
@@ -420,7 +420,7 @@ void ql_log(int level, const char *fmt, ...);
 |---|---|
 | 线程 | 当前版本**非线程安全**；所有 API 需在同一线程调用 |
 | 运行期分配 | 对象创建之外（事件、属性、派发）**不分配堆内存** |
-| 失败处理 | 可能失败的 API 均返回 `ql_err_t` 或 `NULL`/`QL_TYPE_NONE`，不抛异常、不 abort |
+| 失败处理 | 可能失败的 API 均返回 `QLErr` 或 `NULL`/`QL_TYPE_NONE`，不抛异常、不 abort |
 | ABI | `QLObjectClass` 等公开结构体只允许在末尾追加字段；属性/事件 id 由 qlgen 保证稳定 |
 | 位宽 | `QLType`/`ql_property_t`/`ql_event_t` 固定 32 位，`ql_fixed_t` 固定 `int32_t` |
 

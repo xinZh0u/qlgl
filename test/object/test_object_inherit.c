@@ -35,7 +35,7 @@ struct QLT1Private{ int32_t value; };
 
 QL_DEFINE_WITH_PRIVATE(QL_T1, QLT1, ql_t1, ql_object)
 
-static ql_err_t ql_t1_set_property(QLObject *obj, ql_property_t property, QLValue value)
+static QLErr ql_t1_set_property(QLObject *obj, ql_property_t property, QLValue value)
 {
     struct QLT1Private *priv = ql_t1_get_private((QLT1 *)(void *)obj);
     switch (property) {

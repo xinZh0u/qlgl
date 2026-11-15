@@ -16,7 +16,7 @@
 | `test/draw/test_anim.c` | 64 项断言：推进、重基、缓动端点/单调、steps、取消、池满、时钟回绕 |
 | `test/web/test_transition.c` | 41 项断言：CSS `transition` 端到端 |
 
-依赖方向：`qlanim` 不依赖 `qlui`、不依赖任何绘制后端，只依赖 `qlgl.h` 的 `ql_err_t`。
+依赖方向：`qlanim` 不依赖 `qlui`、不依赖任何绘制后端，只依赖 `qlgl.h` 的 `QLErr`。
 **反向依赖是单向的**：`qlui` → `qlanim`。
 
 ---
@@ -64,7 +64,7 @@ A ──────▶ (到 40%) ── 目标改成 C
 
 ```c
 uint32_t ql_anim_now_ms(void);
-void     ql_anim_set_time_source(ql_anim_time_fn fn);
+void     ql_anim_set_time_source(ql_anim_time_cb fn);
 ```
 
 - 默认 `clock_gettime(CLOCK_MONOTONIC)`，精度毫秒，`uint32_t` 装（约 49.7 天回绕）。

@@ -34,7 +34,7 @@ struct QLEvtPrivate { int32_t hits; };
 
 QL_DEFINE_WITH_PRIVATE(QL_EVT, QLEvt, ql_evt, ql_object)
 
-static ql_err_t ql_evt_default(QLObject *self, QLEvent *event)
+static QLErr ql_evt_default(QLObject *self, QLEvent *event)
 {
     QL_UNUSED(self);
     QL_UNUSED(event);

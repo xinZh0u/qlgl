@@ -35,7 +35,7 @@ static const QLEventDesc ql_counter_events[] = {
     { "limit",   QL_COUNTER_EVENT_LIMIT,   QL_EVENT_FLAG_BUBBLE | QL_EVENT_FLAG_STOPPABLE },
 };
 
-static ql_err_t ql_counter_set_property(QLObject *obj, ql_property_t property, QLValue value)
+static QLErr ql_counter_set_property(QLObject *obj, ql_property_t property, QLValue value)
 {
     QLCounter *self = (QLCounter *)(void *)obj;
     struct QLCounterPrivate *priv = ql_counter_get_private(self);
@@ -129,7 +129,7 @@ int main(void)
     ql_object_set_property((QLObject *)counter, QL_COUNTER_PROPERTY_VALUE, ql_value_int(1));
 
     printf("-- 设置 VALUE = 2（类型错误应被拒绝）--\n");
-    ql_err_t err = ql_object_set_property((QLObject *)counter, QL_COUNTER_PROPERTY_VALUE,
+    QLErr err = ql_object_set_property((QLObject *)counter, QL_COUNTER_PROPERTY_VALUE,
                                           ql_value_string("bad"));
     printf("  返回值 = %d\n", (int)err);
 

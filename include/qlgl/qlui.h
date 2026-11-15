@@ -1572,7 +1572,7 @@ uint32_t    ql_ui_anim_tick(QLUIRoot *ui, uint32_t now_ms);
  * 从头重播某个节点的 @keyframes 动画（点击反馈、出错抖动之类）。
  * 该节点没有动画时返回 QL_ERR_INVAL。起始时刻取下一次 ql_ui_anim_tick 的 now。
  */
-ql_err_t    ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node);
+QLErr    ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node);
 
 /* 正在跑的动画数：过渡 + 还在走的关键帧动画（播完停在末帧的不算） */
 uint32_t    ql_ui_anim_running(const QLUIRoot *ui);
@@ -1723,9 +1723,9 @@ typedef struct {
 void        ql_ui_set_clipboard(QLUIRoot *ui, const QLUIClipboard *cb, void *user);
 
 /* 复制 / 剪切 / 粘贴（操作的是当前焦点输入框的选区；没有选区时复制全文） */
-ql_err_t    ql_ui_clipboard_copy(QLUIRoot *ui);
-ql_err_t    ql_ui_clipboard_cut(QLUIRoot *ui);
-ql_err_t    ql_ui_clipboard_paste(QLUIRoot *ui);
+QLErr    ql_ui_clipboard_copy(QLUIRoot *ui);
+QLErr    ql_ui_clipboard_cut(QLUIRoot *ui);
+QLErr    ql_ui_clipboard_paste(QLUIRoot *ui);
 
 struct QLUIRoot {
     const QLUIDoc *doc;
@@ -1853,7 +1853,7 @@ void        ql_ui_free(QLUIRoot *ui);
  * 拿新指针的办法：`ql_ui_root_node(ui)` 然后顺着 `first_child` / `next_sibling` 走，
  * 或者直接用 `ql_ui_find_by_tag()`。
  */
-ql_err_t    ql_ui_repeat(QLUIRoot *ui, QLUINodeRT *tpl, uint16_t count);
+QLErr    ql_ui_repeat(QLUIRoot *ui, QLUINodeRT *tpl, uint16_t count);
 
 /* 按给定视口尺寸做一次完整布局（自上而下 + 自下而上算高度） */
 void        ql_ui_layout(QLUIRoot *ui, ql_coord_t width, ql_coord_t height);
@@ -1903,7 +1903,7 @@ const char *ql_ui_tag_name(uint16_t tag);
  * 静态缓冲、或你自己管理生命周期的字符串）。传栈上局部缓冲 = 画面出乱码
  * （指针悬空了，不崩已经是运气）。本库零分配是刻意的，别为了图方便复制。
  */
-ql_err_t    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
+QLErr    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 
 /* 交互状态：命中测试 + 状态位 + 点击回调 */
 void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
@@ -1937,7 +1937,7 @@ void        ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
 /* 当前值；node 不是输入框返回 NULL。指针在下次编辑前有效。 */
 const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 改值（会被夹到上限；光标移到末尾） */
-ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
+QLErr    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
 
 /* ---------------------------- 进度条 / 度量条 ---------------------------- */
 
@@ -1953,7 +1953,7 @@ ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *va
 /* 0..1000 的完成度；-1 = 不是 progress/meter，-2 = 没有 value（不确定） */
 int         ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 按 value/max 设置（夹到 [0, max]；max <= 0 视为 100） */
-ql_err_t    ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
+QLErr    ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
 
 /* -------------------------------- 浮层 -------------------------------- */
 
@@ -1969,7 +1969,7 @@ ql_err_t    ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int ma
 /* 1 = 打开，0 = 关闭；不是 <dialog> 返回 -1 */
 int         ql_ui_dialog_open(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 打开/关闭（内部会重排，返回脏区由调用方按 paint_bounds 处理） */
-ql_err_t    ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
+QLErr    ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 /* 关掉最上层那个（没有打开的返回 0） */
 int         ql_ui_dialog_close_top(QLUIRoot *ui);
 
@@ -1993,7 +1993,7 @@ typedef struct {
 } QLUIImageInput;
 
 /* 注册/替换一张图（同名覆盖）。会重排（尺寸可能变了）。 */
-ql_err_t    ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
+QLErr    ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
 /* 节点当前的解码结果；没有/失败返回 NULL，不是 <img> 返回 NULL */
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 
@@ -2039,7 +2039,7 @@ void        ql_ui_set_area_cb(QLUIRoot *ui, ql_ui_area_cb cb, void *user);
 /* 1 = 展开，0 = 收起；不是 <details> 返回 -1 */
 int         ql_ui_details_open(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 设置展开状态（会重排；状态没变时是空操作） */
-ql_err_t    ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
+QLErr    ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 
 /* ------------------------------ 下拉框 ------------------------------ */
 
@@ -2054,7 +2054,7 @@ void        ql_ui_set_select_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
 /* 当前选中项下标；不是 <select> 返回 -1 */
 int         ql_ui_select_index(const QLUIRoot *ui, const QLUINodeRT *node);
 /* 设置选中项（越界夹紧） */
-ql_err_t    ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
+QLErr    ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
 
 /*
  * 滚动（`overflow: auto`）。
@@ -2063,8 +2063,8 @@ ql_err_t    ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
  * `ql_ui_scroll_to` 之后需要重跑一次 `ql_ui_layout`（见 QLUI阅读指南 §5.6），
  * 或者干脆用 `ql_ui_scroll_by` —— 它内部会重排并返回脏区。
  */
-ql_err_t    ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y);
-ql_err_t    ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy);
+QLErr    ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y);
+QLErr    ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy);
 /* 这个节点能不能滚（overflow: auto 且有超出内容） */
 int         ql_ui_scrollable(const QLUINodeRT *node);
 
@@ -2260,7 +2260,7 @@ _Static_assert(sizeof(QLUIKeyframe) == 44, "关键帧必须是 44 字节（blob 
 size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap);
 
 /* 写文件；返回 QL_OK / QL_ERR_* */
-ql_err_t ql_ui_doc_save(const QLUIDoc *doc, const char *path);
+QLErr ql_ui_doc_save(const QLUIDoc *doc, const char *path);
 
 /*
  * 从内存加载。data 会被拷贝一份（调用方可以立刻释放自己的缓冲）。

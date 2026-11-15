@@ -54,8 +54,8 @@ typedef enum {
 } QLEasing;
 
 /* 值写到目标：user 由调用方给，value 已插值好 */
-typedef void (*ql_anim_apply_fn)(void *user, const QLAnimValue *value);
-typedef void (*ql_anim_done_fn)(void *user);
+typedef void (*ql_anim_apply_cb)(void *user, const QLAnimValue *value);
+typedef void (*ql_anim_done_cb)(void *user);
 
 /*
  * 一个动画槽的"身份"。**由调用方持有并零初始化**；同一个 key 重复 start 会重基。
@@ -70,7 +70,7 @@ typedef struct {
 } QLAnimKey;
 
 /*
- * 依赖 `ql_err_t`，所以要 include `qlgl.h` —— 但**必须放在本文件类型定义之后**：
+ * 依赖 `QLErr`，所以要 include `qlgl.h` —— 但**必须放在本文件类型定义之后**：
  * `qlgl.h` 是伞头文件，末尾会 include `qlui.h`，而 `qlui.h` 用到了 `QLAnimKey`。
  * 放在最上面就会形成"qlui.h 里 QLAnimKey 还没定义"的循环（只影响**外部**工程：
  * 内部例程都是从 `qlgl.h` 进，顺序刚好躲过去了）。
@@ -79,8 +79,8 @@ typedef struct {
 
 /* 单调时钟（毫秒）。默认用 CLOCK_MONOTONIC；MCU 上可用 set_time_source 换掉 */
 uint32_t ql_anim_now_ms(void);
-typedef uint32_t (*ql_anim_time_fn)(void);
-void     ql_anim_set_time_source(ql_anim_time_fn fn);
+typedef uint32_t (*ql_anim_time_cb)(void);
+void     ql_anim_set_time_source(ql_anim_time_cb fn);
 
 /*
  * 开始 / 重基一个动画。
@@ -90,8 +90,8 @@ void     ql_anim_set_time_source(ql_anim_time_fn fn);
  *   steps    QL_EASE_STEPS 的台阶数（其它缓动忽略）
  * 起始值取 `key->cur`。返回 QL_OK / QL_ERR_INVAL / QL_ERR_NOMEM（槽位满）。
  */
-ql_err_t ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms, uint8_t ease,
-                       uint8_t steps, ql_anim_apply_fn apply, ql_anim_done_fn done,
+QLErr ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms, uint8_t ease,
+                       uint8_t steps, ql_anim_apply_cb apply, ql_anim_done_cb done,
                        void *user);
 
 /* 取消：不再 apply，也不触发 done。key 可以立刻复用 */

@@ -872,7 +872,7 @@ static char *rep_subst(QLUIRoot *ui, const char *s, uint32_t k)
     return out;
 }
 
-ql_err_t ql_ui_repeat(QLUIRoot *ui, QLUINodeRT *tpl, uint16_t count)
+QLErr ql_ui_repeat(QLUIRoot *ui, QLUINodeRT *tpl, uint16_t count)
 {
     if (ui == NULL || tpl == NULL || ui->nodes == NULL)
         return QL_ERR_INVAL;
@@ -2474,7 +2474,7 @@ static struct QLUIInput *focused_input(QLUIRoot *ui)
     return (ui->focus != NULL) ? input_of(ui, ui->focus) : NULL;
 }
 
-ql_err_t ql_ui_clipboard_copy(QLUIRoot *ui)
+QLErr ql_ui_clipboard_copy(QLUIRoot *ui)
 {
     if (ui == NULL)
         return QL_ERR_INVAL;
@@ -2499,14 +2499,14 @@ ql_err_t ql_ui_clipboard_copy(QLUIRoot *ui)
     return QL_OK;
 }
 
-ql_err_t ql_ui_clipboard_cut(QLUIRoot *ui)
+QLErr ql_ui_clipboard_cut(QLUIRoot *ui)
 {
     if (ui == NULL)
         return QL_ERR_INVAL;
     struct QLUIInput *in = focused_input(ui);
     if (in == NULL)
         return QL_ERR_INVAL;
-    const ql_err_t rc = ql_ui_clipboard_copy(ui);
+    const QLErr rc = ql_ui_clipboard_copy(ui);
     if (rc != QL_OK)
         return rc;
     if (in->sel != in->caret) {
@@ -2528,7 +2528,7 @@ static int paste_apply(QLUIRoot *ui, const char *text)
     return 1;
 }
 
-ql_err_t ql_ui_clipboard_paste(QLUIRoot *ui)
+QLErr ql_ui_clipboard_paste(QLUIRoot *ui)
 {
     if (ui == NULL)
         return QL_ERR_INVAL;
@@ -6531,7 +6531,7 @@ int ql_ui_select_index(const QLUIRoot *ui, const QLUINodeRT *node)
     return (st != NULL) ? (int)st->sel : -1;
 }
 
-ql_err_t ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index)
+QLErr ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index)
 {
     struct QLUISelectState *st = select_of(ui, node);
     if (st == NULL)
@@ -6563,7 +6563,7 @@ int ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node)
     return pg->known ? (int)pg->permille : -2;
 }
 
-ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max)
+QLErr ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max)
 {
     struct QLUIProgress *pg = progress_of(ui, node);
     if (pg == NULL)
@@ -6686,7 +6686,7 @@ int ql_ui_dialog_open(const QLUIRoot *ui, const QLUINodeRT *node)
     return (node->flags & QL_UI_RT_OPEN) != 0;
 }
 
-ql_err_t ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open)
+QLErr ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open)
 {
     if (ql_ui_dialog_open(ui, node) < 0)
         return QL_ERR_INVAL;
@@ -6776,7 +6776,7 @@ int ql_ui_details_open(const QLUIRoot *ui, const QLUINodeRT *node)
     return (node->flags & QL_UI_RT_OPEN) != 0;
 }
 
-ql_err_t ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open)
+QLErr ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open)
 {
     if (ql_ui_details_open(ui, node) < 0)
         return QL_ERR_INVAL;
@@ -7074,7 +7074,7 @@ static void image_node_size(const QLUIRoot *ui, const QLUINodeRT *node, ql_coord
     }
 }
 
-ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
+QLErr ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
 {
     if (ui == NULL || in == NULL || in->name == NULL || in->data == NULL)
         return QL_ERR_INVAL;
@@ -7082,7 +7082,7 @@ ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
         return QL_ERR_INVAL;           /* 这个界面里没有 <img> */
 
     int hit = 0;
-    ql_err_t first_err = QL_OK;
+    QLErr first_err = QL_OK;
     for (uint16_t i = 0; i < ui->image_count; i++) {
         struct QLUIImageRT *ir = &ui->images[i];
         const char *nm = (ir->node != NULL) ? ir->node->text : ir->name;
@@ -7100,7 +7100,7 @@ ql_err_t ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
         req.h = in->h;
 
         QLImage img;
-        const ql_err_t err = ql_image_decode(&req, &img);
+        const QLErr err = ql_image_decode(&req, &img);
         if (err != QL_OK) {
             ir->failed = 1;
             ir->img.px = NULL;
@@ -9433,7 +9433,7 @@ static void render_node(QLUINodeRT *node, QLDraw2D *d2d)
     d2d->alpha = saved;
 }
 
-ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text)
+QLErr ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text)
 {
     QL_UNUSED(ui);
     if (node == NULL)
@@ -10016,7 +10016,7 @@ static void anim_boot(QLUIRoot *ui)
     }
 }
 
-ql_err_t ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node)
+QLErr ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node)
 {
     if (ui == NULL || node == NULL || ui->runs == NULL || ui->doc == NULL)
         return QL_ERR_INVAL;
@@ -10769,7 +10769,7 @@ const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node)
     return (in != NULL) ? in->buf : NULL;
 }
 
-ql_err_t ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value)
+QLErr ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value)
 {
     struct QLUIInput *in = input_of(ui, node);
     if (in == NULL)
@@ -10808,7 +10808,7 @@ int ql_ui_scrollable(const QLUINodeRT *node)
     return (auto_x && node->scroll_max_x > 0) || (auto_y && node->scroll_max_y > 0);
 }
 
-ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y)
+QLErr ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y)
 {
     if (ui == NULL || node == NULL || node->style == NULL)
         return QL_ERR_INVAL;
@@ -10850,7 +10850,7 @@ ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_
     return QL_OK;
 }
 
-ql_err_t ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy)
+QLErr ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy)
 {
     if (ui == NULL || node == NULL)
         return QL_ERR_INVAL;

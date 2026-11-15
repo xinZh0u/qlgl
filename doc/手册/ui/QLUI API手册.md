@@ -813,7 +813,7 @@ if (dirty_count > 0) {
 
 ```c
 /* 从头重播（点击反馈、出错抖动）；节点没有动画时返回 QL_ERR_INVAL */
-ql_err_t ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node);
+QLErr ql_ui_anim_restart(QLUIRoot *ui, QLUINodeRT *node);
 
 /* 正在跑的动画数（过渡 + 未播完的关键帧动画） */
 uint32_t ql_ui_anim_running(const QLUIRoot *ui);
@@ -1281,7 +1281,7 @@ const char *ql_ui_tag_name(QLUITag tag);
 ### 运行期改内容
 
 ```c
-ql_err_t ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
+QLErr ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 ```
 
 只允许改"没有子节点的元素"的文本。改完需要重新 `ql_ui_layout` + `ql_ui_render`。
@@ -1318,7 +1318,7 @@ int  ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 
 ```c
 /* 前端（平台后端）只管上报；手势在界面层认 */
-ql_err_t ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+QLErr ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
                              uint8_t touch_id, uint8_t touch_count);
 
 /* 相位（放在 QLInputEvent.button 里） */
@@ -1359,7 +1359,7 @@ typedef void (*ql_ui_input_cb)(QLUIRoot *ui, QLUINodeRT *node,
 
 void        ql_ui_set_input_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
 const char *ql_ui_input_value(const QLUIRoot *ui, const QLUINodeRT *node);
-ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
+QLErr    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *value);
 ```
 
 | 函数 | 说明 |
@@ -1376,7 +1376,7 @@ ql_err_t    ql_ui_input_set_value(QLUIRoot *ui, QLUINodeRT *node, const char *va
 
 ```c
 int      ql_ui_progress_permille(const QLUIRoot *ui, const QLUINodeRT *node);
-ql_err_t ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
+QLErr ql_ui_progress_set(QLUIRoot *ui, QLUINodeRT *node, int value, int max);
 ```
 
 | 函数 | 说明 |
@@ -1422,7 +1422,7 @@ typedef struct {
     uint8_t        pixel_format; /* RAW 时必填（QL_IMAGE_RGB565 等） */
 } QLUIImageInput;
 
-ql_err_t       ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
+QLErr       ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 ```
 
@@ -1544,7 +1544,7 @@ void             ql_ui_set_area_cb(QLUIRoot *ui, ql_ui_area_cb cb, void *user);
 
 ```c
 int      ql_ui_dialog_open(const QLUIRoot *ui, const QLUINodeRT *node);
-ql_err_t ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
+QLErr ql_ui_dialog_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 int      ql_ui_dialog_close_top(QLUIRoot *ui);
 ```
 
@@ -1555,7 +1555,7 @@ int      ql_ui_dialog_close_top(QLUIRoot *ui);
 
 ```c
 int      ql_ui_details_open(const QLUIRoot *ui, const QLUINodeRT *node);
-ql_err_t ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
+QLErr ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 ```
 
 `<details>` 收起时把非 `<summary>` 的子节点指向共享隐藏样式（`display:none`）。
@@ -1566,7 +1566,7 @@ ql_err_t ql_ui_details_set_open(QLUIRoot *ui, QLUINodeRT *node, int open);
 ```c
 void     ql_ui_set_select_cb(QLUIRoot *ui, ql_ui_input_cb cb, void *user);
 int      ql_ui_select_index(const QLUIRoot *ui, const QLUINodeRT *node);
-ql_err_t ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
+QLErr ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
 ```
 
 | 函数 | 说明 |
@@ -1581,8 +1581,8 @@ ql_err_t ql_ui_select_set_index(QLUIRoot *ui, QLUINodeRT *node, int index);
 ### 滚动
 
 ```c
-ql_err_t ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y);
-ql_err_t ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy);
+QLErr ql_ui_scroll_to(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t x, ql_coord_t y);
+QLErr ql_ui_scroll_by(QLUIRoot *ui, QLUINodeRT *node, ql_coord_t dx, ql_coord_t dy);
 int      ql_ui_scrollable(const QLUINodeRT *node);
 ```
 
@@ -1630,9 +1630,9 @@ typedef struct {
 } QLUIClipboard;
 
 void     ql_ui_set_clipboard(QLUIRoot *ui, const QLUIClipboard *cb, void *user);
-ql_err_t ql_ui_clipboard_copy(QLUIRoot *ui);    /* 焦点输入框的选区；无选区复制全文 */
-ql_err_t ql_ui_clipboard_cut(QLUIRoot *ui);
-ql_err_t ql_ui_clipboard_paste(QLUIRoot *ui);
+QLErr ql_ui_clipboard_copy(QLUIRoot *ui);    /* 焦点输入框的选区；无选区复制全文 */
+QLErr ql_ui_clipboard_cut(QLUIRoot *ui);
+QLErr ql_ui_clipboard_paste(QLUIRoot *ui);
 ```
 
 `Ctrl+C` / `Ctrl+X` / `Ctrl+V` 在 `ql_input` 层就映射到这���个函数（X11 那边带 Ctrl 的
@@ -1800,7 +1800,7 @@ ql_ui_doc_free(doc);
 ```c
 /* 构建期（宿主工具用） */
 size_t   ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap);
-ql_err_t ql_ui_doc_save(const QLUIDoc *doc, const char *path);
+QLErr ql_ui_doc_save(const QLUIDoc *doc, const char *path);
 
 /* 运行期 */
 QLUIDoc *ql_ui_doc_load_mem(const void *data, size_t size);

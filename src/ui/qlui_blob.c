@@ -413,7 +413,7 @@ size_t ql_ui_doc_encode(const QLUIDoc *doc, void *buf, size_t cap)
     return lay.total;
 }
 
-ql_err_t ql_ui_doc_save(const QLUIDoc *doc, const char *path)
+QLErr ql_ui_doc_save(const QLUIDoc *doc, const char *path)
 {
     if (path == NULL)
         return QL_ERR_INVAL;
@@ -426,7 +426,7 @@ ql_err_t ql_ui_doc_save(const QLUIDoc *doc, const char *path)
     if (buf == NULL)
         return QL_ERR_NOMEM;
 
-    ql_err_t err = QL_OK;
+    QLErr err = QL_OK;
     if (ql_ui_doc_encode(doc, buf, size) != size) {
         err = QL_ERR_INVAL;
     } else {

@@ -335,6 +335,7 @@ main img {
 <a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
 <a href='../../JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
 <a href='../../跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+<a href='../../命名与API风格.html' title='命名与 API 风格'>命名与 API 风格</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
@@ -349,7 +350,7 @@ main img {
 </ul>
 <hr />
 <h2 id="1">1. 初始化</h2>
-<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">qlgl_init</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="n">QLErr</span><span class="w"> </span><span class="nf">qlgl_init</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
 <span class="kt">void</span><span class="w">     </span><span class="nf">qlgl_shutdown</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
 <span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">qlgl_version</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
 </code></pre></div>
@@ -632,7 +633,7 @@ main img {
 </tr>
 <tr>
 <td><code>set_property</code> / <code>get_property</code></td>
-<td>属性读写（返回 <code>ql_err_t</code> / <code>QLValue</code>）</td>
+<td>属性读写（返回 <code>QLErr</code> / <code>QLValue</code>）</td>
 </tr>
 <tr>
 <td><code>event</code></td>
@@ -753,8 +754,8 @@ python3<span class="w"> </span>tools/qlgen/qlgen.py<span class="w"> </span>--che
 
 <p><code>NULL</code> 输入一律安全：<code>ql_object_type(NULL)</code> 返回 <code>QL_TYPE_NONE</code>，<code>type_name</code> 返回 <code>""</code>。</p>
 <h3 id="_3">对象树</h3>
-<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_object_set_parent</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">);</span>
-<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_object_add_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">child</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="n">QLErr</span><span class="w">  </span><span class="nf">ql_object_set_parent</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w">  </span><span class="nf">ql_object_add_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">child</span><span class="p">);</span>
 <span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_parent</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
 <span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_first_child</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
 <span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_object_next_sibling</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">);</span>
@@ -799,7 +800,7 @@ python3<span class="w"> </span>tools/qlgen/qlgen.py<span class="w"> </span>--che
 <p>O(1)：<code>(char *)self - self-&gt;klass-&gt;priv_total + klass-&gt;priv_offset</code>。</p>
 <hr />
 <h2 id="7">7. 属性</h2>
-<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_object_set_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">value</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_object_set_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">,</span><span class="w"> </span><span class="n">QLValue</span><span class="w"> </span><span class="n">value</span><span class="p">);</span>
 <span class="n">QLValue</span><span class="w">  </span><span class="nf">ql_object_get_property</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">      </span><span class="nf">ql_object_property_owner</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_property_t</span><span class="w"> </span><span class="n">property</span><span class="p">,</span><span class="w"> </span><span class="n">QLType</span><span class="w"> </span><span class="o">*</span><span class="n">owner_type</span><span class="p">);</span>
 </code></pre></div>
@@ -838,10 +839,10 @@ python3<span class="w"> </span>tools/qlgen/qlgen.py<span class="w"> </span>--che
 <hr />
 <h2 id="8">8. 事件</h2>
 <h3 id="81">8.1 连接</h3>
-<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_event_cb_t</span><span class="p">)(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">event</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">ql_event_cb</span><span class="p">)(</span><span class="n">QLEvent</span><span class="w"> </span><span class="o">*</span><span class="n">event</span><span class="p">);</span>
 
-<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_connect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_cb_t</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
-<span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_disconnect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">conn_id</span><span class="p">);</span>
+<span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_connect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_t</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">ql_event_cb</span><span class="w"> </span><span class="n">cb</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user_data</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_disconnect</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">conn_id</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">      </span><span class="nf">ql_disconnect_all</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
 <span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_event_conn_count</span><span class="p">(</span><span class="n">QLObject</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
 </code></pre></div>
@@ -1032,7 +1033,7 @@ python3<span class="w"> </span>tools/qlgen/qlgen.py<span class="w"> </span>--che
 </tr>
 <tr>
 <td>失败处理</td>
-<td>可能失败的 API 均返回 <code>ql_err_t</code> 或 <code>NULL</code>/<code>QL_TYPE_NONE</code>，不抛异常、不 abort</td>
+<td>可能失败的 API 均返回 <code>QLErr</code> 或 <code>NULL</code>/<code>QL_TYPE_NONE</code>，不抛异常、不 abort</td>
 </tr>
 <tr>
 <td>ABI</td>

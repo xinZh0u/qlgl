@@ -42,7 +42,7 @@ typedef struct QLEvent {
     uint8_t             prevent_default; /* 非 0：跳过类的默认事件处理 */
 } QLEvent;
 
-typedef void (*ql_event_cb_t)(QLEvent *event);
+typedef void (*ql_event_cb)(QLEvent *event);
 
 /* 事件描述表：静态常量，注册时挂在类上 */
 typedef struct {
@@ -83,8 +83,8 @@ typedef enum {
     };
 
 /* ----- 连接 ----- */
-uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb_t cb, void *user_data);
-ql_err_t ql_disconnect(QLObject *obj, uint32_t conn_id);
+uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb cb, void *user_data);
+QLErr ql_disconnect(QLObject *obj, uint32_t conn_id);
 int      ql_disconnect_all(QLObject *obj);
 /* 内部：对象析构时立即回收连接（不等派发结束，对象内存马上就要释放） */
 void     ql_event_force_disconnect_all(QLObject *obj);

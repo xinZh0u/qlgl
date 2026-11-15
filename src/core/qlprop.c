@@ -13,7 +13,7 @@ static QLObjectClass *find_owner(QLObject *obj, ql_property_t property)
     return NULL;
 }
 
-ql_err_t ql_object_set_property(QLObject *obj, ql_property_t property, QLValue value)
+QLErr ql_object_set_property(QLObject *obj, ql_property_t property, QLValue value)
 {
     if (obj == NULL)
         return QL_ERR_INVAL;

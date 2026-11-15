@@ -45,9 +45,9 @@ static void click(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
 /*
  * 只画脏区（与窗口主循环同一条路）。
  *
- * `ql_draw2d_canvas_init()` 背后是**静态上下文**，同一时刻只有最近 init 的那块
- * 画布有效 —— 所以这里每次都重新 init 到目标画布，而不是抱着一个 d2d 不放
- * （中间会有别的画布被 init 过，比如整屏对比那张）。
+ * CPU 后端的**图层栈**是共享的（画布本身已按 d2d 实例持有），同一时刻只应
+ * 有一个 d2d 在开/关图层；这里每次重新 init 到目标画布，只是为了让 DPR/裁剪
+ * 跟着目标画布走，不是"全局只有一个上下文"的意思。
  */
 static int paint_dirty(QLUIRoot *ui, QLCanvas *dc)
 {

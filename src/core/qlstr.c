@@ -39,7 +39,7 @@ static int source_offset(const QLStr *str, const char *text, uint32_t *offset)
 }
 
 /* 确保容量能放下 need 字节（含结尾 '\0'）；成功返回 QL_OK */
-static ql_err_t ensure_capacity(QLStr *str, uint32_t need)
+static QLErr ensure_capacity(QLStr *str, uint32_t need)
 {
     if (str->own && str->data != NULL) {
         /* compact 要求"容量正好"，amortized 只要"够用" */
@@ -99,7 +99,7 @@ QLStrPolicy ql_str_policy(const QLStr *str)
     return (str != NULL) ? (QLStrPolicy)str->policy : QL_STR_COMPACT;
 }
 
-ql_err_t ql_str_set_n(QLStr *str, const char *text, uint32_t len)
+QLErr ql_str_set_n(QLStr *str, const char *text, uint32_t len)
 {
     if (str == NULL)
         return QL_ERR_INVAL;
@@ -132,14 +132,14 @@ ql_err_t ql_str_set_n(QLStr *str, const char *text, uint32_t len)
     return QL_OK;
 }
 
-ql_err_t ql_str_set(QLStr *str, const char *text)
+QLErr ql_str_set(QLStr *str, const char *text)
 {
     if (text == NULL)
         return ql_str_clear(str);
     return ql_str_set_n(str, text, (uint32_t)strlen(text));
 }
 
-ql_err_t ql_str_set_static(QLStr *str, const char *text)
+QLErr ql_str_set_static(QLStr *str, const char *text)
 {
     if (str == NULL)
         return QL_ERR_INVAL;
@@ -160,7 +160,7 @@ ql_err_t ql_str_set_static(QLStr *str, const char *text)
     return QL_OK;
 }
 
-ql_err_t ql_str_append(QLStr *str, const char *text)
+QLErr ql_str_append(QLStr *str, const char *text)
 {
     if (str == NULL || text == NULL)
         return QL_ERR_INVAL;
@@ -188,7 +188,7 @@ ql_err_t ql_str_append(QLStr *str, const char *text)
     return QL_OK;
 }
 
-ql_err_t ql_str_clear(QLStr *str)
+QLErr ql_str_clear(QLStr *str)
 {
     if (str == NULL)
         return QL_ERR_INVAL;

@@ -263,7 +263,7 @@ static ql_coord_t ellipsis_width(const QLFont *font, ql_coord_t letter_spacing)
 
 static void emit_ellipsis(QLDraw2D *self, const QLFont *font, ql_coord_t *pen_x,
                           ql_coord_t baseline, const QLTextStyle *ts,
-                          ql_draw2d_glyph_fn emit_glyph)
+                          ql_draw2d_glyph_cb emit_glyph)
 {
     if (ellipsis_is_dots(font)) {
         const QLGlyph *g = ql_font_find_glyph(font, '.');
@@ -285,7 +285,7 @@ static void emit_ellipsis(QLDraw2D *self, const QLFont *font, ql_coord_t *pen_x,
 
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, const QLTextStyle *ts,
-                           ql_draw2d_glyph_fn emit_glyph)
+                           ql_draw2d_glyph_cb emit_glyph)
 {
     if (self == NULL || font == NULL || text == NULL || ts == NULL ||
         emit_glyph == NULL)
@@ -536,8 +536,6 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 /* ------------------------------ CPU 后端 ------------------------------ */
 
 typedef struct {
-    QLCanvas *canvas;
-    QLRect    saved_clip;
 
 #if QL_FEAT_CSS_FILTER_LAYER
     /* ----- 离屏图层（M9.3）：一块小栈，深度上限 QL_CFG_UI_LAYER_MAX_DEPTH ----- */
@@ -682,8 +680,7 @@ static QLRect dev_rect_of(QLDraw2D *self, QLRect r)
 /* 毛玻璃：把设备像素区域里已有的内容就地模糊（CPU 侧的"背后"就是画布本身） */
 static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma, uint8_t sat)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    if (ctx->canvas == NULL)
+    if (self->canvas == NULL)
         return;
 
     QLRect dev = dev_rect_of(self, rect);
@@ -691,7 +688,7 @@ static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma, uint8_t sa
     int r = (int)(((int64_t)sigma * fx) / QL_SCALE_ONE);
     if (r < 1)
         r = 1;
-    (void)ql_canvas_backdrop_blur(ctx->canvas, dev, r, sat);
+    (void)ql_canvas_backdrop_blur(self->canvas, dev, r, sat);
 }
 
 /*
@@ -702,8 +699,7 @@ static void cpu_backdrop_blur(QLDraw2D *self, QLRect rect, int sigma, uint8_t sa
 static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
                                     ql_coord_t corner, uint8_t sat, int refract)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    if (ctx->canvas == NULL)
+    if (self->canvas == NULL)
         return;
 
     QLRect dev = dev_rect_of(self, rect);
@@ -717,7 +713,7 @@ static void cpu_backdrop_blur_round(QLDraw2D *self, QLRect rect, int sigma,
     const ql_coord_t cdev =
         (ql_coord_t)(((int64_t)corner * fx) / QL_SCALE_ONE);
     const int fdev = (int)(((int64_t)refract * fx) / QL_SCALE_ONE);
-    (void)ql_canvas_backdrop_blur_round(ctx->canvas, dev, r, cdev, sat,
+    (void)ql_canvas_backdrop_blur_round(self->canvas, dev, r, cdev, sat,
                                         fdev > 0 ? fdev : 0);
 }
 
@@ -729,25 +725,23 @@ static void cpu_set_cm(QLDraw2D *self, const int32_t m[12], int on);
 
 static void cpu_set_clip(QLDraw2D *self, QLRect clip)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_set_clip(ctx->canvas, sx(self, clip));
+    ql_canvas_set_clip(self->canvas, sx(self, clip));
 }
 
 /* 椭圆/圆遮罩：CSS px → 设备像素（按"边"缩放，与矩形一致；半径按长度缩放） */
 static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_t rx,
                          ql_coord_t ry)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     if (rx < 0 || ry < 0) {
-        ql_canvas_set_mask(ctx->canvas, 0, 0, -1, -1);
+        ql_canvas_set_mask(self->canvas, 0, 0, -1, -1);
         return;
     }
     if (self->scale_fx == QL_SCALE_ONE) {
-        ql_canvas_set_mask(ctx->canvas, cx, cy, rx, ry);
+        ql_canvas_set_mask(self->canvas, cx, cy, rx, ry);
         return;
     }
     QLRect pt = ql_scale_rect(ql_rect_make(cx, cy, 0, 0), self->scale_fx);
-    ql_canvas_set_mask(ctx->canvas, pt.x, pt.y, ql_scale_len(rx, self->scale_fx),
+    ql_canvas_set_mask(self->canvas, pt.x, pt.y, ql_scale_len(rx, self->scale_fx),
                        ql_scale_len(ry, self->scale_fx));
 }
 
@@ -755,9 +749,8 @@ static void cpu_set_mask(QLDraw2D *self, ql_coord_t cx, ql_coord_t cy, ql_coord_
 static void cpu_set_mask_polygon(QLDraw2D *self, const ql_coord_t *xs,
                                  const ql_coord_t *ys, int n)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     if (xs == NULL || ys == NULL || n < 3) {
-        ql_canvas_set_mask_polygon(ctx->canvas, NULL, NULL, 0);
+        ql_canvas_set_mask_polygon(self->canvas, NULL, NULL, 0);
         return;
     }
     float px[QL_CFG_UI_CLIP_PTS_MAX], py[QL_CFG_UI_CLIP_PTS_MAX];
@@ -766,42 +759,39 @@ static void cpu_set_mask_polygon(QLDraw2D *self, const ql_coord_t *xs,
         px[i] = (float)ql_scale_len(xs[i], fx);
         py[i] = (float)ql_scale_len(ys[i], fx);
     }
-    ql_canvas_set_mask_polygon(ctx->canvas, px, py, n);
+    ql_canvas_set_mask_polygon(self->canvas, px, py, n);
 }
 
 /* 颜色矩阵：直接交给画布（逐像素生效，见 ql_canvas_set_color_matrix） */
 static void cpu_set_cm(QLDraw2D *self, const int32_t m[12], int on)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    ql_canvas_set_color_matrix(ctx->canvas, m, on);
+    ql_canvas_set_color_matrix(self->canvas, m, on);
 }
 
 static void cpu_fill_rect(QLDraw2D *self, QLRect rect, ql_color_t color, uint8_t alpha)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     alpha = ql_draw2d_eff_alpha(self, alpha);
     if (alpha == 0)
         return;
     if (!has_offset(self)) {
-        ql_canvas_fill_rect_alpha(ctx->canvas, sx(self, rect), color, alpha);
+        ql_canvas_fill_rect_alpha(self->canvas, sx(self, rect), color, alpha);
         return;
     }
-    ql_canvas_fill_rect_fx(ctx->canvas, sxf(self, rect), color, alpha);
+    ql_canvas_fill_rect_fx(self->canvas, sxf(self, rect), color, alpha);
 }
 
 static void cpu_fill_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                 ql_color_t color, uint8_t alpha)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     alpha = ql_draw2d_eff_alpha(self, alpha);
     if (alpha == 0)
         return;
     if (!has_offset(self)) {
-        ql_canvas_fill_round_rect_alpha(ctx->canvas, sx(self, rect), sl(self, radius), color,
+        ql_canvas_fill_round_rect_alpha(self->canvas, sx(self, rect), sl(self, radius), color,
                                         alpha);
         return;
     }
-    ql_canvas_fill_round_rect_fx(ctx->canvas, sxf(self, rect),
+    ql_canvas_fill_round_rect_fx(self->canvas, sxf(self, rect),
                                  ql_fx_of(sl(self, radius)), color, alpha);
 }
 
@@ -809,13 +799,12 @@ static void cpu_fill_round_rect_gradient(QLDraw2D *self, QLRect rect, ql_coord_t
                                          ql_color_t from, ql_color_t to, uint8_t dir,
                                          uint8_t a1, uint8_t a2)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     a1 = ql_draw2d_eff_alpha(self, a1);
     a2 = ql_draw2d_eff_alpha(self, a2);
     if (a1 == 0 && a2 == 0)
         return;
     /* 渐变走的是逐行整像素填充：偏移只取整数部分（亚像素对渐变几乎看不出） */
-    ql_canvas_fill_round_rect_gradient(ctx->canvas,
+    ql_canvas_fill_round_rect_gradient(self->canvas,
                                        sx(self, shift_rect_rounded(self, rect)),
                                        sl(self, radius), from, to, (QLGradientDir)dir,
                                        a1, a2);
@@ -825,11 +814,10 @@ static void cpu_fill_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radius,
                             ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
                             ql_color_t color, uint8_t alpha)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     alpha = ql_draw2d_eff_alpha(self, alpha);
     if (alpha == 0)
         return;
-    ql_canvas_fill_shadow(ctx->canvas, sx(self, shift_rect_rounded(self, inner)),
+    ql_canvas_fill_shadow(self->canvas, sx(self, shift_rect_rounded(self, inner)),
                           sl(self, radius), sl(self, blur), sl(self, dx), sl(self, dy),
                           color, alpha);
 }
@@ -838,11 +826,10 @@ static void cpu_fill_inset_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radiu
                                   ql_coord_t blur, ql_coord_t dx, ql_coord_t dy,
                                   ql_color_t color, uint8_t alpha)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     alpha = ql_draw2d_eff_alpha(self, alpha);
     if (alpha == 0)
         return;
-    ql_canvas_fill_inset_shadow(ctx->canvas, sx(self, shift_rect_rounded(self, inner)),
+    ql_canvas_fill_inset_shadow(self->canvas, sx(self, shift_rect_rounded(self, inner)),
                                 sl(self, radius), sl(self, blur), sl(self, dx),
                                 sl(self, dy), color, alpha);
 }
@@ -851,7 +838,6 @@ static void cpu_fill_inset_shadow(QLDraw2D *self, QLRect inner, ql_coord_t radiu
 static void cpu_fill_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
                                  ql_color_t color, uint8_t alpha)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     alpha = ql_draw2d_eff_alpha(self, alpha);
     if (alpha == 0)
         return;
@@ -863,10 +849,10 @@ static void cpu_fill_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r
         ql_coord_t sr[4];
         for (int i = 0; i < 4; i++)
             sr[i] = sl(self, r4[i]);
-        ql_canvas_fill_round_rect4_alpha(ctx->canvas, sx(self, rect), sr, color, alpha);
+        ql_canvas_fill_round_rect4_alpha(self->canvas, sx(self, rect), sr, color, alpha);
         return;
     }
-    ql_canvas_fill_round_rect_fx(ctx->canvas, sxf(self, rect), ql_fx_of(sl(self, maxr)),
+    ql_canvas_fill_round_rect_fx(self->canvas, sxf(self, rect), ql_fx_of(sl(self, maxr)),
                                  color, alpha);
 }
 
@@ -875,7 +861,6 @@ static void cpu_fill_round_rect_gradient4(QLDraw2D *self, QLRect rect,
                                           ql_color_t to, uint8_t dir, uint8_t a1,
                                           uint8_t a2)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     a1 = ql_draw2d_eff_alpha(self, a1);
     a2 = ql_draw2d_eff_alpha(self, a2);
     if (a1 == 0 && a2 == 0)
@@ -889,7 +874,7 @@ static void cpu_fill_round_rect_gradient4(QLDraw2D *self, QLRect rect,
      * "缺角"用小矩形补成背景色做不到（我们没有底色），所以这里直接
      * 退到单半径 —— 视觉上圆角偏大但不会露底。文档里如实写。
      */
-    ql_canvas_fill_round_rect_gradient(ctx->canvas,
+    ql_canvas_fill_round_rect_gradient(self->canvas,
                                        sx(self, shift_rect_rounded(self, rect)),
                                        sl(self, maxr), from, to, (QLGradientDir)dir,
                                        a1, a2);
@@ -898,7 +883,6 @@ static void cpu_fill_round_rect_gradient4(QLDraw2D *self, QLRect rect,
 static void cpu_stroke_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t r4[4],
                                    ql_coord_t thickness, ql_color_t color)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     const uint8_t alpha = ql_draw2d_eff_alpha(self, 255);
     if (alpha == 0)
         return;
@@ -910,11 +894,11 @@ static void cpu_stroke_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t
         ql_coord_t sr[4];
         for (int i = 0; i < 4; i++)
             sr[i] = sl(self, r4[i]);
-        ql_canvas_stroke_rect4_alpha(ctx->canvas, sx(self, rect), sr, sl(self, thickness),
+        ql_canvas_stroke_rect4_alpha(self->canvas, sx(self, rect), sr, sl(self, thickness),
                                      color, alpha);
         return;
     }
-    ql_canvas_stroke_rect_fx_alpha(ctx->canvas, sxf(self, rect),
+    ql_canvas_stroke_rect_fx_alpha(self->canvas, sxf(self, rect),
                                    ql_fx_of(sl(self, maxr)), ql_fx_of(sl(self, thickness)),
                                    color, alpha);
 }
@@ -922,16 +906,15 @@ static void cpu_stroke_round_rect4(QLDraw2D *self, QLRect rect, const ql_coord_t
 static void cpu_stroke_round_rect(QLDraw2D *self, QLRect rect, ql_coord_t radius,
                                   ql_coord_t thickness, ql_color_t color)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     const uint8_t alpha = ql_draw2d_eff_alpha(self, 255);
     if (alpha == 0)
         return;
     if (!has_offset(self)) {
-        ql_canvas_stroke_rect_alpha(ctx->canvas, sx(self, rect), sl(self, radius),
+        ql_canvas_stroke_rect_alpha(self->canvas, sx(self, rect), sl(self, radius),
                                     sl(self, thickness), color, alpha);
         return;
     }
-    ql_canvas_stroke_rect_fx_alpha(ctx->canvas, sxf(self, rect),
+    ql_canvas_stroke_rect_fx_alpha(self->canvas, sxf(self, rect),
                                    ql_fx_of(sl(self, radius)),
                                    ql_fx_of(sl(self, thickness)), color, alpha);
 }
@@ -940,7 +923,6 @@ static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gl
                            ql_coord_t pen_x, ql_coord_t baseline_y,
                            const QLTextStyle *ts)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     /*
      * 只有"不是等比正缩放"时才需要逐字形做水平 affine（压扁 / 镜像）。
      * 等比时字形已经换过字号，这里保持恒等 —— 那条路必须逐像素不变。
@@ -949,11 +931,11 @@ static void cpu_emit_glyph(QLDraw2D *self, const QLFont *font, const QLGlyph *gl
     if (alpha == 0)
         return;
     if (!self->text_geo) {
-        ql_canvas_draw_glyph_alpha(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+        ql_canvas_draw_glyph_alpha(self->canvas, font, glyph, pen_x, baseline_y, ts->color,
                                    ts->italic != 0, ts->bold != 0, alpha);
         return;
     }
-    ql_canvas_draw_glyph_xf_alpha(ctx->canvas, font, glyph, pen_x, baseline_y, ts->color,
+    ql_canvas_draw_glyph_xf_alpha(self->canvas, font, glyph, pen_x, baseline_y, ts->color,
                                   ts->italic != 0, ts->bold != 0,
                                   self->elem_x_fx, self->elem_y_fx,
                                   self->text_px, self->text_py, alpha);
@@ -1090,8 +1072,7 @@ static QLRect cpu_layer_dev_rect(QLDraw2D *self, QLRect bounds)
 /* 把画布切到某块哑光缓冲，并把 `dev` 的左上角挪到 (0,0) */
 static void cpu_layer_attach(QLDraw2D *self, uint8_t *buf, QLRect dev)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    QLCanvas *c = ctx->canvas;
+    QLCanvas *c = self->canvas;
     c->buffer = buf;
     c->stride = (uint32_t)dev.w * 3u;
     c->width = dev.w;
@@ -1133,12 +1114,12 @@ static int cpu_layer_open(QLDraw2D *self, int i, QLRect bounds,
     ctx->layer[i].matte_bytes = bytes;
     ctx->layer[i].dev = dev;
     ctx->layer[i].fx = *fx;
-    ctx->layer[i].saved = *ctx->canvas;
+    ctx->layer[i].saved = *self->canvas;
     ctx->layer[i].saved_off_x = self->offset_x_fx;
     ctx->layer[i].saved_off_y = self->offset_y_fx;
 
     cpu_layer_attach(self, m0, dev);
-    ql_canvas_clear(ctx->canvas, 0x000000);
+    ql_canvas_clear(self->canvas, 0x000000);
     ctx->layer[i].stage = 1;
     return 1;
 }
@@ -1147,7 +1128,7 @@ static int cpu_layer_open(QLDraw2D *self, int i, QLRect bounds,
 static void cpu_layer_restore(QLDraw2D *self, int i)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    *ctx->canvas = ctx->layer[i].saved;
+    *self->canvas = ctx->layer[i].saved;
     self->offset_x_fx = ctx->layer[i].saved_off_x;
     self->offset_y_fx = ctx->layer[i].saved_off_y;
 }
@@ -1155,7 +1136,7 @@ static void cpu_layer_restore(QLDraw2D *self, int i)
 static int cpu_layer_begin(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx *fx)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    if (ctx == NULL || ctx->canvas == NULL)
+    if (ctx == NULL || self->canvas == NULL)
         return 0;
     /* 栈顶正处于"两遍之间"→ 这是第二遍（白底） */
     if (ctx->layer_depth > 0 && ctx->layer[ctx->layer_depth - 1].stage == 2) {
@@ -1167,7 +1148,7 @@ static int cpu_layer_begin(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx 
             ctx->layer[i].matte[1] = m1;
         }
         cpu_layer_attach(self, ctx->layer[i].matte[1], ctx->layer[i].dev);
-        ql_canvas_clear(ctx->canvas, 0xFFFFFF);
+        ql_canvas_clear(self->canvas, 0xFFFFFF);
         ctx->layer[i].stage = 3;
         return 1;
     }
@@ -1182,7 +1163,7 @@ static int cpu_layer_begin(QLDraw2D *self, QLRect bounds, const QLDraw2DLayerFx 
 static int cpu_layer_end(QLDraw2D *self)
 {
     QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
-    if (ctx == NULL || ctx->canvas == NULL || ctx->layer_depth <= 0)
+    if (ctx == NULL || self->canvas == NULL || ctx->layer_depth <= 0)
         return 0;
     const int i = ctx->layer_depth - 1;
     if (ctx->layer[i].stage == 1) {
@@ -1198,7 +1179,7 @@ static int cpu_layer_end(QLDraw2D *self)
     const QLDraw2DLayerFx fx = ctx->layer[i].fx;
     cpu_layer_restore(self, i);
 
-    QLCanvas *dst = ctx->canvas;
+    QLCanvas *dst = self->canvas;
     const size_t npx = (size_t)dev.w * (size_t)dev.h;
     uint8_t *rgba = (uint8_t *)ql_mem_alloc(npx * 4u);
     if (rgba == NULL) {
@@ -1240,23 +1221,19 @@ static int cpu_layer_end(QLDraw2D *self)
 static void cpu_blit_image(QLDraw2D *self, const QLImage *img, QLRect dst,
                            const QLRect *src, ql_coord_t radius, uint8_t alpha)
 {
-    QLDraw2DCanvas *ctx = (QLDraw2DCanvas *)self->user;
     alpha = ql_draw2d_eff_alpha(self, alpha);
     if (alpha == 0)
         return;
     /* dst 走与其它图元完全相同的坐标变换（offset / DPR / elem scale） */
-    ql_canvas_blit_image(ctx->canvas, img,
+    ql_canvas_blit_image(self->canvas, img,
                          ql_rect_from_fx(sxf(self, shift_rect_rounded(self, dst))), src,
                          sl(self, radius), alpha);
 }
 
-ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
+QLErr ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
 {
     if (out == NULL || canvas == NULL)
         return QL_ERR_INVAL;
-
-    s_cpu.canvas = canvas;
-    s_cpu.saved_clip = canvas->clip;
 
     out->set_clip = cpu_set_clip;
     out->set_mask = cpu_set_mask;
@@ -1294,6 +1271,7 @@ ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas)
     out->elem_y_fx = QL_SCALE_ONE;
     out->elem_px = 0;
     out->elem_py = 0;
+    out->canvas = canvas;
     out->user = &s_cpu;
     return QL_OK;
 }

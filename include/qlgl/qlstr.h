@@ -28,12 +28,12 @@ void        ql_str_init(QLStr *str);
 void        ql_str_free(QLStr *str);
 
 /* 设置内容（会复制）；返回 QL_ERR_NOMEM 表示失败且内容保持不变 */
-ql_err_t    ql_str_set(QLStr *str, const char *text);
-ql_err_t    ql_str_set_n(QLStr *str, const char *text, uint32_t len);
+QLErr    ql_str_set(QLStr *str, const char *text);
+QLErr    ql_str_set_n(QLStr *str, const char *text, uint32_t len);
 /* 引用外部只读字符串，不复制也不释放（用于字面量） */
-ql_err_t    ql_str_set_static(QLStr *str, const char *text);
-ql_err_t    ql_str_append(QLStr *str, const char *text);
-ql_err_t    ql_str_clear(QLStr *str);
+QLErr    ql_str_set_static(QLStr *str, const char *text);
+QLErr    ql_str_append(QLStr *str, const char *text);
+QLErr    ql_str_clear(QLStr *str);
 
 const char *ql_str_data(const QLStr *str);
 uint32_t    ql_str_len(const QLStr *str);

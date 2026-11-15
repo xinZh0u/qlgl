@@ -46,7 +46,7 @@ int ql_disp_x11_poll(QLDispDriver *driver);
 int ql_disp_x11_wait(QLDispDriver *driver, int timeout_ms);
 
 /* 请求窗口尺寸（XResizeWindow，异步）；返回 QL_OK 表示请求已发出 */
-ql_err_t ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t height);
+QLErr ql_disp_x11_resize(QLDispDriver *driver, ql_coord_t width, ql_coord_t height);
 
 /* 把 X11 CLIPBOARD 接到界面（Ctrl+C/V） */
 void ql_disp_x11_attach_clipboard(QLDispDriver *driver, QLUIRoot *ui);

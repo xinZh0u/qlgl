@@ -29,7 +29,7 @@ struct QLInput {
     uint8_t  buttons;
     uint8_t  mods;
 
-    ql_input_sink sink;
+    ql_input_event_cb sink;
     void         *sink_user;
 };
 
@@ -81,7 +81,7 @@ void ql_input_reset_ex(QLInput *in)
     in->sink_user = NULL;
 }
 
-void ql_input_set_sink_ex(QLInput *in, ql_input_sink sink, void *user)
+void ql_input_set_sink_ex(QLInput *in, ql_input_event_cb sink, void *user)
 {
     in = resolve_input(in);
     in->sink = sink;
@@ -127,7 +127,7 @@ static void track_state(QLInput *in, const QLInputEvent *ev)
         in->buttons = (uint8_t)(in->buttons & (uint8_t)~ev->button);
 }
 
-ql_err_t ql_input_push_ex(QLInput *in, const QLInputEvent *ev)
+QLErr ql_input_push_ex(QLInput *in, const QLInputEvent *ev)
 {
     if (ev == NULL)
         return QL_ERR_INVAL;
@@ -135,7 +135,7 @@ ql_err_t ql_input_push_ex(QLInput *in, const QLInputEvent *ev)
 
     track_state(in, ev);
 
-    ql_err_t err = QL_OK;
+    QLErr err = QL_OK;
     if (in->count >= (uint16_t)QL_CFG_INPUT_QUEUE) {
         /* 丢最旧的：交互事件宁可丢历史也不能卡住输入 */
         in->tail = (uint16_t)((in->tail + 1) % QL_CFG_INPUT_QUEUE);
@@ -166,7 +166,7 @@ static int queue_pop(QLInput *in, QLInputEvent *out)
 
 /* ------------------------------ 构造入队 ------------------------------ */
 
-static ql_err_t push_simple(QLInput *in, uint8_t type, ql_coord_t x, ql_coord_t y)
+static QLErr push_simple(QLInput *in, uint8_t type, ql_coord_t x, ql_coord_t y)
 {
     QLInputEvent ev;
     memset(&ev, 0, sizeof(ev));
@@ -178,7 +178,7 @@ static ql_err_t push_simple(QLInput *in, uint8_t type, ql_coord_t x, ql_coord_t 
     return ql_input_push_ex(in, &ev);
 }
 
-ql_err_t ql_input_push_move_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr ql_input_push_move_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                uint8_t buttons)
 {
     in = resolve_input(in);
@@ -192,7 +192,7 @@ ql_err_t ql_input_push_move_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
     return ql_input_push_ex(in, &ev);
 }
 
-ql_err_t ql_input_push_button_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr ql_input_push_button_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                  uint8_t button, int down)
 {
     in = resolve_input(in);
@@ -207,7 +207,7 @@ ql_err_t ql_input_push_button_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
     return ql_input_push_ex(in, &ev);
 }
 
-ql_err_t ql_input_push_leave_ex(QLInput *in)
+QLErr ql_input_push_leave_ex(QLInput *in)
 {
     in = resolve_input(in);
     if (in == NULL)
@@ -215,7 +215,7 @@ ql_err_t ql_input_push_leave_ex(QLInput *in)
     return push_simple(in, QL_INPUT_POINTER_LEAVE, in->x, in->y);
 }
 
-ql_err_t ql_input_push_wheel_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr ql_input_push_wheel_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                 int32_t dx, int32_t dy)
 {
     in = resolve_input(in);
@@ -235,7 +235,7 @@ ql_err_t ql_input_push_wheel_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
  * 触摸点：一次一根手指的状态变化。`touch_count` 由后端数（它看得见所有点），
  * 界面层靠它区分"单指拖动"和"双指捏合"。
  */
-ql_err_t ql_input_push_touch_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
+QLErr ql_input_push_touch_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
                                 uint8_t phase, uint8_t touch_id,
                                 uint8_t touch_count)
 {
@@ -253,7 +253,7 @@ ql_err_t ql_input_push_touch_ex(QLInput *in, ql_coord_t x, ql_coord_t y,
     return ql_input_push_ex(in, &ev);
 }
 
-ql_err_t ql_input_push_key_ex(QLInput *in, uint32_t key, int down, uint8_t mods)
+QLErr ql_input_push_key_ex(QLInput *in, uint32_t key, int down, uint8_t mods)
 {
     in = resolve_input(in);
     QLInputEvent ev;
@@ -269,7 +269,7 @@ ql_err_t ql_input_push_key_ex(QLInput *in, uint32_t key, int down, uint8_t mods)
     return ql_input_push_ex(in, &ev);
 }
 
-ql_err_t ql_input_push_text_ex(QLInput *in, const char *utf8)
+QLErr ql_input_push_text_ex(QLInput *in, const char *utf8)
 {
     in = resolve_input(in);
     if (utf8 == NULL)
@@ -322,46 +322,46 @@ int ql_input_dispatch_ex(QLInput *in)
 
 void ql_input_reset(void) { ql_input_reset_ex(&s_default); }
 
-void ql_input_set_sink(ql_input_sink sink, void *user)
+void ql_input_set_sink(ql_input_event_cb sink, void *user)
 {
     ql_input_set_sink_ex(&s_default, sink, user);
 }
 
-ql_err_t ql_input_push(const QLInputEvent *ev) { return ql_input_push_ex(&s_default, ev); }
+QLErr ql_input_push(const QLInputEvent *ev) { return ql_input_push_ex(&s_default, ev); }
 
 uint32_t ql_input_pending(void) { return ql_input_pending_ex(&s_default); }
 
 int ql_input_dispatch(void) { return ql_input_dispatch_ex(&s_default); }
 
-ql_err_t ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons)
+QLErr ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons)
 {
     return ql_input_push_move_ex(&s_default, x, y, buttons);
 }
 
-ql_err_t ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down)
+QLErr ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down)
 {
     return ql_input_push_button_ex(&s_default, x, y, button, down);
 }
 
-ql_err_t ql_input_push_leave(void) { return ql_input_push_leave_ex(&s_default); }
+QLErr ql_input_push_leave(void) { return ql_input_push_leave_ex(&s_default); }
 
-ql_err_t ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy)
+QLErr ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy)
 {
     return ql_input_push_wheel_ex(&s_default, x, y, dx, dy);
 }
 
-ql_err_t ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+QLErr ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
                              uint8_t touch_id, uint8_t touch_count)
 {
     return ql_input_push_touch_ex(&s_default, x, y, phase, touch_id, touch_count);
 }
 
-ql_err_t ql_input_push_key(uint32_t key, int down, uint8_t mods)
+QLErr ql_input_push_key(uint32_t key, int down, uint8_t mods)
 {
     return ql_input_push_key_ex(&s_default, key, down, mods);
 }
 
-ql_err_t ql_input_push_text(const char *utf8)
+QLErr ql_input_push_text(const char *utf8)
 {
     return ql_input_push_text_ex(&s_default, utf8);
 }

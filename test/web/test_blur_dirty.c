@@ -19,9 +19,8 @@
 /*
  * 逐帧推进动画、只重绘脏区；返回"脏区未完整覆盖玻璃"的次数。
  *
- * 注意：`ql_draw2d_canvas_init()` 背后是**一份静态上下文**，同一时刻只能有一个
- * canvas 后端的 draw2d 有效。所以这里只做脏区重绘，整屏重绘留到最后一帧
- * 用另一块画布做（见 compare_with_full）。
+ * 注意：CPU 后端的**图层栈**是共享的（画布本身已按 d2d 实例持有），
+ * 所以两个 d2d 不要同时开图层；这里脏区与整屏对比是顺序做的，没问题。
  */
 static int run_dirty(QLUIRoot *ui, QLDraw2D *d2d, int frames)
 {

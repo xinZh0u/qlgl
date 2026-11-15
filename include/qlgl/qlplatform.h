@@ -44,7 +44,7 @@ typedef struct QLPlatform {
     /* 尺寸/缩放变了：取一次清零。返回 1 时 QLWindow 会重新布局 */
     int  (*resize_pending)(QLPlatformWindow *pw);
     /* 请求改窗口尺寸（异步）；不支持返回 QL_ERR_UNSUPPORTED */
-    ql_err_t (*resize)(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h);
+    QLErr (*resize)(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h);
 
     /* 绘制一帧：清脏区 → 用 draw() 的接口画 → end() 呈现 */
     int  (*begin)(QLPlatformWindow *pw, ql_color_t bg, const QLRect *dirty, int n);

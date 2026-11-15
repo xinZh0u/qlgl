@@ -64,7 +64,7 @@ typedef enum {
     };
 
 /* 派发：沿继承链找到拥有该 id 区间的类，调用它的 set/get */
-ql_err_t ql_object_set_property(QLObject *obj, ql_property_t property, QLValue value);
+QLErr ql_object_set_property(QLObject *obj, ql_property_t property, QLValue value);
 QLValue  ql_object_get_property(QLObject *obj, ql_property_t property);
 
 /* 判断某个类是否接管该属性 id（调试用） */

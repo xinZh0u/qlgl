@@ -27,9 +27,9 @@ static uint32_t mono_now_ms(void)
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)((uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u);
 }
-static ql_anim_time_fn s_time_fn = mono_now_ms;
+static ql_anim_time_cb s_time_fn = mono_now_ms;
 #else
-static ql_anim_time_fn s_time_fn = NULL;
+static ql_anim_time_cb s_time_fn = NULL;
 #endif
 
 uint32_t ql_anim_now_ms(void)
@@ -37,7 +37,7 @@ uint32_t ql_anim_now_ms(void)
     return (s_time_fn != NULL) ? s_time_fn() : 0u;
 }
 
-void ql_anim_set_time_source(ql_anim_time_fn fn)
+void ql_anim_set_time_source(ql_anim_time_cb fn)
 {
 #if defined(__STDC_HOSTED__) && __STDC_HOSTED__
     s_time_fn = (fn != NULL) ? fn : mono_now_ms;
@@ -128,8 +128,8 @@ typedef struct {
     uint8_t          ease;
     uint8_t          steps;
     uint8_t          started;   /* 0 = 还没 apply 过起始值 */
-    ql_anim_apply_fn apply;
-    ql_anim_done_fn  done;
+    ql_anim_apply_cb apply;
+    ql_anim_done_cb  done;
     void            *user;
 } QLAnimSlot;
 
@@ -165,8 +165,8 @@ uint32_t ql_anim_active(void)
     return n;
 }
 
-ql_err_t ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms, uint8_t ease,
-                       uint8_t steps, ql_anim_apply_fn apply, ql_anim_done_fn done,
+QLErr ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms, uint8_t ease,
+                       uint8_t steps, ql_anim_apply_cb apply, ql_anim_done_cb done,
                        void *user)
 {
     if (key == NULL || to == NULL || apply == NULL)
@@ -268,7 +268,7 @@ uint32_t ql_anim_tick(uint32_t now_ms)
              * 若此时槽位仍登记着旧动画，新动画会被收尾逻辑立刻抹掉。
              */
             QLAnimKey *key = s->key;
-            const ql_anim_done_fn done = s->done;
+            const ql_anim_done_cb done = s->done;
             void *user = s->user;
 
             key->cur = s->to;

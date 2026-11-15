@@ -66,9 +66,9 @@ struct BenchBackend {
     double   (*busy_ms)(BenchBackend *b);
     /*
      * 把**最后一帧**读回成 RGB（w*h*3）。返回 0 = 这个后端不支持读回。
-     * 自检（--check）用它，**不能再建第二个 canvas draw2d** ——
-     * `ql_draw2d_canvas_init()` 背后是一份静态上下文，建第二个会把
-     * 正在用的那个 d2d 的 canvas 指针换掉（之后逐帧崩）。
+     * 自检（--check）用它，不再另建一块 canvas 去重画：CPU 后端的
+     * 图层栈是共享的（同一时刻只该有一个 d2d 在开图层），直接用后端
+     * 自己的 snapshot 最省事也最不容易踩到共享状态。
      */
     int  (*snapshot)(BenchBackend *b, uint8_t *rgb, int w, int h);
     void (*destroy)(BenchBackend *b);

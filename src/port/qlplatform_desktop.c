@@ -271,7 +271,7 @@ static int desktop_resize_pending(QLPlatformWindow *pw)
     return pending;
 }
 
-static ql_err_t desktop_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
+static QLErr desktop_resize(QLPlatformWindow *pw, ql_coord_t w, ql_coord_t h)
 {
     if (pw == NULL || w <= 0 || h <= 0)
         return QL_ERR_INVAL;

@@ -131,9 +131,9 @@ QLObject *ql_object_ref(QLObject *self)
     return self;
 }
 
-static ql_object_tree_hook s_tree_hook;
+static ql_object_tree_cb s_tree_hook;
 
-void ql_object_set_tree_hook(ql_object_tree_hook hook)
+void ql_object_set_tree_hook(ql_object_tree_cb hook)
 {
     s_tree_hook = hook;
 }
@@ -249,7 +249,7 @@ static int object_subtree_height(const QLObject *self)
     return best + 1;
 }
 
-ql_err_t ql_object_set_parent(QLObject *self, QLObject *parent)
+QLErr ql_object_set_parent(QLObject *self, QLObject *parent)
 {
     if (self == NULL)
         return QL_ERR_INVAL;
@@ -312,7 +312,7 @@ ql_err_t ql_object_set_parent(QLObject *self, QLObject *parent)
     return QL_OK;
 }
 
-ql_err_t ql_object_add_child(QLObject *parent, QLObject *child)
+QLErr ql_object_add_child(QLObject *parent, QLObject *child)
 {
     /*
      * parent == NULL 时 set_parent(child, NULL) 是合法的"解绑"，
@@ -321,7 +321,7 @@ ql_err_t ql_object_add_child(QLObject *parent, QLObject *child)
     if (parent == NULL || child == NULL)
         return QL_ERR_INVAL;
 
-    ql_err_t err = ql_object_set_parent(child, parent);
+    QLErr err = ql_object_set_parent(child, parent);
     if (err != QL_OK)
         return err;
 

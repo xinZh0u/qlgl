@@ -377,6 +377,12 @@ struct QLDraw2D {
     int        text_geo;
     ql_coord_t text_px, text_py;   /* 几何变换的中心（设备像素） */
 
+    /*
+     * CPU 后端的绘制目标。**每个实例一份**：以前它放在共享的 CPU 上下文里，
+     * 多窗口时会被后 init 的画布覆盖（画错窗口，画布释放后还会悬空）。
+     * GL 后端不使用（为 NULL）。
+     */
+    QLCanvas *canvas;
     void *user;   /* 后端私有数据 */
 };
 
@@ -438,7 +444,7 @@ int ql_text_wrap_opt(const QLFont *font, const char *text, ql_coord_t max_w,
                      int keep_trailing);
 
 /* 单行绘制文字的公共实现：后端可直接复用它的排版逻辑 */
-typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,
+typedef void (*ql_draw2d_glyph_cb)(QLDraw2D *self, const QLFont *font,
                                    const QLGlyph *glyph, ql_coord_t pen_x,
                                    ql_coord_t baseline_y, const QLTextStyle *ts);
 
@@ -448,7 +454,7 @@ typedef void (*ql_draw2d_glyph_fn)(QLDraw2D *self, const QLFont *font,
  */
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text, int32_t len,
                            QLRect box, const QLTextStyle *ts,
-                           ql_draw2d_glyph_fn emit_glyph);
+                           ql_draw2d_glyph_cb emit_glyph);
 
 /*
  * 直线的**公共实现**：CPU 与 GPU 后端都应把 draw_line 指向它。
@@ -458,7 +464,7 @@ void ql_draw2d_draw_line(QLDraw2D *self, ql_coord_t x1, ql_coord_t y1, ql_coord_
                          ql_coord_t y2, ql_coord_t thickness, ql_color_t color);
 
 /* ----- CPU 后端（包一层 QLCanvas） ----- */
-ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas);
+QLErr ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas);
 
 /*
  * 按缩放取"设备像素字号"的同族字体：DPR>1 时字形必须按设备字号重新光栅化，

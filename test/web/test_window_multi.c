@@ -137,7 +137,7 @@ static int on_event(QLUIRoot *ui, const QLInputEvent *ev, void *user)
     return 0;                       /* 不消费：界面层还要处理 */
 }
 
-static QLUIRoot *make_ui(const char *css_color)
+static QLUIRoot *make_ui(const char *css_color, QLUIDoc **out_doc)
 {
     char css[256];
     snprintf(css, sizeof(css),
@@ -149,7 +149,8 @@ static QLUIRoot *make_ui(const char *css_color)
     if (doc == NULL)
         return NULL;
     QLUIRoot *ui = ql_ui_build(doc);
-    ql_ui_doc_free(doc);
+    /* root 不拥有 doc：doc 必须活到 ui 释放之后 */
+    *out_doc = doc;
     return ui;
 }
 
@@ -162,8 +163,9 @@ QL_TEST_BEGIN("test_window_multi")
     memset(s_clicks, 0, sizeof(s_clicks));
     memset(s_events, 0, sizeof(s_events));
 
-    QLUIRoot *ui0 = make_ui("#0969DA");
-    QLUIRoot *ui1 = make_ui("#2DA44E");
+    QLUIDoc *doc0 = NULL, *doc1 = NULL, *doc2 = NULL;
+    QLUIRoot *ui0 = make_ui("#0969DA", &doc0);
+    QLUIRoot *ui1 = make_ui("#2DA44E", &doc1);
     QL_CHECK(ui0 != NULL && ui1 != NULL);
     if (ui0 == NULL || ui1 == NULL) {
         ql_ui_free(ui0);
@@ -227,7 +229,7 @@ QL_TEST_BEGIN("test_window_multi")
     QL_CHECK_EQ(s_events[1], 2);
 
     /* 4. 换界面只影响自己：w0 换一份新树，w1 的点击照旧 */
-    QLUIRoot *ui2 = make_ui("#BF3989");
+    QLUIRoot *ui2 = make_ui("#BF3989", &doc2);
     QL_CHECK(ui2 != NULL);
     if (ui2 != NULL) {
         ql_ui_set_click_cb(ui2, on_click, (void *)(intptr_t)0);
@@ -258,6 +260,9 @@ QL_TEST_BEGIN("test_window_multi")
     ql_ui_free(ui2);
     ql_ui_free(ui1);
     ql_ui_free(ui0);
+    ql_ui_doc_free(doc2);
+    ql_ui_doc_free(doc1);
+    ql_ui_doc_free(doc0);
 
     qlgl_set_platform(NULL);
 

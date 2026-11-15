@@ -32,9 +32,9 @@ struct QLWindow {
     int                own_in;    /* 1 = in 由本窗口创建/释放 */
     QLUIRoot          *ui;
 
-    ql_window_event_fn event_fn;
+    ql_window_event_cb event_fn;
     void              *event_user;
-    ql_window_frame_fn frame_fn;
+    ql_window_frame_cb frame_fn;
     void              *frame_user;
 
     ql_color_t bg;
@@ -296,7 +296,7 @@ QLWindow *ql_window_create(const char *title, ql_coord_t width, ql_coord_t heigh
     return win;
 }
 
-ql_err_t ql_window_set_ui(QLWindow *win, QLUIRoot *ui)
+QLErr ql_window_set_ui(QLWindow *win, QLUIRoot *ui)
 {
     if (win == NULL || win->pw == NULL || ui == NULL)
         return QL_ERR_INVAL;
@@ -328,7 +328,7 @@ ql_err_t ql_window_set_ui(QLWindow *win, QLUIRoot *ui)
     return QL_OK;
 }
 
-ql_err_t ql_window_bind_ui(QLWindow *win, QLUIRoot *ui)
+QLErr ql_window_bind_ui(QLWindow *win, QLUIRoot *ui)
 {
     return ql_window_set_ui(win, ui);
 }
@@ -458,13 +458,13 @@ int ql_window_run_args(QLWindow *win, int argc, char **argv)
     return rc;
 }
 
-ql_err_t ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height)
+QLErr ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height)
 {
     if (win == NULL || win->plat == NULL || width <= 0 || height <= 0)
         return QL_ERR_INVAL;
     if (win->plat->resize == NULL)
         return QL_ERR_UNSUPPORTED;
-    const ql_err_t err = win->plat->resize(win->pw, width, height);
+    const QLErr err = win->plat->resize(win->pw, width, height);
     if (err == QL_OK)
         win->need_full = 1;
     return err;
@@ -500,7 +500,7 @@ void ql_window_set_bg(QLWindow *win, ql_color_t color)
     }
 }
 
-void ql_window_set_event_filter(QLWindow *win, ql_window_event_fn fn, void *user)
+void ql_window_set_event_filter(QLWindow *win, ql_window_event_cb fn, void *user)
 {
     if (win != NULL) {
         win->event_fn = fn;
@@ -508,7 +508,7 @@ void ql_window_set_event_filter(QLWindow *win, ql_window_event_fn fn, void *user
     }
 }
 
-void ql_window_set_frame_cb(QLWindow *win, ql_window_frame_fn fn, void *user)
+void ql_window_set_frame_cb(QLWindow *win, ql_window_frame_cb fn, void *user)
 {
     if (win != NULL) {
         win->frame_fn = fn;

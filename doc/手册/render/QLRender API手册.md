@@ -80,7 +80,7 @@ ql_coord_t ql_scale_len(ql_coord_t v, ql_coord_t scale_fx);
 ```c
 void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
                            int32_t len, QLRect box, ql_color_t color,
-                           QLTextAlign align, ql_draw2d_glyph_fn emit_glyph);
+                           QLTextAlign align, ql_draw2d_glyph_cb emit_glyph);
 ```
 
 后端只需实现"怎么把单个字形变成一次绘制"，排版由它统一处理。
@@ -90,7 +90,7 @@ void ql_draw2d_text_layout(QLDraw2D *self, const QLFont *font, const char *text,
 ## 2. CPU 后端
 
 ```c
-ql_err_t ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas);
+QLErr ql_draw2d_canvas_init(QLDraw2D *out, QLCanvas *canvas);
 ```
 
 把既有 `QLCanvas` 包成 `QLDraw2D`。用于 MCU、无 GPU 环境、离屏导出。
@@ -125,7 +125,7 @@ void      ql_gfx_gl_end(QLGfxGL *gfx);
 QLDraw2D *ql_gfx_gl_draw(QLGfxGL *gfx);
 
 /* 保留式脏区（窗口动画局部重绘）——见 §3.4 */
-ql_err_t  ql_gfx_gl_set_retained(QLGfxGL *gfx, int on);
+QLErr  ql_gfx_gl_set_retained(QLGfxGL *gfx, int on);
 int       ql_gfx_gl_begin_rects(QLGfxGL *gfx, ql_color_t clear_color,
                                 const QLRect *rects, int count);
 
@@ -141,7 +141,7 @@ uint32_t  ql_gfx_gl_draw_calls(QLGfxGL *gfx);
 uint32_t  ql_gfx_gl_vertex_count(QLGfxGL *gfx);
 uint32_t  ql_gfx_gl_frame_us(QLGfxGL *gfx);      /* 上一帧 begin→end 的墙钟耗时 */
 uint32_t  ql_gfx_gl_swap_us(QLGfxGL *gfx);       /* 其中 eglSwapBuffers 占多久 */
-ql_err_t  ql_gfx_gl_read_pixels(QLGfxGL *gfx, uint8_t *rgba, uint32_t stride_bytes);
+QLErr  ql_gfx_gl_read_pixels(QLGfxGL *gfx, uint8_t *rgba, uint32_t stride_bytes);
 ```
 
 ### 3.1 标准用法

@@ -335,6 +335,7 @@ main img {
 <a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
 <a href='../../JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
 <a href='../../跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+<a href='../../命名与API风格.html' title='命名与 API 风格'>命名与 API 风格</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
@@ -469,9 +470,9 @@ MCU 上换成 tick 计数器即可（<code>HAL_GetTick()</code> 之类），只�
 </code></pre></div>
 
 <h3 id="32">3.2 启动 / 重基</h3>
-<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_anim_start</span><span class="p">(</span><span class="n">QLAnimKey</span><span class="w"> </span><span class="o">*</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="o">*</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">dur_ms</span><span class="p">,</span>
+<div class="highlight"><pre><span></span><code><span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_anim_start</span><span class="p">(</span><span class="n">QLAnimKey</span><span class="w"> </span><span class="o">*</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLAnimValue</span><span class="w"> </span><span class="o">*</span><span class="n">to</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">dur_ms</span><span class="p">,</span>
 <span class="w">                       </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">ease</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">steps</span><span class="p">,</span>
-<span class="w">                       </span><span class="n">ql_anim_apply_fn</span><span class="w"> </span><span class="n">apply</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_done_fn</span><span class="w"> </span><span class="n">done</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
+<span class="w">                       </span><span class="n">ql_anim_apply_cb</span><span class="w"> </span><span class="n">apply</span><span class="p">,</span><span class="w"> </span><span class="n">ql_anim_done_cb</span><span class="w"> </span><span class="n">done</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">);</span>
 </code></pre></div>
 
 <table>

@@ -25,7 +25,7 @@ typedef enum {
     QL_ERR_VER      = -6,   /* 版本不兼容 */
     QL_ERR_FULL     = -7,   /* 池已满 */
     QL_ERR_UNSUPPORTED = -8, /* 这个构建没启用该能力（格式/特性被裁掉） */
-} ql_err_t;
+} QLErr;
 
 /* ----- 公共宏 ----- */
 #define QL_ARRAY_SIZE(a)    (sizeof(a) / sizeof((a)[0]))
@@ -44,7 +44,7 @@ typedef uint32_t ql_object_id_t;
 typedef uint32_t QLType;
 
 /* ----- 生命周期 ----- */
-ql_err_t    qlgl_init(void);
+QLErr    qlgl_init(void);
 void        qlgl_shutdown(void);
 const char *qlgl_version(void);
 

@@ -109,15 +109,15 @@ ql_gfx_gl_end(gfx);
 ```c
 typedef uint16_t QLUINodeId;            /* 即 nodes[] 下标，0xFFFF = 无效 */
 
-ql_err_t ql_ui_node_create (QLUIRoot *ui, QLUINodeId parent,
+QLErr ql_ui_node_create (QLUIRoot *ui, QLUINodeId parent,
                             uint16_t style, QLUINodeId *out);      /* 分配 + 挂到 parent 末尾 */
-ql_err_t ql_ui_node_destroy(QLUIRoot *ui, QLUINodeId id);          /* 子树整体回收 */
-ql_err_t ql_ui_node_insert (QLUIRoot *ui, QLUINodeId parent,
+QLErr ql_ui_node_destroy(QLUIRoot *ui, QLUINodeId id);          /* 子树整体回收 */
+QLErr ql_ui_node_insert (QLUIRoot *ui, QLUINodeId parent,
                             QLUINodeId child, QLUINodeId before);  /* 0xFFFF = 末尾 */
-ql_err_t ql_ui_node_set_text(QLUIRoot *ui, QLUINodeId id, const char *utf8);
-ql_err_t ql_ui_node_set_style(QLUIRoot *ui, QLUINodeId id, uint16_t style);
-ql_err_t ql_ui_node_set_class(QLUIRoot *ui, QLUINodeId id, uint32_t class_mask);
-ql_err_t ql_ui_node_set_inline(QLUIRoot *ui, QLUINodeId id, const char *decls); /* "color:red;..." */
+QLErr ql_ui_node_set_text(QLUIRoot *ui, QLUINodeId id, const char *utf8);
+QLErr ql_ui_node_set_style(QLUIRoot *ui, QLUINodeId id, uint16_t style);
+QLErr ql_ui_node_set_class(QLUIRoot *ui, QLUINodeId id, uint32_t class_mask);
+QLErr ql_ui_node_set_inline(QLUIRoot *ui, QLUINodeId id, const char *decls); /* "color:red;..." */
 ```
 
 约束（对应红线）：

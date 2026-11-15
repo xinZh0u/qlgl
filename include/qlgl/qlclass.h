@@ -43,9 +43,9 @@ struct QLObjectClass {
     void     (*init)(QLObject *self);
     void     (*deinit)(QLObject *self);
     void     (*class_init)(struct QLObjectClass *klass);
-    ql_err_t (*set_property)(QLObject *self, ql_property_t property, QLValue value);
+    QLErr (*set_property)(QLObject *self, ql_property_t property, QLValue value);
     QLValue  (*get_property)(QLObject *self, ql_property_t property);
-    ql_err_t (*event)(QLObject *self, QLEvent *event);
+    QLErr (*event)(QLObject *self, QLEvent *event);
 };
 
 /* 构建期生成的类表项 */

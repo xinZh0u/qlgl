@@ -10,7 +10,7 @@
 
 typedef struct {
     QLObject     *obj;
-    ql_event_cb_t cb;
+    ql_event_cb cb;
     void         *user_data;
     ql_event_t    event;
     uint32_t      conn_id;      /* 单调递增，不复用，避免 ABA */
@@ -90,7 +90,7 @@ static void conn_gc(QLObject *obj)
         obj->conn_head = QL_CONN16_NONE;
 }
 
-uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb_t cb, void *user_data)
+uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb cb, void *user_data)
 {
     if (obj == NULL || cb == NULL)
         return QL_CONN_ID_NONE;
@@ -120,7 +120,7 @@ uint32_t ql_connect(QLObject *obj, ql_event_t event, ql_event_cb_t cb, void *use
     return conn->conn_id;
 }
 
-ql_err_t ql_disconnect(QLObject *obj, uint32_t conn_id)
+QLErr ql_disconnect(QLObject *obj, uint32_t conn_id)
 {
     if (obj == NULL || conn_id == QL_CONN_ID_NONE)
         return QL_ERR_INVAL;

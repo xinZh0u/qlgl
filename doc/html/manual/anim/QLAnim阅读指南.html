@@ -335,13 +335,14 @@ main img {
 <a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
 <a href='../../JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
 <a href='../../跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+<a href='../../命名与API风格.html' title='命名与 API 风格'>命名与 API 风格</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
 <main><div class='inner'>
 <p class='eyebrow'>QLAnim</p>
 <h1>QLAnim / 帧时钟与补间动画 阅读指南</h1>
-<p class='lead'>依赖方向：qlanim 不依赖 qlui、不依赖任何绘制后端，只依赖 qlgl.h 的 qlerrt。 反向依赖是单向的：qlui → qlanim。</p>
+<p class='lead'>依赖方向：qlanim 不依赖 qlui、不依赖任何绘制后端，只依赖 qlgl.h 的 QLErr。 反向依赖是单向的：qlui → qlanim。</p>
 <blockquote>
 <p>本模块只管"时间怎么推进、值怎么插值"，<strong>不管被插值的值是什么</strong>。
 颜色、透明度、绘制偏移都只是 4 个 float。
@@ -408,7 +409,7 @@ main img {
 <hr />
 <h2 id="3">3. 帧时钟</h2>
 <div class="highlight"><pre><span></span><code><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">ql_anim_now_ms</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
-<span class="kt">void</span><span class="w">     </span><span class="nf">ql_anim_set_time_source</span><span class="p">(</span><span class="n">ql_anim_time_fn</span><span class="w"> </span><span class="n">fn</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">     </span><span class="nf">ql_anim_set_time_source</span><span class="p">(</span><span class="n">ql_anim_time_cb</span><span class="w"> </span><span class="n">fn</span><span class="p">);</span>
 </code></pre></div>
 
 <ul>

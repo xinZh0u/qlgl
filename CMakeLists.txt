@@ -476,6 +476,13 @@ if(QLGL_BUILD_TESTS)
              COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
 
+    # 命名约定（doc/命名与API风格.md）：typedef 形状的机械检查
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME test_style
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_style.py)
+    endif()
+
     # 构建期转码（qltext cc --root）：生成物与基准逐字节比对。
     # 样例是 BMP，raw-only 预设把 BMP 解码器砍掉了 → 这条测不了，就不注册。
     if(NOT DEFINED QL_FEAT_IMG_BMP OR QL_FEAT_IMG_BMP)

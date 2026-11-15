@@ -125,7 +125,7 @@ QL_BUTTON_BIT_LEFT = 1, QL_BUTTON_BIT_MIDDLE = 2, QL_BUTTON_BIT_RIGHT = 4  /* �
 
 ```c
 void      ql_input_reset(void);
-ql_err_t  ql_input_push(const QLInputEvent *ev);
+QLErr  ql_input_push(const QLInputEvent *ev);
 uint32_t  ql_input_pending(void);
 int       ql_input_dispatch(void);
 void      ql_input_handle(const QLInputEvent *ev);   /* 立即派发单条 */
@@ -141,13 +141,13 @@ void      ql_input_handle(const QLInputEvent *ev);   /* 立即派发单条 */
 ### 构造 + 入队的便捷函数（后端与测试都用）
 
 ```c
-ql_err_t ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons);
-ql_err_t ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down);
-ql_err_t ql_input_push_leave(void);
-ql_err_t ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy);
-ql_err_t ql_input_push_key(uint32_t key, int down, uint8_t mods);
-ql_err_t ql_input_push_text(const char *utf8);
-ql_err_t ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
+QLErr ql_input_push_move(ql_coord_t x, ql_coord_t y, uint8_t buttons);
+QLErr ql_input_push_button(ql_coord_t x, ql_coord_t y, uint8_t button, int down);
+QLErr ql_input_push_leave(void);
+QLErr ql_input_push_wheel(ql_coord_t x, ql_coord_t y, int32_t dx, int32_t dy);
+QLErr ql_input_push_key(uint32_t key, int down, uint8_t mods);
+QLErr ql_input_push_text(const char *utf8);
+QLErr ql_input_push_touch(ql_coord_t x, ql_coord_t y, uint8_t phase,
                             uint8_t touch_id, uint8_t touch_count);
 ```
 
@@ -187,8 +187,8 @@ int         ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 ## 5. 事件汇（sink）：把输入交给界面层
 
 ```c
-typedef void (*ql_input_sink)(const QLInputEvent *ev, void *user);
-void ql_input_set_sink(ql_input_sink sink, void *user);
+typedef void (*ql_input_event_cb)(const QLInputEvent *ev, void *user);
+void ql_input_set_sink(ql_input_event_cb sink, void *user);
 ```
 
 `ql_input_dispatch()` **只认装好的汇**：不装汇时事件被丢弃（队列照常排空）。

@@ -17,7 +17,7 @@ struct QLPropAPrivate { int32_t x; int32_t y; };
 
 QL_DEFINE_WITH_PRIVATE(QL_PROPA, QLPropA, ql_prop_a, ql_object)
 
-static ql_err_t ql_prop_a_set(QLObject *obj, ql_property_t property, QLValue value)
+static QLErr ql_prop_a_set(QLObject *obj, ql_property_t property, QLValue value)
 {
     struct QLPropAPrivate *priv = ql_prop_a_get_private((QLPropA *)(void *)obj);
     switch (property) {

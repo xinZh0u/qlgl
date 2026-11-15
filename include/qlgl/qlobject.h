@@ -63,8 +63,8 @@ int            ql_object_is(QLObject *self, QLType type);   /* 含父类判断 *
  * 需要自己 ql_object_unref 一次。常见场景请直接用 add_child：
  * 它等价于 set_parent(child, parent) 之后再释放调用方那份引用。
  */
-ql_err_t   ql_object_set_parent(QLObject *self, QLObject *parent);
-ql_err_t   ql_object_add_child(QLObject *parent, QLObject *child);
+QLErr   ql_object_set_parent(QLObject *self, QLObject *parent);
+QLErr   ql_object_add_child(QLObject *parent, QLObject *child);
 
 QLObject  *ql_object_parent(QLObject *self);
 QLObject  *ql_object_first_child(QLObject *self);
@@ -75,8 +75,8 @@ uint32_t   ql_object_child_count(QLObject *self);
  * 对象树结构变化钩子：挂接/摘除时被调用。
  * 渲染层用它把新挂上的控件标记为脏；对象层本身不关心绘制。
  */
-typedef void (*ql_object_tree_hook)(QLObject *obj);
-void ql_object_set_tree_hook(ql_object_tree_hook hook);
+typedef void (*ql_object_tree_cb)(QLObject *obj);
+void ql_object_set_tree_hook(ql_object_tree_cb hook);
 
 /* ----- 私有区（O(1)） ----- */
 static inline void *ql_priv(QLObject *self, QLObjectClass *klass)

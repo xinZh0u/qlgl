@@ -48,9 +48,9 @@ typedef enum {
 } QLWindowBackend;
 
 /* 事件过滤器：返回 1 = 已消费，不再交给界面层（与 ql_input_set_sink 同语义） */
-typedef int (*ql_window_event_fn)(QLUIRoot *ui, const QLInputEvent *ev, void *user);
+typedef int (*ql_window_event_cb)(QLUIRoot *ui, const QLInputEvent *ev, void *user);
 /* 每帧钩子：返回 1 表示这一帧必须整屏重画 */
-typedef int (*ql_window_frame_fn)(QLUIRoot *ui, QLWindow *win, void *user);
+typedef int (*ql_window_frame_cb)(QLUIRoot *ui, QLWindow *win, void *user);
 
 /*
  * 建窗口。失败返回 NULL（当前平台没有可用后端，或尺寸非法）。
@@ -64,7 +64,7 @@ QLWindow *ql_window_create(const char *title, ql_coord_t width, ql_coord_t heigh
  * 绑界面。会做三件事：`ql_ui_attach_input()`、接剪贴板、接输入法，
  * 并按窗口尺寸布局一次。**必须在 create 之后、run 之前**调用。
  */
-ql_err_t ql_window_bind_ui(QLWindow *win, QLUIRoot *ui);
+QLErr ql_window_bind_ui(QLWindow *win, QLUIRoot *ui);
 
 
 /* 跑默认主循环：阻塞到关窗 / `ql_window_quit()`。返回退出码（目前恒 0）。 */
@@ -86,7 +86,7 @@ int ql_window_run_args(QLWindow *win, int argc, char **argv);
  * 换一份界面（live reload / 切页面）：摘掉旧 root 的输入汇，接上新 root，
  * 并按当前窗口尺寸重新布局。旧 root 仍归调用方所有。
  */
-ql_err_t ql_window_set_ui(QLWindow *win, QLUIRoot *ui);
+QLErr ql_window_set_ui(QLWindow *win, QLUIRoot *ui);
 
 /* 手动循环：处理一轮事件 + 有脏区才画；返回 0 = 窗口关了。 */
 int ql_window_poll(QLWindow *win);
@@ -98,13 +98,13 @@ void ql_window_quit(QLWindow *win);
 void ql_window_destroy(QLWindow *win);
 
 /* 请求改窗口尺寸（CSS px）。X11/GL 异步生效；Wayland CPU 端返回 UNSUPPORTED。 */
-ql_err_t ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height);
+QLErr ql_window_resize(QLWindow *win, ql_coord_t width, ql_coord_t height);
 
 /* 可选配置（在 bind/run 之前调用） */
 void ql_window_set_vsync(QLWindow *win, int on);
 void ql_window_set_bg(QLWindow *win, ql_color_t color);
-void ql_window_set_event_filter(QLWindow *win, ql_window_event_fn fn, void *user);
-void ql_window_set_frame_cb(QLWindow *win, ql_window_frame_fn fn, void *user);
+void ql_window_set_event_filter(QLWindow *win, ql_window_event_cb fn, void *user);
+void ql_window_set_frame_cb(QLWindow *win, ql_window_frame_cb fn, void *user);
 
 #if defined(QLGL_ENABLE_GL)
 /* 需要低层能力（zoom / 自定义绘制）时取后端句柄；CPU 后端返回 NULL */

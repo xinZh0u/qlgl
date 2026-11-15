@@ -114,9 +114,9 @@ ql_anim_set_time_source(NULL);
 ### 3.2 启动 / 重基
 
 ```c
-ql_err_t ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms,
+QLErr ql_anim_start(QLAnimKey *key, const QLAnimValue *to, uint32_t dur_ms,
                        uint8_t ease, uint8_t steps,
-                       ql_anim_apply_fn apply, ql_anim_done_fn done, void *user);
+                       ql_anim_apply_cb apply, ql_anim_done_cb done, void *user);
 ```
 
 | 参数 | 说明 |

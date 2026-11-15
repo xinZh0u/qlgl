@@ -335,6 +335,7 @@ main img {
 <a href='../../性能诊断.html' title='性能诊断：怎么量、怎么判、往哪儿改'>性能诊断：怎么量、怎么判、往哪儿改</a>
 <a href='../../JS宿主与框架支持.html' title='QLGL JS 宿主与前端框架支持（设计草案）'>QLGL JS 宿主与前端框架支持（设计草案）</a>
 <a href='../../跨端一致性.html' title='跨端一致性：一份代码多端可跑的边界'>跨端一致性：一份代码多端可跑的边界</a>
+<a href='../../命名与API风格.html' title='命名与 API 风格'>命名与 API 风格</a>
 </details>
 <p class='gen'>由 <code>tools/doc/gen_html.py</code> 生成<br>搜索快捷键：<code>/</code></p>
 </aside>
@@ -434,13 +435,13 @@ main img {
 <p>公共排版逻辑：</p>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">ql_draw2d_text_layout</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">self</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLFont</span><span class="w"> </span><span class="o">*</span><span class="n">font</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">text</span><span class="p">,</span>
 <span class="w">                           </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="n">box</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">color</span><span class="p">,</span>
-<span class="w">                           </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">,</span><span class="w"> </span><span class="n">ql_draw2d_glyph_fn</span><span class="w"> </span><span class="n">emit_glyph</span><span class="p">);</span>
+<span class="w">                           </span><span class="n">QLTextAlign</span><span class="w"> </span><span class="n">align</span><span class="p">,</span><span class="w"> </span><span class="n">ql_draw2d_glyph_cb</span><span class="w"> </span><span class="n">emit_glyph</span><span class="p">);</span>
 </code></pre></div>
 
 <p>后端只需实现"怎么把单个字形变成一次绘制"，排版由它统一处理。</p>
 <hr />
 <h2 id="2-cpu">2. CPU 后端</h2>
-<div class="highlight"><pre><span></span><code><span class="n">ql_err_t</span><span class="w"> </span><span class="nf">ql_draw2d_canvas_init</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span><span class="w"> </span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_draw2d_canvas_init</span><span class="p">(</span><span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span><span class="w"> </span><span class="n">QLCanvas</span><span class="w"> </span><span class="o">*</span><span class="n">canvas</span><span class="p">);</span>
 </code></pre></div>
 
 <p>把既有 <code>QLCanvas</code> 包成 <code>QLDraw2D</code>。用于 MCU、无 GPU 环境、离屏导出。</p>
@@ -469,7 +470,7 @@ main img {
 <span class="n">QLDraw2D</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_gfx_gl_draw</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
 
 <span class="cm">/* 保留式脏区（窗口动画局部重绘）——见 §3.4 */</span>
-<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_set_retained</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">on</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w">  </span><span class="nf">ql_gfx_gl_set_retained</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">on</span><span class="p">);</span>
 <span class="kt">int</span><span class="w">       </span><span class="nf">ql_gfx_gl_begin_rects</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="n">ql_color_t</span><span class="w"> </span><span class="n">clear_color</span><span class="p">,</span>
 <span class="w">                                </span><span class="k">const</span><span class="w"> </span><span class="n">QLRect</span><span class="w"> </span><span class="o">*</span><span class="n">rects</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">);</span>
 
@@ -485,7 +486,7 @@ main img {
 <span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_vertex_count</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span>
 <span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_frame_us</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 上一帧 begin→end 的墙钟耗时 */</span>
 <span class="kt">uint32_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_swap_us</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 其中 eglSwapBuffers 占多久 */</span>
-<span class="n">ql_err_t</span><span class="w">  </span><span class="nf">ql_gfx_gl_read_pixels</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">rgba</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride_bytes</span><span class="p">);</span>
+<span class="n">QLErr</span><span class="w">  </span><span class="nf">ql_gfx_gl_read_pixels</span><span class="p">(</span><span class="n">QLGfxGL</span><span class="w"> </span><span class="o">*</span><span class="n">gfx</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">rgba</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride_bytes</span><span class="p">);</span>
 </code></pre></div>
 
 <h3 id="31">3.1 标准用法</h3>

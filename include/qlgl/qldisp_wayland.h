@@ -42,7 +42,7 @@ int ql_disp_wayland_poll(QLDispDriver *driver);
 int ql_disp_wayland_wait(QLDispDriver *driver, int timeout_ms);
 
 /* 请求窗口尺寸。xdg-shell 由合成器决定尺寸，这里返回 QL_ERR_UNSUPPORTED */
-ql_err_t ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
+QLErr ql_disp_wayland_resize(QLDispDriver *driver, ql_coord_t width,
                                 ql_coord_t height);
 
 /* 绑定每窗口输入实例（多窗口）；NULL = 进程默认 */

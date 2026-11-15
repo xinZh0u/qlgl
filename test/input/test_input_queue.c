@@ -135,7 +135,7 @@ QL_TEST_BEGIN("test_input_queue")
 
         int full_seen = 0;
         for (uint32_t i = 0; i < (uint32_t)QL_CFG_INPUT_QUEUE + 3u; i++) {
-            const ql_err_t rc = ql_input_push_move((ql_coord_t)i, 0, 0);
+            const QLErr rc = ql_input_push_move((ql_coord_t)i, 0, 0);
             if (rc == QL_ERR_FULL)
                 full_seen = 1;
         }
