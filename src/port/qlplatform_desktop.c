@@ -303,7 +303,16 @@ static int desktop_begin(QLPlatformWindow *pw, ql_color_t bg, const QLRect *dirt
 
 static QLDraw2D *desktop_draw(QLPlatformWindow *pw)
 {
-    return (pw != NULL && pw->kind == 1) ? &pw->d2d : NULL;
+    if (pw == NULL)
+        return NULL;
+    if (pw->kind == 0) {
+#if defined(QLGL_ENABLE_GL)
+        return ql_gfx_gl_draw(pw->gl);
+#else
+        return NULL;
+#endif
+    }
+    return &pw->d2d;
 }
 
 static void desktop_end(QLPlatformWindow *pw)

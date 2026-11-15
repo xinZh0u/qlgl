@@ -38,6 +38,7 @@ struct QLWindow {
     int        quit;
     int        need_full;
     int        input_attached;
+    int        warned_no_draw;
 
     /* `ql_window_run_args` 的开发参数（性能教程用） */
     int        spin;
@@ -171,6 +172,12 @@ static void render_frame(QLWindow *win, const QLRect *rects, int n, int full)
     int force = win->plat->begin(win->pw, window_bg(win), dirty, dn);
     QLDraw2D *d2d = win->plat->draw(win->pw);
     if (d2d == NULL) {
+        /* 后端有窗口却给不出 draw 接口：这帧什么都不会画（白屏），
+         * 只在第一次报错，避免每帧刷屏。 */
+        if (!win->warned_no_draw) {
+            QL_LOGE("ql_window: platform draw() returned NULL, UI not rendered");
+            win->warned_no_draw = 1;
+        }
         win->plat->end(win->pw);
         return;
     }
