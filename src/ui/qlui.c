@@ -6842,6 +6842,98 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
     return &ir->img;
 }
 
+/* ------------------------------ <video> ↔ QLMedia ------------------------------ */
+
+static QLMedia *media_for_node(QLUIRoot *ui, QLUINodeRT *node)
+{
+    for (uint8_t i = 0; i < ui->media_count; i++)
+        if (ui->media_nodes[i] == node)
+            return ui->media_handles[i];
+    return NULL;
+}
+
+QLErr ql_ui_bind_media(QLUIRoot *ui, QLUINodeRT *node, QLMedia *media)
+{
+    if (ui == NULL || node == NULL || media == NULL)
+        return QL_ERR_INVAL;
+    if (node->src == NULL || node->src->tag != QL_UI_TAG_VIDEO)
+        return QL_ERR_INVAL;
+
+    for (uint8_t i = 0; i < ui->media_count; i++) {
+        if (ui->media_nodes[i] == node) {
+            ui->media_handles[i] = media;
+            ql_ui_invalidate(ui, node);
+            return QL_OK;
+        }
+    }
+    if (ui->media_count >= QL_CFG_UI_MEDIA_MAX)
+        return QL_ERR_FULL;
+
+    ui->media_nodes[ui->media_count] = node;
+    ui->media_handles[ui->media_count] = media;
+    ui->media_count++;
+    ql_ui_invalidate(ui, node);
+    return QL_OK;
+}
+
+void ql_ui_invalidate(QLUIRoot *ui, QLUINodeRT *node)
+{
+    (void)ui;
+    if (node != NULL)
+        node->flags |= QL_UI_RT_DIRTY;
+}
+
+#if QL_FEAT_UI_MEDIA
+/*
+ * 画视频帧：object-fit: contain（等比缩放到内容盒、居中）。
+ * 没有帧时返回 0，让调用方继续画占位盒。
+ * （没有媒体能力的构建里整段不编：qlmedia 的桩不提供帧 API。）
+ */
+static int draw_video(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
+{
+    if (ui == NULL || node == NULL || d2d == NULL || d2d->blit_image == NULL)
+        return 0;
+    QLMedia *m = media_for_node(ui, node);
+    if (m == NULL)
+        return 0;
+
+    const QLMediaVideoFrame *f = ql_media_acquire_frame(m);
+    if (f == NULL || f->px == NULL)
+        return 0;
+
+    QLRect box = node->content_box;
+    if (ql_rect_is_empty(box))
+        box = node->border_box;
+
+    if (!ql_rect_is_empty(box) && f->w > 0 && f->h > 0) {
+        ql_coord_t dw = box.w;
+        ql_coord_t dh = (ql_coord_t)(((int64_t)f->h * box.w) / f->w);
+        if (dh > box.h) {
+            dh = box.h;
+            dw = (ql_coord_t)(((int64_t)f->w * box.h) / f->h);
+        }
+        if (dw > 0 && dh > 0) {
+            const QLRect dst = ql_rect_make(box.x + (box.w - dw) / 2,
+                                            box.y + (box.h - dh) / 2, dw, dh);
+            QLImage img;
+            memset(&img, 0, sizeof(img));
+            img.px = f->px;
+            img.len = (uint32_t)(f->stride * (uint32_t)f->h);
+            img.w = (uint16_t)f->w;
+            img.h = (uint16_t)f->h;
+            img.stride = (uint16_t)f->stride;
+            img.format = f->format;
+            img.owned = 0;
+            img.rev = (uint32_t)f->pts_us;   /* 每帧不同：GL 纹理缓存据此重传 */
+            d2d->blit_image(d2d, &img, dst, NULL, 0, 255);
+        }
+    }
+
+    ql_media_frame_release(f);
+    return 1;
+}
+#endif /* QL_FEAT_UI_MEDIA */
+
 /* ------------------------------ 图像热区 ------------------------------ */
 
 /* 点是否在矩形内（右/下边界不含，与布局的半开区间一致） */
@@ -8415,9 +8507,17 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
     if (!inv && node->src != NULL && node->src->tag == QL_UI_TAG_IMG)
         draw_img(node->owner, node, d2d);
 
-    /* EMBED 包：画标签名当占位提示（这些节点自身没有文本） */
-    if (!inv && node->src != NULL && tag_is_embed_box(node->src->tag))
+    /* <video>：有帧就画帧（contain），没有帧/没绑定才画占位盒 */
+#if QL_FEAT_UI_MEDIA
+    if (!inv && node->src != NULL && node->src->tag == QL_UI_TAG_VIDEO &&
+        node->owner != NULL && draw_video(node->owner, node, d2d)) {
+        /* 帧已画 */
+    } else
+#endif
+    if (!inv && node->src != NULL && tag_is_embed_box(node->src->tag)) {
+        /* EMBED 包：画标签名当占位提示（这些节点自身没有文本） */
         draw_embed_placeholder(node, d2d);
+    }
 
     /* <progress>/<meter>：轨道就是背景（已经画完），这里补填充 */
     if (!inv && node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||
@@ -10294,8 +10394,12 @@ int ql_ui_consume_dirty(QLUIRoot *ui, QLRect *out, int max)
             continue;
         node->flags = (uint8_t)(node->flags & ~QL_UI_RT_DIRTY);
 
-        /* 用绘制包围盒而不是边框盒：阴影/未裁剪子树也要重画 */
+        /* 用绘制包围盒而不是边框盒：阴影/未裁剪子树也要重画。
+         * 有些节点（例如带外框的替换元素）paint_box 可能还没算出来，
+         * 退回到边框盒，否则"标脏了但拿不到矩形"会静默丢重绘。 */
         QLRect r = node->paint_box;
+        if (ql_rect_is_empty(r))
+            r = node->border_box;
         if (ql_rect_is_empty(r))
             continue;
 

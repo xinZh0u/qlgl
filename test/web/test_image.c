@@ -244,7 +244,8 @@ QL_TEST_BEGIN("test_image")
 
     /* ---------- 7. 有界校验：溢出与不自洽直接拒绝 ---------- */
     {
-        QLImage ok = { (const uint8_t *)s_raw, sizeof(s_raw), 8, 8, 16, QL_IMAGE_RGB565, 0 };
+        QLImage ok = { (const uint8_t *)s_raw, sizeof(s_raw), 8, 8, 16,
+                       QL_IMAGE_RGB565, 0, 0 };
         QL_CHECK_EQ(ql_image_validate(&ok), 1);
 
         /* len 与 stride*h 不一致 */

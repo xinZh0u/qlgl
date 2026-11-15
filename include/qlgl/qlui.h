@@ -1798,6 +1798,10 @@ struct QLUIRoot {
     struct QLUIImageRT *images;        /* 图像池（没有 <img> 时为 NULL） */
     uint16_t       image_count;       /* doc 里 <dialog> 的个数（0 时可以跳过整段浮层逻辑） */
     struct QLUIProgress *progresses;   /* 进度条池（没有 progress/meter 时为 NULL） */
+    /* <video> ↔ QLMedia 绑定（M2）：按节点指针查表，最多 QL_CFG_UI_MEDIA_MAX 个 */
+    struct QLUINodeRT *media_nodes[QL_CFG_UI_MEDIA_MAX];
+    struct QLMedia    *media_handles[QL_CFG_UI_MEDIA_MAX];
+    uint8_t            media_count;
     uint16_t       progress_count;
     struct QLUISelectState *selects;   /* 下拉框池（没有 <select> 时为 NULL） */
     uint16_t       select_count;
@@ -1996,6 +2000,19 @@ typedef struct {
 QLErr    ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
 /* 节点当前的解码结果；没有/失败返回 NULL，不是 <img> 返回 NULL */
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
+
+/*
+ * 把 QLMedia 绑到 `<video>` 节点：之后的渲染会取"最新一帧"画进盒子
+ * （object-fit: contain 的等比缩放，居中；没有帧时仍显示占位盒）。
+ * `media` 必须活到 `ql_ui_free(ui)` 之后；同一个节点重复绑定会覆盖。
+ */
+QLErr       ql_ui_bind_media(QLUIRoot *ui, QLUINodeRT *node, QLMedia *media);
+
+/*
+ * 把一个节点标脏（视频每来新帧调一次）。主循环随后会通过
+ * `ql_ui_consume_dirty()` 拿到它的矩形并局部重绘。
+ */
+void        ql_ui_invalidate(QLUIRoot *ui, QLUINodeRT *node);
 
 /* ------------------------------ 图像热区 ------------------------------ */
 

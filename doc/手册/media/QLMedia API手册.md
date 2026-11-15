@@ -81,6 +81,40 @@ int  ql_media_poll(QLMedia *m);               /* 主循环里调；返回 1 */
 - 暂停时冻结在暂停瞬间；
 - `seek()` 是异步的：位置立即跳到目标，实际音频在新位置之前可能还差几十毫秒。
 
+### 2.3 视频（M2）
+
+```c
+/* 每来一帧 serial +1；没有视频返回 0 */
+uint32_t ql_media_video_serial(const QLMedia *m);
+/* 原始解码尺寸 */
+int ql_media_video_size(const QLMedia *m, ql_coord_t *w, ql_coord_t *h);
+
+/* 借用"最新一帧"；画完必须 release（否则解码端会停） */
+const QLMediaVideoFrame *ql_media_acquire_frame(QLMedia *m);
+void ql_media_frame_release(const QLMediaVideoFrame *frame);
+
+/* 把媒体绑到 <video> 节点；每次 serial 变化后标脏该节点 */
+QLErr ql_ui_bind_media(QLUIRoot *ui, QLUINodeRT *node, QLMedia *media);
+void  ql_ui_invalidate(QLUIRoot *ui, QLUINodeRT *node);
+```
+
+主循环的写法：
+
+```c
+uint32_t serial = 0;
+for (;;) {
+    ql_media_poll(m);
+    if (ql_media_video_serial(m) != serial) {
+        serial = ql_media_video_serial(m);
+        ql_ui_invalidate(ui, video_node);   /* 只重绘视频那一块 */
+    }
+    if (!ql_window_poll(win)) break;
+}
+```
+
+帧是 **RGBA8888**、object-fit: contain（等比居中）。完整例子：
+`example/45_video_player`。
+
 ## 3. 后端与设备（测试 / 板级）
 
 M1 的两条接缝都可以替换，和 `QLPlatform` 同构：
@@ -122,13 +156,14 @@ const QLAudioSink    *ql_audio_sink_default(void);
 它总是编译，媒体能力关闭时提供上述桩；`qlmedia_ffmpeg.c` / `qlaudio_alsa.c`
 只在需要真实解码/出声时加入。
 
-## 5. 限制（M1）
+## 5. 限制（M1 + M2）
 
-- 只有音频；`<video>` 仍是占位盒（M2）；
+- 视频走 **CPU**：RGBA8888 + `sws_scale`，GPU 零拷贝/硬解在 M3；
 - 只支持本地文件，网络流不做（`QL_FEAT_MEDIA_NET` 未实现）；
-- 没有字幕 / `<track>`（M3）；没有硬件解码；
+- 没有字幕 / `<track>`（M3）；
 - `open()` 是同步的：大文件的容器头解析会有几毫秒阻塞；
-- 一个 `QLMedia` 一个工作线程；页面里十几个音频实例要自己控制数量。
+- 一个 `QLMedia` 一个工作线程；页面里十几个实例要自己控制数量；
+- 视频尺寸在打开时固定，播放中换分辨率不支持（会在解码前按上限拒绝）。
 
 ## 6. 与界面层的关系
 

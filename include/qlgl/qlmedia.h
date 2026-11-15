@@ -57,6 +57,11 @@ typedef struct QLMediaBackend {
     int     (*rate)(void *h);
     int     (*channels)(void *h);
     int     (*read_audio)(void *h, int16_t *buf, int max_frames);
+    /* 视频：解码一帧到 dst（RGBA8888，dst_bytes = w*h*4）。
+     * 返回 1 = 有帧，0 = 没有更多（EOF），<0 = 错误。 */
+    int     (*video_size)(void *h, int *w, int *out_h);
+    int     (*read_video)(void *h, uint8_t *dst, int dst_bytes,
+                          int *out_w, int *out_h, int64_t *pts_us);
     QLErr   (*seek)(void *h, int64_t ms);
 } QLMediaBackend;
 
@@ -86,6 +91,30 @@ const QLAudioSink *ql_audio_sink(void);
 /* 默认实现（弱符号：板级/测试可以覆盖） */
 const QLMediaBackend *ql_media_backend_default(void);
 const QLAudioSink    *ql_audio_sink_default(void);
+
+/* ----- 视频帧（M2：RGBA8888，CPU 可直接画；M3 再做 GPU 零拷贝） -----
+ *
+ * 借用语义：`ql_media_acquire_frame()` 返回带引用的"最新一帧"（没有则 NULL），
+ * 画完必须 `ql_media_frame_release()`。帧池固定大小，不释放会让解码端停下来。
+ */
+typedef struct QLMediaVideoFrame {
+    const uint8_t *px;     /* RGBA8888（非预乘），行优先 */
+    int32_t   w, h;
+    uint32_t  stride;      /* 字节/行 = w*4 */
+    int64_t   pts_us;      /* 该帧在媒体时间轴上的位置 */
+    uint8_t   format;      /* QL_IMAGE_RGBA8888 */
+    /* 内部字段：调用方不要读写 */
+    int       refs;
+    int       in_use;
+    void     *owner;
+} QLMediaVideoFrame;
+
+const QLMediaVideoFrame *ql_media_acquire_frame(QLMedia *m);
+void ql_media_frame_release(const QLMediaVideoFrame *frame);
+/* 每发布一帧 +1；UI 用它决定要不要标脏（暂停时不变） */
+uint32_t ql_media_video_serial(const QLMedia *m);
+/* 视频原始尺寸；没有视频返回 0 */
+int ql_media_video_size(const QLMedia *m, ql_coord_t *w, ql_coord_t *h);
 
 /* ----- 生命周期与控制 ----- */
 QLMedia *ql_media_open(const char *src);

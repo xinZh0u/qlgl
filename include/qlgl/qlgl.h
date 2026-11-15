@@ -76,6 +76,7 @@ void ql_log(int level, const char *fmt, ...);
 #include "qlgeom.h"
 #include "qldisp.h"
 #include "qlinput.h"
+#include "qlmedia.h"
 #include "qlanim.h"
 #include "qlfont.h"
 #include "qlfont_ft.h"
@@ -90,7 +91,6 @@ void ql_log(int level, const char *fmt, ...);
 #include "qldisp_wayland.h"
 #include "qlgfx_gl.h"
 #include "qlplatform.h"
-#include "qlmedia.h"
 #include "qlwindow.h"
 
 #endif /* QLGL_H */

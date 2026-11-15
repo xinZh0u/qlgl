@@ -53,6 +53,12 @@ typedef struct {
     uint16_t       stride;   /* 字节/行（可大于 w*bpp，便于对齐） */
     uint8_t        format;   /* QLImageFormat */
     uint8_t        owned;    /* 1 = 归调用方（QLUIRoot）释放；0 = 指向 .rodata */
+    /*
+     * 内容版本（0 = 内容不变）。GL 后端按 `px` 指针缓存纹理；视频这类
+     * "复用同一块缓冲、每帧内容都变"的源必须带版本号，否则会命中旧纹理
+     * （画面冻在第一帧）。CPU 后端忽略它。
+     */
+    uint32_t       rev;
 } QLImage;
 
 /* 每个像素的字节数；未知格式返回 0 */

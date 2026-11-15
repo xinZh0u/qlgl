@@ -116,7 +116,7 @@
 | 嵌入 | `<object>` | `EMBED` | ✅ 占位 |
 | 嵌入 | `<picture>` | `IMAGE` | ✅ 已支持（P3e：透明容器，`inline-block`） |
 | 嵌入 | `<source>` | `IMAGE` | ✅ 已支持（P3e：空元素，`display:none`；不做候选选择） |
-| 媒体 | `<audio>` | `EMBED` | ✅ 引擎（M1 音频）/ 无媒体构建时占位 |
+| 媒体 | `<audio>` / `<video>` | `EMBED` | ✅ 引擎（M1 音频、M2 视频 CPU）/ 无媒体构建时占位 |
 | 媒体 | `<track>` | `EMBED` | ✅ 占位 |
 | 媒体 | `<video>` | `EMBED` | ✅ 占位 |
 | 表格 | `<caption>` | `TABLE` | ✅ 可用 |

@@ -219,6 +219,15 @@ struct QLMedia {
     int64_t         duration_ms;
     int             has_audio;
     int             has_video;
+    int             vw, vh;
+    QLMediaVideoFrame vframes[QL_CFG_MEDIA_VIDEO_FRAMES];
+    uint8_t        *vmem;
+    size_t          vframe_bytes;
+    QLMediaVideoFrame *latest;      /* 最新发布的帧（不含引用） */
+    QLMediaVideoFrame *vpending;    /* 已解码、等 pts 的帧 */
+    int             video_eof;
+    uint32_t        vserial;
+    int64_t         play_start_us;  /* 无音频时用系统时钟做基准 */
     int             rate;
     int             channels;
 
@@ -287,6 +296,165 @@ int64_t ql_media_position_ms(const QLMedia *cm)
     return pos;
 }
 
+static int64_t now_us_mono(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+/* 音画同步用：有音频就以"耳朵听到的位置"为准，否则用系统时钟 */
+static int64_t clock_ms_locked(QLMedia *m)
+{
+    if (m->has_audio && m->sink_ctx != NULL)
+        return pos_locked(m);
+    int64_t e = (now_us_mono() - m->play_start_us) / 1000;
+    if (e < 0)
+        e = 0;
+    return m->base_ms + e;
+}
+
+static QLMediaVideoFrame *frame_free_slot(QLMedia *m)
+{
+    /* 调用方持锁 */
+    for (int i = 0; i < QL_CFG_MEDIA_VIDEO_FRAMES; i++) {
+        QLMediaVideoFrame *f = &m->vframes[i];
+        if (f->px != NULL && f != m->latest && !f->in_use && f->refs == 0)
+            return f;
+    }
+    return NULL;
+}
+
+static void frame_publish(QLMedia *m, QLMediaVideoFrame *f)
+{
+    pthread_mutex_lock(&m->mu);
+    f->in_use = 0;
+    m->latest = f;
+    m->vserial++;
+    pthread_mutex_unlock(&m->mu);
+}
+
+static void frame_drop(QLMedia *m, QLMediaVideoFrame *f)
+{
+    (void)m;
+    f->in_use = 0;
+}
+
+/* 解码/呈现一帧；在 worker 里、不持锁调用 */
+static void video_step(QLMedia *m)
+{
+    if (m->vpending != NULL) {
+        pthread_mutex_lock(&m->mu);
+        const int live = m->playing && !m->paused;
+        const int64_t clock = clock_ms_locked(m);
+        pthread_mutex_unlock(&m->mu);
+
+        if (!live)
+            return;
+        const int64_t pts = m->vpending->pts_us;
+        if (pts <= clock * 1000 + 5000)
+            frame_publish(m, m->vpending);
+        else if (pts < clock * 1000 - 80000)
+            frame_drop(m, m->vpending);
+        else
+            return;                 /* 还早：先让音频线程/时钟走 */
+        m->vpending = NULL;
+    }
+
+    if (m->vpending != NULL)
+        return;
+
+    pthread_mutex_lock(&m->mu);
+    QLMediaVideoFrame *f = frame_free_slot(m);
+    if (f != NULL)
+        f->in_use = 1;
+    pthread_mutex_unlock(&m->mu);
+    if (f == NULL)
+        return;                     /* 池满：等 UI 放掉旧帧 */
+
+    int w = 0, h = 0;
+    int64_t pts = 0;
+    const int r = m->be->read_video(m->be_ctx, (uint8_t *)f->px,
+                                    (int)m->vframe_bytes, &w, &h, &pts);
+    if (r <= 0) {
+        f->in_use = 0;
+        if (r < 0) {
+            pthread_mutex_lock(&m->mu);
+            snprintf(m->err, sizeof(m->err), "video decode error");
+            set_state(m, QL_MEDIA_ERROR);
+            ev_push(m, QL_MEDIA_EV_ERROR);
+            m->playing = 0;
+            pthread_mutex_unlock(&m->mu);
+        } else {
+            m->video_eof = 1;
+            if (!m->has_audio) {
+                pthread_mutex_lock(&m->mu);
+                m->base_ms = m->duration_ms;
+                m->playing = 0;
+                set_state(m, QL_MEDIA_ENDED);
+                ev_push(m, QL_MEDIA_EV_ENDED);
+                pthread_mutex_unlock(&m->mu);
+            }
+        }
+        return;
+    }
+
+    f->w = w;
+    f->h = h;
+    f->stride = (uint32_t)w * 4u;
+    f->pts_us = pts;
+    f->format = QL_IMAGE_RGBA8888;
+    m->vpending = f;
+}
+
+const QLMediaVideoFrame *ql_media_acquire_frame(QLMedia *m)
+{
+    if (m == NULL)
+        return NULL;
+    pthread_mutex_lock(&m->mu);
+    QLMediaVideoFrame *f = m->latest;
+    if (f != NULL && f->px != NULL)
+        f->refs++;
+    else
+        f = NULL;
+    pthread_mutex_unlock(&m->mu);
+    return f;
+}
+
+void ql_media_frame_release(const QLMediaVideoFrame *cf)
+{
+    if (cf == NULL)
+        return;
+    QLMediaVideoFrame *f = (QLMediaVideoFrame *)cf;
+    QLMedia *m = (QLMedia *)f->owner;
+    if (m == NULL)
+        return;
+    pthread_mutex_lock(&m->mu);
+    if (f->refs > 0)
+        f->refs--;
+    pthread_mutex_unlock(&m->mu);
+}
+
+uint32_t ql_media_video_serial(const QLMedia *cm)
+{
+    if (cm == NULL)
+        return 0;
+    QLMedia *m = (QLMedia *)cm;
+    pthread_mutex_lock(&m->mu);
+    const uint32_t s = m->vserial;
+    pthread_mutex_unlock(&m->mu);
+    return s;
+}
+
+int ql_media_video_size(const QLMedia *m, ql_coord_t *w, ql_coord_t *h)
+{
+    if (m == NULL || !m->has_video)
+        return 0;
+    if (w != NULL) *w = (ql_coord_t)m->vw;
+    if (h != NULL) *h = (ql_coord_t)m->vh;
+    return 1;
+}
+
 int64_t ql_media_duration_ms(const QLMedia *m) { return (m != NULL) ? m->duration_ms : 0; }
 QLMediaState ql_media_state(const QLMedia *m) { return (m != NULL) ? m->state : QL_MEDIA_ERROR; }
 int ql_media_has_audio(const QLMedia *m) { return (m != NULL) ? m->has_audio : 0; }
@@ -352,9 +520,29 @@ static void *media_thread(void *arg)
             (void)m->be->seek(m->be_ctx, target);
             if (m->sink->flush != NULL)
                 m->sink->flush(m->sink_ctx);
+            if (m->vpending != NULL) {
+                m->vpending->in_use = 0;
+                m->vpending = NULL;
+            }
+            m->video_eof = 0;
+            pthread_mutex_lock(&m->mu);
+            m->play_start_us = now_us_mono();
+            pthread_mutex_unlock(&m->mu);
         }
 
-        const int got = m->be->read_audio(m->be_ctx, buf, QL_CFG_MEDIA_FRAMES);
+        if (m->has_video)
+            video_step(m);
+
+        if (!m->has_audio) {
+            /* 纯视频：没有阻塞写设备，靠 5ms 的节拍等下一帧 */
+            struct timespec ts = { 0, 5 * 1000000L };
+            nanosleep(&ts, NULL);
+            continue;
+        }
+
+        const int want = m->has_video ? (QL_CFG_MEDIA_FRAMES / 2)
+                                      : QL_CFG_MEDIA_FRAMES;
+        const int got = m->be->read_audio(m->be_ctx, buf, want);
         if (got > 0) {
             pthread_mutex_lock(&m->mu);
             const int vol = m->volume;
@@ -459,6 +647,39 @@ QLMedia *ql_media_open(const char *src)
     if (m->channels <= 0 || m->channels > 8)
         m->channels = 2;
 
+    /* 视频帧池：打开时就按解码尺寸分配，播放期零分配 */
+    if (m->has_video) {
+        int vw = 0, vh = 0;
+        if (be->video_size == NULL || be->read_video == NULL ||
+            be->video_size(m->be_ctx, &vw, &vh) != 0 || vw <= 0 || vh <= 0 ||
+            vw > QL_CFG_MEDIA_MAX_DIM || vh > QL_CFG_MEDIA_MAX_DIM) {
+            QL_LOGW("media: video %dx%d rejected (limit %d)", vw, vh,
+                    QL_CFG_MEDIA_MAX_DIM);
+            m->has_video = 0;
+        } else {
+            m->vw = vw;
+            m->vh = vh;
+            m->vframe_bytes = (size_t)vw * (size_t)vh * 4u;
+            m->vmem = (uint8_t *)ql_mem_alloc(m->vframe_bytes *
+                                              QL_CFG_MEDIA_VIDEO_FRAMES);
+            if (m->vmem == NULL) {
+                QL_LOGW("media: no memory for video frames (%ux%u)", vw, vh);
+                m->has_video = 0;
+            } else {
+                for (int i = 0; i < QL_CFG_MEDIA_VIDEO_FRAMES; i++) {
+                    QLMediaVideoFrame *f = &m->vframes[i];
+                    memset(f, 0, sizeof(*f));
+                    f->px = m->vmem + (size_t)i * m->vframe_bytes;
+                    f->w = vw;
+                    f->h = vh;
+                    f->stride = (uint32_t)vw * 4u;
+                    f->format = QL_IMAGE_RGBA8888;
+                    f->owner = m;
+                }
+            }
+        }
+    }
+
     m->state = QL_MEDIA_READY;
     ev_push(m, QL_MEDIA_EV_READY);
     return m;
@@ -481,6 +702,7 @@ void ql_media_close(QLMedia *m)
         m->sink->close(m->sink_ctx);
     if (m->be != NULL && m->be->close != NULL)
         m->be->close(m->be_ctx);
+    ql_mem_free(m->vmem);
     pthread_cond_destroy(&m->cv);
     pthread_mutex_destroy(&m->mu);
     ql_mem_free(m);
@@ -533,6 +755,7 @@ QLErr ql_media_play(QLMedia *m)
 
     m->playing = 1;
     m->paused = 0;
+    m->play_start_us = now_us_mono();
     set_state(m, QL_MEDIA_PLAYING);
     pthread_cond_broadcast(&m->cv);
     pthread_mutex_unlock(&m->mu);

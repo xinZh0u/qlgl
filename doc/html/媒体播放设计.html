@@ -346,7 +346,8 @@ main img {
 <h1>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</h1>
 <p class='lead'>这份文档定四件事：播放引擎怎么分层、时钟和线程谁说了算、 帧怎么落到 CPU/GL 两个后端、&lt;track&gt; 和容器字幕分别归谁。 和图像管线一样，红线是外来数据必须有界：媒体文件是典型的&quot;不可信、可畸形、 可能很大&quot;的输入，任何一条路径都不许 OOM、越界或死循环。</p>
 <blockquote>
-<p>状态：<strong>设计；M1（音频）已实现（2026-11-15）</strong>。M2（视频）/ M3（字幕）见 §13。
+<p>状态：<strong>设计；M1（音频）与 M2（视频，CPU）已实现（2026-11-15）</strong>。
+M3（GPU 零拷贝 + 字幕）见 §13。
 目标读者：要实现媒体后端、音视频输出、字幕轨与 <code>&lt;video&gt;</code> 布局/绘制的人。
 相关：<a href="平台后端设计.html">平台后端设计</a>（回调表套路）、
 <a href="图像管线设计.html">图像管线设计</a>（外来数据必须有界、<code>blit_image</code>）、
@@ -1116,9 +1117,9 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <td>本地 mp3/wav 连续播放 5 分钟，欠载 0；暂停/恢复/seek 正确；假后端测试全绿</td>
 </tr>
 <tr>
-<td><strong>M2（视频，CPU）</strong></td>
-<td>视频解码 + 帧池 + <code>sws_scale</code> + <code>&lt;video&gt;</code> 布局（固有尺寸/<code>object-fit</code>）+ 脏区</td>
-<td>720p@30 播放流畅、音画同步；暂停零重绘；窗口缩放正确</td>
+<td><strong>M2（视频，CPU）✅</strong></td>
+<td>视频解码 + 帧池 + <code>sws_scale</code> + <code>&lt;video&gt;</code> 布局（contain）+ 脏区</td>
+<td>320×180@30 音画同步、暂停零重绘、拖动进度条正确；720p 取决于机器</td>
 </tr>
 <tr>
 <td><strong>M3（视频，GL + 字幕）</strong></td>
@@ -1300,6 +1301,55 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 </ul>
 <p><strong>验收实测（本机 ALSA）</strong>：5 分钟 mp3 连续播放，位置走到 <code>300.00 s</code>、
 <strong>欠载 0</strong>、正常收到 <code>ENDED</code>；5 秒文件播放用时 ≈5 秒（音频时钟没有漂）。</p>
+<h3 id="152-m2cpu">15.2 M2（视频，CPU）落地说明</h3>
+<p>M2 做的是"能稳定播放、能进 <code>&lt;video&gt;</code>"，刻意不做 GPU 零拷贝：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解码</td>
+<td>与音频<strong>同一个 worker</strong>：音/视频各一条有界包队列（32/64），解码器各自持有；避免两个线程同时用 AVFormatContext</td>
+</tr>
+<tr>
+<td>帧格式</td>
+<td>RGBA8888（<code>sws_scale</code>），一帧一块紧凑缓冲</td>
+</tr>
+<tr>
+<td>帧池</td>
+<td>固定 <code>QL_CFG_MEDIA_VIDEO_FRAMES</code>（默认 3）块；UI 借用 + <code>ql_media_frame_release()</code> 归还，池满时解码端自动停</td>
+</tr>
+<tr>
+<td>同步</td>
+<td>音频为主时钟（无音频用系统单调钟）；帧 <code>pts &lt;= clock+5ms</code> 才发布，落后 &gt;80ms 直接丢</td>
+</tr>
+<tr>
+<td>界面</td>
+<td><code>ql_ui_bind_media(ui, &lt;video&gt; 节点, media)</code>；每来新帧 <code>ql_ui_invalidate(ui, 节点)</code>，主循环只重绘那一块</td>
+</tr>
+<tr>
+<td>缩放</td>
+<td>object-fit: contain（等比、居中）；不做裁剪/圆角之外的滤镜</td>
+</tr>
+<tr>
+<td>GL 缓存</td>
+<td><code>QLImage</code> 新增 <code>rev</code>（内容版本）：视频复用同一块缓冲，纹理缓存必须按 rev 重传，否则画面冻在第一帧</td>
+</tr>
+<tr>
+<td>示例</td>
+<td><code>example/45_video_player</code>（文件名/时间/可调进度条/播放暂停）</td>
+</tr>
+</tbody>
+</table>
+<p>测试：<code>test_media_video_fake</code>（帧池/发布/暂停/seek）、<code>test_media_video_ffmpeg</code>
+（系统 ffmpeg 现场生成 1s mp4，没有工具就 SKIP）；真机窗口播放 320×180@30fps
+音画同步、暂停零重绘、拖动进度条正常。</p>
+<p>M2 仍然<strong>没有</strong>做：GPU 零拷贝（YUV 三平面 + shader，M3）、HDR/色彩转换矩阵、
+字幕（M3）、硬件解码、8K（<code>QL_CFG_MEDIA_MAX_DIM</code> 会在解码前拒绝）。</p>
 <p>M1 仍然<strong>没有</strong>做：<code>&lt;audio src&gt;</code> 自动打开、视频帧、字幕、网络流、硬件解码。</p>
 <p><strong>备选方案</strong>（评估过，不采用）：</p>
 <ul>
@@ -1366,6 +1416,7 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <li><a href='#14-qt'>14. 与 Qt 的对照（抄什么、不抄什么）</a></li>
 <li><a href='#15'>15. 风险与备选</a></li>
 <li><a href='#151-m1'>15.1 M1 落地说明（与草案的差异）</a></li>
+<li class='lv3'><a href='#152-m2cpu'>15.2 M2（视频，CPU）落地说明</a></li>
 <li><a href='#16'>16. 开放问题（实现前要定）</a></li>
 </ul></aside>
 </div>

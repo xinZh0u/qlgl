@@ -317,6 +317,7 @@ struct QLGfxGL {
     GLuint           img_tex[QL_GL_IMAGE_CACHE];
     const uint8_t   *img_key[QL_GL_IMAGE_CACHE];   /* 源指针，兼作缓存键 */
     uint16_t         img_w[QL_GL_IMAGE_CACHE];
+    uint32_t         img_rev[QL_GL_IMAGE_CACHE];
     uint16_t         img_h[QL_GL_IMAGE_CACHE];
     uint8_t          img_fmt[QL_GL_IMAGE_CACHE];
     int              img_count;
@@ -2082,8 +2083,22 @@ static GLuint gl_image_tex(QLGfxGL *g, const QLImage *img)
 {
     for (int i = 0; i < g->img_count; i++) {
         if (g->img_key[i] == img->px && g->img_w[i] == img->w &&
-            g->img_h[i] == img->h && g->img_fmt[i] == img->format)
+            g->img_h[i] == img->h && g->img_fmt[i] == img->format) {
+            if (g->img_rev[i] == img->rev)
+                return g->img_tex[i];
+            /* 同一块缓冲、内容变了（视频帧）：只重传这一张纹理 */
+            glBindTexture(GL_TEXTURE_2D, g->img_tex[i]);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            const GLint row_len =
+                (GLint)(img->stride / ql_image_format_bpp(img->format));
+            glPixelStorei(GL_UNPACK_ROW_LENGTH,
+                          (row_len > (GLint)img->w) ? row_len : 0);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)img->w,
+                            (GLsizei)img->h, GL_RGBA, GL_UNSIGNED_BYTE, img->px);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            g->img_rev[i] = img->rev;
             return g->img_tex[i];
+        }
     }
 
     int slot;
@@ -2146,6 +2161,7 @@ static GLuint gl_image_tex(QLGfxGL *g, const QLImage *img)
     g->img_w[slot] = img->w;
     g->img_h[slot] = img->h;
     g->img_fmt[slot] = img->format;
+    g->img_rev[slot] = img->rev;
     return g->img_tex[slot];
 }
 

@@ -441,9 +441,21 @@
 #ifndef QL_FEAT_UI_MEDIA
 #define QL_FEAT_UI_MEDIA            QL_FEAT_MEDIA
 #endif
-/* 一次解码/写设备多少帧（48kHz 下 1024 ≈ 21ms） */
+/* 一次解码/写设备多少帧（48kHz 下 1024 ≈ 21ms；有视频时内部用一半） */
 #ifndef QL_CFG_MEDIA_FRAMES
 #define QL_CFG_MEDIA_FRAMES         1024
+#endif
+/* 视频帧池：同一时刻最多几帧在"解码完成 / 待显示 / 正在画" */
+#ifndef QL_CFG_MEDIA_VIDEO_FRAMES
+#define QL_CFG_MEDIA_VIDEO_FRAMES   3
+#endif
+/* 每个 QLUIRoot 最多绑定几个 <video>（多窗口/多视频时按需调大） */
+#ifndef QL_CFG_UI_MEDIA_MAX
+#define QL_CFG_UI_MEDIA_MAX         2
+#endif
+/* 单边像素上限（超过就在解码前拒绝，防 8K 变炸弹） */
+#ifndef QL_CFG_MEDIA_MAX_DIM
+#define QL_CFG_MEDIA_MAX_DIM        1920
 #endif
 /* 事件队列深度 */
 #ifndef QL_CFG_MEDIA_EVENTS
