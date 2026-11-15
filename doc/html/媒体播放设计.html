@@ -1295,7 +1295,8 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <li><code>test/media/test_media_fake.c</code>：状态机/时钟/暂停/seek/音量/循环/事件（假后端与假声卡）；</li>
 <li><code>test/media/test_media_ffmpeg.c</code>：现场生成 WAV（44.1k 单声道），真实 FFmpeg 解码 + seek；</li>
 <li><code>test/web/test_media_element.c</code>：<code>&lt;audio&gt;</code> 不占布局；</li>
-<li><code>example/44_audio_player</code>：真实声卡播放，结束时打印欠载计数。</li>
+<li><code>example/44_audio_player</code>：<strong>极简界面</strong>（文件名、时间、<strong>可点击/拖动的进度条</strong>、
+  播放/暂停），真实声卡播放；<code>--dump</code> 可导出一帧 PPM。</li>
 </ul>
 <p><strong>验收实测（本机 ALSA）</strong>：5 分钟 mp3 连续播放，位置走到 <code>300.00 s</code>、
 <strong>欠载 0</strong>、正常收到 <code>ENDED</code>；5 秒文件播放用时 ≈5 秒（音频时钟没有漂）。</p>

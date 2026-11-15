@@ -1,12 +1,14 @@
 /**
  * @file    main.c
- * @brief   `<audio>` 的引擎层最小示例：用 QLMedia 播一个本地文件。
+ * @brief   极简音频播放器：文件名 + 进度条 + 时间 + 播放/暂停。
  *
  *   ./build/example/example_44_audio_player song.mp3
- *   ./build/example/example_44_audio_player song.wav --seconds 3
+ *   ./build/example/example_44_audio_player song.wav --seconds 5
+ *   ./build/example/example_44_audio_player song.mp3 --dump /tmp/player.ppm
  *
- * 只演示 API，不做界面：播放 → 每 0.5 秒打印位置 → 播完/到点退出。
- * 结束时会打印欠载计数（正常应为 0）。
+ * 演示 `<audio>` 的引擎层（QLMedia）+ 普通 HTML/CSS 控件：
+ * 文件名、时间、进度条、播放/暂停全部是 DOM；进度条可点击/拖动跳转
+ * （`ql_window_set_event_filter` 做命中与坐标换算），←/→ 各 5 秒。
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,95 +17,270 @@
 
 #include <qlgl/qlgl.h>
 
-static void on_event(QLMedia *m, QLMediaEventType ev, void *user)
+#define W 380
+#define H 190
+
+typedef struct {
+    QLMedia    *media;
+    QLWindow   *win;
+    QLUIRoot   *ui;
+    QLUINodeRT *bar;      /* <progress> */
+    QLUINodeRT *time;     /* 时间文本 */
+    QLUINodeRT *play;     /* 播放/暂停按钮 */
+    int         last_shown_ms;
+    int         dragging;        /* 正在拖进度条 */
+    int         drag_ms;         /* 拖动/点击的预览位置（-1 = 没有） */
+    char        time_buf[48];
+    char        name_buf[96];
+} App;
+
+static void fmt_time(char *out, size_t cap, int64_t ms)
 {
-    (void)user;
-    switch (ev) {
-    case QL_MEDIA_EV_READY:
-        printf("[event] ready: %lld ms\n", (long long)ql_media_duration_ms(m));
+    if (ms < 0)
+        ms = 0;
+    const int64_t s = ms / 1000;
+    snprintf(out, cap, "%d:%02d", (int)(s / 60), (int)(s % 60));
+}
+
+static void update_ui(App *app, int force)
+{
+    int64_t pos = ql_media_position_ms(app->media);
+    if (app->drag_ms >= 0)
+        pos = app->drag_ms;          /* 拖动时先显示目标位置，不等 seek 完成 */
+    if (!force && pos / 250 == app->last_shown_ms / 250)
+        return;
+    app->last_shown_ms = (int)pos;
+
+    char cur[16], total[16];
+    fmt_time(cur, sizeof(cur), pos);
+    fmt_time(total, sizeof(total), ql_media_duration_ms(app->media));
+    snprintf(app->time_buf, sizeof(app->time_buf), "%s / %s", cur, total);
+    (void)ql_ui_set_text(app->ui, app->time, app->time_buf);
+
+    const int dur = (int)ql_media_duration_ms(app->media);
+    (void)ql_ui_progress_set(app->ui, app->bar, (int)pos, dur > 0 ? dur : 1000);
+
+    (void)ql_ui_set_text(app->ui, app->play,
+                         (ql_media_state(app->media) == QL_MEDIA_PLAYING) ? "暂停"
+                                                                         : "播放");
+}
+
+static int64_t duration_ms(const App *app)
+{
+    const int64_t d = ql_media_duration_ms(app->media);
+    return (d > 0) ? d : 1;
+}
+
+/* 把 x 换算成进度（毫秒）；进度条之外的坐标夹到两端 */
+static int64_t ms_at_x(const App *app, const QLRect r, int32_t x)
+{
+    if (r.w <= 0)
+        return 0;
+    int64_t dx = x - r.x;
+    if (dx < 0)
+        dx = 0;
+    if (dx > r.w)
+        dx = r.w;
+    return dx * duration_ms(app) / r.w;
+}
+
+static int on_event(QLUIRoot *ui, const QLInputEvent *ev, void *user)
+{
+    (void)ui;
+    App *app = (App *)user;
+    if (app->bar == NULL)
+        return 0;
+
+    const QLRect r = ql_ui_node_rect(app->bar);
+    /* 纵向多给 6px 的抓取范围，细进度条也好点 */
+    const int inside = (ev->x >= r.x && ev->x < r.x + r.w &&
+                        ev->y >= r.y - 6 && ev->y < r.y + r.h + 6);
+
+    switch (ev->type) {
+    case QL_INPUT_POINTER_DOWN:
+        if (!inside)
+            return 0;
+        app->dragging = 1;
+        app->drag_ms = (int)ms_at_x(app, r, ev->x);
+        return 1;
+    case QL_INPUT_POINTER_MOVE:
+        if (!app->dragging)
+            return 0;
+        app->drag_ms = (int)ms_at_x(app, r, ev->x);
+        return 1;
+    case QL_INPUT_POINTER_UP:
+        if (!app->dragging)
+            return 0;
+        app->dragging = 0;
+        app->drag_ms = (int)ms_at_x(app, r, ev->x);
+        return 1;
+    case QL_INPUT_KEY_DOWN: {
+        const int64_t pos = ql_media_position_ms(app->media);
+        if (ev->key == QL_KEY_LEFT) {
+            (void)ql_media_seek(app->media, pos > 5000 ? pos - 5000 : 0);
+            update_ui(app, 1);
+            return 1;
+        }
+        if (ev->key == QL_KEY_RIGHT) {
+            (void)ql_media_seek(app->media, pos + 5000);
+            update_ui(app, 1);
+            return 1;
+        }
         break;
-    case QL_MEDIA_EV_STATE:
-        printf("[event] state=%d\n", (int)ql_media_state(m));
-        break;
-    case QL_MEDIA_EV_ENDED:
-        printf("[event] ended\n");
-        break;
-    case QL_MEDIA_EV_ERROR:
-        printf("[event] error: %s\n", ql_media_error(m));
-        break;
+    }
     default:
         break;
     }
+    return 0;
+}
+
+static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+{
+    (void)ui;
+    App *app = (App *)user;
+    if (node != app->play)
+        return;
+
+    if (ql_media_state(app->media) == QL_MEDIA_PLAYING)
+        (void)ql_media_pause(app->media);
+    else
+        (void)ql_media_play(app->media);          /* ENDED 后 play() = 重播 */
+    update_ui(app, 1);
 }
 
 int main(int argc, char **argv)
 {
     const char *path = NULL;
-    int seconds = 10;
+    const char *dump = NULL;
+    int seconds = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--seconds") == 0 && i + 1 < argc)
             seconds = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
+            dump = argv[++i];
         else if (path == NULL)
             path = argv[i];
     }
     if (path == NULL) {
-        fprintf(stderr, "用法: %s <音频文件> [--seconds N]\n", argv[0]);
+        fprintf(stderr, "用法: %s <音频文件> [--seconds N] [--dump out.ppm]\n",
+                argv[0]);
         return 2;
     }
 
     if (qlgl_init() != QL_OK)
         return 1;
 
-    QLMedia *m = ql_media_open(path);
-    if (m == NULL) {
+    App app;
+    memset(&app, 0, sizeof(app));
+    app.last_shown_ms = -1000;
+    app.drag_ms = -1;
+
+    app.media = ql_media_open(path);
+    if (app.media == NULL) {
         fprintf(stderr, "打不开: %s\n", path);
         return 1;
     }
-    printf("时长: %lld ms，音频: %s，视频: %s\n",
-           (long long)ql_media_duration_ms(m),
-           ql_media_has_audio(m) ? "有" : "无",
-           ql_media_has_video(m) ? "有" : "无");
-    ql_media_set_event_cb(m, on_event, NULL);
 
-    if (ql_media_play(m) != QL_OK) {
-        fprintf(stderr, "播放失败: %s\n", ql_media_error(m));
-        ql_media_close(m);
+    const char *base = strrchr(path, '/');
+    base = (base != NULL) ? base + 1 : path;
+    snprintf(app.name_buf, sizeof(app.name_buf), "%s", base);
+
+    QLUIDoc *doc = ql_ui_load_html(
+        "<div id=root>"
+        "<div class=name></div>"
+        "<div class=time>0:00 / 0:00</div>"
+        "<progress value=0 max=1000></progress>"
+        "<div class=row><button>暂停</button></div>"
+        "<div class=hint>点击或拖动进度条跳转，←/→ 各 5 秒</div>"
+        "</div>",
+        "#root { width: 100%; height: 100%; padding: 12px; box-sizing: border-box;"
+        " background-color: #FFFFFF; color: #1F2328; font-size: 12px; }"
+        ".name { font-size: 15px; color: #0969DA; margin-bottom: 8px;"
+        " white-space: nowrap; overflow: hidden; }"
+        ".time { color: #57606A; margin-bottom: 6px; }"
+        "progress { width: 100%; height: 12px; margin-bottom: 10px; }"
+        ".row { display: flex; }"
+        "button { padding: 6px 14px; border-radius: 6px; background-color: #0969DA;"
+        " color: #FFFFFF; border: 1px solid #0969DA; }"
+        "button:hover { background-color: #1F7FE8; }"
+        ".hint { margin-top: 10px; color: #8C959F; font-size: 11px; }");
+    if (doc == NULL) {
+        fprintf(stderr, "界面解析失败\n");
         return 1;
+    }
+    app.ui = ql_ui_build(doc);
+    /* root 不拥有 doc：doc 必须活到 ui 释放之后（否则样式指针悬空 → 白屏） */
+    if (app.ui == NULL) {
+        ql_ui_doc_free(doc);
+        return 1;
+    }
+
+    /* 文件名：root 的第一个子 div；时间：第二个 */
+    QLUINodeRT *name = ql_ui_find_by_tag(app.ui, QL_UI_TAG_DIV, 1);
+    if (name != NULL)
+        (void)ql_ui_set_text(app.ui, name, app.name_buf);
+    app.time = ql_ui_find_by_tag(app.ui, QL_UI_TAG_DIV, 2);
+    app.bar = ql_ui_find_by_tag(app.ui, QL_UI_TAG_PROGRESS, 0);
+    app.play = ql_ui_find_by_tag(app.ui, QL_UI_TAG_BUTTON, 0);
+    ql_ui_set_click_cb(app.ui, on_click, &app);
+
+    app.win = ql_window_create("QLGL · 音频", W, H, QL_WINDOW_GL);
+    if (app.win == NULL)
+        app.win = ql_window_create("QLGL · 音频", W, H, QL_WINDOW_CPU);
+    if (app.win == NULL) {
+        fprintf(stderr, "建窗口失败（没有 GL/X11？）\n");
+        ql_ui_free(app.ui);
+        ql_ui_doc_free(doc);
+        return 1;
+    }
+    (void)ql_window_bind_ui(app.win, app.ui);
+    ql_window_set_event_filter(app.win, on_event, &app);
+    ql_media_play(app.media);
+
+    if (dump != NULL) {
+        update_ui(&app, 1);
+        for (int i = 0; i < 3; i++)
+            (void)ql_window_poll(app.win);
+        const int ok = ql_window_dump_ppm(app.win, dump);
+        printf(ok ? "已写出 %s\n" : "写出 %s 失败\n", dump);
+        ql_media_close(app.media);
+        ql_window_destroy(app.win);
+        ql_ui_free(app.ui);
+        ql_ui_doc_free(doc);
+        qlgl_shutdown();
+        return ok ? 0 : 1;
     }
 
     struct timespec t0, now;
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    int64_t last_print = -500;
 
     for (;;) {
-        (void)ql_media_poll(m);
+        (void)ql_media_poll(app.media);
 
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        const int64_t elapsed = (now.tv_sec - t0.tv_sec) * 1000 +
-                                (now.tv_nsec - t0.tv_nsec) / 1000000;
-        const int64_t pos = ql_media_position_ms(m);
-
-        if (pos / 500 != last_print / 500) {
-            last_print = pos;
-            printf("  %6.2f / %6.2f s\n", pos / 1000.0,
-                   ql_media_duration_ms(m) / 1000.0);
-            fflush(stdout);
+        if (app.drag_ms >= 0 && app.dragging) {
+            (void)ql_media_seek(app.media, app.drag_ms);
+            app.drag_ms = -1;                   /* 下一帧再按新位置更新 */
+        } else if (!app.dragging && app.drag_ms >= 0) {
+            (void)ql_media_seek(app.media, app.drag_ms);
+            app.drag_ms = -1;
+            update_ui(&app, 1);
         }
-        if (ql_media_state(m) == QL_MEDIA_ENDED)
-            break;
-        if (ql_media_state(m) == QL_MEDIA_ERROR) {
-            fprintf(stderr, "错误: %s\n", ql_media_error(m));
-            break;
-        }
-        if (elapsed >= (int64_t)seconds * 1000)
-            break;
 
-        struct timespec ts = { 0, 10 * 1000000L };   /* 10ms */
-        nanosleep(&ts, NULL);
+        update_ui(&app, 0);
+        if (!ql_window_poll(app.win))
+            break;
+        if (seconds > 0) {
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            if (now.tv_sec - t0.tv_sec >= seconds)
+                break;
+        }
     }
 
-    printf("欠载: %u\n", (unsigned)ql_media_underruns(m));
-    ql_media_close(m);
+    printf("欠载: %u\n", (unsigned)ql_media_underruns(app.media));
+    ql_media_close(app.media);
+    ql_window_destroy(app.win);
+    ql_ui_free(app.ui);
+    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return 0;
 }
