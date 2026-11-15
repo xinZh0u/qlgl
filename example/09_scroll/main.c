@@ -12,7 +12,11 @@
  *      代价是滚动后要重跑一次布局（0.04ms 量级）；
  *   3. 滚动条是覆盖式画的，不占布局空间。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 260
 #define H 220
@@ -21,18 +25,10 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
-        printf("界面编译失败：%s\n", ql_ui_text_last_error());
-        qlgl_shutdown();
-        return 1;
-    }
-    QLUIRoot *ui = ql_ui_build(doc);
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
     if (ui == NULL) {
-        ql_ui_doc_free(doc);
+        printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
@@ -48,7 +44,6 @@ int main(int argc, char **argv)
     if (list == NULL) {
         printf("没有找到滚动容器\n");
         ql_ui_free(ui);
-        ql_ui_doc_free(doc);
         qlgl_shutdown();
         return 1;
     }
@@ -68,9 +63,17 @@ int main(int argc, char **argv)
         }
     }
 
-    const int rc = ex_run(ui, W, H, "QLGL · 09 scroll", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 09 scroll", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

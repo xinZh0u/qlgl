@@ -18,7 +18,11 @@
  *
  * 鼠标行为完全不变：滚轮滚列表、拖滚动条，捏合（双指）鼠标做不出来。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 340
 #define H 600
@@ -137,9 +141,12 @@ static void on_pinch(QLUIRoot *ui, ql_coord_t cx, ql_coord_t cy,
 }
 
 /* 每帧钩子：这里是唯一能拿到 gfx 的地方（缩放要它） */
-static int on_frame(QLUIRoot *ui, QLGfxGL *gfx, void *user)
+static int on_frame(QLUIRoot *ui, QLWindow *win, void *user)
 {
     (void)ui; (void)user;
+    QLGfxGL *gfx = ql_window_gfx(win);
+    if (gfx == NULL)
+        return 0;
     s_gfx = gfx;
     ql_gfx_gl_window_size(gfx, &s_win_w, &s_win_h);
     if (s_pending_zoom) {
@@ -157,18 +164,11 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
-        printf("界面编译失败：%s\n", ql_ui_text_last_error());
-        qlgl_shutdown();
-        return 1;
-    }
-    QLUIRoot *ui = ql_ui_build(doc);
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html",
+                                       QL_EX_DIR "/style.css");
     if (ui == NULL) {
-        ql_ui_doc_free(doc);
+        printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
@@ -185,7 +185,6 @@ int main(int argc, char **argv)
     if (ui->node_count < 10) {
         printf("界面节点太少（%d）\n", (int)ui->node_count);
         ql_ui_free(ui);
-        ql_ui_doc_free(doc);
         qlgl_shutdown();
         return 1;
     }
@@ -203,14 +202,12 @@ int main(int argc, char **argv)
     if (s_list == NULL) {
         printf("没找到可滚动的列表\n");
         ql_ui_free(ui);
-        ql_ui_doc_free(doc);
         qlgl_shutdown();
         return 1;
     }
 
     ql_ui_set_click_cb(ui, on_click, NULL);
     ql_ui_set_pinch_cb(ui, on_pinch, NULL);
-    ex_set_frame_cb(on_frame, NULL);
 
     /*
      * `--zoom 150`：启动时就按 150% 布局与绘制。截图对比用，省得手上没有触摸屏
@@ -232,8 +229,6 @@ int main(int argc, char **argv)
      */
     if (argc == 1) {
         printf("合成手势（窗口模式请用触摸屏或鼠标）\n");
-        /* 事件要经输入队列才会到界面层：先接上汇（ex_run 里会再接一次） */
-        ql_ui_attach_input(ui);
         (void)ql_input_push_touch(60, 100, QL_TOUCH_DOWN, 0, 1);
         (void)ql_input_push_touch(60, 100, QL_TOUCH_UP, 0, 0);
         (void)ql_input_dispatch();
@@ -254,12 +249,20 @@ int main(int argc, char **argv)
         (void)ql_input_push_touch(260, 400, QL_TOUCH_UP, 1, 0);
         (void)ql_input_dispatch();
         printf("捏合 100→160px：zoom=%d%%\n", (int)(s_zoom * 100 / QL_SCALE_ONE));
-        ql_ui_detach_input();
     }
 
-    const int rc = ex_run(ui, W, H, "QLGL · 37 touch", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 37 touch", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_set_frame_cb(win, on_frame, NULL);
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

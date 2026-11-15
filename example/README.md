@@ -3,11 +3,11 @@
 每个例程一个文件夹，一个文件夹就是一个**完整可运行**的程序：
 
 ```
+00_hello/        最短版本：10 行，qlgl_init → load_html_file → ql_window_run
 01_window/
   main.c         程序（40~160 行，只讲自己那一件事）
   index.html     界面的结构
   style.css      界面的样式
-common.h         几个例程共用的样板：读文件、挑字体、跑主循环
 ```
 
 ## 约定：例程一律白底（浅色）主题
@@ -43,24 +43,27 @@ common.h         几个例程共用的样板：读文件、挑字体、跑主循
 2. **深色填充块上的字必须显式写 `color: #FFFFFF`**：文字颜色是继承的，
    换浅色主题后默认继承到的是深色字，压在蓝/绿/紫块上就看不见了。
 3. **截图一律用 `--dump`**，它的清除色是根元素的 `background-color`
-   （见 `common.h` 的 `ex_dump_ppm()`）。自己另写一份 `clear(0x000000)`
-   会在白底页面四周留一圈黑边。
+   （见 `ql_ui_dump_ppm()` / `ql_window_dump_ppm()`）。自己另写一份
+   `clear(0x000000)` 会在白底页面四周留一圈黑边。
 
 ## 跑起来
 
 ```bash
 cmake -S . -B build && cmake --build build -j
+./build/example/example_00_hello                       # 最短版本
 ./build/example/example_01_window                     # 打开窗口
 ./build/example/example_01_window --dump /tmp/01.ppm  # 截图模式：渲染一帧就退出
-./build/example/example_01_window --frames 120        # 跑 120 帧
 ```
 
-| 参数 | 作用 |
+| 参数 / 环境变量 | 作用 |
 |---|---|
-| `--dump FILE` | 把一帧存成 PPM（没有显示器也能跑） |
-| `--frames N` | 跑 N 帧后退出 |
-| `--size WxH` | 换窗口尺寸，看页面是不是真自适应 |
-| `QLGL_EX_DIR=DIR` | 环境变量：让例程去别处读 HTML/CSS |
+| `--dump FILE` | 把一帧存成 PPM（窗口或离屏后端） |
+| `--frames N` | 渲染 N 帧后退出（隐含 `--spin`） |
+| `--seconds S` | 跑 S 秒后退出 |
+| `--stats` | 退出时打帧时间 p50/p95/max + 等 swap 时间 |
+| `--spin` | 每帧都渲染（性能/基准用） |
+| `--vsync 0/1` | 强制开关垂直同步 |
+| `QL_EX_DUMP=FILE` | 与 `--dump` 同义（适合不方便传参的启动方式） |
 
 单个例程：`cmake --build build --target example_01_window`。
 
@@ -69,7 +72,8 @@ cmake -S . -B build && cmake --build build -j
 例程是给人在 PC 上**直接跑**的，所以 `main.c` 里读的是文件路径：
 
 ```c
-QLUIDoc *doc = ex_load_ui("index.html", "style.css");
+QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html",
+                                   QL_EX_DIR "/style.css");
 ```
 
 好处有三个：
@@ -130,23 +134,23 @@ python3 tools/qltext/qltext.py cc \
 | `35_text_stack` | B8 文本栈：`@font-face`（运行期探测系统字体）、家族列表与逐字回退、真粗体/真斜体、连字开关、阿拉伯文 RTL |
 | `36_clip_filter` | B9：`clip-path` 的 circle/ellipse/inset/polygon 四种形状、纯颜色 `filter` 走单批次（不进离屏图层）、`small-caps` / `tabular-nums`、`text-align: justify`、椭圆圆角、阴影 `spread` |
 | `37_touch` | 触摸：单指点按 / 单指拖动滚动（`overflow` 容器）/ 双指捏合缩放整页（`ql_gfx_gl_set_zoom`），手机形态布局 + `--zoom` 截图 |
-| `38_liquid_glass` | 液态玻璃：`backdrop-filter: blur()` 的玻璃按钮/药丸/气球 + 背后会动的色块（`filter: blur()` 整层一次离屏），三层材质（模糊染色 / 亮边内阴影 / 镜面反射），`:active` 只在 `background-color` 上过渡 |
+| `38_liquid_glass` | 液态玻璃（对照 CodePen `MYwrMNy`）：`--image <path>` 传入背景照片（运行时解码，不打包），**滚轮上下滚动**照片；玻璃 `backdrop-filter: blur(6px) refract(143px)` 按参考稿的法线图朝圆心位移（轮廓处最大），8% 白底 + 柔和亮边 + 淡投影，悬停折射 143→200px 有 0.22s 过渡 |
 
 配套教程在 [`../doc/tutorial/`](../doc/tutorial/)，一章一个例程。
 
 ---
 
-## 例程的循环参数（`common.h` 的 `ex_run`）
+## 主循环（`QLWindow`）
 
-| 参数 | 含义 |
-|---|---|
-| （默认） | **事件驱动**：没有脏区就阻塞等事件（静止时 0 帧、0% CPU） |
-| `--spin` | 每帧都渲染（基准测试用） |
-| `--frames N` | 渲染 N 帧后退出（隐含 `--spin`） |
-| `--seconds S` | 跑 S 秒后退出 |
-| `--stats` | 退出时打帧时间 p50/p95/max + 其中等 swap 的时间 |
-| `--vsync 0/1` | 强制开关垂直同步（拖动缩放期间库会自动临时关闭） |
-| `--size 800x480` | 换窗口尺寸 |
-| `--dump out.ppm` | 存一帧（不等着关窗口） |
+```c
+QLWindow *win = ql_window_create("Hello", 640, 400, QL_WINDOW_GL);
+ql_window_bind_ui(win, ui);
+ql_window_run(win);       // 事件驱动：没有脏区就阻塞等事件（静止时 0 帧、0% CPU）
+ql_window_destroy(win);
+```
 
-测量方法与"拖动窗口掉帧"的完整案例见 [性能诊断](../doc/性能诊断.md)。
+需要自己驱动时用 `ql_window_poll()` / `ql_window_render()`；需要拦滚轮
+（例程 38）用 `ql_window_set_event_filter()`，需要每帧逻辑（例程 20/37）用
+`ql_window_set_frame_cb()`。
+
+帧时间测量与"拖动窗口掉帧"的完整案例见 [性能诊断](../doc/性能诊断.md)。

@@ -14,7 +14,11 @@
  *               <code>/<kbd>/<samp>（没有等宽字体）、<q>（没有生成引号）、
  *               <time>/<data>（属性被忽略）
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 320
 #define H 348
@@ -23,28 +27,28 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        ql_ui_doc_free(doc);
+    ql_ui_layout(ui, W, H);
+    printf("%d 个节点，%d 个不同标签\n", (int)ui->doc->node_count,
+           (int)QL_UI_TAG_COUNT);
+
+    QLWindow *win = ql_window_create("QLGL · 11 semantic", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
         qlgl_shutdown();
         return 1;
     }
-    ql_ui_layout(ui, W, H);
-    printf("%d 个节点，%d 个不同标签\n", (int)doc->node_count,
-           (int)QL_UI_TAG_COUNT);
-
-    const int rc = ex_run(ui, W, H, "QLGL · 11 semantic", argc, argv);
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

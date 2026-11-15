@@ -9,7 +9,11 @@
  * 运行期**不解析任何条件**：构建期已经把宽度轴切成区间，每个区间编译一套样式；
  * 布局时只按视口宽选区间下标（线性扫一个 6 项以内的小数组）。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 820
 #define H 420
@@ -18,18 +22,16 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
-    printf("断点区间 %d 个：", (int)doc->media_count);
-    for (uint16_t i = 0; i < doc->media_count; i++) {
-        const QLUIMedia *m = &doc->media[i];
+    printf("断点区间 %d 个：", (int)ui->doc->media_count);
+    for (uint16_t i = 0; i < ui->doc->media_count; i++) {
+        const QLUIMedia *m = &ui->doc->media[i];
         if (m->hi == 0xFFFFu)
             printf(" [%u, ∞)", (unsigned)m->lo);
         else
@@ -37,17 +39,19 @@ int main(int argc, char **argv)
     }
     printf("\n");
 
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        ql_ui_doc_free(doc);
+    ql_ui_layout(ui, W, H);
+
+    QLWindow *win = ql_window_create("QLGL · 22 media（拖边缘缩放）", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
         qlgl_shutdown();
         return 1;
     }
-    ql_ui_layout(ui, W, H);
-
-    const int rc = ex_run(ui, W, H, "QLGL · 22 media（拖边缘缩放）", argc, argv);
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

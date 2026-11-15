@@ -13,7 +13,19 @@
  * 编译一次是毫秒级的，而且产物就是静态表 —— 换完皮肤之后性能与
  * 构建期编译出来的完全一样。
  */
-#include "common.h"
+#include <stdio.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
+
+/* 相对名 → 例程目录下的绝对路径；绝对路径原样用 */
+static void css_path_of(char *out, size_t cap, const char *css_file)
+{
+    if (css_file[0] == '/')
+        snprintf(out, cap, "%s", css_file);
+    else
+        snprintf(out, cap, "%s/%s", QL_EX_DIR, css_file);
+}
 
 /*
  * 编译 + 渲染一张图；返回 0 表示成功。
@@ -21,38 +33,42 @@
  */
 static int shot(const char *css_file, int index, int argc, char **argv)
 {
-    QLUIDoc *doc = ex_load_ui("index.html", css_file);
-    if (doc == NULL) {
+    char cp[1200];
+    css_path_of(cp, sizeof(cp), css_file);
+
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", cp);
+    if (ui == NULL) {
         printf("第 %d 套皮肤编译失败：%s\n", index, ql_ui_text_last_error());
         return 1;
     }
+
     char name[64];
     snprintf(name, sizeof(name), "theme%d", index);
     ql_ui_text_set_name(name);
-
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        ql_ui_doc_free(doc);
-        return 1;
-    }
 
     int rc = 0;
     if (argc <= 1) {
         char path[64];
         snprintf(path, sizeof(path), "/tmp/06_theme_%d.ppm", index);
-        ql_ui_layout(ui, 260, 140);
-        if (ex_dump_ppm(ui, 260, 140, path)) {
+        if (ql_ui_dump_ppm(ui, 260, 140, path)) {
             printf("第 %d 套皮肤 → %s（%u 条样式）\n", index, path,
-                   (unsigned)doc->style_count);
+                   (unsigned)ui->doc->style_count);
         } else {
             rc = 1;
         }
     } else {
-        rc = ex_run(ui, 260, 140, "QLGL · 06 theme", argc, argv);
+        QLWindow *win = ql_window_create("QLGL · 06 theme", 260, 140, QL_WINDOW_GL);
+        if (win == NULL) {
+            printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+            ql_ui_free(ui);
+            return 1;
+        }
+        ql_window_bind_ui(win, ui);
+        rc = ql_window_run_args(win, argc, argv);
+        ql_window_destroy(win);
     }
 
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     return rc;
 }
 
@@ -60,12 +76,9 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
     int rc = 0;
     if (argc > 1 && argv[1][0] != '-') {
-        /* 用你写的 CSS：相对名先找当前目录，再找例程目录（见 common.h） */
         rc = shot(argv[1], 0, argc, argv);
     } else {
         rc |= shot("dark.css", 1, argc, argv);

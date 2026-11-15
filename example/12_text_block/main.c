@@ -16,7 +16,11 @@
  * 另外看一眼状态行：本库**没有等宽字体族的分家**（除非注册了 mono factory），
  * 内建位图字体本身就是等宽的；接了矢量字体后 `<pre>`/`<code>` 才算"真等宽"。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 340
 #define H 470
@@ -25,18 +29,10 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
-        printf("界面编译失败：%s\n", ql_ui_text_last_error());
-        qlgl_shutdown();
-        return 1;
-    }
-    QLUIRoot *ui = ql_ui_build(doc);
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
     if (ui == NULL) {
-        ql_ui_doc_free(doc);
+        printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
@@ -58,9 +54,17 @@ int main(int argc, char **argv)
                (int)ui->nodes[i].border_box.w, (int)ui->nodes[i].border_box.h);
     }
 
-    const int rc = ex_run(ui, W, H, "QLGL · 12 text block", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 12 text block", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

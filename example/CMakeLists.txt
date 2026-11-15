@@ -24,6 +24,7 @@
 # 完全不要例程：cmake -S . -B build -DQLGL_BUILD_EXAMPLES=OFF
 
 set(QL_EXAMPLES
+    00_hello
     01_window
     02_text
     03_layout
@@ -71,8 +72,6 @@ set(QL_EXAMPLES
 foreach(e ${QL_EXAMPLES})
     add_executable(example_${e} ${CMAKE_CURRENT_SOURCE_DIR}/${e}/main.c)
     target_link_libraries(example_${e} PRIVATE qlgl)
-    # 共用样板（common.h）放在 example/ 根下，不进每个例程目录
-    target_include_directories(example_${e} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     # 例程的 HTML/CSS 在源码目录里躺着（运行期读），把它编进程序当默认目录，
     # 这样 `./build/example/example_01_window` 从任何 cwd 启动都能找到 index.html。
     target_compile_definitions(example_${e} PRIVATE

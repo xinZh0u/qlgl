@@ -11,7 +11,11 @@
  * 想现场看"改一处、处处变"：配合 `example/20_live_reload` 的写法（热重载），
  * 改 `#root` 里的 `--brand` 保存，整个界面立刻换色。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 640
 #define H 470
@@ -20,18 +24,10 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
-        printf("界面编译失败：%s\n", ql_ui_text_last_error());
-        qlgl_shutdown();
-        return 1;
-    }
-    QLUIRoot *ui = ql_ui_build(doc);
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
     if (ui == NULL) {
-        ql_ui_doc_free(doc);
+        printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
@@ -42,19 +38,27 @@ int main(int argc, char **argv)
      * "同一个主题色出现在多少条样式里" —— 它们应当全部等于 #0969DA 或局部覆盖的紫色。
      */
     int brand_use = 0, purple_use = 0;
-    for (uint16_t i = 0; i < doc->style_count; i++) {
-        const QLUIStyle *s = &doc->styles[i];
+    for (uint16_t i = 0; i < ui->doc->style_count; i++) {
+        const QLUIStyle *s = &ui->doc->styles[i];
         if (s->text_color == 0x0969DA)
             brand_use++;
         if (s->text_color == 0x8250DF)
             purple_use++;
     }
     printf("节点 %d 个，样式 %d 条：主题色被人用在 %d 条样式上，局部覆盖的紫色 %d 条\n",
-           (int)doc->node_count, (int)doc->style_count, brand_use, purple_use);
+           (int)ui->doc->node_count, (int)ui->doc->style_count, brand_use, purple_use);
 
-    const int rc = ex_run(ui, W, H, "QLGL · 21 css vars", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 21 css vars", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

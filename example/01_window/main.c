@@ -16,41 +16,44 @@
  *   3. `ql_ui_build()`    用 doc 建出运行期节点树，然后布局一次
  *   4. 交给窗口 / 或者离屏渲染成图片
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
     /* ① 编译界面。失败时 last_error 里有 "css:行号: 原因" */
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
 
     /* ② 建运行期树并布局（视口 240x120，与 #root 一致） */
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        printf("ql_ui_build 失败\n");
-        ql_ui_doc_free(doc);
+
+    printf("%u 个节点 / %u 条样式\n", (unsigned)ui->doc->node_count,
+           (unsigned)ui->doc->style_count);
+
+    /* ③ 跑起来 */
+    QLWindow *win = ql_window_create("QLGL · 01 window", 240, 120, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
         qlgl_shutdown();
         return 1;
     }
-
-    printf("%u 个节点 / %u 条样式\n", (unsigned)doc->node_count,
-           (unsigned)doc->style_count);
-
-    /* ③ 跑起来 */
-    const int rc = ex_run(ui, 240, 120, "QLGL · 01 window", argc, argv);
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
 
     /* ④ 收尾：先释放运行期树，再释放 doc（doc 是独立的所有权） */
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

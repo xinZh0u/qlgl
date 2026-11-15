@@ -1,0 +1,20 @@
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #0F1419;
+  color: #E6EDF3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: 24px;
+}
+
+.sub {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8B949E;
+}

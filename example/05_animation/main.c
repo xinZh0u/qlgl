@@ -12,30 +12,26 @@
  * 主循环里唯一要做的事：
  *     ql_ui_anim_tick(ui, ql_anim_now_ms());   // 返回 0 表示没有东西在动
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
-    printf("%u 段动画 / %u 个关键帧\n", (unsigned)doc->anim_count,
-           (unsigned)doc->keyframe_count);
+    printf("%u 段动画 / %u 个关键帧\n", (unsigned)ui->doc->anim_count,
+           (unsigned)ui->doc->keyframe_count);
 
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        ql_ui_doc_free(doc);
-        qlgl_shutdown();
-        return 1;
-    }
     ql_ui_layout(ui, 300, 160);
 
     /* 逐帧推进，打印"这一帧有几块脏区"——动画只在脏区里重绘 */
@@ -46,9 +42,17 @@ int main(int argc, char **argv)
         printf("t=%3dms  在动 %u 个  脏区 %d 块\n", t, (unsigned)moving, n);
     }
 
-    const int rc = ex_run(ui, 300, 160, "QLGL · 05 animation", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 05 animation", 300, 160, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

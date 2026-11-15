@@ -14,7 +14,11 @@
  *   3. `font-variant-caps: small-caps` / `font-variant-numeric: tabular-nums`
  *      靠 HarfBuzz 的 OpenType 特性，没有整形能力时**构建期报错**（不静默降级）。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 848
 #define H 800
@@ -23,24 +27,22 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
     char hp[1024], cp[1024];
-    ex_resolve(hp, sizeof(hp), "index.html");
-    ex_resolve(cp, sizeof(cp), "style.css");
-    char *html = ex_slurp(hp);
-    char *css = ex_slurp(cp);
+    snprintf(hp, sizeof(hp), "%s/index.html", QL_EX_DIR);
+    snprintf(cp, sizeof(cp), "%s/style.css", QL_EX_DIR);
+    char *html = ql_file_read_text(hp);
+    char *css = ql_file_read_text(cp);
     if (html == NULL || css == NULL) {
-        free(html);
-        free(css);
+        ql_mem_free(html);
+        ql_mem_free(css);
         qlgl_shutdown();
         return 1;
     }
 
     QLUIDoc *doc = ql_ui_load_text(html, css);
-    free(html);
-    free(css);
+    ql_mem_free(html);
+    ql_mem_free(css);
     if (doc == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
@@ -49,7 +51,6 @@ int main(int argc, char **argv)
 
     QLUIRoot *ui = ql_ui_build(doc);
     if (ui == NULL) {
-        ql_ui_doc_free(doc);
         qlgl_shutdown();
         return 1;
     }
@@ -58,7 +59,17 @@ int main(int argc, char **argv)
     printf("整形后端：%s（small-caps / tabular-nums 需要 HarfBuzz）\n",
            ql_text_shape_backend());
 
-    const int rc = ex_run(ui, W, H, "QLGL · 36 clip-path / filter / 字体变体", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 36 clip-path / filter / 字体变体", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        ql_ui_doc_free(doc);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
     ql_ui_doc_free(doc);
     qlgl_shutdown();

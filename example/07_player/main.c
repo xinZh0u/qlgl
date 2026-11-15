@@ -17,7 +17,11 @@
  *
  * 缺的东西也在这个例程里看得见：没有滚动条、不能输入、没有图片。这些是下一步。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 300
 #define H 316
@@ -26,24 +30,16 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
-    printf("%u 个节点 / %u 条样式 / %u 个字号\n", (unsigned)doc->node_count,
-           (unsigned)doc->style_count, (unsigned)doc->font_size_count);
+    printf("%u 个节点 / %u 条样式 / %u 个字号\n", (unsigned)ui->doc->node_count,
+           (unsigned)ui->doc->style_count, (unsigned)ui->doc->font_size_count);
 
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        ql_ui_doc_free(doc);
-        qlgl_shutdown();
-        return 1;
-    }
     ql_ui_layout(ui, W, H);
 
     /* 折行结果直接摆出来：这就是"布局与绘制共用一份断行"的证据 */
@@ -55,9 +51,17 @@ int main(int argc, char **argv)
                    (int)ql_ui_node_rect(n).h);
     }
 
-    const int rc = ex_run(ui, W, H, "QLGL · 07 player", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 07 player", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }

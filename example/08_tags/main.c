@@ -15,7 +15,11 @@
  * `i`/`em` 是合成斜体（按行剪切），`u` 是下划线、`s` 是删除线（各画一条 1px 线），
  * `mark` 是背景高亮。都不需要第二个字体文件。
  */
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <qlgl/qlgl.h>
 
 #define W 260
 #define H 500
@@ -24,24 +28,16 @@ int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
         return 1;
-    ex_setup_locale();
-    ex_load_font();
 
-    QLUIDoc *doc = ex_load_ui("index.html", "style.css");
-    if (doc == NULL) {
+    QLUIRoot *ui = ql_ui_load_html_file(QL_EX_DIR "/index.html", QL_EX_DIR "/style.css");
+    if (ui == NULL) {
         printf("界面编译失败：%s\n", ql_ui_text_last_error());
         qlgl_shutdown();
         return 1;
     }
-    printf("%u 个节点 / %u 条样式\n", (unsigned)doc->node_count,
-           (unsigned)doc->style_count);
+    printf("%u 个节点 / %u 条样式\n", (unsigned)ui->doc->node_count,
+           (unsigned)ui->doc->style_count);
 
-    QLUIRoot *ui = ql_ui_build(doc);
-    if (ui == NULL) {
-        ql_ui_doc_free(doc);
-        qlgl_shutdown();
-        return 1;
-    }
     ql_ui_layout(ui, W, H);
 
     /* 标签名可以直接取回（文档里只有下标，没有名字） */
@@ -55,9 +51,17 @@ int main(int argc, char **argv)
         }
     }
 
-    const int rc = ex_run(ui, W, H, "QLGL · 08 tags", argc, argv);
+    QLWindow *win = ql_window_create("QLGL · 08 tags", W, H, QL_WINDOW_GL);
+    if (win == NULL) {
+        printf("建窗口失败（需要 EGL + GLES3 + X11/Wayland）\n");
+        ql_ui_free(ui);
+        qlgl_shutdown();
+        return 1;
+    }
+    ql_window_bind_ui(win, ui);
+    const int rc = ql_window_run_args(win, argc, argv);
+    ql_window_destroy(win);
     ql_ui_free(ui);
-    ql_ui_doc_free(doc);
     qlgl_shutdown();
     return rc;
 }
