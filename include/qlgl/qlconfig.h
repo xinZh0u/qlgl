@@ -425,6 +425,31 @@
 #endif
 
 /* 输入事件队列容量（后端只入队，主循环统一派发；静态分配不 malloc） */
+/*
+ * 媒体播放（QLMedia）：<audio>/<video> 的引擎。默认关；桌面构建由 CMake
+ * 的 QLGL_BUILD_MEDIA 打开（见 doc/媒体播放设计.md）。
+ */
+#ifndef QL_FEAT_MEDIA
+#define QL_FEAT_MEDIA               0
+#endif
+#ifndef QL_FEAT_MEDIA_AUDIO
+#define QL_FEAT_MEDIA_AUDIO         QL_FEAT_MEDIA
+#endif
+#ifndef QL_FEAT_MEDIA_FFMPEG
+#define QL_FEAT_MEDIA_FFMPEG        0
+#endif
+#ifndef QL_FEAT_UI_MEDIA
+#define QL_FEAT_UI_MEDIA            QL_FEAT_MEDIA
+#endif
+/* 一次解码/写设备多少帧（48kHz 下 1024 ≈ 21ms） */
+#ifndef QL_CFG_MEDIA_FRAMES
+#define QL_CFG_MEDIA_FRAMES         1024
+#endif
+/* 事件队列深度 */
+#ifndef QL_CFG_MEDIA_EVENTS
+#define QL_CFG_MEDIA_EVENTS         16
+#endif
+
 #ifndef QL_CFG_INPUT_QUEUE
 #define QL_CFG_INPUT_QUEUE          64
 #endif

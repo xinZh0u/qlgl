@@ -8560,12 +8560,17 @@ static int ua_defaults(const char *tag, Decls *out)
                decls_set(out, "text-align", "center");
     }
     if (strcmp(tag, "audio") == 0) {
+#if QL_FEAT_UI_MEDIA
+        /* 有媒体能力时与浏览器一致：<audio> 不产生盒子（controls 要自己写） */
+        return decls_set(out, "display", "none");
+#else
         return decls_set(out, "display", "block") && decls_set(out, "width", "300px") &&
                decls_set(out, "height", "32px") &&
                decls_set(out, "border-width", "1px") &&
                decls_set(out, "border-color", "#8A8A8A") &&
                decls_set(out, "color", "#8A8A8A") &&
                decls_set(out, "text-align", "center");
+#endif
     }
     /* <svg> 与 <math> 在浏览器里是行内元素，所以这里也是 inline-block */
     if (strcmp(tag, "svg") == 0 || strcmp(tag, "math") == 0) {

@@ -25,6 +25,7 @@ typedef enum {
     QL_ERR_VER      = -6,   /* 版本不兼容 */
     QL_ERR_FULL     = -7,   /* 池已满 */
     QL_ERR_UNSUPPORTED = -8, /* 这个构建没启用该能力（格式/特性被裁掉） */
+    QL_ERR_IO       = -9,   /* 文件/设备/网络 IO 失败 */
 } QLErr;
 
 /* ----- 公共宏 ----- */
@@ -89,6 +90,7 @@ void ql_log(int level, const char *fmt, ...);
 #include "qldisp_wayland.h"
 #include "qlgfx_gl.h"
 #include "qlplatform.h"
+#include "qlmedia.h"
 #include "qlwindow.h"
 
 #endif /* QLGL_H */

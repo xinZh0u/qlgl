@@ -68,6 +68,7 @@ set(QL_EXAMPLES
     41_radius_pct
     42_translate_pct
     43_multi_window
+    44_audio_player
 )
 
 foreach(e ${QL_EXAMPLES})

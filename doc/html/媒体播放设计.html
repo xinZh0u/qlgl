@@ -310,6 +310,8 @@ main img {
 <span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
 <a href='manual/input/QLInput阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLMedia —— 媒体：状态机、解码后端、音频输出</span>
+<a href='manual/media/QLMedia API手册.html' title='API 手册'>API 手册</a>
 </details>
 <details class='sec'><summary>规范与清单</summary>
 <a href='manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
@@ -344,8 +346,8 @@ main img {
 <h1>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</h1>
 <p class='lead'>这份文档定四件事：播放引擎怎么分层、时钟和线程谁说了算、 帧怎么落到 CPU/GL 两个后端、&lt;track&gt; 和容器字幕分别归谁。 和图像管线一样，红线是外来数据必须有界：媒体文件是典型的&quot;不可信、可畸形、 可能很大&quot;的输入，任何一条路径都不许 OOM、越界或死循环。</p>
 <blockquote>
-<p>状态：<strong>设计草案（2026-11-15）</strong>。目标读者：要实现媒体后端、音视频输出、
-字幕轨与 <code>&lt;video&gt;</code> 布局/绘制的人。
+<p>状态：<strong>设计；M1（音频）已实现（2026-11-15）</strong>。M2（视频）/ M3（字幕）见 §13。
+目标读者：要实现媒体后端、音视频输出、字幕轨与 <code>&lt;video&gt;</code> 布局/绘制的人。
 相关：<a href="平台后端设计.html">平台后端设计</a>（回调表套路）、
 <a href="图像管线设计.html">图像管线设计</a>（外来数据必须有界、<code>blit_image</code>）、
 <a href="manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>（现状：三个标签都还是占位）。</p>
@@ -386,7 +388,7 @@ main img {
 </tr>
 <tr>
 <td>音频输出</td>
-<td>一期 ALSA；PulseAudio / WASAPI / AAudio 作为后端补充；回调里只做环形缓冲拷贝</td>
+<td>一期 <strong>ALSA（dlopen <code>libasound.so.2</code>，不依赖 -dev 头）</strong>；打不开退化成静音 + 系统时钟</td>
 </tr>
 <tr>
 <td><code>&lt;track&gt;</code></td>
@@ -1245,6 +1247,59 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 </tr>
 </tbody>
 </table>
+<h2 id="151-m1">15.1 M1 落地说明（与草案的差异）</h2>
+<p>M1 已实现并验证，实际落地和本文草案有几处不同：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>草案</th>
+<th>实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ALSA</td>
+<td>链 <code>libasound</code></td>
+<td><strong>dlopen</strong>：只用到 8 个稳定符号，避免要求 <code>libasound2-dev</code>；没有就静音降级</td>
+</tr>
+<tr>
+<td>音频线程</td>
+<td>独立回调线程 + 无锁环形缓冲</td>
+<td>工作线程直接<strong>阻塞 write</strong>（ALSA 自己管设备线程）；少一层缓冲，M1 够用</td>
+</tr>
+<tr>
+<td>事件</td>
+<td>主循环派发</td>
+<td>同左：<code>ql_media_poll()</code> 在主线程回调</td>
+</tr>
+<tr>
+<td>暂停</td>
+<td><code>snd_pcm_pause</code></td>
+<td>支持就 pause；不支持就 <code>drop+prepare</code>，从冻结的位置继续</td>
+</tr>
+<tr>
+<td>API</td>
+<td>§9 草案</td>
+<td>实际见 <code>include/qlgl/qlmedia.h</code>；<code>ql_media_error()</code> / <code>ql_media_underruns()</code> 用于诊断</td>
+</tr>
+<tr>
+<td><code>&lt;audio&gt;</code></td>
+<td>零盒子</td>
+<td>已实现（<code>QL_FEAT_UI_MEDIA=1</code> 时 <code>display:none</code>，否则保留占位盒）</td>
+</tr>
+</tbody>
+</table>
+<p>已经有的验证：</p>
+<ul>
+<li><code>test/media/test_media_fake.c</code>：状态机/时钟/暂停/seek/音量/循环/事件（假后端与假声卡）；</li>
+<li><code>test/media/test_media_ffmpeg.c</code>：现场生成 WAV（44.1k 单声道），真实 FFmpeg 解码 + seek；</li>
+<li><code>test/web/test_media_element.c</code>：<code>&lt;audio&gt;</code> 不占布局；</li>
+<li><code>example/44_audio_player</code>：真实声卡播放，结束时打印欠载计数。</li>
+</ul>
+<p><strong>验收实测（本机 ALSA）</strong>：5 分钟 mp3 连续播放，位置走到 <code>300.00 s</code>、
+<strong>欠载 0</strong>、正常收到 <code>ENDED</code>；5 秒文件播放用时 ≈5 秒（音频时钟没有漂）。</p>
+<p>M1 仍然<strong>没有</strong>做：<code>&lt;audio src&gt;</code> 自动打开、视频帧、字幕、网络流、硬件解码。</p>
 <p><strong>备选方案</strong>（评估过，不采用）：</p>
 <ul>
 <li><strong>平台原生播放器</strong>（GStreamer/Media Foundation/AVFoundation）：
@@ -1309,6 +1364,7 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <li><a href='#13'>13. 分阶段计划</a></li>
 <li><a href='#14-qt'>14. 与 Qt 的对照（抄什么、不抄什么）</a></li>
 <li><a href='#15'>15. 风险与备选</a></li>
+<li><a href='#151-m1'>15.1 M1 落地说明（与草案的差异）</a></li>
 <li><a href='#16'>16. 开放问题（实现前要定）</a></li>
 </ul></aside>
 </div>

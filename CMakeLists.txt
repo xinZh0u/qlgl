@@ -126,6 +126,39 @@ else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_LIBJPEG=0)
 endif()
 
+# ---- QLMedia：媒体播放引擎（M1：音频）----
+# 核心总是编译（关掉时提供"明确不支持"的桩）；FFmpeg 找到才启用默认解码后端。
+option(QLGL_BUILD_MEDIA "构建 QLMedia（<audio>/<video> 播放引擎，FFmpeg 音频后端）" ON)
+target_sources(qlgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/media/qlmedia.c)
+find_package(Threads REQUIRED)
+target_link_libraries(qlgl PUBLIC Threads::Threads)
+
+set(QLGL_MEDIA_ENABLED 0)
+if(QLGL_BUILD_MEDIA)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(FFMPEG QUIET IMPORTED_TARGET
+                          libavformat libavcodec libavutil libswresample)
+    endif()
+    if(FFMPEG_FOUND)
+        target_sources(qlgl PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/media/qlmedia_ffmpeg.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/media/qlaudio_alsa.c)
+        target_link_libraries(qlgl PUBLIC PkgConfig::FFMPEG ${CMAKE_DL_LIBS})
+        target_compile_definitions(qlgl PUBLIC
+            QL_FEAT_MEDIA=1 QL_FEAT_MEDIA_AUDIO=1
+            QL_FEAT_MEDIA_FFMPEG=1 QL_FEAT_UI_MEDIA=1)
+        set(QLGL_MEDIA_ENABLED 1)
+        message(STATUS "QLGL: QLMedia 已启用（FFmpeg 音频 + ALSA dlopen）")
+    else()
+        message(STATUS "QLGL: 未找到 FFmpeg 开发库，QLMedia 关闭（<audio> 保持占位盒）")
+    endif()
+endif()
+if(NOT QLGL_MEDIA_ENABLED)
+    target_compile_definitions(qlgl PUBLIC
+        QL_FEAT_MEDIA=0 QL_FEAT_MEDIA_FFMPEG=0 QL_FEAT_UI_MEDIA=0)
+endif()
+
 # ---- FreeType：矢量字体后端（PC/MPU；MCU 关掉即可，内置位图字体仍然可用） ----
 if(QLGL_BUILD_FREETYPE)
     find_package(Freetype QUIET)
@@ -605,6 +638,11 @@ endif()
 if(QLGL_FREETYPE_ENABLED)
     string(APPEND QLGL_CONFIG_DEPS "find_dependency(Freetype)\n")
 endif()
+if(QLGL_MEDIA_ENABLED)
+    string(APPEND QLGL_CONFIG_DEPS "find_dependency(Threads)\n")
+    string(APPEND QLGL_CONFIG_DEPS
+        "pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswresample)\n")
+endif()
 if(QLGL_BUILD_JPEG AND JPEG_FOUND)
     string(APPEND QLGL_CONFIG_DEPS "find_dependency(JPEG)\n")
 endif()
@@ -625,6 +663,10 @@ if(QLGL_FREETYPE_ENABLED)
 endif()
 if(QLGL_BUILD_JPEG AND JPEG_FOUND)
     set(QL_PC_LIBS "${QL_PC_LIBS} -ljpeg")
+endif()
+if(QLGL_MEDIA_ENABLED)
+    # 静态消费方要一次链完：FFmpeg 四个库 + pthread（老 glibc 需要）
+    set(QL_PC_LIBS "${QL_PC_LIBS} -lavformat -lavcodec -lavutil -lswresample -lpthread")
 endif()
 if(QLGL_ENABLE_GL_FLAG)
     set(QL_PC_LIBS "${QL_PC_LIBS} -lEGL -lGLESv2")

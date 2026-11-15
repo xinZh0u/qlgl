@@ -194,7 +194,6 @@ QL_TEST_BEGIN("test_embed")
                 { "canvas", 302, 152 },
                 { "object", 302, 152 },
                 { "embed", 302, 152 },
-                { "audio", 302, 34 },     /* 300×32 + 边框 */
             };
             for (size_t i = 0; i < sizeof(k_expect) / sizeof(k_expect[0]); i++) {
                 QLUINodeRT *n = find_tag(ui, k_expect[i].tag, 0);
@@ -206,6 +205,22 @@ QL_TEST_BEGIN("test_embed")
                     QL_CHECK_EQ((int)n->style->display, (int)QL_UI_DISPLAY_BLOCK);
                 }
             }
+            /* <audio>：有媒体能力时是零盒子（与浏览器一致），否则仍是占位盒 */
+            QLUINodeRT *aud = find_tag(ui, "audio", 0);
+            QL_CHECK(aud != NULL);
+            if (aud != NULL) {
+                const QLRect ar = ql_ui_node_rect(aud);
+#if QL_FEAT_UI_MEDIA
+                QL_CHECK_EQ((int)ar.w, 0);
+                QL_CHECK_EQ((int)ar.h, 0);
+                QL_CHECK_EQ((int)aud->style->display, (int)QL_UI_DISPLAY_NONE);
+#else
+                QL_CHECK_EQ((int)ar.w, 302);   /* 300×32 + 1px 边框双方 */
+                QL_CHECK_EQ((int)ar.h, 34);
+                QL_CHECK_EQ((int)aud->style->display, (int)QL_UI_DISPLAY_BLOCK);
+#endif
+            }
+
             /* svg / math 是行内的（浏览器里也是） */
             ql_ui_free(ui);
             ql_ui_doc_free(doc);

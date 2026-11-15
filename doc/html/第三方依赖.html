@@ -310,6 +310,8 @@ main img {
 <span class='mod'>QLInput —— 输入：事件队列、指针、键盘</span>
 <a href='manual/input/QLInput阅读指南.html' title='阅读指南'>阅读指南</a>
 <a href='manual/input/QLInput API手册.html' title='API 手册'>API 手册</a>
+<span class='mod'>QLMedia —— 媒体：状态机、解码后端、音频输出</span>
+<a href='manual/media/QLMedia API手册.html' title='API 手册'>API 手册</a>
 </details>
 <details class='sec'><summary>规范与清单</summary>
 <a href='manual/ui/CSS3覆盖与裁剪.html' title='CSS 覆盖与裁剪（全量清单）'>CSS 覆盖与裁剪（全量清单）</a>
@@ -433,6 +435,26 @@ main img {
 <td><strong>LGPL-2.1+</strong></td>
 <td><strong>dlopen</strong> <code>libfribidi.so.0</code>；有头文件时直连</td>
 <td><code>QL_FEAT_CSS_BIDI=0</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>FFmpeg</strong> 8.0（avformat/avcodec/avutil/swresample）</td>
+<td>C</td>
+<td><code>&lt;audio&gt;</code>/<code>&lt;video&gt;</code> 解码（M1 音频）</td>
+<td>PC/Mobile</td>
+<td><strong>LGPL-2.1+</strong>（<strong>不要开 <code>--enable-gpl</code></strong>）</td>
+<td>链接动态库（pkg-config）</td>
+<td><code>QLGL_BUILD_MEDIA=OFF</code>、<code>QL_FEAT_MEDIA=0</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td><strong>libasound</strong> 2（ALSA）</td>
+<td>C</td>
+<td>音频输出（M1）</td>
+<td>Linux</td>
+<td>LGPL-2.1</td>
+<td><strong>dlopen</strong> <code>libasound.so.2</code>（<strong>不需要 -dev 头</strong>）</td>
+<td>运行期打不开就静音降级</td>
 </tr>
 </tbody>
 </table>
