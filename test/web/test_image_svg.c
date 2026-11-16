@@ -107,8 +107,22 @@ QL_TEST_BEGIN("test_image_svg")
                             QL_IMAGE_RGBA8888, 0, 0, &img), QL_ERR_INVAL);
     QL_CHECK(strstr(ql_image_last_error(), "禁止") != NULL);
 
+    /* 畸形输入：PlutoSVG 直接失败；ThorVG 可能"成功"但画不出任何像素。
+     * 两种都算"明确没有画面"，不允许崩或给出非空图像。 */
     memset(&img, 0, sizeof(img));
-    QL_CHECK(decode_text("<svg", QL_IMAGE_RGBA8888, 0, 0, &img) != QL_OK);
+    {
+        const int brc = decode_text("<svg", QL_IMAGE_RGBA8888, 0, 0, &img);
+        if (brc != QL_OK) {
+            QL_CHECK(1);
+        } else {
+            uint32_t nz = 0;
+            for (uint32_t i = 3; i < img.len; i += 4u)
+                if (img.px[i] != 0)
+                    nz++;
+            QL_CHECK(nz == 0);
+            ql_mem_free((void *)img.px);
+        }
+    }
     ql_image_set_decode_budget(0);
 
     /* ---- 6. 显式 SRC_SVG 也能走同一条路 ---- */

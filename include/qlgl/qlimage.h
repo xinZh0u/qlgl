@@ -72,6 +72,17 @@ uint32_t ql_image_format_bpp(uint8_t format);
 int ql_image_is_svg(const void *data, size_t len);
 
 /*
+ * SVG 后端选择（需要 `QL_FEAT_IMG_SVG`）：
+ *   "plutosvg" / "pluto"   纯 C 默认后端
+ *   "thorvg"               C++ 后端（需要构建时 `QLGL_BUILD_THORVG=ON`）
+ *   NULL / "" / "auto"     恢复默认
+ * 未知或没编进来的后端返回 `QL_ERR_UNSUPPORTED`（不改变当前选择）。
+ * 进程级全局状态；切换后已注册的图会在下一次重栅格化时使用新后端。
+ */
+QLErr       ql_image_svg_set_backend(const char *name);
+const char *ql_image_svg_backend_name(void);
+
+/*
  * 校验一张图的自洽性与上界。返回 1 = 可用。
  * 检查项：format 合法、w/h 非 0、像素数 ≤ QL_CFG_IMAGE_MAX_PIXELS、
  * stride ≥ w*bpp、len == stride*h、stride 能装进 uint16。

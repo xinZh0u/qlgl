@@ -13,12 +13,21 @@ execute_process(
 if(NOT rc EQUAL 1)
     message(FATAL_ERROR "目录扫描期望退出码 1，实际 ${rc}\n${out}${err}")
 endif()
-foreach(needle "fail" "block" "clipPath" "text")
+# bad.svg：PlutoSVG 会 fail，ThorVG 可能把它当空图（warn/空白），
+# 所以这里只断言"文件被报出来"，退出码由 block 保证为 1。
+foreach(needle "bad.svg" "block" "text")
     string(FIND "${out}" "${needle}" pos)
     if(pos EQUAL -1)
         message(FATAL_ERROR "输出里缺少 '${needle}'：\n${out}${err}")
     endif()
 endforeach()
+# clipPath 是 PlutoSVG 不支持的；ThorVG 默认后端会把它过滤掉
+if(HAVE_PLUTO)
+    string(FIND "${out}" "clipPath" pos)
+    if(pos EQUAL -1)
+        message(FATAL_ERROR "默认 PlutoSVG 后端应报出 clipPath：\n${out}${err}")
+    endif()
+endif()
 
 # 正常文件：ok + 0
 execute_process(
@@ -51,4 +60,27 @@ if(NOT rc4 EQUAL 1)
     message(FATAL_ERROR "--strict 期望退出码 1，实际 ${rc4}\n${out4}${err4}")
 endif()
 
-message(STATUS "qlsvgprobe：状态/特性/--strict 都符合预期")
+# 同时编了两个后端时：--compare 必须能跑，并且对坏文件返回非 0
+if(HAVE_BOTH)
+    execute_process(
+        COMMAND "${QLSVGPROBE}" --compare "${SRC}/svg/star.svg"
+        RESULT_VARIABLE rc5 OUTPUT_VARIABLE out5 ERROR_VARIABLE err5)
+    if(NOT rc5 EQUAL 0)
+        message(FATAL_ERROR "--compare（star）期望 0，实际 ${rc5}\n${out5}${err5}")
+    endif()
+    foreach(needle "plutosvg" "thorvg")
+        string(FIND "${out5}" "${needle}" pos)
+        if(pos EQUAL -1)
+            message(FATAL_ERROR "--compare 输出里缺少 '${needle}'：\n${out5}")
+        endif()
+    endforeach()
+
+    execute_process(
+        COMMAND "${QLSVGPROBE}" --compare "${SRC}/svg/bad.svg"
+        RESULT_VARIABLE rc6 OUTPUT_VARIABLE out6 ERROR_VARIABLE err6)
+    if(NOT rc6 EQUAL 1)
+        message(FATAL_ERROR "--compare（bad）期望 1，实际 ${rc6}\n${out6}${err6}")
+    endif()
+endif()
+
+message(STATUS "qlsvgprobe：状态/特性/--strict/--compare 都符合预期")

@@ -371,12 +371,27 @@
 #define QL_FEAT_IMG_LIBJPEG         QL_FEAT_IMG_PLATFORM   /* libjpeg-turbo 参考实现 */
 #endif
 /*
- * 运行期 SVG 解码（PlutoSVG + PlutoVG，vendored 到 third_party/）。
- * 关掉时 `.svg` 明确返回 `QL_ERR_UNSUPPORTED`，其余格式完全不受影响；
- * MCU 档应当关掉（图标在构建期预渲染成 PNG/A8 更省）。
+ * 运行期 SVG 解码。默认后端 PlutoSVG + PlutoVG（vendored，纯 C）；
+ * 可选 ThorVG（`QLGL_BUILD_THORVG=ON`，C++）。关掉时 `.svg` 明确返回
+ * `QL_ERR_UNSUPPORTED`，其余格式完全不受影响；MCU 档应当关掉
+ * （图标在构建期预渲染成 PNG/A8 更省）。
  */
 #ifndef QL_FEAT_IMG_SVG
 #define QL_FEAT_IMG_SVG             0
+#endif
+/* 具体后端：PlutoSVG（纯 C，默认）/ ThorVG（C++，可选） */
+#ifndef QL_FEAT_IMG_SVG_PLUTOSVG
+#define QL_FEAT_IMG_SVG_PLUTOSVG    QL_FEAT_IMG_SVG
+#endif
+#ifndef QL_FEAT_IMG_SVG_THORVG
+#define QL_FEAT_IMG_SVG_THORVG      0
+#endif
+/*
+ * `clip-path: path()` 复用 PlutoVG 的路径解析/展平，和后端选择无关
+ * （即使运行期渲染切到 ThorVG，只要 PlutoVG 还编着就能用）。
+ */
+#ifndef QL_FEAT_CSS_CLIP_PATH_FILE
+#define QL_FEAT_CSS_CLIP_PATH_FILE  QL_FEAT_IMG_SVG_PLUTOSVG
 #endif
 
 #ifndef QL_CFG_UI_IMAGE_MAX

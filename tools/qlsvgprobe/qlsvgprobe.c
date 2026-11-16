@@ -41,6 +41,7 @@ enum {
     FEAT_UNSUPPORTED = 0,
     FEAT_BLOCKED,
     FEAT_IMAGE_EMBED,
+    FEAT_IMAGE_ANY,
 };
 
 typedef struct {
@@ -69,6 +70,7 @@ static const Feat k_feats[] = {
     { "filter 属性",  "filter=",         0, FEAT_UNSUPPORTED },
     { "mask 属性",    "mask=",           0, FEAT_UNSUPPORTED },
     { "image 非内嵌", "<image",          1, FEAT_IMAGE_EMBED },
+    { "image（像素 loader）", "<image",   1, FEAT_IMAGE_ANY },
     { "script",       "<script",         1, FEAT_BLOCKED },
     { "javascript:",  "javascript:",     0, FEAT_BLOCKED },
     { "外部 href",    "href=\"http",     0, FEAT_BLOCKED },
@@ -126,6 +128,34 @@ static uint64_t scan_features(const char *d, size_t n)
             mask |= 1ull << i;
     }
     return mask;
+}
+
+/*
+ * 后端能力过滤：ThorVG 已支持 clipPath/mask/pattern/filter/<style> 与
+ * clip-path=/filter=/mask= 属性；但本构建没编 png/jpg loader，`<image>`
+ * 反而不能画。PlutoSVG 则是 `<image>` 只支持内嵌 data:image。
+ */
+static uint64_t effective_feats(uint64_t raw, const char *backend)
+{
+    const int thorvg = (backend != NULL && strcmp(backend, "thorvg") == 0);
+    for (int i = 0; i < FEAT_COUNT; i++) {
+        const uint64_t bit = 1ull << i;
+        if ((raw & bit) == 0)
+            continue;
+        const char *l = k_feats[i].label;
+        if (thorvg) {
+            if (strcmp(l, "clipPath") == 0 || strcmp(l, "mask") == 0 ||
+                strcmp(l, "pattern") == 0 || strcmp(l, "filter") == 0 ||
+                strcmp(l, "style") == 0 || strcmp(l, "clip-path 属性") == 0 ||
+                strcmp(l, "filter 属性") == 0 || strcmp(l, "mask 属性") == 0 ||
+                k_feats[i].kind == FEAT_IMAGE_EMBED)
+                raw &= ~bit;
+        } else {
+            if (k_feats[i].kind == FEAT_IMAGE_ANY)
+                raw &= ~bit;
+        }
+    }
+    return raw;
 }
 
 static int mask_has_blocked(uint64_t mask)
@@ -291,7 +321,8 @@ static void probe_one(const char *path, int size, Result *r)
         return;
     }
 
-    r->feats = scan_features((const char *)data, n);
+    r->feats = effective_feats(scan_features((const char *)data, n),
+                               ql_image_svg_backend_name());
 
     if (mask_has_blocked(r->feats)) {
         r->status = 3;
@@ -351,10 +382,13 @@ static void probe_one(const char *path, int size, Result *r)
 static void usage(const char *a0)
 {
     fprintf(stderr,
-            "用法: %s [--size N] [--strict] [--quiet] <文件.svg | 目录>...\n"
-            "  --size N   解码目标宽度（默认 64，高度按比例）\n"
-            "  --strict   有警告也返回非 0（CI 门槛）\n"
-            "  --quiet    只打印汇总和失败项\n"
+            "用法: %s [--size N] [--backend NAME] [--strict] [--quiet]"
+            " <文件.svg | 目录>...\n"
+            "  --size N      解码目标宽度（默认 64，高度按比例）\n"
+            "  --backend N   plutosvg | thorvg | auto（默认 auto）\n"
+            "  --compare     同一批文件用 PlutoSVG/ThorVG 各跑一遍（需两个后端）\n"
+            "  --strict      有警告也返回非 0（CI 门槛）\n"
+            "  --quiet       只打印汇总和失败项\n"
             "退出码: 0 通过 / 1 有失败或阻断 / 2 参数或 IO 错误\n",
             a0);
 }
@@ -362,7 +396,8 @@ static void usage(const char *a0)
 int main(int argc, char **argv)
 {
     int size = 64;
-    int strict = 0, quiet = 0;
+    int strict = 0, quiet = 0, compare = 0;
+    const char *backend = NULL;
     Paths paths;
     memset(&paths, 0, sizeof(paths));
 
@@ -374,6 +409,10 @@ int main(int argc, char **argv)
         }
         if (strcmp(a, "--size") == 0 && i + 1 < argc) {
             size = atoi(argv[++i]);
+        } else if (strcmp(a, "--backend") == 0 && i + 1 < argc) {
+            backend = argv[++i];
+        } else if (strcmp(a, "--compare") == 0) {
+            compare = 1;
         } else if (strcmp(a, "--strict") == 0) {
             strict = 1;
         } else if (strcmp(a, "--quiet") == 0) {
@@ -395,15 +434,75 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    if (compare && backend != NULL) {
+        fprintf(stderr, "qlsvgprobe: --compare 与 --backend 不能同时用\n");
+        return 2;
+    }
+    if (compare) {
+        if (ql_image_svg_set_backend("plutosvg") != QL_OK ||
+            ql_image_svg_set_backend("thorvg") != QL_OK) {
+            fprintf(stderr, "qlsvgprobe: --compare 需要同时编入 plutosvg 和 thorvg\n");
+            return 2;
+        }
+    } else if (backend != NULL &&
+               ql_image_svg_set_backend(backend) != QL_OK) {
+        fprintf(stderr, "qlsvgprobe: 没有可用的 SVG 后端 \"%s\"\n", backend);
+        return 2;
+    }
+
     qsort(paths.path, (size_t)paths.count, sizeof(paths.path[0]), cmp_path);
 
     int counts[4] = { 0, 0, 0, 0 };
     int feat_counts[FEAT_COUNT];
     memset(feat_counts, 0, sizeof(feat_counts));
 
-    printf("qlsvgprobe: %d 个文件，目标宽度 %dpx\n\n", paths.count, size);
+    printf("qlsvgprobe: %d 个文件，目标宽度 %dpx（后端 %s）\n\n", paths.count, size,
+           compare ? "plutosvg vs thorvg" : ql_image_svg_backend_name());
+
+    int cmp_counts[2][4];
+    int cmp_feats[2][FEAT_COUNT];
+    memset(cmp_counts, 0, sizeof(cmp_counts));
+    memset(cmp_feats, 0, sizeof(cmp_feats));
 
     for (int i = 0; i < paths.count; i++) {
+        if (compare) {
+            Result rp, rt;
+            ql_image_svg_set_backend("plutosvg");
+            probe_one(paths.path[i], size, &rp);
+            ql_image_svg_set_backend("thorvg");
+            probe_one(paths.path[i], size, &rt);
+            cmp_counts[0][rp.status]++;
+            cmp_counts[1][rt.status]++;
+
+            const char *mark = (rp.status == rt.status) ? " " : "*";
+            printf("%s %s\n", mark, paths.path[i]);
+            printf("    plutosvg  %-5s %4dx%-4d %7.2fms cov %3d%%", status_name(rp.status),
+                   rp.w, rp.h, rp.ms, rp.coverage);
+            if (rp.status >= 2)
+                printf("  %s", rp.error);
+            printf("\n");
+            printf("    thorvg    %-5s %4dx%-4d %7.2fms cov %3d%%", status_name(rt.status),
+                   rt.w, rt.h, rt.ms, rt.coverage);
+            if (rt.status >= 2)
+                printf("  %s", rt.error);
+            printf("\n");
+            for (int b = 0; b < 2; b++) {
+                const uint64_t fm = (b == 0) ? rp.feats : rt.feats;
+                if (fm == 0)
+                    continue;
+                printf("    %-9s 不支持/风险:", b == 0 ? "plutosvg" : "thorvg");
+                for (int k = 0; k < FEAT_COUNT; k++) {
+                    if (fm & (1ull << k)) {
+                        printf(" %s", k_feats[k].label);
+                        cmp_feats[b][k]++;
+                    }
+                }
+                printf("\n");
+            }
+            free(paths.path[i]);
+            continue;
+        }
+
         Result r;
         probe_one(paths.path[i], size, &r);
         counts[r.status]++;
@@ -437,22 +536,50 @@ int main(int argc, char **argv)
         free(paths.path[i]);
     }
 
-    printf("\n汇总: ok %d / warn %d / fail %d / block %d\n",
-           counts[0], counts[1], counts[2], counts[3]);
+    if (compare) {
+        for (int b = 0; b < 2; b++) {
+            printf("\n%s: ok %d / warn %d / fail %d / block %d", b == 0 ? "plutosvg" : "thorvg",
+                   cmp_counts[b][0], cmp_counts[b][1], cmp_counts[b][2],
+                   cmp_counts[b][3]);
+            int first = 1;
+            for (int k = 0; k < FEAT_COUNT; k++) {
+                if (cmp_feats[b][k] == 0)
+                    continue;
+                printf("%s%s×%d", first ? "\n  特性:" : ",", k_feats[k].label,
+                       cmp_feats[b][k]);
+                first = 0;
+            }
+        }
+        printf("\n");
+        ql_image_svg_set_backend(NULL);
+    } else {
+        printf("\n汇总: ok %d / warn %d / fail %d / block %d\n",
+               counts[0], counts[1], counts[2], counts[3]);
+    }
 
     int any_feat = 0;
-    for (int k = 0; k < FEAT_COUNT; k++) {
-        if (feat_counts[k] == 0)
-            continue;
-        printf("  %s %s×%d\n", any_feat ? "     " : "特性:", k_feats[k].label,
-               feat_counts[k]);
-        any_feat = 1;
+    if (!compare) {
+        for (int k = 0; k < FEAT_COUNT; k++) {
+            if (feat_counts[k] == 0)
+                continue;
+            printf("  %s %s×%d\n", any_feat ? "     " : "特性:", k_feats[k].label,
+                   feat_counts[k]);
+            any_feat = 1;
+        }
+        if (!any_feat)
+            printf("  没有发现已知的不支持特性\n");
     }
-    if (!any_feat)
-        printf("  没有发现已知的不支持特性\n");
 
     free(paths.path);
 
+    if (compare) {
+        const int bad = cmp_counts[0][2] + cmp_counts[0][3] + cmp_counts[1][2] +
+                        cmp_counts[1][3];
+        const int warn = cmp_counts[0][1] + cmp_counts[1][1];
+        if (bad > 0 || (strict && (warn > 0 || any_feat)))
+            return 1;
+        return 0;
+    }
     if (counts[2] > 0 || counts[3] > 0)
         return 1;
     if (strict && (counts[1] > 0 || any_feat))

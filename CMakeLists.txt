@@ -155,6 +155,9 @@ else()
     set(_ql_svg_default ON)
 endif()
 option(QLGL_BUILD_SVG "构建运行期 SVG 解码（vendored PlutoSVG + PlutoVG）" ${_ql_svg_default})
+# 可选的 ThorVG 后端（C++ 内核 + C API）。默认关：它比 PlutoSVG 大一个量级，
+# 且需要开启 C++ 工具链；打开后运行期可用 ql_image_svg_set_backend("thorvg") 切换。
+option(QLGL_BUILD_THORVG "构建 ThorVG SVG 后端（C++，可选）" OFF)
 if(QLGL_BUILD_SVG)
     # 第三方源码直接编进 qlgl（不单独成库）：静态库再挂一个依赖会牵出
     # "导出/安装目标必须成套"的问题，而这里本来就没有独立的消费场景。
@@ -168,8 +171,68 @@ if(QLGL_BUILD_SVG)
         PLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD=1
         # 库里不写图片文件（只有宿主工具 qlsvg 需要 stb_image_write）
         PLUTOVG_DISABLE_IMAGE_WRITE=1)
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_PLUTOSVG=1)
+    message(STATUS "QLGL: SVG 后端 PlutoSVG 已启用（PlutoVG）")
+else()
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_PLUTOSVG=0)
+endif()
+
+# ---- SVG 后端：ThorVG（可选，C++）----
+# 只编 CPU 引擎 + SVG loader + C API；PNG/JPG/WebP/GIF/Lottie/字体 loader 都不编。
+# 与 PlutoSVG 共用 src/draw/qlimage_svg.c 的预检查/尺寸/输出转换。
+if(QLGL_BUILD_THORVG)
+    if(NOT CMAKE_CXX_COMPILER_LOADED)
+        enable_language(CXX)
+    endif()
+    find_package(Threads REQUIRED)
+
+    set(_ql_tvg ${_ql_third}/thorvg)
+    file(GLOB _ql_tvg_sources CONFIGURE_DEPENDS
+        ${_ql_tvg}/src/common/*.cpp
+        ${_ql_tvg}/src/renderer/*.cpp
+        ${_ql_tvg}/src/renderer/cpu_engine/*.cpp
+        ${_ql_tvg}/src/modules/raw/*.cpp
+        ${_ql_tvg}/src/modules/svg/*.cpp
+        ${_ql_tvg}/src/bindings/capi/*.cpp)
+    set(_ql_tvg_cfg ${CMAKE_CURRENT_BINARY_DIR}/third_party/thorvg)
+    file(MAKE_DIRECTORY ${_ql_tvg_cfg})
+    file(WRITE ${_ql_tvg_cfg}/config.h
+        "#define THORVG_VERSION_STRING \"1.2.0\"\n"
+        "#define THORVG_CPU_ENGINE_SUPPORT 1\n"
+        "#define THORVG_SVG_LOADER_SUPPORT 1\n"
+        "#define THORVG_CAPI_BINDING_SUPPORT 1\n")
+
+    target_sources(qlgl PRIVATE ${_ql_tvg_sources}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/draw/qlimage_svg_thorvg.cpp)
+    target_include_directories(qlgl PRIVATE
+        ${_ql_tvg}/inc
+        ${_ql_tvg}/src
+        ${_ql_tvg}/src/common
+        ${_ql_tvg}/src/renderer
+        ${_ql_tvg}/src/renderer/cpu_engine
+        ${_ql_tvg}/src/modules
+        ${_ql_tvg}/src/modules/svg
+        ${_ql_tvg}/src/modules/raw
+        ${_ql_tvg}/src/bindings/capi
+        ${_ql_tvg_cfg})
+    target_compile_definitions(qlgl PRIVATE TVG_STATIC=1)
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_THORVG=1)
+    # 第三方 C++ 代码：不刷我们的告警；ThorVG 本身支持关异常/RTTI
+    set_source_files_properties(${_ql_tvg_sources}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/draw/qlimage_svg_thorvg.cpp
+        PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED ON
+        COMPILE_OPTIONS "-w;-fno-exceptions;-fno-rtti")
+    target_link_libraries(qlgl PRIVATE Threads::Threads)
+    message(STATUS "QLGL: SVG 后端 ThorVG 已启用（CPU 引擎 + SVG loader）")
+else()
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_THORVG=0)
+endif()
+
+# 至少有一个后端才启用运行期 SVG；两个都没有时 `.svg` → UNSUPPORTED。
+if(QLGL_BUILD_SVG OR QLGL_BUILD_THORVG)
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG=1)
-    message(STATUS "QLGL: 运行期 SVG 解码已启用（PlutoSVG + PlutoVG）")
 else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG=0)
     message(STATUS "QLGL: 运行期 SVG 解码关闭（.svg → QL_ERR_UNSUPPORTED）")
@@ -201,7 +264,7 @@ endif()
 
 # SVG 资产兼容性自检：批量解码 + 静态特性扫描（要看运行期解码器，故依赖
 # QLGL_BUILD_SVG）。输出 fail/block/warn 与不支持特性汇总，--strict 可当 CI 门槛。
-if(QLGL_BUILD_SVG AND NOT CMAKE_CROSSCOMPILING)
+if((QLGL_BUILD_SVG OR QLGL_BUILD_THORVG) AND NOT CMAKE_CROSSCOMPILING)
     add_executable(qlsvgprobe ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlsvgprobe/qlsvgprobe.c)
     target_link_libraries(qlsvgprobe PRIVATE qlgl)
     message(STATUS "QLGL: 宿主工具 qlsvgprobe 已启用（SVG 资产自检）")
@@ -592,10 +655,17 @@ if(QLGL_BUILD_TESTS)
 
     # SVG 资产自检工具（运行期解码器）
     if(TARGET qlsvgprobe)
+        if(QLGL_BUILD_SVG AND QLGL_BUILD_THORVG)
+            set(_ql_have_both ON)
+        else()
+            set(_ql_have_both OFF)
+        endif()
         add_test(NAME test_qlsvgprobe
                  COMMAND ${CMAKE_COMMAND}
                          -DQLSVGPROBE=$<TARGET_FILE:qlsvgprobe>
                          -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
+                         -DHAVE_BOTH=${_ql_have_both}
+                         -DHAVE_PLUTO=${QLGL_BUILD_SVG}
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/probe_svg.cmake)
     endif()
 

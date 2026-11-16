@@ -54,12 +54,12 @@ static const RejectCase k_cases[] = {
       "#a { transform: scale(40) }", "t:style[0]: scale 倍数必须在 -32.767~32.767（收到 'scale(40)'）" },
     { 0, "<div id='a'></div>",
       "#a { backdrop-filter: blur(0px) }", "t:style[0]: backdrop-filter: blur 半径必须在 1~64px" },
-    /* v34 起 inset()/ellipse()/polygon() 都支持了；path() 需要 QL_FEAT_IMG_SVG，
+    /* v34 起 inset()/ellipse()/polygon() 都支持了；path() 需要 QL_FEAT_CSS_CLIP_PATH_FILE，
      * 这里故意给一条只有 2 个顶点的路径（任何构建都应当拒绝）。 */
     { 0, "<div id='a'></div>",
       "#a { clip-path: path('M0 0 L10 10') }",
       "clip-path: path() 展平后至少要有 3 个顶点" },
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
     { 1, "<div id='a'></div>",
       "#a { clip-path: path('M0 0 L10 0 L10 10 Z') }", "" },
 #endif

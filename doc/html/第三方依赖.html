@@ -344,7 +344,7 @@ main img {
 <main><div class='inner'>
 <p class='eyebrow'>设计文档</p>
 <h1>第三方依赖与许可</h1>
-<p class='lead'>一句话结论：主库 MIT；最小构建零外部依赖；PC/Mobile 全量档只有 7 个系统运行期库， 而且全部是动态库（不占我们的二进制、可被系统替换）；SVG 是 vendored 的两份 MIT 纯 C 源码（静态编进库，可用 QLGLBUILDSVG=OFF 完全裁掉）；MCU 档一个都不需要。</p>
+<p class='lead'>一句话结论：主库 MIT；最小构建零外部依赖；PC/Mobile 全量档只有 7 个系统运行期库， 而且全部是动态库（不占我们的二进制、可被系统替换）；SVG 默认用 vendored 的 PlutoSVG/PlutoVG（MIT 纯 C）；可选 ThorVG（MIT，C++ 子集） 作为第二后端。</p>
 <blockquote>
 <p>状态：<strong>现行清单（2026-12 核对）</strong>。目标读者：打包/发版的人、评估"能不能用它"的人、
 以及被法务问"你们用了什么开源库"的人。数据都是本机（Ubuntu 24.04、x86_64）实测。</p>
@@ -460,11 +460,21 @@ main img {
 <td>10</td>
 <td><strong>PlutoSVG 0.0.8 + PlutoVG 1.3.3</strong></td>
 <td>C</td>
-<td>运行期 SVG 图标解码（<code>&lt;img src=x.svg&gt;</code>）</td>
+<td>运行期 SVG 图标解码（默认后端）</td>
 <td>PC/Mobile（MCU 不用）</td>
 <td>MIT</td>
 <td><strong>vendored 源码</strong>，静态编进 <code>libqlgl</code></td>
-<td><code>QLGL_BUILD_SVG=OFF</code>（<code>.svg</code> → <code>UNSUPPORTED</code>）</td>
+<td><code>QLGL_BUILD_SVG=OFF</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td><strong>ThorVG 1.2.0</strong>（CPU 引擎 + SVG loader + C API）</td>
+<td>C++</td>
+<td>可选 SVG 后端（对比/更全特性）</td>
+<td>PC/Mobile</td>
+<td>MIT</td>
+<td><strong>vendored 子集</strong>，静态编进 <code>libqlgl</code></td>
+<td><code>QLGL_BUILD_THORVG=OFF</code>（默认）</td>
 </tr>
 </tbody>
 </table>
@@ -551,10 +561,18 @@ main img {
 <td>MIT</td>
 <td>SVG XML → PlutoVG</td>
 </tr>
+<tr>
+<td><code>third_party/thorvg</code></td>
+<td>github.com/thorvg/thorvg</td>
+<td>1.2.0</td>
+<td>MIT</td>
+<td>可选 SVG 后端（只保留 CPU 引擎/SVG loader/C API）</td>
+</tr>
 </tbody>
 </table>
 <ul>
-<li>只在 <code>QLGL_BUILD_SVG=ON</code>（桌面默认）时编译，直接编进 <code>libqlgl</code>；</li>
+<li>PlutoSVG 只在 <code>QLGL_BUILD_SVG=ON</code>（桌面默认）时编译；ThorVG 只在
+  <code>QLGL_BUILD_THORVG=ON</code>（默认 OFF）时编译；两者都直接编进 <code>libqlgl</code>；</li>
 <li>关掉后<strong>一个符号都不进固件</strong>，MCU 用 <code>qlsvg</code> 预渲染 PNG/A8；</li>
 <li>不启用 FreeType（<code>&lt;text&gt;</code> 不渲染），并关闭 PlutoVG 的字体缓存加载；</li>
 <li>升级步骤与版本来源见 <code>third_party/README.md</code>。</li>

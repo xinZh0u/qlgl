@@ -1433,6 +1433,14 @@ SVG（`AUTO` 按开头是否出现 `<svg` 判断）会被**保留原文**（上�
 布局与 `object-fit` 用的是注册时记下的固有 CSS 尺寸，不会跟着变。
 SVG 里的 `currentColor` 会取元素自己的 `color`（颜色变化只重栅格化一次）。
 
+后端选择（需要 `QL_FEAT_IMG_SVG`）：
+
+```c
+ql_image_svg_set_backend("thorvg");   /* 需要构建时 QLGL_BUILD_THORVG=ON */
+const char *name = ql_image_svg_backend_name();
+ql_image_svg_set_backend(NULL);       /* 恢复默认（PlutoSVG） */
+```
+
 | 情况 | 返回 |
 |---|---|
 | 名字对不上任何 `<img src>` / 界面里没有 `<img>` / 参数非法 | `QL_ERR_INVAL` |

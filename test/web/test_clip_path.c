@@ -21,7 +21,7 @@
 static QLDispDriver *s_disp;
 static QLCanvas s_cv;
 
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
 static ql_color_t px(int x, int y)
 {
     return ql_disp_mem_pixel(s_disp, (ql_coord_t)x, (ql_coord_t)y);
@@ -47,7 +47,7 @@ static int render(const char *css)
     return 1;
 }
 
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
 static int is_fg(ql_color_t c)
 {
     return QL_COLOR_GET_R(c) > 0xC0 && QL_COLOR_GET_G(c) < 0x40 &&
@@ -68,7 +68,7 @@ QL_TEST_BEGIN("test_clip_path")
         QL_CHECK_EQ(ql_canvas_from_disp(&s_cv, s_disp), QL_OK);
     }
 
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
     /* ---- 1. 直角三角形 (0,0)-(64,0)-(0,64)：x+y < 64 在内部 ---- */
     QL_CHECK(render("#a { width: 64px; height: 64px; background-color: #ff0000;"
                     " clip-path: path(\"M0 0 L64 0 L0 64 Z\"); }"));

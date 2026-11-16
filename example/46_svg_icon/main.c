@@ -3,6 +3,7 @@
  * @brief   SVG 图标：`<img src="*.svg">` + `mask-image` 染色（运行期 PlutoSVG）。
  *
  *   ./build/example/example_46_svg_icon
+ *   ./build/example/example_46_svg_icon --backend thorvg   # 需 QLGL_BUILD_THORVG=ON
  *   ./build/example/example_46_svg_icon --dump /tmp/svg_icon.ppm
  *
  * 两条路径共用一张资源表：
@@ -88,6 +89,13 @@ int main(int argc, char **argv)
         return 1;
     }
     ql_ui_layout(ui, W, H);
+
+    /* 可选：对比两个 SVG 后端（默认 PlutoSVG） */
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--backend") == 0 &&
+            ql_image_svg_set_backend(argv[i + 1]) != QL_OK)
+            printf("没有可用的 SVG 后端：%s\n", argv[i + 1]);
+    }
 
     register_svg(ui, "logo.svg");
     register_svg(ui, "star.svg");

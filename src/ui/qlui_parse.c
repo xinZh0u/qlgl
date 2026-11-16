@@ -25,7 +25,7 @@
 
 #include <qlgl/qlgl.h>
 
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
 #  include <plutovg.h>       /* clip-path: path() 的路径解析 + 展平 */
 #endif
 
@@ -3034,7 +3034,7 @@ static int parse_len_group(const char *inner, const char *where, int allow_pct,
     return n;
 }
 
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
 /*
  * `clip-path: path("...")`：用 PlutoVG 解析 SVG 路径，再**按像素误差展平**
  * 成多边形，交给现有的覆盖率遮罩（CPU / GPU 同一公式）。
@@ -3212,7 +3212,7 @@ static int parse_clip_path_data(const char *text, const char *where, ClipPathDef
     out->kind = QL_UI_CLIP_POLYGON;
     return 1;
 }
-#endif /* QL_FEAT_IMG_SVG */
+#endif /* QL_FEAT_CSS_CLIP_PATH_FILE */
 
 /* 大小写不敏感的前缀判断（CSS 函数名不区分大小写） */
 static int clip_prefix_ci(const char *s, const char *prefix)
@@ -3235,7 +3235,7 @@ static int clip_prefix_ci(const char *s, const char *prefix)
  *   ellipse(<rx> <ry>)
  *   inset(<t> [<r> [<b> [<l>]]])          ← CSS 顺序 top right bottom left
  *   polygon([<x> <y>]#)                    ← 至少 3 个顶点
- *   path("<svg path data>")                ← 单条子路径；展平成多边形（QL_FEAT_IMG_SVG）
+ *   path("<svg path data>")                ← 单条子路径；展平成多边形（QL_FEAT_CSS_CLIP_PATH_FILE）
  *
  * 明确不支持（构建期报错，不做静默降级）：
  *   - 圆心的 `at <位置>`（本库的圆/椭圆圆心恒在元素中心）
@@ -3261,7 +3261,7 @@ static int parse_clip_path(const char *text, const char *where, ClipPathDef *out
         while (*head == ' ' || *head == '\t' || *head == '\n' || *head == '\r')
             head++;
         if (clip_prefix_ci(head, "path(")) {
-#if QL_FEAT_IMG_SVG
+#if QL_FEAT_CSS_CLIP_PATH_FILE
             return parse_clip_path_data(head, where, out);
 #else
             set_error("%s: clip-path: path() 需要 QLGL_BUILD_SVG=ON"
