@@ -25,6 +25,10 @@
 
 #include <qlgl/qlgl.h>
 
+#if QL_FEAT_IMG_SVG
+#  include <plutovg.h>       /* clip-path: path() 的路径解析 + 展平 */
+#endif
+
 /* ============================== ① 错误与内存 ============================== */
 
 static char s_error[192];
@@ -3030,6 +3034,200 @@ static int parse_len_group(const char *inner, const char *where, int allow_pct,
     return n;
 }
 
+#if QL_FEAT_IMG_SVG
+/*
+ * `clip-path: path("...")`：用 PlutoVG 解析 SVG 路径，再**按像素误差展平**
+ * 成多边形，交给现有的覆盖率遮罩（CPU / GPU 同一公式）。
+ *
+ * 边界：
+ *   - 只支持**一条子路径**（多个 M 会形成互相覆盖的轮廓，而遮罩是单多边形）；
+ *   - 路径坐标按 CSS 规范就是 px（不支持百分比）；
+ *   - 展平后顶点数 ≤ QL_CFG_UI_CLIP_PTS_MAX，超了构建期报错。
+ */
+#define CLIP_PATH_FLAT_TOL    0.75f   /* px；与遮罩 ±0.5px 抗锯齿带同量级 */
+#define CLIP_PATH_FLAT_DEPTH  8
+
+typedef struct {
+    ClipPathDef *out;
+    const char  *where;
+    int          n;
+    int          contours;
+    int          bad;
+} ClipPathFlat;
+
+static void clip_path_emit(ClipPathFlat *f, float x, float y)
+{
+    if (f->bad)
+        return;
+    if (f->n >= QL_CFG_UI_CLIP_PTS_MAX) {
+        set_error("%s: clip-path: path() 展平后顶点超过上限 %d"
+                  "（见 QL_CFG_UI_CLIP_PTS_MAX），请简化路径",
+                  f->where, QL_CFG_UI_CLIP_PTS_MAX);
+        f->bad = 1;
+        return;
+    }
+    if (!(x > -32000.0f && x < 32000.0f && y > -32000.0f && y < 32000.0f)) {
+        set_error("%s: clip-path: path() 的坐标超出支持范围", f->where);
+        f->bad = 1;
+        return;
+    }
+    f->out->pt[f->n * 2].value = (int16_t)py_round((double)x);
+    f->out->pt[f->n * 2].unit = (uint8_t)QL_UI_UNIT_PX;
+    f->out->pt[f->n * 2].reserved = 0;
+    f->out->pt[f->n * 2 + 1].value = (int16_t)py_round((double)y);
+    f->out->pt[f->n * 2 + 1].unit = (uint8_t)QL_UI_UNIT_PX;
+    f->out->pt[f->n * 2 + 1].reserved = 0;
+    f->n++;
+}
+
+/* 三次贝塞尔递归细分：控制点到弦的距离 ≤ 容差就当直线 */
+static void clip_path_cubic(ClipPathFlat *f, float x0, float y0, float x1, float y1,
+                            float x2, float y2, float x3, float y3, int depth)
+{
+    if (f->bad)
+        return;
+
+    const float dx = x3 - x0, dy = y3 - y0;
+    const float chord = sqrtf(dx * dx + dy * dy);
+    float flat;
+    if (chord > 1e-5f) {
+        const float d1 = fabsf((x1 - x0) * dy - (y1 - y0) * dx) / chord;
+        const float d2 = fabsf((x2 - x0) * dy - (y2 - y0) * dx) / chord;
+        flat = (d1 > d2) ? d1 : d2;
+    } else {
+        const float a = (x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0);
+        const float b = (x2 - x0) * (x2 - x0) + (y2 - y0) * (y2 - y0);
+        flat = sqrtf((a > b) ? a : b);
+    }
+    if (flat <= CLIP_PATH_FLAT_TOL || depth >= CLIP_PATH_FLAT_DEPTH) {
+        clip_path_emit(f, x3, y3);
+        return;
+    }
+
+    const float x01 = (x0 + x1) * 0.5f, y01 = (y0 + y1) * 0.5f;
+    const float x12 = (x1 + x2) * 0.5f, y12 = (y1 + y2) * 0.5f;
+    const float x23 = (x2 + x3) * 0.5f, y23 = (y2 + y3) * 0.5f;
+    const float x012 = (x01 + x12) * 0.5f, y012 = (y01 + y12) * 0.5f;
+    const float x123 = (x12 + x23) * 0.5f, y123 = (y12 + y23) * 0.5f;
+    const float xm = (x012 + x123) * 0.5f, ym = (y012 + y123) * 0.5f;
+
+    clip_path_cubic(f, x0, y0, x01, y01, x012, y012, xm, ym, depth + 1);
+    clip_path_cubic(f, xm, ym, x123, y123, x23, y23, x3, y3, depth + 1);
+}
+
+/* 解析 path("M… Z")；成功时把顶点写进 out（kind = POLYGON） */
+static int parse_clip_path_data(const char *text, const char *where, ClipPathDef *out)
+{
+    const char *lp = strchr(text, '(');
+    const char *end = text + strlen(text);
+    while (end > text && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' ||
+                          end[-1] == '\r'))
+        end--;
+    if (lp == NULL || end <= lp + 1 || end[-1] != ')') {
+        set_error("%s: clip-path: path() 语法错误（收到 '%s'）", where, text);
+        return 0;
+    }
+
+    const char *a = lp + 1, *b = end - 1;
+    while (a < b && (*a == ' ' || *a == '\t' || *a == '\n' || *a == '\r'))
+        a++;
+    while (b > a && (b[-1] == ' ' || b[-1] == '\t' || b[-1] == '\n' || b[-1] == '\r'))
+        b--;
+
+    /* CSS 的 path() 要求字符串；两侧引号必须成对 */
+    if (b - a < 2 || (a[0] != '"' && a[0] != '\'') || b[-1] != a[0]) {
+        set_error("%s: clip-path: path() 的路径要用引号包起来"
+                  "（例如 path(\"M0 0 L10 0 L10 10 Z\")）", where);
+        return 0;
+    }
+    a++;
+    b--;
+
+    plutovg_path_t *path = plutovg_path_create();
+    if (path == NULL || !plutovg_path_parse(path, a, (int)(b - a))) {
+        plutovg_path_destroy(path);
+        set_error("%s: clip-path: path() 的路径数据无法解析", where);
+        return 0;
+    }
+
+    const plutovg_path_element_t *el = NULL;
+    const int count = plutovg_path_get_elements(path, &el);
+    ClipPathFlat f;
+    memset(&f, 0, sizeof(f));
+    f.out = out;
+    f.where = where;
+
+    float cx = 0.0f, cy = 0.0f, sx = 0.0f, sy = 0.0f;
+    for (int i = 0; i < count && !f.bad; ) {
+        const int cmd = el[i].header.command;
+        const int step = el[i].header.length;
+        if (step <= 0)
+            break;
+        switch (cmd) {
+        case PLUTOVG_PATH_COMMAND_MOVE_TO:
+            if (f.contours > 0) {
+                set_error("%s: clip-path: path() 目前只支持一条子路径"
+                          "（多个 M 会形成互相覆盖的轮廓）", where);
+                f.bad = 1;
+                break;
+            }
+            f.contours++;
+            cx = sx = el[i + 1].point.x;
+            cy = sy = el[i + 1].point.y;
+            /* 多边形的第一个顶点：路径起点本身也是一个角 */
+            clip_path_emit(&f, cx, cy);
+            break;
+        case PLUTOVG_PATH_COMMAND_LINE_TO:
+            cx = el[i + 1].point.x;
+            cy = el[i + 1].point.y;
+            clip_path_emit(&f, cx, cy);
+            break;
+        case PLUTOVG_PATH_COMMAND_CUBIC_TO:
+            clip_path_cubic(&f, cx, cy, el[i + 1].point.x, el[i + 1].point.y,
+                            el[i + 2].point.x, el[i + 2].point.y,
+                            el[i + 3].point.x, el[i + 3].point.y, 0);
+            cx = el[i + 3].point.x;
+            cy = el[i + 3].point.y;
+            break;
+        case PLUTOVG_PATH_COMMAND_CLOSE:
+            /* 多边形遮罩天然闭合；CLOSE 不额外加点 */
+            cx = sx;
+            cy = sy;
+            break;
+        default:
+            break;
+        }
+        i += step;
+    }
+    plutovg_path_destroy(path);
+
+    if (f.bad)
+        return 0;
+    if (f.contours == 0 || f.n < 3) {
+        set_error("%s: clip-path: path() 展平后至少要有 3 个顶点（收到 %d 个）",
+                  where, f.n);
+        return 0;
+    }
+    out->n = (uint8_t)f.n;
+    out->kind = QL_UI_CLIP_POLYGON;
+    return 1;
+}
+#endif /* QL_FEAT_IMG_SVG */
+
+/* 大小写不敏感的前缀判断（CSS 函数名不区分大小写） */
+static int clip_prefix_ci(const char *s, const char *prefix)
+{
+    for (size_t i = 0; prefix[i] != '\0'; i++) {
+        unsigned char a = (unsigned char)s[i];
+        const unsigned char b = (unsigned char)prefix[i];
+        if (a >= 'A' && a <= 'Z')
+            a = (unsigned char)(a - 'A' + 'a');
+        if (a != b)
+            return 0;
+    }
+    return 1;
+}
+
 /*
  * clip-path：
  *   none
@@ -3037,13 +3235,14 @@ static int parse_len_group(const char *inner, const char *where, int allow_pct,
  *   ellipse(<rx> <ry>)
  *   inset(<t> [<r> [<b> [<l>]]])          ← CSS 顺序 top right bottom left
  *   polygon([<x> <y>]#)                    ← 至少 3 个顶点
+ *   path("<svg path data>")                ← 单条子路径；展平成多边形（QL_FEAT_IMG_SVG）
  *
  * 明确不支持（构建期报错，不做静默降级）：
  *   - 圆心的 `at <位置>`（本库的圆/椭圆圆心恒在元素中心）
  *   - `inset(... round <半径>)`（圆角矩形裁剪要另一套扫线，见文档）
  *   - `polygon(... , <fill-rule>)`（evenodd 与非零环绕在本库是同一结果，
  *     因为形状只有一层；写了就报错，免得你以为生效了）
- *   - `path()` / `url()`（需要 SVG 路径解析器）
+ *   - `url()`（引用文档内 `<clipPath>` 需要 DOM/内联 SVG）
  */
 static int parse_clip_path(const char *text, const char *where, ClipPathDef *out)
 {
@@ -3051,6 +3250,25 @@ static int parse_clip_path(const char *text, const char *where, ClipPathDef *out
     for (int i = 0; i < 4; i++) {
         out->box[i].unit = (uint8_t)QL_UI_UNIT_PX;
         out->box[i].value = 0;
+    }
+
+    /*
+     * `path()` 必须抢在下面"整串转小写"之前处理：SVG 路径的 m/M、c/C
+     * 是相对/绝对语义，转小写会画错。
+     */
+    {
+        const char *head = text;
+        while (*head == ' ' || *head == '\t' || *head == '\n' || *head == '\r')
+            head++;
+        if (clip_prefix_ci(head, "path(")) {
+#if QL_FEAT_IMG_SVG
+            return parse_clip_path_data(head, where, out);
+#else
+            set_error("%s: clip-path: path() 需要 QLGL_BUILD_SVG=ON"
+                      "（PlutoVG 路径解析）", where);
+            return 0;
+#endif
+        }
     }
 
     char t[512];

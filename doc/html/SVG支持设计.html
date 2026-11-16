@@ -396,7 +396,7 @@ MCU 不链 SVG 库，用同一个渲染器写成的宿主工具 <code>qlsvg</cod
 </tr>
 <tr>
 <td><code>clip-path: path()</code></td>
-<td>还没接；PlutoVG 的路径展平器是现成的，但属于独立特性</td>
+<td><strong>已接</strong>（PlutoVG 解析 + 0.75px 展平 + 现有覆盖率）；单条子路径、≤64 顶点</td>
 </tr>
 </tbody>
 </table>
@@ -720,12 +720,22 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 升级步骤：替换 <code>third_party/</code> 源码 → 重跑 <code>test_image_svg</code> / <code>test_qlsvg</code> /
 <code>example_46_svg_icon</code> 截图。</p>
 <hr />
-<h2 id="8">8. 还没做（按需）</h2>
+<h2 id="8-clip-path-path">8. <code>clip-path: path()</code>（已完成）</h2>
+<p><code>path("…")</code> 不再"明确报错"：<code>qlui_parse.c</code> 用 PlutoVG 解析路径，按 0.75px
+误差把三次贝塞尔展平成多边形，交给现有的单多边形覆盖率遮罩（CPU / GPU 同公式）。</p>
+<p>限制（构建期报错，不静默降级）：</p>
+<ul>
+<li>只支持<strong>一条子路径</strong>（多个 <code>M</code> 会形成互相覆盖的轮廓，遮罩只有一层）；</li>
+<li>坐标就是 CSS px（<code>path()</code> 不支持百分比）；</li>
+<li>展平后顶点 ≤ <code>QL_CFG_UI_CLIP_PTS_MAX</code>（默认 64）；</li>
+<li><code>url(#id)</code> 仍不支持（要 DOM/内联 SVG）；</li>
+<li>需要 <code>QLGL_BUILD_SVG=ON</code>（复用 vendored PlutoVG），关掉时明确报错。</li>
+</ul>
+<h2 id="9">9. 还没做（按需）</h2>
 <ol>
 <li><strong>DPR 自动重栅格化 / 按尺寸缓存</strong>：现在注册时渲染一次，QLUI 负责缩放。</li>
 <li><strong><code>currentColor</code> 在渲染期替换</strong>：PlutoSVG 支持 <code>current_color</code> 参数，
    但 QLUI 现在走 A8 + mask 染色；需要"多色图标里只改一个颜色"时再接。</li>
-<li><strong><code>clip-path: path()</code></strong>：复用 PlutoVG 的路径解析与展平，接入现有覆盖率算法。</li>
 <li><strong>ThorVG 可选后端</strong>：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。</li>
 <li><strong>内联 <code>&lt;svg&gt;</code></strong>：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。</li>
 </ol><div class='pager'>
@@ -746,7 +756,8 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 <li><a href='#5'>5. 安全与有界</a></li>
 <li><a href='#6'>6. 测试</a></li>
 <li><a href='#7'>7. 第三方代码与许可</a></li>
-<li><a href='#8'>8. 还没做（按需）</a></li>
+<li><a href='#8-clip-path-path'>8. clip-path: path()（已完成）</a></li>
+<li><a href='#9'>9. 还没做（按需）</a></li>
 </ul></aside>
 </div>
 <script src='search-index.js'></script>

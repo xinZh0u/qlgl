@@ -224,7 +224,7 @@ css:12: 不支持的属性 'float'
 |---|---|
 | `float` / `clear` | 用 flex；文字环绕没有实现 |
 | `transform` 的 3D（`perspective()` / `rotate3d()` / `matrix3d()`） | 只有**仿射** 2D：`translate()` / `scale()` / `rotate()` / `skew()` / `matrix()` |
-| `clip-path: path()` / `clip-path: url(#…)` | `circle()` / `ellipse()` / `inset()` / `polygon()` 都支持；`at x y` / `round R` / `evenodd` 报错 |
+| `clip-path: url(#…)` | 引用文档内 `<clipPath>` 要 DOM；`circle()` / `ellipse()` / `inset()` / `polygon()` / `path("…")` 都支持（`path()` 只收单条子路径、≤64 顶点；`at x y` / `round R` / `evenodd` 报错） |
 | `backdrop-filter` 除 `blur()` / `saturate()` / `refract()` 之外的函数 | 报错，不静默忽略（`brightness()` / `hue-rotate()` 等） |
 | `backdrop-filter: refract(<N>px)` 本身 | **qlgl 扩展**：CSS 里没有这个函数（浏览器要等效效果得写内联 SVG `feDisplacementMap`），只在本库可用 |
 | `vertical-align: middle` / 长度值 | 只有 `baseline` / `sub` / `super` |
@@ -328,7 +328,7 @@ css:12: 不支持的属性 'float'
 2. **单位**：`px` / `%` / `em` / `rem` / `vw` 族 / `calc()` 都能用，一般不用改；
    `ch` / `ex` 这类字体相对单位不支持，要换成 px。
 3. **删掉仍然不支持的**：`float` / `clear`、3D `transform`、`:has()` / `:is()` / `:where()`、
-   `clip-path: path()`、`@supports` / `@layer`、`list-style`。
+   `clip-path: url(#…)`、`@supports` / `@layer`、`list-style`。
    （`cursor` / `outline` / `grid` / `table` / `::before` / `@media` / CSS 变量 / `calc()`
    / 字体列表 / `filter` 一族**都已经能用**，别照旧文章删掉它们。）
 4. **给每段长文本加 `white-space: normal`**（否则不折行）。

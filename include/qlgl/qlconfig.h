@@ -199,14 +199,15 @@
 #ifndef QL_CFG_UI_FILTER_MAX_OPS
 #define QL_CFG_UI_FILTER_MAX_OPS    6
 #endif
-/* `clip-path: polygon()` 最多几个顶点。装饰形状（徽标/箭头/气泡）6~8 个就够，
- * 16 是留余量；超了构建期报错（不做静默截断）。 */
+/* `clip-path` 多边形最多几个顶点。`polygon()` 手写通常 6~8 个就够；
+ * 64 是给 `path()` 展平后的曲线留余量（超了构建期报错，不做静默截断）。
+ * 注意：这个值会进 `QLCanvas` / GPU uniform 数组，改大要一起看两端。 */
 #ifndef QL_CFG_UI_CLIP_PTS_MAX
-#define QL_CFG_UI_CLIP_PTS_MAX      16
+#define QL_CFG_UI_CLIP_PTS_MAX      64
 #endif
 /* 一份文档里 clip-path 点池的总容量（多边形顶点总数，同形状去重后计数） */
 #ifndef QL_CFG_UI_CLIP_PTS_TOTAL
-#define QL_CFG_UI_CLIP_PTS_TOTAL    256
+#define QL_CFG_UI_CLIP_PTS_TOTAL    512
 #endif
 
 /* ----- Grid 的容量上限 ----- */

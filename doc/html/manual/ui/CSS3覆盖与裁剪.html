@@ -2344,10 +2344,16 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td>B9：顶点进 doc 池（同形状去重）→ 绘制期解析覆盖率（奇偶内点 + 到最近边距离），CPU/GPU 同公式、零图层</td>
 </tr>
 <tr>
-<td><code>clip-path: path()</code> / <code>url()</code></td>
+<td><code>clip-path: path()</code></td>
+<td>✅</td>
+<td>F</td>
+<td><code>path("…")</code> 用 PlutoVG 解析，按 <strong>0.75px</strong> 误差展平成多边形，接现有覆盖率（CPU/GPU 同公式、零图层）；只支持<strong>单条子路径</strong>、px 坐标，展平后 ≤ <code>QL_CFG_UI_CLIP_PTS_MAX</code>（64）；需要 <code>QLGL_BUILD_SVG=ON</code></td>
+</tr>
+<tr>
+<td><code>clip-path: url(#id)</code></td>
 <td>❌</td>
 <td>X</td>
-<td>要 SVG 路径解析器；明确报错</td>
+<td>引用文档内 <code>&lt;clipPath&gt;</code> 需要 DOM/内联 SVG；明确报错</td>
 </tr>
 <tr>
 <td><code>clip-path: circle(… at x y)</code> / <code>inset(… round R)</code> / <code>polygon(… evenodd)</code></td>

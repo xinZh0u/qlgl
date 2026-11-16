@@ -516,7 +516,8 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 | `clip-path: circle()` / `ellipse()` | ✅ | R | 子树级**椭圆**遮罩（圆心恒在元素中心）；GPU 顶点属性带 `(cx,cy,rx,ry)`，CPU 同一公式 |
 | `clip-path: inset()` | ✅ | R | **与裁剪矩形求交**，两后端精确、零额外成本（B9） |
 | `clip-path: polygon()` | ✅ | F | B9：顶点进 doc 池（同形状去重）→ 绘制期解析覆盖率（奇偶内点 + 到最近边距离），CPU/GPU 同公式、零图层 |
-| `clip-path: path()` / `url()` | ❌ | X | 要 SVG 路径解析器；明确报错 |
+| `clip-path: path()` | ✅ | F | `path("…")` 用 PlutoVG 解析，按 **0.75px** 误差展平成多边形，接现有覆盖率（CPU/GPU 同公式、零图层）；只支持**单条子路径**、px 坐标，展平后 ≤ `QL_CFG_UI_CLIP_PTS_MAX`（64）；需要 `QLGL_BUILD_SVG=ON` |
+| `clip-path: url(#id)` | ❌ | X | 引用文档内 `<clipPath>` 需要 DOM/内联 SVG；明确报错 |
 | `clip-path: circle(… at x y)` / `inset(… round R)` / `polygon(… evenodd)` | ❌ | F | 明确报错并给替代做法（圆心恒居中；圆角矩形裁剪请用 `border-radius` + `overflow: hidden`） |
 | `mask` / `mask-image` | ✅ | O | `url(<name>)` / `none`；只用图片 alpha，拉伸到边框盒（= `mask-size: 100% 100%` + `mask-mode: alpha`）。见 §18.10 |
 | `mask-position` / `-repeat` / `-composite` / `mask-border` | ❌ | O | 语义分支多，收益低 |

@@ -767,8 +767,8 @@ main img {
 <td>只有<strong>仿射</strong> 2D：<code>translate()</code> / <code>scale()</code> / <code>rotate()</code> / <code>skew()</code> / <code>matrix()</code></td>
 </tr>
 <tr>
-<td><code>clip-path: path()</code> / <code>clip-path: url(#…)</code></td>
-<td><code>circle()</code> / <code>ellipse()</code> / <code>inset()</code> / <code>polygon()</code> 都支持；<code>at x y</code> / <code>round R</code> / <code>evenodd</code> 报错</td>
+<td><code>clip-path: url(#…)</code></td>
+<td>引用文档内 <code>&lt;clipPath&gt;</code> 要 DOM；<code>circle()</code> / <code>ellipse()</code> / <code>inset()</code> / <code>polygon()</code> / <code>path("…")</code> 都支持（<code>path()</code> 只收单条子路径、≤64 顶点；<code>at x y</code> / <code>round R</code> / <code>evenodd</code> 报错）</td>
 </tr>
 <tr>
 <td><code>backdrop-filter</code> 除 <code>blur()</code> / <code>saturate()</code> / <code>refract()</code> 之外的函数</td>
@@ -978,7 +978,7 @@ main img {
 <li><strong>单位</strong>：<code>px</code> / <code>%</code> / <code>em</code> / <code>rem</code> / <code>vw</code> 族 / <code>calc()</code> 都能用，一般不用改；
    <code>ch</code> / <code>ex</code> 这类字体相对单位不支持，要换成 px。</li>
 <li><strong>删掉仍然不支持的</strong>：<code>float</code> / <code>clear</code>、3D <code>transform</code>、<code>:has()</code> / <code>:is()</code> / <code>:where()</code>、
-   <code>clip-path: path()</code>、<code>@supports</code> / <code>@layer</code>、<code>list-style</code>。
+   <code>clip-path: url(#…)</code>、<code>@supports</code> / <code>@layer</code>、<code>list-style</code>。
    （<code>cursor</code> / <code>outline</code> / <code>grid</code> / <code>table</code> / <code>::before</code> / <code>@media</code> / CSS 变量 / <code>calc()</code>
    / 字体列表 / <code>filter</code> 一族<strong>都已经能用</strong>，别照旧文章删掉它们。）</li>
 <li><strong>给每段长文本加 <code>white-space: normal</code></strong>（否则不折行）。</li>

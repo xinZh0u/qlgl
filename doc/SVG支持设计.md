@@ -23,7 +23,7 @@
 | 单色图标染色 | 运行期 `mask-image: url(x.svg)`（取 alpha）；MCU 用 `qlsvg --alpha` + `qltext -a8` |
 | 内联 `<svg>` | **不做**，继续"占位盒 + 内容跳过"；要图标请用 `<img src="x.svg">` |
 | SVG 动画 | **不做**（PlutoSVG 不支持 SMIL/CSS 动画）；动效做在 QLUI 层（对位图做 transform/opacity） |
-| `clip-path: path()` | 还没接；PlutoVG 的路径展平器是现成的，但属于独立特性 |
+| `clip-path: path()` | **已接**（PlutoVG 解析 + 0.75px 展平 + 现有覆盖率）；单条子路径、≤64 顶点 |
 
 ---
 
@@ -222,11 +222,23 @@ PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实�
 
 ---
 
-## 8. 还没做（按需）
+## 8. `clip-path: path()`（已完成）
+
+`path("…")` 不再"明确报错"：`qlui_parse.c` 用 PlutoVG 解析路径，按 0.75px
+误差把三次贝塞尔展平成多边形，交给现有的单多边形覆盖率遮罩（CPU / GPU 同公式）。
+
+限制（构建期报错，不静默降级）：
+
+- 只支持**一条子路径**（多个 `M` 会形成互相覆盖的轮廓，遮罩只有一层）；
+- 坐标就是 CSS px（`path()` 不支持百分比）；
+- 展平后顶点 ≤ `QL_CFG_UI_CLIP_PTS_MAX`（默认 64）；
+- `url(#id)` 仍不支持（要 DOM/内联 SVG）；
+- 需要 `QLGL_BUILD_SVG=ON`（复用 vendored PlutoVG），关掉时明确报错。
+
+## 9. 还没做（按需）
 
 1. **DPR 自动重栅格化 / 按尺寸缓存**：现在注册时渲染一次，QLUI 负责缩放。
 2. **`currentColor` 在渲染期替换**：PlutoSVG 支持 `current_color` 参数，
    但 QLUI 现在走 A8 + mask 染色；需要"多色图标里只改一个颜色"时再接。
-3. **`clip-path: path()`**：复用 PlutoVG 的路径解析与展平，接入现有覆盖率算法。
-4. **ThorVG 可选后端**：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。
-5. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。
+3. **ThorVG 可选后端**：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。
+4. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。
