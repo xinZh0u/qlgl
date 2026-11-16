@@ -107,6 +107,20 @@ QL_TEST_BEGIN("test_image_svg")
                             QL_IMAGE_RGBA8888, 0, 0, &img), QL_ERR_INVAL);
     QL_CHECK(strstr(ql_image_last_error(), "禁止") != NULL);
 
+    /* 相对路径 / file:// 也一律拒绝：ThorVG 的 FILE_IO 会真的去读 */
+    memset(&img, 0, sizeof(img));
+    QL_CHECK_EQ(decode_text("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\""
+                            " height=\"8\"><image href=\"relative.png\"/></svg>",
+                            QL_IMAGE_RGBA8888, 0, 0, &img), QL_ERR_INVAL);
+    QL_CHECK(strstr(ql_image_last_error(), "禁止") != NULL);
+
+    memset(&img, 0, sizeof(img));
+    QL_CHECK_EQ(decode_text("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\""
+                            " height=\"8\"><rect width=\"8\" height=\"8\""
+                            " fill=\"url(font.svg)\"/></svg>",
+                            QL_IMAGE_RGBA8888, 0, 0, &img), QL_ERR_INVAL);
+    QL_CHECK(strstr(ql_image_last_error(), "禁止") != NULL);
+
     /* 畸形输入：PlutoSVG 直接失败；ThorVG 可能"成功"但画不出任何像素。
      * 两种都算"明确没有画面"，不允许崩或给出非空图像。 */
     memset(&img, 0, sizeof(img));

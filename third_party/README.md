@@ -7,7 +7,7 @@
 |---|---|---|---|---|
 | `plutovg/` | https://github.com/sammycage/plutovg | 1.3.3 | MIT（`plutovg/LICENSE`） | 2D 路径/填充/渐变/光栅化 |
 | `plutosvg/` | https://github.com/sammycage/plutosvg | 0.0.8 | MIT（`plutosvg/LICENSE`） | SVG XML → PlutoVG 绘制 |
-| `thorvg/` | https://github.com/thorvg/thorvg | 1.2.0（只保留子集） | MIT（`thorvg/LICENSE`） | 可选 SVG 后端（CPU 引擎 + SVG loader + C API，无 png/jpg/Lottie/字体 loader） |
+| `thorvg/` | https://github.com/thorvg/thorvg | 1.2.0（去掉 GPU 引擎/JS expressions） | MIT（`thorvg/LICENSE`） | 可选 SVG 后端（CPU 引擎 + 全量 loader + C API） |
 
 ## 引入方式
 
@@ -23,13 +23,16 @@
 ```
 inc/thorvg.h
 src/common/  src/renderer/  src/renderer/cpu_engine/
-src/modules/raw/  src/modules/svg/  src/bindings/capi/
+src/modules/{raw,svg,png/static,jpg/static,webp/static,gif/load,gif/save,
+             sfnt,lottie,media}
+src/bindings/capi/
 ```
 
-上游是 Meson-only 工程，这里由顶层 CMake 直接编译这批源文件，并在构建目录生成
-`config.h`（`THORVG_CPU_ENGINE_SUPPORT` / `THORVG_SVG_LOADER_SUPPORT` /
-`THORVG_CAPI_BINDING_SUPPORT`）。升级时用新版本覆盖这些目录，并检查
-`src/common`/`src/renderer` 是否新增了源文件（顶层用 glob，会自动纳入）。
+去掉了 GPU 引擎（gl/wg）、`lottie/jerryscript`（JS expressions，5MB+）以及
+`*/external` 包装（它们要求系统 libpng/libjpeg/libwebp；我们用 ThorVG 自带的
+static 解码器）。上游是 Meson-only 工程，这里由顶层 CMake 直接编译，并在构建
+目录生成 `config.h`（全部 loader 的 `THORVG_*_SUPPORT`）。升级时覆盖这些目录，
+顶层用 glob 自动纳入新增源文件。
 
 ## 升级步骤
 

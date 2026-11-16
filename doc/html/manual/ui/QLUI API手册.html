@@ -2606,9 +2606,13 @@ SVG 里的 <code>currentColor</code> 会取元素自己的 <code>color</code>（
 <p>后端选择（需要 <code>QL_FEAT_IMG_SVG</code>）：</p>
 <div class="highlight"><pre><span></span><code><span class="n">ql_image_svg_set_backend</span><span class="p">(</span><span class="s">&quot;thorvg&quot;</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 需要构建时 QLGL_BUILD_THORVG=ON */</span>
 <span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_image_svg_backend_name</span><span class="p">();</span>
+<span class="n">ql_image_svg_load_font</span><span class="p">(</span><span class="s">&quot;/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf&quot;</span><span class="p">);</span>
 <span class="n">ql_image_svg_set_backend</span><span class="p">(</span><span class="nb">NULL</span><span class="p">);</span><span class="w">       </span><span class="cm">/* 恢复默认（PlutoSVG） */</span>
 </code></pre></div>
 
+<p>ThorVG 后端已编入 SVG/Lottie/PNG/JPEG/WebP/GIF/SFNT 全部 loader；<code>&lt;text&gt;</code>
+需要先用 <code>ql_image_svg_load_font()</code> 加载字体（PlutoSVG 不渲染文本，返回
+<code>UNSUPPORTED</code>）。Lottie loader 已编入，但当前图片 API 仍只解 SVG。</p>
 <table>
 <thead>
 <tr>

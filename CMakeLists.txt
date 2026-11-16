@@ -187,19 +187,44 @@ if(QLGL_BUILD_THORVG)
     find_package(Threads REQUIRED)
 
     set(_ql_tvg ${_ql_third}/thorvg)
+    # 完整 loader 集合：SVG / Lottie / PNG / JPG / WebP / GIF / SFNT(ttf,otf) / media。
+    # 第三方解码器用 ThorVG 自带的 static 版本（lodepng / jpgd / libwebp），
+    # 不依赖系统库；lottie 的 JS expressions（jerryscript）不编。
     file(GLOB _ql_tvg_sources CONFIGURE_DEPENDS
         ${_ql_tvg}/src/common/*.cpp
         ${_ql_tvg}/src/renderer/*.cpp
         ${_ql_tvg}/src/renderer/cpu_engine/*.cpp
         ${_ql_tvg}/src/modules/raw/*.cpp
         ${_ql_tvg}/src/modules/svg/*.cpp
+        ${_ql_tvg}/src/modules/png/static/*.cpp
+        ${_ql_tvg}/src/modules/jpg/static/*.cpp
+        ${_ql_tvg}/src/modules/gif/load/*.cpp
+        ${_ql_tvg}/src/modules/gif/save/*.cpp
+        ${_ql_tvg}/src/modules/sfnt/*.cpp
+        ${_ql_tvg}/src/modules/lottie/*.cpp
+        ${_ql_tvg}/src/modules/media/*.cpp
         ${_ql_tvg}/src/bindings/capi/*.cpp)
+    file(GLOB_RECURSE _ql_tvg_webp CONFIGURE_DEPENDS
+        ${_ql_tvg}/src/modules/webp/static/*.cpp)
+    list(APPEND _ql_tvg_sources ${_ql_tvg_webp})
+
     set(_ql_tvg_cfg ${CMAKE_CURRENT_BINARY_DIR}/third_party/thorvg)
     file(MAKE_DIRECTORY ${_ql_tvg_cfg})
     file(WRITE ${_ql_tvg_cfg}/config.h
         "#define THORVG_VERSION_STRING \"1.2.0\"\n"
         "#define THORVG_CPU_ENGINE_SUPPORT 1\n"
         "#define THORVG_SVG_LOADER_SUPPORT 1\n"
+        "#define THORVG_PNG_LOADER_SUPPORT 1\n"
+        "#define THORVG_JPG_LOADER_SUPPORT 1\n"
+        "#define THORVG_GIF_LOADER_SUPPORT 1\n"
+        "#define THORVG_WEBP_LOADER_SUPPORT 1\n"
+        "#define THORVG_LOTTIE_LOADER_SUPPORT 1\n"
+        "#define THORVG_SFNT_LOADER_SUPPORT 1\n"
+        "#define THORVG_TTF_LOADER_SUPPORT 1\n"
+        "#define THORVG_OTF_LOADER_SUPPORT 1\n"
+        "#define THORVG_MEDIA_LOADER_SUPPORT 1\n"
+        "#define THORVG_GIF_SAVER_SUPPORT 1\n"
+        "#define THORVG_FILE_IO_SUPPORT 1\n"
         "#define THORVG_CAPI_BINDING_SUPPORT 1\n")
 
     target_sources(qlgl PRIVATE ${_ql_tvg_sources}
@@ -213,6 +238,14 @@ if(QLGL_BUILD_THORVG)
         ${_ql_tvg}/src/modules
         ${_ql_tvg}/src/modules/svg
         ${_ql_tvg}/src/modules/raw
+        ${_ql_tvg}/src/modules/png/static
+        ${_ql_tvg}/src/modules/jpg/static
+        ${_ql_tvg}/src/modules/webp/static
+        ${_ql_tvg}/src/modules/gif/load
+        ${_ql_tvg}/src/modules/gif/save
+        ${_ql_tvg}/src/modules/sfnt
+        ${_ql_tvg}/src/modules/lottie
+        ${_ql_tvg}/src/modules/media
         ${_ql_tvg}/src/bindings/capi
         ${_ql_tvg_cfg})
     target_compile_definitions(qlgl PRIVATE TVG_STATIC=1)
@@ -225,7 +258,15 @@ if(QLGL_BUILD_THORVG)
         CXX_STANDARD_REQUIRED ON
         COMPILE_OPTIONS "-w;-fno-exceptions;-fno-rtti")
     target_link_libraries(qlgl PRIVATE Threads::Threads)
-    message(STATUS "QLGL: SVG 后端 ThorVG 已启用（CPU 引擎 + SVG loader）")
+    # C 消费方（cc 链接静态库）不会自动带 C++ 运行时；显式挂到接口上。
+    if(NOT MSVC)
+        if(APPLE)
+            target_link_libraries(qlgl PUBLIC c++)
+        else()
+            target_link_libraries(qlgl PUBLIC stdc++)
+        endif()
+    endif()
+    message(STATUS "QLGL: SVG 后端 ThorVG 已启用（CPU 引擎 + 全量 loader：svg/lottie/png/jpg/webp/gif/ttf/otf）")
 else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_THORVG=0)
 endif()
@@ -621,6 +662,10 @@ if(QLGL_BUILD_TESTS)
             target_compile_definitions(${test_name} PRIVATE
                 QL_IMG_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/assets/img")
         endif()
+        if(test_name STREQUAL "test_image_svg_thorvg")
+            target_compile_definitions(${test_name} PRIVATE
+                QL_SVG_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/assets/svg")
+        endif()
         target_link_libraries(${test_name} PRIVATE qlgl)
         target_compile_options(${test_name} PRIVATE -Wall -Wextra)
         # 窗口示例会进入事件循环，不能当单元测试跑
@@ -836,6 +881,13 @@ install(FILES
 
 # pkg-config：链接依赖要跟着"这份构建到底链了谁"走
 set(QL_PC_LIBS "-lm")
+if(QLGL_BUILD_THORVG AND NOT MSVC)
+    if(APPLE)
+        set(QL_PC_LIBS "${QL_PC_LIBS} -lc++")
+    else()
+        set(QL_PC_LIBS "${QL_PC_LIBS} -lstdc++")
+    endif()
+endif()
 if(QLGL_FREETYPE_ENABLED)
     set(QL_PC_LIBS "${QL_PC_LIBS} -lfreetype")
 endif()

@@ -26,6 +26,56 @@ static const char kColor[] =
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\">"
     "<rect width=\"24\" height=\"24\" fill=\"currentColor\"/></svg>";
 
+static const char kText[] =
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"80\" height=\"32\">"
+    "<text x=\"2\" y=\"24\" font-family=\"DejaVu Sans\" font-size=\"20\""
+    " fill=\"#000000\">Hi</text></svg>";
+
+/* 内嵌图片（ThorVG 全量 loader）：读测试资产并确认画出了像素 */
+static void check_embedded(const char *name)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", QL_SVG_ASSET_DIR, name);
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        printf("  [SKIP] 缺少 %s\n", path);
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    const long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *data = (char *)malloc((size_t)n);
+    if (data == NULL || fread(data, 1, (size_t)n, f) != (size_t)n) {
+        free(data);
+        fclose(f);
+        QL_CHECK(0);
+        return;
+    }
+    fclose(f);
+
+    QLImageDecodeReq req;
+    memset(&req, 0, sizeof(req));
+    req.data = (const uint8_t *)data;
+    req.len = (size_t)n;
+    req.src_format = QL_IMAGE_SRC_AUTO;
+    req.out_format = QL_IMAGE_RGBA8888;
+    req.target_w = 32;
+    req.target_h = 0;
+    QLImage img;
+    memset(&img, 0, sizeof(img));
+    const QLErr rc = ql_image_decode(&req, &img);
+    QL_CHECK_EQ(rc, QL_OK);
+    if (rc == QL_OK) {
+        uint32_t nz = 0;
+        for (uint32_t i = 3; i < img.len; i += 4u)
+            if (img.px[i] != 0)
+                nz++;
+        QL_CHECK(nz > 0);
+        ql_mem_free((void *)img.px);
+    }
+    free(data);
+}
+
 static int decode(const char *svg, uint8_t fmt, uint16_t tw, uint16_t th,
                   uint32_t current, QLImage *out)
 {
@@ -93,6 +143,36 @@ QL_TEST_BEGIN("test_image_svg_thorvg")
     }
     if (img.px != NULL)
         ql_mem_free((void *)img.px);
+
+    /*
+     * 字体 loader（sfnt + ttf/otf）：加载系统字体后 <text> 应能画出像素。
+     * 没装 DejaVu 的机器跳过这一小段（不把系统字体当成测试前提）。
+     */
+    {
+        const char *font = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+        FILE *f = fopen(font, "rb");
+        if (f != NULL) {
+            fclose(f);
+            QL_CHECK_EQ(ql_image_svg_load_font(font), QL_OK);
+            memset(&img, 0, sizeof(img));
+            QL_CHECK_EQ(decode(kText, QL_IMAGE_RGBA8888, 80, 32, 0, &img), QL_OK);
+            if (img.px != NULL) {
+                uint32_t nz = 0;
+                for (uint32_t i = 3; i < img.len; i += 4u)
+                    if (img.px[i] != 0)
+                        nz++;
+                QL_CHECK(nz > 0);
+                ql_mem_free((void *)img.px);
+            }
+        } else {
+            printf("  [SKIP] 没有 DejaVuSans.ttf，跳过 <text> 用例\n");
+        }
+    }
+
+    /* 内嵌 PNG / JPEG / WebP：ThorVG static loader */
+    check_embedded("embedded_png.svg");
+    check_embedded("embedded_jpg.svg");
+    check_embedded("embedded_webp.svg");
 
     QL_CHECK_EQ(ql_image_svg_set_backend(NULL), QL_OK);
 #else

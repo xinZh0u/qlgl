@@ -65,6 +65,71 @@ static int svg_precheck_refs(const uint8_t *d, size_t n, char *err, size_t cap)
     return 1;
 }
 
+static int svg_ci_prefix(const uint8_t *p, const char *s)
+{
+    for (size_t i = 0; s[i] != '\0'; i++) {
+        unsigned char c = p[i];
+        if (c >= 'A' && c <= 'Z')
+            c = (unsigned char)(c - 'A' + 'a');
+        if (c != (unsigned char)s[i])
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * 外部引用：`href` / `xlink:href` / `url(...)` 只允许 `#fragment` 与 `data:`。
+ * 这一条是给 ThorVG 的 `THORVG_FILE_IO_SUPPORT` 兜底：它的 SVG loader 会
+ * 尝试按路径读取 `<image href="relative.png">` / CSS `url(font.ttf)`。
+ */
+static int svg_precheck_external(const uint8_t *d, size_t n, char *err, size_t cap)
+{
+    for (size_t i = 0; i + 4 <= n; i++) {
+        if (!svg_ci_prefix(d + i, "href"))
+            continue;
+        if (i > 0) {
+            const unsigned char c = d[i - 1];
+            if (isalnum(c) || c == '_' || c == '-')
+                continue;
+        }
+        size_t j = i + 4;
+        while (j < n && isspace((unsigned char)d[j]))
+            j++;
+        if (j >= n || d[j] != '=')
+            continue;
+        j++;
+        while (j < n && isspace((unsigned char)d[j]))
+            j++;
+        if (j >= n)
+            continue;
+        const char q = (char)d[j];
+        if (q != '"' && q != '\'')
+            continue;
+        j++;
+        if (j < n && d[j] == '#')
+            continue;
+        if (j + 5 <= n && svg_ci_prefix(d + j, "data:"))
+            continue;
+        svg_set_err(err, cap, "SVG 含有被禁止的外部引用/脚本");
+        return 0;
+    }
+
+    for (size_t i = 0; i + 4 <= n; i++) {
+        if (!svg_ci_prefix(d + i, "url("))
+            continue;
+        size_t j = i + 4;
+        while (j < n && (isspace((unsigned char)d[j]) || d[j] == '"' || d[j] == '\''))
+            j++;
+        if (j < n && d[j] == '#')
+            continue;
+        if (j + 5 <= n && svg_ci_prefix(d + j, "data:"))
+            continue;
+        svg_set_err(err, cap, "SVG 含有被禁止的外部引用/脚本");
+        return 0;
+    }
+    return 1;
+}
+
 /*
  * 粗扫标签结构：只看 `<` / `>`，不解析属性（真正的解析交给后端）。
  * 目的只有两个：限制嵌套深度与元素总数。注释/CDATA/处理指令先跳过。
@@ -406,6 +471,21 @@ const char *ql_image_svg_backend_name(void)
     return (b != NULL) ? b->name : "none";
 }
 
+#if QL_FEAT_IMG_SVG_THORVG
+QLErr ql_svg_load_font_thorvg(const char *path);
+
+QLErr ql_image_svg_load_font(const char *path)
+{
+    return ql_svg_load_font_thorvg(path);
+}
+#else
+QLErr ql_image_svg_load_font(const char *path)
+{
+    (void)path;
+    return QL_ERR_UNSUPPORTED;
+}
+#endif
+
 QLErr ql_image_svg_set_backend(const char *name)
 {
     if (name == NULL || name[0] == '\0' || strcmp(name, "auto") == 0) {
@@ -476,6 +556,7 @@ int ql_image_decode_svg(const QLImageDecodeReq *req, QLImage *out,
         return QL_ERR_INVAL;
 
     if (!svg_precheck_refs(req->data, req->len, err, err_cap) ||
+        !svg_precheck_external(req->data, req->len, err, err_cap) ||
         !svg_precheck_structure(req->data, req->len, err, err_cap))
         return QL_ERR_INVAL;
 
@@ -567,6 +648,12 @@ int ql_image_decode_svg(const QLImageDecodeReq *req, QLImage *out,
 }
 
 #else /* !QL_FEAT_IMG_SVG */
+
+QLErr ql_image_svg_load_font(const char *path)
+{
+    (void)path;
+    return QL_ERR_UNSUPPORTED;
+}
 
 QLErr ql_image_svg_set_backend(const char *name)
 {

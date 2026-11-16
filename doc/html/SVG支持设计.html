@@ -387,6 +387,10 @@ MCU 不链 SVG 库，用同一个渲染器写成的宿主工具 <code>qlsvg</cod
 <td>运行期 <code>mask-image: url(x.svg)</code>（取 alpha）；MCU 用 <code>qlsvg --alpha</code> + <code>qltext -a8</code></td>
 </tr>
 <tr>
+<td>文本 / 内嵌图片</td>
+<td>PlutoSVG：内嵌 png/jpeg；ThorVG 全量：内嵌 png/jpeg/webp/svg+xml，<code>&lt;text&gt;</code> 需 <code>ql_image_svg_load_font()</code></td>
+</tr>
+<tr>
 <td>内联 <code>&lt;svg&gt;</code></td>
 <td><strong>不做</strong>，继续"占位盒 + 内容跳过"；要图标请用 <code>&lt;img src="x.svg"&gt;</code></td>
 </tr>
@@ -661,9 +665,13 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 <ul>
 <li>后端是<strong>进程级</strong>全局状态；切换后新的解码/重栅格化走新后端，已经解好的图不会自动重来；</li>
 <li>两个后端都参与 <code>ql_image_decode()</code> 的同一套预检查/尺寸/预算/<code>out_format</code> 转换；</li>
-<li>ThorVG 构建只编 <strong>CPU 引擎 + SVG loader + C API</strong>（不含 png/jpg/webp/gif/Lottie/字体 loader）：
-  <code>clipPath</code> / <code>mask</code> / <code>pattern</code> / 基础 <code>filter</code> / <code>&lt;style&gt;</code> 比 PlutoSVG 完整，
-  但 <code>&lt;text&gt;</code> 不渲染（没有字体 loader）、<code>&lt;image&gt;</code> 也不能解；</li>
+<li>ThorVG 构建编 <strong>CPU 引擎 + 全量 loader</strong>（SVG / Lottie / PNG / JPEG / WebP /
+  GIF / SFNT(ttf,otf) / media）+ C API：
+  <code>clipPath</code> / <code>mask</code> / <code>pattern</code> / 基础 <code>filter</code> / <code>&lt;style&gt;</code> 比 PlutoSVG 完整；
+  <code>&lt;image&gt;</code> 支持内嵌 <strong>png / jpeg / webp / svg+xml</strong>（GIF 被 ThorVG 的 SVG
+  mime 白名单拒绝，GIF loader 只用于直接加载图片）；
+  <code>&lt;text&gt;</code> 需要先调 <code>ql_image_svg_load_font("DejaVuSans.ttf")</code> 之类的字体加载；
+  Lottie loader 已编入，但本库目前的图片 API 仍只解 SVG；</li>
 <li><code>qlsvg</code> 构建期工具始终用 PlutoSVG（保证 <code>qlsvg</code> 产物与<strong>默认</strong>后端一致）。</li>
 </ul>
 <p>逐文件对比：</p>
@@ -699,7 +707,7 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 </tr>
 <tr>
 <td>外部引用</td>
-<td><code>href="http…"</code>、<code>href="//…"</code>、<code>xlink:href="http…"</code>、<code>url(http…)</code>、<code>@import</code> 直接拒绝</td>
+<td><code>href</code> / <code>xlink:href</code> 只允许 <code>#fragment</code> 与 <code>data:</code>；<code>http</code>、<code>file://</code>、<strong>相对路径</strong>、<code>url(http…)</code>、<code>url(font.ttf)</code>、<code>@import</code> 一律拒绝（ThorVG 开了 FILE_IO，会真的读路径）</td>
 </tr>
 <tr>
 <td>实体膨胀（billion laughs）</td>
@@ -765,7 +773,7 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 <tr>
 <td>ThorVG 后端</td>
 <td><code>test_image_svg_thorvg</code></td>
-<td>颜色/尺寸/A8/currentColor；没有 ThorVG 的构建打印 SKIP</td>
+<td>颜色/尺寸/A8/currentColor、内嵌 PNG/JPEG/WebP、字体 <code>&lt;text&gt;</code>；没有 ThorVG 的构建打印 SKIP</td>
 </tr>
 </tbody>
 </table>
@@ -791,8 +799,9 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 
 <p>状态：<code>ok</code> / <code>warn</code>（能画但有已知不支持特性，或解码后全透明）/ <code>fail</code>（解码失败）/
 <code>block</code>（外部引用或脚本，运行期会直接拒绝）。特性告警会按<strong>当前后端</strong>过滤：
-ThorVG 已支持的 clipPath/mask/pattern/filter/style 不再报，<code>&lt;text&gt;</code>/<code>&lt;image&gt;</code>
-（本构建没编字体/图片 loader）仍会提示。默认退出码：有 <code>fail/block</code> 为 1；
+ThorVG 已支持的 clipPath/mask/pattern/filter/style 不再报；内嵌
+png/jpeg/webp 也按支持处理，<code>image/gif</code>（ThorVG 的 SVG mime 白名单不接受）
+和 <code>&lt;text&gt;</code>（没加载字体时）仍会提示。默认退出码：有 <code>fail/block</code> 为 1；
 <code>--strict</code> 时 <code>warn</code> 也算失败。汇总会按特性列出"这一批资产里踩了多少次"，
 用来决定"哪些资产必须预渲染、要不要换后端"。</p>
 <p>一个真实资产库的推荐流程：</p>
@@ -846,8 +855,8 @@ ThorVG 已支持的 clipPath/mask/pattern/filter/style 不再报，<code>&lt;tex
 </ul>
 <h2 id="9">9. 还没做（按需）</h2>
 <ol>
-<li><strong>ThorVG 的其余 loader</strong>：当前只编 CPU 引擎 + SVG loader + C API；Lottie、
-   字体（<code>&lt;text&gt;</code>）、PNG/JPG/WebP/GIF 的 loader 都没编。需要 Lottie 时再单独开。</li>
+<li><strong>ThorVG Lottie 的动画 API</strong>：loader 已编，但 <code>ql_image_*</code> 只暴露静态 SVG；
+   要播放 Lottie 需要另加时间轴/seek 接口。</li>
 <li><strong>更多 SVG filter</strong>：ThorVG 目前只覆盖部分 filter（<code>feGaussianBlur</code> 等），
    其余 <code>fe*</code> 仍会被跳过。</li>
 <li><strong>内联 <code>&lt;svg&gt;</code></strong>：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。</li>

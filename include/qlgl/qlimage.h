@@ -83,6 +83,13 @@ QLErr       ql_image_svg_set_backend(const char *name);
 const char *ql_image_svg_backend_name(void);
 
 /*
+ * 给 ThorVG 后端加载一个字体文件（`.ttf` / `.otf`），供 SVG `<text>` 使用。
+ * 字体是进程级全局状态，必须在解码文本 SVG **之前**调用。
+ * PlutoSVG 不渲染文本；没有编 ThorVG 时返回 `QL_ERR_UNSUPPORTED`。
+ */
+QLErr       ql_image_svg_load_font(const char *path);
+
+/*
  * 校验一张图的自洽性与上界。返回 1 = 可用。
  * 检查项：format 合法、w/h 非 0、像素数 ≤ QL_CFG_IMAGE_MAX_PIXELS、
  * stride ≥ w*bpp、len == stride*h、stride 能装进 uint16。

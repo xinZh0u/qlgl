@@ -21,6 +21,7 @@
 | 渲染器有几份 | **默认 PlutoSVG**（`qlsvg` 构建期工具也用它，保证产物与默认后端一致）；可另编 **ThorVG**（可选 C++ 后端）用于对比/更全的 SVG 特性 |
 | 关掉 SVG 会怎样 | `QLGL_BUILD_SVG=OFF` → `.svg` 明确返回 `QL_ERR_UNSUPPORTED`，其余格式不受影响 |
 | 单色图标染色 | 运行期 `mask-image: url(x.svg)`（取 alpha）；MCU 用 `qlsvg --alpha` + `qltext -a8` |
+| 文本 / 内嵌图片 | PlutoSVG：内嵌 png/jpeg；ThorVG 全量：内嵌 png/jpeg/webp/svg+xml，`<text>` 需 `ql_image_svg_load_font()` |
 | 内联 `<svg>` | **不做**，继续"占位盒 + 内容跳过"；要图标请用 `<img src="x.svg">` |
 | SVG 动画 | **不做**（PlutoSVG 不支持 SMIL/CSS 动画）；动效做在 QLUI 层（对位图做 transform/opacity） |
 | `clip-path: path()` | **已接**（PlutoVG 解析 + 0.75px 展平 + 现有覆盖率）；单条子路径、≤64 顶点 |
@@ -205,9 +206,13 @@ ql_image_svg_set_backend(NULL);
 
 - 后端是**进程级**全局状态；切换后新的解码/重栅格化走新后端，已经解好的图不会自动重来；
 - 两个后端都参与 `ql_image_decode()` 的同一套预检查/尺寸/预算/`out_format` 转换；
-- ThorVG 构建只编 **CPU 引擎 + SVG loader + C API**（不含 png/jpg/webp/gif/Lottie/字体 loader）：
-  `clipPath` / `mask` / `pattern` / 基础 `filter` / `<style>` 比 PlutoSVG 完整，
-  但 `<text>` 不渲染（没有字体 loader）、`<image>` 也不能解；
+- ThorVG 构建编 **CPU 引擎 + 全量 loader**（SVG / Lottie / PNG / JPEG / WebP /
+  GIF / SFNT(ttf,otf) / media）+ C API：
+  `clipPath` / `mask` / `pattern` / 基础 `filter` / `<style>` 比 PlutoSVG 完整；
+  `<image>` 支持内嵌 **png / jpeg / webp / svg+xml**（GIF 被 ThorVG 的 SVG
+  mime 白名单拒绝，GIF loader 只用于直接加载图片）；
+  `<text>` 需要先调 `ql_image_svg_load_font("DejaVuSans.ttf")` 之类的字体加载；
+  Lottie loader 已编入，但本库目前的图片 API 仍只解 SVG；
 - `qlsvg` 构建期工具始终用 PlutoSVG（保证 `qlsvg` 产物与**默认**后端一致）。
 
 逐文件对比：
@@ -239,7 +244,7 @@ PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实�
 | 风险 | 应对 |
 |---|---|
 | 脚本 / 事件 | 文本里出现 `<script`、`javascript:` 直接拒绝 |
-| 外部引用 | `href="http…"`、`href="//…"`、`xlink:href="http…"`、`url(http…)`、`@import` 直接拒绝 |
+| 外部引用 | `href` / `xlink:href` 只允许 `#fragment` 与 `data:`；`http`、`file://`、**相对路径**、`url(http…)`、`url(font.ttf)`、`@import` 一律拒绝（ThorVG 开了 FILE_IO，会真的读路径） |
 | 实体膨胀（billion laughs） | PlutoSVG 只跳过 `DOCTYPE`，不展开自定义实体 |
 | 深递归 / 元素炸弹 | 预扫描限制深度 ≤ 64、元素数 ≤ 4096 |
 | 超大输出 | 目标尺寸夹到 2048；surface 按解码预算检查（4 B/px） |
@@ -259,7 +264,7 @@ PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实�
 | 工具链 | `test/assets/gen_svg_tool.cmake` | `qlsvg` 正常/`--alpha`/坏 SVG 失败；PNG 经 `qltext -a8` 后尺寸与覆盖率正确 |
 | 例程 | `example/46_svg_icon` | 多色 `<img>` + 单色 `mask-image`，CPU/GL 截图一致 |
 | 资产自检 | `test_qlsvgprobe` | 目录扫描：坏文件、外部引用 block、不支持特性 warn、`--strict`、`--compare` |
-| ThorVG 后端 | `test_image_svg_thorvg` | 颜色/尺寸/A8/currentColor；没有 ThorVG 的构建打印 SKIP |
+| ThorVG 后端 | `test_image_svg_thorvg` | 颜色/尺寸/A8/currentColor、内嵌 PNG/JPEG/WebP、字体 `<text>`；没有 ThorVG 的构建打印 SKIP |
 
 不做逐像素 golden：抗锯齿细节由 PlutoVG 版本决定，跨版本可能微调。
 
@@ -286,8 +291,9 @@ PlutoSVG 对不支持的标签是**静默忽略**的（解码"成功"但画面�
 
 状态：`ok` / `warn`（能画但有已知不支持特性，或解码后全透明）/ `fail`（解码失败）/
 `block`（外部引用或脚本，运行期会直接拒绝）。特性告警会按**当前后端**过滤：
-ThorVG 已支持的 clipPath/mask/pattern/filter/style 不再报，`<text>`/`<image>`
-（本构建没编字体/图片 loader）仍会提示。默认退出码：有 `fail/block` 为 1；
+ThorVG 已支持的 clipPath/mask/pattern/filter/style 不再报；内嵌
+png/jpeg/webp 也按支持处理，`image/gif`（ThorVG 的 SVG mime 白名单不接受）
+和 `<text>`（没加载字体时）仍会提示。默认退出码：有 `fail/block` 为 1；
 `--strict` 时 `warn` 也算失败。汇总会按特性列出"这一批资产里踩了多少次"，
 用来决定"哪些资产必须预渲染、要不要换后端"。
 
@@ -331,8 +337,8 @@ ThorVG 已支持的 clipPath/mask/pattern/filter/style 不再报，`<text>`/`<im
 
 ## 9. 还没做（按需）
 
-1. **ThorVG 的其余 loader**：当前只编 CPU 引擎 + SVG loader + C API；Lottie、
-   字体（`<text>`）、PNG/JPG/WebP/GIF 的 loader 都没编。需要 Lottie 时再单独开。
+1. **ThorVG Lottie 的动画 API**：loader 已编，但 `ql_image_*` 只暴露静态 SVG；
+   要播放 Lottie 需要另加时间轴/seek 接口。
 2. **更多 SVG filter**：ThorVG 目前只覆盖部分 filter（`feGaussianBlur` 等），
    其余 `fe*` 仍会被跳过。
 3. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。

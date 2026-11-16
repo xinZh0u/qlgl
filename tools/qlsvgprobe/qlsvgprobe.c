@@ -42,6 +42,7 @@ enum {
     FEAT_BLOCKED,
     FEAT_IMAGE_EMBED,
     FEAT_IMAGE_ANY,
+    FEAT_PLUTO_ONLY,      /* ThorVG 支持、PlutoSVG 不支持 */
 };
 
 typedef struct {
@@ -71,6 +72,8 @@ static const Feat k_feats[] = {
     { "mask 属性",    "mask=",           0, FEAT_UNSUPPORTED },
     { "image 非内嵌", "<image",          1, FEAT_IMAGE_EMBED },
     { "image（像素 loader）", "<image",   1, FEAT_IMAGE_ANY },
+    { "image/webp 内嵌", "data:image/webp", 0, FEAT_PLUTO_ONLY },
+    { "image/gif 内嵌",  "data:image/gif",  0, FEAT_UNSUPPORTED },
     { "script",       "<script",         1, FEAT_BLOCKED },
     { "javascript:",  "javascript:",     0, FEAT_BLOCKED },
     { "外部 href",    "href=\"http",     0, FEAT_BLOCKED },
@@ -144,11 +147,15 @@ static uint64_t effective_feats(uint64_t raw, const char *backend)
             continue;
         const char *l = k_feats[i].label;
         if (thorvg) {
+            /* ThorVG 全量 loader：内嵌 png/jpeg/webp/svg 都能画；
+             * `image/gif` 由 SVG loader 的 mime 白名单拒绝，仍单独告警。 */
             if (strcmp(l, "clipPath") == 0 || strcmp(l, "mask") == 0 ||
                 strcmp(l, "pattern") == 0 || strcmp(l, "filter") == 0 ||
                 strcmp(l, "style") == 0 || strcmp(l, "clip-path 属性") == 0 ||
                 strcmp(l, "filter 属性") == 0 || strcmp(l, "mask 属性") == 0 ||
-                k_feats[i].kind == FEAT_IMAGE_EMBED)
+                k_feats[i].kind == FEAT_IMAGE_EMBED ||
+                k_feats[i].kind == FEAT_IMAGE_ANY ||
+                k_feats[i].kind == FEAT_PLUTO_ONLY)
                 raw &= ~bit;
         } else {
             if (k_feats[i].kind == FEAT_IMAGE_ANY)

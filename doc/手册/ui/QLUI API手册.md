@@ -1438,8 +1438,13 @@ SVG 里的 `currentColor` 会取元素自己的 `color`（颜色变化只重栅�
 ```c
 ql_image_svg_set_backend("thorvg");   /* 需要构建时 QLGL_BUILD_THORVG=ON */
 const char *name = ql_image_svg_backend_name();
+ql_image_svg_load_font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
 ql_image_svg_set_backend(NULL);       /* 恢复默认（PlutoSVG） */
 ```
+
+ThorVG 后端已编入 SVG/Lottie/PNG/JPEG/WebP/GIF/SFNT 全部 loader；`<text>`
+需要先用 `ql_image_svg_load_font()` 加载字体（PlutoSVG 不渲染文本，返回
+`UNSUPPORTED`）。Lottie loader 已编入，但当前图片 API 仍只解 SVG。
 
 | 情况 | 返回 |
 |---|---|

@@ -26,14 +26,28 @@
 
 namespace {
 
-pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
-bool g_engine_ready = false;
-
 void set_err(char *err, size_t cap, const char *msg)
 {
     if (err != NULL && cap > 0)
         snprintf(err, cap, "%s", msg);
 }
+
+pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
+bool g_engine_ready = false;
+
+/* 调用方必须已经持有 g_mutex */
+bool ensure_engine(char *err, size_t cap)
+{
+    if (g_engine_ready)
+        return true;
+    if (tvg_engine_init(0) != TVG_RESULT_SUCCESS) {
+        set_err(err, cap, "ThorVG 引擎初始化失败");
+        return false;
+    }
+    g_engine_ready = true;
+    return true;
+}
+
 
 /* 大小写不敏感地判断 p 处是否是 "currentColor"（12 字节） */
 bool is_current_color(const uint8_t *p)
@@ -101,14 +115,10 @@ extern "C" QLErr ql_svg_render_thorvg(const uint8_t *data, size_t len, int w, in
     pthread_mutex_lock(&g_mutex);
 
     QLErr rc = QL_ERR_INVAL;
-    if (!g_engine_ready) {
-        if (tvg_engine_init(0) != TVG_RESULT_SUCCESS) {
-            set_err(err, err_cap, "ThorVG 引擎初始化失败");
-            pthread_mutex_unlock(&g_mutex);
-            free(replaced);
-            return QL_ERR_INVAL;
-        }
-        g_engine_ready = true;
+    if (!ensure_engine(err, err_cap)) {
+        pthread_mutex_unlock(&g_mutex);
+        free(replaced);
+        return QL_ERR_INVAL;
     }
 
     Tvg_Canvas canvas = tvg_swcanvas_create(TVG_ENGINE_OPTION_NONE);
@@ -182,4 +192,15 @@ done:
     pthread_mutex_unlock(&g_mutex);
     free(replaced);
     return rc;
+}
+
+extern "C" QLErr ql_svg_load_font_thorvg(const char *path)
+{
+    if (path == NULL || path[0] == '\0')
+        return QL_ERR_INVAL;
+    pthread_mutex_lock(&g_mutex);
+    const bool ok = ensure_engine(NULL, 0) &&
+                    tvg_font_load(path) == TVG_RESULT_SUCCESS;
+    pthread_mutex_unlock(&g_mutex);
+    return ok ? QL_OK : QL_ERR_INVAL;
 }
