@@ -111,6 +111,12 @@ SVG → `QL_IMAGE_A8` 取的是**覆盖率（alpha）**，不是黑色图形的�
 - 运行期 `mask-image: url(star.svg)` 读图片 alpha，颜色由 `background-color` 决定；
 - 不需要为每种主题色重新导出资源。
 
+SVG 里直接写 `fill="currentColor"` / `stroke="currentColor"` 也支持：
+栅格化时把元素自己的 `color` 传给 PlutoSVG（`plutosvg_document_render_to_surface`
+的 `current_color` 参数）。`<img>` 用自己的 `color`；`background-image` / `mask-image`
+这种按名字共享的资源用第一个使用者的 `color`。颜色变化会触发一次重栅格化
+（同一个资源名被多个 `<img>` 使用时，每个 `<img>` 有独立光栅，互不影响）。
+
 ### 2.4 尺寸与 DPR：自动重栅格化
 
 运行期注册的 SVG 会**保留原文**（≤ `QL_CFG_IMAGE_SVG_MAX_SOURCE`，默认 1 MiB），
@@ -246,7 +252,5 @@ PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实�
 
 ## 9. 还没做（按需）
 
-1. **`currentColor` 在渲染期替换**：PlutoSVG 支持 `current_color` 参数，
-   但 QLUI 现在走 A8 + mask 染色；需要"多色图标里只改一个颜色"时再接。
-2. **ThorVG 可选后端**：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。
-3. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。
+1. **ThorVG 可选后端**：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。
+2. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。

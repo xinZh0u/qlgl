@@ -30,6 +30,10 @@ static const char kHalf[] =
 static const char kHalfRed[] =
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\">"
     "<rect width=\"12\" height=\"24\" fill=\"#ff0000\"/></svg>";
+
+static const char kCurrentColor[] =
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\">"
+    "<rect width=\"24\" height=\"24\" fill=\"currentColor\"/></svg>";
 #endif
 
 /* 建页面：图片占 50% × 50%（= 64×64，在 128 的视口里） */
@@ -170,6 +174,64 @@ static void test_background_dpr(void)
     ql_ui_free(ui);
     ql_ui_doc_free(doc);
 }
+/* 同一个 SVG 资源名被两个元素使用，currentColor 各用各的颜色 */
+static void test_current_color(void)
+{
+    QLUIDoc *doc = ql_ui_load_text(
+        "<div id='root'><img id='a' src='color.svg'>"
+        "<img id='b' src='color.svg'></div>",
+        "#root { width: 100%; height: 100%; }"
+        "#a { width: 32px; height: 32px; color: #00ff00; }"
+        "#b { width: 32px; height: 32px; color: #0000ff; }");
+    QL_CHECK(doc != NULL);
+    if (doc == NULL)
+        return;
+    QLUIRoot *ui = ql_ui_build(doc);
+    QL_CHECK(ui != NULL);
+    if (ui == NULL) {
+        ql_ui_doc_free(doc);
+        return;
+    }
+    ql_ui_layout(ui, 64, 64);
+
+    QLUIImageInput in;
+    memset(&in, 0, sizeof(in));
+    in.name = "color.svg";
+    in.data = (const uint8_t *)kCurrentColor;
+    in.len = strlen(kCurrentColor);
+    in.format = QL_IMAGE_SRC_AUTO;
+    QL_CHECK_EQ(ql_ui_register_image(ui, &in), QL_OK);
+
+    QLDispDriver *disp = ql_disp_mem_create(64, 64, QL_COLOR_ARGB8888);
+    QL_CHECK(disp != NULL);
+    if (disp != NULL) {
+        QLCanvas cv;
+        QL_CHECK_EQ(ql_canvas_from_disp(&cv, disp), QL_OK);
+        ql_disp_mem_clear(disp, 0xFFFFFFu);
+        ql_ui_render_canvas(ui, &cv);
+
+        const QLUINodeRT *na = ql_ui_find_by_tag(ui, QL_UI_TAG_IMG, 0);
+        const QLUINodeRT *nb = ql_ui_find_by_tag(ui, QL_UI_TAG_IMG, 1);
+        QL_CHECK(na != NULL && nb != NULL);
+        if (na != NULL && nb != NULL) {
+            const QLRect ra = ql_ui_node_rect(na);
+            const QLRect rb = ql_ui_node_rect(nb);
+            const ql_color_t ca =
+                ql_disp_mem_pixel(disp, ra.x + ra.w / 2, ra.y + ra.h / 2);
+            const ql_color_t cb =
+                ql_disp_mem_pixel(disp, rb.x + rb.w / 2, rb.y + rb.h / 2);
+            QL_CHECK(QL_COLOR_GET_R(ca) < 0x40 && QL_COLOR_GET_G(ca) > 0xC0 &&
+                     QL_COLOR_GET_B(ca) < 0x40);
+            QL_CHECK(QL_COLOR_GET_R(cb) < 0x40 && QL_COLOR_GET_G(cb) < 0x40 &&
+                     QL_COLOR_GET_B(cb) > 0xC0);
+        }
+        ql_disp_mem_destroy(disp);
+    }
+
+    ql_ui_free(ui);
+    ql_ui_doc_free(doc);
+}
+
 #endif /* QL_FEAT_IMG_SVG */
 
 QL_TEST_BEGIN("test_image_svg_scale")
@@ -232,6 +294,7 @@ QL_TEST_BEGIN("test_image_svg_scale")
 
     test_mask_dpr();
     test_background_dpr();
+    test_current_color();
 #else
     /* 没有 SVG 的构建：注册明确失败，不会留下任何重栅格化状态 */
     QLUIDoc *doc = NULL;

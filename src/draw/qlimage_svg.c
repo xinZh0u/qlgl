@@ -227,8 +227,14 @@ int ql_image_decode_svg(const QLImageDecodeReq *req, QLImage *out,
         return QL_ERR_NOMEM;
     }
 
+    plutovg_color_t current_color;
+    current_color.r = (float)((req->current_color >> 16) & 0xFFu) / 255.0f;
+    current_color.g = (float)((req->current_color >> 8) & 0xFFu) / 255.0f;
+    current_color.b = (float)(req->current_color & 0xFFu) / 255.0f;
+    current_color.a = 1.0f;
+
     plutovg_surface_t *surface = plutosvg_document_render_to_surface(
-        doc, NULL, tw, th, NULL, NULL, NULL);
+        doc, NULL, tw, th, &current_color, NULL, NULL);
     if (surface == NULL) {
         svg_set_err(err, err_cap, "SVG 光栅化失败");
         plutosvg_document_destroy(doc);

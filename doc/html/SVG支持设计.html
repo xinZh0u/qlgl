@@ -519,6 +519,11 @@ MCU 不链 SVG 库，用同一个渲染器写成的宿主工具 <code>qlsvg</cod
 <li>运行期 <code>mask-image: url(star.svg)</code> 读图片 alpha，颜色由 <code>background-color</code> 决定；</li>
 <li>不需要为每种主题色重新导出资源。</li>
 </ul>
+<p>SVG 里直接写 <code>fill="currentColor"</code> / <code>stroke="currentColor"</code> 也支持：
+栅格化时把元素自己的 <code>color</code> 传给 PlutoSVG（<code>plutosvg_document_render_to_surface</code>
+的 <code>current_color</code> 参数）。<code>&lt;img&gt;</code> 用自己的 <code>color</code>；<code>background-image</code> / <code>mask-image</code>
+这种按名字共享的资源用第一个使用者的 <code>color</code>。颜色变化会触发一次重栅格化
+（同一个资源名被多个 <code>&lt;img&gt;</code> 使用时，每个 <code>&lt;img&gt;</code> 有独立光栅，互不影响）。</p>
 <h3 id="24-dpr">2.4 尺寸与 DPR：自动重栅格化</h3>
 <p>运行期注册的 SVG 会<strong>保留原文</strong>（≤ <code>QL_CFG_IMAGE_SVG_MAX_SOURCE</code>，默认 1 MiB），
 第一次真正绘制前按"元素盒子 × DPR"栅格化，而不是按固有 24×24 直接放大：</p>
@@ -742,8 +747,6 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 </ul>
 <h2 id="9">9. 还没做（按需）</h2>
 <ol>
-<li><strong><code>currentColor</code> 在渲染期替换</strong>：PlutoSVG 支持 <code>current_color</code> 参数，
-   但 QLUI 现在走 A8 + mask 染色；需要"多色图标里只改一个颜色"时再接。</li>
 <li><strong>ThorVG 可选后端</strong>：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。</li>
 <li><strong>内联 <code>&lt;svg&gt;</code></strong>：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。</li>
 </ol><div class='pager'>

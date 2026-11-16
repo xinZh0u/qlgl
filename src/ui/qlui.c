@@ -175,10 +175,12 @@ struct QLUIImageRT {
      * 只对运行期注册的 SVG 有效（构建期产物已经是 RAW 位图）。
      */
     uint8_t     is_svg;
+    uint8_t     svg_uses_color; /* SVG 文本里出现 currentColor */
     uint8_t    *svg;
     size_t      svg_len;
     uint16_t    css_w, css_h;   /* 固有 CSS 尺寸（object-fit / 布局用） */
     uint16_t    try_w, try_h;   /* 上次尝试栅格化的目标（失败后别每帧重试） */
+    uint32_t    svg_color;      /* 上次栅格化用的 currentColor（0xRRGGBB） */
 };
 
 /* 下面这几组定义在文件后部（构建期就要用），先声明 */
@@ -6830,6 +6832,28 @@ static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node)
     return NULL;
 }
 
+/* 文本里是否出现 currentColor（大小写不敏感；SVG 可以没有 NUL 结尾） */
+static int image_svg_uses_current_color(const uint8_t *d, size_t n)
+{
+    static const char k[] = "currentcolor";
+    const size_t m = sizeof(k) - 1u;
+    if (d == NULL || n < m)
+        return 0;
+    for (size_t i = 0; i + m <= n; i++) {
+        size_t j = 0;
+        for (; j < m; j++) {
+            unsigned char c = d[i + j];
+            if (c >= 'A' && c <= 'Z')
+                c = (unsigned char)(c - 'A' + 'a');
+            if (c != (unsigned char)k[j])
+                break;
+        }
+        if (j == m)
+            return 1;
+    }
+    return 0;
+}
+
 static const char *image_entry_name(const struct QLUIImageRT *ir)
 {
     return (ir->node != NULL) ? ir->node->text : ir->name;
@@ -6942,10 +6966,16 @@ static void ui_sync_svg_images(QLUIRoot *ui, ql_coord_t scale_fx)
             continue;             /* border-image 的切片按源像素算，别动 */
 
         ql_coord_t need_w = 0, need_h = 0;
+        uint32_t want_color = 0;
+        int have_color = 0;
 
         /* 1) 自己的 <img> 节点：按 object-fit 之后真正占的盒子 */
         if (ir->node != NULL && !ql_rect_is_empty(ir->node->content_box)) {
             const QLUIStyle *s = ql_ui_node_style(ir->node);
+            if (s != NULL) {
+                want_color = s->text_color & 0xFFFFFFu;
+                have_color = 1;
+            }
             if (ir->css_w > 0 && ir->css_h > 0 && s != NULL) {
                 QLRect dst, src;
                 if (image_fit_rect(ir->css_w, ir->css_h, ir->node->content_box,
@@ -6976,6 +7006,10 @@ static void ui_sync_svg_images(QLUIRoot *ui, ql_coord_t scale_fx)
             }
             if (!used)
                 continue;
+            if (!have_color) {
+                want_color = s->text_color & 0xFFFFFFu;
+                have_color = 1;
+            }
             if (node->border_box.w > need_w)
                 need_w = node->border_box.w;
             if (node->border_box.h > need_h)
@@ -7024,18 +7058,22 @@ static void ui_sync_svg_images(QLUIRoot *ui, ql_coord_t scale_fx)
         if (th < 1) th = 1;
 
         const int cur_w = (int)ir->img.w, cur_h = (int)ir->img.h;
+        const int color_changed = ir->svg_uses_color && have_color &&
+                                  ir->svg_color != want_color;
         static int trace = -1;
         if (trace < 0)
             trace = (getenv("QL_TRACE_SVG") != NULL);
         if (trace)
-            fprintf(stderr, "[svg] %s need=%dx%d css=%ux%u cur=%dx%d target=%dx%d\n",
+            fprintf(stderr, "[svg] %s need=%dx%d css=%ux%u cur=%dx%d target=%dx%d"
+                    " color=%06x/%06x%s\n",
                     name, (int)need_w, (int)need_h, ir->css_w, ir->css_h,
-                    cur_w, cur_h, tw, th);
-        if (cur_w == tw && cur_h == th)
+                    cur_w, cur_h, tw, th, (unsigned)ir->svg_color,
+                    (unsigned)want_color, color_changed ? " (color)" : "");
+        if (!color_changed && cur_w == tw && cur_h == th)
             continue;
 
-        /* ±25% 带内不重来：动画/拖动窗口时别每帧磨一次 */
-        if (cur_w > 0 && cur_h > 0 &&
+        /* ±25% 带内不重来：动画/拖动窗口时别每帧磨一次（颜色变化除外） */
+        if (!color_changed && cur_w > 0 && cur_h > 0 &&
             tw <= cur_w + cur_w / 4 && tw + tw / 4 >= cur_w &&
             th <= cur_h + cur_h / 4 && th + th / 4 >= cur_h)
             continue;
@@ -7053,6 +7091,7 @@ static void ui_sync_svg_images(QLUIRoot *ui, ql_coord_t scale_fx)
         req.src_format = QL_IMAGE_SRC_SVG;
         req.target_w = (uint16_t)tw;
         req.target_h = (uint16_t)th;
+        req.current_color = want_color;
         QLImage img;
         memset(&img, 0, sizeof(img));
         if (ql_image_decode(&req, &img) == QL_OK) {
@@ -7061,6 +7100,7 @@ static void ui_sync_svg_images(QLUIRoot *ui, ql_coord_t scale_fx)
             img.rev = ++s_image_rev;        /* 让 GL 纹理缓存失效 */
             ir->img = img;
             ir->failed = 0;
+            ir->svg_color = want_color;
             ir->try_w = ir->try_h = 0;
             /* 重栅格化后局部重绘也要跟上（当前这帧可能只画脏区） */
             if (ir->node != NULL)
@@ -7485,6 +7525,8 @@ QLErr ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
         ir->svg = NULL;
         ir->svg_len = 0;
         ir->is_svg = 0;
+        ir->svg_uses_color = 0;
+        ir->svg_color = 0;
         ir->try_w = ir->try_h = 0;
         if (is_svg && in->len <= QL_CFG_IMAGE_SVG_MAX_SOURCE) {
             uint8_t *copy = (uint8_t *)ql_mem_alloc(in->len);
@@ -7493,6 +7535,7 @@ QLErr ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
                 ir->svg = copy;
                 ir->svg_len = in->len;
                 ir->is_svg = 1;
+                ir->svg_uses_color = image_svg_uses_current_color(copy, in->len);
             }
         }
 

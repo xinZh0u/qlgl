@@ -102,6 +102,11 @@ typedef struct {
      * 其他格式忽略。
      */
     uint16_t       target_w, target_h;
+    /*
+     * SVG 的 `currentColor`（0xRRGGBB）。0 = 默认黑色；只对 SVG 有效。
+     * 元素颜色变化后调用方可以重新解码（QLUI 的 SVG 重栅格化会自动带上它）。
+     */
+    uint32_t       current_color;
 } QLImageDecodeReq;
 
 /*

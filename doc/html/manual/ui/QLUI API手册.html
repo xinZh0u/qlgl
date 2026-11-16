@@ -2601,7 +2601,8 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <code>QL_CFG_IMAGE_SVG_MAX_SOURCE</code>）：第一次绘制按"元素盒子 × DPR"栅格化，
 之后元素尺寸/DPR 变化会自动重栅格化（±25% 带内不重来）。
 <code>ql_ui_node_image()</code> 返回的是<strong>当前光栅</strong>，它的 <code>w/h</code> 可能比固有尺寸大；
-布局与 <code>object-fit</code> 用的是注册时记下的固有 CSS 尺寸，不会跟着变。</p>
+布局与 <code>object-fit</code> 用的是注册时记下的固有 CSS 尺寸，不会跟着变。
+SVG 里的 <code>currentColor</code> 会取元素自己的 <code>color</code>（颜色变化只重栅格化一次）。</p>
 <table>
 <thead>
 <tr>
