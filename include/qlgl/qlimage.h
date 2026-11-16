@@ -66,6 +66,12 @@ typedef struct {
 uint32_t ql_image_format_bpp(uint8_t format);
 
 /*
+ * 是不是 SVG 文本（按开头是否出现 `<svg` 判断，不看扩展名）。
+ * 运行期需要"保留源、按尺寸重栅格化"时用它决定要不要留一份字节。
+ */
+int ql_image_is_svg(const void *data, size_t len);
+
+/*
  * 校验一张图的自洽性与上界。返回 1 = 可用。
  * 检查项：format 合法、w/h 非 0、像素数 ≤ QL_CFG_IMAGE_MAX_PIXELS、
  * stride ≥ w*bpp、len == stride*h、stride 能装进 uint16。

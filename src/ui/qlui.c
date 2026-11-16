@@ -170,11 +170,21 @@ struct QLUIImageRT {
     const char *name;        /* 资源名（指向 doc 的文本池或节点的 text） */
     QLImage     img;
     uint8_t     failed;      /* 解码失败过：不要每帧重试 */
+    /*
+     * SVG 的"源"：注册时留一份原文，布局/DPR 变化时按元素盒子重新栅格化。
+     * 只对运行期注册的 SVG 有效（构建期产物已经是 RAW 位图）。
+     */
+    uint8_t     is_svg;
+    uint8_t    *svg;
+    size_t      svg_len;
+    uint16_t    css_w, css_h;   /* 固有 CSS 尺寸（object-fit / 布局用） */
+    uint16_t    try_w, try_h;   /* 上次尝试栅格化的目标（失败后别每帧重试） */
 };
 
 /* 下面这几组定义在文件后部（构建期就要用），先声明 */
 static struct QLUIProgress *progress_of(const QLUIRoot *ui, const QLUINodeRT *node);
 static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node);
+static QLErr image_decode_into(struct QLUIImageRT *ir, const QLImageDecodeReq *req);
 static void image_node_size(const QLUIRoot *ui, const QLUINodeRT *node, ql_coord_t *w,
                             ql_coord_t *h);
 static int image_fit_rect(int32_t iw, int32_t ih, QLRect box, uint8_t fit,
@@ -523,8 +533,7 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
                 req.pixel_format = src->pixel_format;
                 req.w = src->w;
                 req.h = src->h;
-                if (ql_image_decode(&req, &ir->img) != QL_OK)
-                    ir->failed = 1;
+                (void)image_decode_into(ir, &req);
                 break;
             }
         }
@@ -558,8 +567,7 @@ static QLUIRoot *build_internal(const QLUIDoc *doc, int owns_doc)
                 req.pixel_format = src->pixel_format;
                 req.w = src->w;
                 req.h = src->h;
-                if (ql_image_decode(&req, &ir->img) != QL_OK)
-                    ir->failed = 1;
+                (void)image_decode_into(ir, &req);
                 break;
             }
           }
@@ -758,9 +766,11 @@ void ql_ui_free(QLUIRoot *ui)
     }
     ql_mem_free(ui->runs);
     if (ui->images != NULL) {
-        for (uint16_t i = 0; i < ui->image_count; i++)
+        for (uint16_t i = 0; i < ui->image_count; i++) {
             if (ui->images[i].img.owned)
                 ql_mem_free((void *)ui->images[i].img.px);
+            ql_mem_free(ui->images[i].svg);
+        }
         ql_mem_free(ui->images);
     }
     ql_mem_free(ui->progresses);
@@ -6820,18 +6830,58 @@ static struct QLUIImageRT *image_of(const QLUIRoot *ui, const QLUINodeRT *node)
     return NULL;
 }
 
-/* 按资源名找（背景图用；B4） */
-static const QLImage *image_by_name(const QLUIRoot *ui, const char *name)
+static const char *image_entry_name(const struct QLUIImageRT *ir)
+{
+    return (ir->node != NULL) ? ir->node->text : ir->name;
+}
+
+/*
+ * 解码一份资源并装进槽位。`css_w/css_h` 只在"拿到新源"时更新：
+ * 之后按元素尺寸重栅格化时，固有尺寸必须保持不变（否则布局会跟着抖）。
+ * 失败时把旧像素也释放掉（调用方拿到的是新源的失败结果）。
+ */
+static uint32_t s_image_rev = 1;
+
+static QLErr image_decode_into(struct QLUIImageRT *ir, const QLImageDecodeReq *req)
+{
+    QLImage img;
+    memset(&img, 0, sizeof(img));
+    const QLErr rc = ql_image_decode(req, &img);
+    if (rc != QL_OK) {
+        if (ir->img.owned)
+            ql_mem_free((void *)ir->img.px);
+        memset(&ir->img, 0, sizeof(ir->img));
+        ir->failed = 1;
+        return rc;
+    }
+    if (ir->img.owned)
+        ql_mem_free((void *)ir->img.px);
+    img.rev = ++s_image_rev;       /* 换内容：GL 纹理缓存必须重传 */
+    ir->img = img;
+    ir->css_w = img.w;
+    ir->css_h = img.h;
+    ir->failed = 0;
+    return QL_OK;
+}
+
+/* 按资源名找（背景图/遮罩/边框图用） */
+static struct QLUIImageRT *image_entry_by_name(const QLUIRoot *ui, const char *name)
 {
     if (ui == NULL || name == NULL || ui->images == NULL)
         return NULL;
     for (uint16_t i = 0; i < ui->image_count; i++) {
-        const struct QLUIImageRT *ir = &ui->images[i];
-        const char *nm = (ir->node != NULL) ? ir->node->text : ir->name;
+        struct QLUIImageRT *ir = &ui->images[i];
+        const char *nm = image_entry_name(ir);
         if (nm != NULL && strcmp(nm, name) == 0 && ir->img.px != NULL)
-            return &ir->img;
+            return ir;
     }
     return NULL;
+}
+
+static const QLImage *image_by_name(const QLUIRoot *ui, const char *name)
+{
+    struct QLUIImageRT *ir = image_entry_by_name(ui, name);
+    return (ir != NULL) ? &ir->img : NULL;
 }
 
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
@@ -6841,6 +6891,188 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
         return NULL;
     return &ir->img;
 }
+
+#if QL_FEAT_IMG_SVG
+/*
+ * 运行期 SVG 的"按需重栅格化"。
+ *
+ * 触发点：每帧真正要画之前（此时才知道 canvas 的 DPR），以及布局把盒子改大/
+ * 改小之后。策略：
+ *   - 目标尺寸 = 所有使用者的最大盒子 × DPR（保持 SVG 固有宽高比）；
+ *   - 只在变化超过 ±25% 时重来，避免动画/拖动时每帧重栅格化；
+ *   - 单边上限 QL_CFG_IMAGE_SVG_MAX_DIM，超了按比例缩；
+ *   - 只用运行期注册、且保留了原文的 SVG；构建期 RAW 资源不动。
+ *
+ * `object-fit: contain` 的 `<img>` 按"实际画出来的大小"算，而不是内容盒，
+ * 这样 100×100 盒子里的 4:1 图标不会白占 4 倍像素。
+ */
+static int image_name_used_as_border(const QLUIRoot *ui, const char *name)
+{
+    if (ui == NULL || name == NULL || ui->doc == NULL || ui->doc->text_pool == NULL ||
+        ui->doc->text_offsets == NULL)
+        return 0;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        const QLUIStyle *s = ql_ui_node_style(&ui->nodes[i]);
+        if (s == NULL || s->border_image == QL_UI_NO_BORDER_IMAGE)
+            continue;
+        if (strcmp(ui->doc->text_pool + ui->doc->text_offsets[s->border_image],
+                   name) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void ui_sync_svg_images(QLUIRoot *ui, ql_coord_t scale_fx)
+{
+    if (ui == NULL || ui->images == NULL || ui->doc == NULL)
+        return;
+    if (scale_fx <= 0)
+        scale_fx = QL_SCALE_ONE;
+    if (ui->doc->text_pool == NULL || ui->doc->text_offsets == NULL)
+        return;
+
+    for (uint16_t i = 0; i < ui->image_count; i++) {
+        struct QLUIImageRT *ir = &ui->images[i];
+        if (!ir->is_svg || ir->svg == NULL || ir->svg_len == 0)
+            continue;
+        const char *name = image_entry_name(ir);
+        if (name == NULL)
+            continue;
+        if (image_name_used_as_border(ui, name))
+            continue;             /* border-image 的切片按源像素算，别动 */
+
+        ql_coord_t need_w = 0, need_h = 0;
+
+        /* 1) 自己的 <img> 节点：按 object-fit 之后真正占的盒子 */
+        if (ir->node != NULL && !ql_rect_is_empty(ir->node->content_box)) {
+            const QLUIStyle *s = ql_ui_node_style(ir->node);
+            if (ir->css_w > 0 && ir->css_h > 0 && s != NULL) {
+                QLRect dst, src;
+                if (image_fit_rect(ir->css_w, ir->css_h, ir->node->content_box,
+                                   ql_ui_style_object_fit(s), &dst, &src)) {
+                    need_w = dst.w;
+                    need_h = dst.h;
+                }
+            } else {
+                need_w = ir->node->content_box.w;
+                need_h = ir->node->content_box.h;
+            }
+        }
+
+        /* 2) CSS 引用的同一张图（背景/遮罩）：按边框盒估 */
+        for (uint16_t n = 0; n < ui->node_count; n++) {
+            QLUINodeRT *node = &ui->nodes[n];
+            const QLUIStyle *s = ql_ui_node_style(node);
+            if (s == NULL)
+                continue;
+            int used = 0;
+            for (int which = 0; which < 3; which++) {
+                const uint16_t idx = style_res_idx(s, which);
+                if (idx == QL_UI_NO_IMAGE)
+                    continue;
+                if (strcmp(ui->doc->text_pool + ui->doc->text_offsets[idx], name) != 0)
+                    continue;
+                used = 1;
+            }
+            if (!used)
+                continue;
+            if (node->border_box.w > need_w)
+                need_w = node->border_box.w;
+            if (node->border_box.h > need_h)
+                need_h = node->border_box.h;
+        }
+
+        if (need_w <= 0 || need_h <= 0)
+            continue;
+
+        /* CSS px → 设备像素（向上取整，避免边缘少一行） */
+        int64_t nw = ((int64_t)need_w * (int64_t)scale_fx + QL_SCALE_ONE - 1) >>
+                     QL_SCALE_SHIFT;
+        int64_t nh = ((int64_t)need_h * (int64_t)scale_fx + QL_SCALE_ONE - 1) >>
+                     QL_SCALE_SHIFT;
+        if (nw < 1) nw = 1;
+        if (nh < 1) nh = 1;
+
+        int tw, th;
+        if (ir->css_w > 0 && ir->css_h > 0) {
+            /* 保持固有宽高比，同时覆盖两个方向 */
+            const int64_t w1 = nw;
+            const int64_t h1 = ((int64_t)ir->css_h * nw + ir->css_w - 1) / ir->css_w;
+            const int64_t w2 = ((int64_t)ir->css_w * nh + ir->css_h - 1) / ir->css_h;
+            const int64_t h2 = nh;
+            if (h1 >= nh) {
+                tw = (int)w1;
+                th = (int)h1;
+            } else {
+                tw = (int)w2;
+                th = (int)h2;
+            }
+        } else {
+            tw = (int)nw;
+            th = (int)nh;
+        }
+
+        if (tw > QL_CFG_IMAGE_SVG_MAX_DIM) {
+            th = (int)((double)th * QL_CFG_IMAGE_SVG_MAX_DIM / tw + 0.5);
+            tw = QL_CFG_IMAGE_SVG_MAX_DIM;
+        }
+        if (th > QL_CFG_IMAGE_SVG_MAX_DIM) {
+            tw = (int)((double)tw * QL_CFG_IMAGE_SVG_MAX_DIM / th + 0.5);
+            th = QL_CFG_IMAGE_SVG_MAX_DIM;
+        }
+        if (tw < 1) tw = 1;
+        if (th < 1) th = 1;
+
+        const int cur_w = (int)ir->img.w, cur_h = (int)ir->img.h;
+        static int trace = -1;
+        if (trace < 0)
+            trace = (getenv("QL_TRACE_SVG") != NULL);
+        if (trace)
+            fprintf(stderr, "[svg] %s need=%dx%d css=%ux%u cur=%dx%d target=%dx%d\n",
+                    name, (int)need_w, (int)need_h, ir->css_w, ir->css_h,
+                    cur_w, cur_h, tw, th);
+        if (cur_w == tw && cur_h == th)
+            continue;
+
+        /* ±25% 带内不重来：动画/拖动窗口时别每帧磨一次 */
+        if (cur_w > 0 && cur_h > 0 &&
+            tw <= cur_w + cur_w / 4 && tw + tw / 4 >= cur_w &&
+            th <= cur_h + cur_h / 4 && th + th / 4 >= cur_h)
+            continue;
+
+        /* 同一目标已经失败过：别每帧重试 */
+        if (ir->failed && ir->try_w == tw && ir->try_h == th)
+            continue;
+        ir->try_w = (uint16_t)tw;
+        ir->try_h = (uint16_t)th;
+
+        QLImageDecodeReq req;
+        memset(&req, 0, sizeof(req));
+        req.data = ir->svg;
+        req.len = ir->svg_len;
+        req.src_format = QL_IMAGE_SRC_SVG;
+        req.target_w = (uint16_t)tw;
+        req.target_h = (uint16_t)th;
+        QLImage img;
+        memset(&img, 0, sizeof(img));
+        if (ql_image_decode(&req, &img) == QL_OK) {
+            if (ir->img.owned)
+                ql_mem_free((void *)ir->img.px);
+            img.rev = ++s_image_rev;        /* 让 GL 纹理缓存失效 */
+            ir->img = img;
+            ir->failed = 0;
+            ir->try_w = ir->try_h = 0;
+            /* 重栅格化后局部重绘也要跟上（当前这帧可能只画脏区） */
+            if (ir->node != NULL)
+                ir->node->flags |= QL_UI_RT_DIRTY;
+            else if (ui->node_count > 0)
+                ui->nodes[0].flags |= QL_UI_RT_DIRTY;
+        } else {
+            ir->failed = 1;
+        }
+    }
+}
+#endif /* QL_FEAT_IMG_SVG */
 
 /* ------------------------------ <video> ↔ QLMedia ------------------------------ */
 
@@ -7202,8 +7434,10 @@ static void image_node_size(const QLUIRoot *ui, const QLUINodeRT *node, ql_coord
         return;
     const struct QLUIImageRT *ir = image_of(ui, node);
     if (ir != NULL && ir->img.w > 0) {
-        *w = (ql_coord_t)ir->img.w;
-        *h = (ql_coord_t)ir->img.h;
+        /* 布局/object-fit 用**固有 CSS 尺寸**：SVG 可能已经按 DPR 重栅格化，
+         * 光栅尺寸（img.w/h）会变，不能拿它当"图片有多大"。 */
+        *w = (ql_coord_t)((ir->css_w > 0) ? ir->css_w : ir->img.w);
+        *h = (ql_coord_t)((ir->css_h > 0) ? ir->css_h : ir->img.h);
         return;
     }
     /* 没注册资源：退回 doc 里的资源条目（blob 路径下这里才有值） */
@@ -7236,6 +7470,32 @@ QLErr ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
             continue;
         hit = 1;
 
+        /*
+         * SVG 留一份原文：之后布局/DPR 变化时按元素盒子重新栅格化。
+         * 构建期产物（RAW）没有源，走不到这里；超大文件只解一次、不留源。
+         */
+#if QL_FEAT_IMG_SVG
+        const int is_svg = (in->format == QL_IMAGE_SRC_SVG) ||
+                           (in->format == QL_IMAGE_SRC_AUTO &&
+                            ql_image_is_svg(in->data, in->len));
+#else
+        const int is_svg = 0;          /* 没有 SVG 解码：不留源 */
+#endif
+        ql_mem_free(ir->svg);
+        ir->svg = NULL;
+        ir->svg_len = 0;
+        ir->is_svg = 0;
+        ir->try_w = ir->try_h = 0;
+        if (is_svg && in->len <= QL_CFG_IMAGE_SVG_MAX_SOURCE) {
+            uint8_t *copy = (uint8_t *)ql_mem_alloc(in->len);
+            if (copy != NULL) {
+                memcpy(copy, in->data, in->len);
+                ir->svg = copy;
+                ir->svg_len = in->len;
+                ir->is_svg = 1;
+            }
+        }
+
         QLImageDecodeReq req;
         memset(&req, 0, sizeof(req));
         req.data = in->data;
@@ -7245,19 +7505,12 @@ QLErr ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in)
         req.w = in->w;
         req.h = in->h;
 
-        QLImage img;
-        const QLErr err = ql_image_decode(&req, &img);
+        const QLErr err = image_decode_into(ir, &req);
         if (err != QL_OK) {
-            ir->failed = 1;
-            ir->img.px = NULL;
             if (first_err == QL_OK)
                 first_err = err;
             continue;
         }
-        if (ir->img.owned)
-            ql_mem_free((void *)ir->img.px);
-        ir->img = img;
-        ir->failed = 0;
         /* 背景图资源没有对应节点（node == NULL）：整屏标脏就够了 */
         if (ir->node != NULL)
             ir->node->flags |= QL_UI_RT_DIRTY;
@@ -7421,12 +7674,16 @@ static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d)
         ui->doc->text_offsets == NULL)
         return;
     const char *nm = ui->doc->text_pool + ui->doc->text_offsets[s->bg_image];
-    const QLImage *img = image_by_name(ui, nm);
-    if (img == NULL || ql_rect_is_empty(box))
+    struct QLUIImageRT *ir = image_entry_by_name(ui, nm);
+    if (ir == NULL || ql_rect_is_empty(box))
         return;
+    const QLImage *img = &ir->img;
 
-    const ql_coord_t iw = (ql_coord_t)img->w;
-    const ql_coord_t ih = (ql_coord_t)img->h;
+    /* `background-size: auto` / 比例 / 平铺步长都按**固有 CSS 尺寸**算 */
+    const ql_coord_t iw = (ir->css_w > 0) ? (ql_coord_t)ir->css_w
+                                          : (ql_coord_t)img->w;
+    const ql_coord_t ih = (ir->css_h > 0) ? (ql_coord_t)ir->css_h
+                                          : (ql_coord_t)img->h;
     if (iw <= 0 || ih <= 0)
         return;
 
@@ -7481,7 +7738,7 @@ static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d)
                  ? (ql_coord_t)((int32_t)(box.h - dh) * py->value / 1000)
                  : (ql_coord_t)py->value;
 
-    const QLRect src = ql_rect_make(0, 0, iw, ih);
+    const QLRect src = ql_rect_make(0, 0, (ql_coord_t)img->w, (ql_coord_t)img->h);
     const ql_coord_t rad = ql_ui_radius_max(s);
     d2d->image_pixelated = (s->image_rendering != 0);
 
@@ -7533,17 +7790,53 @@ static void draw_bg_image(QLUINodeRT *node, QLRect box, QLDraw2D *d2d)
     }
 }
 
+/*
+ * 源矩形是"固有 CSS 像素"；SVG 按 DPR/元素尺寸重栅格化后，光栅比固有尺寸大，
+ * blit 需要的是光栅坐标 —— 按比例换过去（`cover` 的裁剪也会跟着缩）。
+ */
+static QLRect image_src_to_raster(QLRect s, ql_coord_t cw, ql_coord_t ch,
+                                  const QLImage *img)
+{
+    if (img == NULL || cw <= 0 || ch <= 0 || img->w == 0 || img->h == 0)
+        return s;
+    if ((ql_coord_t)img->w == cw && (ql_coord_t)img->h == ch)
+        return s;
+
+    s.x = (ql_coord_t)((int64_t)s.x * img->w / cw);
+    s.y = (ql_coord_t)((int64_t)s.y * img->h / ch);
+    s.w = (ql_coord_t)((int64_t)s.w * img->w / cw);
+    s.h = (ql_coord_t)((int64_t)s.h * img->h / ch);
+    if (s.w < 1) s.w = 1;
+    if (s.h < 1) s.h = 1;
+
+    if (s.x < 0) s.x = 0;
+    if (s.y < 0) s.y = 0;
+    if (s.x + s.w > (ql_coord_t)img->w) s.w = (ql_coord_t)img->w - s.x;
+    if (s.y + s.h > (ql_coord_t)img->h) s.h = (ql_coord_t)img->h - s.y;
+    if (s.w < 1) s.w = 1;
+    if (s.h < 1) s.h = 1;
+    return s;
+}
+
 static void draw_img(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
 {
-    const QLImage *img = ql_ui_node_image(ui, node);
+    struct QLUIImageRT *ir = image_of(ui, node);
+    const QLImage *img = (ir != NULL) ? &ir->img : NULL;
     const QLUIStyle *s = ql_ui_node_style(node);
-    if (img == NULL || ql_rect_is_empty(node->content_box) || d2d->blit_image == NULL)
+    if (img == NULL || img->px == NULL || ql_rect_is_empty(node->content_box) ||
+        d2d->blit_image == NULL)
         return;
 
+    const ql_coord_t css_w = (ir->css_w > 0) ? (ql_coord_t)ir->css_w
+                                             : (ql_coord_t)img->w;
+    const ql_coord_t css_h = (ir->css_h > 0) ? (ql_coord_t)ir->css_h
+                                             : (ql_coord_t)img->h;
+
     QLRect dst, src;
-    if (!image_fit_rect((int32_t)img->w, (int32_t)img->h, node->content_box,
+    if (!image_fit_rect((int32_t)css_w, (int32_t)css_h, node->content_box,
                         ql_ui_style_object_fit(s), &dst, &src))
         return;
+    src = image_src_to_raster(src, css_w, css_h, img);
 
     /*
      * `object-position`：图片在"多出来的余量"里怎么摆。
@@ -8872,6 +9165,11 @@ void ql_ui_render(QLUIRoot *ui, QLDraw2D *d2d)
     if (ui == NULL || d2d == NULL || ui->node_count == 0)
         return;
 
+#if QL_FEAT_IMG_SVG
+    /* 到这一帧才知道 DPR；SVG 在这里按"元素盒子 × DPR"重栅格化 */
+    ui_sync_svg_images(ui, d2d->scale_fx);
+#endif
+
     /* 记录进入时的裁剪，overflow 容器靠它保存/恢复 */
     ui->clip = ql_rect_make(0, 0, ui->width, ui->height);
     if (ui->root_clip_valid)
@@ -8885,6 +9183,10 @@ void ql_ui_render_rect(QLUIRoot *ui, QLDraw2D *d2d, QLRect dirty)
 {
     if (ui == NULL || d2d == NULL || ui->node_count == 0 || d2d->set_clip == NULL)
         return;
+
+#if QL_FEAT_IMG_SVG
+    ui_sync_svg_images(ui, d2d->scale_fx);
+#endif
 
     QLRect want = ql_rect_intersect(dirty, ql_rect_make(0, 0, ui->width, ui->height));
     if (ui->root_clip_valid)

@@ -1402,6 +1402,15 @@ static int decode_via_backend(const QLImageDecodeReq *req, QLImage *out, uint8_t
  * 跳过 BOM 与空白后必须是 `<`，并且前 512 字节里出现 `<svg` 标签
  * （允许 `<?xml ...?>` 声明在前）。这样 `<?xml` 开头的非 SVG 文件不会误判。
  */
+static int looks_like_svg(const uint8_t *d, size_t n);
+
+int ql_image_is_svg(const void *data, size_t len)
+{
+    if (data == NULL || len == 0)
+        return 0;
+    return looks_like_svg((const uint8_t *)data, len);
+}
+
 static int looks_like_svg(const uint8_t *d, size_t n)
 {
     size_t i = 0;

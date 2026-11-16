@@ -397,6 +397,13 @@
 #define QL_CFG_IMAGE_SVG_MAX_DIM    2048
 #endif
 /*
+ * 运行期注册 SVG 时**保留原文**的字节上限（为了按元素尺寸重栅格化）。
+ * 超过这个大小的 SVG 仍然能解码一次，但不会保留源，后续尺寸变化不回退重渲。
+ */
+#ifndef QL_CFG_IMAGE_SVG_MAX_SOURCE
+#define QL_CFG_IMAGE_SVG_MAX_SOURCE (1024u * 1024u)
+#endif
+/*
  * 外来 SVG 的元素嵌套深度 / 元素个数上限（防 XML 炸弹与递归过深）。
  * 图标级 SVG 远远用不到；超限按"数据非法"拒绝。
  */

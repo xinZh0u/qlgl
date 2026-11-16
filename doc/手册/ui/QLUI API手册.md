@@ -1426,6 +1426,12 @@ QLErr       ql_ui_register_image(QLUIRoot *ui, const QLUIImageInput *in);
 const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 ```
 
+SVG（`AUTO` 按开头是否出现 `<svg` 判断）会被**保留原文**（上限
+`QL_CFG_IMAGE_SVG_MAX_SOURCE`）：第一次绘制按"元素盒子 × DPR"栅格化，
+之后元素尺寸/DPR 变化会自动重栅格化（±25% 带内不重来）。
+`ql_ui_node_image()` 返回的是**当前光栅**，它的 `w/h` 可能比固有尺寸大；
+布局与 `object-fit` 用的是注册时记下的固有 CSS 尺寸，不会跟着变。
+
 | 情况 | 返回 |
 |---|---|
 | 名字对不上任何 `<img src>` / 界面里没有 `<img>` / 参数非法 | `QL_ERR_INVAL` |

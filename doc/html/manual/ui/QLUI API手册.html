@@ -2597,6 +2597,11 @@ qlui: 错误：index.css:8: margin/padding 只接受构建期就能算成 px 的
 <span class="k">const</span><span class="w"> </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_ui_node_image</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">);</span>
 </code></pre></div>
 
+<p>SVG（<code>AUTO</code> 按开头是否出现 <code>&lt;svg</code> 判断）会被<strong>保留原文</strong>（上限
+<code>QL_CFG_IMAGE_SVG_MAX_SOURCE</code>）：第一次绘制按"元素盒子 × DPR"栅格化，
+之后元素尺寸/DPR 变化会自动重栅格化（±25% 带内不重来）。
+<code>ql_ui_node_image()</code> 返回的是<strong>当前光栅</strong>，它的 <code>w/h</code> 可能比固有尺寸大；
+布局与 <code>object-fit</code> 用的是注册时记下的固有 CSS 尺寸，不会跟着变。</p>
 <table>
 <thead>
 <tr>

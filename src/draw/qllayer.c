@@ -609,13 +609,26 @@ void ql_layer_composite(QLCanvas *dst, const uint8_t *rgba, int w, int h, QLRect
                 const uint8_t *sp = rgba + ((size_t)sy * (size_t)w + (size_t)sx) * 4u;
                 if (sp[3] == 0)
                     continue;
+                /*
+                 * 圆角与遮罩的 `box/corner` 是 **CSS px**，而 x/y 是设备像素。
+                 * DPR ≠ 1 时必须换回 CSS 再判定（慢路已经这么做了）；
+                 * 以前直接把设备坐标当 CSS 用，2x 屏上遮罩只铺到左上四分之一。
+                 */
+                const ql_coord_t lc_x =
+                    (dpr == QL_SCALE_ONE)
+                        ? x
+                        : (ql_coord_t)(((int64_t)x * QL_SCALE_ONE) / dpr);
+                const ql_coord_t lc_y =
+                    (dpr == QL_SCALE_ONE)
+                        ? y
+                        : (ql_coord_t)(((int64_t)y * QL_SCALE_ONE) / dpr);
                 uint32_t cov = 255u;
                 if (corner > 0)
-                    cov = ql_layer_round_cov(box, corner, x, y);
+                    cov = ql_layer_round_cov(box, corner, lc_x, lc_y);
                 if (cov == 0u)
                     continue;
                 if (mask != NULL) {
-                    const uint32_t m2 = mask_alpha_at(mask, box, x, y);
+                    const uint32_t m2 = mask_alpha_at(mask, box, lc_x, lc_y);
                     if (m2 == 0u)
                         continue;
                     cov = cov * m2 / 255u;

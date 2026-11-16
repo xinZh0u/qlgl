@@ -111,11 +111,20 @@ SVG → `QL_IMAGE_A8` 取的是**覆盖率（alpha）**，不是黑色图形的�
 - 运行期 `mask-image: url(star.svg)` 读图片 alpha，颜色由 `background-color` 决定；
 - 不需要为每种主题色重新导出资源。
 
-### 2.4 尺寸与 DPR（现状）
+### 2.4 尺寸与 DPR：自动重栅格化
 
-当前在**注册时**按固有尺寸（或调用方给的 `target_w/h`）渲染一次，
-之后由 QLUI 按元素盒子缩放。没有做"元素尺寸 × DPR 变化后自动重栅格化"；
-高 DPI 下需要更锐利时，注册时显式给 `target_w/h`（例如 2×）。
+运行期注册的 SVG 会**保留原文**（≤ `QL_CFG_IMAGE_SVG_MAX_SOURCE`，默认 1 MiB），
+第一次真正绘制前按"元素盒子 × DPR"栅格化，而不是按固有 24×24 直接放大：
+
+- `<img>` 按 `object-fit` 之后的实际绘制尺寸算（`contain` 不会为宽盒子白占像素）；
+- `background-image` / `mask-image` 按元素的边框盒（CSS 里它们本来就拉伸到盒子）；
+- 目标尺寸保持 SVG 固有宽高比，单边上限 `QL_CFG_IMAGE_SVG_MAX_DIM`；
+- 尺寸变化超过 **±25%** 才重新栅格化，避免动画/拖动窗口时每帧重来；
+- DPR 从画布（`ql_canvas_scale_fx`）取，所以 1x/2x/3x 屏都会自动变清晰；
+- **布局与 `object-fit` 仍用固有 CSS 尺寸**（`QLImage` 的光栅尺寸只影响采样）。
+
+限制：构建期嵌入的 RAW 位图没有源，无法重栅格化；`border-image` 的切片依赖
+源像素，名字被 `border-image` 引用时不会自动重栅格化（避免切片错位）。
 
 ---
 
@@ -237,8 +246,7 @@ PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实�
 
 ## 9. 还没做（按需）
 
-1. **DPR 自动重栅格化 / 按尺寸缓存**：现在注册时渲染一次，QLUI 负责缩放。
-2. **`currentColor` 在渲染期替换**：PlutoSVG 支持 `current_color` 参数，
+1. **`currentColor` 在渲染期替换**：PlutoSVG 支持 `current_color` 参数，
    但 QLUI 现在走 A8 + mask 染色；需要"多色图标里只改一个颜色"时再接。
-3. **ThorVG 可选后端**：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。
-4. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。
+2. **ThorVG 可选后端**：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。
+3. **内联 `<svg>`**：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。
