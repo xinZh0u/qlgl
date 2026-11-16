@@ -102,7 +102,9 @@ int main(void)
         printf("  ui build failed\n");
         return 1;
     }
-    ql_ui_set_click_cb(ui, on_click, NULL);
+    QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+    CHECK(btn != NULL);
+    CHECK_INT(ql_ui_set_node_click_cb(ui, btn, on_click, NULL), QL_OK);
 
     QLWindow *win = ql_window_create("mcu", QL_BOARD_W, QL_BOARD_H, QL_WINDOW_CPU);
     CHECK(win != NULL);

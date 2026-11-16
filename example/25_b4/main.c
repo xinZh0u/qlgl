@@ -10,7 +10,7 @@
  *   - `outline` 画在边框盒外面，盒子的位置和尺寸一点不变
  *     （所以 focus 环、选中高亮用它最合适）。
  *
- * 第 5 节点一下输入框，就能看到 `:focus` 把 outline 打开（终端会打印焦点节点）。
+ * 点一下输入框，就能看到 `:focus` 把 outline 打开（终端会打印焦点节点）。
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,12 +21,12 @@
 #define W 720
 #define H 760
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static void on_input_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
     (void)user;
     if (node == NULL || node->style == NULL)
         return;
-    /* 点哪儿就把焦点给哪儿（真实控件由 ql_ui_input_event 内部处理，这里演示意图） */
+    /* 输入框自己会拿焦点，这里只是把事件打出来（真实控件由 ql_ui_input_event 处理） */
     ql_ui_set_focus_node(ui, node);
     printf("点击：outline=%dpx/%d，border=%dpx/%d（上边）\n",
            (int)node->style->outline_width, (int)node->style->outline_style,
@@ -45,14 +45,12 @@ int main(int argc, char **argv)
         return 1;
     }
     ql_ui_layout(ui, W, H);
-    ql_ui_set_click_cb(ui, on_click, NULL);
 
     /* 启动就把焦点给输入框：截图/首屏都能看到 focus 环长什么样 */
-    for (uint16_t i = 0; i < ui->node_count; i++) {
-        if (ui->nodes[i].src != NULL && ui->nodes[i].src->tag == QL_UI_TAG_INPUT) {
-            ql_ui_set_focus_node(ui, &ui->nodes[i]);
-            break;
-        }
+    QLUINodeRT *input = ql_ui_find_by_id(ui, "name");
+    if (input != NULL) {
+        ql_ui_set_focus_node(ui, input);
+        (void)ql_ui_set_node_click_cb(ui, input, on_input_click, NULL);
     }
 
     QLWindow *win = ql_window_create("QLGL · 25 B4（点一下输入框）", W, H, QL_WINDOW_GL);

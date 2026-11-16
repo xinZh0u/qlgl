@@ -162,6 +162,7 @@ ql_ui_doc_free(doc);
 
 ```
 nodes[]      每个元素的标签、父子兄弟关系、样式下标、文本下标
+node_ids[]   每个元素一个 id 文本下标（0xFFFF = 没写 id）
 styles[]     去重后的样式（QLUIStyle，每个 116 字节）
 text_pool    所有文本字符串（'\0' 分隔）
 font_sizes[] 用到哪些字号

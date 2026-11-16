@@ -1739,8 +1739,7 @@ if (ql_gfx_gl_resize_pending(gfx)) {
 ```c
 static ql_color_t page_bg(QLUIRoot *ui)
 {
-    const QLUIStyle *s = (ui != NULL && ui->node_count > 0)
-                             ? ql_ui_node_style(&ui->nodes[0]) : NULL;
+    const QLUIStyle *s = (ui != NULL) ? ql_ui_node_style(ql_ui_root_node(ui)) : NULL;
     return (s != NULL && s->bg_alpha > 0) ? s->bg_color : QL_COLOR_RGB(0xFF, 0xFF, 0xFF);
 }
 
@@ -1765,6 +1764,7 @@ ql_gfx_gl_begin(gfx, page_bg(ui));
 
 static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
+    (void)ui; (void)user;
     printf("clicked: %s\n", ql_ui_node_text(node));
 }
 
@@ -1775,7 +1775,7 @@ int main(void)
 
     QLUIRoot *ui = ql_ui_build(&ui_index_doc);
     ql_ui_layout(ui, 320, 240);
-    ql_ui_set_click_cb(ui, on_click, NULL);
+    ql_ui_set_node_click_cb(ui, ql_ui_find_by_id(ui, "btn"), on_click, NULL);
 
     QLCanvas canvas;
     ql_canvas_from_disp(&canvas, d);

@@ -146,12 +146,11 @@ static int on_event(QLUIRoot *ui, const QLInputEvent *ev, void *user)
     return 0;
 }
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static void on_play_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
     (void)ui;
+    (void)node;
     App *app = (App *)user;
-    if (node != app->play)
-        return;
     if (ql_media_state(app->media) == QL_MEDIA_PLAYING)
         (void)ql_media_pause(app->media);
     else
@@ -211,11 +210,11 @@ int main(int argc, char **argv)
 
     QLUIDoc *doc = ql_ui_load_html(
         "<div id=root>"
-        "<div class=name></div>"
-        "<video><track kind=subtitles src=\"track.vtt\" default></video>"
-        "<div class=time>0:00 / 0:00</div>"
-        "<progress value=0 max=1000></progress>"
-        "<div class=row><button>暂停</button></div>"
+        "<div id=name class=name></div>"
+        "<video id=video><track id=track kind=subtitles src=\"track.vtt\" default></video>"
+        "<div id=time class=time>0:00 / 0:00</div>"
+        "<progress id=bar value=0 max=1000></progress>"
+        "<div class=row><button id=play>暂停</button></div>"
         "</div>",
         "#root { width: 100%; height: 100%; padding: 10px;"
         " box-sizing: border-box; display: flex; flex-direction: column;"
@@ -240,14 +239,15 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    QLUINodeRT *name = ql_ui_find_by_tag(app.ui, QL_UI_TAG_DIV, 1);
+    QLUINodeRT *name = ql_ui_find_by_id(app.ui, "name");
     if (name != NULL)
         (void)ql_ui_set_text(app.ui, name, app.name_buf);
-    app.time = ql_ui_find_by_tag(app.ui, QL_UI_TAG_DIV, 2);
-    app.bar = ql_ui_find_by_tag(app.ui, QL_UI_TAG_PROGRESS, 0);
-    app.play = ql_ui_find_by_tag(app.ui, QL_UI_TAG_BUTTON, 0);
-    app.video = ql_ui_find_by_tag(app.ui, QL_UI_TAG_VIDEO, 0);
-    ql_ui_set_click_cb(app.ui, on_click, &app);
+    app.time = ql_ui_find_by_id(app.ui, "time");
+    app.bar = ql_ui_find_by_id(app.ui, "bar");
+    app.play = ql_ui_find_by_id(app.ui, "play");
+    app.video = ql_ui_find_by_id(app.ui, "video");
+    if (app.play != NULL)
+        (void)ql_ui_set_node_click_cb(app.ui, app.play, on_play_click, &app);
     if (app.video != NULL)
         (void)ql_ui_bind_media(app.ui, app.video, app.media);
 
@@ -262,7 +262,7 @@ int main(int argc, char **argv)
             if (!loaded)
                 fprintf(stderr, "字幕加载失败: %s\n", vtt);
         } else {
-            QLUINodeRT *tr = ql_ui_find_by_tag(app.ui, QL_UI_TAG_TRACK, 0);
+            QLUINodeRT *tr = ql_ui_find_by_id(app.ui, "track");
             const char *src = (tr != NULL) ? ql_ui_node_text(tr) : NULL;
             if (src != NULL && src[0] != '\0') {
                 char path[1024];

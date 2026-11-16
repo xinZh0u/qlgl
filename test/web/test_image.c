@@ -777,7 +777,7 @@ QL_TEST_BEGIN("test_image")
     /* ---------- 17. 点击派发：热区优先，不发 click_cb ---------- */
     {
         static const char *const html =
-            "<div id=root><div id=r><img src=\"pic\" usemap=\"#m\"></div>"
+            "<div id=root><div id=r><img id=pic src=\"pic\" usemap=\"#m\"></div>"
             "<map name=\"m\"><area coords=\"0 0 3 3\" href=\"#a\"></map></div>";
         QLUIDoc *doc = NULL;
         QLUIRoot *ui = mk(html, "#r { width: 64px; height: 64px }", &doc);
@@ -790,7 +790,11 @@ QL_TEST_BEGIN("test_image")
             s_area_hits = 0;
             s_click_hits = 0;
             ql_ui_set_area_cb(ui, on_area, NULL);
-            ql_ui_set_click_cb(ui, on_click, NULL);
+            QLUINodeRT *img = ql_ui_find_by_id(ui, "pic");
+            QL_CHECK(img != NULL);
+            if (img != NULL)
+                QL_CHECK_EQ(ql_ui_set_node_click_cb(ui, img, on_click, NULL),
+                            QL_OK);
 
             ql_ui_pointer_down(ui, r.x + 1, r.y + 1);
             ql_ui_pointer_up(ui, r.x + 1, r.y + 1);

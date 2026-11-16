@@ -493,6 +493,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 <h3 id="3-ql_ui_load_texthtml-css">③ <code>ql_ui_load_text(html, css)</code></h3>
 <p>它把文本编译成一个 <code>QLUIDoc</code>。这个 doc 里全是<strong>扁平数组 + <code>uint16</code> 下标</strong>：</p>
 <div class="highlight"><pre><span></span><code>nodes[]      每个元素的标签、父子兄弟关系、样式下标、文本下标
+node_ids[]   每个元素一个 id 文本下标（0xFFFF = 没写 id）
 styles[]     去重后的样式（QLUIStyle，每个 116 字节）
 text_pool    所有文本字符串（&#39;\0&#39; 分隔）
 font_sizes[] 用到哪些字号

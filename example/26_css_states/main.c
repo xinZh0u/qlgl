@@ -19,18 +19,13 @@
 #define W 760
 #define H 520
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static void on_check_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
     (void)ui;
-    (void)user;
-    if (node == NULL || node->src == NULL)
+    if (node == NULL)
         return;
-    if ((node->src->flags & QL_UI_NODE_CHECKBOX) != 0)
-        printf("复选框：%s\n", (node->flags & QL_UI_RT_CHECKED) ? "已勾选" : "未勾选");
-    else if ((node->flags & QL_UI_RT_DISABLED) != 0)
-        printf("这个节点是 disabled，点击被忽略\n");
-    else
-        printf("点击：tag=%d\n", (int)node->src->tag);
+    printf("复选框 %s：%s\n", (const char *)user,
+           (node->flags & QL_UI_RT_CHECKED) ? "已勾选" : "未勾选");
 }
 
 int main(int argc, char **argv)
@@ -45,7 +40,14 @@ int main(int argc, char **argv)
         return 1;
     }
     ql_ui_layout(ui, W, H);
-    ql_ui_set_click_cb(ui, on_click, NULL);
+
+    /* 每个复选框各自接一个回调；禁用的那个不会触发（与浏览器一致） */
+    static const char *const ids[] = { "c1", "c2", "c3" };
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        QLUINodeRT *cb = ql_ui_find_by_id(ui, ids[i]);
+        if (cb != NULL)
+            (void)ql_ui_set_node_click_cb(ui, cb, on_check_click, (void *)ids[i]);
+    }
 
     QLWindow *win = ql_window_create("QLGL · 26 CSS 状态（点复选框试试）", W, H, QL_WINDOW_GL);
     if (win == NULL) {

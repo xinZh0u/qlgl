@@ -31,15 +31,6 @@ static void on_change(QLUIRoot *ui, QLUINodeRT *node, const char *value, void *u
     printf("  [事件] %s\n", value);
 }
 
-/* 按标签找节点（例程里用不上 id 选择器那套，直接扫一遍最省事） */
-static QLUINodeRT *find(QLUIRoot *ui, uint16_t tag)
-{
-    for (uint16_t i = 0; i < ui->node_count; i++)
-        if (ui->nodes[i].src->tag == tag)
-            return &ui->nodes[i];
-    return NULL;
-}
-
 int main(int argc, char **argv)
 {
     if (qlgl_init() != QL_OK)
@@ -55,8 +46,8 @@ int main(int argc, char **argv)
     ql_ui_set_input_cb(ui, on_change, NULL);
     ql_ui_set_select_cb(ui, on_change, NULL);
 
-    QLUINodeRT *user = find(ui, QL_UI_TAG_INPUT);
-    QLUINodeRT *role = find(ui, QL_UI_TAG_SELECT);
+    QLUINodeRT *user = ql_ui_find_by_id(ui, "user");
+    QLUINodeRT *role = ql_ui_find_by_id(ui, "role");
     printf("账号 = \"%s\"，角色 = \"%s\"（第 %d 项）\n",
            ql_ui_input_value(ui, user),
            role != NULL && role->text != NULL ? role->text : "",

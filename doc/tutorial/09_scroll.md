@@ -43,10 +43,8 @@ ql_ui_scroll_by() → 改 node->scroll_y → 重跑 ql_ui_layout()
 ## 代码里怎么用
 
 ```c
-/* 找到滚动容器（也可以自己保存节点指针） */
-QLUINodeRT *list = NULL;
-for (uint16_t i = 0; i < ui->node_count; i++)
-    if (ui->nodes[i].style->overflow == QL_UI_OVERFLOW_AUTO) { list = &ui->nodes[i]; break; }
+/* 给滚动容器起个 id：<div class="list" id="list"> */
+QLUINodeRT *list = ql_ui_find_by_id(ui, "list");
 
 printf("可滚 %dpx\n", (int)list->scroll_max_y);
 

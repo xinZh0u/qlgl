@@ -544,7 +544,8 @@ main img {
 </tbody>
 </table>
 <p><strong>没有 JS</strong>：所以没有 <code>video.play()</code>。控制走 C API（§9），
-页面里的按钮通过 <code>ql_ui_set_click_cb</code> 回调到应用，应用再调 <code>ql_media_play()</code>。
+页面里的按钮通过 <code>ql_ui_find_by_id()</code> 取到节点、再用
+<code>ql_ui_set_node_click_cb()</code> 接回调，应用在回调里调 <code>ql_media_play()</code>。
 这也是"HTML 写界面、C 写逻辑"的分工，和现有事件/输入模型一致。</p>
 <h3 id="23">2.3 资源从哪来</h3>
 <ul>

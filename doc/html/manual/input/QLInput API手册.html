@@ -355,7 +355,7 @@ main img {
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qlgl/qlgl.h&gt;</span>
 
 <span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_html</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="s">&quot;&lt;div id=</span><span class="se">\&quot;</span><span class="s">root</span><span class="se">\&quot;</span><span class="s">&gt;&lt;div class=</span><span class="se">\&quot;</span><span class="s">btn</span><span class="se">\&quot;</span><span class="s">&gt;点我&lt;/div&gt;&lt;/div&gt;&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="s">&quot;&lt;div id=</span><span class="se">\&quot;</span><span class="s">root</span><span class="se">\&quot;</span><span class="s">&gt;&lt;div id=</span><span class="se">\&quot;</span><span class="s">btn</span><span class="se">\&quot;</span><span class="s"> class=</span><span class="se">\&quot;</span><span class="s">btn</span><span class="se">\&quot;</span><span class="s">&gt;点我&lt;/div&gt;&lt;/div&gt;&quot;</span><span class="p">;</span>
 <span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">k_css</span><span class="w"> </span><span class="o">=</span>
 <span class="w">    </span><span class="s">&quot;#root { width: 320px; height: 240px; background-color: #101820; }&quot;</span>
 <span class="w">    </span><span class="s">&quot;.btn  { position: absolute; left: 20px; top: 20px; width: 120px; height: 40px;&quot;</span>
@@ -383,7 +383,7 @@ main img {
 <span class="w">    </span><span class="n">QLUIDoc</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_load_text</span><span class="p">(</span><span class="n">k_html</span><span class="p">,</span><span class="w"> </span><span class="n">k_css</span><span class="p">);</span>
 <span class="w">    </span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_build</span><span class="p">(</span><span class="n">doc</span><span class="p">);</span>
 <span class="w">    </span><span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_ui_set_node_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;btn&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
 <span class="w">    </span><span class="n">ql_input_set_sink</span><span class="p">(</span><span class="n">sink</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span><span class="w">          </span><span class="cm">/* ① 装汇：事件 → QLUI */</span>
 
 <span class="w">    </span><span class="n">QLDispDriver</span><span class="w"> </span><span class="o">*</span><span class="n">disp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_disp_mem_create</span><span class="p">(</span><span class="mi">320</span><span class="p">,</span><span class="w"> </span><span class="mi">240</span><span class="p">,</span><span class="w"> </span><span class="n">QL_COLOR_RGB888</span><span class="p">);</span>
@@ -677,8 +677,10 @@ EnterWindowMask | LeaveWindowMask | KeyPressMask | KeyReleaseMask</code>。
 4. 元素是不是 <code>display: none</code>，或被祖先的 <code>overflow: hidden</code> 裁掉了？
    用 <code>ql_ui_hit_test()</code> 直接问"这个点命中了谁"。</p>
 <p><strong>Q：<code>:hover</code> 生效了但点了没反应</strong>
-点击要求"按下与抬起命中同一个节点"。<code>ql_ui_set_click_cb()</code> 之外还要确认
-节点不是 <code>&lt;img&gt;</code>（图片上的点击走热区，见 <code>ql_ui_set_area_cb</code>）。</p>
+点击要求"按下与抬起命中同一个节点"。先确认回调绑在了命中节点<strong>或它的祖先</strong>
+（<code>ql_ui_set_node_click_cb()</code> 会从命中节点向上冒泡）；没有节点绑定时才走
+<code>ql_ui_set_click_cb()</code> 这个全局兜底。另外确认节点不是 <code>&lt;img&gt;</code>
+（图片上的点击走热区，见 <code>ql_ui_set_area_cb</code>）。</p>
 <p><strong>Q：键盘事件没人收到</strong>
 界面层只在有焦点时处理按键。先点一下需要键盘的控件（<code>&lt;input&gt;</code> / <code>&lt;select&gt;</code>），
 它会自己拿焦点；也可以 <code>ql_ui_set_focus_node()</code> 主动设置。</p>

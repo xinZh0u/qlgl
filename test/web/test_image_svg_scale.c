@@ -52,7 +52,7 @@ static QLUIRoot *mk_ui(QLUIDoc **out_doc, QLUINodeRT **out_img)
     }
     ql_ui_layout(ui, PAGE_W, PAGE_H);
     *out_doc = doc;
-    *out_img = ql_ui_find_by_tag(ui, QL_UI_TAG_IMG, 0);
+    *out_img = ql_ui_find_by_id(ui, "i");
     return ui;
 }
 
@@ -210,8 +210,8 @@ static void test_current_color(void)
         ql_disp_mem_clear(disp, 0xFFFFFFu);
         ql_ui_render_canvas(ui, &cv);
 
-        const QLUINodeRT *na = ql_ui_find_by_tag(ui, QL_UI_TAG_IMG, 0);
-        const QLUINodeRT *nb = ql_ui_find_by_tag(ui, QL_UI_TAG_IMG, 1);
+        const QLUINodeRT *na = ql_ui_find_by_id(ui, "a");
+        const QLUINodeRT *nb = ql_ui_find_by_id(ui, "b");
         QL_CHECK(na != NULL && nb != NULL);
         if (na != NULL && nb != NULL) {
             const QLRect ra = ql_ui_node_rect(na);

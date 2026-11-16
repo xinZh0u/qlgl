@@ -134,13 +134,11 @@ static int on_event(QLUIRoot *ui, const QLInputEvent *ev, void *user)
     return 0;
 }
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static void on_play_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
     (void)ui;
+    (void)node;
     App *app = (App *)user;
-    if (node != app->play)
-        return;
-
     if (ql_media_state(app->media) == QL_MEDIA_PLAYING)
         (void)ql_media_pause(app->media);
     else
@@ -187,10 +185,10 @@ int main(int argc, char **argv)
 
     QLUIDoc *doc = ql_ui_load_html(
         "<div id=root>"
-        "<div class=name></div>"
-        "<div class=time>0:00 / 0:00</div>"
-        "<progress value=0 max=1000></progress>"
-        "<div class=row><button>暂停</button></div>"
+        "<div id=name class=name></div>"
+        "<div id=time class=time>0:00 / 0:00</div>"
+        "<progress id=bar value=0 max=1000></progress>"
+        "<div class=row><button id=play>暂停</button></div>"
         "<div class=hint>点击或拖动进度条跳转，←/→ 各 5 秒</div>"
         "</div>",
         "#root { width: 100%; height: 100%; padding: 12px; box-sizing: border-box;"
@@ -215,14 +213,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* 文件名：root 的第一个子 div；时间：第二个 */
-    QLUINodeRT *name = ql_ui_find_by_tag(app.ui, QL_UI_TAG_DIV, 1);
+    QLUINodeRT *name = ql_ui_find_by_id(app.ui, "name");
     if (name != NULL)
         (void)ql_ui_set_text(app.ui, name, app.name_buf);
-    app.time = ql_ui_find_by_tag(app.ui, QL_UI_TAG_DIV, 2);
-    app.bar = ql_ui_find_by_tag(app.ui, QL_UI_TAG_PROGRESS, 0);
-    app.play = ql_ui_find_by_tag(app.ui, QL_UI_TAG_BUTTON, 0);
-    ql_ui_set_click_cb(app.ui, on_click, &app);
+    app.time = ql_ui_find_by_id(app.ui, "time");
+    app.bar = ql_ui_find_by_id(app.ui, "bar");
+    app.play = ql_ui_find_by_id(app.ui, "play");
+    if (app.play != NULL)
+        (void)ql_ui_set_node_click_cb(app.ui, app.play, on_play_click, &app);
 
     app.win = ql_window_create("QLGL · 音频", W, H, QL_WINDOW_GL);
     if (app.win == NULL)

@@ -104,12 +104,10 @@ static void apply_zoom(ql_coord_t z)
     apply_zoom_now(z);
 }
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static void on_pad_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
+    (void)node;
     (void)user;
-    /* 只有那个大按钮计次（列表行也行，但没必要） */
-    if (node->src == NULL || node->src->tag != QL_UI_TAG_DIV)
-        return;
     s_taps++;
     static char cnt[48];
     snprintf(cnt, sizeof(cnt), "点按 %d 次", s_taps);
@@ -177,36 +175,22 @@ int main(int argc, char **argv)
     /* 先布局一次：滚动范围（scroll_max_y）要等布局算出来才知道 */
     ql_ui_layout(ui, W, H);
 
-    /*
-     * 节点顺序 = 文档顺序（深度优先、父在前）：
-     *   0 root · 1 .bar · 2 .title · 3 #zoom · 4 .body · 5 #pad · 6 .pad-main
-     *   7 #cnt · 8 .hint · 9 #list · 10.. .row/.n … · 最后一个是 #status
-     */
-    if (ui->node_count < 10) {
-        printf("界面节点太少（%d）\n", (int)ui->node_count);
-        ql_ui_free(ui);
-        qlgl_shutdown();
-        return 1;
-    }
-    s_zoom_label = &ui->nodes[3];
-    s_cnt = &ui->nodes[7];
-    s_status = &ui->nodes[ui->node_count - 1];
-
-    /* 滚动容器不按下标猜：整页只有一个 overflow-y: auto 的节点 */
-    s_list = NULL;
-    for (uint16_t i = 0; i < ui->node_count; i++)
-        if (ql_ui_scrollable(&ui->nodes[i])) {
-            s_list = &ui->nodes[i];
-            break;
-        }
-    if (s_list == NULL) {
-        printf("没找到可滚动的列表\n");
+    /* 按 id 找节点：插删元素不会让这里失效 */
+    s_zoom_label = ql_ui_find_by_id(ui, "zoom");
+    s_cnt = ql_ui_find_by_id(ui, "cnt");
+    s_status = ql_ui_find_by_id(ui, "status");
+    s_list = ql_ui_find_by_id(ui, "list");
+    QLUINodeRT *pad = ql_ui_find_by_id(ui, "pad");
+    if (s_zoom_label == NULL || s_cnt == NULL || s_status == NULL ||
+        s_list == NULL || pad == NULL) {
+        printf("界面缺少 #zoom / #cnt / #status / #list / #pad\n");
         ql_ui_free(ui);
         qlgl_shutdown();
         return 1;
     }
 
-    ql_ui_set_click_cb(ui, on_click, NULL);
+    /* 给大按钮接回调：点它的子元素（.pad-main / .pad-sub）会冒泡上来 */
+    (void)ql_ui_set_node_click_cb(ui, pad, on_pad_click, NULL);
     ql_ui_set_pinch_cb(ui, on_pinch, NULL);
 
     /*

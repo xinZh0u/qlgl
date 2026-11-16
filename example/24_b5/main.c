@@ -17,15 +17,19 @@
 #define W 720
 #define H 900
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static int s_hits;
+
+static void on_ok_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
-    (void)ui;
+    (void)node;
     (void)user;
-    const QLUITag tag = (node != NULL && node->src != NULL)
-                            ? (QLUITag)node->src->tag
-                            : (QLUITag)0;
-    printf("点击命中：节点 tag=%d，文本=\"%s\"\n", (int)tag,
-           (node != NULL && node->text != NULL) ? node->text : "");
+    s_hits++;
+    static char buf[128];
+    snprintf(buf, sizeof(buf), "点击 %d 次：装饰层 pointer-events:none，没挡住", s_hits);
+    QLUINodeRT *hits = ql_ui_find_by_id(ui, "hits");
+    if (hits != NULL)
+        (void)ql_ui_set_text(ui, hits, buf);
+    printf("%s\n", buf);
 }
 
 int main(int argc, char **argv)
@@ -40,18 +44,14 @@ int main(int argc, char **argv)
         return 1;
     }
     ql_ui_layout(ui, W, H);
-    ql_ui_set_click_cb(ui, on_click, NULL);
+
+    /* 只给"可点区域"接回调：点到装饰层会穿过去落到 #ok（见上面注释） */
+    QLUINodeRT *ok = ql_ui_find_by_id(ui, "ok");
+    if (ok != NULL)
+        (void)ql_ui_set_node_click_cb(ui, ok, on_ok_click, NULL);
 
     /* sticky 列表先滚一点，截图里才看得出"表头钉住了、内容滚过去" */
-    QLUINodeRT *list = ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 0);
-    for (uint16_t i = 0; i < ui->node_count; i++) {
-        if (ui->nodes[i].src != NULL && ui->nodes[i].src->tag == QL_UI_TAG_DIV &&
-            ui->nodes[i].text == NULL && ui->nodes[i].style != NULL &&
-            ui->nodes[i].style->overflow_y == QL_UI_OVERFLOW_AUTO) {
-            list = &ui->nodes[i];
-            break;
-        }
-    }
+    QLUINodeRT *list = ql_ui_find_by_id(ui, "list");
     if (list != NULL && ql_ui_scrollable(list))
         (void)ql_ui_scroll_by(ui, list, 0, 46);
 

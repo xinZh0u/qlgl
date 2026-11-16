@@ -158,7 +158,10 @@ QL_TEST_BEGIN("test_window_fake")
         printf("  %d 项检查，%d 项失败\n", ql_test_checks, ql_test_failures);
         return 1;
     }
-    ql_ui_set_click_cb(ui, on_click, NULL);
+    QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+    QL_CHECK(btn != NULL);
+    if (btn != NULL)
+        QL_CHECK_EQ(ql_ui_set_node_click_cb(ui, btn, on_click, NULL), QL_OK);
 
     QLWindow *win = ql_window_create("fake", W, H, QL_WINDOW_OFFSCREEN);
     QL_CHECK(win != NULL);

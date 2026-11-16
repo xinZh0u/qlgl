@@ -21,7 +21,7 @@ static uint32_t fake_now(void)
 
 static const QLUIStyle *style_of(QLUIRoot *ui)
 {
-    QLUINodeRT *node = ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 0);
+    QLUINodeRT *node = ql_ui_find_by_id(ui, "g");
     return (node != NULL) ? ql_ui_node_style(node) : NULL;
 }
 

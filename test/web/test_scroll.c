@@ -215,7 +215,11 @@ QL_TEST_BEGIN("test_scroll")
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
             click_count = 0;
-            ql_ui_set_click_cb(ui, on_click, NULL);
+            QLUINodeRT *sc = ql_ui_find_by_class(ui, "sc", 0);
+            QL_CHECK(sc != NULL);
+            if (sc != NULL)
+                QL_CHECK_EQ(ql_ui_set_node_click_cb(ui, sc, on_click, NULL),
+                            QL_OK);
             /* 右侧竖带是滚动条热区 */
             QL_CHECK_EQ(ql_ui_pointer_down(ui, W - 3, 50), 1);
             QL_CHECK(ui->scroll_drag != NULL);
@@ -229,7 +233,6 @@ QL_TEST_BEGIN("test_scroll")
             ql_ui_pointer_down(ui, 20, 20);
             ql_ui_pointer_up(ui, 20, 20);
             QL_CHECK_EQ(click_count, 1);
-            ql_ui_set_click_cb(ui, NULL, NULL);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }

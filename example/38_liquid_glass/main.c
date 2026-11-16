@@ -282,11 +282,10 @@ static int on_event(QLUIRoot *ui, const QLInputEvent *ev, void *user)
     return 0;
 }
 
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
+static void on_glass_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
 {
+    (void)node;
     (void)user;
-    if (node->src == NULL || node->src->tag != QL_UI_TAG_DIV)
-        return;
     s_count++;
     snprintf(s_buf, sizeof(s_buf), "第 %d 次点击 · 滚轮可以上下滚动背景", s_count);
     ql_ui_set_text(ui, s_hint, s_buf);
@@ -384,7 +383,7 @@ int main(int argc, char **argv)
     in.pixel_format = s_photo.format;
 
     /* 可滚动容器 = <img> 的父节点 */
-    QLUINodeRT *img = ql_ui_find_by_tag(ui, QL_UI_TAG_IMG, 0);
+    QLUINodeRT *img = ql_ui_find_by_id(ui, "photo");
     s_wrap = (img != NULL) ? img->parent : NULL;
 
     /* RAW 注册也走解码预算检查（放大到 6M 像素的缓冲可能 >16MB） */
@@ -409,10 +408,19 @@ int main(int argc, char **argv)
     if (s_wrap != NULL && start_scroll != 0)
         (void)ql_ui_scroll_by(ui, s_wrap, 0, (ql_coord_t)start_scroll);
 
-    /* 状态行是最后一个节点（`.hint` 里的文本节点） */
-    s_hint = &ui->nodes[ui->node_count - 1];
-
-    ql_ui_set_click_cb(ui, on_click, NULL);
+    /* 按 id 拿状态行与玻璃盘：不依赖文档顺序 */
+    s_hint = ql_ui_find_by_id(ui, "hint");
+    QLUINodeRT *glass = ql_ui_find_by_id(ui, "glass");
+    if (s_hint == NULL || glass == NULL) {
+        printf("界面缺少 #hint / #glass\n");
+        ql_window_destroy(win);
+        ql_ui_free(ui);
+        ql_ui_doc_free(doc);
+        ql_mem_free((void *)s_photo.px);
+        qlgl_shutdown();
+        return 1;
+    }
+    (void)ql_ui_set_node_click_cb(ui, glass, on_glass_click, NULL);
     ql_window_set_event_filter(win, on_event, NULL);
 
     const int rc = ql_window_run_args(win, argc, argv);

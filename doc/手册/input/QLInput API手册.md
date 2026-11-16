@@ -14,7 +14,7 @@
 #include <qlgl/qlgl.h>
 
 static const char *k_html =
-    "<div id=\"root\"><div class=\"btn\">点我</div></div>";
+    "<div id=\"root\"><div id=\"btn\" class=\"btn\">点我</div></div>";
 static const char *k_css =
     "#root { width: 320px; height: 240px; background-color: #101820; }"
     ".btn  { position: absolute; left: 20px; top: 20px; width: 120px; height: 40px;"
@@ -42,7 +42,7 @@ int main(void)
     QLUIDoc *doc = ql_ui_load_text(k_html, k_css);
     QLUIRoot *ui = ql_ui_build(doc);
     ql_ui_layout(ui, 320, 240);
-    ql_ui_set_click_cb(ui, on_click, NULL);
+    ql_ui_set_node_click_cb(ui, ql_ui_find_by_id(ui, "btn"), on_click, NULL);
     ql_input_set_sink(sink, ui);          /* ① 装汇：事件 → QLUI */
 
     QLDispDriver *disp = ql_disp_mem_create(320, 240, QL_COLOR_RGB888);
@@ -304,8 +304,10 @@ void ql_gfx_gl_close(QLGfxGL *gfx);
    用 `ql_ui_hit_test()` 直接问"这个点命中了谁"。
 
 **Q：`:hover` 生效了但点了没反应**
-点击要求"按下与抬起命中同一个节点"。`ql_ui_set_click_cb()` 之外还要确认
-节点不是 `<img>`（图片上的点击走热区，见 `ql_ui_set_area_cb`）。
+点击要求"按下与抬起命中同一个节点"。先确认回调绑在了命中节点**或它的祖先**
+（`ql_ui_set_node_click_cb()` 会从命中节点向上冒泡）；没有节点绑定时才走
+`ql_ui_set_click_cb()` 这个全局兜底。另外确认节点不是 `<img>`
+（图片上的点击走热区，见 `ql_ui_set_area_cb`）。
 
 **Q：键盘事件没人收到**
 界面层只在有焦点时处理按键。先点一下需要键盘的控件（`<input>` / `<select>`），

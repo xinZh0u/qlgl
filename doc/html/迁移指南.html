@@ -513,8 +513,8 @@ main img {
 <span class="nb">document</span><span class="p">.</span><span class="nx">querySelector</span><span class="p">(</span><span class="s1">&#39;.title&#39;</span><span class="p">).</span><span class="nx">textContent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;新标题&#39;</span><span class="p">;</span>
 </code></pre></div>
 
-<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL */</span>
-<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">t</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_tag</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QL_UI_TAG_DIV</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w">   </span><span class="cm">/* 或用你自己的 id 表 */</span>
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL：给元素写 id=&quot;title&quot;，按 id 找 */</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">t</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;title&quot;</span><span class="p">);</span>
 <span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;新标题&quot;</span><span class="p">);</span>
 <span class="n">ql_ui_layout</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">);</span><span class="w">          </span><span class="cm">/* 文本变了要重排 */</span>
 </code></pre></div>
@@ -556,12 +556,16 @@ main img {
 <span class="nx">btn</span><span class="p">.</span><span class="nx">addEventListener</span><span class="p">(</span><span class="s1">&#39;click&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">});</span>
 </code></pre></div>
 
-<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL：一次性挂回调，回调里拿到节点指针 */</span>
-<span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="n">user_data</span><span class="p">);</span>
-<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ud</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><span class="cm">/* QLGL：每个节点各挂各的，回调只在这个节点（或它的子元素）被点时触发 */</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_btn_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">ud</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="o">-&gt;</span><span class="n">tag</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_UI_TAG_BUTTON</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="cm">/* node 就是绑定的那个按钮，不用再判断 tag */</span>
 <span class="p">}</span>
+
+<span class="n">ql_ui_set_node_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;btn&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">on_btn_click</span><span class="p">,</span><span class="w"> </span><span class="n">user_data</span><span class="p">);</span>
+
+<span class="cm">/* 没有节点绑定时才走全局兜底（兼容旧代码） */</span>
+<span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="n">user_data</span><span class="p">);</span>
 </code></pre></div>
 
 <p>输入框同理：<code>ql_ui_set_input_cb()</code>；滚动、拖动、悬停都有对应入口（见《QLUI API 手册》）。</p>
@@ -678,8 +682,8 @@ qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> <
 </tr>
 <tr>
 <td><code>document.querySelector</code></td>
-<td><code>ql_ui_find_by_tag()</code> / 自己维护一张 id 表</td>
-<td>没有选择器引擎</td>
+<td><code>ql_ui_find_by_id()</code> / <code>ql_ui_find_by_class()</code>（无选择器引擎）</td>
+<td>也可以 <code>ql_ui_find_by_tag()</code> 按标签找</td>
 </tr>
 <tr>
 <td><code>innerHTML = ...</code></td>

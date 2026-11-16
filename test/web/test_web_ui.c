@@ -118,14 +118,8 @@ QL_TEST_BEGIN("test_web_ui")
     /* 标题条是 #3399ff */
     ql_color_t bar_px = ql_disp_mem_pixel(disp, 20, 16);
     QL_CHECK(QL_COLOR_GET_B(bar_px) > 200);      /* 蓝色分量明显 */
-    /* 主按钮是 #3cc07a（绿色）：按文本找节点 */
-    QLUINodeRT *btn = NULL;
-    for (uint16_t i = 0; i < ui->node_count; i++) {
-        if (strcmp(ql_ui_node_text(&ui->nodes[i]), "Primary") == 0) {
-            btn = &ui->nodes[i];
-            break;
-        }
-    }
+    /* 主按钮是 #3cc07a（绿色）：按 id 找节点 */
+    QLUINodeRT *btn = ql_ui_find_by_id(ui, "primary");
     QL_CHECK(btn != NULL);
     QLRect br = ql_ui_node_rect(btn);
     QL_CHECK(!ql_rect_is_empty(br));
@@ -148,7 +142,7 @@ QL_TEST_BEGIN("test_web_ui")
     QL_CHECK((btn->flags & QL_UI_RT_ACTIVE) != 0);
 
     g_clicked = 0;
-    ql_ui_set_click_cb(ui, on_click, &g_clicked);
+    QL_CHECK_EQ(ql_ui_set_node_click_cb(ui, btn, on_click, &g_clicked), QL_OK);
     QL_CHECK_EQ(ql_ui_pointer_up(ui, br.x + 2, br.y + 2), 1);
     QL_CHECK_EQ(g_clicked, 1);
     QL_CHECK((btn->flags & QL_UI_RT_ACTIVE) == 0);
@@ -160,11 +154,7 @@ QL_TEST_BEGIN("test_web_ui")
     ql_ui_render_canvas(ui, &canvas);
 
     /* 14. 伪类状态样式：构建期已经编译成独立样式，运行期只切下标 */
-    QLUINodeRT *primary = NULL;
-    for (uint16_t i = 0; i < ui->node_count; i++) {
-        if (strcmp(ql_ui_node_text(&ui->nodes[i]), "Primary") == 0)
-            primary = &ui->nodes[i];
-    }
+    QLUINodeRT *primary = ql_ui_find_by_id(ui, "primary");
     QL_CHECK(primary != NULL);
     ql_ui_layout(ui, 320, 240);
 

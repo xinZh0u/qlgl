@@ -132,7 +132,7 @@ int         ql_media_subtitle_count(const QLMedia *m);
 - 容器内嵌字幕（mp4 mov_text / mkv subrip / ASS）在 `ql_media_open()` 时自动解析；
 - `<track>`：解析器会把 `src` 存进 `<track>` 节点的文本，应用自己读出来加载：
   ```c
-  QLUINodeRT *tr = ql_ui_find_by_tag(ui, QL_UI_TAG_TRACK, 0);
+  QLUINodeRT *tr = ql_ui_find_by_id(ui, "track");   /* <track id="track"> */
   const char *src = ql_ui_node_text(tr);      /* "sub.vtt" */
   ql_media_load_subtitle(m, resolved_path);
   ```

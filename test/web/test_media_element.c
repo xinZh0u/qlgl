@@ -16,7 +16,7 @@ QL_TEST_BEGIN("test_media_element")
 
     QLUIDoc *doc = ql_ui_load_html(
         "<div id=root>"
-        "<audio src=\"track.wav\"></audio>"
+        "<audio id=\"audio\" src=\"track.wav\"></audio>"
         "<div id=after>x</div>"
         "</div>",
         "#root { width: 100%; height: 100%; }"
@@ -28,7 +28,7 @@ QL_TEST_BEGIN("test_media_element")
         if (ui != NULL) {
             ql_ui_layout(ui, 200, 100);
 
-            QLUINodeRT *audio = ql_ui_find_by_tag(ui, QL_UI_TAG_AUDIO, 0);
+            QLUINodeRT *audio = ql_ui_find_by_id(ui, "audio");
             QL_CHECK(audio != NULL);
             if (audio != NULL) {
                 const QLRect r = ql_ui_node_rect(audio);
@@ -39,7 +39,7 @@ QL_TEST_BEGIN("test_media_element")
             }
 
             /* 紧跟其后的 div 从 y=0 开始：audio 没占任何空间 */
-            QLUINodeRT *after = ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 1);
+            QLUINodeRT *after = ql_ui_find_by_id(ui, "after");
             QL_CHECK(after != NULL);
             if (after != NULL) {
                 const QLRect r = ql_ui_node_rect(after);

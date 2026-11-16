@@ -66,8 +66,11 @@ static QLUIRoot *make_ui(const char *title, const char *hint, const char *bg,
     QLUIRoot *ui = ql_ui_build(doc);
     /* 手动 build 时 root **不拥有** doc：doc 必须活到 ui 释放之后 */
     *out_doc = doc;
-    if (ui != NULL)
-        ql_ui_set_click_cb(ui, on_click, counter);
+    if (ui != NULL) {
+        QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+        if (btn != NULL)
+            (void)ql_ui_set_node_click_cb(ui, btn, on_click, counter);
+    }
     return ui;
 }
 

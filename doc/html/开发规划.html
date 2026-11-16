@@ -731,7 +731,12 @@ PC / 移动是第一平台，MCU 是第二平台；性能对标 LVGL，在小屏
 </tr>
 <tr>
 <td>回调 API</td>
-<td><code>ql_ui_set_click_cb</code> / <code>ql_ui_set_input_cb</code> / <code>ql_ui_set_select_cb</code> / <code>ql_ui_set_area_cb</code></td>
+<td><code>ql_ui_set_node_click_cb</code> / <code>ql_ui_set_click_cb</code>（兜底） / <code>ql_ui_set_input_cb</code> / <code>ql_ui_set_select_cb</code> / <code>ql_ui_set_area_cb</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>节点查询</td>
+<td><code>ql_ui_find_by_id</code> / <code>ql_ui_find_by_class</code> / <code>ql_ui_find_by_tag</code></td>
 <td>✅</td>
 </tr>
 <tr>

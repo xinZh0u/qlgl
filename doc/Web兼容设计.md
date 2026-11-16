@@ -41,7 +41,7 @@ QLGL 现在就是照这个模型长的：
 | `ql_object_set_property(WIDTH, 100)` | CSS 声明（`width: 100px`）或行内 `style` |
 | `x/y/w/h` 四个 int | `auto` / `%` / flex 算出来的**布局结果** |
 | 属性 id 区间 | 内部实现细节，对外不可见 |
-| `ql_connect` 信号槽 | 命中测试 + 状态位 + `ql_ui_set_click_cb()` 等回调 |
+| `ql_connect` 信号槽 | 命中测试 + 状态位 + `ql_ui_set_node_click_cb()` 等回调 |
 
 **落地结果**：`src/core/`（对象/事件/内存）、`src/draw/`（画布/绘制接口）、`src/text/`（字体）
 保留；`src/widget/`（`QLWidget` / `QLLabel`）**已删除** —— "属性 + 绝对几何"被拆成

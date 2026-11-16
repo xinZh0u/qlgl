@@ -34,13 +34,9 @@ int main(int argc, char **argv)
     }
     ql_ui_layout(ui, W, H);
 
-    /* 找出那个滚动容器（.list）：它是唯一 overflow == auto 的节点 */
-    QLUINodeRT *list = NULL;
-    for (uint16_t i = 0; i < ui->node_count; i++)
-        if (ui->nodes[i].style->overflow == QL_UI_OVERFLOW_AUTO) {
-            list = &ui->nodes[i];
-            break;
-        }
+    /* 按 id 找滚动容器与行：不依赖文档顺序 */
+    QLUINodeRT *list = ql_ui_find_by_id(ui, "list");
+    QLUINodeRT *row1 = ql_ui_find_by_id(ui, "row1");
     if (list == NULL) {
         printf("没有找到滚动容器\n");
         ql_ui_free(ui);
@@ -49,7 +45,7 @@ int main(int argc, char **argv)
     }
     printf("列表可滚 %dpx；每行 %.0fpx，视口 %.0fpx\n",
            (int)list->scroll_max_y,
-           (double)(ql_ui_node_rect(&ui->nodes[3]).h),
+           (double)(row1 != NULL ? ql_ui_node_rect(row1).h : 0),
            (double)ql_ui_node_rect(list).h);
 
     /* 命令行直接滚一段：方便截图对比 */

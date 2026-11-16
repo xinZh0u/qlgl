@@ -130,6 +130,16 @@ static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
     s_clicks[(int)(intptr_t)user]++;
 }
 
+static void bind_btn(QLUIRoot *ui, int idx)
+{
+    QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+    QL_CHECK(btn != NULL);
+    if (btn != NULL)
+        QL_CHECK_EQ(ql_ui_set_node_click_cb(ui, btn, on_click,
+                                            (void *)(intptr_t)idx),
+                    QL_OK);
+}
+
 static int on_event(QLUIRoot *ui, const QLInputEvent *ev, void *user)
 {
     (void)ui; (void)ev;
@@ -174,8 +184,8 @@ QL_TEST_BEGIN("test_window_multi")
         printf("  %d 项检查，%d 项失败\n", ql_test_checks, ql_test_failures);
         return 1;
     }
-    ql_ui_set_click_cb(ui0, on_click, (void *)(intptr_t)0);
-    ql_ui_set_click_cb(ui1, on_click, (void *)(intptr_t)1);
+    bind_btn(ui0, 0);
+    bind_btn(ui1, 1);
 
     QLWindow *w0 = ql_window_create("win0", W, H, QL_WINDOW_OFFSCREEN);
     QLWindow *w1 = ql_window_create("win1", W, H, QL_WINDOW_OFFSCREEN);
@@ -232,7 +242,7 @@ QL_TEST_BEGIN("test_window_multi")
     QLUIRoot *ui2 = make_ui("#BF3989", &doc2);
     QL_CHECK(ui2 != NULL);
     if (ui2 != NULL) {
-        ql_ui_set_click_cb(ui2, on_click, (void *)(intptr_t)0);
+        bind_btn(ui2, 0);
         QL_CHECK_EQ(ql_window_set_ui(w0, ui2), QL_OK);
         QL_CHECK(ql_window_ui(w0) == ui2);
         QL_CHECK_EQ(ql_window_poll(w0), 1);

@@ -81,10 +81,23 @@ static QLUIRoot *mk(QLUIDoc **out_doc, QLUINodeRT **out_sc)
         return NULL;
     }
     ql_ui_layout(ui, W, H);
-    /* 节点顺序：0=root, 1=pad, 2=sc, 3..8=row */
-    *out_sc = &ui->nodes[2];
+    *out_sc = ql_ui_find_by_id(ui, "sc");
+    if (*out_sc == NULL) {
+        ql_ui_free(ui);
+        ql_ui_doc_free(doc);
+        return NULL;
+    }
     *out_doc = doc;
     return ui;
+}
+
+/* 点击只绑在 #pad 上：点子元素会冒泡，拖动/捏合不会误触发 */
+static void bind_pad(QLUIRoot *ui)
+{
+    QLUINodeRT *pad = ql_ui_find_by_id(ui, "pad");
+    QL_CHECK(pad != NULL);
+    if (pad != NULL)
+        QL_CHECK_EQ(ql_ui_set_node_click_cb(ui, pad, on_click, NULL), QL_OK);
 }
 
 QL_TEST_BEGIN("test_touch")
@@ -100,7 +113,7 @@ QL_TEST_BEGIN("test_touch")
         QLUIRoot *ui = mk(&doc, &sc);
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
-            ql_ui_set_click_cb(ui, on_click, NULL);
+            bind_pad(ui);
             ql_ui_attach_input(ui);
 
             touch(100, 20, QL_TOUCH_DOWN, 0, 1);
@@ -121,7 +134,6 @@ QL_TEST_BEGIN("test_touch")
             QL_CHECK_EQ(s_clicks, 2);
 
             ql_ui_detach_input();
-            ql_ui_set_click_cb(ui, NULL, NULL);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
@@ -135,7 +147,7 @@ QL_TEST_BEGIN("test_touch")
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
             s_clicks = 0;
-            ql_ui_set_click_cb(ui, on_click, NULL);
+            bind_pad(ui);
             ql_ui_attach_input(ui);
             QL_CHECK(ql_ui_scrollable(sc));
             const ql_coord_t max_y = sc->scroll_max_y;
@@ -158,7 +170,6 @@ QL_TEST_BEGIN("test_touch")
             touch(100, -105, QL_TOUCH_UP, 1, 0);
 
             ql_ui_detach_input();
-            ql_ui_set_click_cb(ui, NULL, NULL);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
@@ -173,7 +184,7 @@ QL_TEST_BEGIN("test_touch")
         if (ui != NULL) {
             s_clicks = 0;
             s_pinch_n = 0;
-            ql_ui_set_click_cb(ui, on_click, NULL);
+            bind_pad(ui);
             ql_ui_set_pinch_cb(ui, on_pinch, NULL);
             ql_ui_attach_input(ui);
 
@@ -208,7 +219,6 @@ QL_TEST_BEGIN("test_touch")
 
             ql_ui_detach_input();
             ql_ui_set_pinch_cb(ui, NULL, NULL);
-            ql_ui_set_click_cb(ui, NULL, NULL);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
@@ -222,7 +232,7 @@ QL_TEST_BEGIN("test_touch")
         QL_CHECK(ui != NULL);
         if (ui != NULL) {
             s_clicks = 0;
-            ql_ui_set_click_cb(ui, on_click, NULL);
+            bind_pad(ui);
             ql_ui_attach_input(ui);
 
             touch(100, 20, QL_TOUCH_DOWN, 0, 1);
@@ -236,7 +246,6 @@ QL_TEST_BEGIN("test_touch")
             QL_CHECK_EQ(s_clicks, 1);
 
             ql_ui_detach_input();
-            ql_ui_set_click_cb(ui, NULL, NULL);
             ql_ui_free(ui);
             ql_ui_doc_free(doc);
         }
