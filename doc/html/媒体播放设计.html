@@ -1325,7 +1325,7 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 </tr>
 <tr>
 <td>同步</td>
-<td>音频为主时钟（无音频用系统单调钟）；帧 <code>pts &lt;= clock+5ms</code> 才发布，落后 &gt;80ms 直接丢</td>
+<td>音频为主时钟；<strong>纯视频/没有音频轨用系统单调钟</strong>（否则 <code>frames</code> 永远为 0，进度条会卡死）。帧 <code>pts &lt;= clock+5ms</code> 才发布，落后 &gt;80ms 直接丢</td>
 </tr>
 <tr>
 <td>界面</td>
@@ -1341,10 +1341,20 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 </tr>
 <tr>
 <td>示例</td>
-<td><code>example/45_video_player</code>（文件名/时间/可调进度条/播放暂停）</td>
+<td><code>example/45_video_player</code>（文件名/时间/可调进度条/播放暂停；flex 列布局让 <code>&lt;video&gt;</code> 吃掉剩余高度）</td>
 </tr>
 </tbody>
 </table>
+<p><strong>WebM / 录屏的 seek</strong>（实测踩到的坑）：</p>
+<ul>
+<li>很多录屏 WebM 全程<strong>只有一个关键帧</strong>（在 0 秒），seek 到中间后解码器会一直
+  "Discarding interframe without a prior keyframe"，看起来像卡死；</li>
+<li>处理：seek 后先丢帧等关键帧；等不到（或直接 EOF）就<strong>回到 0 从头解码</strong>，
+  丢掉目标之前的帧再出图；</li>
+<li>回退解码可能花几百毫秒到几秒：这段时间<strong>不能算进播放时钟</strong>，否则目标帧
+  一到就被判"迟到"整段丢光。第一帧真正显示时把 base 重置到它的 pts；</li>
+<li>跳转后的坏包（<code>AVERROR_INVALIDDATA</code>）按"跳过这一帧"处理，不把播放打成 ERROR。</li>
+</ul>
 <p>测试：<code>test_media_video_fake</code>（帧池/发布/暂停/seek）、<code>test_media_video_ffmpeg</code>
 （系统 ffmpeg 现场生成 1s mp4，没有工具就 SKIP）；真机窗口播放 320×180@30fps
 音画同步、暂停零重绘、拖动进度条正常。</p>

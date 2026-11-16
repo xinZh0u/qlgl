@@ -51,6 +51,8 @@ typedef struct {
     int              vdrain_sent, vdrain_done;
     int              vwait_key;      /* seek 之后先解到关键帧再出图 */
     int              vdrop;          /* 等关键帧时丢掉的帧数（防永久等待） */
+    int64_t          seek_target_us; /* 本次 seek 的目标（回退时用） */
+    int64_t          vskip_to_us;    /* 从 0 重解：跳过此前的帧（<0 = 不跳） */
 
     int64_t          duration_ms;
     int              rate, channels;
@@ -156,7 +158,10 @@ static int ff_send_next(FFMedia *f, PktQ *q, AVCodecContext *dec, int *sent)
         return 0;
     const int r = avcodec_send_packet(dec, p);
     av_packet_free(&p);
-    return (r >= 0 || r == AVERROR(EAGAIN)) ? 1 : -1;
+    /* 坏包/跳转后的残帧：跳过这一包，别把整个播放打成 ERROR */
+    if (r >= 0 || r == AVERROR(EAGAIN) || r == AVERROR_INVALIDDATA)
+        return 1;
+    return -1;
 }
 
 static int ff_open_decoder(AVFormatContext *fmt, int stream, AVCodecContext **out)
@@ -403,6 +408,28 @@ static int ff_read_audio(void *h, int16_t *buf, int max_frames)
     return produced;
 }
 
+/*
+ * 有些录屏/WebM 全程只有开头一个关键帧。向后 seek 之后解码器一直
+ * "Discarding interframe without a prior keyframe"，直到 EOF —— 表现就是
+ * 跳转后黑屏/直接结束。兜底：回到 0 从头解码，丢掉目标之前的帧。
+ */
+static void ff_restart_from_zero(FFMedia *f)
+{
+    if (f->vstream < 0 || f->adec != NULL)
+        return;                       /* A/V 文件不走这条路（避免音画不同步） */
+    (void)av_seek_frame(f->fmt, f->vstream, 0, AVSEEK_FLAG_BACKWARD);
+    if (f->vdec != NULL)
+        avcodec_flush_buffers(f->vdec);
+    if (f->vframe != NULL)
+        av_frame_unref(f->vframe);
+    q_clear(&f->vq);
+    f->demux_eof = 0;
+    f->vdrain_sent = f->vdrain_done = 0;
+    f->vwait_key = 1;
+    f->vdrop = 0;
+    f->vskip_to_us = f->seek_target_us;
+}
+
 static int ff_read_video(void *h, uint8_t *dst, int dst_bytes,
                          int *out_w, int *out_h, int64_t *pts_us)
 {
@@ -416,37 +443,64 @@ static int ff_read_video(void *h, uint8_t *dst, int dst_bytes,
     for (;;) {
         int ret = avcodec_receive_frame(f->vdec, f->vframe);
         if (ret == 0) {
+            int64_t ts = f->vframe->best_effort_timestamp;
+            if (ts == AV_NOPTS_VALUE)
+                ts = 0;
+            const int64_t ts_us =
+                av_rescale_q(ts, f->fmt->streams[f->vstream]->time_base,
+                             (AVRational){ 1, 1000000 });
+
             /*
              * 跳转键帧：WebM/录屏的 GOP 可能很长，seek 落在 GOP 中间时
-             * 解码器会一直 "Discarding interframe without a prior keyframe"，
-             * 画面看起来像卡死。这里先丢到第一个关键帧再出图；丢太多
-             * （没有索引的畸形文件）就放弃等待，别让播放永久停住。
+             * 解码器会一直 "Discarding interframe without a prior keyframe"。
              */
             if (f->vwait_key) {
                 const int key = (f->vframe->flags & AV_FRAME_FLAG_KEY) != 0;
-                if (!key && f->vdrop < 300) {
-                    f->vdrop++;
+                if (!key) {
+                    if (f->vdrop < 300) {
+                        f->vdrop++;
+                        av_frame_unref(f->vframe);
+                        continue;
+                    }
+                    /* 找不到关键帧：回到 0 重解，跳过目标之前的帧 */
                     av_frame_unref(f->vframe);
+                    ff_restart_from_zero(f);
                     continue;
                 }
                 f->vwait_key = 0;
                 f->vdrop = 0;
             }
+            if (f->vskip_to_us >= 0) {
+                if (ts_us + 5000 < f->vskip_to_us) {
+                    av_frame_unref(f->vframe);
+                    continue;
+                }
+                f->vskip_to_us = -1;
+            }
             uint8_t *planes[4] = { dst, NULL, NULL, NULL };
             int strides[4] = { f->vw * 4, 0, 0, 0 };
             sws_scale(f->vsws, (const uint8_t *const *)f->vframe->data,
                       f->vframe->linesize, 0, f->vh, planes, strides);
-            int64_t ts = f->vframe->best_effort_timestamp;
-            if (ts == AV_NOPTS_VALUE)
-                ts = 0;
-            *pts_us = av_rescale_q(ts, f->fmt->streams[f->vstream]->time_base,
-                                   (AVRational){ 1, 1000000 });
+            *pts_us = ts_us;
             if (out_w != NULL) *out_w = f->vw;
             if (out_h != NULL) *out_h = f->vh;
             av_frame_unref(f->vframe);
             return 1;
         }
+        if (ret == AVERROR_INVALIDDATA) {
+            /* 解码器丢了一帧（常见于 seek 落在 GOP 中间）：继续往下读 */
+            av_frame_unref(f->vframe);
+            continue;
+        }
         if (ret == AVERROR_EOF) {
+            if (f->vwait_key || f->vskip_to_us >= 0) {
+                /* 还没找到可解码的关键帧：回退到 0 从头解 */
+                avcodec_flush_buffers(f->vdec);
+                f->vdrain_sent = f->vdrain_done = 0;
+                ff_restart_from_zero(f);
+                if (f->vskip_to_us >= 0)
+                    continue;
+            }
             f->vdrain_done = 1;
             return 0;
         }
@@ -457,6 +511,13 @@ static int ff_read_video(void *h, uint8_t *dst, int dst_bytes,
         if (sent < 0)
             return -1;
         if (sent == 0 && f->vq.count == 0 && f->demux_eof && f->vdrain_sent) {
+            if (f->vwait_key || f->vskip_to_us >= 0) {
+                avcodec_flush_buffers(f->vdec);
+                f->vdrain_sent = f->vdrain_done = 0;
+                ff_restart_from_zero(f);
+                if (f->vskip_to_us >= 0)
+                    continue;
+            }
             f->vdrain_done = 1;
             return 0;
         }
@@ -491,6 +552,12 @@ static QLErr ff_seek(void *h, int64_t ms)
     f->pending_pos = 0;
     f->vwait_key = (f->vdec != NULL);
     f->vdrop = 0;
+    f->seek_target_us = ms * 1000;
+    /*
+     * 不管 demux 落在关键帧 0 还是目标附近，目标之前的帧都不该出图：
+     * 稀疏关键帧的录屏 seek 常常只能回到 0，靠这里"跳过"到目标。
+     */
+    f->vskip_to_us = f->seek_target_us;
     if (f->swr != NULL) {
         swr_close(f->swr);
         (void)swr_init(f->swr);

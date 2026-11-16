@@ -528,7 +528,9 @@ int  ql_media_poll(QLMedia *m);               /* 主循环里调；返回 1 */
 <li>没有字幕 / <code>&lt;track&gt;</code>（M3）；</li>
 <li><code>open()</code> 是同步的：大文件的容器头解析会有几毫秒阻塞；</li>
 <li>一个 <code>QLMedia</code> 一个工作线程；页面里十几个实例要自己控制数量；</li>
-<li>视频尺寸在打开时固定，播放中换分辨率不支持（会在解码前按上限拒绝）。</li>
+<li>视频尺寸在打开时固定，播放中换分辨率不支持（会在解码前按上限拒绝）；</li>
+<li>只有开头一个关键帧的录屏（常见于 WebM）seek 会退化成"从头解码到目标"，
+  跳转可能需要几百毫秒到几秒（画面会停在目标位置，属于预期）。</li>
 </ul>
 <h2 id="6">6. 与界面层的关系</h2>
 <p>M1 的 <code>QLMedia</code> 是<strong>纯引擎</strong>：它不知道 <code>&lt;audio&gt;</code> 节点在哪。

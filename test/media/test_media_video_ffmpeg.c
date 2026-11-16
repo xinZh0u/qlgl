@@ -91,6 +91,41 @@ QL_TEST_BEGIN("test_media_video_ffmpeg")
             ql_media_close(m);
         }
         remove(path);
+
+        /*
+         * 录屏 WebM：全程只有一个关键帧，seek 必须走"回退到 0 重解"的兜底，
+         * 而且要能继续播下去（不能直接 ERROR/END）。
+         */
+        char wpath[128];
+        snprintf(wpath, sizeof(wpath), "/tmp/qlgl_sparse_%d.webm", (int)getpid());
+        snprintf(cmd, sizeof(cmd),
+                 "ffmpeg -loglevel error -f lavfi -i "
+                 "\"testsrc2=size=64x48:rate=30:duration=2\" -c:v libvpx -g 9999 "
+                 "\"%s\" -y >/dev/null 2>&1", wpath);
+        if (system(cmd) == 0) {
+            QLMedia *w = ql_media_open(wpath);
+            QL_CHECK(w != NULL);
+            if (w != NULL) {
+                QL_CHECK_EQ(ql_media_play(w), QL_OK);
+                sleep_ms(300);
+                QL_CHECK_EQ(ql_media_seek(w, 1200), QL_OK);
+                sleep_ms(700);
+                (void)ql_media_poll(w);
+                const QLMediaState st = ql_media_state(w);
+                printf("  sparse-webm seek state=%d pos=%lld\n", (int)st,
+                       (long long)ql_media_position_ms(w));
+                QL_CHECK(st != QL_MEDIA_ERROR);
+                QL_CHECK(ql_media_position_ms(w) >= 1000);
+                const QLMediaVideoFrame *f = ql_media_acquire_frame(w);
+                QL_CHECK(f != NULL);
+                if (f != NULL)
+                    ql_media_frame_release(f);
+                ql_media_close(w);
+            }
+            remove(wpath);
+        } else {
+            printf("  [SKIP] 没有 libvpx 编码器（sparse webm 子测试）\n");
+        }
     }
 
     ql_audio_set_sink(NULL);

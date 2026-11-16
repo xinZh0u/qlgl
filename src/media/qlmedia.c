@@ -372,6 +372,15 @@ static void video_step(QLMedia *m)
             m->vpending = NULL;
             pthread_mutex_lock(&m->mu);
             m->seek_preview = 0;
+            /*
+             * 无音频时，seek 可能要走"回退到 0 再解码到目标"的兜底路径，
+             * 这期间系统时钟会白跑好几秒。把时钟基准重置到**第一帧真正
+             * 显示的这一刻**，否则后面所有帧都会被判成"迟到"直接丢光。
+             */
+            if (!m->has_audio) {
+                m->base_ms = m->latest != NULL ? m->latest->pts_us / 1000 : m->base_ms;
+                m->play_start_us = now_us_mono();
+            }
             pthread_mutex_unlock(&m->mu);
             return;
         }
