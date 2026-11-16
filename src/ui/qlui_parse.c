@@ -8045,7 +8045,8 @@ static PNode *parse_html(const char *html)
              * <img src>：`src` 存进节点文本（资源名）。不加节点字段 ——
              * 资源名本来就在文本池里，运行时按名字找到解码结果。
              */
-            if (strcmp(name, "img") == 0 && at.src != NULL && at.src[0] != '\0') {
+            if ((strcmp(name, "img") == 0 || strcmp(name, "track") == 0) &&
+                at.src != NULL && at.src[0] != '\0') {
                 Item tit;
                 tit.is_text = 1;
                 tit.text = xstrdup(at.src);

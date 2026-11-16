@@ -449,6 +449,10 @@
 #ifndef QL_CFG_MEDIA_VIDEO_FRAMES
 #define QL_CFG_MEDIA_VIDEO_FRAMES   3
 #endif
+/* 单个媒体最多多少条字幕 cue（VTT 或容器内嵌）；防畸形文件吃内存 */
+#ifndef QL_CFG_MEDIA_CUES
+#define QL_CFG_MEDIA_CUES           512
+#endif
 /* 每个 QLUIRoot 最多绑定几个 <video>（多窗口/多视频时按需调大） */
 #ifndef QL_CFG_UI_MEDIA_MAX
 #define QL_CFG_UI_MEDIA_MAX         2

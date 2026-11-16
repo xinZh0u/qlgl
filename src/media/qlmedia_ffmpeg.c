@@ -61,7 +61,172 @@ typedef struct {
     int              pending_frames;
     int              pending_pos;
     int              pending_cap;
+
+    /* 容器内嵌字幕（打开时一次性解好；与播放解复用无关） */
+    struct SubCue { char *text; int64_t start_ms, end_ms; } *subs;
+    int              sub_count, sub_cap;
 } FFMedia;
+
+static void sub_add(FFMedia *f, const char *text, int64_t start_ms, int64_t end_ms)
+{
+    if (text == NULL || text[0] == '\0' || f->sub_count >= QL_CFG_MEDIA_CUES)
+        return;
+    if (f->sub_count >= f->sub_cap) {
+        const int cap = (f->sub_cap > 0) ? f->sub_cap * 2 : 32;
+        struct SubCue *p = (struct SubCue *)ql_mem_alloc((size_t)cap * sizeof(*p));
+        if (p == NULL)
+            return;
+        if (f->sub_count > 0)
+            memcpy(p, f->subs, (size_t)f->sub_count * sizeof(*p));
+        ql_mem_free(f->subs);
+        f->subs = p;
+        f->sub_cap = cap;
+    }
+    const size_t n = strlen(text);
+    char *copy = (char *)ql_mem_alloc(n + 1);
+    if (copy == NULL)
+        return;
+    memcpy(copy, text, n + 1);
+    f->subs[f->sub_count].text = copy;
+    f->subs[f->sub_count].start_ms = start_ms;
+    f->subs[f->sub_count].end_ms = end_ms;
+    f->sub_count++;
+}
+
+/* 把 ASS / mov_text 的字幕文本清成纯文本 */
+static char *sub_clean(const char *s, int ass)
+{
+    if (s == NULL)
+        return NULL;
+    if (ass) {
+        int commas = 0;
+        /* FFmpeg 的 ASS rect 字段：ReadOrder,Layer,Style,Name,MarginL,R,
+         * MarginV,Effect,Text —— 第 9 个字段才是文本（8 个逗号）。 */
+        while (*s != '\0' && commas < 8) {
+            if (*s == ',')
+                commas++;
+            s++;
+        }
+    }
+    const size_t n = strlen(s);
+    char *out = (char *)ql_mem_alloc(n + 1);
+    if (out == NULL)
+        return NULL;
+    size_t o = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] == '{') {                     /* ASS 覆写块 */
+            while (i < n && s[i] != '}')
+                i++;
+            continue;
+        }
+        if (s[i] == '<') {                     /* mov_text 内联标签 */
+            while (i < n && s[i] != '>')
+                i++;
+            continue;
+        }
+        if (s[i] == '\\' && i + 1 < n && (s[i + 1] == 'N' || s[i + 1] == 'n')) {
+            out[o++] = '\n';
+            i++;
+            continue;
+        }
+        out[o++] = s[i];
+    }
+    out[o] = '\0';
+    return out;
+}
+
+/*
+ * 用**第二个 AVFormatContext** 把字幕轨完整解一遍。
+ * 不能借用播放中的 demux：那会把 audio/video 的包全吃掉。
+ */
+static void ff_extract_subs(FFMedia *f, const char *src)
+{
+    AVFormatContext *fmt = NULL;
+    if (avformat_open_input(&fmt, src, NULL, NULL) < 0)
+        return;
+    if (avformat_find_stream_info(fmt, NULL) < 0)
+        goto done;
+
+    int si = -1;
+    for (unsigned i = 0; i < fmt->nb_streams; i++)
+        if (fmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+            si = (int)i;
+            break;
+        }
+    if (si < 0)
+        goto done;
+
+    AVStream *st = fmt->streams[si];
+    const AVCodec *codec = avcodec_find_decoder(st->codecpar->codec_id);
+    if (codec == NULL)
+        goto done;
+    AVCodecContext *dec = avcodec_alloc_context3(codec);
+    if (dec == NULL)
+        goto done;
+    if (avcodec_parameters_to_context(dec, st->codecpar) < 0 ||
+        avcodec_open2(dec, codec, NULL) < 0) {
+        avcodec_free_context(&dec);
+        goto done;
+    }
+
+    AVPacket *pkt = av_packet_alloc();
+    if (pkt != NULL) {
+        while (f->sub_count < QL_CFG_MEDIA_CUES && av_read_frame(fmt, pkt) >= 0) {
+            if (pkt->stream_index != si) {
+                av_packet_unref(pkt);
+                continue;
+            }
+            AVSubtitle sub;
+            memset(&sub, 0, sizeof(sub));
+            int got = 0;
+            if (avcodec_decode_subtitle2(dec, &sub, &got, pkt) >= 0 && got) {
+                int64_t base_ms = 0;
+                if (pkt->pts != AV_NOPTS_VALUE)
+                    base_ms = av_rescale_q(pkt->pts, st->time_base,
+                                           (AVRational){ 1, 1000 });
+                for (unsigned k = 0; k < sub.num_rects; k++) {
+                    const AVSubtitleRect *r = sub.rects[k];
+                    const char *raw = (r->type == SUBTITLE_ASS && r->ass != NULL)
+                                          ? r->ass
+                                          : r->text;
+                    char *clean = sub_clean(raw, r->type == SUBTITLE_ASS);
+                    if (clean != NULL) {
+                        int64_t a = base_ms + sub.start_display_time;
+                        int64_t b = base_ms + sub.end_display_time;
+                        if (b <= a)
+                            b = a + 2000;
+                        sub_add(f, clean, a, b);
+                        ql_mem_free(clean);
+                    }
+                }
+            }
+            avsubtitle_free(&sub);
+            av_packet_unref(pkt);
+        }
+        av_packet_free(&pkt);
+    }
+    avcodec_free_context(&dec);
+
+done:
+    avformat_close_input(&fmt);
+}
+
+static int ff_subtitle_count(void *h)
+{
+    return ((FFMedia *)h)->sub_count;
+}
+
+static int ff_subtitle_get(void *h, int index, const char **text,
+                           int64_t *start_ms, int64_t *end_ms)
+{
+    FFMedia *f = (FFMedia *)h;
+    if (index < 0 || index >= f->sub_count)
+        return -1;
+    if (text != NULL) *text = f->subs[index].text;
+    if (start_ms != NULL) *start_ms = f->subs[index].start_ms;
+    if (end_ms != NULL) *end_ms = f->subs[index].end_ms;
+    return 0;
+}
 
 static void ff_set_err(char *err, size_t cap, const char *what, int avret)
 {
@@ -282,6 +447,8 @@ static void *ff_open(const char *src, char *err, size_t err_cap)
         }
     }
 
+    ff_extract_subs(f, src);
+
     AVStream *st = f->fmt->streams[f->astream >= 0 ? f->astream : f->vstream];
     if (st->duration > 0)
         f->duration_ms = av_rescale_q(st->duration, st->time_base,
@@ -319,6 +486,9 @@ static void ff_close(void *h)
     if (f->vdec != NULL) avcodec_free_context(&f->vdec);
     if (f->fmt != NULL) avformat_close_input(&f->fmt);
     ql_mem_free(f->pending);
+    for (int i = 0; i < f->sub_count; i++)
+        ql_mem_free(f->subs[i].text);
+    ql_mem_free(f->subs);
     ql_mem_free(f);
 }
 
@@ -578,6 +748,8 @@ static const QLMediaBackend s_ffmpeg_backend = {
     .video_size = ff_video_size,
     .read_video = ff_read_video,
     .seek = ff_seek,
+    .subtitle_count = ff_subtitle_count,
+    .subtitle_get = ff_subtitle_get,
 };
 
 const QLMediaBackend *ql_media_backend_ffmpeg(void)

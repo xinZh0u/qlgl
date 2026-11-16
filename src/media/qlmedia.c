@@ -26,11 +26,35 @@
 #include <qlgl/qlgl.h>
 
 #include "qlmedia_internal.h"
+#include "qlwebvtt.h"
 
 #if !QL_FEAT_MEDIA
 
 /* ----- 关闭媒体能力：保留符号，明确报"不支持" ----- */
 static const char s_unsupported[] = "media support is disabled (QL_FEAT_MEDIA=0)";
+
+/* 视频/字幕接口在关闭媒体时也要有符号，避免调用方链接失败 */
+const QLMediaVideoFrame *ql_media_acquire_frame(QLMedia *m) { (void)m; return NULL; }
+void ql_media_frame_release(const QLMediaVideoFrame *f) { (void)f; }
+uint32_t ql_media_video_serial(const QLMedia *m) { (void)m; return 0; }
+int ql_media_video_size(const QLMedia *m, ql_coord_t *w, ql_coord_t *h)
+{
+    (void)m; (void)w; (void)h;
+    return 0;
+}
+QLErr ql_media_set_subtitle_text(QLMedia *m, const char *vtt, size_t len)
+{
+    (void)m; (void)vtt; (void)len;
+    return QL_ERR_UNSUPPORTED;
+}
+QLErr ql_media_load_subtitle(QLMedia *m, const char *path)
+{
+    (void)m; (void)path;
+    return QL_ERR_UNSUPPORTED;
+}
+void ql_media_clear_subtitle(QLMedia *m) { (void)m; }
+const char *ql_media_subtitle_text(QLMedia *m) { (void)m; return NULL; }
+int ql_media_subtitle_count(const QLMedia *m) { (void)m; return 0; }
 
 QLMedia *ql_media_open(const char *src) { (void)src; return NULL; }
 void ql_media_close(QLMedia *m) { (void)m; }
@@ -193,6 +217,11 @@ typedef struct {
     uint8_t type;      /* QLMediaEventType */
 } QLMediaEvent;
 
+typedef struct {
+    int64_t start_ms, end_ms;
+    char   *text;
+} QLMediaCue;
+
 struct QLMedia {
     const QLMediaBackend *be;
     void                 *be_ctx;
@@ -229,6 +258,8 @@ struct QLMedia {
     int             video_eof;
     uint32_t        vserial;
     int64_t         play_start_us;  /* 无音频时用系统时钟做基准 */
+    QLMediaCue     *cues;
+    int             cue_count, cue_cap;
     int             rate;
     int             channels;
 
@@ -441,6 +472,113 @@ static void video_step(QLMedia *m)
     f->pts_us = pts;
     f->format = QL_IMAGE_RGBA8888;
     m->vpending = f;
+}
+
+static void cues_clear_locked(QLMedia *m)
+{
+    for (int i = 0; i < m->cue_count; i++)
+        ql_mem_free(m->cues[i].text);
+    m->cue_count = 0;
+}
+
+static void cue_emit(void *user, int64_t start_ms, int64_t end_ms,
+                     const char *text, size_t len)
+{
+    QLMedia *m = (QLMedia *)user;
+    if (m->cue_count >= QL_CFG_MEDIA_CUES)
+        return;
+
+    if (m->cue_count >= m->cue_cap) {
+        const int cap = (m->cue_cap > 0) ? m->cue_cap * 2 : 32;
+        QLMediaCue *p = (QLMediaCue *)ql_mem_alloc((size_t)cap * sizeof(*p));
+        if (p == NULL)
+            return;
+        if (m->cue_count > 0)
+            memcpy(p, m->cues, (size_t)m->cue_count * sizeof(*p));
+        ql_mem_free(m->cues);
+        m->cues = p;
+        m->cue_cap = cap;
+    }
+
+    char *copy = (char *)ql_mem_alloc(len + 1);
+    if (copy == NULL)
+        return;
+    if (len > 0)
+        memcpy(copy, text, len);
+    copy[len] = '\0';
+
+    QLMediaCue *c = &m->cues[m->cue_count++];
+    c->start_ms = start_ms;
+    c->end_ms = end_ms;
+    c->text = copy;
+}
+
+QLErr ql_media_set_subtitle_text(QLMedia *m, const char *vtt, size_t len)
+{
+    if (m == NULL || vtt == NULL)
+        return QL_ERR_INVAL;
+    if (len == 0)
+        len = strlen(vtt);
+
+    pthread_mutex_lock(&m->mu);
+    cues_clear_locked(m);
+    const int n = ql_vtt_parse(vtt, len, cue_emit, m);
+    pthread_mutex_unlock(&m->mu);
+    return (n >= 0) ? QL_OK : QL_ERR_INVAL;
+}
+
+QLErr ql_media_load_subtitle(QLMedia *m, const char *path)
+{
+    if (m == NULL || path == NULL)
+        return QL_ERR_INVAL;
+    char *text = ql_file_read_text(path);
+    if (text == NULL)
+        return QL_ERR_IO;
+    const QLErr rc = ql_media_set_subtitle_text(m, text, strlen(text));
+    ql_mem_free(text);
+    return rc;
+}
+
+void ql_media_clear_subtitle(QLMedia *m)
+{
+    if (m == NULL)
+        return;
+    pthread_mutex_lock(&m->mu);
+    cues_clear_locked(m);
+    pthread_mutex_unlock(&m->mu);
+}
+
+int ql_media_subtitle_count(const QLMedia *cm)
+{
+    if (cm == NULL)
+        return 0;
+    QLMedia *m = (QLMedia *)cm;
+    pthread_mutex_lock(&m->mu);
+    const int n = m->cue_count;
+    pthread_mutex_unlock(&m->mu);
+    return n;
+}
+
+const char *ql_media_subtitle_text(QLMedia *m)
+{
+    if (m == NULL)
+        return NULL;
+    pthread_mutex_lock(&m->mu);
+    int64_t pos;
+    if (m->state == QL_MEDIA_PLAYING)
+        pos = position_locked(m);
+    else if (m->state == QL_MEDIA_ENDED && m->duration_ms > 0)
+        pos = m->duration_ms;
+    else
+        pos = m->base_ms;
+
+    const char *found = NULL;
+    for (int i = 0; i < m->cue_count; i++) {
+        if (pos >= m->cues[i].start_ms && pos < m->cues[i].end_ms)
+            found = m->cues[i].text;
+    }
+    pthread_mutex_unlock(&m->mu);
+    return found;
 }
 
 const QLMediaVideoFrame *ql_media_acquire_frame(QLMedia *m)
@@ -716,6 +854,18 @@ QLMedia *ql_media_open(const char *src)
         }
     }
 
+    /* 容器内嵌字幕：后端在 open 时已经解好，拷进统一 cue 列表 */
+    if (m->be->subtitle_count != NULL && m->be->subtitle_get != NULL) {
+        const int n = m->be->subtitle_count(m->be_ctx);
+        for (int i = 0; i < n; i++) {
+            const char *text = NULL;
+            int64_t start = 0, end = 0;
+            if (m->be->subtitle_get(m->be_ctx, i, &text, &start, &end) == 0 &&
+                text != NULL)
+                cue_emit(m, start, end, text, strlen(text));
+        }
+    }
+
     m->state = QL_MEDIA_READY;
     ev_push(m, QL_MEDIA_EV_READY);
     return m;
@@ -739,6 +889,8 @@ void ql_media_close(QLMedia *m)
     if (m->be != NULL && m->be->close != NULL)
         m->be->close(m->be_ctx);
     ql_mem_free(m->vmem);
+    cues_clear_locked(m);
+    ql_mem_free(m->cues);
     pthread_cond_destroy(&m->cv);
     pthread_mutex_destroy(&m->mu);
     ql_mem_free(m);

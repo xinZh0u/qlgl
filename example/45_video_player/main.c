@@ -143,6 +143,7 @@ int main(int argc, char **argv)
     const char *path = NULL;
     const char *dump = NULL;
     const char *size = NULL;
+    const char *vtt = NULL;
     int seconds = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--seconds") == 0 && i + 1 < argc)
@@ -151,11 +152,15 @@ int main(int argc, char **argv)
             dump = argv[++i];
         else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc)
             size = argv[++i];
+        else if (strcmp(argv[i], "--vtt") == 0 && i + 1 < argc)
+            vtt = argv[++i];
         else if (path == NULL)
             path = argv[i];
     }
     if (path == NULL) {
-        fprintf(stderr, "用法: %s <视频文件> [--seconds N] [--dump out.ppm]\n", argv[0]);
+        fprintf(stderr,
+                "用法: %s <视频文件> [--vtt 字幕.vtt] [--size WxH] [--seconds N]"
+                " [--dump out.ppm]\n", argv[0]);
         return 2;
     }
 
@@ -175,6 +180,7 @@ int main(int argc, char **argv)
     if (!ql_media_has_video(app.media))
         fprintf(stderr, "提示：这个文件没有视频轨（只出声）\n");
 
+    const char *path_abs = path;
     const char *base = strrchr(path, '/');
     base = (base != NULL) ? base + 1 : path;
     snprintf(app.name_buf, sizeof(app.name_buf), "%s", base);
@@ -182,7 +188,7 @@ int main(int argc, char **argv)
     QLUIDoc *doc = ql_ui_load_html(
         "<div id=root>"
         "<div class=name></div>"
-        "<video></video>"
+        "<video><track kind=subtitles src=\"track.vtt\" default></video>"
         "<div class=time>0:00 / 0:00</div>"
         "<progress value=0 max=1000></progress>"
         "<div class=row><button>暂停</button></div>"
@@ -220,6 +226,30 @@ int main(int argc, char **argv)
     ql_ui_set_click_cb(app.ui, on_click, &app);
     if (app.video != NULL)
         (void)ql_ui_bind_media(app.ui, app.video, app.media);
+
+    /* 字幕：命令行 --vtt 优先，否则看页面里的 <track src="..."> */
+    if (vtt != NULL) {
+        if (ql_media_load_subtitle(app.media, vtt) != QL_OK)
+            fprintf(stderr, "字幕加载失败: %s\n", vtt);
+    } else {
+        QLUINodeRT *tr = ql_ui_find_by_tag(app.ui, QL_UI_TAG_TRACK, 0);
+        const char *src = (tr != NULL) ? ql_ui_node_text(tr) : NULL;
+        if (src != NULL && src[0] != '\0') {
+            char path[1024];
+            if (src[0] == '/') {
+                snprintf(path, sizeof(path), "%s", src);
+            } else {
+                const char *slash = strrchr(path_abs, '/');
+                if (slash != NULL)
+                    snprintf(path, sizeof(path), "%.*s/%s",
+                             (int)(slash - path_abs), path_abs, src);
+                else
+                    snprintf(path, sizeof(path), "%s", src);
+            }
+            /* 页面里写了 <track> 但文件不在：静默跳过（常见用法） */
+            (void)ql_media_load_subtitle(app.media, path);
+        }
+    }
 
     app.win = ql_window_create("QLGL · 视频", W, H, QL_WINDOW_GL);
     if (app.win == NULL)

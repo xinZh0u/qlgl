@@ -115,6 +115,30 @@ for (;;) {
 帧是 **RGBA8888**、object-fit: contain（等比居中）。完整例子：
 `example/45_video_player`。
 
+### 2.4 字幕（M3）
+
+```c
+/* 外部 .vtt（<track src>）；path 是本地文件 */
+QLErr ql_media_load_subtitle(QLMedia *m, const char *path);
+/* 直接给 WebVTT 文本（构建期嵌入/网络下载都走这个） */
+QLErr ql_media_set_subtitle_text(QLMedia *m, const char *vtt, size_t len);
+void  ql_media_clear_subtitle(QLMedia *m);
+
+/* 当前时间点的字幕；没有返回 NULL。指针归 QLMedia 所有 */
+const char *ql_media_subtitle_text(QLMedia *m);
+int         ql_media_subtitle_count(const QLMedia *m);
+```
+
+- 容器内嵌字幕（mp4 mov_text / mkv subrip / ASS）在 `ql_media_open()` 时自动解析；
+- `<track>`：解析器会把 `src` 存进 `<track>` 节点的文本，应用自己读出来加载：
+  ```c
+  QLUINodeRT *tr = ql_ui_find_by_tag(ui, QL_UI_TAG_TRACK, 0);
+  const char *src = ql_ui_node_text(tr);      /* "sub.vtt" */
+  ql_media_load_subtitle(m, resolved_path);
+  ```
+  `example/45_video_player` 就是这么做的（相对视频目录解析，`--vtt` 覆盖）；
+- 只支持文本字幕：`<b>`/`<i>`/实体在解析时清成纯文本，不提供 `::cue` 样式。
+
 ## 3. 后端与设备（测试 / 板级）
 
 M1 的两条接缝都可以替换，和 `QLPlatform` 同构：
@@ -160,7 +184,7 @@ const QLAudioSink    *ql_audio_sink_default(void);
 
 - 视频走 **CPU**：RGBA8888 + `sws_scale`，GPU 零拷贝/硬解在 M3；
 - 只支持本地文件，网络流不做（`QL_FEAT_MEDIA_NET` 未实现）；
-- 没有字幕 / `<track>`（M3）；
+- 字幕只支持**文本**（WebVTT / 容器文本轨）；位图字幕（PGS/DVB）不支持；
 - `open()` 是同步的：大文件的容器头解析会有几毫秒阻塞；
 - 一个 `QLMedia` 一个工作线程；页面里十几个实例要自己控制数量；
 - 视频尺寸在打开时固定，播放中换分辨率不支持（会在解码前按上限拒绝）；

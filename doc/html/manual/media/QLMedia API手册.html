@@ -463,6 +463,28 @@ int  ql_media_poll(QLMedia *m);               /* 主循环里调；返回 1 */
 
 <p>帧是 <strong>RGBA8888</strong>、object-fit: contain（等比居中）。完整例子：
 <code>example/45_video_player</code>。</p>
+<h3 id="24-m3">2.4 字幕（M3）</h3>
+<div class="highlight"><pre><span></span><code><span class="cm">/* 外部 .vtt（&lt;track src&gt;）；path 是本地文件 */</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_media_load_subtitle</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">);</span>
+<span class="cm">/* 直接给 WebVTT 文本（构建期嵌入/网络下载都走这个） */</span>
+<span class="n">QLErr</span><span class="w"> </span><span class="nf">ql_media_set_subtitle_text</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">vtt</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">);</span>
+<span class="kt">void</span><span class="w">  </span><span class="nf">ql_media_clear_subtitle</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+
+<span class="cm">/* 当前时间点的字幕；没有返回 NULL。指针归 QLMedia 所有 */</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_media_subtitle_text</span><span class="p">(</span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+<span class="kt">int</span><span class="w">         </span><span class="nf">ql_media_subtitle_count</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLMedia</span><span class="w"> </span><span class="o">*</span><span class="n">m</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li>容器内嵌字幕（mp4 mov_text / mkv subrip / ASS）在 <code>ql_media_open()</code> 时自动解析；</li>
+<li><code>&lt;track&gt;</code>：解析器会把 <code>src</code> 存进 <code>&lt;track&gt;</code> 节点的文本，应用自己读出来加载：
+  <code>c
+  QLUINodeRT *tr = ql_ui_find_by_tag(ui, QL_UI_TAG_TRACK, 0);
+  const char *src = ql_ui_node_text(tr);      /* "sub.vtt" */
+  ql_media_load_subtitle(m, resolved_path);</code>
+  <code>example/45_video_player</code> 就是这么做的（相对视频目录解析，<code>--vtt</code> 覆盖）；</li>
+<li>只支持文本字幕：<code>&lt;b&gt;</code>/<code>&lt;i&gt;</code>/实体在解析时清成纯文本，不提供 <code>::cue</code> 样式。</li>
+</ul>
 <h2 id="3">3. 后端与设备（测试 / 板级）</h2>
 <p>M1 的两条接缝都可以替换，和 <code>QLPlatform</code> 同构：</p>
 <div class="highlight"><pre><span></span><code><span class="cm">/* 解码：默认 ffmpeg；测试可用假后端 */</span>
@@ -525,7 +547,7 @@ int  ql_media_poll(QLMedia *m);               /* 主循环里调；返回 1 */
 <ul>
 <li>视频走 <strong>CPU</strong>：RGBA8888 + <code>sws_scale</code>，GPU 零拷贝/硬解在 M3；</li>
 <li>只支持本地文件，网络流不做（<code>QL_FEAT_MEDIA_NET</code> 未实现）；</li>
-<li>没有字幕 / <code>&lt;track&gt;</code>（M3）；</li>
+<li>字幕只支持<strong>文本</strong>（WebVTT / 容器文本轨）；位图字幕（PGS/DVB）不支持；</li>
 <li><code>open()</code> 是同步的：大文件的容器头解析会有几毫秒阻塞；</li>
 <li>一个 <code>QLMedia</code> 一个工作线程；页面里十几个实例要自己控制数量；</li>
 <li>视频尺寸在打开时固定，播放中换分辨率不支持（会在解码前按上限拒绝）；</li>
@@ -545,6 +567,7 @@ int  ql_media_poll(QLMedia *m);               /* 主循环里调；返回 1 */
 <li class='lv3'><a href='#21'>2.1 事件</a></li>
 <li class='lv3'><a href='#22'>2.2 位置与时钟</a></li>
 <li class='lv3'><a href='#23-m2'>2.3 视频（M2）</a></li>
+<li class='lv3'><a href='#24-m3'>2.4 字幕（M3）</a></li>
 <li><a href='#3'>3. 后端与设备（测试 / 板级）</a></li>
 <li><a href='#4'>4. 构建</a></li>
 <li><a href='#5-m1-m2'>5. 限制（M1 + M2）</a></li>

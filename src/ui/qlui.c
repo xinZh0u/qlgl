@@ -6844,6 +6844,7 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node)
 
 /* ------------------------------ <video> ↔ QLMedia ------------------------------ */
 
+#if QL_FEAT_UI_MEDIA
 static QLMedia *media_for_node(QLUIRoot *ui, QLUINodeRT *node)
 {
     for (uint8_t i = 0; i < ui->media_count; i++)
@@ -6851,6 +6852,7 @@ static QLMedia *media_for_node(QLUIRoot *ui, QLUINodeRT *node)
             return ui->media_handles[i];
     return NULL;
 }
+#endif
 
 QLErr ql_ui_bind_media(QLUIRoot *ui, QLUINodeRT *node, QLMedia *media)
 {
@@ -6931,6 +6933,58 @@ static int draw_video(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
 
     ql_media_frame_release(f);
     return 1;
+}
+#endif /* QL_FEAT_UI_MEDIA */
+
+#if QL_FEAT_UI_MEDIA
+/* 字幕：底部居中，半透明底 + 白字（两行以内） */
+static void draw_subtitles(QLUIRoot *ui, QLUINodeRT *node, QLDraw2D *d2d)
+{
+    if (ui == NULL || node == NULL || d2d == NULL || d2d->draw_text == NULL)
+        return;
+    QLMedia *m = media_for_node(ui, node);
+    if (m == NULL)
+        return;
+    const char *text = ql_media_subtitle_text(m);
+    if (text == NULL || text[0] == '\0')
+        return;
+
+    QLRect box = node->content_box;
+    if (ql_rect_is_empty(box))
+        box = node->border_box;
+    if (ql_rect_is_empty(box))
+        return;
+
+    const QLFont *font = font_of(node);
+    if (font == NULL || font->line_height <= 0)
+        return;
+
+    const ql_coord_t line_h = font->line_height;
+    ql_coord_t tw = ql_font_line_width(font, text, -1);
+    const ql_coord_t maxw = box.w - 32;
+    if (maxw < 40)
+        return;
+    if (tw > maxw)
+        tw = maxw;
+
+    const ql_coord_t bh = line_h * 2 + 8;
+    ql_coord_t by = box.y + box.h - bh - 10;
+    if (by < box.y)
+        by = box.y;
+    const ql_coord_t bx = box.x + (box.w - (tw + 16)) / 2;
+
+    if (d2d->fill_round_rect != NULL)
+        d2d->fill_round_rect(d2d, ql_rect_make(bx, by, tw + 16, bh), 4,
+                             0x000000, 150);
+
+    QLTextStyle ts;
+    memset(&ts, 0, sizeof(ts));
+    ts.color = 0xFFFFFF;
+    ts.align = QL_TEXT_ALIGN_CENTER;
+    ts.wrap = 1;
+    ts.line_h = line_h;
+    d2d->draw_text(d2d, font, text, -1,
+                   ql_rect_make(box.x + 16, by + 4, box.w - 32, bh - 8), &ts);
 }
 #endif /* QL_FEAT_UI_MEDIA */
 
@@ -8518,6 +8572,12 @@ static void render_node_inner(QLUINodeRT *node, QLDraw2D *d2d)
         /* EMBED 包：画标签名当占位提示（这些节点自身没有文本） */
         draw_embed_placeholder(node, d2d);
     }
+#if QL_FEAT_UI_MEDIA
+    /* 字幕画在视频/占位盒之上；没有帧时也能看到 */
+    if (!inv && node->src != NULL && node->src->tag == QL_UI_TAG_VIDEO &&
+        node->owner != NULL)
+        draw_subtitles(node->owner, node, d2d);
+#endif
 
     /* <progress>/<meter>：轨道就是背景（已经画完），这里补填充 */
     if (!inv && node->src != NULL && (node->src->tag == QL_UI_TAG_PROGRESS ||

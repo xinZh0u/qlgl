@@ -346,8 +346,8 @@ main img {
 <h1>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</h1>
 <p class='lead'>这份文档定四件事：播放引擎怎么分层、时钟和线程谁说了算、 帧怎么落到 CPU/GL 两个后端、&lt;track&gt; 和容器字幕分别归谁。 和图像管线一样，红线是外来数据必须有界：媒体文件是典型的&quot;不可信、可畸形、 可能很大&quot;的输入，任何一条路径都不许 OOM、越界或死循环。</p>
 <blockquote>
-<p>状态：<strong>设计；M1（音频）与 M2（视频，CPU）已实现（2026-11-15）</strong>。
-M3（GPU 零拷贝 + 字幕）见 §13。
+<p>状态：<strong>设计；M1（音频）、M2（视频，CPU）、M3 的文本字幕已实现（2026-11-16）</strong>。
+还剩 M3 的 GPU 零拷贝（YUV 纹理 + shader）见 §13。
 目标读者：要实现媒体后端、音视频输出、字幕轨与 <code>&lt;video&gt;</code> 布局/绘制的人。
 相关：<a href="平台后端设计.html">平台后端设计</a>（回调表套路）、
 <a href="图像管线设计.html">图像管线设计</a>（外来数据必须有界、<code>blit_image</code>）、
@@ -393,7 +393,7 @@ M3（GPU 零拷贝 + 字幕）见 §13。
 </tr>
 <tr>
 <td><code>&lt;track&gt;</code></td>
-<td><strong>和 FFmpeg 无关</strong>：WebVTT 解析 + 按时间取 cue + 由 QLUI 画 overlay</td>
+<td><strong>已实现</strong>：WebVTT 解析 + 按时间取 cue + QLUI 画 overlay；容器内嵌字幕走同一条 cue 时间轴</td>
 </tr>
 <tr>
 <td>容器内嵌字幕</td>
@@ -1122,9 +1122,9 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <td>320×180@30 音画同步、暂停零重绘、拖动进度条正确；720p 取决于机器</td>
 </tr>
 <tr>
-<td><strong>M3（视频，GL + 字幕）</strong></td>
-<td>YUV 三平面纹理 + shader 矩阵；<code>&lt;track&gt;</code> WebVTT 解析 + overlay 绘制；容器字幕文本</td>
-<td>1080p@60 GL 路径 CPU 占用显著低于 CPU 路径；字幕时间轴准确</td>
+<td><strong>M3（字幕 ✅ / GL 待做）</strong></td>
+<td>✅ WebVTT + 容器文本字幕 + overlay；⬜ YUV 三平面纹理 + shader</td>
+<td>字幕时间轴准确；GL 路径待补</td>
 </tr>
 <tr>
 <td><strong>M4（打磨）</strong></td>
@@ -1358,6 +1358,43 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <p>测试：<code>test_media_video_fake</code>（帧池/发布/暂停/seek）、<code>test_media_video_ffmpeg</code>
 （系统 ffmpeg 现场生成 1s mp4，没有工具就 SKIP）；真机窗口播放 320×180@30fps
 音画同步、暂停零重绘、拖动进度条正常。</p>
+<h3 id="153-m3">15.3 M3（字幕）落地说明</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>外部 <code>&lt;track&gt;</code></td>
+<td><code>src</code> 存进 <code>&lt;track&gt;</code> 节点的文本；应用用 <code>ql_media_load_subtitle(m, path)</code> 加载（示例按视频所在目录解析相对路径，<code>--vtt</code> 可强制覆盖）</td>
+</tr>
+<tr>
+<td>WebVTT</td>
+<td><code>src/media/qlwebvtt.c</code>：<code>WEBVTT</code> 头、<code>NOTE/STYLE/REGION</code> 跳过、<code>mm:ss.mmm</code>/<code>hh:mm:ss.mmm</code>、内联标签与常见实体清理；纯函数、零分配回调</td>
+</tr>
+<tr>
+<td>容器字幕</td>
+<td>FFmpeg 后端在 <code>open</code> 时用<strong>第二个 AVFormatContext</strong> 把字幕轨解一遍（不能借播放中的 demux，会把音视频包吃掉）；mov_text/ASS/subrip 都转纯文本</td>
+</tr>
+<tr>
+<td>数据模型</td>
+<td>QLMedia 统一 cue 列表（<code>start/end/text</code>，上限 <code>QL_CFG_MEDIA_CUES</code>）；<code>ql_media_subtitle_text()</code> 按当前位置返回当前 cue</td>
+</tr>
+<tr>
+<td>绘制</td>
+<td>QLUI 在 <code>&lt;video&gt;</code> 内容盒底部居中画：半透明黑底 + 白字，最多两行；无帧（暂停/首帧前）也会显示</td>
+</tr>
+<tr>
+<td>优先级</td>
+<td>外部 <code>&lt;track&gt;</code> 调用会<strong>清空并替换</strong>容器字幕（用户显式选轨优先）</td>
+</tr>
+</tbody>
+</table>
+<p>限制：只做纯文本（<code>&lt;b&gt;/&lt;i&gt;</code> 等标签在解析时丢掉）；没有 <code>::cue</code> 样式；
+PGS/DVB 这类<strong>位图字幕</strong>不支持（只处理文本 rect）。</p>
 <p>M2 仍然<strong>没有</strong>做：GPU 零拷贝（YUV 三平面 + shader，M3）、HDR/色彩转换矩阵、
 字幕（M3）、硬件解码、8K（<code>QL_CFG_MEDIA_MAX_DIM</code> 会在解码前拒绝）。</p>
 <p>M1 仍然<strong>没有</strong>做：<code>&lt;audio src&gt;</code> 自动打开、视频帧、字幕、网络流、硬件解码。</p>
@@ -1427,6 +1464,7 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <li><a href='#15'>15. 风险与备选</a></li>
 <li><a href='#151-m1'>15.1 M1 落地说明（与草案的差异）</a></li>
 <li class='lv3'><a href='#152-m2cpu'>15.2 M2（视频，CPU）落地说明</a></li>
+<li class='lv3'><a href='#153-m3'>15.3 M3（字幕）落地说明</a></li>
 <li><a href='#16'>16. 开放问题（实现前要定）</a></li>
 </ul></aside>
 </div>

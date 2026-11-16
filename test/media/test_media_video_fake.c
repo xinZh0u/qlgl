@@ -119,7 +119,9 @@ static void sleep_ms(int ms)
     nanosleep(&ts, NULL);
 }
 
+#endif
 QL_TEST_BEGIN("test_media_video_fake")
+#if QL_FEAT_MEDIA
 
     ql_media_set_backend(&s_be);
     ql_audio_set_sink(&s_sink);

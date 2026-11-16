@@ -63,6 +63,10 @@ typedef struct QLMediaBackend {
     int     (*read_video)(void *h, uint8_t *dst, int dst_bytes,
                           int *out_w, int *out_h, int64_t *pts_us);
     QLErr   (*seek)(void *h, int64_t ms);
+    /* 容器内嵌字幕（可选）：打开时已经解析好，按 index 取纯文本与时间轴 */
+    int     (*subtitle_count)(void *h);
+    int     (*subtitle_get)(void *h, int index, const char **text,
+                            int64_t *start_ms, int64_t *end_ms);
 } QLMediaBackend;
 
 /* ----- 音频输出 -----
@@ -115,6 +119,18 @@ void ql_media_frame_release(const QLMediaVideoFrame *frame);
 uint32_t ql_media_video_serial(const QLMedia *m);
 /* 视频原始尺寸；没有视频返回 0 */
 int ql_media_video_size(const QLMedia *m, ql_coord_t *w, ql_coord_t *h);
+
+/* ----- 字幕（M3） -----
+ * 两种来源统一成同一条时间轴：
+ *   - `<track src="x.vtt">`：`ql_media_load_subtitle()` / `set_subtitle_text()`；
+ *   - 容器内嵌字幕（mp4 mov_text / mkv subrip…）：打开时由后端解析。
+ * 渲染层每帧取一次 `ql_media_subtitle_text()`，没有 cue 时返回 NULL。
+ */
+QLErr ql_media_set_subtitle_text(QLMedia *m, const char *vtt, size_t len);
+QLErr ql_media_load_subtitle(QLMedia *m, const char *path);
+void  ql_media_clear_subtitle(QLMedia *m);
+const char *ql_media_subtitle_text(QLMedia *m);
+int   ql_media_subtitle_count(const QLMedia *m);
 
 /* ----- 生命周期与控制 ----- */
 QLMedia *ql_media_open(const char *src);

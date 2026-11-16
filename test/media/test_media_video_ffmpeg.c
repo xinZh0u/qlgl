@@ -45,7 +45,9 @@ static void sleep_ms(int ms)
     nanosleep(&ts, NULL);
 }
 
+#endif
 QL_TEST_BEGIN("test_media_video_ffmpeg")
+#if QL_FEAT_MEDIA && QL_FEAT_MEDIA_FFMPEG
 
     ql_audio_set_sink(&s_sink);
 
@@ -91,6 +93,46 @@ QL_TEST_BEGIN("test_media_video_ffmpeg")
             ql_media_close(m);
         }
         remove(path);
+
+        /*
+         * 容器内嵌字幕（mov_text）：打开时就应该解析出 cue，
+         * 渲染层按位置取 `ql_media_subtitle_text()`。
+         */
+        char srt[128], muxed[128];
+        snprintf(srt, sizeof(srt), "/tmp/qlgl_subs_%d.srt", (int)getpid());
+        snprintf(muxed, sizeof(muxed), "/tmp/qlgl_muxed_%d.mp4", (int)getpid());
+        {
+            FILE *sf = fopen(srt, "wb");
+            QL_CHECK(sf != NULL);
+            if (sf != NULL) {
+                fputs("1\n00:00:00,400 --> 00:00:02,200\n"
+                      "embedded subtitle\n\n", sf);
+                fclose(sf);
+                snprintf(cmd, sizeof(cmd),
+                         "ffmpeg -loglevel error -f lavfi -i "
+                         "\"testsrc2=size=64x48:rate=10:duration=2\" -i \"%s\" "
+                         "-map 0 -map 1 -c:v libx264 -pix_fmt yuv420p "
+                         "-c:s mov_text \"%s\" -y >/dev/null 2>&1", srt, muxed);
+                if (system(cmd) == 0) {
+                    QLMedia *sm = ql_media_open(muxed);
+                    QL_CHECK(sm != NULL);
+                    if (sm != NULL) {
+                        printf("  subtitles=%d\n", ql_media_subtitle_count(sm));
+                        QL_CHECK(ql_media_subtitle_count(sm) >= 1);
+                        QL_CHECK_EQ(ql_media_seek(sm, 600), QL_OK);
+                        const char *stext = ql_media_subtitle_text(sm);
+                        printf("  subtitle@600ms = '%s'\n",
+                               stext ? stext : "(null)");
+                        QL_CHECK(stext != NULL);
+                        if (stext != NULL)
+                            QL_CHECK(strstr(stext, "embedded") != NULL);
+                        ql_media_close(sm);
+                    }
+                }
+                remove(srt);
+                remove(muxed);
+            }
+        }
 
         /*
          * 录屏 WebM：全程只有一个关键帧，seek 必须走"回退到 0 重解"的兜底，
