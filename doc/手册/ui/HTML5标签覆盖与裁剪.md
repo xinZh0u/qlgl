@@ -152,7 +152,8 @@
 | Web Components | `<slot>` | `EMBED` | ✅ 占位 |
 | Web Components | `<template>` | `EMBED` | ✅ 占位 |
 | SVG / MathML | `<math>` | `EMBED` | ✅ 占位 |
-| SVG / MathML | `<svg>` | `EMBED` | ✅ 占位 |
+| SVG / MathML | `<svg>` | `EMBED` | ✅ 占位（内联 SVG 不渲染） |
+| SVG 资源 | `<img src="x.svg">` / `background-image: url(x.svg)` / `mask-image: url(x.svg)` | `IMAGE` | ✅ 运行期 PlutoSVG（`QLGL_BUILD_SVG=ON`）或构建期 `qlsvg` 预渲染 |
 
 统计：**✅ 101 个**（P0 加 31 个纯语义标签、P1 加 6 个元数据标签、
 P2a 加 4 个控件、P2b/P2c 加 `details`/`summary`/`dialog`、P3a 加 `img`、

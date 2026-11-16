@@ -369,6 +369,14 @@
 #ifndef QL_FEAT_IMG_LIBJPEG
 #define QL_FEAT_IMG_LIBJPEG         QL_FEAT_IMG_PLATFORM   /* libjpeg-turbo 参考实现 */
 #endif
+/*
+ * 运行期 SVG 解码（PlutoSVG + PlutoVG，vendored 到 third_party/）。
+ * 关掉时 `.svg` 明确返回 `QL_ERR_UNSUPPORTED`，其余格式完全不受影响；
+ * MCU 档应当关掉（图标在构建期预渲染成 PNG/A8 更省）。
+ */
+#ifndef QL_FEAT_IMG_SVG
+#define QL_FEAT_IMG_SVG             0
+#endif
 
 #ifndef QL_CFG_UI_IMAGE_MAX
 #define QL_CFG_UI_IMAGE_MAX         8       /* 一个界面最多几张图 */
@@ -378,6 +386,24 @@
 #endif
 #ifndef QL_CFG_IMAGE_MAX_BYTES
 #define QL_CFG_IMAGE_MAX_BYTES      (512u * 1024u)   /* 解码后像素字节预算的基数 */
+#endif
+/*
+ * 运行期 SVG 的**输出**单边上限（像素）。外来 SVG 里的 viewBox 可以写得
+ * 很大，先夹住再交给渲染器，避免一次 `plutovg_surface_create()` 吃掉整机内存。
+ * 调用方还可以通过 `QLImageDecodeReq.target_w/target_h` 指定更小的尺寸。
+ */
+#ifndef QL_CFG_IMAGE_SVG_MAX_DIM
+#define QL_CFG_IMAGE_SVG_MAX_DIM    2048
+#endif
+/*
+ * 外来 SVG 的元素嵌套深度 / 元素个数上限（防 XML 炸弹与递归过深）。
+ * 图标级 SVG 远远用不到；超限按"数据非法"拒绝。
+ */
+#ifndef QL_CFG_IMAGE_SVG_MAX_DEPTH
+#define QL_CFG_IMAGE_SVG_MAX_DEPTH  64
+#endif
+#ifndef QL_CFG_IMAGE_SVG_MAX_ELEMENTS
+#define QL_CFG_IMAGE_SVG_MAX_ELEMENTS 4096
 #endif
 /*
  * 输入文件（编码字节）的上限。只用于 `ql_image_decode()` 的第一道拒绝，

@@ -126,6 +126,79 @@ else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_LIBJPEG=0)
 endif()
 
+# ---- SVG：运行期矢量解码（vendored PlutoSVG + PlutoVG）----
+# 图标级静态 SVG：path/形状/渐变/transform/use；没有 text/filter/CSS/SMIL。
+# 关掉时 `.svg` 明确返回 QL_ERR_UNSUPPORTED，MCU 档继续用预渲染的 PNG/A8。
+set(_ql_third ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+set(_ql_svg_sources
+    ${_ql_third}/plutovg/source/plutovg-blend.c
+    ${_ql_third}/plutovg/source/plutovg-canvas.c
+    ${_ql_third}/plutovg/source/plutovg-font.c
+    ${_ql_third}/plutovg/source/plutovg-matrix.c
+    ${_ql_third}/plutovg/source/plutovg-paint.c
+    ${_ql_third}/plutovg/source/plutovg-path.c
+    ${_ql_third}/plutovg/source/plutovg-rasterize.c
+    ${_ql_third}/plutovg/source/plutovg-surface.c
+    ${_ql_third}/plutovg/source/plutovg-ft-math.c
+    ${_ql_third}/plutovg/source/plutovg-ft-raster.c
+    ${_ql_third}/plutovg/source/plutovg-ft-stroker.c
+    ${_ql_third}/plutosvg/source/plutosvg.c)
+target_include_directories(qlgl PRIVATE
+    ${_ql_third}/plutovg/include
+    ${_ql_third}/plutovg/source
+    ${_ql_third}/plutosvg/source)
+
+# raw-only 预设只吃构建期 RAW，不要静默把 SVG 库也链进来
+if(QLGL_IMG_PRESET STREQUAL "raw-only")
+    set(_ql_svg_default OFF)
+else()
+    set(_ql_svg_default ON)
+endif()
+option(QLGL_BUILD_SVG "构建运行期 SVG 解码（vendored PlutoSVG + PlutoVG）" ${_ql_svg_default})
+if(QLGL_BUILD_SVG)
+    # 第三方源码直接编进 qlgl（不单独成库）：静态库再挂一个依赖会牵出
+    # "导出/安装目标必须成套"的问题，而这里本来就没有独立的消费场景。
+    target_sources(qlgl PRIVATE ${_ql_svg_sources})
+    # 第三方代码的告警策略与我们不同：`-w` 只加在它们身上（主库仍是 -Wall -Wextra）
+    set_source_files_properties(${_ql_svg_sources} PROPERTIES COMPILE_OPTIONS "-w")
+    # 静态链接 + 禁掉"从文件/目录加载字体"（我们不渲染 <text>，也不需要碰文件系统）
+    target_compile_definitions(qlgl PRIVATE
+        PLUTOVG_BUILD_STATIC=1
+        PLUTOSVG_BUILD_STATIC=1
+        PLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD=1
+        # 库里不写图片文件（只有宿主工具 qlsvg 需要 stb_image_write）
+        PLUTOVG_DISABLE_IMAGE_WRITE=1)
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG=1)
+    message(STATUS "QLGL: 运行期 SVG 解码已启用（PlutoSVG + PlutoVG）")
+else()
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG=0)
+    message(STATUS "QLGL: 运行期 SVG 解码关闭（.svg → QL_ERR_UNSUPPORTED）")
+endif()
+
+# 宿主工具 qlsvg：构建期把 SVG 转成 PNG（MCU / 预渲染资源）。
+# **独立于 QLGL_BUILD_SVG**：目标机裁掉 SVG 时，开发机仍然需要这个工具。
+if(NOT CMAKE_CROSSCOMPILING)
+    option(QLGL_BUILD_QLSVG "构建宿主工具 qlsvg（SVG → PNG）" ON)
+else()
+    set(QLGL_BUILD_QLSVG OFF)
+endif()
+if(QLGL_BUILD_QLSVG)
+    add_executable(qlsvg ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlsvg/qlsvg.c
+                         ${_ql_svg_sources})
+    set_source_files_properties(${_ql_svg_sources} PROPERTIES COMPILE_OPTIONS "-w")
+    target_include_directories(qlsvg PRIVATE
+        ${_ql_third}/plutovg/include
+        ${_ql_third}/plutovg/source
+        ${_ql_third}/plutosvg/source)
+    target_compile_definitions(qlsvg PRIVATE
+        PLUTOVG_BUILD_STATIC=1
+        PLUTOSVG_BUILD_STATIC=1)
+    if(UNIX)
+        target_link_libraries(qlsvg PRIVATE m)
+    endif()
+    message(STATUS "QLGL: 宿主工具 qlsvg 已启用（SVG → PNG）")
+endif()
+
 # ---- QLMedia：媒体播放引擎（M1：音频）----
 # 核心总是编译（关掉时提供"明确不支持"的桩）；FFmpeg 找到才启用默认解码后端。
 option(QLGL_BUILD_MEDIA "构建 QLMedia（<audio>/<video> 播放引擎，FFmpeg 音频后端）" ON)
@@ -509,6 +582,18 @@ if(QLGL_BUILD_TESTS)
              COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
 
+    # 构建期 SVG 工具链（qlsvg → qltext）：MCU 的实际用法。
+    # 没有 qlsvg（交叉编译/显式关掉）或没有 PNG 解码时跳过 —— 那是另一条合法预设。
+    if(TARGET qlsvg AND QL_FEAT_IMG_PNG)
+        add_test(NAME test_qlsvg
+                 COMMAND ${CMAKE_COMMAND}
+                         -DQLSVG=$<TARGET_FILE:qlsvg>
+                         -DQLTEXT=$<TARGET_FILE:qltext>
+                         -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
+                         -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/gen_svg_tool.cmake)
+    endif()
+
     # 命名约定（doc/命名与API风格.md）：typedef 形状的机械检查
     if(Python3_Interpreter_FOUND)
         add_test(NAME test_style
@@ -601,6 +686,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/qlgl
 # 宿主工具：构建期把 HTML/CSS 编成 C（目标机不需要它）
 if(TARGET qltext)
     install(TARGETS qltext RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+if(TARGET qlsvg)
+    install(TARGETS qlsvg RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 install(EXPORT qlglTargets

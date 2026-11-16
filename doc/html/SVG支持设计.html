@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>SVG 支持设计（构建期栅格化 + 可选运行期后端） · QLGL</title>
+<title>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg） · QLGL</title>
 <style>
 :root {
   --text: #333;
@@ -323,7 +323,7 @@ main img {
 </details>
 <details class='sec' open><summary>设计文档</summary>
 <a href='图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
-<a href='SVG支持设计.html' class='current' title='SVG 支持设计（构建期栅格化 + 可选运行期后端）'>SVG 支持设计（构建期栅格化 + 可选运行期后端）</a>
+<a href='SVG支持设计.html' class='current' title='SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）'>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）</a>
 <a href='媒体播放设计.html' title='媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）'>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
 <a href='平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
 <a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -343,16 +343,18 @@ main img {
 </aside>
 <main><div class='inner'>
 <p class='eyebrow'>设计文档</p>
-<h1>SVG 支持设计（构建期栅格化 + 可选运行期后端）</h1>
-<p class='lead'>这份文档定三件事：SVG 什么时候变成像素、运行期要不要矢量渲染器、 内联 &lt;svg&gt; 为什么不做。核心判断只有一句：</p>
+<h1>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）</h1>
+<p class='lead'>PlutoSVG 是&quot;图标级静态 SVG&quot;渲染器，不是完整 SVG 1.1：</p>
 <blockquote>
-<p>状态：<strong>设计草案（2026-11-15）</strong>。目标读者：要接 SVG 图标、改 <code>qltext</code> 资源管线、
-或实现 <code>clip-path: path()</code> 的人。
-相关：<a href="图像管线设计.html">图像管线设计</a>（解码/资源表/<code>blit_image</code>）、
-<a href="平台后端设计.html">平台后端设计</a>（vtable + 弱符号套路）、
-<a href="manual/ui/CSS3覆盖与裁剪.html">CSS3 覆盖与裁剪</a>（<code>clip-path: path()</code> 现状是明确报错）。</p>
-<p><strong>图标是"资源"，不是"文档"。</strong> 绝大多数 SVG 在构建期就能变成目标像素格式，
-运行期的矢量渲染只作为可选能力；这样 MCU 和桌面用的是同一条像素管线。</p>
+<p>状态：<strong>已实现（2026-11-16）</strong>。目标读者：要接 SVG 图标、改 <code>qltext</code> 资源管线、
+或评估"哪些 SVG 画不出来"的人。
+相关：<a href="图像管线设计.html">图像管线设计</a>、<a href="第三方依赖.html">第三方依赖</a>、
+<a href="manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a>。</p>
+</blockquote>
+<p>核心判断：</p>
+<blockquote>
+<p><strong>图标是"资源"，不是"文档"。</strong> PC/Mobile 直接在运行期用 PlutoSVG 解析；
+MCU 不链 SVG 库，用同一个渲染器写成的宿主工具 <code>qlsvg</code> 在构建期转成 PNG/A8。</p>
 </blockquote>
 <hr />
 <h2 id="0">0. 结论摘要</h2>
@@ -365,183 +367,193 @@ main img {
 </thead>
 <tbody>
 <tr>
-<td>默认路线</td>
-<td><strong>构建期栅格化</strong>：<code>qltext</code> 把 <code>.svg</code> 转成 <code>RAW</code> 资源，运行时零依赖、零解析</td>
+<td>PC / Mobile 怎么解 SVG</td>
+<td><strong>运行期</strong>：<code>ql_image_decode()</code> 识别 <code>.svg</code>，调 vendored PlutoSVG + PlutoVG 渲染成位图</td>
 </tr>
 <tr>
-<td>运行期要不要库</td>
-<td>可选。<code>QLImageSvgBackend</code> 接缝，<strong>默认不启用</strong>；PC/Mobile 想要就开</td>
+<td>MCU 怎么用 SVG</td>
+<td><strong>构建期</strong>：<code>tools/qlsvg</code> 转 PNG（<code>--alpha</code> 出覆盖率遮罩），再交给 <code>qltext --root</code></td>
 </tr>
 <tr>
-<td>选哪个库</td>
-<td><strong>PlutoSVG + PlutoVG</strong>（纯 C、MIT、PC/Mobile 都能用）；ThorVG 作为"高质量可选后端"</td>
+<td>渲染器有几份</td>
+<td><strong>一份</strong>：运行期与 <code>qlsvg</code> 都编译 <code>third_party/plutosvg</code> + <code>third_party/plutovg</code>，语义一致</td>
+</tr>
+<tr>
+<td>关掉 SVG 会怎样</td>
+<td><code>QLGL_BUILD_SVG=OFF</code> → <code>.svg</code> 明确返回 <code>QL_ERR_UNSUPPORTED</code>，其余格式不受影响</td>
+</tr>
+<tr>
+<td>单色图标染色</td>
+<td>运行期 <code>mask-image: url(x.svg)</code>（取 alpha）；MCU 用 <code>qlsvg --alpha</code> + <code>qltext -a8</code></td>
 </tr>
 <tr>
 <td>内联 <code>&lt;svg&gt;</code></td>
-<td><strong>不做</strong>。继续"占位盒 + 内容跳过"；要图标请用 <code>&lt;img src="x.svg"&gt;</code> 或 <code>background-image</code></td>
+<td><strong>不做</strong>，继续"占位盒 + 内容跳过"；要图标请用 <code>&lt;img src="x.svg"&gt;</code></td>
 </tr>
 <tr>
-<td><code>&lt;img src=x.svg&gt;</code></td>
-<td>构建期：转成普通位图（<code>--pixel-format</code> 决定 RGB565/A8…）；运行期：注册解码</td>
-</tr>
-<tr>
-<td>单色图标</td>
-<td>构建期转 <strong>A8 遮罩</strong>，运行期用 <code>color</code>/mask 染色，一套图标支持任意主题色</td>
-</tr>
-<tr>
-<td>尺寸与 DPR</td>
-<td>构建期按 <code>--svg-scale</code> 定型；运行期按 <code>元素尺寸 × DPR</code> 栅格化并缓存 <code>(名字, w, h)</code></td>
+<td>SVG 动画</td>
+<td><strong>不做</strong>（PlutoSVG 不支持 SMIL/CSS 动画）；动效做在 QLUI 层（对位图做 transform/opacity）</td>
 </tr>
 <tr>
 <td><code>clip-path: path()</code></td>
-<td>复用 PlutoVG 的路径解析 + 遮罩化，作为独立小特性（不依赖完整 SVG 支持）</td>
-</tr>
-<tr>
-<td>安全</td>
-<td>外来 SVG 是 XML：禁外链/脚本/字体/滤镜，尺寸/字节数/递归深度/渲染时间全部有上限</td>
-</tr>
-<tr>
-<td>MCU</td>
-<td>构建期路线完全可用（A8/565 小图标）；运行期路线默认关</td>
+<td>还没接；PlutoVG 的路径展平器是现成的，但属于独立特性</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="1">1. 目标与非目标</h2>
-<p><strong>目标</strong></p>
-<ol>
-<li><code>&lt;img src="icon.svg"&gt;</code>、<code>background-image: url(icon.svg)</code>、<code>mask-image: url(icon.svg)</code>
-   三条路径和 PNG 一样可用，像素结果确定、可缓存。</li>
-<li>图标在 1x/2x/3x 屏上都清晰：构建期按目标 DPR 栅格化，运行期按需重栅格化。</li>
-<li>单色图标能跟随主题色，不需要为每种颜色重新导出资源。</li>
-<li>支持 SVG 的"图标级子集"：<code>path</code>、<code>rect/circle/ellipse/line/polygon/polyline</code>、
-   渐变、<code>transform</code>、<code>clipPath</code>、<code>mask</code>、<code>use</code>（文档内）、<code>opacity</code>。</li>
-<li>明确拒绝：脚本、外链图片、外链字体、滤镜、SMIL、CSS 动画。</li>
-<li>所有外来输入有界：字节数、viewBox、输出尺寸、递归深度、渲染步数。</li>
-</ol>
-<p><strong>非目标</strong></p>
-<ul>
-<li><strong>内联 <code>&lt;svg&gt;</code> 子树</strong>（<code>&lt;svg&gt;&lt;path/&gt;&lt;/svg&gt;</code> 直接写在 HTML 里）：
-  那需要 DOM/CSS 继承/<code>&lt;use&gt;</code>/<code>viewBox</code> 嵌套，等于第二个渲染器。
-  维持现状：内容整段跳过 + 占位盒（<code>qlui_parse.c</code> 的 <code>tag_skips_content</code>）。</li>
-<li>SVG 动画（SMIL / CSS animation / <code>&lt;animate&gt;</code>）。</li>
-<li>滤镜（<code>feGaussianBlur</code> 等）与 <code>filter: url(#...)</code>。</li>
-<li>外链资源：<code>&lt;image href="https://..."&gt;</code>、<code>@font-face</code>、<code>url(http://...)</code>。</li>
-<li>完整文本排版：<code>&lt;text&gt;</code> 只在运行期后端里尽量给（依赖字体），
-  构建期路线建议直接把文字转曲（导出时 outline）。</li>
-<li>SVG 写回/编辑。</li>
-</ul>
-<hr />
-<h2 id="2-2026-11">2. 现状（2026-11）</h2>
+<h2 id="1">1. 能力边界（很重要）</h2>
 <table>
 <thead>
 <tr>
-<th>位置</th>
-<th>现状</th>
+<th>支持</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>&lt;svg&gt;</code> 标签</td>
-<td><code>QL_UI_TAG_SVG</code>，占位盒；<strong>内容整段跳过</strong>（<code>tag_skips_content</code>）</td>
+<td><code>svg</code> / <code>g</code> / <code>defs</code> / <code>use</code> / <code>symbol</code></td>
+<td>结构、引用、复用</td>
 </tr>
 <tr>
-<td><code>&lt;img src="x.svg"&gt;</code></td>
-<td>构建期 <code>qltext --root</code> 会把它当图片打开 → 现阶段会解码失败；运行期 <code>QL_IMAGE_SRC_AUTO</code> 也不认 SVG</td>
+<td><code>path</code> / <code>rect</code> / <code>circle</code> / <code>ellipse</code> / <code>line</code> / <code>polyline</code> / <code>polygon</code></td>
+<td>基本形状</td>
 </tr>
 <tr>
-<td><code>background-image</code> / <code>mask-image</code> / <code>border-image</code></td>
-<td>与 <code>&lt;img&gt;</code> 共用资源表；同样只认 BMP/QOI/PNG/GIF/JPEG</td>
+<td><code>linearGradient</code> / <code>radialGradient</code> / <code>solidColor</code></td>
+<td>渐变与纯色</td>
 </tr>
 <tr>
-<td><code>clip-path: path()</code> / <code>url()</code></td>
-<td>解析期明确报错（"需要 SVG 路径解析器"）</td>
+<td><code>transform</code> / <code>viewBox</code> / <code>preserveAspectRatio</code> / <code>fill-rule</code> / <code>opacity</code></td>
+<td>常用属性</td>
 </tr>
 <tr>
-<td>文献</td>
-<td><a href="manual/ui/HTML5标签覆盖与裁剪.html">HTML5 标签覆盖与裁剪</a> §5：<code>svg/math</code> 归为"需要独立渲染器"</td>
+<td>内联 <code>style=""</code></td>
+<td>常用项可用</td>
 </tr>
 </tbody>
 </table>
-<p>也就是说：<strong>现在没有任何 SVG 能力</strong>，但资源表、构建期转码、A8 蒙版、
-<code>blit_image</code> 都已经就位，差的只是"把 SVG 变成像素"这一步。</p>
-<hr />
-<h2 id="3">3. 三条路线与取舍</h2>
 <table>
 <thead>
 <tr>
-<th>路线</th>
-<th>运行时依赖</th>
-<th>优点</th>
-<th>缺点</th>
-<th>用途</th>
+<th>不支持</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>A. 构建期栅格化</strong></td>
-<td>0</td>
-<td>零解析、零依赖、像素确定、MCU 可用、可做 A8 染色</td>
-<td>尺寸固定；换色/换尺寸要重新构建</td>
-<td><strong>默认</strong>：图标、logo、静态插画</td>
+<td><code>clipPath</code> / <code>mask</code> / <code>pattern</code> / <code>marker</code></td>
+<td>PlutoSVG 当前版本没有实现（<code>TAG_CLIP_PATH</code> 仍是 TODO）</td>
 </tr>
 <tr>
-<td><strong>B. 运行期矢量渲染</strong></td>
-<td>一个 SVG 库</td>
-<td>任意缩放、外部文件、动态换色</td>
-<td>体积、内存、SVG 子集、浮点差异</td>
-<td>可选：动态图标、用户提供的 SVG</td>
+<td>滤镜（<code>feGaussianBlur</code> 等）</td>
+<td>不做</td>
 </tr>
 <tr>
-<td><strong>C. 自己写子集</strong></td>
-<td>0</td>
-<td>完全可控</td>
-<td>等于写半个渲染器（贝塞尔、填充规则、渐变、裁剪）</td>
-<td><strong>不做</strong></td>
+<td><code>&lt;style&gt;</code> 样式表 / class 选择器 / CSS 变量（可传 palette 回调，但我们没接）</td>
+<td>不保证</td>
+</tr>
+<tr>
+<td><code>&lt;text&gt;</code> / <code>&lt;tspan&gt;</code></td>
+<td>没开 FreeType，不渲染（图标请把文字转曲）</td>
+</tr>
+<tr>
+<td><code>&lt;image&gt;</code> 的外链、<code>@font-face</code>、外部 <code>&lt;use&gt;</code></td>
+<td>拒绝</td>
+</tr>
+<tr>
+<td>SMIL / CSS 动画</td>
+<td><strong>完全不支持</strong></td>
 </tr>
 </tbody>
 </table>
-<p>结论：<strong>A 是主路径，B 是加装件，C 不碰。</strong></p>
-<h3 id="31-a">3.1 路线 A：构建期栅格化</h3>
-<p><code>qltext</code> 已经具备能力：<code>--root DIR</code> 把 <code>&lt;img src&gt;</code> 指向的图片在构建期解码，
-按 <code>--pixel-format</code>（<code>rgb565/rgb888/rgba8888/a8</code>）重排后嵌入 C 表。</p>
-<p>需要加的是：<strong>遇到 <code>.svg</code> 时先栅格化，再走同一条嵌入路径</strong>。</p>
-<div class="highlight"><pre><span></span><code>qltext cc --html app.html --css app.css --root assets \
-       --pixel-format rgb565 --svg-scale 2
+<p><strong>结论</strong>：单色图标、logo、渐变图标、<code>&lt;use&gt;</code> 图标集都没问题；
+插画级 SVG（滤镜/蒙版/大量文本/CSS 主题）请在构建期用设计工具导出 PNG，
+不要承诺运行期还原。</p>
+<hr />
+<h2 id="2-pc-mobile">2. 运行期解码（PC / Mobile）</h2>
+<h3 id="21">2.1 入口</h3>
+<p>不新增公开解码 API：走现有 <code>ql_image_decode()</code>。</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLImageDecodeReq</span><span class="w"> </span><span class="n">req</span><span class="p">;</span>
+<span class="n">memset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">req</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">req</span><span class="p">));</span>
+<span class="n">req</span><span class="p">.</span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">svg_bytes</span><span class="p">;</span>
+<span class="n">req</span><span class="p">.</span><span class="n">len</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">svg_len</span><span class="p">;</span>
+<span class="n">req</span><span class="p">.</span><span class="n">src_format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_SRC_AUTO</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 按 `&lt;svg` / `&lt;?xml ... &lt;svg` 探测 */</span>
+<span class="n">req</span><span class="p">.</span><span class="n">out_format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_RGBA8888</span><span class="p">;</span><span class="w">   </span><span class="cm">/* 或 RGB565 / A8 */</span>
+<span class="n">req</span><span class="p">.</span><span class="n">target_w</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">64</span><span class="p">;</span><span class="w">                    </span><span class="cm">/* 0 = 用 SVG 固有尺寸 */</span>
+<span class="n">req</span><span class="p">.</span><span class="n">target_h</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">64</span><span class="p">;</span><span class="w">                    </span><span class="cm">/* 只给一边按比例补另一边 */</span>
+
+<span class="n">QLImage</span><span class="w"> </span><span class="n">img</span><span class="p">;</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ql_image_decode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">req</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">img</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">QL_OK</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cm">/* img.px 是非预乘像素；owned = 1，用完 ql_mem_free(img.px) */</span>
+<span class="p">}</span>
 </code></pre></div>
 
 <ul>
-<li><code>--svg-scale N</code>：按 SVG 声明尺寸的 N 倍栅格化（对应 2x/3x 屏）。</li>
-<li><code>--svg-size WxH</code>：强制输出尺寸（覆盖 SVG 的 width/height）。</li>
-<li>单色图标建议先导出成 <code>&lt;path fill="currentColor"&gt;</code>，再用 <code>--pixel-format a8</code>：
-  运行期用 <code>color</code> 染色（见 §7.3），一套资源适配亮/暗主题。</li>
+<li><code>QL_IMAGE_SRC_SVG</code> 也可以显式指定；</li>
+<li>显式给 <code>target_w/target_h</code> 时按精确尺寸渲染；两个都 0 时用
+  <code>width/height</code>，没有就 <code>viewBox</code>，再没有按规范兜底 300×150；</li>
+<li>输出尺寸单边夹到 <code>QL_CFG_IMAGE_SVG_MAX_DIM</code>（默认 2048；超限时<strong>按比例</strong>缩，
+  不改变长宽比），surface 按解码预算检查；</li>
+<li>峰值内存 ≈ <code>surface（4 B/px）+ 输出像素</code>：A8 输出很小，RGBA 会多一份。
+  大图请自觉给 <code>target_w/h</code> 或调 <code>ql_image_set_decode_budget()</code>。</li>
 </ul>
-<p><strong>实现方式</strong>（二选一）：</p>
-<ol>
-<li><strong>外部工具</strong>（推荐先做）：配置期探测 <code>resvg</code> / <code>rsvg-convert</code>，
-   <code>qltext</code> 用子进程把 SVG 转成 PNG（临时文件或 stdout），再走现有解码。
-   好处：库本身零依赖；坏处：构建机要装工具。</li>
-<li><strong>链接 PlutoSVG</strong>：<code>qltext</code> 直接调 <code>plutosvg_document_load_from_file</code> +
-   <code>document_render_to_surface</code>，转成 RGBA 后按目标格式重排。
-   好处：构建产物在装没装工具的机器上都一致；坏处：宿主工具多一个依赖。</li>
-</ol>
-<p>建议：<strong>两者都支持</strong>，默认优先外部工具（保持库轻），找不到再退回链接后端。</p>
-<blockquote>
-<p>与 <code>qltext</code> 的既有约定一致：构建期解码是"把外来数据变成目标像素格式"，
-运行期只做搬运。SVG 只是多了一种源格式。</p>
-</blockquote>
-<h3 id="32-b">3.2 路线 B：运行期矢量渲染</h3>
-<p>只在"资源在运行期才拿到"或"尺寸/颜色会变"时需要：</p>
+<h3 id="22-qlui">2.2 与 QLUI 的配合</h3>
+<p><code>&lt;img src="logo.svg"&gt;</code> 的 <code>src</code> 只是<strong>资源名</strong>。应用读文件后按名字注册：</p>
+<div class="highlight"><pre><span></span><code><span class="n">QLUIImageInput</span><span class="w"> </span><span class="n">in</span><span class="p">;</span>
+<span class="n">memset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">in</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">in</span><span class="p">));</span>
+<span class="n">in</span><span class="p">.</span><span class="n">name</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;logo.svg&quot;</span><span class="p">;</span>
+<span class="n">in</span><span class="p">.</span><span class="n">data</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="n">bytes</span><span class="p">;</span>
+<span class="n">in</span><span class="p">.</span><span class="n">len</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="n">len</span><span class="p">;</span>
+<span class="n">in</span><span class="p">.</span><span class="n">format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QL_IMAGE_SRC_AUTO</span><span class="p">;</span>
+<span class="n">ql_ui_register_image</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">in</span><span class="p">);</span><span class="w">      </span><span class="cm">/* 解码一次；之后每帧只搬像素 */</span>
+</code></pre></div>
+
+<p><code>background-image: url(x.svg)</code> / <code>mask-image: url(x.svg)</code> 与 <code>&lt;img&gt;</code> 共用同一张
+资源表：<code>ql_ui_build()</code> 会为样式里引用的名字也分配资源槽（<code>node == NULL</code>），
+所以<strong>只有 CSS 引用、没有 <code>&lt;img&gt;</code></strong> 时同样可以 <code>ql_ui_register_image(ui, "x.svg")</code>。
+<code>example/46_svg_icon</code> 里 <code>star.svg</code> 就是只通过 <code>mask-image</code> 引用的。</p>
+<h3 id="23-a8">2.3 A8 与染色</h3>
+<p>SVG → <code>QL_IMAGE_A8</code> 取的是<strong>覆盖率（alpha）</strong>，不是黑色图形的亮度：</p>
 <ul>
-<li>从磁盘/网络加载的 <code>.svg</code>（主题包、插件）；</li>
-<li>同一图标要按不同 DPR/尺寸渲染（窗口拖到 4K 屏）；</li>
-<li><code>currentColor</code> 染色（A8 方案在构建期也能做，见 §7.3）。</li>
+<li><code>fill="#000"</code> + 透明背景的图标 → 形状处 255、外部 0，正好当遮罩；</li>
+<li>运行期 <code>mask-image: url(star.svg)</code> 读图片 alpha，颜色由 <code>background-color</code> 决定；</li>
+<li>不需要为每种主题色重新导出资源。</li>
 </ul>
-<p>运行期后端接口见 §5。<strong>默认 <code>QLGL_BUILD_SVG=OFF</code></strong>：不链任何 SVG 库，
-<code>&lt;img src=x.svg&gt;</code> 在构建期已经变成位图的话完全无感。</p>
+<h3 id="24-dpr">2.4 尺寸与 DPR（现状）</h3>
+<p>当前在<strong>注册时</strong>按固有尺寸（或调用方给的 <code>target_w/h</code>）渲染一次，
+之后由 QLUI 按元素盒子缩放。没有做"元素尺寸 × DPR 变化后自动重栅格化"；
+高 DPI 下需要更锐利时，注册时显式给 <code>target_w/h</code>（例如 2×）。</p>
 <hr />
-<h2 id="4">4. 能力开关</h2>
-<p>沿用"能力正交、各自可裁"的规则：</p>
+<h2 id="3-qlsvgmcu">3. 构建期工具 <code>qlsvg</code>（MCU / 预渲染）</h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># 普通 PNG（保留颜色/透明度）</span>
+qlsvg<span class="w"> </span>icons/logo.svg<span class="w"> </span>icons/logo.png
+
+<span class="c1"># 指定尺寸（只给一边按比例）</span>
+qlsvg<span class="w"> </span>icons/logo.svg<span class="w"> </span>icons/logo.png<span class="w"> </span>-w<span class="w"> </span><span class="m">64</span><span class="w"> </span>-h<span class="w"> </span><span class="m">64</span>
+
+<span class="c1"># 单色遮罩：白 = 不透明，黑 = 透明</span>
+qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.png<span class="w"> </span>--alpha
+</code></pre></div>
+
+<p>然后走现有资源管线：</p>
+<div class="highlight"><pre><span></span><code>qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--root<span class="w"> </span>icons<span class="w"> </span><span class="se">\</span>
+<span class="w">          </span>--pixel-format<span class="w"> </span>a8<span class="w">          </span><span class="c1"># 或 rgb565 / rgba8888</span>
+</code></pre></div>
+
+<ul>
+<li><code>--alpha</code> 输出的是<strong>灰度图</strong>（RGB=覆盖率），这样 <code>qltext -a8</code> 按亮度取也能得到遮罩；
+  直接把透明背景 + 黑色图形交给 <code>qltext -a8</code> 会得到全 0（黑色亮度为 0）。</li>
+<li>工具与运行期共用同一份 PlutoSVG/PlutoVG，因此"工具产物"和桌面渲染一致。</li>
+<li>产物是普通 PNG，可以提交进版本库；目标机不需要 <code>qlsvg</code>。</li>
+<li>顺带：如果<strong>宿主</strong>的 <code>qltext</code> 是在带 SVG 的构建里编出来的（桌面默认），
+  <code>qltext cc --root</code> 也能直接把 <code>.svg</code> 解成目标像素格式嵌入；MCU 预设把
+  <code>QLGL_BUILD_SVG</code> 关掉时才必须先用 <code>qlsvg</code> 预渲染。</li>
+</ul>
+<hr />
+<h2 id="4-cmake">4. CMake 与裁剪</h2>
+<div class="highlight"><pre><span></span><code><span class="nb">option</span><span class="p">(</span><span class="s">QLGL_BUILD_SVG</span><span class="w"> </span><span class="s2">&quot;运行期 SVG 解码（vendored PlutoSVG + PlutoVG）&quot;</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+</code></pre></div>
+
 <table>
 <thead>
 <tr>
@@ -553,40 +565,16 @@ main img {
 </thead>
 <tbody>
 <tr>
-<td>构建期 SVG 栅格化</td>
-<td><code>QLTEXT_SVG</code>（构建工具侧）</td>
-<td>探测到工具/库才开</td>
-<td><code>qltext</code> 对 <code>.svg</code> 报错并给出安装提示</td>
-</tr>
-<tr>
-<td>运行期 SVG 接口</td>
+<td>运行期 SVG</td>
 <td><code>QL_FEAT_IMG_SVG</code></td>
-<td>0（桌面预设可开）</td>
-<td>运行期 <code>.svg</code> → <code>QL_ERR_UNSUPPORTED</code></td>
+<td>由 <code>QLGL_BUILD_SVG</code> 决定（桌面 ON，MCU 预设 OFF）</td>
+<td><code>.svg</code> → <code>QL_ERR_UNSUPPORTED</code></td>
 </tr>
 <tr>
-<td>PlutoSVG 后端</td>
-<td><code>QL_FEAT_IMG_SVG_PLUTOSVG</code></td>
-<td>= <code>QL_FEAT_IMG_SVG</code></td>
-<td>没有默认后端</td>
-</tr>
-<tr>
-<td>ThorVG 后端</td>
-<td><code>QL_FEAT_IMG_SVG_THORVG</code></td>
-<td>0（可选）</td>
-<td>桌面高质量路径不可用</td>
-</tr>
-<tr>
-<td>NanoSVG 后端</td>
-<td><code>QL_FEAT_IMG_SVG_NANOSVG</code></td>
-<td>0（极小构建）</td>
-<td>只认简单图标</td>
-</tr>
-<tr>
-<td><code>clip-path: path()</code></td>
-<td><code>QL_FEAT_CSS_CLIP_PATH_FILE</code></td>
-<td>0（二期）</td>
-<td>保持现在的"明确报错"</td>
+<td>宿主工具</td>
+<td><code>QLGL_BUILD_QLSVG</code></td>
+<td>非交叉编译时 ON（<strong>与 <code>QLGL_BUILD_SVG</code> 独立</strong>）</td>
+<td>不产出 <code>qlsvg</code>；MCU 仍可手写/提交预渲染 PNG</td>
 </tr>
 </tbody>
 </table>
@@ -601,226 +589,34 @@ main img {
 </thead>
 <tbody>
 <tr>
-<td><code>QL_CFG_SVG_MAX_BYTES</code></td>
-<td>1 MiB</td>
-<td>单个 SVG 文件字节上限</td>
-</tr>
-<tr>
-<td><code>QL_CFG_SVG_MAX_DIM</code></td>
+<td><code>QL_CFG_IMAGE_SVG_MAX_DIM</code></td>
 <td>2048</td>
 <td>输出单边像素上限</td>
 </tr>
 <tr>
-<td><code>QL_CFG_SVG_MAX_PIXELS</code></td>
-<td>2048×2048</td>
-<td>输出总像素上限</td>
+<td><code>QL_CFG_IMAGE_SVG_MAX_DEPTH</code></td>
+<td>64</td>
+<td>元素嵌套深度上限</td>
 </tr>
 <tr>
-<td><code>QL_CFG_SVG_CACHE_ENTRIES</code></td>
-<td>4</td>
-<td>每个资源名缓存几个尺寸</td>
+<td><code>QL_CFG_IMAGE_SVG_MAX_ELEMENTS</code></td>
+<td>4096</td>
+<td>元素总数上限</td>
 </tr>
 <tr>
-<td><code>QL_CFG_SVG_CACHE_BYTES</code></td>
-<td>8 MiB</td>
-<td>全局栅格化缓存预算</td>
-</tr>
-<tr>
-<td><code>QL_CFG_SVG_MAX_DEPTH</code></td>
-<td>32</td>
-<td><code>&lt;g&gt;</code>/<code>&lt;use&gt;</code> 嵌套上限</td>
+<td><code>QL_CFG_IMAGE_MAX_ENCODED_BYTES</code></td>
+<td>32 MiB</td>
+<td>SVG 文本字节上限（与其它编码共用）</td>
 </tr>
 </tbody>
 </table>
+<p>关掉时 <code>src/draw/qlimage_svg.c</code> 编译成空文件，第三方源码不参与 <code>libqlgl</code> 编译，
+库里不出现任何 PlutoSVG 符号；但开发机上的 <code>qlsvg</code> <strong>仍然默认构建</strong>，
+所以"MCU 库裁掉 SVG"与"构建期还能把 SVG 转 PNG"不冲突。</p>
 <hr />
-<h2 id="5-qlimagesvgbackend">5. 运行期接缝：<code>QLImageSvgBackend</code></h2>
-<p>和 <code>QLImageBackend</code>（JPEG 平台后端）并列，但<strong>多一个目标尺寸</strong>——
-SVG 不"解码一次得到固定位图"，它是"按尺寸渲染"：</p>
-<div class="highlight"><pre><span></span><code><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">QLImageSvgBackend</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">              </span><span class="cm">/* &quot;plutosvg&quot; / &quot;thorvg&quot; / &quot;nanosvg&quot; */</span>
-
-<span class="w">    </span><span class="cm">/*</span>
-<span class="cm">     * 把 SVG 字节渲染成 out_format 的像素。</span>
-<span class="cm">     *   w, h       目标像素尺寸（已含 DPR，调用方按元素尺寸算好）</span>
-<span class="cm">     *   out        成功时填 px/len/w/h/stride/format，owned = 1（ql_mem_alloc 分配）</span>
-<span class="cm">     *   err/err_cap 人类可读失败原因</span>
-<span class="cm">     * 失败返回 QL_ERR_INVAL / QL_ERR_NOMEM / QL_ERR_UNSUPPORTED。</span>
-<span class="cm">     */</span>
-<span class="w">    </span><span class="n">QLErr</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">render</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span>
-<span class="w">                       </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">out_format</span><span class="p">,</span>
-<span class="w">                       </span><span class="n">QLImage</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">err_cap</span><span class="p">);</span>
-
-<span class="w">    </span><span class="cm">/* 可选：直接渲染进调用方的缓冲（GL 上传零拷贝、A8 蒙版） */</span>
-<span class="w">    </span><span class="n">QLErr</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">render_to</span><span class="p">)(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">,</span>
-<span class="w">                          </span><span class="kt">uint8_t</span><span class="w"> </span><span class="o">*</span><span class="n">dst</span><span class="p">,</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">stride</span><span class="p">,</span>
-<span class="w">                          </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">ql_coord_t</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">out_format</span><span class="p">,</span>
-<span class="w">                          </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">err_cap</span><span class="p">);</span>
-
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">;</span>
-<span class="p">}</span><span class="w"> </span><span class="n">QLImageSvgBackend</span><span class="p">;</span>
-
-<span class="kt">void</span><span class="w"> </span><span class="nf">ql_image_set_svg_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">QLImageSvgBackend</span><span class="w"> </span><span class="o">*</span><span class="n">be</span><span class="p">);</span><span class="w">   </span><span class="cm">/* NULL = 卸载 */</span>
-<span class="k">const</span><span class="w"> </span><span class="n">QLImageSvgBackend</span><span class="w"> </span><span class="o">*</span><span class="nf">ql_image_svg_backend</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
-</code></pre></div>
-
-<p>约定：</p>
-<ul>
-<li><strong>输出非预乘</strong>，与 <code>QLImage</code> 的 <code>RGBA8888</code> 定义一致。PlutoVG 的 surface 是
-  <strong>预乘 ARGB32</strong>（小端内存序 B,G,R,A），适配器里必须反预乘 + 换序；
-  <code>render_to</code> 允许后端直接写目标格式以减少一次拷贝。</li>
-<li><code>w/h</code> 由调用方给：后端不许自己按 <code>viewBox</code> 猜（尺寸策略在 QLUI 层，见 §7）。</li>
-<li>后端不缓存、不持有多媒体/文档对象之外的状态；每次 <code>render</code> 都是独立的。</li>
-<li>失败必须写 <code>err</code>（例如 <code>"&lt;use&gt; 指向外部文件，已拒绝"</code>），便于定位。</li>
-</ul>
-<h3 id="51-plutosvg">5.1 适配器实现要点（PlutoSVG）</h3>
-<div class="highlight"><pre><span></span><code><span class="cm">/* 1) 解析（带上限：先查字节数/根元素尺寸） */</span>
-<span class="n">plutosvg_document_t</span><span class="w"> </span><span class="o">*</span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">plutosvg_document_load_from_data</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="p">)</span><span class="n">len</span><span class="p">,</span>
-<span class="w">                                                            </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="mi">-1</span><span class="p">);</span>
-<span class="cm">/* 2) 目标 surface：优先 surface_create_for_data 直接写调用方缓冲 */</span>
-<span class="n">plutovg_surface_t</span><span class="w"> </span><span class="o">*</span><span class="n">surf</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">plutovg_surface_create_for_data</span><span class="p">(</span><span class="n">dst</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="n">stride</span><span class="p">);</span>
-<span class="n">plutovg_canvas_t</span><span class="w">  </span><span class="o">*</span><span class="n">cv</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="n">plutovg_canvas_create</span><span class="p">(</span><span class="n">surf</span><span class="p">);</span>
-<span class="cm">/* 3) 渲染：viewBox → 目标矩形；current_color 用于解析 CSS currentColor */</span>
-<span class="n">plutosvg_document_render</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">cv</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">current_color</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
-<span class="cm">/* 4) 反预乘 + BGR→RGB（仅 render() 路径需要） */</span>
-</code></pre></div>
-
-<ul>
-<li>PlutoVG 的 <code>plutovg_surface_create_for_data()</code> 让我们<strong>直接渲染进目标缓冲</strong>，
-  不需要中间 surface；这对 A8 蒙版和 GL 纹理上传都很关键。</li>
-<li><code>plutosvg_document_render()</code> 自带 <code>current_color</code> 参数：单色 SVG 可以在<strong>栅格化时</strong>
-  就换成主题色，不必先出 A8 再染色（A8 仍是对 CPU 最省的路径）。</li>
-<li>解析用 <code>plutosvg_document_load_from_data()</code>：<strong>它不拷贝输入缓冲</strong>，
-  缓冲必须活到 <code>plutosvg_document_destroy()</code>（所以运行期缓存要连字节一起管）。</li>
-<li>文本：PlutoVG 自带 TrueType 字体接口（<code>plutovg_font_face_load_from_*</code>），
-  但图标里基本用不到；运行期后端可以关闭文本，遇到 <code>&lt;text&gt;</code> 返回
-  <code>QL_ERR_UNSUPPORTED</code>（比渲染成乱码好）。</li>
-</ul>
-<hr />
-<h2 id="6-qltext">6. 构建期管线（<code>qltext</code>）</h2>
-<h3 id="61">6.1 命令与开关</h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># 已支持：--root 把图片按目标像素格式嵌入</span>
-qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--root<span class="w"> </span>assets<span class="w"> </span><span class="se">\</span>
-<span class="w">          </span>--pixel-format<span class="w"> </span>rgb565
-
-<span class="c1"># 新增（本设计）：</span>
-<span class="c1">#   --svg-scale N      按声明尺寸的 N 倍栅格化（默认 1）</span>
-<span class="c1">#   --svg-size WxH     强制输出尺寸</span>
-<span class="c1">#   --svg-tool PATH    指定 resvg / rsvg-convert（默认自动探测）</span>
-<span class="c1">#   --svg-engine auto|tool|plutosvg   栅格化实现（auto = 先工具后库）</span>
-</code></pre></div>
-
-<p><code>--root</code> 遇到 <code>foo.svg</code> 时：</p>
-<ol>
-<li>读文件，检查字节数 ≤ <code>QL_CFG_SVG_MAX_BYTES</code>；</li>
-<li>解析根元素拿 <code>width/height/viewBox</code>，算出目标尺寸（按 <code>--svg-scale</code>）；</li>
-<li>用 <code>--svg-engine</code> 栅格化到 RGBA8888；</li>
-<li>按 <code>--pixel-format</code> 重排（<code>rgb565</code> / <code>a8</code> / …）；</li>
-<li>走现有 <code>Asset</code> 流程：进 <code>image_data</code> 段，<code>src_format = QL_IMAGE_SRC_RAW</code>。</li>
-</ol>
-<p><strong>结果</strong>：运行期和 PNG 图标<strong>完全一样</strong>——没有 SVG 分支、没有解析、没有依赖。</p>
-<h3 id="62-a8">6.2 单色图标的 A8 染色</h3>
-<div class="highlight"><pre><span></span><code>qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> </span>app.html<span class="w"> </span>--css<span class="w"> </span>app.css<span class="w"> </span>--root<span class="w"> </span>icons<span class="w"> </span>--pixel-format<span class="w"> </span>a8
-</code></pre></div>
-
-<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">icon</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">width</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">height</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="kc">currentColor</span><span class="p">;</span>
-<span class="w">        </span><span class="k">mask-image</span><span class="p">:</span><span class="w"> </span><span class="nb">url</span><span class="p">(</span><span class="sx">star.svg</span><span class="p">);</span><span class="w"> </span><span class="k">mask-size</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="w"> </span><span class="mi">100</span><span class="kt">%</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-</code></pre></div>
-
-<ul>
-<li>构建期把 <code>star.svg</code> 栅格成 <strong>A8</strong>（透明度即形状）；</li>
-<li>运行期 <code>mask-image</code> 已支持（<code>QLUIStyle.mask_image</code> + 资源表），
-  颜色取 <code>background-color</code>/<code>color</code>，天然跟随主题。</li>
-<li>对多色图标仍用 <code>rgb565/rgba8888</code>；两条路可以混用。</li>
-</ul>
-<h3 id="63-svg">6.3 内联 <code>&lt;svg&gt;</code> 的处置</h3>
-<p>保持"跳过内容 + 占位盒"，但<strong>构建期可以救</strong>（可选，二期）：</p>
-<ul>
-<li><code>qltext</code> 在跳过前把 <code>&lt;svg ...&gt; … &lt;/svg&gt;</code> 的<strong>原始片段</strong>收集下来，
-  按 <code>width/height</code> 栅格化成一个匿名资源，然后把节点改写成 <code>&lt;img src="…"&gt;</code>。</li>
-<li>这样"内联图标"也能用，且运行期仍然只有位图。</li>
-<li>风险：内联 SVG 可能依赖 CSS 继承/<code>currentColor</code>/<code>&lt;use&gt;</code> 外链；
-  一期只处理"自包含、无外链"的片段，其余维持占位。</li>
-</ul>
-<hr />
-<h2 id="7-qlui">7. 运行期管线与 QLUI 集成</h2>
-<h3 id="71">7.1 什么时候栅格化</h3>
-<table>
-<thead>
-<tr>
-<th>触发</th>
-<th>行为</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ql_ui_build()</code></td>
-<td>不解码；只登记资源名（与 <code>&lt;img&gt;</code> 的 RAW 资源一致）</td>
-</tr>
-<tr>
-<td>首次绘制 <code>&lt;img src=x.svg&gt;</code></td>
-<td>按"元素内容框 × DPR"算出 <code>w/h</code>，调后端 <code>render</code>，结果进缓存</td>
-</tr>
-<tr>
-<td>CSS 尺寸变化</td>
-<td>先继续用旧位图拉伸（一帧），把新尺寸放进"待重栅格化"队列</td>
-</tr>
-<tr>
-<td>尺寸稳定 1~2 帧 / 布局结束</td>
-<td>重栅格化并替换（避免拖动窗口时每帧重渲染）</td>
-</tr>
-<tr>
-<td>缓存超预算</td>
-<td>按 LRU 淘汰（同一资源的旧尺寸优先）</td>
-</tr>
-</tbody>
-</table>
-<p><strong>上限</strong>：<code>w/h</code> 先夹到 <code>QL_CFG_SVG_MAX_DIM</code>；总像素超上限时按比例缩小，
-并打一次 <code>QL_LOGW</code>（不静默改尺寸）。</p>
-<h3 id="72">7.2 缓存键</h3>
-<div class="highlight"><pre><span></span><code>(name, css_w_rounded, css_h_rounded, scale_fx, format)
-</code></pre></div>
-
-<ul>
-<li><code>scale_fx</code> 是 26.6 定点 DPR（与画布同一套）；</li>
-<li><code>format</code> 区分 <code>RGBA8888</code> / <code>A8</code>（同名字可能两种用途）；</li>
-<li>不做"颜色"进键：染色在绘制期做（A8 蒙版），多色图标本来就是多色。</li>
-</ul>
-<h3 id="73-currentcolor">7.3 染色（currentColor）</h3>
-<ul>
-<li>A8 资源：绘制期用 <code>mask</code> + 纯色填充，颜色取自样式（<code>color</code>），
-  与现有 <code>mask-image</code> 路径完全一致，<strong>不需要 SVG 层参与</strong>。</li>
-<li>RGBA 资源：需要"只替换 RGB、保留 alpha"的 tint；作为 <code>QLDraw2D</code> 的可选能力
-  （<code>blit_image_tinted</code>），CPU 逐像素、GL 用 <code>u_tint</code> uniform。</li>
-</ul>
-<h3 id="74">7.4 布局尺寸</h3>
-<ul>
-<li>有 <code>width/height</code>：用它们（CSS <code>width/height</code> 优先，盒模型不变）。</li>
-<li>只有 <code>viewBox</code>：固有尺寸 = viewBox 尺寸（SVG 规范对替换元素的行为）。</li>
-<li>都没有：按 300×150 兜底（与 <code>&lt;img&gt;</code> 的"无内在尺寸"一致）。</li>
-<li>运行期可以从 <code>plutosvg_document_get_width()/get_height()</code> 取固有尺寸；
-  构建期由 <code>qltext</code> 解析根元素得到同样的值。</li>
-<li><code>object-fit</code> / <code>object-position</code> 复用 <code>&lt;img&gt;</code> 的实现，不改。</li>
-</ul>
-<hr />
-<h2 id="8-clip-path-path-url">8. <code>clip-path: path()</code> / <code>url()</code>（顺带收益）</h2>
-<p>现在的状态是"解析期明确报错"（<code>CSS3覆盖与裁剪.md</code> §517）。有了路径解析器后：</p>
-<div class="highlight"><pre><span></span><code><span class="p">.</span><span class="nc">badge</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">clip-path</span><span class="p">:</span><span class="w"> </span><span class="nf">path</span><span class="p">(</span><span class="s2">&quot;M0,0 L40,0 L40,40 Z&quot;</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
-</code></pre></div>
-
-<p>实现路线：</p>
-<ol>
-<li><code>plutovg_path_parse()</code> 解析路径 → 展平成多边形（<code>plutovg_path_clone_flatten</code>）；</li>
-<li>顶点归档进 doc 池（复用现有 <code>clip_pts</code> 存储与去重）；</li>
-<li>绘制期用现有"奇偶内点 + 到最近边距离"的覆盖率算法（CPU/GPU 同一公式）。</li>
-</ol>
-<ul>
-<li>只支持绝对/相对命令 + 直线/曲线展平；<code>url(#id)</code>（引用文档内 <code>&lt;clipPath&gt;</code>）
-  仍不支持（那要 DOM 和 <code>&lt;svg&gt;</code> 树）。</li>
-<li>单独开关 <code>QL_FEAT_CSS_CLIP_PATH_FILE</code>，不依赖完整 SVG 资源支持。</li>
-<li>收益：<code>clip-path: path()</code>（明确报错项）+ 未来 CSS <code>shape()</code> 都能复用同一个展平器。</li>
-</ul>
-<hr />
-<h2 id="9-svg-xml">9. 安全与有界（SVG 是 XML，别当图片看）</h2>
+<h2 id="5">5. 安全与有界</h2>
+<p>PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实体；
+但我们仍然在外层加了一道预扫描：</p>
 <table>
 <thead>
 <tr>
@@ -830,357 +626,108 @@ qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> <
 </thead>
 <tbody>
 <tr>
+<td>脚本 / 事件</td>
+<td>文本里出现 <code>&lt;script</code>、<code>javascript:</code> 直接拒绝</td>
+</tr>
+<tr>
+<td>外部引用</td>
+<td><code>href="http…"</code>、<code>href="//…"</code>、<code>xlink:href="http…"</code>、<code>url(http…)</code>、<code>@import</code> 直接拒绝</td>
+</tr>
+<tr>
 <td>实体膨胀（billion laughs）</td>
-<td>解析器禁用 DTD/实体展开；<code>plutosvg</code> 只认元素/属性，不展开实体；比 XML 通用解析器安全</td>
+<td>PlutoSVG 只跳过 <code>DOCTYPE</code>，不展开自定义实体</td>
 </tr>
 <tr>
-<td>外部引用（<code>&lt;image href&gt;</code>、<code>xlink:href</code>）</td>
-<td>一律拒绝并记 <code>err</code>；不发起任何网络/文件访问</td>
+<td>深递归 / 元素炸弹</td>
+<td>预扫描限制深度 ≤ 64、元素数 ≤ 4096</td>
 </tr>
 <tr>
-<td>脚本（<code>&lt;script&gt;</code>、<code>on*</code>）</td>
-<td>不执行；解析时直接忽略</td>
+<td>超大输出</td>
+<td>目标尺寸夹到 2048；surface 按解码预算检查（4 B/px）</td>
 </tr>
 <tr>
-<td>超大 <code>viewBox</code> / 输出尺寸</td>
-<td>输出前夹到 <code>QL_CFG_SVG_MAX_DIM</code> / <code>MAX_PIXELS</code></td>
+<td>文件本身过大</td>
+<td><code>QL_CFG_IMAGE_MAX_ENCODED_BYTES</code> 先拒绝</td>
 </tr>
 <tr>
-<td>深递归（<code>&lt;g&gt;</code> 嵌套 / <code>&lt;use&gt;</code> 环）</td>
-<td>深度上限 + <code>&lt;use&gt;</code> 访问集合防环</td>
-</tr>
-<tr>
-<td>渲染时间（复杂路径）</td>
-<td>构建期无限制（开发机）；运行期按"像素预算"限制，超了降分辨率并告警</td>
-</tr>
-<tr>
-<td>字体（<code>@font-face</code>、系统字体扫描）</td>
-<td>运行期后端禁用文本/字体，<code>&lt;text&gt;</code> 返回 UNSUPPORTED</td>
-</tr>
-<tr>
-<td>文件路径穿越</td>
-<td>构建期只读 <code>--root</code> 之下的文件；运行期由调用方给字节</td>
+<td>字体 / 文件系统</td>
+<td>不启用 FreeType；PlutoVG 的字体缓存加载被 <code>PLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD</code> 关掉</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p>这条和图像管线的红线一致：<strong>外来数据必须有界</strong>。SVG 比 PNG 更危险，
-因为它是"可执行的描述"（引用、嵌套、字体）。</p>
+<p>运行期只接受<strong>调用方给的字节</strong>；本库不读路径、不访问网络。</p>
 </blockquote>
 <hr />
-<h2 id="10">10. 线程与性能</h2>
-<ul>
-<li><strong>构建期</strong>：<code>qltext</code> 单线程；一个图标几十毫秒无所谓。</li>
-<li><strong>运行期</strong>：</li>
-<li>一期<strong>同步</strong>栅格化（首次绘制时），单图标（≤128×128）目标 &lt; 2ms；</li>
-<li>超时/超像素预算的内容降分辨率，不阻塞主循环；</li>
-<li>二期可选后台线程：<code>render</code> 在 worker，UI 继续用旧位图/占位，完成后替换。</li>
-<li><strong>缓存</strong>：栅格化结果按 §7.2 缓存；静止页面零渲染、零上传。</li>
-<li><strong>GL</strong>：优先 <code>render_to</code> 直接写纹理 staging buffer，避免"渲染到 RGBA → 再拷一遍"。</li>
-<li><strong>CPU</strong>：<code>render_to</code> 直接写画布区域（A8 蒙版尤其划算）。</li>
-</ul>
+<h2 id="6">6. 测试</h2>
+<table>
+<thead>
+<tr>
+<th>用例</th>
+<th>文件</th>
+<th>断言</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解码 / 尺寸 / A8</td>
+<td><code>test/web/test_image_svg.c</code></td>
+<td>AUTO 探测、固有尺寸、target 只给一边、A8 覆盖率非零且不是全白、外链/畸形拒绝、预算超限</td>
+</tr>
+<tr>
+<td>关掉 SVG</td>
+<td>同上（<code>QL_FEAT_IMG_SVG=0</code> 分支）</td>
+<td>明确 <code>QL_ERR_UNSUPPORTED</code>，<code>ql_image_last_error()</code> 有原因</td>
+</tr>
+<tr>
+<td>工具链</td>
+<td><code>test/assets/gen_svg_tool.cmake</code></td>
+<td><code>qlsvg</code> 正常/<code>--alpha</code>/坏 SVG 失败；PNG 经 <code>qltext -a8</code> 后尺寸与覆盖率正确</td>
+</tr>
+<tr>
+<td>例程</td>
+<td><code>example/46_svg_icon</code></td>
+<td>多色 <code>&lt;img&gt;</code> + 单色 <code>mask-image</code>，CPU/GL 截图一致</td>
+</tr>
+</tbody>
+</table>
+<p>不做逐像素 golden：抗锯齿细节由 PlutoVG 版本决定，跨版本可能微调。</p>
 <hr />
-<h2 id="11">11. 构建与许可</h2>
-<h3 id="111-cmake">11.1 CMake</h3>
-<div class="highlight"><pre><span></span><code><span class="nb">option</span><span class="p">(</span><span class="s">QLGL_BUILD_SVG</span><span class="w"> </span><span class="s2">&quot;运行期 SVG 栅格化（可选）&quot;</span><span class="w"> </span><span class="s">OFF</span><span class="p">)</span>
-<span class="nb">set</span><span class="p">(</span><span class="s">QLGL_SVG_BACKEND</span><span class="w"> </span><span class="s2">&quot;plutosvg&quot;</span><span class="w"> </span><span class="s">CACHE</span><span class="w"> </span><span class="s">STRING</span><span class="w"> </span><span class="s2">&quot;plutosvg|thorvg|nanosvg|none&quot;</span><span class="p">)</span>
-
-<span class="nb">if</span><span class="p">(</span><span class="s">QLGL_BUILD_SVG</span><span class="w"> </span><span class="s">AND</span><span class="w"> </span><span class="s">QLGL_SVG_BACKEND</span><span class="w"> </span><span class="s">STREQUAL</span><span class="w"> </span><span class="s2">&quot;plutosvg&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="nb">pkg_check_modules</span><span class="p">(</span><span class="s">PLUTOSVG</span><span class="w"> </span><span class="s">QUIET</span><span class="w"> </span><span class="s">plutosvg</span><span class="p">)</span>
-<span class="w">    </span><span class="nb">if</span><span class="p">(</span><span class="s">NOT</span><span class="w"> </span><span class="s">PLUTOSVG_FOUND</span><span class="p">)</span>
-<span class="w">        </span><span class="nb">find_package</span><span class="p">(</span><span class="s">plutosvg</span><span class="w"> </span><span class="s">QUIET</span><span class="p">)</span><span class="w">          </span><span class="c"># 上游提供 CMake 包</span>
-<span class="w">    </span><span class="nb">endif</span><span class="p">()</span>
-<span class="w">    </span><span class="nb">if</span><span class="p">(</span><span class="s">PLUTOSVG_FOUND</span><span class="p">)</span>
-<span class="w">        </span><span class="nb">target_sources</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">src/port/qlimage_svg_plutosvg.c</span><span class="p">)</span>
-<span class="w">        </span><span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">PLUTOSVG_LIBRARIES</span><span class="o">}</span><span class="p">)</span>
-<span class="w">        </span><span class="nb">target_compile_definitions</span><span class="p">(</span><span class="s">qlgl</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">QL_FEAT_IMG_SVG=1</span>
-<span class="w">                                             </span><span class="s">QL_FEAT_IMG_SVG_PLUTOSVG=1</span><span class="p">)</span>
-<span class="w">    </span><span class="nb">else</span><span class="p">()</span>
-<span class="w">        </span><span class="nb">message</span><span class="p">(</span><span class="s">STATUS</span><span class="w"> </span><span class="s2">&quot;QLGL: 未找到 PlutoSVG，运行期 SVG 关闭&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="nb">endif</span><span class="p">()</span>
-<span class="nb">endif</span><span class="p">()</span>
-</code></pre></div>
-
-<ul>
-<li>构建期路线<strong>不需要</strong>任何 CMake 依赖：<code>qltext</code> 运行时探测 <code>resvg</code>/<code>rsvg-convert</code>。</li>
-<li>若选择"qltext 链接 PlutoSVG"，只在宿主工具上加依赖，不进库。</li>
-<li>上游是 CMake/Meson 工程，纯 C；也可以用 <code>FetchContent</code>（默认不做，
-  保持"系统依赖"的仓库习惯）。</li>
-</ul>
-<h3 id="112">11.2 许可</h3>
+<h2 id="7">7. 第三方代码与许可</h2>
+<p><code>third_party/</code> 下 vendor 了两份 MIT 源码（版本与来源见 <code>third_party/README.md</code>）：</p>
 <table>
 <thead>
 <tr>
 <th>组件</th>
-<th>许可</th>
-<th>说明</th>
+<th>版本</th>
+<th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>PlutoSVG / PlutoVG</td>
-<td><strong>MIT</strong></td>
-<td>可静态/动态链接，商用友好</td>
+<td>PlutoVG</td>
+<td>1.3.3</td>
+<td>2D 路径/填充/渐变/光栅化</td>
 </tr>
 <tr>
-<td>NanoSVG</td>
-<td>zlib</td>
-<td>单头文件，可 vendor</td>
-</tr>
-<tr>
-<td>ThorVG</td>
-<td>MIT</td>
-<td>C++ 内核 + C API；允许静态链接</td>
-</tr>
-<tr>
-<td>resvg（构建期工具）</td>
-<td>MPL-2.0</td>
-<td>只跑在开发机，不进产物</td>
-</tr>
-<tr>
-<td>rsvg-convert（构建期工具）</td>
-<td>LGPL-2.1+</td>
-<td>同上，只是工具</td>
+<td>PlutoSVG</td>
+<td>0.0.8</td>
+<td>SVG XML → PlutoVG 绘制</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>与 FFmpeg 的结论一样：<strong>工具链许可 ≠ 产物许可</strong>。构建期用 GPL/MPL 工具
-不会改变本库的许可；但把库静态链进产物要按库自己的许可办。</p>
-</blockquote>
-<h3 id="113">11.3 体积参考（量级，非承诺）</h3>
-<table>
-<thead>
-<tr>
-<th>方案</th>
-<th>代码/二进制量级</th>
-<th>MCU</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>构建期（无运行期库）</td>
-<td>0</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>NanoSVG</td>
-<td>单头 ~3k 行，几十 KB</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>PlutoSVG + PlutoVG</td>
-<td>约两三万行，百 KB 级（接入时实测）</td>
-<td>⚠️ 小图标可以</td>
-</tr>
-<tr>
-<td>ThorVG</td>
-<td>百 KB 级（可裁）</td>
-<td>⚠️ 需 C++</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>具体数字在接入时实测，写进 <code>test/mcu/README.md</code> 的体积表。</p>
-</blockquote>
+<p>两者都是纯 C、无外部依赖；直接静态编进 <code>libqlgl</code>，不安装任何头文件。
+升级步骤：替换 <code>third_party/</code> 源码 → 重跑 <code>test_image_svg</code> / <code>test_qlsvg</code> /
+<code>example_46_svg_icon</code> 截图。</p>
 <hr />
-<h2 id="12">12. 测试计划</h2>
-<h3 id="121">12.1 构建期</h3>
-<table>
-<thead>
-<tr>
-<th>用例</th>
-<th>断言</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>icon.svg</code> → <code>rgb565</code></td>
-<td>产物尺寸/像素格式正确；关键像素颜色在容差内</td>
-</tr>
-<tr>
-<td><code>--svg-scale 2</code></td>
-<td>输出是 1x 的两倍；A8 覆盖率单调</td>
-</tr>
-<tr>
-<td><code>--svg-size</code> 覆盖</td>
-<td>输出尺寸被强制</td>
-</tr>
-<tr>
-<td><code>.svg</code> 损坏 / 无 <code>viewBox</code></td>
-<td>明确报错，构建失败而不是产出 0×0</td>
-</tr>
-<tr>
-<td>超过 <code>--svg</code> 上限</td>
-<td>明确报错（不静默降级）</td>
-</tr>
-<tr>
-<td>与 PNG 同图对比</td>
-<td>结构相似度（不逐像素，渲染器不同）</td>
-</tr>
-</tbody>
-</table>
-<h3 id="122">12.2 运行期后端</h3>
-<table>
-<thead>
-<tr>
-<th>用例</th>
-<th>断言</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>假后端</td>
-<td>不依赖任何 SVG 库，验证 QLUI 的尺寸/缓存/失效逻辑（和 <code>test_window_fake</code> 同思路）</td>
-</tr>
-<tr>
-<td>PlutoSVG 后端</td>
-<td>图标集（path/渐变/clip/mask/transform）逐像素 golden，<strong>带 ±2 容差</strong></td>
-</tr>
-<tr>
-<td>DPR</td>
-<td>1x/2x 输出的覆盖率关系（2x 边缘更平滑，不是简单放大）</td>
-</tr>
-<tr>
-<td>缓存</td>
-<td>同名同尺寸只 render 一次；LRU 淘汰后重新 render</td>
-</tr>
-<tr>
-<td>拒绝项</td>
-<td>外链 <code>&lt;image&gt;</code>、<code>&lt;script&gt;</code>、<code>&lt;text&gt;</code>（禁文本时）、超尺寸 → 明确错误码，不崩</td>
-</tr>
-<tr>
-<td>畸形输入</td>
-<td>截断的 SVG、超深 <code>&lt;g&gt;</code>、<code>&lt;use&gt;</code> 环 → 不崩、不死循环（ASan + 超时）</td>
-</tr>
-<tr>
-<td>版本固定</td>
-<td>PlutoSVG 仍是 <code>0.0.x</code>：记录/锁定版本（或 vendor 一份），升级时重跑图标 golden</td>
-</tr>
-<tr>
-<td>无后端构建</td>
-<td><code>QL_FEAT_IMG_SVG=0</code> 时 <code>.svg</code> → <code>QL_ERR_UNSUPPORTED</code>，页面显示占位</td>
-</tr>
-</tbody>
-</table>
-<h3 id="123">12.3 手工验收</h3>
-<ul>
-<li>高 DPI 屏上图标是否清晰（1x 拉伸 vs 2x 重栅格化）；</li>
-<li>拖动窗口时是否出现"每帧重渲染"（用 <code>--stats</code> 看帧时间）；</li>
-<li>深色/浅色主题切换时 <code>currentColor</code> 图标是否即时变色（应零重栅格化）。</li>
-</ul>
-<hr />
-<h2 id="13">13. 里程碑</h2>
-<table>
-<thead>
-<tr>
-<th>阶段</th>
-<th>内容</th>
-<th>验收</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>S1（构建期）</strong></td>
-<td><code>qltext</code> 支持 <code>.svg</code>（外部工具 + <code>--svg-scale/--svg-size</code>）；A8 染色文档与示例</td>
-<td><code>examples</code> 里一个纯 SVG 图标页，MCU 配置也能构建、能显示</td>
-</tr>
-<tr>
-<td><strong>S2（运行期最小）</strong></td>
-<td><code>QLImageSvgBackend</code> + PlutoSVG 适配器 + 尺寸/缓存/失效</td>
-<td>运行期加载 <code>.svg</code>、窗口缩放后重栅格化正确；缓存命中率可观测</td>
-</tr>
-<tr>
-<td><strong>S3（染色与裁剪）</strong></td>
-<td><code>blit_image_tinted</code>（RGBA tint）+ <code>clip-path: path()</code></td>
-<td>单色 SVG 跟 <code>color</code> 变；<code>path()</code> 用例通过 golden</td>
-</tr>
-<tr>
-<td><strong>S4（可选）</strong></td>
-<td>ThorVG 后端（桌面高质量）、内联 <code>&lt;svg&gt;</code> 构建期栅格化、后台线程渲染</td>
-<td>对比 PlutoSVG 的覆盖差异；内联图标可用</td>
-</tr>
-</tbody>
-</table>
-<p>每一阶段都保持"关掉能力 = 占位盒/明确报错"，不允许半开半挂。</p>
-<hr />
-<h2 id="14">14. 与其它方案对照</h2>
-<table>
-<thead>
-<tr>
-<th>维度</th>
-<th>构建期栅格</th>
-<th>PlutoSVG 运行期</th>
-<th>ThorVG 运行期</th>
-<th>librsvg / resvg 运行期</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>依赖</td>
-<td>0</td>
-<td>MIT、纯 C、百 KB 级</td>
-<td>MIT、C++ 内核</td>
-<td>Rust + Cairo/Pango，数 MB</td>
-</tr>
-<tr>
-<td>PC/Mobile</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>MCU</td>
-<td>✅</td>
-<td>⚠️（小图标）</td>
-<td>⚠️（需 C++）</td>
-<td>❌</td>
-</tr>
-<tr>
-<td>任意尺寸/DPR</td>
-<td>❌（要预生成多套）</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>动态换色</td>
-<td>A8 染色即可</td>
-<td>✅（tint/currentColor）</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>SVG 覆盖</td>
-<td>由工具决定（最全）</td>
-<td>图标级子集</td>
-<td>图标级 + 部分滤镜/Lottie</td>
-<td>最全</td>
-</tr>
-<tr>
-<td>与自绘管线冲突</td>
-<td>无</td>
-<td>输出位图，无冲突</td>
-<td>输出位图/画布，无冲突</td>
-<td>输出位图，无冲突</td>
-</tr>
-</tbody>
-</table>
-<p>Qt 的 <code>QSvgRenderer</code> 属于"Qt SVG 模块"（SVG Tiny 1.2 子集，Tiny 1.2 不支持滤镜/脚本），
-思路和这里的运行期后端一致；但它是 C++/Qt 依赖，不适用于本库。</p>
-<hr />
-<h2 id="15">15. 开放问题</h2>
+<h2 id="8">8. 还没做（按需）</h2>
 <ol>
-<li>构建期默认用<strong>外部工具</strong>还是<strong>链接 PlutoSVG</strong>？
-   （建议：auto = 先找工具，找不到再退回库；CI 里固定一种，避免像素漂移。）</li>
-<li>运行期默认开关：桌面 ON / MCU OFF，还是全局 OFF 由用户显式打开？
-   （建议后者，保持"零惊喜依赖"。）</li>
-<li>A8 染色是否需要支持<strong>多色 tint</strong>（比如双色图标）？一期先单色。</li>
-<li><code>clip-path: path()</code> 的顶点数上限（建议 256，与现有 <code>clip_pts</code> 预算对齐）。</li>
-<li>内联 <code>&lt;svg&gt;</code> 的构建期栅格化是否值得做？还是永远"请改用 <code>&lt;img&gt;</code>"？</li>
-<li>运行期 SVG 的文本：返回 <code>UNSUPPORTED</code>，还是用 PlutoVG 的字体接口尽力渲染？
-   （建议前者：图标场景不需要，渲染错字体比不渲染更糟。）</li>
+<li><strong>DPR 自动重栅格化 / 按尺寸缓存</strong>：现在注册时渲染一次，QLUI 负责缩放。</li>
+<li><strong><code>currentColor</code> 在渲染期替换</strong>：PlutoSVG 支持 <code>current_color</code> 参数，
+   但 QLUI 现在走 A8 + mask 染色；需要"多色图标里只改一个颜色"时再接。</li>
+<li><strong><code>clip-path: path()</code></strong>：复用 PlutoVG 的路径解析与展平，接入现有覆盖率算法。</li>
+<li><strong>ThorVG 可选后端</strong>：需要 Lottie / 更高质量时再引；会带 C++ 运行时，MCU 不用。</li>
+<li><strong>内联 <code>&lt;svg&gt;</code></strong>：维持占位；要支持就按"构建期捕获片段 → 匿名资源"做。</li>
 </ol><div class='pager'>
 <a href='图像管线设计.html'><span class='dir'>上一页</span>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
 <a class='next' href='媒体播放设计.html'><span class='dir'>下一页</span>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
@@ -1188,37 +735,18 @@ qltext<span class="w"> </span>cc<span class="w"> </span>--html<span class="w"> <
 </div></main>
 <aside class='toc'><h5>本页内容</h5><ul>
 <li><a href='#0'>0. 结论摘要</a></li>
-<li><a href='#1'>1. 目标与非目标</a></li>
-<li><a href='#2-2026-11'>2. 现状（2026-11）</a></li>
-<li><a href='#3'>3. 三条路线与取舍</a></li>
-<li class='lv3'><a href='#31-a'>3.1 路线 A：构建期栅格化</a></li>
-<li class='lv3'><a href='#32-b'>3.2 路线 B：运行期矢量渲染</a></li>
-<li><a href='#4'>4. 能力开关</a></li>
-<li><a href='#5-qlimagesvgbackend'>5. 运行期接缝：QLImageSvgBackend</a></li>
-<li class='lv3'><a href='#51-plutosvg'>5.1 适配器实现要点（PlutoSVG）</a></li>
-<li><a href='#6-qltext'>6. 构建期管线（qltext）</a></li>
-<li class='lv3'><a href='#61'>6.1 命令与开关</a></li>
-<li class='lv3'><a href='#62-a8'>6.2 单色图标的 A8 染色</a></li>
-<li class='lv3'><a href='#63-svg'>6.3 内联 &amp;lt;svg&amp;gt; 的处置</a></li>
-<li><a href='#7-qlui'>7. 运行期管线与 QLUI 集成</a></li>
-<li class='lv3'><a href='#71'>7.1 什么时候栅格化</a></li>
-<li class='lv3'><a href='#72'>7.2 缓存键</a></li>
-<li class='lv3'><a href='#73-currentcolor'>7.3 染色（currentColor）</a></li>
-<li class='lv3'><a href='#74'>7.4 布局尺寸</a></li>
-<li><a href='#8-clip-path-path-url'>8. clip-path: path() / url()（顺带收益）</a></li>
-<li><a href='#9-svg-xml'>9. 安全与有界（SVG 是 XML，别当图片看）</a></li>
-<li><a href='#10'>10. 线程与性能</a></li>
-<li><a href='#11'>11. 构建与许可</a></li>
-<li class='lv3'><a href='#111-cmake'>11.1 CMake</a></li>
-<li class='lv3'><a href='#112'>11.2 许可</a></li>
-<li class='lv3'><a href='#113'>11.3 体积参考（量级，非承诺）</a></li>
-<li><a href='#12'>12. 测试计划</a></li>
-<li class='lv3'><a href='#121'>12.1 构建期</a></li>
-<li class='lv3'><a href='#122'>12.2 运行期后端</a></li>
-<li class='lv3'><a href='#123'>12.3 手工验收</a></li>
-<li><a href='#13'>13. 里程碑</a></li>
-<li><a href='#14'>14. 与其它方案对照</a></li>
-<li><a href='#15'>15. 开放问题</a></li>
+<li><a href='#1'>1. 能力边界（很重要）</a></li>
+<li><a href='#2-pc-mobile'>2. 运行期解码（PC / Mobile）</a></li>
+<li class='lv3'><a href='#21'>2.1 入口</a></li>
+<li class='lv3'><a href='#22-qlui'>2.2 与 QLUI 的配合</a></li>
+<li class='lv3'><a href='#23-a8'>2.3 A8 与染色</a></li>
+<li class='lv3'><a href='#24-dpr'>2.4 尺寸与 DPR（现状）</a></li>
+<li><a href='#3-qlsvgmcu'>3. 构建期工具 qlsvg（MCU / 预渲染）</a></li>
+<li><a href='#4-cmake'>4. CMake 与裁剪</a></li>
+<li><a href='#5'>5. 安全与有界</a></li>
+<li><a href='#6'>6. 测试</a></li>
+<li><a href='#7'>7. 第三方代码与许可</a></li>
+<li><a href='#8'>8. 还没做（按需）</a></li>
 </ul></aside>
 </div>
 <script src='search-index.js'></script>

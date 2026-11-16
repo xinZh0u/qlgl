@@ -1418,7 +1418,7 @@ typedef struct {
     const uint8_t *data;
     size_t         len;
     uint16_t       w, h;         /* RAW 必填；其他格式填 0 */
-    uint8_t        format;       /* QL_IMAGE_SRC_RAW/BMP/QOI/PNG/AUTO */
+    uint8_t        format;       /* QL_IMAGE_SRC_RAW/BMP/QOI/PNG/SVG/AUTO */
     uint8_t        pixel_format; /* RAW 时必填（QL_IMAGE_RGB565 等） */
 } QLUIImageInput;
 
@@ -1444,9 +1444,11 @@ const QLImage *ql_ui_node_image(const QLUIRoot *ui, const QLUINodeRT *node);
 | `QL_IMAGE_SRC_PNG` | ✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、`tRNS`；**隔行扫描（Adam7）明确报 `QL_ERR_UNSUPPORTED`**（装了平台后端时会交给后端） | 同上 |
 | `QL_IMAGE_SRC_GIF` | ✅ **首帧**：全局/局部调色板、透明色、隔行、画布偏移。**不做动画** | 同上 |
 | `QL_IMAGE_SRC_JPEG` | ✅ 需要平台后端（Linux 上默认带 libjpeg-turbo）。没有后端 → `QL_ERR_UNSUPPORTED` | RGBA8888（再由本库转换） |
+| `QL_IMAGE_SRC_SVG` | ✅ 需要 `QLGL_BUILD_SVG=ON`（vendored PlutoSVG）；图标级静态 SVG。`QLImageDecodeReq.target_w/target_h` 指定输出尺寸（0 = 固有尺寸）；A8 取覆盖率 | 按 `out_format` 转换 |
 
 `out_format` 默认 **RGBA8888**（它的枚举值就是 0，所以 `memset` 清零的请求即默认）。
-`src_format = QL_IMAGE_SRC_AUTO` 时按魔数探测（PNG/BMP/QOI；RAW 无法探测，必须显式给）。
+`src_format = QL_IMAGE_SRC_AUTO` 时按魔数探测（PNG/BMP/QOI/JPEG/SVG；
+SVG 按开头是否出现 `<svg` 判断；RAW 无法探测，必须显式给）。
 
 **构建期**用同一份解码器：`qltext cc --root DIR --pixel-format rgb565` 会把
 `<img src>` 指向的文件解成目标格式嵌入 doc，运行时**零解码**。

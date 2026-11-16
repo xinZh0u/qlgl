@@ -323,7 +323,7 @@ main img {
 </details>
 <details class='sec' open><summary>设计文档</summary>
 <a href='图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
-<a href='SVG支持设计.html' title='SVG 支持设计（构建期栅格化 + 可选运行期后端）'>SVG 支持设计（构建期栅格化 + 可选运行期后端）</a>
+<a href='SVG支持设计.html' title='SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）'>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）</a>
 <a href='媒体播放设计.html' title='媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）'>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
 <a href='平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
 <a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -344,7 +344,7 @@ main img {
 <main><div class='inner'>
 <p class='eyebrow'>设计文档</p>
 <h1>第三方依赖与许可</h1>
-<p class='lead'>一句话结论：主库 MIT；最小构建零外部依赖；PC/Mobile 全量档只有 7 个运行期库， 而且全部是动态库（不占我们的二进制、可被系统替换）；MCU 档一个都不需要。</p>
+<p class='lead'>一句话结论：主库 MIT；最小构建零外部依赖；PC/Mobile 全量档只有 7 个系统运行期库， 而且全部是动态库（不占我们的二进制、可被系统替换）；SVG 是 vendored 的两份 MIT 纯 C 源码（静态编进库，可用 QLGLBUILDSVG=OFF 完全裁掉）；MCU 档一个都不需要。</p>
 <blockquote>
 <p>状态：<strong>现行清单（2026-12 核对）</strong>。目标读者：打包/发版的人、评估"能不能用它"的人、
 以及被法务问"你们用了什么开源库"的人。数据都是本机（Ubuntu 24.04、x86_64）实测。</p>
@@ -456,6 +456,16 @@ main img {
 <td><strong>dlopen</strong> <code>libasound.so.2</code>（<strong>不需要 -dev 头</strong>）</td>
 <td>运行期打不开就静音降级</td>
 </tr>
+<tr>
+<td>10</td>
+<td><strong>PlutoSVG 0.0.8 + PlutoVG 1.3.3</strong></td>
+<td>C</td>
+<td>运行期 SVG 图标解码（<code>&lt;img src=x.svg&gt;</code>）</td>
+<td>PC/Mobile（MCU 不用）</td>
+<td>MIT</td>
+<td><strong>vendored 源码</strong>，静态编进 <code>libqlgl</code></td>
+<td><code>QLGL_BUILD_SVG=OFF</code>（<code>.svg</code> → <code>UNSUPPORTED</code>）</td>
+</tr>
 </tbody>
 </table>
 <p>另有三个"永远存在但不是第三方"的链接项：<code>libm</code>（数学）、<code>libdl</code>（<code>CMAKE_DL_LIBS</code>，仅 dlopen 路径）、
@@ -515,6 +525,40 @@ main img {
 </tr>
 </tbody>
 </table>
+<h3 id="03-vendored">0.3 vendored 源码（静态编进库，没有系统依赖）</h3>
+<table>
+<thead>
+<tr>
+<th>目录</th>
+<th>上游</th>
+<th>版本</th>
+<th>许可</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>third_party/plutovg</code></td>
+<td>github.com/sammycage/plutovg</td>
+<td>1.3.3</td>
+<td>MIT</td>
+<td>路径/填充/渐变/光栅化</td>
+</tr>
+<tr>
+<td><code>third_party/plutosvg</code></td>
+<td>github.com/sammycage/plutosvg</td>
+<td>0.0.8</td>
+<td>MIT</td>
+<td>SVG XML → PlutoVG</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>只在 <code>QLGL_BUILD_SVG=ON</code>（桌面默认）时编译，直接编进 <code>libqlgl</code>；</li>
+<li>关掉后<strong>一个符号都不进固件</strong>，MCU 用 <code>qlsvg</code> 预渲染 PNG/A8；</li>
+<li>不启用 FreeType（<code>&lt;text&gt;</code> 不渲染），并关闭 PlutoVG 的字体缓存加载；</li>
+<li>升级步骤与版本来源见 <code>third_party/README.md</code>。</li>
+</ul>
 <hr />
 <h2 id="1">1. 能不能引入一个库：三条红线</h2>
 <p>QLGL 是 MIT 的 C11 库，跑得起来的机器从 640 KB RAM 的 MCU 到桌面。任何一个第三方库进来都要过这三关：</p>
@@ -1490,6 +1534,7 @@ ldd<span class="w"> </span>build/example/example_01_window<span class="w"> </spa
 <li><a href='#0'>0. 一览表</a></li>
 <li class='lv3'><a href='#01'>0.1 运行期依赖（会进进程、可能被链接进产物）</a></li>
 <li class='lv3'><a href='#02'>0.2 构建期 / 开发期工具（不进产物）</a></li>
+<li class='lv3'><a href='#03-vendored'>0.3 vendored 源码（静态编进库，没有系统依赖）</a></li>
 <li><a href='#1'>1. 能不能引入一个库：三条红线</a></li>
 <li><a href='#2'>2. 运行期依赖逐个说明</a></li>
 <li class='lv3'><a href='#21-freetype'>2.1 FreeType —— 矢量字体与任意字号</a></li>

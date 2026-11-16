@@ -43,6 +43,7 @@ typedef enum {
     QL_IMAGE_SRC_PNG  = 3,
     QL_IMAGE_SRC_GIF  = 4,   /* 只取**首帧**（`QL_FEAT_IMG_GIF`）；动画不做 */
     QL_IMAGE_SRC_JPEG = 5,   /* 只能靠平台后端（`QL_FEAT_IMG_PLATFORM`） */
+    QL_IMAGE_SRC_SVG  = 6,   /* 矢量文本（`QL_FEAT_IMG_SVG`；AUTO 按 `<svg`/`<?xml` 探测） */
     QL_IMAGE_SRC_AUTO = 0xFF /* 运行期探测魔数（RAW 无法探测，必须显式给） */
 } QLImageSrcFormat;
 
@@ -73,18 +74,28 @@ int ql_image_validate(const QLImage *img);
 
 /*
  * 解码一段字节到 `out`（`out->px` 由本函数分配，`owned = 1`）。
- * 目前只有 RAW 直通；BMP/QOI/PNG 随开关逐个落地（见设计文档 §12）。
+ * RAW 直通；BMP/QOI/PNG/GIF 由自有解码器按开关编译；JPEG 走平台后端；
+ * SVG 需要 `QL_FEAT_IMG_SVG`（vendored PlutoSVG）。
  *
- * `src_format` 传 QL_IMAGE_SRC_AUTO 时按魔数探测。
- * `raw_format` / `raw_w` / `raw_h` 只在 RAW 时使用。
+ * `src_format` 传 QL_IMAGE_SRC_AUTO 时按魔数/文本特征探测
+ * （PNG/BMP/QOI/GIF/JPEG，以及开头出现 `<svg` 的 SVG）。
+ * `pixel_format` / `w` / `h` 只在 RAW 时使用；`target_w/target_h` 只给 SVG。
  */
 typedef struct {
     const uint8_t *data;
     size_t         len;
-    uint8_t        src_format;   /* QLImageSrcFormat；AUTO = 按魔数探测 */
+    uint8_t        src_format;   /* QLImageSrcFormat；AUTO = 按魔数/文本特征探测 */
     uint8_t        pixel_format; /* **输入**是 RAW 时的像素格式（其他格式忽略） */
     uint8_t        out_format;   /* 想要的输出格式；0 = RGBA8888（见 QLImageFormat 顺序） */
     uint16_t       w, h;         /* **输入**是 RAW 时的尺寸（其他格式由文件头决定） */
+    /*
+     * SVG 的目标像素尺寸（`QL_IMAGE_SRC_SVG` / AUTO 探测到 SVG 时使用）：
+     *   - 两个都 0：用 SVG 自己的 width/height/viewBox；
+     *   - 只给一个：按固有宽高比补另一个；
+     *   - 两个都给：精确尺寸（会被 `QL_CFG_IMAGE_SVG_MAX_DIM` 夹住）。
+     * 其他格式忽略。
+     */
+    uint16_t       target_w, target_h;
 } QLImageDecodeReq;
 
 /*

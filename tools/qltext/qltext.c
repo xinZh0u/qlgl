@@ -104,7 +104,13 @@ static const char *base_name(const char *path)
 /* 本构建实际编进来的解码器（用于错误信息，别让用户猜） */
 static const char *qltext_decode_formats(void)
 {
-#if QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
+#if QL_FEAT_IMG_SVG && QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
+    return "BMP/QOI/PNG/SVG";
+#elif QL_FEAT_IMG_SVG && QL_FEAT_IMG_BMP && QL_FEAT_IMG_QOI
+    return "BMP/QOI/SVG";
+#elif QL_FEAT_IMG_SVG
+    return "SVG";
+#elif QL_FEAT_IMG_PNG && QL_FEAT_IMG_INFLATE
     return "BMP/QOI/PNG";
 #elif QL_FEAT_IMG_BMP && QL_FEAT_IMG_QOI
     return "BMP/QOI";

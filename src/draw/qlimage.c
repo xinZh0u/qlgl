@@ -12,6 +12,7 @@
 
 #include <qlgl/qlgl.h>
 
+#include "qlimage_svg.h"
 #include "qlinflate.h"
 
 uint32_t ql_image_format_bpp(uint8_t format)
@@ -1396,6 +1397,33 @@ static int decode_via_backend(const QLImageDecodeReq *req, QLImage *out, uint8_t
 
 /* ------------------------------ 入口 ------------------------------ */
 
+/*
+ * SVG 是唯一"没有魔数"的格式：它是文本。只看开头一小段：
+ * 跳过 BOM 与空白后必须是 `<`，并且前 512 字节里出现 `<svg` 标签
+ * （允许 `<?xml ...?>` 声明在前）。这样 `<?xml` 开头的非 SVG 文件不会误判。
+ */
+static int looks_like_svg(const uint8_t *d, size_t n)
+{
+    size_t i = 0;
+    if (n >= 3u && d[0] == 0xEFu && d[1] == 0xBBu && d[2] == 0xBFu)
+        i = 3u;
+    while (i < n && (d[i] == ' ' || d[i] == '\t' || d[i] == '\r' || d[i] == '\n'))
+        i++;
+    if (i >= n || d[i] != '<')
+        return 0;
+
+    const size_t limit = (n < i + 512u) ? n : i + 512u;
+    for (size_t k = i; k + 4u <= limit; k++) {
+        if (d[k] != '<' || d[k + 1] != 's' || d[k + 2] != 'v' || d[k + 3] != 'g')
+            continue;
+        const uint8_t c = (k + 4u < n) ? d[k + 4u] : (uint8_t)' ';
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '>' ||
+            c == '/' || c == ':')
+            return 1;
+    }
+    return 0;
+}
+
 int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
 {
     if (req == NULL || out == NULL || req->data == NULL)
@@ -1435,6 +1463,8 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
         else if (req->len >= 3u && req->data[0] == 0xFFu && req->data[1] == 0xD8u &&
                  req->data[2] == 0xFFu)
             fmt = QL_IMAGE_SRC_JPEG;
+        else if (looks_like_svg(req->data, req->len))
+            fmt = QL_IMAGE_SRC_SVG;
         else
             return QL_ERR_UNSUPPORTED;   /* RAW 无法探测，必须显式指定 */
     }
@@ -1489,6 +1519,15 @@ int ql_image_decode(const QLImageDecodeReq *req, QLImage *out)
     case QL_IMAGE_SRC_GIF:
 #if QL_FEAT_IMG_GIF
         rc = decode_gif(req, out, outf);
+#endif
+        break;
+    case QL_IMAGE_SRC_SVG:
+#if QL_FEAT_IMG_SVG
+        rc = ql_image_decode_svg(req, out, outf, s_err, sizeof(s_err));
+#else
+        snprintf(s_err, sizeof(s_err),
+                 "本构建没有 SVG 解码（QLGL_BUILD_SVG=OFF）；"
+                 "请把图标预渲染成 PNG 或用 platform backend 注册");
 #endif
         break;
     default:                             /* JPEG 等：自有解码器一律不做 */

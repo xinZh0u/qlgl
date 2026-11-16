@@ -70,6 +70,7 @@ set(QL_EXAMPLES
     43_multi_window
     44_audio_player
     45_video_player
+    46_svg_icon
 )
 
 foreach(e ${QL_EXAMPLES})
