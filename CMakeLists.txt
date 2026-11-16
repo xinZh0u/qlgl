@@ -199,6 +199,14 @@ if(QLGL_BUILD_QLSVG)
     message(STATUS "QLGL: 宿主工具 qlsvg 已启用（SVG → PNG）")
 endif()
 
+# SVG 资产兼容性自检：批量解码 + 静态特性扫描（要看运行期解码器，故依赖
+# QLGL_BUILD_SVG）。输出 fail/block/warn 与不支持特性汇总，--strict 可当 CI 门槛。
+if(QLGL_BUILD_SVG AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(qlsvgprobe ${CMAKE_CURRENT_SOURCE_DIR}/tools/qlsvgprobe/qlsvgprobe.c)
+    target_link_libraries(qlsvgprobe PRIVATE qlgl)
+    message(STATUS "QLGL: 宿主工具 qlsvgprobe 已启用（SVG 资产自检）")
+endif()
+
 # ---- QLMedia：媒体播放引擎（M1：音频）----
 # 核心总是编译（关掉时提供"明确不支持"的桩）；FFmpeg 找到才启用默认解码后端。
 option(QLGL_BUILD_MEDIA "构建 QLMedia（<audio>/<video> 播放引擎，FFmpeg 音频后端）" ON)
@@ -582,6 +590,15 @@ if(QLGL_BUILD_TESTS)
              COMMAND ${CMAKE_COMMAND} -E compare_files ${QL_DIRECT_BLOB}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test/golden/row.qlui)
 
+    # SVG 资产自检工具（运行期解码器）
+    if(TARGET qlsvgprobe)
+        add_test(NAME test_qlsvgprobe
+                 COMMAND ${CMAKE_COMMAND}
+                         -DQLSVGPROBE=$<TARGET_FILE:qlsvgprobe>
+                         -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/probe_svg.cmake)
+    endif()
+
     # 构建期 SVG 工具链（qlsvg → qltext）：MCU 的实际用法。
     # 没有 qlsvg（交叉编译/显式关掉）或没有 PNG 解码时跳过 —— 那是另一条合法预设。
     if(TARGET qlsvg AND QL_FEAT_IMG_PNG)
@@ -689,6 +706,9 @@ if(TARGET qltext)
 endif()
 if(TARGET qlsvg)
     install(TARGETS qlsvg RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+if(TARGET qlsvgprobe)
+    install(TARGETS qlsvgprobe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 install(EXPORT qlglTargets

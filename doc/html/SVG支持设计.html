@@ -703,9 +703,40 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 <td><code>example/46_svg_icon</code></td>
 <td>多色 <code>&lt;img&gt;</code> + 单色 <code>mask-image</code>，CPU/GL 截图一致</td>
 </tr>
+<tr>
+<td>资产自检</td>
+<td><code>test_qlsvgprobe</code></td>
+<td>目录扫描：坏文件 fail、外部引用 block、不支持特性 warn、<code>--strict</code> 门槛</td>
+</tr>
 </tbody>
 </table>
 <p>不做逐像素 golden：抗锯齿细节由 PlutoVG 版本决定，跨版本可能微调。</p>
+<h3 id="61-qlsvgprobe">6.1 资产兼容性自检：<code>qlsvgprobe</code></h3>
+<p>PlutoSVG 对不支持的标签是<strong>静默忽略</strong>的（解码"成功"但画面缺一块），只看
+<code>ql_image_decode()</code> 的返回值不够。<code>tools/qlsvgprobe</code> 同时做两件事：</p>
+<ol>
+<li><strong>批量解码</strong>（默认目标宽 64px、按固有宽高比）→ 记录成功/失败、尺寸、耗时、
+   非透明覆盖率；全透明的成功结果标为 <code>warn</code>（大概是资源本身有问题）。</li>
+<li><strong>静态特性扫描</strong>：<code>clipPath</code> / <code>mask</code> / <code>pattern</code> / <code>marker</code> / <code>filter</code> / <code>fe*</code> /
+   <code>text</code> / <code>tspan</code> / <code>&lt;style&gt;</code> / SMIL（<code>animate</code> / <code>set</code>）/ <code>foreignObject</code> /
+   <code>switch</code> / <code>clip-path=</code> / <code>filter=</code> / <code>mask=</code> / 非内嵌 <code>&lt;image&gt;</code> / 外部 <code>href</code> /
+   <code>javascript:</code> / <code>@import</code> / <code>url(http…)</code>。</li>
+</ol>
+<div class="highlight"><pre><span></span><code>./build/qlsvgprobe<span class="w"> </span>assets/<span class="w">                  </span><span class="c1"># 递归扫描</span>
+./build/qlsvgprobe<span class="w"> </span>assets/<span class="w"> </span>--size<span class="w"> </span><span class="m">96</span>
+./build/qlsvgprobe<span class="w"> </span>assets/<span class="w"> </span>--strict<span class="w">         </span><span class="c1"># 有 warn 也返回 1（CI 门槛）</span>
+./build/qlsvgprobe<span class="w"> </span>assets/<span class="w"> </span>--quiet<span class="w">          </span><span class="c1"># 只打汇总与失败项</span>
+</code></pre></div>
+
+<p>状态：<code>ok</code> / <code>warn</code>（能画但有已知不支持特性，或解码后全透明）/ <code>fail</code>（解码失败）/
+<code>block</code>（外部引用或脚本，运行期会直接拒绝）。默认退出码：有 <code>fail/block</code> 为 1；
+<code>--strict</code> 时 <code>warn</code> 也算失败。汇总会按特性列出"这一批资产里踩了多少次"，
+用来决定"哪些资产必须预渲染、要不要换后端"。</p>
+<p>一个真实资产库的推荐流程：</p>
+<div class="highlight"><pre><span></span><code>./build/qlsvgprobe<span class="w"> </span>~/icons<span class="w"> </span>--strict<span class="w"> </span>&gt;<span class="w"> </span>icons.txt<span class="w">   </span><span class="c1"># 先看失败/告警清单</span>
+<span class="c1"># 复杂插画（clipPath/filter/text）走设计工具导出 PNG；图标继续用 SVG</span>
+</code></pre></div>
+
 <hr />
 <h2 id="7">7. 第三方代码与许可</h2>
 <p><code>third_party/</code> 下 vendor 了两份 MIT 源码（版本与来源见 <code>third_party/README.md</code>）：</p>
@@ -766,6 +797,7 @@ qlsvg<span class="w"> </span>icons/star.svg<span class="w"> </span>icons/star.pn
 <li><a href='#4-cmake'>4. CMake 与裁剪</a></li>
 <li><a href='#5'>5. 安全与有界</a></li>
 <li><a href='#6'>6. 测试</a></li>
+<li class='lv3'><a href='#61-qlsvgprobe'>6.1 资产兼容性自检：qlsvgprobe</a></li>
 <li><a href='#7'>7. 第三方代码与许可</a></li>
 <li><a href='#8-clip-path-path'>8. clip-path: path()（已完成）</a></li>
 <li><a href='#9'>9. 还没做（按需）</a></li>

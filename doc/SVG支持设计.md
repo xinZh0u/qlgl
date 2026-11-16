@@ -217,8 +217,40 @@ PlutoSVG 把 SVG 当 XML 元素树解析，不执行脚本、不展开 DTD 实�
 | 关掉 SVG | 同上（`QL_FEAT_IMG_SVG=0` 分支） | 明确 `QL_ERR_UNSUPPORTED`，`ql_image_last_error()` 有原因 |
 | 工具链 | `test/assets/gen_svg_tool.cmake` | `qlsvg` 正常/`--alpha`/坏 SVG 失败；PNG 经 `qltext -a8` 后尺寸与覆盖率正确 |
 | 例程 | `example/46_svg_icon` | 多色 `<img>` + 单色 `mask-image`，CPU/GL 截图一致 |
+| 资产自检 | `test_qlsvgprobe` | 目录扫描：坏文件 fail、外部引用 block、不支持特性 warn、`--strict` 门槛 |
 
 不做逐像素 golden：抗锯齿细节由 PlutoVG 版本决定，跨版本可能微调。
+
+### 6.1 资产兼容性自检：`qlsvgprobe`
+
+PlutoSVG 对不支持的标签是**静默忽略**的（解码"成功"但画面缺一块），只看
+`ql_image_decode()` 的返回值不够。`tools/qlsvgprobe` 同时做两件事：
+
+1. **批量解码**（默认目标宽 64px、按固有宽高比）→ 记录成功/失败、尺寸、耗时、
+   非透明覆盖率；全透明的成功结果标为 `warn`（大概是资源本身有问题）。
+2. **静态特性扫描**：`clipPath` / `mask` / `pattern` / `marker` / `filter` / `fe*` /
+   `text` / `tspan` / `<style>` / SMIL（`animate` / `set`）/ `foreignObject` /
+   `switch` / `clip-path=` / `filter=` / `mask=` / 非内嵌 `<image>` / 外部 `href` /
+   `javascript:` / `@import` / `url(http…)`。
+
+```bash
+./build/qlsvgprobe assets/                  # 递归扫描
+./build/qlsvgprobe assets/ --size 96
+./build/qlsvgprobe assets/ --strict         # 有 warn 也返回 1（CI 门槛）
+./build/qlsvgprobe assets/ --quiet          # 只打汇总与失败项
+```
+
+状态：`ok` / `warn`（能画但有已知不支持特性，或解码后全透明）/ `fail`（解码失败）/
+`block`（外部引用或脚本，运行期会直接拒绝）。默认退出码：有 `fail/block` 为 1；
+`--strict` 时 `warn` 也算失败。汇总会按特性列出"这一批资产里踩了多少次"，
+用来决定"哪些资产必须预渲染、要不要换后端"。
+
+一个真实资产库的推荐流程：
+
+```bash
+./build/qlsvgprobe ~/icons --strict > icons.txt   # 先看失败/告警清单
+# 复杂插画（clipPath/filter/text）走设计工具导出 PNG；图标继续用 SVG
+```
 
 ---
 
