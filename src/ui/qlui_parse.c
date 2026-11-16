@@ -15491,6 +15491,8 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     /* `@media` 的临时数组：**必须在函数开头声明** —— 中途 `goto done` 会跳过
      * 后面的初始化语句，届时 free 的就是野指针（踩过） */
     uint16_t *bucket_idx = NULL;
+    uint16_t *node_id_tab = NULL;
+    QLUIClassRef *class_tab = NULL;
     uint16_t *node_media_ofs = NULL;
     uint16_t *media_pool = NULL;
     int media_pool_n = 0;
@@ -16005,6 +16007,55 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     if (!build_areas(flat, nflat, &pool, &areas))
         goto done;
 
+    /*
+     * 节点身份：id 走稠密表（每节点 2B）；class 走稀疏表（只有写了 class
+     * 的节点才占一条）。两者都进同一个文本池，运行期按名字查。
+     */
+    node_id_tab = (uint16_t *)ql_mem_calloc((size_t)((nflat > 0) ? nflat : 1),
+                                            sizeof(uint16_t));
+    if (node_id_tab == NULL) {
+        set_error("out of memory");
+        goto done;
+    }
+    int class_n = 0, class_cap = 0;
+    for (int i = 0; i < nflat; i++) {
+        node_id_tab[i] = 0xFFFF;
+        const PNode *pn = flat[i].node;
+        if (pn->id != NULL && !text_pool_intern(&pool, pn->id, &node_id_tab[i]))
+            goto done;
+        for (int c = 0; c < pn->nclasses; c++) {
+            uint16_t ti = 0;
+            if (!text_pool_intern(&pool, pn->classes[c], &ti))
+                goto done;
+            if (ti == 0xFFFF)
+                continue;
+            int dup = 0;
+            for (int k = 0; k < class_n && !dup; k++)
+                if (class_tab[k].node == (uint16_t)i && class_tab[k].name == ti)
+                    dup = 1;
+            if (dup)
+                continue;
+            if (class_n >= class_cap) {
+                const int cap = (class_cap > 0) ? class_cap * 2 : 32;
+                QLUIClassRef *nt = (QLUIClassRef *)ql_mem_realloc(
+                    class_tab, (size_t)cap * sizeof(QLUIClassRef));
+                if (nt == NULL && cap > 0) {
+                    set_error("out of memory");
+                    goto done;
+                }
+                class_tab = nt;
+                class_cap = cap;
+            }
+            if (class_n >= 0xFFFF) {
+                set_error("too many class references");
+                goto done;
+            }
+            class_tab[class_n].node = (uint16_t)i;
+            class_tab[class_n].name = ti;
+            class_n++;
+        }
+    }
+
     /* ------------------------------ 一次分配 arena ------------------------------ */
     {
         const char *nm = (g_doc_name != NULL) ? g_doc_name : "text";
@@ -16124,6 +16175,11 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         const size_t off_clip_pts = off;
         if (s_clip_pt_n > 0)
             off += QL_UI_ALIGN8((size_t)s_clip_pt_n * sizeof(QLClipPt));
+        const size_t off_node_ids = off;
+        off += QL_UI_ALIGN8((size_t)nflat * sizeof(uint16_t));
+        const size_t off_node_classes = off;
+        if (class_n > 0)
+            off += QL_UI_ALIGN8((size_t)class_n * sizeof(QLUIClassRef));
         const size_t off_name = off;
         off += QL_UI_ALIGN8(name_len);
         const size_t total = off;
@@ -16230,6 +16286,13 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         for (int i = 0; i < grid_pool.an; i++)
             gar[i] = grid_pool.a[i];
 
+        uint16_t *nid = (uint16_t *)(base + off_node_ids);
+        for (int i = 0; i < nflat; i++)
+            nid[i] = node_id_tab[i];
+        QLUIClassRef *cld = (QLUIClassRef *)(base + off_node_classes);
+        for (int i = 0; i < class_n; i++)
+            cld[i] = class_tab[i];
+
         char *nmd = (char *)(base + off_name);
         memcpy(nmd, nm, name_len);
 
@@ -16252,6 +16315,9 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
         doc->keyframe_count = (uint16_t)kftab.n;
         doc->degraded_tags = s_degraded_tags;
         doc->nodes = (nflat > 0) ? nodes : NULL;
+        doc->node_ids = (nflat > 0) ? nid : NULL;
+        doc->node_class_count = (uint16_t)class_n;
+        doc->node_classes = (class_n > 0) ? cld : NULL;
         doc->styles = (styles.n > 0) ? stl : NULL;
         doc->text_pool = pool_dst;
         doc->text_offsets = tofs;
@@ -16321,6 +16387,8 @@ QLUIDoc *ql_ui_load_text(const char *html, const char *css)
     }
 
 done:
+    ql_mem_free(node_id_tab);
+    ql_mem_free(class_tab);
     /* 文本栈的构建期收集器：内容已经搬进 doc（或本次解析失败），这里清掉 */
     face_defs_free(&s_face_defs);
     font_lists_free();

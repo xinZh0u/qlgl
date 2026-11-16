@@ -183,8 +183,8 @@ static const QLUIStyle ui_app_styles[] = {
       .radius_v = { 0, 0, 0, 0 } },
 };
 
-static const char ui_app_text[] = "logo.bmp\000hi\000";
-static const uint16_t ui_app_text_ofs[] = { 0, 9 };
+static const char ui_app_text[] = "logo.bmp\000hi\000r\000";
+static const uint16_t ui_app_text_ofs[] = { 0, 9, 12 };
 
 static const QLUIKeyframe ui_app_keyframes[1] = { { 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0, { 0, 0, 0, 0 }, 0, 0 } };
 
@@ -200,6 +200,8 @@ static const QLUIImageSrc ui_app_images[1] = {
     { .name = 0, .off = 0, .len = 32, .w = 4, .h = 4, .format = QL_IMAGE_SRC_RAW, .pixel_format = QL_IMAGE_RGB565 },
 };
 
+static const uint16_t ui_app_node_ids[3] = { 2, 65535, 65535 };
+
 const QLUIDoc ui_app_doc = {
     .name         = "app",
     .node_count   = (uint16_t)(sizeof(ui_app_nodes) / sizeof(ui_app_nodes[0])),
@@ -212,6 +214,7 @@ const QLUIDoc ui_app_doc = {
     .anims        = ui_app_anims,
     .keyframes    = ui_app_keyframes,
     .nodes        = ui_app_nodes,
+    .node_ids     = ui_app_node_ids,
     .styles       = ui_app_styles,
     .text_pool    = ui_app_text,
     .text_offsets = ui_app_text_ofs,

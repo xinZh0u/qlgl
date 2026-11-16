@@ -74,29 +74,44 @@ static void sink(const QLInputEvent *ev, void *user)
 ql_input_set_sink(sink, ui);
 ```
 
-## 点击回调
+## 按 id / class 找节点
 
 ```c
-static void on_click(QLUIRoot *ui, QLUINodeRT *node, void *user)
-{
-    if (node->src->tag != QL_UI_TAG_DIV)
-        return;                     /* 只看自己关心的节点 */
-    s_clicks++;
-    char buf[64];
-    snprintf(buf, sizeof(buf), "点击次数：%d", s_clicks);
-    ql_ui_set_text(ui, s_log, buf);
-}
+QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+QLUINodeRT *log = ql_ui_find_by_id(ui, "log");
 
-ql_ui_set_click_cb(ui, on_click, NULL);
+/* 第 2 个 class="item" 的节点（nth 从 0 开始） */
+QLUINodeRT *item = ql_ui_find_by_class(ui, "item", 1);
 ```
 
-一条回调管全树，靠 `node` 区分是哪个。为什么不给每个节点单独注册？
-因为结构是编译期固定的 —— 用一个 `switch (node - ui->nodes)` 或者查
-`node->src->id` 就够了，不用为每个节点分配回调槽。
+不要再写 `&ui->nodes[2]`：前面插一个元素，下标就全变了。
+`ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 1)` 仍然可用，但它按"第几个 div"
+找，插删同类元素同样会漂。
 
-节点顺序就是**文档顺序**（深度优先、父在前），所以 `&ui->nodes[2]` 就是
-HTML 里第 3 个元素。也可以用 `ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 1)`
-按标签找。
+## 点击回调：一个按钮一个
+
+```c
+static void on_btn_click(QLUIRoot *ui, QLUINodeRT *btn, void *user)
+{
+    (void)btn;
+    QLUINodeRT *log = (QLUINodeRT *)user;
+    s_clicks++;
+    static char buf[64];
+    snprintf(buf, sizeof(buf), "点击次数：%d", s_clicks);
+    ql_ui_set_text(ui, log, buf);
+}
+
+QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+QLUINodeRT *log = ql_ui_find_by_id(ui, "log");
+ql_ui_set_node_click_cb(ui, btn, on_btn_click, log);   /* user 里带输出节点 */
+```
+
+- 点到按钮里的 `<span>` / 图标 / 内层 `<div>` 会**冒泡到按钮**；
+- 绑定即停止：按钮回调触发后，不会再继续冒泡，也不会调全局 `click_cb`；
+- `ql_ui_set_click_cb(ui, cb, user)` 仍然保留，作为**没有节点绑定时的兜底**；
+- 解绑：`ql_ui_set_node_click_cb(ui, btn, NULL, NULL)`。
+
+绑定表按需分配，默认最多 16 个（`QL_CFG_UI_CLICK_BIND_MAX`）。
 
 ## 没有窗口时怎么办
 

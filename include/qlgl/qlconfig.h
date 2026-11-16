@@ -205,6 +205,10 @@
 #ifndef QL_CFG_UI_CLIP_PTS_MAX
 #define QL_CFG_UI_CLIP_PTS_MAX      64
 #endif
+/* 一个界面最多绑多少个"节点级点击回调"（按需分配，不绑就不占内存） */
+#ifndef QL_CFG_UI_CLICK_BIND_MAX
+#define QL_CFG_UI_CLICK_BIND_MAX    16
+#endif
 /* 一份文档里 clip-path 点池的总容量（多边形顶点总数，同形状去重后计数） */
 #ifndef QL_CFG_UI_CLIP_PTS_TOTAL
 #define QL_CFG_UI_CLIP_PTS_TOTAL    512

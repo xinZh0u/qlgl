@@ -1297,7 +1297,16 @@ QLErr ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 ```c
 typedef void (*ql_ui_click_cb)(QLUIRoot *ui, QLUINodeRT *node, void *user_data);
 
-void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
+/* 全局兜底回调（没有节点绑定时用） */
+void  ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
+/* 每节点回调：命中子元素会冒泡到父容器，绑定即停止 */
+QLErr ql_ui_set_node_click_cb(QLUIRoot *ui, QLUINodeRT *node,
+                              ql_ui_click_cb cb, void *user_data);
+
+/* 按 id / class 找节点（第 nth 个带该 class 的节点，nth 从 0 开始） */
+QLUINodeRT *ql_ui_find_by_id(QLUIRoot *ui, const char *id);
+QLUINodeRT *ql_ui_find_by_class(QLUIRoot *ui, const char *class_name, uint16_t nth);
+
 int  ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 int  ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 int  ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
@@ -1306,7 +1315,7 @@ int  ql_ui_pointer_move(QLUIRoot *ui, ql_coord_t x, ql_coord_t y);
 | 函数 | 返回 | 说明 |
 |---|---|---|
 | `pointer_down` | 1 = 命中 | 给命中节点置 `QL_UI_RT_ACTIVE` |
-| `pointer_up` | 1 = 触发点击 | 清 `ACTIVE`；若按下时命中同一节点则调 `click_cb` |
+| `pointer_up` | 1 = 触发点击 | 清 `ACTIVE`；若按下时命中同一节点，从命中节点向父链找最近的节点绑定；没有绑定才调全局 `click_cb` |
 | `pointer_move` | 1 = 悬停状态有变化 | 更新 `QL_UI_RT_HOVER` |
 
 节点状态位：`QL_UI_RT_HOVER` / `QL_UI_RT_ACTIVE` / `QL_UI_RT_DIRTY`。

@@ -1248,6 +1248,25 @@ static int write_source(const QLUIDoc *doc, const char *ident, const char *out_d
         fputs("\n};\n\n", f);
     }
 
+    /* ---- 节点 id / class 查询表（v39） ---- */
+    if (doc->node_count > 0) {
+        fprintf(f, "static const uint16_t %s_node_ids[%u] = {", ident,
+                (unsigned)doc->node_count);
+        for (uint16_t i = 0; i < doc->node_count; i++) {
+            const unsigned id = (doc->node_ids != NULL) ? doc->node_ids[i] : 0xFFFFu;
+            fprintf(f, "%s%u", (i == 0) ? " " : ", ", id);
+        }
+        fputs(" };\n\n", f);
+    }
+    if (doc->node_class_count > 0 && doc->node_classes != NULL) {
+        fprintf(f, "static const QLUIClassRef %s_node_classes[%u] = {\n", ident,
+                (unsigned)doc->node_class_count);
+        for (uint16_t i = 0; i < doc->node_class_count; i++)
+            fprintf(f, "    { %u, %u },\n", (unsigned)doc->node_classes[i].node,
+                    (unsigned)doc->node_classes[i].name);
+        fputs("};\n\n", f);
+    }
+
     /* ---- doc ---- */
     fprintf(f,
             "const QLUIDoc %s_doc = {\n"
@@ -1262,6 +1281,7 @@ static int write_source(const QLUIDoc *doc, const char *ident, const char *out_d
             "    .anims        = %s_anims,\n"
             "    .keyframes    = %s_keyframes,\n"
             "    .nodes        = %s_nodes,\n"
+            "    .node_ids     = %s_node_ids,\n"
             "    .styles       = %s_styles,\n"
             "    .text_pool    = %s_text,\n"
             "    .text_offsets = %s_text_ofs,\n",
@@ -1271,7 +1291,7 @@ static int write_source(const QLUIDoc *doc, const char *ident, const char *out_d
             ident, ident,   /* .text_count  : sizeof(%s_text_ofs) x2 */
             ident, ident,   /* font_size_cnt: sizeof(%s_font_sizes) x2 */
             (unsigned)doc->anim_count, (unsigned)doc->keyframe_count,
-            ident, ident, ident, ident, ident, ident, ident);
+            ident, ident, ident, ident, ident, ident, ident, ident);
 
     /* @media 三段：没有断点时一个字都不多 */
     if (doc->media_count > 0 && doc->media != NULL) {
@@ -1281,6 +1301,13 @@ static int write_source(const QLUIDoc *doc, const char *ident, const char *out_d
                 "    .node_media    = %s_node_media,\n"
                 "    .media_styles  = %s_media_styles,\n",
                 (unsigned)doc->media_count, ident, ident, ident);
+    }
+
+    if (doc->node_class_count > 0 && doc->node_classes != NULL) {
+        fprintf(f,
+                "    .node_class_count = %u,\n"
+                "    .node_classes     = %s_node_classes,\n",
+                (unsigned)doc->node_class_count, ident);
     }
 
     /* transform 矩阵池：没有就一个字都不多 */

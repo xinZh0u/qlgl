@@ -402,26 +402,40 @@ main img {
 <span class="n">ql_input_set_sink</span><span class="p">(</span><span class="n">sink</span><span class="p">,</span><span class="w"> </span><span class="n">ui</span><span class="p">);</span>
 </code></pre></div>
 
-<h2 id="_2">点击回调</h2>
-<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">node</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">src</span><span class="o">-&gt;</span><span class="n">tag</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">QL_UI_TAG_DIV</span><span class="p">)</span>
-<span class="w">        </span><span class="k">return</span><span class="p">;</span><span class="w">                     </span><span class="cm">/* 只看自己关心的节点 */</span>
-<span class="w">    </span><span class="n">s_clicks</span><span class="o">++</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="n">buf</span><span class="p">[</span><span class="mi">64</span><span class="p">];</span>
-<span class="w">    </span><span class="n">snprintf</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;点击次数：%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">s_clicks</span><span class="p">);</span>
-<span class="w">    </span><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">s_log</span><span class="p">,</span><span class="w"> </span><span class="n">buf</span><span class="p">);</span>
-<span class="p">}</span>
+<h2 id="id-class">按 id / class 找节点</h2>
+<div class="highlight"><pre><span></span><code><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">btn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;btn&quot;</span><span class="p">);</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">log</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;log&quot;</span><span class="p">);</span>
 
-<span class="n">ql_ui_set_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">on_click</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+<span class="cm">/* 第 2 个 class=&quot;item&quot; 的节点（nth 从 0 开始） */</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_class</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;item&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
 </code></pre></div>
 
-<p>一条回调管全树，靠 <code>node</code> 区分是哪个。为什么不给每个节点单独注册？
-因为结构是编译期固定的 —— 用一个 <code>switch (node - ui-&gt;nodes)</code> 或者查
-<code>node-&gt;src-&gt;id</code> 就够了，不用为每个节点分配回调槽。</p>
-<p>节点顺序就是<strong>文档顺序</strong>（深度优先、父在前），所以 <code>&amp;ui-&gt;nodes[2]</code> 就是
-HTML 里第 3 个元素。也可以用 <code>ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 1)</code>
-按标签找。</p>
+<p>不要再写 <code>&amp;ui-&gt;nodes[2]</code>：前面插一个元素，下标就全变了。
+<code>ql_ui_find_by_tag(ui, QL_UI_TAG_DIV, 1)</code> 仍然可用，但它按"第几个 div"
+找，插删同类元素同样会漂。</p>
+<h2 id="_2">点击回调：一个按钮一个</h2>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">on_btn_click</span><span class="p">(</span><span class="n">QLUIRoot</span><span class="w"> </span><span class="o">*</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">btn</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">user</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">btn</span><span class="p">;</span>
+<span class="w">    </span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">log</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">user</span><span class="p">;</span>
+<span class="w">    </span><span class="n">s_clicks</span><span class="o">++</span><span class="p">;</span>
+<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">buf</span><span class="p">[</span><span class="mi">64</span><span class="p">];</span>
+<span class="w">    </span><span class="n">snprintf</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;点击次数：%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">s_clicks</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ql_ui_set_text</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">log</span><span class="p">,</span><span class="w"> </span><span class="n">buf</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">btn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;btn&quot;</span><span class="p">);</span>
+<span class="n">QLUINodeRT</span><span class="w"> </span><span class="o">*</span><span class="n">log</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ql_ui_find_by_id</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;log&quot;</span><span class="p">);</span>
+<span class="n">ql_ui_set_node_click_cb</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="n">btn</span><span class="p">,</span><span class="w"> </span><span class="n">on_btn_click</span><span class="p">,</span><span class="w"> </span><span class="n">log</span><span class="p">);</span><span class="w">   </span><span class="cm">/* user 里带输出节点 */</span>
+</code></pre></div>
+
+<ul>
+<li>点到按钮里的 <code>&lt;span&gt;</code> / 图标 / 内层 <code>&lt;div&gt;</code> 会<strong>冒泡到按钮</strong>；</li>
+<li>绑定即停止：按钮回调触发后，不会再继续冒泡，也不会调全局 <code>click_cb</code>；</li>
+<li><code>ql_ui_set_click_cb(ui, cb, user)</code> 仍然保留，作为<strong>没有节点绑定时的兜底</strong>；</li>
+<li>解绑：<code>ql_ui_set_node_click_cb(ui, btn, NULL, NULL)</code>。</li>
+</ul>
+<p>绑定表按需分配，默认最多 16 个（<code>QL_CFG_UI_CLICK_BIND_MAX</code>）。</p>
 <h2 id="_3">没有窗口时怎么办</h2>
 <p>交互链路可以用合成事件走一遍，写测试时非常有用：</p>
 <div class="highlight"><pre><span></span><code><span class="n">ql_ui_pointer_move</span><span class="p">(</span><span class="n">ui</span><span class="p">,</span><span class="w"> </span><span class="mi">84</span><span class="p">,</span><span class="w"> </span><span class="mi">48</span><span class="p">);</span><span class="w">    </span><span class="cm">/* 移进去 → :hover */</span>
@@ -461,7 +475,8 @@ HTML 里第 3 个元素。也可以用 <code>ql_ui_find_by_tag(ui, QL_UI_TAG_DIV
 <aside class='toc'><h5>本页内容</h5><ul>
 <li><a href='#hover-active-focus'>状态样式：:hover / :active / :focus</a></li>
 <li><a href='#_1'>事件怎么进来</a></li>
-<li><a href='#_2'>点击回调</a></li>
+<li><a href='#id-class'>按 id / class 找节点</a></li>
+<li><a href='#_2'>点击回调：一个按钮一个</a></li>
 <li><a href='#_3'>没有窗口时怎么办</a></li>
 <li><a href='#transition'>transition 是&quot;状态变了就渐变过去&quot;</a></li>
 <li><a href='#_4'>焦点与键盘</a></li>

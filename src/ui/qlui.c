@@ -775,6 +775,7 @@ void ql_ui_free(QLUIRoot *ui)
         }
         ql_mem_free(ui->images);
     }
+    ql_mem_free(ui->click_binds);
     ql_mem_free(ui->progresses);
     ql_mem_free(ui->ta_arena);
     ql_mem_free(ui->inputs);
@@ -9291,6 +9292,41 @@ QLUINodeRT *ql_ui_find_by_tag(QLUIRoot *ui, QLUITag tag, uint16_t nth)
     return NULL;
 }
 
+QLUINodeRT *ql_ui_find_by_id(QLUIRoot *ui, const char *id)
+{
+    if (ui == NULL || id == NULL || ui->doc == NULL || ui->doc->node_ids == NULL ||
+        ui->doc->text_pool == NULL || ui->doc->text_offsets == NULL)
+        return NULL;
+    for (uint16_t i = 0; i < ui->node_count; i++) {
+        const uint16_t ti = ui->doc->node_ids[i];
+        if (ti == 0xFFFFu || ti >= ui->doc->text_count)
+            continue;
+        if (strcmp(ui->doc->text_pool + ui->doc->text_offsets[ti], id) == 0)
+            return &ui->nodes[i];
+    }
+    return NULL;
+}
+
+QLUINodeRT *ql_ui_find_by_class(QLUIRoot *ui, const char *class_name, uint16_t nth)
+{
+    if (ui == NULL || class_name == NULL || ui->doc == NULL ||
+        ui->doc->node_classes == NULL || ui->doc->text_pool == NULL ||
+        ui->doc->text_offsets == NULL)
+        return NULL;
+    for (uint16_t i = 0; i < ui->doc->node_class_count; i++) {
+        const QLUIClassRef *ref = &ui->doc->node_classes[i];
+        if (ref->node >= ui->node_count || ref->name >= ui->doc->text_count)
+            continue;
+        if (strcmp(ui->doc->text_pool + ui->doc->text_offsets[ref->name],
+                   class_name) != 0)
+            continue;
+        if (nth == 0)
+            return &ui->nodes[ref->node];
+        nth--;
+    }
+    return NULL;
+}
+
 static ql_coord_t resolve_origin_len(QLUILength len, ql_coord_t basis);
 
 /* 递归命中：子节点优先（子节点画在父之上），后出现的子节点优先（z 序已排好） */
@@ -9490,6 +9526,63 @@ void ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data)
         return;
     ui->click_cb = cb;
     ui->click_user_data = user_data;
+}
+
+QLErr ql_ui_set_node_click_cb(QLUIRoot *ui, QLUINodeRT *node, ql_ui_click_cb cb,
+                              void *user_data)
+{
+    if (ui == NULL || node == NULL)
+        return QL_ERR_INVAL;
+    if (node < ui->nodes || node >= ui->nodes + ui->node_count)
+        return QL_ERR_INVAL;
+
+    for (uint8_t i = 0; i < ui->click_bind_count; i++) {
+        if (ui->click_binds[i].node != node)
+            continue;
+        if (cb == NULL) {
+            ui->click_binds[i] = ui->click_binds[--ui->click_bind_count];
+            return QL_OK;
+        }
+        ui->click_binds[i].cb = cb;
+        ui->click_binds[i].user_data = user_data;
+        return QL_OK;
+    }
+    if (cb == NULL)
+        return QL_OK;
+    if (ui->click_binds == NULL) {
+        ui->click_binds = (QLUINodeClick *)ql_mem_calloc(
+            QL_CFG_UI_CLICK_BIND_MAX, sizeof(QLUINodeClick));
+        if (ui->click_binds == NULL)
+            return QL_ERR_NOMEM;
+    }
+    if (ui->click_bind_count >= QL_CFG_UI_CLICK_BIND_MAX)
+        return QL_ERR_NOMEM;
+    QLUINodeClick *b = &ui->click_binds[ui->click_bind_count++];
+    b->node = node;
+    b->cb = cb;
+    b->user_data = user_data;
+    return QL_OK;
+}
+
+/*
+ * 点击派发：从命中节点向根冒泡，第一个绑定的节点接住并**停止**；
+ * 都没有才走全局回调。
+ */
+static int click_dispatch(QLUIRoot *ui, QLUINodeRT *hit)
+{
+    for (QLUINodeRT *n = hit; n != NULL; n = n->parent) {
+        for (uint8_t i = 0; i < ui->click_bind_count; i++) {
+            if (ui->click_binds[i].node != n)
+                continue;
+            ui->click_binds[i].cb(ui, n, ui->click_binds[i].user_data);
+            return 1;
+        }
+    }
+    if (ui->click_cb != NULL) {
+        ui->click_cb(ui, hit, ui->click_user_data);
+        return 1;
+    }
+    return 0;
 }
 
 /*
@@ -10945,8 +11038,7 @@ int ql_ui_pointer_down(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
             return 1;                    /* 禁用：什么都不做 */
         hit->flags ^= QL_UI_RT_CHECKED;
         hit->flags |= QL_UI_RT_DIRTY;
-        if (ui->click_cb != NULL)
-            ui->click_cb(ui, hit, ui->click_user_data);
+        (void)click_dispatch(ui, hit);
         return 1;
     }
 
@@ -11002,8 +11094,7 @@ int ql_ui_pointer_up(QLUIRoot *ui, ql_coord_t x, ql_coord_t y)
         }
     }
 
-    if (ui->click_cb != NULL)
-        ui->click_cb(ui, node, ui->click_user_data);
+    (void)click_dispatch(ui, node);
     return 1;
 }
 

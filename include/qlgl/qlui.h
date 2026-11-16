@@ -1362,6 +1362,12 @@ typedef struct {
     uint16_t count;
 } QLUIFontList;
 
+/* class 查询表的一条：哪个节点 + class 名在文本池里的下标 */
+typedef struct {
+    uint16_t node;
+    uint16_t name;
+} QLUIClassRef;
+
 typedef struct {
     const char       *name;
     uint16_t          node_count;
@@ -1433,6 +1439,17 @@ typedef struct {
     const QLUIGridArea  *grid_areas;
     const QLUIXform     *xforms;
     const QLUINode   *nodes;
+    /*
+     * 每个节点一个 `id` 文本池下标（0xFFFF = 没有 id）。用于
+     * `ql_ui_find_by_id()`：不依赖节点下标，插删节点不会让应用代码失效。
+     */
+    const uint16_t   *node_ids;
+    /*
+     * class 查询表：每条 `{ node, name }`，name 是文本池下标。
+     * 只有写了 `class` 的节点才占条目；`ql_ui_find_by_class()` 按名字线性扫。
+     */
+    uint16_t          node_class_count;
+    const QLUIClassRef *node_classes;
     const QLUIStyle  *styles;
     const char       *text_pool;      /* 以 '\0' 分隔的字符串池 */
     const uint16_t   *text_offsets;   /* 文本池内偏移 */
@@ -1727,6 +1744,13 @@ QLErr    ql_ui_clipboard_copy(QLUIRoot *ui);
 QLErr    ql_ui_clipboard_cut(QLUIRoot *ui);
 QLErr    ql_ui_clipboard_paste(QLUIRoot *ui);
 
+/* 单个节点的点击绑定（按需分配，未绑定的界面零成本） */
+typedef struct QLUINodeClick {
+    struct QLUINodeRT *node;
+    ql_ui_click_cb     cb;
+    void              *user_data;
+} QLUINodeClick;
+
 struct QLUIRoot {
     const QLUIDoc *doc;
     uint8_t        owns_doc;     /* 1 = ql_ui_free 时一并释放 doc（ql_ui_load_file 用） */
@@ -1734,8 +1758,11 @@ struct QLUIRoot {
     uint16_t       node_count;
     ql_coord_t     width;
     ql_coord_t     height;
-    ql_ui_click_cb click_cb;     /* 点击回调（可为 NULL） */
+    ql_ui_click_cb click_cb;     /* 全局点击回调（没有节点绑定时用） */
     void          *click_user_data;
+    /* 节点级点击回调：按需分配，最多 QL_CFG_UI_CLICK_BIND_MAX 个 */
+    QLUINodeClick *click_binds;
+    uint8_t        click_bind_count;
     QLRect         root_clip;    /* 调用方给定的初始裁剪（渲染器与画布 clip 对齐用） */
     uint8_t        root_clip_valid;
     QLRect         clip;         /* 当前裁剪（render_node 进出 overflow 容器时保存/恢复） */
@@ -1911,6 +1938,27 @@ QLErr    ql_ui_set_text(QLUIRoot *ui, QLUINodeRT *node, const char *text);
 
 /* 交互状态：命中测试 + 状态位 + 点击回调 */
 void        ql_ui_set_click_cb(QLUIRoot *ui, ql_ui_click_cb cb, void *user_data);
+
+/*
+ * 给**单个节点**接点击回调（比"全局回调 + 判断 node"直观）：
+ *   - 命中节点/它的祖先里有绑定时，调用最近的那个，并吞掉全局回调；
+ *   - 点击子元素会冒泡到父容器（与 DOM 一致），绑定即停止，不再继续冒泡；
+ *   - cb == NULL 表示解绑；同一节点重复设置会覆盖；
+ *   - 绑定表按需分配，最多 QL_CFG_UI_CLICK_BIND_MAX 个。
+ */
+QLErr       ql_ui_set_node_click_cb(QLUIRoot *ui, QLUINodeRT *node,
+                                    ql_ui_click_cb cb, void *user_data);
+
+/*
+ * 按 HTML `id` / `class` 找节点（不依赖 `&ui->nodes[i]` 的下标）。
+ * `class` 版本返回第 nth 个带该 class 的节点（nth 从 0 开始），
+ * 找不到返回 NULL。事件路径：
+ *
+ *     QLUINodeRT *btn = ql_ui_find_by_id(ui, "btn");
+ *     QLUINodeRT *item = ql_ui_find_by_class(ui, "item", 2);
+ */
+QLUINodeRT *ql_ui_find_by_id(QLUIRoot *ui, const char *id);
+QLUINodeRT *ql_ui_find_by_class(QLUIRoot *ui, const char *class_name, uint16_t nth);
 
 /*
  * 双指捏合：接上回调就能收到 BEGIN / UPDATE / END。
@@ -2150,7 +2198,7 @@ int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *ou
 /*
  * 格式（little-endian，各段按 8 字节对齐）：
  *
- *   [ QLUIDocBlobHeader 124 字节 ]
+ *   [ QLUIDocBlobHeader 192 字节（v39） ]
  *   [ nodes      ] node_count      * sizeof(QLUINode)
  *   [ styles     ] style_count     * sizeof(QLUIStyle)
  *   [ text_pool  ] 以 '\0' 分隔的 UTF-8 字节
@@ -2174,6 +2222,8 @@ int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *ou
  *   [ font_lists ] font_list_count  * sizeof(QLUIFontList)    （v33）
  *   [ font_names ] font_name_count  * uint16                  （v33）
  *   [ clip_pts   ] clip_pt_count    * sizeof(QLClipPt)        （v34）
+ *   [ node_ids   ] node_count       * uint16                   （v39）
+ *   [ node_classes] node_class_count * sizeof(QLUIClassRef)    （v39）
  *   [ name       ] name_len 字节（不含 '\0'）
  *
  * 之所以能"直接绑指针"，是因为 doc 内部全是 uint16 下标。
@@ -2196,10 +2246,13 @@ int         ql_ui_ime_spot(const QLUIRoot *ui, ql_coord_t *out_x, ql_coord_t *ou
  *     `box-shadow` 的 spread（复用 QLUIShadow.reserved）。QLUIStyle 368 → **396**
  * 38: + `backdrop-filter: refract(<N>px)`（backdrop_refract）与 `translate(%%)` 的
  *     `tf_pct` 标记。QLUIStyle 布局变了 → 所有 golden 一起重建
+ * 39: + 节点 id（uint16[node_count]，0xFFFF = 没有）与 class 查询表
+ *     （QLUIClassRef[]）；`ql_ui_find_by_id()` / `ql_ui_find_by_class()`。
+ *     头 180 → **192**
  * 25: + border-style、outline（width/color/offset/style）
  * 24: + overflow-x/y、align-content、cursor、user-select、scroll-behavior、position: sticky
  */
-#define QL_UI_BLOB_VERSION    38u
+#define QL_UI_BLOB_VERSION    39u
 
 typedef struct {
     uint32_t magic;
@@ -2265,9 +2318,14 @@ typedef struct {
     uint16_t clip_pt_count;       /* clip_pts[] 元素个数 */
     uint16_t reserved_clip;       /* 对齐填充 */
     uint32_t off_clip_pts;        /* QLClipPt[clip_pt_count] */
+    /* v39：节点 id 与 class 查询表 */
+    uint32_t off_node_ids;        /* uint16[node_count]，0xFFFF = 没有 id */
+    uint16_t node_class_count;    /* node_classes[] 条数 */
+    uint16_t reserved_node_class; /* 对齐填充 */
+    uint32_t off_node_classes;    /* QLUIClassRef[node_class_count] */
 } QLUIDocBlobHeader;
 
-_Static_assert(sizeof(QLUIDocBlobHeader) == 180, "blob 头必须是 180 字节（v34）");
+_Static_assert(sizeof(QLUIDocBlobHeader) == 192, "blob 头必须是 192 字节（v39）");
 _Static_assert(sizeof(QLUIKeyframe) == 44, "关键帧必须是 44 字节（blob 顺序存放）");
 
 /*
