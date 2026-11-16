@@ -1369,7 +1369,7 @@ seek 期间 UI 继续显示旧帧（不清屏），直到新帧到达。</p>
 <tbody>
 <tr>
 <td>外部 <code>&lt;track&gt;</code></td>
-<td><code>src</code> 存进 <code>&lt;track&gt;</code> 节点的文本；应用用 <code>ql_media_load_subtitle(m, path)</code> 加载（示例按视频所在目录解析相对路径，<code>--vtt</code> 可强制覆盖）</td>
+<td><code>src</code> 存进 <code>&lt;track&gt;</code> 节点的文本；应用用 <code>ql_media_load_subtitle(m, path)</code> 加载（示例按视频所在目录解析相对路径，<code>--vtt</code> 可强制覆盖；都没有时加载内置演示字幕，<code>--no-subtitle</code> 关闭）</td>
 </tr>
 <tr>
 <td>WebVTT</td>

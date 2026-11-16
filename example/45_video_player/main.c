@@ -4,7 +4,12 @@
  *
  *   ./build/example/example_45_video_player clip.mp4
  *   ./build/example/example_45_video_player clip.mp4 --seconds 5
+ *   ./build/example/example_45_video_player clip.mp4 --vtt sub.vtt
+ *   ./build/example/example_45_video_player clip.mp4 --no-subtitle
  *   ./build/example/example_45_video_player clip.mp4 --dump /tmp/video.ppm
+ *
+ * 字幕优先级：`--vtt` > 视频同目录的 `track.vtt`（页面里的 <track src>）>
+ * 内置演示字幕；只想看画面就加 `--no-subtitle`。
  *
  * 演示 M2：QLMedia 解出 RGBA 帧 → `ql_ui_bind_media()` 绑到 `<video>` 节点 →
  * 每来新帧把节点标脏，主循环只重绘那一块。控件仍然是普通 HTML/CSS。
@@ -18,6 +23,22 @@
 
 #define W 480
 #define H 360
+
+/*
+ * 内置演示字幕：没有任何外部 .vtt 时也能看到 <track> 的渲染效果。
+ * 用 `--vtt file.vtt` 或视频同目录的 `track.vtt` 会覆盖它。
+ */
+static const char kDemoVtt[] =
+    "WEBVTT\n"
+    "\n"
+    "00:00.000 --> 00:02.000\n"
+    "QLMedia 字幕演示（内置 WebVTT）\n"
+    "\n"
+    "00:02.000 --> 00:00:04.000\n"
+    "&lt;track src=\"track.vtt\"&gt; 或 --vtt 加载外部字幕\n"
+    "\n"
+    "00:04.000 --> 00:00:06.000\n"
+    "容器内嵌字幕（mov_text/ASS）也会自动解析\n";
 
 typedef struct {
     QLMedia    *media;
@@ -144,6 +165,7 @@ int main(int argc, char **argv)
     const char *dump = NULL;
     const char *size = NULL;
     const char *vtt = NULL;
+    int subtitle_on = 1;
     int seconds = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--seconds") == 0 && i + 1 < argc)
@@ -154,12 +176,14 @@ int main(int argc, char **argv)
             size = argv[++i];
         else if (strcmp(argv[i], "--vtt") == 0 && i + 1 < argc)
             vtt = argv[++i];
+        else if (strcmp(argv[i], "--no-subtitle") == 0)
+            subtitle_on = 0;
         else if (path == NULL)
             path = argv[i];
     }
     if (path == NULL) {
         fprintf(stderr,
-                "用法: %s <视频文件> [--vtt 字幕.vtt] [--size WxH] [--seconds N]"
+                "用法: %s <视频文件> [--vtt 字幕.vtt] [--no-subtitle] [--size WxH] [--seconds N]"
                 " [--dump out.ppm]\n", argv[0]);
         return 2;
     }
@@ -227,28 +251,36 @@ int main(int argc, char **argv)
     if (app.video != NULL)
         (void)ql_ui_bind_media(app.ui, app.video, app.media);
 
-    /* 字幕：命令行 --vtt 优先，否则看页面里的 <track src="..."> */
-    if (vtt != NULL) {
-        if (ql_media_load_subtitle(app.media, vtt) != QL_OK)
-            fprintf(stderr, "字幕加载失败: %s\n", vtt);
-    } else {
-        QLUINodeRT *tr = ql_ui_find_by_tag(app.ui, QL_UI_TAG_TRACK, 0);
-        const char *src = (tr != NULL) ? ql_ui_node_text(tr) : NULL;
-        if (src != NULL && src[0] != '\0') {
-            char path[1024];
-            if (src[0] == '/') {
-                snprintf(path, sizeof(path), "%s", src);
-            } else {
-                const char *slash = strrchr(path_abs, '/');
-                if (slash != NULL)
-                    snprintf(path, sizeof(path), "%.*s/%s",
-                             (int)(slash - path_abs), path_abs, src);
-                else
+    /*
+     * 字幕优先级：--vtt > 视频同目录的 <track src> > 内置演示字幕。
+     * 这样随便给一个视频运行都能看到字幕渲染；真实项目里换成自己的 VTT。
+     */
+    if (subtitle_on) {
+        int loaded = 0;
+        if (vtt != NULL) {
+            loaded = (ql_media_load_subtitle(app.media, vtt) == QL_OK);
+            if (!loaded)
+                fprintf(stderr, "字幕加载失败: %s\n", vtt);
+        } else {
+            QLUINodeRT *tr = ql_ui_find_by_tag(app.ui, QL_UI_TAG_TRACK, 0);
+            const char *src = (tr != NULL) ? ql_ui_node_text(tr) : NULL;
+            if (src != NULL && src[0] != '\0') {
+                char path[1024];
+                if (src[0] == '/') {
                     snprintf(path, sizeof(path), "%s", src);
+                } else {
+                    const char *slash = strrchr(path_abs, '/');
+                    if (slash != NULL)
+                        snprintf(path, sizeof(path), "%.*s/%s",
+                                 (int)(slash - path_abs), path_abs, src);
+                    else
+                        snprintf(path, sizeof(path), "%s", src);
+                }
+                loaded = (ql_media_load_subtitle(app.media, path) == QL_OK);
             }
-            /* 页面里写了 <track> 但文件不在：静默跳过（常见用法） */
-            (void)ql_media_load_subtitle(app.media, path);
         }
+        if (!loaded)
+            (void)ql_media_set_subtitle_text(app.media, kDemoVtt, 0);
     }
 
     app.win = ql_window_create("QLGL · 视频", W, H, QL_WINDOW_GL);

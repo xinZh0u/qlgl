@@ -482,7 +482,8 @@ int  ql_media_poll(QLMedia *m);               /* 主循环里调；返回 1 */
   QLUINodeRT *tr = ql_ui_find_by_tag(ui, QL_UI_TAG_TRACK, 0);
   const char *src = ql_ui_node_text(tr);      /* "sub.vtt" */
   ql_media_load_subtitle(m, resolved_path);</code>
-  <code>example/45_video_player</code> 就是这么做的（相对视频目录解析，<code>--vtt</code> 覆盖）；</li>
+  <code>example/45_video_player</code> 就是这么做的：<code>--vtt</code> &gt; 视频同目录的 <code>track.vtt</code> &gt;
+  内置演示字幕，<code>--no-subtitle</code> 关闭；</li>
 <li>只支持文本字幕：<code>&lt;b&gt;</code>/<code>&lt;i&gt;</code>/实体在解析时清成纯文本，不提供 <code>::cue</code> 样式。</li>
 </ul>
 <h2 id="3">3. 后端与设备（测试 / 板级）</h2>

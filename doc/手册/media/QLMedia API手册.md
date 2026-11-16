@@ -136,7 +136,8 @@ int         ql_media_subtitle_count(const QLMedia *m);
   const char *src = ql_ui_node_text(tr);      /* "sub.vtt" */
   ql_media_load_subtitle(m, resolved_path);
   ```
-  `example/45_video_player` 就是这么做的（相对视频目录解析，`--vtt` 覆盖）；
+  `example/45_video_player` 就是这么做的：`--vtt` > 视频同目录的 `track.vtt` >
+  内置演示字幕，`--no-subtitle` 关闭；
 - 只支持文本字幕：`<b>`/`<i>`/实体在解析时清成纯文本，不提供 `::cue` 样式。
 
 ## 3. 后端与设备（测试 / 板级）
