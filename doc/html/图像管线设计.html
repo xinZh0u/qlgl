@@ -323,7 +323,7 @@ main img {
 </details>
 <details class='sec' open><summary>设计文档</summary>
 <a href='图像管线设计.html' class='current' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
-<a href='SVG支持设计.html' title='SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）'>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）</a>
+<a href='SVG支持设计.html' title='SVG 支持（默认运行期 ThorVG + 备用 PlutoSVG + 构建期 qlsvg）'>SVG 支持（默认运行期 ThorVG + 备用 PlutoSVG + 构建期 qlsvg）</a>
 <a href='媒体播放设计.html' title='媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）'>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
 <a href='平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
 <a href='EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -379,7 +379,7 @@ main img {
 </tr>
 <tr>
 <td>SVG</td>
-<td><strong>可选运行期后端</strong>：PlutoSVG（vendored，静态编进库）。图标级静态 SVG；关掉后 <code>.svg</code> → <code>UNSUPPORTED</code>。MCU 用 <code>qlsvg</code> 构建期转 PNG/A8，见 <a href="SVG支持设计.html">SVG 支持设计</a></td>
+<td><strong>运行期后端</strong>：默认 ThorVG（vendored，静态编进库）；PlutoSVG 为备用。关掉后 <code>.svg</code> → <code>UNSUPPORTED</code>。MCU 用 <code>qlsvg</code> 构建期转 PNG/A8，见 <a href="SVG支持设计.html">SVG 支持设计</a></td>
 </tr>
 <tr>
 <td>JPEG</td>
@@ -426,7 +426,7 @@ main img {
 <ul>
 <li>GIF/WebP/APNG 的<strong>动画</strong>播放（要帧时钟 + 帧缓冲 + 循环策略；首帧可以，动画不做）。</li>
 <li><strong>内联 SVG</strong>（等于第二个渲染器，见覆盖表 §5）；图标级 SVG 走
-  <a href="SVG支持设计.html">SVG 支持设计</a>：运行期用 PlutoSVG 解码，MCU 用 <code>qlsvg</code>
+  <a href="SVG支持设计.html">SVG 支持设计</a>：运行期默认用 ThorVG 解码，MCU 用 <code>qlsvg</code>
   在构建期转成 PNG/A8，最终仍然落到本文件的位图管线。</li>
 <li>图片编辑、缩放算法的高质量版本（默认最近邻；双线性作为可选项，见 §6.2）。</li>
 <li>EXIF 方向自动旋转（PC 后端解码时由平台库处理，自有解码器不管）。</li>
@@ -491,10 +491,10 @@ main img {
 </tr>
 <tr>
 <td>SVG 解码</td>
-<td><code>QL_FEAT_IMG_SVG</code>（CMake <code>QLGL_BUILD_SVG</code> / <code>QLGL_BUILD_THORVG</code>）</td>
-<td>PlutoSVG 桌面 ON；ThorVG 可选 OFF</td>
+<td><code>QL_FEAT_IMG_SVG</code>（CMake <code>QLGL_BUILD_THORVG</code> 默认 / <code>QLGL_BUILD_SVG</code> 备用）</td>
+<td>ThorVG 桌面 ON；PlutoSVG OFF</td>
 <td><code>.svg</code> → <code>QL_ERR_UNSUPPORTED</code></td>
-<td>vendored PlutoSVG + PlutoVG / ThorVG</td>
+<td>vendored ThorVG / PlutoSVG + PlutoVG</td>
 </tr>
 <tr>
 <td>平台后端接口</td>
@@ -1594,7 +1594,7 @@ PNG 与 GIF 现在可以直接吃；JPEG 需要 libjpeg 后端（<code>QLGL_BUIL
 </table>
 <p><strong>明确不做</strong>：动画 GIF/APNG（只取首帧）、WebP、EXIF 旋转（自有解码器）、
 图像金字塔/mipmap、<code>srcset</code> 选择、<code>&lt;picture&gt;</code> 的 media 查询。
-SVG 不在这里：它是可选的 PlutoSVG 运行期后端，见
+SVG 不在这里：它是运行期后端（默认 ThorVG / 备用 PlutoSVG），见
 <a href="SVG支持设计.html">SVG 支持设计</a>。</p>
 <p><strong>GIF 的几条具体限制</strong>（都在 <code>test_gif</code> 里钉住）：只解第一帧；<code>disposal</code> 方法忽略
 （没有第二帧要用它）；调色板索引越界 → 该像素留透明，不猜颜色；画布外的像素裁掉；
@@ -1608,7 +1608,7 @@ SVG 不在这里：它是可选的 PlutoSVG 运行期后端，见
 <li>计划与分期：<a href="开发规划.html">开发规划</a> ⑱</li>
 </ul><div class='pager'>
 <a href='manual/ui/HTML5标签开发日志.html'><span class='dir'>上一页</span>HTML5 标签开发日志</a>
-<a class='next' href='SVG支持设计.html'><span class='dir'>下一页</span>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）</a>
+<a class='next' href='SVG支持设计.html'><span class='dir'>下一页</span>SVG 支持（默认运行期 ThorVG + 备用 PlutoSVG + 构建期 qlsvg）</a>
 </div>
 </div></main>
 <aside class='toc'><h5>本页内容</h5><ul>

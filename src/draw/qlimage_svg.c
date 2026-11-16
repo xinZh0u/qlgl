@@ -455,10 +455,10 @@ static const QLSvgRenderer k_backend_thorvg = { "thorvg", ql_svg_render_thorvg }
 
 static const QLSvgRenderer *svg_default_backend(void)
 {
-#if QL_FEAT_IMG_SVG_PLUTOSVG
-    return &k_backend_plutosvg;
-#elif QL_FEAT_IMG_SVG_THORVG
-    return &k_backend_thorvg;
+#if QL_FEAT_IMG_SVG_THORVG
+    return &k_backend_thorvg;       /* 默认：ThorVG */
+#elif QL_FEAT_IMG_SVG_PLUTOSVG
+    return &k_backend_plutosvg;     /* 备选：PlutoSVG */
 #else
     return NULL;
 #endif

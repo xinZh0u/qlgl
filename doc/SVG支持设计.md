@@ -1,4 +1,4 @@
-# SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）
+# SVG 支持（默认运行期 ThorVG + 备用 PlutoSVG + 构建期 qlsvg）
 
 > 状态：**已实现（2026-11-16）**。目标读者：要接 SVG 图标、改 `qltext` 资源管线、
 > 或评估"哪些 SVG 画不出来"的人。
@@ -7,8 +7,9 @@
 
 核心判断：
 
-> **图标是"资源"，不是"文档"。** PC/Mobile 直接在运行期用 PlutoSVG 解析；
-> MCU 不链 SVG 库，用同一个渲染器写成的宿主工具 `qlsvg` 在构建期转成 PNG/A8。
+> **图标是"资源"，不是"文档"。** PC/Mobile 默认在运行期用 ThorVG 解析
+> （PlutoSVG 是可选的纯 C 备用后端）；MCU 不链 SVG 库，用 PlutoSVG 写成的
+> 宿主工具 `qlsvg` 在构建期转成 PNG/A8。
 
 ---
 
@@ -16,20 +17,24 @@
 
 | 问题 | 决定 |
 |---|---|
-| PC / Mobile 怎么解 SVG | **运行期**：`ql_image_decode()` 识别 `.svg`，调 vendored PlutoSVG + PlutoVG 渲染成位图 |
+| PC / Mobile 怎么解 SVG | **运行期**：`ql_image_decode()` 识别 `.svg`；默认 **ThorVG** 渲染，PlutoSVG 作为备用后端 |
 | MCU 怎么用 SVG | **构建期**：`tools/qlsvg` 转 PNG（`--alpha` 出覆盖率遮罩），再交给 `qltext --root` |
-| 渲染器有几份 | **默认 PlutoSVG**（`qlsvg` 构建期工具也用它，保证产物与默认后端一致）；可另编 **ThorVG**（可选 C++ 后端）用于对比/更全的 SVG 特性 |
+| 渲染器有几份 | **默认 ThorVG**（C++，全量 loader）；**PlutoSVG** 是纯 C 备用后端（`-DQLGL_BUILD_SVG=ON`）。`qlsvg` 构建期工具固定用 PlutoSVG |
 | 关掉 SVG 会怎样 | `QLGL_BUILD_SVG=OFF` → `.svg` 明确返回 `QL_ERR_UNSUPPORTED`，其余格式不受影响 |
 | 单色图标染色 | 运行期 `mask-image: url(x.svg)`（取 alpha）；MCU 用 `qlsvg --alpha` + `qltext -a8` |
 | 文本 / 内嵌图片 | PlutoSVG：内嵌 png/jpeg；ThorVG 全量：内嵌 png/jpeg/webp/svg+xml，`<text>` 需 `ql_image_svg_load_font()` |
 | 内联 `<svg>` | **不做**，继续"占位盒 + 内容跳过"；要图标请用 `<img src="x.svg">` |
 | SVG 动画 | **不做**（PlutoSVG 不支持 SMIL/CSS 动画）；动效做在 QLUI 层（对位图做 transform/opacity） |
 | `clip-path: path()` | **已接**（PlutoVG 解析 + 0.75px 展平 + 现有覆盖率）；单条子路径、≤64 顶点 |
-| 怎么对比后端 | `-DQLGL_BUILD_THORVG=ON` 编入 ThorVG；运行期 `ql_image_svg_set_backend("thorvg")`；`qlsvgprobe --compare` 逐文件并排 |
+| 怎么对比后端 | 默认就是 ThorVG；`-DQLGL_BUILD_SVG=ON` 加编 PlutoSVG，运行期 `ql_image_svg_set_backend("plutosvg")`；`qlsvgprobe --compare` 逐文件并排 |
 
 ---
 
 ## 1. 能力边界（很重要）
+
+> 下表是 **PlutoSVG 备用后端**的边界。默认 ThorVG 还支持
+> `clipPath` / `mask` / `pattern` / 基础 `filter` / `<style>`、内嵌
+> png/jpeg/webp、以及加载字体后的 `<text>`（见 §4.1）。两者都**不做** SMIL。
 
 PlutoSVG 是"图标级静态 SVG"渲染器，不是完整 SVG 1.1：
 
@@ -50,9 +55,8 @@ PlutoSVG 是"图标级静态 SVG"渲染器，不是完整 SVG 1.1：
 | `<image>` 的外链、`@font-face`、外部 `<use>` | 拒绝 |
 | SMIL / CSS 动画 | **完全不支持** |
 
-**结论**：单色图标、logo、渐变图标、`<use>` 图标集都没问题；
-插画级 SVG（滤镜/蒙版/大量文本/CSS 主题）请在构建期用设计工具导出 PNG，
-不要承诺运行期还原。
+**结论**：PlutoSVG 覆盖单色图标、logo、渐变、`<use>`；ThorVG 额外覆盖
+遮罩/裁剪/pattern/部分滤镜/内嵌图片，复杂插画仍然建议构建期导出 PNG。
 
 ---
 
@@ -114,8 +118,8 @@ SVG → `QL_IMAGE_A8` 取的是**覆盖率（alpha）**，不是黑色图形的�
 - 不需要为每种主题色重新导出资源。
 
 SVG 里直接写 `fill="currentColor"` / `stroke="currentColor"` 也支持：
-栅格化时把元素自己的 `color` 传给 PlutoSVG（`plutosvg_document_render_to_surface`
-的 `current_color` 参数）。`<img>` 用自己的 `color`；`background-image` / `mask-image`
+PlutoSVG 把元素自己的 `color` 传给 `plutosvg_document_render_to_surface` 的
+`current_color` 参数；ThorVG 则在加载前把 `currentColor` 替换成具体颜色。`<img>` 用自己的 `color`；`background-image` / `mask-image`
 这种按名字共享的资源用第一个使用者的 `color`。颜色变化会触发一次重栅格化
 （同一个资源名被多个 `<img>` 使用时，每个 `<img>` 有独立光栅，互不影响）。
 
@@ -158,27 +162,32 @@ qltext cc --html app.html --css app.css --root icons \
 
 - `--alpha` 输出的是**灰度图**（RGB=覆盖率），这样 `qltext -a8` 按亮度取也能得到遮罩；
   直接把透明背景 + 黑色图形交给 `qltext -a8` 会得到全 0（黑色亮度为 0）。
-- 工具与运行期共用同一份 PlutoSVG/PlutoVG，因此"工具产物"和桌面渲染一致。
+- qlsvg 固定用 PlutoSVG/PlutoVG；与**备用后端**渲染一致，默认 ThorVG 可能有
+  细微抗锯齿/特性差异（可用 `qlsvgprobe --compare` 看）。
 - 产物是普通 PNG，可以提交进版本库；目标机不需要 `qlsvg`。
-- 顺带：如果**宿主**的 `qltext` 是在带 SVG 的构建里编出来的（桌面默认），
-  `qltext cc --root` 也能直接把 `.svg` 解成目标像素格式嵌入；MCU 预设把
-  `QLGL_BUILD_SVG` 关掉时才必须先用 `qlsvg` 预渲染。
+- 顺带：如果**宿主**的 `qltext` 是在带 SVG 后端的构建里编出来的（桌面默认
+  ThorVG），`qltext cc --root` 也能直接把 `.svg` 解成目标像素格式嵌入；
+  两边后端都关掉时才必须先用 `qlsvg` 预渲染。
 
 ---
 
 ## 4. CMake 与裁剪
 
 ```cmake
-option(QLGL_BUILD_SVG "运行期 SVG 解码（vendored PlutoSVG + PlutoVG）" ON)
+option(QLGL_BUILD_THORVG "默认 SVG 后端（ThorVG，C++）" ON)   # 桌面默认
+option(QLGL_BUILD_SVG    "备用 SVG 后端（PlutoSVG，纯 C）" OFF)
+option(QLGL_BUILD_CLIP_PATH "clip-path: path()（PlutoVG）" ON)
 ```
 
 | 能力 | 宏 | 默认 | 关掉的后果 |
 |---|---|---|---|
-| 运行期 SVG | `QL_FEAT_IMG_SVG` | 由 `QLGL_BUILD_SVG` 决定（桌面 ON，MCU 预设 OFF） | `.svg` → `QL_ERR_UNSUPPORTED` |
-| 宿主工具 | `QLGL_BUILD_QLSVG` | 非交叉编译时 ON（**与 `QLGL_BUILD_SVG` 独立**） | 不产出 `qlsvg`；MCU 仍可手写/提交预渲染 PNG |
-| ThorVG 后端 | `QLGL_BUILD_THORVG` | OFF（可选） | 只有 PlutoSVG 一个后端 |
-| 后端宏 | `QL_FEAT_IMG_SVG_PLUTOSVG` / `QL_FEAT_IMG_SVG_THORVG` | 由上面两个开关决定 | 关掉的后端调用 `ql_image_svg_set_backend()` 返回 `UNSUPPORTED` |
-| `clip-path: path()` | `QL_FEAT_CSS_CLIP_PATH_FILE` | 跟随 PlutoSVG 后端（复用 PlutoVG） | `path()` 明确报错 |
+| 运行期 SVG | `QL_FEAT_IMG_SVG` | 任一后端打开即为 1（桌面默认 ThorVG） | `.svg` → `QL_ERR_UNSUPPORTED` |
+| 宿主工具 | `QLGL_BUILD_QLSVG` | 非交叉编译时 ON（**与后端开关独立**） | 不产出 `qlsvg`；MCU 仍可手写/提交预渲染 PNG |
+| ThorVG 后端 | `QLGL_BUILD_THORVG` | **ON**（桌面默认；raw-only/交叉编译 OFF） | 退回 PlutoSVG 或 UNSUPPORTED |
+| PlutoSVG 备用后端 | `QLGL_BUILD_SVG` | OFF（需要时显式打开） | 只有 ThorVG 一个后端 |
+| `clip-path: path()` | `QLGL_BUILD_CLIP_PATH` | ON（只依赖 PlutoVG） | `path()` 不可用 |
+| 后端宏 | `QL_FEAT_IMG_SVG_PLUTOSVG` / `QL_FEAT_IMG_SVG_THORVG` | 由上面开关决定 | 关掉的后端调用 `ql_image_svg_set_backend()` 返回 `UNSUPPORTED` |
+| `clip-path` 路径解析 | `QL_FEAT_CSS_CLIP_PATH_FILE` | 由 `QLGL_BUILD_CLIP_PATH` 决定（复用 PlutoVG） | `path()` 明确报错 |
 
 容量上限（`qlconfig.h`）：
 
@@ -189,18 +198,19 @@ option(QLGL_BUILD_SVG "运行期 SVG 解码（vendored PlutoSVG + PlutoVG）" ON
 | `QL_CFG_IMAGE_SVG_MAX_ELEMENTS` | 4096 | 元素总数上限 |
 | `QL_CFG_IMAGE_MAX_ENCODED_BYTES` | 32 MiB | SVG 文本字节上限（与其它编码共用） |
 
-关掉时 `src/draw/qlimage_svg.c` 编译成空文件，第三方源码不参与 `libqlgl` 编译，
-库里不出现任何 PlutoSVG 符号；但开发机上的 `qlsvg` **仍然默认构建**，
-所以"MCU 库裁掉 SVG"与"构建期还能把 SVG 转 PNG"不冲突。
+两个后端都关掉时 `src/draw/qlimage_svg.c` 编译成空文件，ThorVG/PlutoSVG
+不参与 `libqlgl` 编译；`QLGL_BUILD_CLIP_PATH=OFF` 再把 PlutoVG 也裁掉。
+开发机上的 `qlsvg` **仍然默认构建**，所以"MCU 库裁掉 SVG"与"构建期还能把
+SVG 转 PNG"不冲突。
 
 ### 4.1 后端选择与对比
 
 ```c
-/* 默认 = PlutoSVG；下面切到 ThorVG（需要构建时 QLGL_BUILD_THORVG=ON） */
-ql_image_svg_set_backend("thorvg");
+/* 默认 = ThorVG；下面切到 PlutoSVG 备用后端（需要 -DQLGL_BUILD_SVG=ON） */
+ql_image_svg_set_backend("plutosvg");
 printf("%s\n", ql_image_svg_backend_name());
 
-/* 恢复默认 */
+/* 恢复默认（ThorVG） */
 ql_image_svg_set_backend(NULL);
 ```
 
@@ -213,7 +223,8 @@ ql_image_svg_set_backend(NULL);
   mime 白名单拒绝，GIF loader 只用于直接加载图片）；
   `<text>` 需要先调 `ql_image_svg_load_font("DejaVuSans.ttf")` 之类的字体加载；
   Lottie loader 已编入，但本库目前的图片 API 仍只解 SVG；
-- `qlsvg` 构建期工具始终用 PlutoSVG（保证 `qlsvg` 产物与**默认**后端一致）。
+- `qlsvg` 构建期工具始终用 PlutoSVG；与**备用后端**一致，和默认 ThorVG
+  可能有抗锯齿/特性差异（用 `qlsvgprobe --compare` 可量化）。
 
 逐文件对比：
 
@@ -313,8 +324,8 @@ png/jpeg/webp 也按支持处理，`image/gif`（ThorVG 的 SVG mime 白名单�
 | 组件 | 版本 | 用途 |
 |---|---|---|
 | PlutoVG | 1.3.3 | 2D 路径/填充/渐变/光栅化（默认后端 + clip-path path） |
-| PlutoSVG | 0.0.8 | SVG XML → PlutoVG 绘制（默认后端） |
-| ThorVG | 1.2.0（只保留 CPU 引擎/SVG loader/C API） | 可选 C++ 后端；`QLGL_BUILD_THORVG=ON` |
+| PlutoSVG | 0.0.8 | SVG XML → PlutoVG 绘制（备用后端） |
+| ThorVG | 1.2.0（CPU 引擎 + 全量 loader + C API） | **默认后端**；`QLGL_BUILD_THORVG=ON`（桌面默认） |
 
 两者都是纯 C、无外部依赖；直接静态编进 `libqlgl`，不安装任何头文件。
 升级步骤：替换 `third_party/` 源码 → 重跑 `test_image_svg` / `test_qlsvg` /
@@ -333,7 +344,7 @@ png/jpeg/webp 也按支持处理，`image/gif`（ThorVG 的 SVG mime 白名单�
 - 坐标就是 CSS px（`path()` 不支持百分比）；
 - 展平后顶点 ≤ `QL_CFG_UI_CLIP_PTS_MAX`（默认 64）；
 - `url(#id)` 仍不支持（要 DOM/内联 SVG）；
-- 需要 `QLGL_BUILD_SVG=ON`（复用 vendored PlutoVG），关掉时明确报错。
+- 需要 `QLGL_BUILD_CLIP_PATH=ON`（复用 vendored PlutoVG），关掉时明确报错。
 
 ## 9. 还没做（按需）
 

@@ -138,25 +138,11 @@ uint16_t THORVG_VERSION_NUMBER()
 }
 
 
-void* operator new(std::size_t size)
-{
-    return tvg::malloc(size);
-}
-
-
-void operator delete(void* ptr) noexcept
-{
-    tvg::free(ptr);
-}
-
-
-void* operator new[](std::size_t size)
-{
-    return tvg::malloc(size);
-}
-
-
-void operator delete[](void* ptr) noexcept
-{
-    tvg::free(ptr);
-}
+/*
+ * qlgl 修改：不要覆盖进程级 `operator new/delete`。
+ *
+ * 上游在这里把全局 new 换成 malloc/free，作为静态库嵌入宿主后会影响**整个进程**
+ * （包括 FFmpeg 等第三方 C++ 对象），还会和 ASan 的 new/delete 拦截冲突
+ * （alloc-dealloc-mismatch）。ThorVG 内部仍用 tvg::malloc/free 做显式分配；
+ * 让标准 new/delete 走宿主 C++ 运行时即可。
+ */

@@ -323,7 +323,7 @@ main img {
 </details>
 <details class='sec'><summary>设计文档</summary>
 <a href='../../图像管线设计.html' title='图像管线设计（&lt;img&gt; / 解码 / 绘制）'>图像管线设计（&lt;img&gt; / 解码 / 绘制）</a>
-<a href='../../SVG支持设计.html' title='SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）'>SVG 支持（运行期 PlutoSVG + 构建期 qlsvg）</a>
+<a href='../../SVG支持设计.html' title='SVG 支持（默认运行期 ThorVG + 备用 PlutoSVG + 构建期 qlsvg）'>SVG 支持（默认运行期 ThorVG + 备用 PlutoSVG + 构建期 qlsvg）</a>
 <a href='../../媒体播放设计.html' title='媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）'>媒体播放设计（&lt;audio&gt; / &lt;video&gt; / &lt;track&gt;）</a>
 <a href='../../平台后端设计.html' title='平台后端设计（QLPlatform）'>平台后端设计（QLPlatform）</a>
 <a href='../../EMBED后端设计.html' title='EMBED 后端设计（13 个标签怎么从占位变成真渲染）'>EMBED 后端设计（13 个标签怎么从占位变成真渲染）</a>
@@ -2347,7 +2347,7 @@ PC/Mobile 档缺它就说不上"兼容现代页面"——Bootstrap 5 / Tailwind 
 <td><code>clip-path: path()</code></td>
 <td>✅</td>
 <td>F</td>
-<td><code>path("…")</code> 用 PlutoVG 解析，按 <strong>0.75px</strong> 误差展平成多边形，接现有覆盖率（CPU/GPU 同公式、零图层）；只支持<strong>单条子路径</strong>、px 坐标，展平后 ≤ <code>QL_CFG_UI_CLIP_PTS_MAX</code>（64）；需要 <code>QLGL_BUILD_SVG=ON</code></td>
+<td><code>path("…")</code> 用 PlutoVG 解析，按 <strong>0.75px</strong> 误差展平成多边形，接现有覆盖率（CPU/GPU 同公式、零图层）；只支持<strong>单条子路径</strong>、px 坐标，展平后 ≤ <code>QL_CFG_UI_CLIP_PTS_MAX</code>（64）；需要 <code>QLGL_BUILD_CLIP_PATH=ON</code>（默认）</td>
 </tr>
 <tr>
 <td><code>clip-path: url(#id)</code></td>

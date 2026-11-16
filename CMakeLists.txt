@@ -11,6 +11,18 @@ project(qlgl LANGUAGES C VERSION 0.1.0)
 # 所以同一个 build 目录再 configure 一次就"好了"，只有全新配置才复现。
 include(GNUInstallDirs)
 
+# 如果外部用 CFLAGS 打开了 sanitizer（build-san 就是这么配的），C++ 源
+# （ThorVG）也要一起插桩，并且让 sanitizer 运行时出现在链接行的**前面**：
+# 否则 libstdc++ 排在 libasan 之前，运行期会报
+# "ASan runtime does not come first in initial library list"。
+if(CMAKE_C_FLAGS MATCHES "-fsanitize=[^ ]+")
+    string(REGEX MATCHALL "-fsanitize=[^ ]+" _ql_san_flags "${CMAKE_C_FLAGS}")
+    foreach(_f ${_ql_san_flags})
+        string(APPEND CMAKE_CXX_FLAGS " ${_f}")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS " ${_f}")
+    endforeach()
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)          # 严格 -std=c11，防止误用 POSIX/编译器扩展
@@ -126,11 +138,11 @@ else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_LIBJPEG=0)
 endif()
 
-# ---- SVG：运行期矢量解码（vendored PlutoSVG + PlutoVG）----
-# 图标级静态 SVG：path/形状/渐变/transform/use；没有 text/filter/CSS/SMIL。
-# 关掉时 `.svg` 明确返回 QL_ERR_UNSUPPORTED，MCU 档继续用预渲染的 PNG/A8。
+# ---- SVG：运行期矢量解码（默认 ThorVG；PlutoSVG 作为备选）----
+# 默认只编 ThorVG（C++）；PlutoSVG 是纯 C 备用后端，-DQLGL_BUILD_SVG=ON 才编。
+# `clip-path: path()` 复用 PlutoVG，可用 -DQLGL_BUILD_CLIP_PATH=OFF 裁掉。
 set(_ql_third ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
-set(_ql_svg_sources
+set(_ql_plutovg_sources
     ${_ql_third}/plutovg/source/plutovg-blend.c
     ${_ql_third}/plutovg/source/plutovg-canvas.c
     ${_ql_third}/plutovg/source/plutovg-font.c
@@ -141,44 +153,51 @@ set(_ql_svg_sources
     ${_ql_third}/plutovg/source/plutovg-surface.c
     ${_ql_third}/plutovg/source/plutovg-ft-math.c
     ${_ql_third}/plutovg/source/plutovg-ft-raster.c
-    ${_ql_third}/plutovg/source/plutovg-ft-stroker.c
-    ${_ql_third}/plutosvg/source/plutosvg.c)
+    ${_ql_third}/plutovg/source/plutovg-ft-stroker.c)
+set(_ql_plutosvg_sources ${_ql_third}/plutosvg/source/plutosvg.c)
+# qlsvg 构建期工具固定用 PlutoSVG（与目标机后端无关）
+set(_ql_svg_sources ${_ql_plutovg_sources} ${_ql_plutosvg_sources})
+
 target_include_directories(qlgl PRIVATE
     ${_ql_third}/plutovg/include
     ${_ql_third}/plutovg/source
     ${_ql_third}/plutosvg/source)
 
-# raw-only 预设只吃构建期 RAW，不要静默把 SVG 库也链进来
-if(QLGL_IMG_PRESET STREQUAL "raw-only")
+# raw-only 预设/交叉编译：默认不把 SVG 后端链进来
+if(QLGL_IMG_PRESET STREQUAL "raw-only" OR CMAKE_CROSSCOMPILING)
     set(_ql_svg_default OFF)
 else()
     set(_ql_svg_default ON)
 endif()
-option(QLGL_BUILD_SVG "构建运行期 SVG 解码（vendored PlutoSVG + PlutoVG）" ${_ql_svg_default})
-# 可选的 ThorVG 后端（C++ 内核 + C API）。默认关：它比 PlutoSVG 大一个量级，
-# 且需要开启 C++ 工具链；打开后运行期可用 ql_image_svg_set_backend("thorvg") 切换。
-option(QLGL_BUILD_THORVG "构建 ThorVG SVG 后端（C++，可选）" OFF)
-if(QLGL_BUILD_SVG)
-    # 第三方源码直接编进 qlgl（不单独成库）：静态库再挂一个依赖会牵出
-    # "导出/安装目标必须成套"的问题，而这里本来就没有独立的消费场景。
-    target_sources(qlgl PRIVATE ${_ql_svg_sources})
-    # 第三方代码的告警策略与我们不同：`-w` 只加在它们身上（主库仍是 -Wall -Wextra）
-    set_source_files_properties(${_ql_svg_sources} PROPERTIES COMPILE_OPTIONS "-w")
-    # 静态链接 + 禁掉"从文件/目录加载字体"（我们不渲染 <text>，也不需要碰文件系统）
+option(QLGL_BUILD_THORVG "默认 SVG 后端（ThorVG，C++；全量 loader）" ${_ql_svg_default})
+option(QLGL_BUILD_SVG "备用 SVG 后端（PlutoSVG，纯 C）" OFF)
+option(QLGL_BUILD_CLIP_PATH "clip-path: path()（复用 PlutoVG 路径解析）" ${_ql_svg_default})
+
+# PlutoVG：默认只为 clip-path 编译；开 QLGL_BUILD_SVG 时同时供备用后端使用
+if(QLGL_BUILD_SVG OR QLGL_BUILD_CLIP_PATH)
+    target_sources(qlgl PRIVATE ${_ql_plutovg_sources})
+    set_source_files_properties(${_ql_plutovg_sources} PROPERTIES COMPILE_OPTIONS "-w")
     target_compile_definitions(qlgl PRIVATE
         PLUTOVG_BUILD_STATIC=1
-        PLUTOSVG_BUILD_STATIC=1
         PLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD=1
-        # 库里不写图片文件（只有宿主工具 qlsvg 需要 stb_image_write）
         PLUTOVG_DISABLE_IMAGE_WRITE=1)
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_CSS_CLIP_PATH_FILE=1)
+else()
+    target_compile_definitions(qlgl PUBLIC QL_FEAT_CSS_CLIP_PATH_FILE=0)
+endif()
+
+if(QLGL_BUILD_SVG)
+    target_sources(qlgl PRIVATE ${_ql_plutosvg_sources})
+    set_source_files_properties(${_ql_plutosvg_sources} PROPERTIES COMPILE_OPTIONS "-w")
+    target_compile_definitions(qlgl PRIVATE PLUTOSVG_BUILD_STATIC=1)
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_PLUTOSVG=1)
-    message(STATUS "QLGL: SVG 后端 PlutoSVG 已启用（PlutoVG）")
+    message(STATUS "QLGL: SVG 备用后端 PlutoSVG 已启用")
 else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_PLUTOSVG=0)
 endif()
 
-# ---- SVG 后端：ThorVG（可选，C++）----
-# 只编 CPU 引擎 + SVG loader + C API；PNG/JPG/WebP/GIF/Lottie/字体 loader 都不编。
+# ---- SVG 后端：ThorVG（默认，C++）----
+# CPU 引擎 + 全量 loader（SVG/Lottie/PNG/JPEG/WebP/GIF/SFNT/media）+ C API。
 # 与 PlutoSVG 共用 src/draw/qlimage_svg.c 的预检查/尺寸/输出转换。
 if(QLGL_BUILD_THORVG)
     if(NOT CMAKE_CXX_COMPILER_LOADED)
@@ -266,7 +285,7 @@ if(QLGL_BUILD_THORVG)
             target_link_libraries(qlgl PUBLIC stdc++)
         endif()
     endif()
-    message(STATUS "QLGL: SVG 后端 ThorVG 已启用（CPU 引擎 + 全量 loader：svg/lottie/png/jpg/webp/gif/ttf/otf）")
+    message(STATUS "QLGL: SVG 默认后端 ThorVG 已启用（CPU 引擎 + 全量 loader）")
 else()
     target_compile_definitions(qlgl PUBLIC QL_FEAT_IMG_SVG_THORVG=0)
 endif()
@@ -711,6 +730,7 @@ if(QLGL_BUILD_TESTS)
                          -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/assets
                          -DHAVE_BOTH=${_ql_have_both}
                          -DHAVE_PLUTO=${QLGL_BUILD_SVG}
+                         -DHAVE_THORVG=${QLGL_BUILD_THORVG}
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/test/assets/probe_svg.cmake)
     endif()
 

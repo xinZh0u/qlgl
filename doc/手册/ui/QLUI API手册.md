@@ -1439,7 +1439,7 @@ SVG 里的 `currentColor` 会取元素自己的 `color`（颜色变化只重栅�
 ql_image_svg_set_backend("thorvg");   /* 需要构建时 QLGL_BUILD_THORVG=ON */
 const char *name = ql_image_svg_backend_name();
 ql_image_svg_load_font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-ql_image_svg_set_backend(NULL);       /* 恢复默认（PlutoSVG） */
+ql_image_svg_set_backend(NULL);       /* 恢复默认（ThorVG） */
 ```
 
 ThorVG 后端已编入 SVG/Lottie/PNG/JPEG/WebP/GIF/SFNT 全部 loader；`<text>`
@@ -1464,7 +1464,7 @@ ThorVG 后端已编入 SVG/Lottie/PNG/JPEG/WebP/GIF/SFNT 全部 loader；`<text>
 | `QL_IMAGE_SRC_PNG` | ✅ 位深 1/2/4/8/16 × 颜色类型 0/2/3/4/6、filter 0–4、`tRNS`；**隔行扫描（Adam7）明确报 `QL_ERR_UNSUPPORTED`**（装了平台后端时会交给后端） | 同上 |
 | `QL_IMAGE_SRC_GIF` | ✅ **首帧**：全局/局部调色板、透明色、隔行、画布偏移。**不做动画** | 同上 |
 | `QL_IMAGE_SRC_JPEG` | ✅ 需要平台后端（Linux 上默认带 libjpeg-turbo）。没有后端 → `QL_ERR_UNSUPPORTED` | RGBA8888（再由本库转换） |
-| `QL_IMAGE_SRC_SVG` | ✅ 需要 `QLGL_BUILD_SVG=ON`（vendored PlutoSVG）；图标级静态 SVG。`QLImageDecodeReq.target_w/target_h` 指定输出尺寸（0 = 固有尺寸）；A8 取覆盖率 | 按 `out_format` 转换 |
+| `QL_IMAGE_SRC_SVG` | ✅ 需要 `QLGL_BUILD_THORVG=ON`（默认）或 `QLGL_BUILD_SVG=ON`（备用）；图标级静态 SVG。`QLImageDecodeReq.target_w/target_h` 指定输出尺寸（0 = 固有尺寸）；A8 取覆盖率 | 按 `out_format` 转换 |
 
 `out_format` 默认 **RGBA8888**（它的枚举值就是 0，所以 `memset` 清零的请求即默认）。
 `src_format = QL_IMAGE_SRC_AUTO` 时按魔数探测（PNG/BMP/QOI/JPEG/SVG；

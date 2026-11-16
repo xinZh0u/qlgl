@@ -381,7 +381,7 @@
 #endif
 /* 具体后端：PlutoSVG（纯 C，默认）/ ThorVG（C++，可选） */
 #ifndef QL_FEAT_IMG_SVG_PLUTOSVG
-#define QL_FEAT_IMG_SVG_PLUTOSVG    QL_FEAT_IMG_SVG
+#define QL_FEAT_IMG_SVG_PLUTOSVG    0   /* 备用后端，CMake 显式打开时才 1 */
 #endif
 #ifndef QL_FEAT_IMG_SVG_THORVG
 #define QL_FEAT_IMG_SVG_THORVG      0
@@ -391,7 +391,7 @@
  * （即使运行期渲染切到 ThorVG，只要 PlutoVG 还编着就能用）。
  */
 #ifndef QL_FEAT_CSS_CLIP_PATH_FILE
-#define QL_FEAT_CSS_CLIP_PATH_FILE  QL_FEAT_IMG_SVG_PLUTOSVG
+#define QL_FEAT_CSS_CLIP_PATH_FILE  0   /* CMake 在编译 PlutoVG 时置 1 */
 #endif
 
 #ifndef QL_CFG_UI_IMAGE_MAX

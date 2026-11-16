@@ -29,7 +29,9 @@ src/bindings/capi/
 ```
 
 去掉了 GPU 引擎（gl/wg）、`lottie/jerryscript`（JS expressions，5MB+）以及
-`*/external` 包装（它们要求系统 libpng/libjpeg/libwebp；我们用 ThorVG 自带的
+`*/external` 包装。另外**删掉了 `tvgInitializer.cpp` 里的全局 `operator new/delete`
+重载**：上游用 malloc/free 覆盖进程级分配器，作为静态库嵌入后会污染宿主，
+并且和 ASan 的 new/delete 拦截冲突；ThorVG 内部仍用自己的 `tvg::malloc/free`。（它们要求系统 libpng/libjpeg/libwebp；我们用 ThorVG 自带的
 static 解码器）。上游是 Meson-only 工程，这里由顶层 CMake 直接编译，并在构建
 目录生成 `config.h`（全部 loader 的 `THORVG_*_SUPPORT`）。升级时覆盖这些目录，
 顶层用 glob 自动纳入新增源文件。

@@ -21,8 +21,8 @@ foreach(needle "bad.svg" "block" "text")
         message(FATAL_ERROR "输出里缺少 '${needle}'：\n${out}${err}")
     endif()
 endforeach()
-# clipPath 是 PlutoSVG 不支持的；ThorVG 默认后端会把它过滤掉
-if(HAVE_PLUTO)
+# clipPath 是 PlutoSVG 不支持的；只有默认后端是 PlutoSVG 时才会出现在扫描里
+if(HAVE_PLUTO AND NOT HAVE_THORVG)
     string(FIND "${out}" "clipPath" pos)
     if(pos EQUAL -1)
         message(FATAL_ERROR "默认 PlutoSVG 后端应报出 clipPath：\n${out}${err}")
